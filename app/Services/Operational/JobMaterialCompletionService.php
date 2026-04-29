@@ -46,13 +46,25 @@ class JobMaterialCompletionService
             return;
         }
 
-        $issueNumbers = JobAssignSchedule::withTrashed()
+        $assignments = JobAssignSchedule::withTrashed()
             ->whereIn('id', $assignmentIds)
             ->with('jobAssignMaterialIssues.materialIssue')
-            ->get()
+            ->get();
+
+        $issueNumbers = $assignments
             ->flatMap(function (JobAssignSchedule $assignment) {
                 return $assignment->jobAssignMaterialIssues
                     ->map(fn ($link) => $link->materialIssue?->issue_number);
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $linkedIssueIds = $assignments
+            ->flatMap(function (JobAssignSchedule $assignment) {
+                return $assignment->jobAssignMaterialIssues
+                    ->map(fn ($link) => $link->material_issue_id);
             })
             ->filter()
             ->unique()
@@ -66,7 +78,13 @@ class JobMaterialCompletionService
         }
 
         $items = MaterialIssueItem::with(['product.productType', 'materialIssue'])
-            ->whereIn('job_assign_schedule_id', $assignmentIds)
+            ->where(function ($query) use ($assignmentIds, $linkedIssueIds) {
+                $query->whereIn('job_assign_schedule_id', $assignmentIds);
+
+                if (!empty($linkedIssueIds)) {
+                    $query->orWhereIn('material_issue_id', $linkedIssueIds);
+                }
+            })
             ->get();
 
         if ($items->isEmpty()) {

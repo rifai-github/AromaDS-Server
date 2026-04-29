@@ -631,7 +631,16 @@ class ProvinceController extends Controller
             ], 400);
         }
 
-        $cacheKey = "location:cities:province:{$provinceId}:v1";
+        if (!Province::query()->whereKey($provinceId)->exists()) {
+            return response()
+                ->json([
+                    'status' => 'success',
+                    'data' => []
+                ])
+                ->header('Cache-Control', 'no-store');
+        }
+
+        $cacheKey = "location:cities:province:{$provinceId}:v2";
         $cities = Cache::remember($cacheKey, now()->addMinutes(30), function () use ($provinceId) {
             return City::query()
                 ->where('province_id', $provinceId)
@@ -651,7 +660,7 @@ class ProvinceController extends Controller
     public function storeCity(Request $request)
     {
         $validator = \Validator::make($request->all(), [
-            'province_id' => 'required|exists:provinces,id',
+            'province_id' => 'required|exists:provinces,id,deleted_at,NULL',
             'name' => 'required|string|max:255',
             'type' => 'nullable|string|max:50',
         ]);
@@ -667,9 +676,19 @@ class ProvinceController extends Controller
         try {
             DB::beginTransaction();
 
+            if ($this->activeLocationNameExists('cities', 'province_id', (int) $request->province_id, $request->name)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'City already exists in this province.',
+                    'errors' => ['name' => ['City already exists in this province.']]
+                ], 422);
+            }
+
             $city = City::create([
                 'province_id' => $request->province_id,
-                'name' => $request->name,
+                'name' => trim($request->name),
                 'type' => $request->type ?? 'Kota',
             ]);
 
@@ -726,9 +745,24 @@ class ProvinceController extends Controller
 
             $city = City::findOrFail($cityId);
             $originalProvinceId = (int) $city->province_id;
+
+            if (!Province::query()->whereKey($originalProvinceId)->exists()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Cannot update city because its province is inactive.'
+                ], 422);
+            }
+
+            if ($this->activeLocationNameExists('cities', 'province_id', $originalProvinceId, $data['name'], (int) $city->id)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'City already exists in this province.',
+                    'errors' => ['name' => ['City already exists in this province.']]
+                ], 422);
+            }
             
             $city->update([
-                'name' => $data['name'],
+                'name' => trim($data['name']),
                 'type' => $data['type'] ?? 'Kota',
             ]);
 
@@ -823,7 +857,16 @@ class ProvinceController extends Controller
             ], 400);
         }
 
-        $cacheKey = "location:districts:city:{$cityId}:v1";
+        if (!City::query()->whereKey($cityId)->whereHas('province')->exists()) {
+            return response()
+                ->json([
+                    'status' => 'success',
+                    'data' => []
+                ])
+                ->header('Cache-Control', 'no-store');
+        }
+
+        $cacheKey = "location:districts:city:{$cityId}:v2";
         $districts = Cache::remember($cacheKey, now()->addMinutes(30), function () use ($cityId) {
             return District::query()
                 ->where('city_id', $cityId)
@@ -843,7 +886,7 @@ class ProvinceController extends Controller
     public function storeDistrict(Request $request)
     {
         $validator = \Validator::make($request->all(), [
-            'city_id' => 'required|exists:cities,id',
+            'city_id' => 'required|exists:cities,id,deleted_at,NULL',
             'name' => 'required|string|max:255',
         ]);
 
@@ -858,9 +901,28 @@ class ProvinceController extends Controller
         try {
             DB::beginTransaction();
 
+            if (!City::query()->whereKey($request->city_id)->whereHas('province')->exists()) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Cannot create district because its city or province is inactive.'
+                ], 422);
+            }
+
+            if ($this->activeLocationNameExists('districts', 'city_id', (int) $request->city_id, $request->name)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'District already exists in this city.',
+                    'errors' => ['name' => ['District already exists in this city.']]
+                ], 422);
+            }
+
             $district = District::create([
                 'city_id' => $request->city_id,
-                'name' => $request->name,
+                'name' => trim($request->name),
             ]);
 
             DB::commit();
@@ -897,9 +959,24 @@ class ProvinceController extends Controller
         try {
             $district = District::findOrFail($districtId);
             $cityId = (int) $district->city_id;
+
+            if (!City::query()->whereKey($cityId)->whereHas('province')->exists()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Cannot update district because its city or province is inactive.'
+                ], 422);
+            }
+
+            if ($this->activeLocationNameExists('districts', 'city_id', $cityId, $request->name, (int) $district->id)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'District already exists in this city.',
+                    'errors' => ['name' => ['District already exists in this city.']]
+                ], 422);
+            }
             
             $district->update([
-                'name' => $request->name,
+                'name' => trim($request->name),
             ]);
 
             $this->forgetDistrictLookupCache($cityId);
@@ -977,7 +1054,16 @@ class ProvinceController extends Controller
             ], 400);
         }
 
-        $cacheKey = "location:subdistricts:district:{$districtId}:v1";
+        if (!District::query()->whereKey($districtId)->whereHas('city.province')->exists()) {
+            return response()
+                ->json([
+                    'status' => 'success',
+                    'data' => []
+                ])
+                ->header('Cache-Control', 'no-store');
+        }
+
+        $cacheKey = "location:subdistricts:district:{$districtId}:v2";
         $subdistricts = Cache::remember($cacheKey, now()->addMinutes(30), function () use ($districtId) {
             return Subdistrict::query()
                 ->where('district_id', $districtId)
@@ -997,7 +1083,7 @@ class ProvinceController extends Controller
     public function storeSubdistrict(Request $request)
     {
         $validator = \Validator::make($request->all(), [
-            'district_id' => 'required|exists:districts,id',
+            'district_id' => 'required|exists:districts,id,deleted_at,NULL',
             'name' => 'required|string|max:255',
             'postal_code' => 'nullable|string|max:10',
         ]);
@@ -1013,9 +1099,28 @@ class ProvinceController extends Controller
         try {
             DB::beginTransaction();
 
+            if (!District::query()->whereKey($request->district_id)->whereHas('city.province')->exists()) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Cannot create subdistrict because its district, city, or province is inactive.'
+                ], 422);
+            }
+
+            if ($this->activeLocationNameExists('subdistricts', 'district_id', (int) $request->district_id, $request->name)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Subdistrict already exists in this district.',
+                    'errors' => ['name' => ['Subdistrict already exists in this district.']]
+                ], 422);
+            }
+
             $subdistrict = Subdistrict::create([
                 'district_id' => $request->district_id,
-                'name' => $request->name,
+                'name' => trim($request->name),
                 'postal_code' => $request->postal_code,
             ]);
 
@@ -1054,9 +1159,24 @@ class ProvinceController extends Controller
         try {
             $subdistrict = Subdistrict::findOrFail($subdistrictId);
             $districtId = (int) $subdistrict->district_id;
+
+            if (!District::query()->whereKey($districtId)->whereHas('city.province')->exists()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Cannot update subdistrict because its district, city, or province is inactive.'
+                ], 422);
+            }
+
+            if ($this->activeLocationNameExists('subdistricts', 'district_id', $districtId, $request->name, (int) $subdistrict->id)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Subdistrict already exists in this district.',
+                    'errors' => ['name' => ['Subdistrict already exists in this district.']]
+                ], 422);
+            }
             
             $subdistrict->update([
-                'name' => $request->name,
+                'name' => trim($request->name),
                 'postal_code' => $request->postal_code,
             ]);
 
@@ -1396,15 +1516,39 @@ class ProvinceController extends Controller
     protected function forgetCityLookupCache(int $provinceId): void
     {
         Cache::forget("location:cities:province:{$provinceId}:v1");
+        Cache::forget("location:cities:province:{$provinceId}:v2");
     }
 
     protected function forgetDistrictLookupCache(int $cityId): void
     {
         Cache::forget("location:districts:city:{$cityId}:v1");
+        Cache::forget("location:districts:city:{$cityId}:v2");
     }
 
     protected function forgetSubdistrictLookupCache(int $districtId): void
     {
         Cache::forget("location:subdistricts:district:{$districtId}:v1");
+        Cache::forget("location:subdistricts:district:{$districtId}:v2");
+    }
+
+    protected function activeLocationNameExists(string $table, string $parentColumn, int $parentId, string $name, ?int $exceptId = null): bool
+    {
+        $query = DB::table($table)
+            ->where($parentColumn, $parentId)
+            ->whereNull('deleted_at')
+            ->whereRaw("LOWER(REPLACE(TRIM(name), ' ', '')) = ?", [
+                $this->normalizeLocationName($name)
+            ]);
+
+        if ($exceptId !== null) {
+            $query->where('id', '!=', $exceptId);
+        }
+
+        return $query->exists();
+    }
+
+    protected function normalizeLocationName(string $name): string
+    {
+        return strtolower(str_replace(' ', '', trim($name)));
     }
 }

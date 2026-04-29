@@ -1612,7 +1612,7 @@ class QuotationWizardController extends Controller
 
             $aromaProducts = $products
                 ->filter(fn ($product) => $this->isSelectableAromaProduct($product))
-                ->groupBy(fn ($product) => trim($product->variant_name))
+                ->groupBy(fn ($product) => strtolower(trim((string) $product->brand_line)) . '|' . trim((string) $product->variant_name))
                 ->map(function ($group) {
                     $product = $group->sortBy(function ($candidate) {
                         $categoryName = strtolower($candidate->productCategory?->name ?? '');
@@ -1632,6 +1632,7 @@ class QuotationWizardController extends Controller
                         'name' => $product->variant_name,
                         'variant' => $product->variant_name,
                         'display_name' => $product->variant_name,
+                        'brand_line' => $product->brand_line,
                         'packaging_size' => '',
                         'product_type' => 'Aroma/Variant'
                     ];

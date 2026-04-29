@@ -2505,11 +2505,26 @@ class InvoiceController extends Controller
         }
 
         if ($invoice->billing_group_id) {
+            $invoiceDate = $invoice->invoice_date ? Carbon::parse($invoice->invoice_date) : now();
+            $existingInvoice = Invoice::where('billing_group_id', $invoice->billing_group_id)
+                ->where('id', '!=', $invoice->id)
+                ->where('invoice_status', '!=', Invoice::STATUS_CANCELLED)
+                ->whereMonth('invoice_date', $invoiceDate->month)
+                ->whereYear('invoice_date', $invoiceDate->year)
+                ->first();
+
+            if ($existingInvoice) {
+                return [
+                    'can_regenerate' => false,
+                    'message' => 'Invoice pengganti sudah ada: ' . $existingInvoice->invoice_number,
+                ];
+            }
+
             return [
                 'can_regenerate' => true,
                 'type' => 'billing_group',
                 'billing_group_id' => $invoice->billing_group_id,
-                'billing_date' => $invoice->invoice_date ? Carbon::parse($invoice->invoice_date) : null,
+                'billing_date' => $invoiceDate,
             ];
         }
 
@@ -2528,6 +2543,22 @@ class InvoiceController extends Controller
             return [
                 'can_regenerate' => false,
                 'message' => 'Periode invoice tidak bisa dipetakan ulang untuk regenerate.',
+            ];
+        }
+
+        $existingInvoice = Invoice::where(function ($query) use ($contract, $invoice) {
+                $query->where('contract_id', $contract->id)
+                    ->orWhere('contract_number', $invoice->contract_number);
+            })
+            ->where('id', '!=', $invoice->id)
+            ->where('invoice_status', '!=', Invoice::STATUS_CANCELLED)
+            ->where('period_invoice', $invoice->period_invoice)
+            ->first();
+
+        if ($existingInvoice) {
+            return [
+                'can_regenerate' => false,
+                'message' => 'Invoice pengganti sudah ada: ' . $existingInvoice->invoice_number,
             ];
         }
 

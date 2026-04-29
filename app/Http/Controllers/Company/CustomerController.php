@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Company;
 
 use App\Http\Controllers\Controller;
+use App\Http\Traits\AccessControlFilterTrait;
 use App\Http\Traits\ColumnFilterTrait;
 use App\Models\Customer;
 use App\Models\Building;
@@ -27,7 +28,7 @@ use App\Models\CustomerTax;
 
 class CustomerController extends Controller
 {
-    use ColumnFilterTrait;
+    use ColumnFilterTrait, AccessControlFilterTrait;
 
     private function forgetSurveyWizardCustomerCaches(): void
     {
@@ -134,6 +135,8 @@ class CustomerController extends Controller
         
         $query = Customer::withoutGlobalScope('autoFilter')
             ->with(['assignedTo', 'customerCategory', 'customerType', 'province', 'city', 'district', 'subdistrict', 'createdBy', 'updatedBy', 'classification']);
+
+        $this->applyAccessControlFilter($query, Auth::user(), 'created_by', 'updated_by', null, null, null);
 
         // Handle updated_at filter (date filter with 3-digit month format)
         if ($hasUpdatedAtFilter && !empty($updatedAtFilterValue)) {

@@ -132,7 +132,8 @@ class AromaChangeController extends Controller
                         $aromaMap[$qRoom->room_id] = [
                             'code' => $qRoom->aromaProduct->code, // Assuming 'code' exists on product
                             'name' => $qRoom->aromaProduct->variant_name,
-                            'product_id' => $qRoom->aroma_product_id
+                            'product_id' => $qRoom->aroma_product_id,
+                            'brand_line' => $qRoom->aromaProduct->brand_line
                         ];
                     }
                 }
@@ -146,10 +147,12 @@ class AromaChangeController extends Controller
                     $room->aroma_code = $aromaInfo['code'];
                     $room->aroma_name = $aromaInfo['name'];
                     $room->aroma_product_id = $aromaInfo['product_id'];
+                    $room->aroma_brand_line = $aromaInfo['brand_line'];
                 } else {
                     $room->aroma_code = ''; // No aroma set
                     $room->aroma_name = 'No Aroma';
                     $room->aroma_product_id = null;
+                    $room->aroma_brand_line = null;
                 }
                 
                 return $room;
@@ -233,12 +236,14 @@ class AromaChangeController extends Controller
             // Resolve Previous Aroma (Must fetch from Quotation as ContractRoom might not store it)
             $previousAromaCode = $contractRoom->aroma_code ?? '';
             $previousAromaName = $contractRoom->aroma_name ?? '';
+            $previousMasterProduct = null;
             
             // Fetch Quotation Data
             $contractForAroma = Contract::with(['quotation.quotationRooms.aromaProduct'])->find($request->contract_id);
             if ($contractForAroma && $contractForAroma->quotation && $contractForAroma->quotation->quotationRooms) {
                 $qRoom = $contractForAroma->quotation->quotationRooms->where('room_id', $contractRoom->room_id)->first();
                 if ($qRoom && $qRoom->aromaProduct) {
+                    $previousMasterProduct = $qRoom->aromaProduct;
                     $previousAromaCode = $qRoom->aromaProduct->code ?? $qRoom->aromaProduct->product_code ?? ''; 
                     $previousAromaName = $qRoom->aromaProduct->variant_name;
                     if (empty($previousAromaCode) && $qRoom->aromaProduct->variant) {
@@ -280,8 +285,7 @@ class AromaChangeController extends Controller
             $approvalNotes = null;
             
             // Resolve Previous Master Product to check Brand Line
-            $previousMasterProduct = null;
-            if ($previousAromaCode || $previousAromaName) {
+            if (!$previousMasterProduct && ($previousAromaCode || $previousAromaName)) {
                 // Try to find exact match
                 $query = MasterProduct::query();
                 if ($previousAromaCode) {
@@ -293,6 +297,8 @@ class AromaChangeController extends Controller
                 }
                 $previousMasterProduct = $query->first();
             }
+
+            $this->ensureSameAromaBrandLine($previousMasterProduct, $masterProduct);
             
             // Compare Brand Lines
             if ($masterProduct && $previousMasterProduct) {
@@ -368,6 +374,18 @@ class AromaChangeController extends Controller
             return redirect()->route('marketing.aroma-changes.show', $aromaChange)
                 ->with('success', 'Aroma change request created successfully');
 
+        } catch (\InvalidArgumentException $e) {
+            DB::rollback();
+            try { DB::statement('SET FOREIGN_KEY_CHECKS=1;'); } catch (\Exception $ex) {}
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $e->getMessage()
+                ], 422);
+            }
+
+            return back()->withInput()->with('error', $e->getMessage());
         } catch (\Exception $e) {
             DB::rollback();
             // Ensure FK checks are re-enabled in case of error
@@ -468,6 +486,9 @@ class AromaChangeController extends Controller
             $masterProduct = MasterProduct::find($request->new_product_type_id);
             $newProductCategoryId = $masterProduct ? $masterProduct->product_category_id : null;
 
+            $previousMasterProduct = $this->resolvePreviousAromaProductForChange($aromaChange);
+            $this->ensureSameAromaBrandLine($previousMasterProduct, $masterProduct);
+
             $aromaChange->update([
                 'new_aroma_code' => $masterProduct
                     ? ($masterProduct->variant ?: ($masterProduct->product_code ?: ($masterProduct->variant_name ?: $masterProduct->sku)))
@@ -497,6 +518,17 @@ class AromaChangeController extends Controller
             return redirect()->route('marketing.aroma-changes.show', $aromaChange)
                 ->with('success', 'Aroma change updated successfully');
 
+        } catch (\InvalidArgumentException $e) {
+            DB::rollback();
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $e->getMessage()
+                ], 422);
+            }
+
+            return back()->withInput()->with('error', $e->getMessage());
         } catch (\Exception $e) {
             DB::rollback();
             Log::error("Failed to update aroma change: " . $e->getMessage());
@@ -889,5 +921,61 @@ class AromaChangeController extends Controller
         }
 
         return null; // Unknown category
+    }
+
+    private function resolvePreviousAromaProductForChange(AromaChange $aromaChange): ?MasterProduct
+    {
+        if ($aromaChange->previous_product_id) {
+            $product = MasterProduct::find($aromaChange->previous_product_id);
+            if ($product) {
+                return $product;
+            }
+        }
+
+        if (!$aromaChange->previous_aroma_code && !$aromaChange->previous_aroma_name) {
+            return null;
+        }
+
+        $query = MasterProduct::query();
+
+        if ($aromaChange->previous_aroma_code) {
+            $query->where('product_code', $aromaChange->previous_aroma_code);
+        }
+
+        if ($aromaChange->previous_aroma_name) {
+            $query->orWhere('variant_name', $aromaChange->previous_aroma_name)
+                ->orWhere('name', $aromaChange->previous_aroma_name);
+        }
+
+        return $query->first();
+    }
+
+    private function ensureSameAromaBrandLine(?MasterProduct $previousProduct, ?MasterProduct $newProduct): void
+    {
+        if (!$previousProduct || !$newProduct) {
+            throw new \InvalidArgumentException('Aroma lama atau aroma baru tidak valid. Pergantian aroma tidak bisa diproses.');
+        }
+
+        $previousBrandLine = $this->normalizeBrandLine($previousProduct->brand_line);
+        $newBrandLine = $this->normalizeBrandLine($newProduct->brand_line);
+
+        if (!$previousBrandLine || !$newBrandLine) {
+            throw new \InvalidArgumentException('Brand line aroma lama atau aroma baru belum lengkap. Pergantian aroma tidak bisa diproses.');
+        }
+
+        if ($previousBrandLine !== $newBrandLine) {
+            throw new \InvalidArgumentException(sprintf(
+                'Aroma tidak boleh pindah brand line dari %s ke %s.',
+                $previousProduct->brand_line ?: '-',
+                $newProduct->brand_line ?: '-'
+            ));
+        }
+    }
+
+    private function normalizeBrandLine(?string $brandLine): ?string
+    {
+        $normalized = trim(strtolower((string) $brandLine));
+
+        return $normalized !== '' ? preg_replace('/\s+/', ' ', $normalized) : null;
     }
 }

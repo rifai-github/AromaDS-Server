@@ -732,6 +732,15 @@ class JobController extends Controller
      */
     public function getJobMaterials($jobScheduleId)
     {
+        $job = JobSchedule::find($jobScheduleId);
+
+        if (!$job) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Job not found'
+            ], 404);
+        }
+
         // Get job assign schedule first
         $jobAssignSchedule = DB::table('job_assign_schedules')
             ->where('job_schedule_id', $jobScheduleId)
@@ -754,7 +763,7 @@ class JobController extends Controller
         ])
         ->where('job_assign_schedule_id', $jobAssignSchedule->id)
         ->get()
-        ->flatMap(function($jobAssignMaterial) use ($job, $materialCompletionService) {
+        ->flatMap(function($jobAssignMaterial) use ($job, $jobAssignSchedule, $materialCompletionService) {
             // Skip if materialIssue is null (deleted or missing)
             if (!$jobAssignMaterial->materialIssue) {
                 return [];
@@ -2046,6 +2055,36 @@ class JobController extends Controller
         ], true);
     }
 
+    private function getMaterialReadinessBlockReason(JobSchedule $job): ?string
+    {
+        $materialIssues = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function ($query) use ($job) {
+            $query->where('job_schedule_id', $job->id);
+        })->get();
+
+        if ($materialIssues->isEmpty()) {
+            return null;
+        }
+
+        $issueNumbers = $materialIssues->pluck('issue_number')->filter()->values();
+        $notIssuedIssue = $materialIssues->first(function ($issue) {
+            return strtolower((string) $issue->status) !== 'issued';
+        });
+
+        if ($notIssuedIssue) {
+            return "Material issue {$notIssuedIssue->issue_number} masih {$notIssuedIssue->status}. Teknisi belum dapat mengerjakan job sebelum material di-issue warehouse.";
+        }
+
+        $hasReadyIssuing = \App\Models\InventoryIssuing::whereIn('reference_no', $issueNumbers)
+            ->whereIn('status', ['processed', 'sent', 'received'])
+            ->exists();
+
+        if (!$hasReadyIssuing) {
+            return 'Material sudah dibuat tetapi belum ada Inventory Issuing yang siap untuk job ini.';
+        }
+
+        return null;
+    }
+
     private function jobScheduleRoomHasPhotoType(?int $jobScheduleRoomId, string $photoType): bool
     {
         if (!$jobScheduleRoomId) {
@@ -2841,9 +2880,11 @@ class JobController extends Controller
         try {
             \DB::beginTransaction();
             
-            $job = JobSchedule::find($jobScheduleId);
+            $job = JobSchedule::whereKey($jobScheduleId)->lockForUpdate()->first();
             
             if (!$job) {
+                \DB::rollBack();
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Job not found'
@@ -3155,6 +3196,7 @@ class JobController extends Controller
                         $materialReturn = \App\Models\MaterialReturn::where('job_schedule_id', $job->id)
                             ->where('status', \App\Models\MaterialReturn::STATUS_RETURNED)
                             ->where('notes', 'like', 'Auto-return dari Aplikasi teknisi via Job ' . $job->job_number . '%')
+                            ->lockForUpdate()
                             ->latest('id')
                             ->first();
 
@@ -3180,6 +3222,7 @@ class JobController extends Controller
                         // Also create Inventory Receiving for stock integrity
                         $inventoryReceiving = \App\Models\InventoryReceiving::where('reference_no', $job->job_number)
                             ->where('notes', 'like', 'Auto-return dari Aplikasi teknisi via Job ' . $job->job_number . '%')
+                            ->lockForUpdate()
                             ->latest('id')
                             ->first();
 
@@ -3867,6 +3910,13 @@ class JobController extends Controller
                 'status' => 'error',
                 'message' => $dependencyCheck['message']
             ], 403);
+        }
+
+        if ($materialBlockReason = $this->getMaterialReadinessBlockReason($job)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $materialBlockReason,
+            ], 409);
         }
         
         // Get user's team
@@ -4634,7 +4684,7 @@ class JobController extends Controller
                 ->toArray();
         }
 
-        if ($job->job_number) {
+        if ($job->job_number && !$job->room_id) {
             $siblingJobIds = \App\Models\JobSchedule::where('job_number', $job->job_number)
                 ->where('job_advice_id', $job->job_advice_id)
                 ->where('type', $job->type)

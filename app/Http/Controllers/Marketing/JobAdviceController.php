@@ -533,32 +533,16 @@ class JobAdviceController extends Controller
 
             $jaType = strtolower(str_replace(' ', '_', $request->type ?? ''));
             if ($jaType === 'service') {
-                if (!$contractId || $quotationId) {
-                    $errorMsg = 'Job Advice type Service wajib dibuat dari Contract.';
+                $errorMsg = 'Job Advice type Service sementara dinonaktifkan untuk input manual. Gunakan flow service otomatis dari contract/job schedule.';
 
-                    if ($request->expectsJson() || $request->header('Accept') === 'application/json') {
-                        return response()->json([
-                            'status' => 'error',
-                            'message' => $errorMsg
-                        ], 422);
-                    }
-
-                    return back()->withInput()->withErrors(['contract_id' => $errorMsg]);
+                if ($request->expectsJson() || $request->header('Accept') === 'application/json') {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $errorMsg
+                    ], 422);
                 }
 
-                $ineligibleServiceRooms = $this->getIneligibleServiceRooms($request->input('rooms', []), (int) $contractId);
-                if ($ineligibleServiceRooms->isNotEmpty()) {
-                    $errorMsg = 'Job Advice type Service hanya boleh untuk room yang unitnya sudah On Wall atau sudah pernah selesai job Install (IR). Room belum valid: ' . $ineligibleServiceRooms->implode(', ');
-
-                    if ($request->expectsJson() || $request->header('Accept') === 'application/json') {
-                        return response()->json([
-                            'status' => 'error',
-                            'message' => $errorMsg
-                        ], 422);
-                    }
-
-                    return back()->withInput()->withErrors(['rooms' => $errorMsg]);
-                }
+                return back()->withInput()->withErrors(['type' => $errorMsg]);
             }
 
             // MOM14: Validation for unfinished jobs before creating JA type Change Rental or Remove
@@ -1593,15 +1577,13 @@ class JobAdviceController extends Controller
         }
 
         if ($unitAlreadyInstalled && in_array(strtolower((string) $jobAdvice->type), ['install'], true)) {
-            \Log::info("Job Advice install room already has active Unit On Wall; skipping room so JA Install only contains remaining uninstalled rooms.", [
+            \Log::info("Job Advice install room already has active Unit On Wall; keeping JA room for first service/check while skipping duplicate install schedule.", [
                 'job_advice_number' => $jobAdvice->job_advice_number,
                 'contract_room_id' => $contractRoom->id ?? null,
                 'quotation_room_id' => $quotationRoom->id ?? null,
                 'room_id' => $roomId,
                 'unit_on_wall_id' => $existingUnitId,
             ]);
-
-            return null;
         }
         
         // Also check if there's completed install job schedule for this room from this contract

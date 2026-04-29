@@ -967,6 +967,7 @@ $(document).on('change', '#contractSelect', function() {
                                 'data-building-id': contractRoom.room?.building_id,
                                 'data-aroma-code': contractRoom.aroma_code || '',
                                 'data-aroma-name': contractRoom.aroma_name || '',
+                                'data-aroma-brand-line': contractRoom.aroma_brand_line || '',
                                 text: buildingName ? `${buildingName} - ${roomName} (${currentAroma})` : `${roomName} (${currentAroma})`
                             }));
                         });
@@ -1009,6 +1010,7 @@ $(document).on('change', '#roomSelect', function() {
     const selectedOption = $(this).find('option:selected');
     const aromaCode = selectedOption.data('aroma-code');
     const aromaName = selectedOption.data('aroma-name');
+    const brandLine = selectedOption.data('aroma-brand-line') || '';
     
     if (aromaCode || aromaName) {
         $('#currentAromaContent').html(`
@@ -1025,6 +1027,7 @@ $(document).on('change', '#roomSelect', function() {
     const contractId = $('#contractSelect').val();
     const contractRoomId = selectedOption.val();
     loadSchedules(contractId, contractRoomId);
+    populateAromaOptions(aromaChangeBootstrap.aromas || [], brandLine);
 });
 
 // Load Schedules Function
@@ -1071,20 +1074,35 @@ function formatDate(dateString) {
     return `${day} ${month} ${year}`;
 }
 
-function populateAromaOptions(products) {
+function normalizeBrandLine(value) {
+    return (value || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function populateAromaOptions(products, currentBrandLine = '') {
     const select = $('#aromaSelect');
     select.empty().append('<option value="">Select new aroma...</option>');
 
+    const normalizedCurrentBrandLine = normalizeBrandLine(currentBrandLine);
+    const filteredProducts = normalizedCurrentBrandLine
+        ? products.filter(product => normalizeBrandLine(product.brand_line) === normalizedCurrentBrandLine)
+        : products;
+
     if (products.length > 0) {
-        products.forEach(product => {
+        filteredProducts.forEach(product => {
             select.append($('<option>', {
                 value: product.id,
                 'data-name': product.name || '',
                 'data-variant': product.variant || '',
+                'data-brand-line': product.brand_line || '',
                 'data-display-name': product.display_name || product.name,
-                text: product.display_name || product.name
+                text: product.brand_line ? `${product.display_name || product.name} (${product.brand_line})` : (product.display_name || product.name)
             }));
         });
+
+        if (filteredProducts.length === 0) {
+            select.append('<option value="">No aroma products found for this brand line</option>');
+        }
+
         initSelect2For(select);
         return;
     }

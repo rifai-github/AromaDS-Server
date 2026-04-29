@@ -421,6 +421,7 @@ class Contract extends Model
     public function blockingOperationalJobsForRenewal()
     {
         $contractNumber = $this->contract_number;
+        $finalStatuses = self::finalJobScheduleStatuses();
 
         return \App\Models\JobSchedule::query()
             ->where(function ($query) use ($contractNumber) {
@@ -432,9 +433,9 @@ class Contract extends Model
                     $query->orWhere('contract_number', $contractNumber);
                 }
             })
-            ->where(function ($query) {
+            ->where(function ($query) use ($finalStatuses) {
                 $query->whereNull('status')
-                    ->orWhereNotIn('status', self::finalJobScheduleStatuses());
+                    ->orWhereNotIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(status))'), $finalStatuses);
             });
     }
 
@@ -445,6 +446,10 @@ class Contract extends Model
 
     public function getRenewalBlockReason(?int $exceptSuccessorContractId = null): ?string
     {
+        if ($this->hasBlockingOperationalJobsForRenewal()) {
+            return "Contract {$this->contract_number} masih memiliki Job Schedule aktif/belum selesai. Selesaikan atau cancel job tersebut sebelum membuat renewal.";
+        }
+
         if ($this->hasRenewalSuccessor($exceptSuccessorContractId)) {
             return "Contract {$this->contract_number} sudah memiliki contract renewal/current contract.";
         }

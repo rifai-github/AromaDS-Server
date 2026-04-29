@@ -19,23 +19,34 @@ class InventoryRequestController extends Controller
 {
     use ColumnFilterTrait, AccessControlFilterTrait;
 
-    private function validateNoDuplicateRequestProducts(array $items): void
+    private function normalizeRequestItems(array $items): array
     {
-        $productIds = collect($items)
-            ->map(fn ($item) => $item['master_product_id'] ?? ($item['product_id'] ?? null))
-            ->filter()
-            ->map(fn ($id) => (int) $id)
-            ->values();
+        return collect($items)
+            ->reduce(function ($carry, $item) {
+                $productId = (int) ($item['master_product_id'] ?? ($item['product_id'] ?? 0));
+                if (!$productId) {
+                    return $carry;
+                }
 
-        $duplicateIds = $productIds->duplicates()->unique()->values();
-        if ($duplicateIds->isEmpty()) {
-            return;
-        }
+                if (!isset($carry[$productId])) {
+                    $carry[$productId] = [
+                        'master_product_id' => $productId,
+                        'quantity' => (float) ($item['quantity'] ?? 0),
+                        'notes' => $item['notes'] ?? null,
+                    ];
 
-        $productNames = MasterProduct::whereIn('id', $duplicateIds)->pluck('name')->implode(', ');
-        throw ValidationException::withMessages([
-            'items' => 'Produk tidak boleh double dalam satu inventory request: ' . ($productNames ?: $duplicateIds->implode(', ')),
-        ]);
+                    return $carry;
+                }
+
+                $carry[$productId]['quantity'] += (float) ($item['quantity'] ?? 0);
+
+                if (!empty($item['notes'])) {
+                    $notes = array_filter([$carry[$productId]['notes'] ?? null, $item['notes']]);
+                    $carry[$productId]['notes'] = implode("\n", array_unique($notes));
+                }
+
+                return $carry;
+            }, []);
     }
 
     private function validateRequestItemQuantities(InventoryRequest $inventoryRequest): ?string
@@ -76,6 +87,44 @@ class InventoryRequestController extends Controller
         }
 
         return null;
+    }
+
+    private function mergeDuplicateRequestItems(InventoryRequest $inventoryRequest): void
+    {
+        $inventoryRequest->loadMissing('items');
+
+        $inventoryRequest->items
+            ->groupBy('master_product_id')
+            ->filter(fn ($items) => $items->count() > 1)
+            ->each(function ($items) {
+                $primary = $items->sortBy('id')->first();
+                $duplicates = $items->where('id', '!=', $primary->id);
+                $quantityFields = ['quantity', 'approved_qty', 'issued_qty', 'received_qty', 'returned_qty'];
+                $updates = ['updated_by' => Auth::id()];
+
+                foreach ($quantityFields as $field) {
+                    $values = $items
+                        ->pluck($field)
+                        ->filter(fn ($value) => $value !== null);
+
+                    if ($values->isNotEmpty()) {
+                        $updates[$field] = $values->sum(fn ($value) => (float) $value);
+                    }
+                }
+
+                $notes = $items
+                    ->pluck('notes')
+                    ->filter()
+                    ->unique()
+                    ->implode("\n");
+
+                if ($notes !== '') {
+                    $updates['notes'] = $notes;
+                }
+
+                $primary->update($updates);
+                $duplicates->each->delete();
+            });
     }
     /**
      * Display a listing of the resource.
@@ -210,7 +259,7 @@ class InventoryRequestController extends Controller
             'items.*.quantity' => 'required|numeric|min:0.01',
             'items.*.notes' => 'nullable|string',
         ]);
-        $this->validateNoDuplicateRequestProducts($request->items);
+        $normalizedItems = $this->normalizeRequestItems($request->items);
 
         try {
             DB::beginTransaction();
@@ -243,9 +292,9 @@ class InventoryRequestController extends Controller
             ]);
 
             // Create request items
-            foreach ($request->items as $item) {
+            foreach ($normalizedItems as $item) {
                 $inventoryRequest->items()->create([
-                    'master_product_id' => $item['master_product_id'] ?? ($item['product_id'] ?? null),
+                    'master_product_id' => $item['master_product_id'],
                     'quantity' => $item['quantity'],
                     'notes' => $item['notes'] ?? null,
                     'created_by' => Auth::id(),
@@ -442,9 +491,9 @@ class InventoryRequestController extends Controller
         }
         
         $request->validate($validationRules);
-        if ($request->has('items')) {
-            $this->validateNoDuplicateRequestProducts($request->items);
-        }
+        $normalizedItems = $request->has('items')
+            ? $this->normalizeRequestItems($request->items)
+            : [];
 
         try {
             DB::beginTransaction();
@@ -463,9 +512,9 @@ class InventoryRequestController extends Controller
                 $inventoryRequest->items()->delete();
 
                 // Create new items
-                foreach ($request->items as $item) {
+                foreach ($normalizedItems as $item) {
                     $inventoryRequest->items()->create([
-                        'master_product_id' => $item['master_product_id'] ?? ($item['product_id'] ?? null),
+                        'master_product_id' => $item['master_product_id'],
                         'quantity' => $item['quantity'],
                         'notes' => $item['notes'] ?? null,
                         'created_by' => Auth::id(),
@@ -705,6 +754,7 @@ class InventoryRequestController extends Controller
         try {
             DB::beginTransaction();
 
+            $this->mergeDuplicateRequestItems($inventoryRequest);
             $inventoryRequest->load(['items.product']);
             foreach ($inventoryRequest->items as $item) {
                 if ($item->approved_qty === null || (float) $item->approved_qty <= 0) {
@@ -815,6 +865,7 @@ class InventoryRequestController extends Controller
         try {
             DB::beginTransaction();
 
+            $this->mergeDuplicateRequestItems($inventoryRequest);
             $inventoryRequest->load(['items.product']);
             foreach ($inventoryRequest->items as $item) {
                 if ($item->approved_qty === null || (float) $item->approved_qty <= 0) {
@@ -1118,18 +1169,22 @@ class InventoryRequestController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Only draft requests can be edited.'], 422);
         }
 
-        // Check if already exists to be safe
-        $exists = $inventoryRequest->items()->where('master_product_id', $request->master_product_id)->exists();
-        if ($exists) {
-            return response()->json(['status' => 'error', 'message' => 'Product already in request.'], 422);
-        }
-
         try {
-            $inventoryRequest->items()->create([
-                'master_product_id' => $request->master_product_id,
-                'quantity' => $request->quantity,
-                'created_by' => Auth::id(),
-            ]);
+            $item = $inventoryRequest->items()->where('master_product_id', $request->master_product_id)->first();
+
+            if ($item) {
+                $item->update([
+                    'quantity' => (float) $item->quantity + (float) $request->quantity,
+                    'updated_by' => Auth::id(),
+                ]);
+            } else {
+                $inventoryRequest->items()->create([
+                    'master_product_id' => $request->master_product_id,
+                    'quantity' => $request->quantity,
+                    'created_by' => Auth::id(),
+                    'updated_by' => Auth::id(),
+                ]);
+            }
 
             return response()->json(['status' => 'success', 'message' => 'Item added successfully.']);
         } catch (\Exception $e) {

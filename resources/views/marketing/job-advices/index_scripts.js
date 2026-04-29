@@ -49,7 +49,6 @@
                                     <option value="">Select Type</option>
                                     <option value="install_free">Install Free</option>
                                     <option value="Install">Install</option>
-                                    <option value="service">Service</option>
                                     <option value="Remove">Remove</option>
                                     <option value="Extra">Extra</option>
                                     <option value="change_rental">Change Rental</option>
