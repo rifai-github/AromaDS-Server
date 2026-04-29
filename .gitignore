@@ -1,0 +1,54 @@
+﻿# Environment
+.env
+.env.*
+!.env.example
+!env.production.example
+
+# Dependencies
+/vendor/
+/node_modules/
+
+# Laravel
+/bootstrap/cache/*.php
+/storage/*.key
+/storage/app/*
+!/storage/app/.gitignore
+/storage/framework/cache/*
+!/storage/framework/cache/.gitignore
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+/storage/framework/testing/*
+!/storage/framework/testing/.gitignore
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+/storage/logs/*
+!/storage/logs/.gitignore
+/public/hot
+/public/storage
+
+# Test and runtime artifacts
+.phpunit.result.cache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+dump.rdb
+*.sql
+*.sqlite
+*.sqlite3
+
+# Local backups
+*.bak
+*.backup
+
+# IDE and OS
+/.idea/
+/.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Laravel Homestead
+Homestead.json
+Homestead.yaml

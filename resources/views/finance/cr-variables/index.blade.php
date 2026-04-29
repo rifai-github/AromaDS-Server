@@ -1,0 +1,194 @@
+@extends('layouts.app')
+
+@section('title', 'CR Variables')
+@section('breadcrumb', 'Home / Finance / CR Variables')
+
+@section('content')
+<style>
+    html, body { overflow-x: hidden; max-width: 100vw; }
+    *, *::before, *::after { box-sizing: border-box; }
+    .btn { padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; border: none; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+    .btn-primary { background-color: #214589; color: white; }
+    .btn-primary:hover { background-color: #1e3a8a; }
+    .btn-secondary { background-color: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db; }
+    .btn-success { background-color: #10b981; color: white; }
+    .btn-warning { background-color: #f59e0b; color: white; }
+    .btn-danger { background-color: #ef4444; color: white; }
+    .btn-info { background-color: #3b82f6; color: white; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .page-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px 0; margin-bottom: 30px; }
+    .page-title { font-size: 28px; font-weight: 700; margin: 0; }
+    .page-subtitle { font-size: 16px; opacity: 0.9; margin: 8px 0 0 0; }
+    .table-container { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border: 1px solid #e5e7eb; }
+    .table-header { background: #f8fafc; padding: 20px 24px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; }
+    .table-title { font-size: 18px; font-weight: 600; color: #1f2937; margin: 0; }
+    .table-wrapper { overflow-x: auto; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .data-table th { background: #f1f5f9; color: #475569; font-weight: 600; padding: 12px 16px; text-align: left; border-bottom: 2px solid #e2e8f0; }
+    .data-table td { padding: 12px 16px; border-bottom: 1px solid #e5e7eb; color: #1f2937; }
+    .data-table tbody tr:hover { background-color: #f8fafc; }
+    .badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+    .badge-success { background-color: #dcfce7; color: #16a34a; }
+    .badge-danger { background-color: #fee2e2; color: #dc2626; }
+    .badge-warning { background-color: #fef3c7; color: #d97706; }
+    .action-buttons { display: flex; gap: 8px; }
+</style>
+
+<div class="container-fluid">
+    <div class="page-header">
+        <div class="container-fluid">
+            <h1 class="page-title"><i class="fas fa-clock"></i> CR Variables</h1>
+            <p class="page-subtitle">Manage Cash Receipt period configurations</p>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+        <div class="mb-4">
+            <a href="{{ route('finance.cr-variables.create') }}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Add New CR Variable
+            </a>
+        </div>
+
+        <div class="table-container">
+            <div class="table-header">
+                <h3 class="table-title">CR Variables List</h3>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table" id="crVariablesTable">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>CR Days</th>
+                            <th>Is Default</th>
+                            <th>Status</th>
+                            <th>Created By</th>
+                            <th>Created At</th>
+                            <th>Last Updated By</th>
+                            <th>Last Updated At</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($crVariables as $variable)
+                        <tr>
+                            <td><strong>{{ $variable->name }}</strong></td>
+                            <td>{{ $variable->cr_days }} days</td>
+                            <td>
+                                @if($variable->is_default)
+                                    <span class="badge badge-warning">Default</span>
+                                @else
+                                    <form action="{{ route('finance.cr-variables.set-default', $variable) }}" method="POST" style="display: inline;">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-secondary">Set as Default</button>
+                                    </form>
+                                @endif
+                            </td>
+                            <td>
+                                @if($variable->is_active)
+                                    <span class="badge badge-success">Active</span>
+                                @else
+                                    <span class="badge badge-danger">Inactive</span>
+                                @endif
+                            </td>
+                            <td class="text-sm text-gray-500">{{ $variable->createdBy->name ?? '-' }}</td>
+                            <td class="text-sm text-gray-500">{!! $variable->created_at ? $variable->created_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                            <td class="text-sm text-gray-500">{{ $variable->updatedBy->name ?? '-' }}</td>
+                            <td class="text-sm text-gray-500">{!! $variable->updated_at ? $variable->updated_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                            <td>
+                                <div class="action-buttons">
+                                    <a href="{{ route('finance.cr-variables.show', $variable) }}" class="btn btn-info btn-sm">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <a href="{{ route('finance.cr-variables.edit', $variable) }}" class="btn btn-warning btn-sm">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    <form action="{{ route('finance.cr-variables.destroy', $variable) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure?');">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="btn btn-danger btn-sm">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        @empty
+                        <tr>
+                            <td colspan="9" style="text-align: center; padding: 40px;">
+                                <p>No CR variables found. <a href="{{ route('finance.cr-variables.create') }}">Create one</a></p>
+                            </td>
+                        </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        @if($crVariables->hasPages())
+        <div class="mt-4">
+            {{ $crVariables->links() }}
+        </div>
+        @endif
+    </div>
+</div>
+
+@push('scripts')
+<!-- DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+<!-- DataTables JS -->
+<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<script>
+$(document).ready(function() {
+    // DataTable is not fully compatible with Laravel pagination
+    // We'll use DataTable only for search and sort on current page
+    // Pagination will be handled by Laravel
+    
+    if (typeof $.fn.DataTable !== 'undefined') {
+        const table = $('#crVariablesTable');
+        
+        // Check if table exists and has valid structure
+        if (table.length > 0) {
+            // Check if there's an empty row with colspan
+            const hasEmptyRow = table.find('tbody tr td[colspan]').length > 0;
+            
+            // Only initialize DataTable if we have data (no empty row)
+            if (!hasEmptyRow) {
+                // Count actual data rows
+                const dataRows = table.find('tbody tr');
+                
+                // Only initialize if we have data rows
+                if (dataRows.length > 0) {
+                    try {
+                        // Destroy existing DataTable instance if any
+                        if ($.fn.DataTable.isDataTable('#crVariablesTable')) {
+                            table.DataTable().destroy();
+                        }
+                        
+                        table.DataTable({
+                            order: [[2, 'desc']],
+                            pageLength: 25,
+                            responsive: true,
+                            searching: true,
+                            info: false,
+                            paging: false, // Disable DataTable pagination - use Laravel pagination
+                            lengthChange: false,
+                            // Ensure all columns are properly defined
+                            columnDefs: [
+                                { orderable: false, targets: 4 } // Actions column (index 4) is not sortable
+                            ]
+                        });
+                    } catch (e) {
+                        console.warn('DataTable initialization failed:', e);
+                        // If DataTable fails, table will still display normally
+                    }
+                }
+            } else {
+                console.log('Table has empty row, skipping DataTable initialization');
+            }
+        }
+    }
+});
+</script>
+@endpush
+@endsection
+

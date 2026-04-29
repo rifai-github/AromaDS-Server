@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Sticky Header & Filter</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        
+        .container {
+            width: 100%;
+            height: 70vh;
+            overflow: auto;
+            border: 2px solid #000;
+            background: #fff;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        
+        thead th {
+            position: sticky;
+            top: 0;
+            background: #214589;
+            color: white;
+            padding: 12px;
+            z-index: 100;
+            border: 1px solid #fff;
+        }
+        
+        .filter-row th {
+            position: sticky !important;
+            top: 50px !important;
+            background: #f3f4f6 !important;
+            z-index: 90 !important;
+            padding: 8px;
+        }
+        
+        .filter-row input, .filter-row select {
+            width: 100%;
+            padding: 4px;
+            border: 1px solid #ccc;
+        }
+        
+        tbody td {
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+        
+        tbody tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+        
+        #status {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #e8f5e9;
+            border: 1px solid #4caf50;
+        }
+    </style>
+</head>
+<body>
+    <div id="status">
+        <h2>Test Status</h2>
+        <div id="log"></div>
+    </div>
+    
+    <div class="container">
+        <table id="testTable">
+            <thead>
+                <tr>
+                    <th>Column 1</th>
+                    <th>Column 2</th>
+                    <th>Column 3</th>
+                </tr>
+                <tr class="filter-row">
+                    <th><input type="text" class="filter-input" placeholder="Type and press Enter"></th>
+                    <th><select class="filter-select"><option>Select</option><option>A</option><option>B</option></select></th>
+                    <th><input type="text" class="filter-input" placeholder="Test Enter"></th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Generate 100 rows -->
+                <script>
+                    for (let i = 1; i <= 100; i++) {
+                        document.write(`<tr><td>Row ${i} Col 1</td><td>Row ${i} Col 2</td><td>Row ${i} Col 3</td></tr>`);
+                    }
+                </script>
+            </tbody>
+        </table>
+    </div>
+    
+    <script>
+        const log = document.getElementById('log');
+        
+        function addLog(message) {
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML += `<div>[${time}] ${message}</div>`;
+            console.log(message);
+        }
+        
+        addLog('Page loaded');
+        
+        // Test filter inputs
+        const filterInputs = document.querySelectorAll('.filter-input');
+        const filterSelects = document.querySelectorAll('.filter-select');
+        
+        addLog(`Found ${filterInputs.length} text inputs and ${filterSelects.length} selects`);
+        
+        filterInputs.forEach((input, index) => {
+            input.addEventListener('keydown', function(e) {
+                addLog(`Key pressed on input ${index}: ${e.key}`);
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addLog('✅ ENTER KEY DETECTED AND PREVENTED!');
+                    alert('Enter key works! Value: ' + this.value);
+                }
+            });
+        });
+        
+        filterSelects.forEach((select, index) => {
+            select.addEventListener('change', function() {
+                addLog(`✅ SELECT CHANGED: ${this.value}`);
+                alert('Select changed to: ' + this.value);
+            });
+        });
+        
+        addLog('Event listeners attached successfully');
+        
+        // Test sticky on scroll
+        document.querySelector('.container').addEventListener('scroll', function() {
+            addLog(`Scrolled: ${this.scrollTop}px`);
+        });
+    </script>
+</body>
+</html>

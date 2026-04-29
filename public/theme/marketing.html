@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Marketing Pipeline Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link href="css/main.css" rel="stylesheet" />
+    
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background: #dbecfd;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 220px;
+            background: linear-gradient(354.28deg, #14ADD6 0%, #384295 100%);
+            color: #fff;
+            border-radius: 0 10px 10px 0;
+            display: flex;
+            flex-direction: column;
+            transition: width 0.3s ease;
+            overflow: hidden;
+            z-index: 100;
+        }
+
+        .sidebar.collapsed {
+            width: 70px;
+        }
+
+        .sidebar .logo {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .sidebar .logo img {
+            max-width: 120px;
+            transition: all 0.3s ease;
+        }
+
+        .sidebar.collapsed .logo img {
+            max-width: 40px;
+            transition: all 0.3s ease;
+        }
+
+        .collapse-btn {
+            background: #fff;
+            border: none;
+            color: #384295;
+            font-size: 18px;
+            cursor: pointer;
+            align-self: flex-end; 
+            margin: 0 10px 15px 0;
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+            min-width: 35px;
+            min-height: 35px;
+        }
+
+        .collapse-btn:hover {
+            background: #e9e9e9;
+        }
+
+        .menu {
+            flex: 1;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 18px;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease;
+            border-radius: 6px;
+            margin: 2px 8px;
+            position: relative;
+        }
+
+        .menu-item.has-submenu {
+            justify-content: space-between;
+        }
+
+        .menu-item:hover {
+            background: #C1E0FC;
+            color: #225FD3;
+        }
+
+        .menu-item.active {
+            background: #C1E0FC;
+            color: #225FD3;
+            font-weight: 600;
+        }
+
+        .menu-item .left {
+            display: flex;
+            align-items: center;
+        }
+
+        .menu-item i {
+            font-size: 18px;
+            min-width: 24px;
+            text-align: center;
+            flex-shrink: 0;
+            margin: 0;
+        }
+
+        .menu-item span {
+            margin-left: 10px;
+            transition: opacity 0.2s ease, width 0.2s ease;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .sidebar.collapsed .menu-item span {
+            opacity: 0;
+            width: 0;
+            pointer-events: none;
+        }
+
+        .menu-item .arrow {
+            margin-left: auto;
+            font-size: 14px;
+            transition: transform 0.3s;
+        }
+
+        .menu-item.open .arrow {
+            transform: rotate(180deg);
+        }
+
+        .sidebar.collapsed .menu-item .arrow {
+            opacity: 0;
+        }
+
+        .sidebar.collapsed .menu-item {
+            justify-content: center;
+            padding: 12px;
+            margin: 2px 8px;
+            width: 48px;   
+            height: 48px;  
+            border-radius: 50%;
+            flex-shrink: 0;
+            min-width: 48px;
+            min-height: 48px;
+        }
+
+        .sidebar.collapsed .menu-item:hover,
+        .sidebar.collapsed .menu-item.active {
+            background: #C1E0FC;
+            color: #225FD3;
+        }
+
+        .sidebar.collapsed .menu-item .left {
+            justify-content: center;
+            width: 100%;
+            display: flex;
+            align-items: center;
+        }
+
+        .sidebar.collapsed .menu-item .left span {
+            display: none;
+        }
+
+        .sidebar.collapsed .menu-item.has-submenu {
+            justify-content: center;
+        }
+
+        .sidebar.collapsed .menu-item.has-submenu .arrow {
+            display: none;
+        }
+
+        .sidebar.collapsed .menu-item .left i {
+            margin: 0;
+            text-align: center;
+        }
+
+        .sidebar.collapsed .menu-item .left {
+            justify-content: center;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            text-align: center;
+        }
+
+        .submenu {
+            list-style: none;
+            margin: 0 8px;
+            padding: 0;
+            max-height: 0;
+            overflow: hidden;
+            opacity: 0;
+            background: #C1E0FC;
+            border-radius: 12px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            transition: all 0.4s ease;
+        }
+
+        .sidebar.collapsed .submenu {
+            background: transparent;
+            box-shadow: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .sidebar.collapsed .submenu li {
+            background: transparent;
+            padding: 10px 20px;
+            margin: 0;
+            width: auto;
+            height: auto;
+            border-radius: 6px;
+            background-color: transparent;
+            display: block;
+            position: relative;
+        }
+
+        .sidebar.collapsed .submenu li:hover {
+            background-color: rgba(34,95,211,0.15);
+        }
+
+        .sidebar.collapsed .submenu li.active {
+            background-color: rgba(34,95,211,0.25);
+        }
+
+        .sidebar.collapsed .submenu li::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background-color: rgba(255,255,255,0.6);
+        }
+
+        .sidebar.collapsed .submenu li:hover::before {
+            background-color: rgba(255,255,255,0.9);
+        }
+
+        .sidebar.collapsed .submenu li.active::before {
+            background-color: rgba(255,255,255,1);
+        }
+
+        .sidebar.collapsed .submenu li {
+            color: transparent;
+            font-size: 0;
+            cursor: pointer;
+        }
+
+        .sidebar.collapsed .submenu li .tooltip {
+            left: 80px;
+        }
+
+        .submenu.show {
+            max-height: 500px;
+            opacity: 1;
+            padding: 10px 0;
+        }
+
+        .submenu li {
+            padding: 10px 20px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease;
+            border-radius: 6px;
+            color: #214589;
+        }
+
+        .submenu li:hover {
+            background: rgba(34,95,211,0.15);
+            color: #225FD3;
+        }
+
+        .submenu li.active {
+            background: rgba(34,95,211,0.25);
+            color: #225FD3;
+            font-weight: 600;
+        }
+
+        .bottom {
+            margin-top: auto;
+            padding: 10px 0;
+        }
+
+        .menu-item .tooltip,
+        .submenu li .tooltip {
+            position: fixed;
+            left: 80px;
+            background: #225FD3;
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 9999;
+        }
+
+        .sidebar.collapsed .menu-item:hover .tooltip {
+            opacity: 1;
+        }
+
+        .sidebar.collapsed .submenu li:hover .tooltip {
+            opacity: 1;
+        }
+
+        .main-content {
+            margin-left: 220px;
+            transition: margin-left 0.3s ease;
+        }
+
+        .main-content.sidebar-collapsed {
+            margin-left: 70px;
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+            }
+            
+            .sidebar.show {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body class="bg-[#dbecfd] min-h-screen">
+    <div class="flex flex-col lg:flex-row   w-full min-h-screen">
+        <div class="flex flex-col lg:flex-row justify-center items-start w-full max-w-[96%] mx-auto mt-[20px] mb-[20px] md:mt-[30px] md:mb-[30px] lg:mt-[40px] lg:mb-[40px]">
+            
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <div class="logo">
+            <img id="logoImg" src="assets/images/img_logo.svg" alt="Logo">
+        </div>
+        <button class="collapse-btn" id="collapseBtn"><i class="fas fa-angle-left"></i></button>
+
+        <div class="menu">
+            <div class="menu-item">
+                <div class="left"><i class="fas fa-table-columns"></i><span>Dashboard</span></div>
+                <div class="tooltip">Dashboard</div>
+            </div>
+
+            <div class="menu-item has-submenu active">
+                <div class="left"><i class="fas fa-bullhorn"></i><span>Marketing</span></div>
+                <i class="fas fa-chevron-down arrow"></i>
+                <div class="tooltip">Marketing</div>
+            </div>
+            <ul class="submenu show">
+                <li class="active">
+                    Pipeline
+                    <div class="tooltip">Pipeline</div>
+                </li>
+                <li>
+                    Survey
+                    <div class="tooltip">Survey</div>
+                </li>
+                <li>
+                    Quotation
+                    <div class="tooltip">Quotation</div>
+                </li>
+                <li>
+                    Contract
+                    <div class="tooltip">Contract</div>
+                </li>
+                <li>
+                    Job Advice
+                    <div class="tooltip">Job Advice</div>
+                </li>
+                <li>
+                    My Activity
+                    <div class="tooltip">My Activity</div>
+                </li>
+                <li>
+                    Report
+                    <div class="tooltip">Report</div>
+                </li>
+                <li>
+                    Lost Unit
+                    <div class="tooltip">Lost Unit</div>
+                </li>
+            </ul>
+
+            <div class="menu-item has-submenu">
+                <div class="left"><i class="fas fa-file-signature"></i><span>Operational</span></div>
+                <i class="fas fa-chevron-down arrow"></i>
+                <div class="tooltip">Operational</div>
+            </div>
+            <div class="menu-item has-submenu">
+                <div class="left"><i class="fas fa-calculator"></i><span>Finance</span></div>
+                <i class="fas fa-chevron-down arrow"></i>
+                <div class="tooltip">Finance</div>
+            </div>
+            <div class="menu-item has-submenu">
+                <div class="left"><i class="fas fa-cube"></i><span>Warehouse</span></div>
+                <i class="fas fa-chevron-down arrow"></i>
+                <div class="tooltip">Warehouse</div>
+            </div>
+            <div class="menu-item has-submenu">
+                <div class="left"><i class="fas fa-building"></i><span>Company</span></div>
+                <i class="fas fa-chevron-down arrow"></i>
+                <div class="tooltip">Company</div>
+            </div>
+            <div class="menu-item has-submenu">
+                <div class="left"><i class="fas fa-chart-line"></i><span>Report</span></div>
+                <i class="fas fa-chevron-down arrow"></i>
+                <div class="tooltip">Report</div>
+            </div>
+            <div class="menu-item has-submenu">
+                <div class="left"><i class="fas fa-gear"></i><span>System</span></div>
+                <i class="fas fa-chevron-down arrow"></i>
+                <div class="tooltip">System</div>
+            </div>
+        </div>
+
+        <div class="bottom">
+            <div class="menu-item has-submenu">
+                <div class="left"><i class="fas fa-language"></i><span>Language</span></div>
+                <i class="fas fa-chevron-down arrow"></i>
+                <div class="tooltip">Language</div>
+            </div>
+            <div class="menu-item"><div class="left"><i class="fas fa-user"></i><span>My Profile</span></div><div class="tooltip">My Profile</div></div>
+            <div class="menu-item"><div class="left"><i class="fas fa-sign-out-alt"></i><span>Logout</span></div><div class="tooltip">Logout</div></div>
+        </div>
+    </div>
+            
+    <!-- Main Content -->
+    <div class="main-content" id="mainContent">
+        <div class="flex flex-col justify-start items-center align-self-center w-full">
+                
+                <!-- Header -->
+                <div class="flex flex-row justify-start items-center w-full bg-white rounded-[10px] pt-[3px] pr-[3px] pb-[3px] pl-[3px] md:pt-[4px] md:pr-[4px] md:pb-[4px] md:pl-[4px] lg:pt-[6px] lg:pr-[6px] lg:pb-[6px] lg:pl-[6px]">
+                    <div class="flex flex-col md:flex-row justify-start items-center w-full mr-[6px] ml-[6px] md:mr-[9px] md:ml-[9px] lg:mr-[12px] lg:ml-[12px]">
+                        <div class="flex flex-row justify-start items-center w-full md:w-[48%]">
+                            <!-- Mobile Menu Button -->
+                            <button class="lg:hidden mr-3 p-2 rounded-md hover:bg-gray-100" onclick="toggleMobileMenu()">
+                                <svg class="w-6 h-6 text-[#214589]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                                </svg>
+                            </button>
+                            
+                            <div class="flex flex-col justify-start items-start">
+                                <div class="flex flex-row justify-start items-center w-full">
+                                    <h1 class="text-[11px] md:text-[16px] lg:text-[22px] font-inter font-bold leading-[13px] md:leading-[20px] lg:leading-[27px] text-left text-[#214589] w-auto">Marketing</h1>
+                                </div>
+                                <div class="flex flex-row justify-start items-center w-full">
+                                    <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#214589] w-auto">Home / Marketing / Pipeline</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex flex-row justify-end items-center w-full md:w-[52%] mt-4 md:mt-0">
+                            <img src="assets/images/img_image_1.png" class="w-[20px] h-[20px] md:w-[30px] md:h-[30px] lg:w-[40px] lg:h-[40px]" alt="profile image" />
+                            <div class="flex flex-col gap-[2px] md:gap-[3px] lg:gap-[4px] justify-start items-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">
+                                <p class="text-[7px] md:text-[10px] lg:text-[14px] font-inter font-bold leading-[8px] md:leading-[12px] lg:leading-[17px] text-left text-[#3d3d3d] w-auto">John Doe</p>
+                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto">Title Information | Area Information</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Pipeline Header -->
+                <div class="flex flex-row   w-full bg-white rounded-t-[10px] pt-[7px] pr-[7px] pb-[7px] pl-[7px] md:pt-[10px] md:pr-[10px] md:pb-[10px] md:pl-[10px] lg:pt-[14px] lg:pr-[14px] lg:pb-[14px] lg:pl-[14px] mt-[10px] md:mt-[15px] lg:mt-[20px]">
+                    <div class="flex flex-row justify-start items-center w-full">
+                        <p class="text-[8px] md:text-[12px] lg:text-[16px] font-inter font-medium leading-[10px] md:leading-[15px] lg:leading-[20px] text-left text-[#214589] w-auto">Pipeline</p>
+                    </div>
+                    
+                    <button class="flex flex-row gap-[4px] md:gap-[6px] lg:gap-[8px]   w-auto bg-[#214589] rounded-[6px] pt-[3px] pr-[7px] pb-[3px] pl-[16px] md:pt-[4px] md:pr-[10px] md:pb-[4px] md:pl-[24px] lg:pt-[6px] lg:pr-[14px] lg:pb-[6px] lg:pl-[32px]">
+                        <img src="assets/images/img_union_white_a700.svg" class="w-[5px] h-[5px] md:w-[7px] md:h-[7px] lg:w-[10px] lg:h-[10px]" alt="add icon" />
+                        <span class="text-[7px] md:text-[10px] lg:text-[14px] font-inter font-medium leading-[8px] md:leading-[12px] lg:leading-[17px] text-center text-white">Add New Pipeline</span>
+                    </button>
+                </div>
+                
+                <!-- Controls Row -->
+                <div class="flex flex-col lg:flex-row gap-[25px] md:gap-[37px] lg:gap-[50px] justify-start items-start w-full pt-[4px] pr-[4px] pb-[4px] pl-[4px] md:pt-[6px] md:pr-[6px] md:pb-[6px] md:pl-[6px] bg-white">
+                    <div class="flex flex-row justify-start items-center align-self-center w-full lg:w-auto">
+                        <div class="flex flex-row justify-start items-center w-full lg:w-[42%] ml-[10px] md:ml-[14px] lg:ml-[19px]">
+                            <div class="flex flex-row   w-auto">
+                                <div class="w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px]"></div>
+                                <div class="flex flex-row justify-start items-center align-self-start w-full pr-[5px] pl-[5px] md:pr-[7px] md:pl-[7px] lg:pr-[10px] lg:pl-[10px]">
+                                    <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto ml-[5px] md:ml-[7px] lg:ml-[10px]">Select all</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Pagination Controls -->
+                        <div class="flex flex-row   w-full lg:w-auto mt-4 lg:mt-0">
+                            <div class="flex flex-row justify-end items-center w-full pr-[5px] pl-[5px] md:pr-[7px] md:pl-[7px] lg:pr-[10px] lg:pl-[10px]">
+                                <div class="flex flex-row   w-auto">
+                                    <div class="bg-[#e7e7e7] rounded-[10px]">
+                                        <p class="text-[5px] md:text-[7px] lg:text-[10px] font-inter font-normal leading-[6px] md:leading-[9px] lg:leading-[13px] text-left text-[#3d3d3d] w-auto px-2 py-1">Previous</p>
+                                    </div>
+                                </div>
+                                
+                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-center text-white w-[10px] md:w-[15px] lg:w-[20px] bg-[#225fd3] rounded-[10px] ml-[5px] md:ml-[7px] lg:ml-[10px]">1</p>
+                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[4px] md:ml-[6px] lg:ml-[8px]">2</p>
+                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">3</p>
+                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">...</p>
+                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[6px] md:ml-[9px] lg:ml-[12px]">8</p>
+                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">9</p>
+                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[5px] md:ml-[7px] lg:ml-[10px]">10</p>
+                                
+                                <div class="flex flex-row   w-auto ml-[6px] md:ml-[9px] lg:ml-[12px] bg-[#e7e7e7] rounded-[10px]">
+                                    <div class="flex flex-row   w-auto pr-[1px] pl-[1px] md:pr-[1px] md:pl-[1px] lg:pr-[2px] lg:pl-[2px]">
+                                        <p class="text-[5px] md:text-[7px] lg:text-[10px] font-inter font-normal leading-[6px] md:leading-[9px] lg:leading-[13px] text-center text-[#3d3d3d] w-auto px-2 py-1">Next</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="flex flex-row   w-auto ml-4">
+                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto">Page</p>
+                                
+                                <button class="flex flex-row gap-[2px] md:gap-[3px] lg:gap-[4px]   w-auto bg-[#eae8e2] rounded-[12px] pt-[2px] pr-[10px] pb-[2px] pl-[5px] md:pt-[3px] md:pr-[15px] md:pb-[3px] md:pl-[7px] lg:pt-[4px] lg:pr-[20px] lg:pb-[4px] lg:pl-[10px] ml-[3px] md:ml-[4px] lg:ml-[6px]">
+                                    <span class="text-[5px] md:text-[8px] lg:text-[11px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-black">10</span>
+                                    <img src="assets/images/img_vector_black_900.svg" class="w-[5px] h-[3px] md:w-[7px] md:h-[4px] lg:w-[10px] lg:h-[6px]" alt="dropdown" />
+                                </button>
+                                
+                                <div class="flex flex-row   w-auto">
+                                    <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto ml-2">of 15</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-[#d9d9d9]"></div>
+                </div>
+                
+                <!-- Table -->
+                <div class="flex flex-col gap-[8px] md:gap-[12px] lg:gap-[16px] justify-start items-center w-full bg-white rounded-b-[10px]">
+                    
+                    <!-- Table Header -->
+                    <div class="flex flex-row   w-full bg-[#225fd3] pt-[5px] pr-[5px] pb-[5px] pl-[5px] md:pt-[7px] md:pr-[7px] md:pb-[7px] md:pl-[7px] lg:pt-[10px] lg:pr-[10px] lg:pb-[10px] lg:pl-[10px]">
+                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-bold leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-white w-auto">Staff Name</p>
+                        
+                        <div class="flex flex-row   w-[44%] pr-[20px] pl-[20px] md:pr-[30px] md:pl-[30px] lg:pr-[40px] lg:pl-[40px]">
+                            <div class="flex flex-row justify-start items-center w-full pr-[19px] pl-[19px] md:pr-[28px] md:pl-[28px] lg:pr-[38px] lg:pl-[38px]">
+                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-bold leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-white w-auto">Follow up Data & Time</p>
+                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-bold leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-white w-auto ml-[17px] md:ml-[25px] lg:ml-[34px]">Company Name</p>
+                            </div>
+                            
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-bold leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-white w-auto">Company Address</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-bold leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-white w-auto ml-[78px] md:ml-[117px] lg:ml-[156px]">Contact Name</p>
+                        </div>
+                        
+                        <div class="flex flex-row justify-between items-center w-[16%] pr-[20px] pl-[20px] md:pr-[30px] md:pl-[30px] lg:pr-[40px] lg:pl-[40px]">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-bold leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-white w-auto">Contact Number</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-bold leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-white w-auto">Contact Email</p>
+                        </div>
+                        
+                        <div class="flex flex-row justify-between items-center w-[26%] pr-[20px] pl-[20px] md:pr-[30px] md:pl-[30px] lg:pr-[40px] lg:pl-[40px]">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-bold leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-white w-auto">Activity Details</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-bold leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-white w-auto mr-[13px] md:mr-[19px] lg:mr-[26px]">Last Updated on</p>
+                        </div>
+                        
+                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-bold leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-white w-auto">Last Updated by</p>
+                    </div>
+                    
+                    <!-- Table Body -->
+                    <div class="flex flex-col gap-[7px] md:gap-[10px] lg:gap-[14px] justify-start items-center w-full mr-[6px] mb-[8px] ml-[10px] md:mr-[9px] md:mb-[12px] md:ml-[15px] lg:mr-[12px] lg:mb-[16px] lg:ml-[20px]">
+                        
+                        <!-- Table Rows (First 2 rows with separator) -->
+                        <div class="flex flex-col gap-[16px] md:gap-[24px] lg:gap-[32px] w-full">
+                            <!-- Row 1 -->
+                            <div class="flex flex-row justify-start items-center w-full mr-[3px] md:mr-[4px] lg:mr-[6px]">
+                                <div class="flex flex-row justify-center items-start w-[26%]">
+                                    <div class="flex flex-row justify-start items-center w-auto">
+                                        <div class="w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px]"></div>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[5px] md:ml-[7px] lg:ml-[10px]">Maya Wulandari</p>
+                                    </div>
+                                    
+                                    <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[30%] ml-[7px] md:ml-[10px] lg:ml-[14px]">17 August 2024<br />at 08.15 WIB</p>
+                                    <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">PT Cahaya Sejahtera</p>
+                                </div>
+                                
+                                <div class="flex flex-row gap-[7px] md:gap-[10px] lg:gap-[14px] justify-center items-start w-[22%] pr-[22px] pl-[22px] md:pr-[33px] md:pl-[33px] lg:pr-[44px] lg:pl-[44px]">
+                                    <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[76%]">Jl. Diponegoro No. 27, Menteng, Jakarta Pusat, DKI Jakarta</p>
+                                    <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto">Budi Santoso</p>
+                                </div>
+                                
+                                <div class="flex flex-row   w-full">
+                                    <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto">0812 3456 7890</p>
+                                    <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[25px] md:ml-[37px] lg:ml-[50px]">budi.santoso@cahayasejahtera.com</p>
+                                    <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">Pengenalan produk ADS dan Pure Hand Sanitizer</p>
+                                    <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[18px] md:ml-[27px] lg:ml-[36px]">20 August 2024<br />at 17.45 WIB</p>
+                                    <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[7px] md:ml-[10px] lg:ml-[14px]">20 August 2024<br />at 17.45 WIB</p>
+                                </div>
+                            </div>
+                            
+                            <!-- Row 2 -->
+                            <div class="flex flex-col gap-[8px] md:gap-[12px] lg:gap-[16px] justify-start items-center w-full">
+                                <div class="flex flex-row justify-start items-center w-full mr-[3px] md:mr-[4px] lg:mr-[6px]">
+                                    <div class="flex flex-row justify-center items-start w-[26%]">
+                                        <div class="flex flex-row justify-start items-center w-auto">
+                                            <div class="w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px]"></div>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[5px] md:ml-[7px] lg:ml-[10px]">Maya Wulandari</p>
+                                        </div>
+                                        
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[30%] ml-[7px] md:ml-[10px] lg:ml-[14px]">17 August 2024<br />at 08.15 WIB</p>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">PT Cahaya Sejahtera</p>
+                                    </div>
+                                    
+                                    <div class="flex flex-row gap-[7px] md:gap-[10px] lg:gap-[14px] justify-center items-start w-[22%] pr-[22px] pl-[22px] md:pr-[33px] md:pl-[33px] lg:pr-[44px] lg:pl-[44px]">
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[76%]">Jl. Diponegoro No. 27, Menteng, Jakarta Pusat, DKI Jakarta</p>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto">Budi Santoso</p>
+                                    </div>
+                                    
+                                    <div class="flex flex-row   w-full">
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto">0812 3456 7890</p>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[25px] md:ml-[37px] lg:ml-[50px]">budi.santoso@cahayasejahtera.com</p>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">Pengenalan produk ADS dan Pure Hand Sanitizer</p>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[18px] md:ml-[27px] lg:ml-[36px]">20 August 2024<br />at 17.45 WIB</p>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[7px] md:ml-[10px] lg:ml-[14px]">20 August 2024<br />at 17.45 WIB</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="w-full h-[0.5px] md:h-[0.7px] lg:h-[1px] bg-black"></div>
+                        </div>
+                        
+                        <!-- Remaining Rows (8 more rows) -->
+                        <div class="flex flex-col gap-[7px] md:gap-[10px] lg:gap-[14px] w-full">
+                            <!-- Rows 3-10 (repeated structure) -->
+                            <div class="flex flex-col gap-[7px] md:gap-[10px] lg:gap-[14px] justify-start items-center w-full">
+                                <!-- Row 3 -->
+                                <div class="flex flex-col gap-[8px] md:gap-[12px] lg:gap-[16px] justify-start items-center w-full">
+                                    <div class="flex flex-row justify-start items-center w-full mr-[3px] md:mr-[4px] lg:mr-[6px]">
+                                        <div class="flex flex-row justify-center items-start w-[26%]">
+                                            <div class="flex flex-row justify-start items-center w-auto">
+                                                <div class="w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px]"></div>
+                                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[5px] md:ml-[7px] lg:ml-[10px]">Maya Wulandari</p>
+                                            </div>
+                                            
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[30%] ml-[7px] md:ml-[10px] lg:ml-[14px]">17 August 2024<br />at 08.15 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">PT Cahaya Sejahtera</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row gap-[7px] md:gap-[10px] lg:gap-[14px] justify-center items-start w-[22%] pr-[22px] pl-[22px] md:pr-[33px] md:pl-[33px] lg:pr-[44px] lg:pl-[44px]">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[76%]">Jl. Diponegoro No. 27, Menteng, Jakarta Pusat, DKI Jakarta</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto">Budi Santoso</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row   w-full">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto">0812 3456 7890</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[25px] md:ml-[37px] lg:ml-[50px]">budi.santoso@cahayasejahtera.com</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">Pengenalan produk ADS dan Pure Hand Sanitizer</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[18px] md:ml-[27px] lg:ml-[36px]">20 August 2024<br />at 17.45 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[7px] md:ml-[10px] lg:ml-[14px]">20 August 2024<br />at 17.45 WIB</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="w-full h-[0.5px] md:h-[0.7px] lg:h-[1px] bg-black"></div>
+                                </div>
+                                
+                                <!-- Row 4 -->
+                                <div class="flex flex-col gap-[8px] md:gap-[12px] lg:gap-[16px] justify-start items-center w-full">
+                                    <div class="flex flex-row justify-start items-center w-full mr-[3px] md:mr-[4px] lg:mr-[6px]">
+                                        <div class="flex flex-row justify-center items-start w-[26%]">
+                                            <div class="flex flex-row justify-start items-center w-auto">
+                                                <div class="w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px]"></div>
+                                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[5px] md:ml-[7px] lg:ml-[10px]">Maya Wulandari</p>
+                                            </div>
+                                            
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[30%] ml-[7px] md:ml-[10px] lg:ml-[14px]">17 August 2024<br />at 08.15 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">PT Cahaya Sejahtera</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row gap-[7px] md:gap-[10px] lg:gap-[14px] justify-center items-start w-[22%] pr-[22px] pl-[22px] md:pr-[33px] md:pl-[33px] lg:pr-[44px] lg:pl-[44px]">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[76%]">Jl. Diponegoro No. 27, Menteng, Jakarta Pusat, DKI Jakarta</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto">Budi Santoso</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row   w-full">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto">0812 3456 7890</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[25px] md:ml-[37px] lg:ml-[50px]">budi.santoso@cahayasejahtera.com</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">Pengenalan produk ADS dan Pure Hand Sanitizer</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[18px] md:ml-[27px] lg:ml-[36px]">20 August 2024<br />at 17.45 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[7px] md:ml-[10px] lg:ml-[14px]">20 August 2024<br />at 17.45 WIB</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="w-full h-[0.5px] md:h-[0.7px] lg:h-[1px] bg-black"></div>
+                                </div>
+                                
+                                <!-- Row 5 -->
+                                <div class="flex flex-col gap-[8px] md:gap-[12px] lg:gap-[16px] justify-start items-center w-full">
+                                    <div class="flex flex-row justify-start items-center w-full mr-[3px] md:mr-[4px] lg:mr-[6px]">
+                                        <div class="flex flex-row justify-center items-start w-[26%]">
+                                            <div class="flex flex-row justify-start items-center w-auto">
+                                                <div class="w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px]"></div>
+                                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[5px] md:ml-[7px] lg:ml-[10px]">Maya Wulandari</p>
+                                            </div>
+                                            
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[30%] ml-[7px] md:ml-[10px] lg:ml-[14px]">17 August 2024<br />at 08.15 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">PT Cahaya Sejahtera</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row gap-[7px] md:gap-[10px] lg:gap-[14px] justify-center items-start w-[22%] pr-[22px] pl-[22px] md:pr-[33px] md:pl-[33px] lg:pr-[44px] lg:pl-[44px]">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[76%]">Jl. Diponegoro No. 27, Menteng, Jakarta Pusat, DKI Jakarta</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto">Budi Santoso</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row   w-full">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto">0812 3456 7890</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[25px] md:ml-[37px] lg:ml-[50px]">budi.santoso@cahayasejahtera.com</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">Pengenalan produk ADS dan Pure Hand Sanitizer</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[18px] md:ml-[27px] lg:ml-[36px]">20 August 2024<br />at 17.45 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[7px] md:ml-[10px] lg:ml-[14px]">20 August 2024<br />at 17.45 WIB</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="w-full h-[0.5px] md:h-[0.7px] lg:h-[1px] bg-black"></div>
+                                </div>
+                                
+                                <!-- Row 6 -->
+                                <div class="flex flex-col gap-[8px] md:gap-[12px] lg:gap-[16px] justify-start items-center w-full">
+                                    <div class="flex flex-row justify-start items-center w-full mr-[3px] md:mr-[4px] lg:mr-[6px]">
+                                        <div class="flex flex-row justify-center items-start w-[26%]">
+                                            <div class="flex flex-row justify-start items-center w-auto">
+                                                <div class="w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px]"></div>
+                                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[5px] md:ml-[7px] lg:ml-[10px]">Maya Wulandari</p>
+                                            </div>
+                                            
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[30%] ml-[7px] md:ml-[10px] lg:ml-[14px]">17 August 2024<br />at 08.15 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">PT Cahaya Sejahtera</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row gap-[7px] md:gap-[10px] lg:gap-[14px] justify-center items-start w-[22%] pr-[22px] pl-[22px] md:pr-[33px] md:pl-[33px] lg:pr-[44px] lg:pl-[44px]">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[76%]">Jl. Diponegoro No. 27, Menteng, Jakarta Pusat, DKI Jakarta</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto">Budi Santoso</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row   w-full">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto">0812 3456 7890</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[25px] md:ml-[37px] lg:ml-[50px]">budi.santoso@cahayasejahtera.com</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">Pengenalan produk ADS dan Pure Hand Sanitizer</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[18px] md:ml-[27px] lg:ml-[36px]">20 August 2024<br />at 17.45 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[7px] md:ml-[10px] lg:ml-[14px]">20 August 2024<br />at 17.45 WIB</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="w-full h-[0.5px] md:h-[0.7px] lg:h-[1px] bg-black"></div>
+                                </div>
+                                
+                                <!-- Row 7 -->
+                                <div class="flex flex-col gap-[8px] md:gap-[12px] lg:gap-[16px] justify-start items-center w-full">
+                                    <div class="flex flex-row justify-start items-center w-full mr-[3px] md:mr-[4px] lg:mr-[6px]">
+                                        <div class="flex flex-row justify-center items-start w-[26%]">
+                                            <div class="flex flex-row justify-start items-center w-auto">
+                                                <div class="w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px]"></div>
+                                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[5px] md:ml-[7px] lg:ml-[10px]">Maya Wulandari</p>
+                                            </div>
+                                            
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[30%] ml-[7px] md:ml-[10px] lg:ml-[14px]">17 August 2024<br />at 08.15 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">PT Cahaya Sejahtera</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row gap-[7px] md:gap-[10px] lg:gap-[14px] justify-center items-start w-[22%] pr-[22px] pl-[22px] md:pr-[33px] md:pl-[33px] lg:pr-[44px] lg:pl-[44px]">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[76%]">Jl. Diponegoro No. 27, Menteng, Jakarta Pusat, DKI Jakarta</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto">Budi Santoso</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row   w-full">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto">0812 3456 7890</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[25px] md:ml-[37px] lg:ml-[50px]">budi.santoso@cahayasejahtera.com</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">Pengenalan produk ADS dan Pure Hand Sanitizer</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[18px] md:ml-[27px] lg:ml-[36px]">20 August 2024<br />at 17.45 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[7px] md:ml-[10px] lg:ml-[14px]">20 August 2024<br />at 17.45 WIB</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="w-full h-[0.5px] md:h-[0.7px] lg:h-[1px] bg-black"></div>
+                                </div>
+                                
+                                <!-- Row 8 -->
+                                <div class="flex flex-col gap-[8px] md:gap-[12px] lg:gap-[16px] justify-start items-center w-full">
+                                    <div class="flex flex-row justify-start items-center w-full mr-[3px] md:mr-[4px] lg:mr-[6px]">
+                                        <div class="flex flex-row justify-center items-start w-[26%]">
+                                            <div class="flex flex-row justify-start items-center w-auto">
+                                                <div class="w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px]"></div>
+                                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[5px] md:ml-[7px] lg:ml-[10px]">Maya Wulandari</p>
+                                            </div>
+                                            
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[30%] ml-[7px] md:ml-[10px] lg:ml-[14px]">17 August 2024<br />at 08.15 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">PT Cahaya Sejahtera</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row gap-[7px] md:gap-[10px] lg:gap-[14px] justify-center items-start w-[22%] pr-[22px] pl-[22px] md:pr-[33px] md:pl-[33px] lg:pr-[44px] lg:pl-[44px]">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[76%]">Jl. Diponegoro No. 27, Menteng, Jakarta Pusat, DKI Jakarta</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto">Budi Santoso</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row   w-full">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto">0812 3456 7890</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[25px] md:ml-[37px] lg:ml-[50px]">budi.santoso@cahayasejahtera.com</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">Pengenalan produk ADS dan Pure Hand Sanitizer</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[18px] md:ml-[27px] lg:ml-[36px]">20 August 2024<br />at 17.45 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[7px] md:ml-[10px] lg:ml-[14px]">20 August 2024<br />at 17.45 WIB</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="w-full h-[0.5px] md:h-[0.7px] lg:h-[1px] bg-black"></div>
+                                </div>
+                                
+                                <!-- Row 9 -->
+                                <div class="flex flex-col gap-[8px] md:gap-[12px] lg:gap-[16px] justify-start items-center w-full">
+                                    <div class="flex flex-row justify-start items-center w-full mr-[3px] md:mr-[4px] lg:mr-[6px]">
+                                        <div class="flex flex-row justify-center items-start w-[26%]">
+                                            <div class="flex flex-row justify-start items-center w-auto">
+                                                <div class="w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px]"></div>
+                                                <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[5px] md:ml-[7px] lg:ml-[10px]">Maya Wulandari</p>
+                                            </div>
+                                            
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[30%] ml-[7px] md:ml-[10px] lg:ml-[14px]">17 August 2024<br />at 08.15 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">PT Cahaya Sejahtera</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row gap-[7px] md:gap-[10px] lg:gap-[14px] justify-center items-start w-[22%] pr-[22px] pl-[22px] md:pr-[33px] md:pl-[33px] lg:pr-[44px] lg:pl-[44px]">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[76%]">Jl. Diponegoro No. 27, Menteng, Jakarta Pusat, DKI Jakarta</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto">Budi Santoso</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-row   w-full">
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto">0812 3456 7890</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[25px] md:ml-[37px] lg:ml-[50px]">budi.santoso@cahayasejahtera.com</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">Pengenalan produk ADS dan Pure Hand Sanitizer</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[18px] md:ml-[27px] lg:ml-[36px]">20 August 2024<br />at 17.45 WIB</p>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[7px] md:ml-[10px] lg:ml-[14px]">20 August 2024<br />at 17.45 WIB</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="w-full h-[0.5px] md:h-[0.7px] lg:h-[1px] bg-black"></div>
+                                </div>
+                                
+                                <!-- Row 10 -->
+                                <div class="flex flex-row justify-start items-center w-full mr-[3px] md:mr-[4px] lg:mr-[6px]">
+                                    <div class="flex flex-row justify-center items-start w-[26%]">
+                                        <div class="flex flex-row justify-start items-center w-auto">
+                                            <div class="w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px]"></div>
+                                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[5px] md:ml-[7px] lg:ml-[10px]">Maya Wulandari</p>
+                                        </div>
+                                        
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[30%] ml-[7px] md:ml-[10px] lg:ml-[14px]">17 August 2024<br />at 08.15 WIB</p>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">PT Cahaya Sejahtera</p>
+                                    </div>
+                                    
+                                    <div class="flex flex-row gap-[7px] md:gap-[10px] lg:gap-[14px] justify-center items-start w-[22%] pr-[22px] pl-[22px] md:pr-[33px] md:pl-[33px] lg:pr-[44px] lg:pl-[44px]">
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] align-self-center w-[76%]">Jl. Diponegoro No. 27, Menteng, Jakarta Pusat, DKI Jakarta</p>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] w-auto">Budi Santoso</p>
+                                    </div>
+                                    
+                                    <div class="flex flex-row   w-full">
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto">0812 3456 7890</p>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[25px] md:ml-[37px] lg:ml-[50px]">budi.santoso@cahayasejahtera.com</p>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] align-self-start w-auto ml-[7px] md:ml-[10px] lg:ml-[14px]">Pengenalan produk ADS dan Pure Hand Sanitizer</p>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[18px] md:ml-[27px] lg:ml-[36px]">20 August 2024<br />at 17.45 WIB</p>
+                                        <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[10px] lg:leading-[14px] text-left text-[#3d3d3d] w-[16%] ml-[7px] md:ml-[10px] lg:ml-[14px]">20 August 2024<br />at 17.45 WIB</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+
+    
+
+    
+    <script>
+        const sidebar = document.getElementById("sidebar");
+        const collapseBtn = document.getElementById("collapseBtn");
+        const collapseIcon = collapseBtn.querySelector("i");
+        const logoImg = document.getElementById("logoImg");
+        const mainContent = document.getElementById("mainContent");
+
+        collapseBtn.addEventListener("click", () => {
+            sidebar.classList.toggle("collapsed");
+
+            if (sidebar.classList.contains("collapsed")) {
+                collapseIcon.classList.remove("fa-angle-left");
+                collapseIcon.classList.add("fa-angle-right");
+                mainContent.classList.add("sidebar-collapsed");
+                logoImg.src = "assets/images/logo-b.svg";
+            } else {
+                collapseIcon.classList.remove("fa-angle-right");
+                collapseIcon.classList.add("fa-angle-left");
+                mainContent.classList.remove("sidebar-collapsed");
+                logoImg.src = "assets/images/img_logo.svg";
+            }
+        });
+
+        document.querySelectorAll(".has-submenu").forEach(item => {
+            item.addEventListener("click", () => {
+                const submenu = item.nextElementSibling;
+                if (submenu && submenu.classList.contains("submenu")) {
+                    submenu.classList.toggle("show");
+                    item.classList.toggle("open");
+                }
+            });
+        });
+
+        document.querySelectorAll(".menu-item, .submenu li").forEach(item => {
+            item.addEventListener("click", (e) => {
+                e.stopPropagation();
+                document.querySelectorAll(".menu-item, .submenu li").forEach(el => el.classList.remove("active"));
+                item.classList.add("active");
+            });
+        });
+
+        function toggleMobileMenu() {
+            sidebar.classList.toggle("show");
+        }
+
+        // Close mobile menu when clicking outside
+        document.addEventListener('click', function(event) {
+            if (!sidebar.contains(event.target) && !event.target.closest('button')) {
+                sidebar.classList.remove("show");
+            }
+        });
+
+        // Handle checkbox interactions
+        document.addEventListener('DOMContentLoaded', function() {
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+            const selectAllCheckbox = document.querySelector('input[type="checkbox"]');
+            
+            // Add click handlers for interactive feedback
+            checkboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    // Add visual feedback or handle selection logic here
+                    console.log('Checkbox changed:', this.checked);
+                });
+            });
+            
+            // Add hover effects to table rows
+            const tableRows = document.querySelectorAll('.flex.flex-row.justify-start.items-center');
+            tableRows.forEach(row => {
+                row.addEventListener('mouseenter', function() {
+                    this.classList.add('bg-gray-50');
+                });
+                
+                row.addEventListener('mouseleave', function() {
+                    this.classList.remove('bg-gray-50');
+                });
+            });
+        });
+    </script>
+<script id="dhws-dataInjector" src="public/dhws-data-injector.js"></script>
+</body>
+</html>

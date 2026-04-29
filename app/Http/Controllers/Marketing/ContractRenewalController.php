@@ -1,0 +1,539 @@
+<?php
+
+namespace App\Http\Controllers\Marketing;
+
+use App\Http\Controllers\Controller;
+use App\Models\ContractRenewal;
+use App\Models\Contract;
+use App\Models\Customer;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
+
+class ContractRenewalController extends Controller
+{
+    public function index(Request $request)
+    {
+        $query = ContractRenewal::with([
+            'contract.customer',
+            'customer',
+            'newContract',
+            'initiatedBy',
+            'customerApprovedBy',
+            'internalApprovedBy'
+        ]);
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('renewal_number', 'like', "%{$search}%")
+                    ->orWhereHas('contract', function ($q2) use ($search) {
+                        $q2->where('contract_number', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('customer', function ($q2) use ($search) {
+                        $q2->where('name', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($request->filled('status')) {
+            $query->where('contract_status', $request->status);
+        }
+
+        if ($request->filled('auto_renewal')) {
+            $query->where('auto_renewal', $request->auto_renewal);
+        }
+
+        if ($request->filled('expiring_in_days')) {
+            $query->expiringIn($request->expiring_in_days);
+        }
+
+        $renewals = $query->orderBy('created_at', 'desc')->paginate(15);
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json(['status' => 'success', 'data' => $renewals]);
+        }
+
+        return view('marketing.contract-renewals.index', compact('renewals'));
+    }
+
+    public function store(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'contract_id' => 'required|exists:contracts,id',
+            'renewal_duration_months' => 'required|integer|min:1|max:60',
+            'proposed_start_date' => 'required|date',
+            'same_terms' => 'boolean',
+            'price_adjustment' => 'boolean',
+            'price_adjustment_percentage' => 'nullable|numeric|min:-100|max:100',
+            'price_adjustment_reason' => 'nullable|string|max:1000',
+            'renewal_notes' => 'nullable|string|max:2000'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $contract = Contract::findOrFail($request->contract_id);
+            $blockReason = $contract->getRenewalBlockReason();
+
+            if ($blockReason) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $blockReason,
+                ], 422);
+            }
+
+            $proposedEndDate = \Carbon\Carbon::parse($request->proposed_start_date)
+                                ->addMonths($request->renewal_duration_months);
+
+            $renewal = ContractRenewal::create([
+                'renewal_number' => ContractRenewal::generateRenewalNumber(),
+                'contract_id' => $contract->id,
+                'customer_id' => $contract->customer_id,
+                'current_end_date' => $contract->end_date,
+                'proposed_start_date' => $request->proposed_start_date,
+                'proposed_end_date' => $proposedEndDate,
+                'renewal_duration_months' => $request->renewal_duration_months,
+                'same_terms' => $request->same_terms ?? true,
+                'previous_total_value' => $contract->total_value,
+                'price_adjustment' => $request->price_adjustment ?? false,
+                'price_adjustment_percentage' => $request->price_adjustment_percentage,
+                'price_adjustment_reason' => $request->price_adjustment_reason,
+                'renewal_notes' => $request->renewal_notes,
+                'status' => ContractRenewal::STATUS_DRAFT,
+                'initiated_by' => Auth::id(),
+                'created_by' => Auth::id()
+            ]);
+
+            // Calculate new total value if price adjustment
+            if ($renewal->price_adjustment) {
+                $newValue = $renewal->calculateNewTotalValue();
+                $renewal->update(['new_total_value' => $newValue]);
+            }
+
+            DB::commit();
+
+            Log::info("Contract Renewal created: {$renewal->renewal_number}");
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Contract renewal created successfully',
+                'data' => $renewal->load(['contract.customer', 'customer', 'initiatedBy'])
+            ]);
+        } catch (\Exception $e) {
+            DB::rollback();
+            Log::error("Error creating contract renewal: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Failed to create contract renewal: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function show(ContractRenewal $contractRenewal)
+    {
+        $contractRenewal->load([
+            'contract.customer',
+            'customer',
+            'newContract',
+            'initiatedBy',
+            'customerApprovedBy',
+            'internalApprovedBy'
+        ]);
+
+        return response()->json(['status' => 'success', 'data' => $contractRenewal]);
+    }
+
+    public function submitToCustomer(ContractRenewal $contractRenewal)
+    {
+        if (!$contractRenewal->isDraft) {
+            return response()->json(['status' => 'error', 'message' => 'Renewal must be in draft status'], 403);
+        }
+
+        try {
+            $contractRenewal->submitToCustomer();
+            Log::info("Contract Renewal submitted to customer: {$contractRenewal->renewal_number}");
+            return response()->json(['status' => 'success', 'message' => 'Renewal submitted to customer']);
+        } catch (\Exception $e) {
+            Log::error("Error submitting renewal to customer: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Failed to submit: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function customerApprove(ContractRenewal $contractRenewal)
+    {
+        if (!$contractRenewal->isPendingCustomer) {
+            return response()->json(['status' => 'error', 'message' => 'Renewal must be pending customer approval'], 403);
+        }
+
+        try {
+            $contractRenewal->customerApprove(Auth::id());
+            Log::info("Contract Renewal customer approved: {$contractRenewal->renewal_number}");
+            return response()->json(['status' => 'success', 'message' => 'Renewal approved by customer']);
+        } catch (\Exception $e) {
+            Log::error("Error customer approving renewal: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Failed to approve: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function internalApprove(Request $request, ContractRenewal $contractRenewal)
+    {
+        if (!$contractRenewal->isPendingInternal && !$contractRenewal->isCustomerApproved) {
+            return response()->json(['status' => 'error', 'message' => 'Invalid status for internal approval'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'approval_notes' => 'nullable|string|max:2000'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $contractRenewal->internalApprove(Auth::id(), $request->approval_notes);
+            Log::info("Contract Renewal internal approved: {$contractRenewal->renewal_number}");
+            return response()->json(['status' => 'success', 'message' => 'Renewal approved internally']);
+        } catch (\Exception $e) {
+            Log::error("Error internal approving renewal: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Failed to approve: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function reject(Request $request, ContractRenewal $contractRenewal)
+    {
+        $validator = Validator::make($request->all(), [
+            'rejection_reason' => 'required|string|max:2000'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $contractRenewal->reject(Auth::id(), $request->rejection_reason);
+            Log::info("Contract Renewal rejected: {$contractRenewal->renewal_number}");
+            return response()->json(['status' => 'success', 'message' => 'Renewal rejected']);
+        } catch (\Exception $e) {
+            Log::error("Error rejecting renewal: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Failed to reject: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function cancel(ContractRenewal $contractRenewal)
+    {
+        if ($contractRenewal->isCompleted) {
+            return response()->json(['status' => 'error', 'message' => 'Cannot cancel completed renewal'], 403);
+        }
+
+        try {
+            $contractRenewal->cancel();
+            Log::info("Contract Renewal cancelled: {$contractRenewal->renewal_number}");
+            return response()->json(['status' => 'success', 'message' => 'Renewal cancelled']);
+        } catch (\Exception $e) {
+            Log::error("Error cancelling renewal: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Failed to cancel: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function sendReminder(ContractRenewal $contractRenewal)
+    {
+        try {
+            $contractRenewal->sendReminder();
+            Log::info("Reminder sent for Contract Renewal: {$contractRenewal->renewal_number}");
+            return response()->json(['status' => 'success', 'message' => 'Reminder sent successfully']);
+        } catch (\Exception $e) {
+            Log::error("Error sending reminder: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Failed to send reminder: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Auto-create renewals for expiring contracts (can be called via schedule/command)
+     */
+    public function autoCreate(Request $request)
+    {
+        try {
+            $renewals = ContractRenewal::autoCreateForExpiringContracts();
+            Log::info("Auto-created " . count($renewals) . " contract renewals");
+
+            return response()->json([
+                'status' => 'success',
+                'message' => count($renewals) . ' renewals created',
+                'data' => $renewals
+            ]);
+        } catch (\Exception $e) {
+            Log::error("Error auto-creating renewals: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Failed to auto-create renewals: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Get active contracts eligible for renewal (for quotation wizard)
+     */
+    /**
+     * Get active contracts eligible for renewal (for quotation wizard)
+     */
+    public function getEligibleContracts(Request $request)
+    {
+        try {
+            $query = Contract::where('contract_status', 'active')
+                ->whereDate('end_date', '>=', now())
+                ->orderBy('end_date', 'asc') // Sort by expiry date (soonest first)
+                ->with(['customer', 'contractRooms.room', 'contractRooms.billingGroup']);
+
+            // Optional: Filter by customer
+            if ($request->filled('customer_id')) {
+                $query->where('customer_id', $request->customer_id);
+            }
+
+            // Filter by marketing_id
+            if ($request->filled('marketing_id')) {
+                $query->where('marketing_id', $request->marketing_id);
+            }
+
+            // Include specific contract ID if provided (for edit mode)
+            $includeId = $request->input('include_id');
+            if ($includeId) {
+                $query->orWhere('id', $includeId);
+            }
+
+            $contracts = $query->get()
+                ->filter(function ($contract) use ($includeId) {
+                    return ($includeId && (int) $contract->id === (int) $includeId)
+                        || $contract->canBeRenewedSafely();
+                })
+                ->values()
+                ->map(function ($contract) use ($includeId) {
+                // Calculate remaining duration string
+                $endDate = \Carbon\Carbon::parse($contract->end_date);
+                $now = now();
+                
+                // Calculate difference
+                $diff = $now->diff($endDate);
+                
+                $parts = [];
+                if ($diff->y > 0) $parts[] = $diff->y . ' tahun';
+                if ($diff->m > 0) $parts[] = $diff->m . ' bulan';
+                if ($diff->d > 0) $parts[] = $diff->d . ' hari';
+                
+                // If expire today/tomorrow
+                if (empty($parts)) {
+                    $remainingDuration = 'hari ini';
+                } else {
+                    $remainingDuration = implode(' ', $parts);
+                }
+
+                return [
+                    'id' => $contract->id,
+                    'contract_number' => $contract->contract_number,
+                    'customer_id' => $contract->customer_id,
+                    'customer_name' => $contract->customer->name ?? '',
+                    'start_date' => $contract->start_date,
+                    'end_date' => $contract->end_date,
+                    'contract_value' => $contract->contract_value,
+                    // Pass formatted string for frontend
+                    'remaining_duration' => 'sisa masa kontrak ' . $remainingDuration,
+                    'contract_rooms_count' => $contract->contractRooms->count(),
+                    'contract_rooms' => $contract->contractRooms,
+                    'eligible' => $contract->canBeRenewedSafely(),
+                    'block_reason' => $contract->getRenewalBlockReason(),
+                    'is_current' => ($includeId && $contract->id == $includeId)
+                ];
+            });
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $contracts
+            ]);
+        } catch (\Exception $e) {
+            Log::error("Error fetching eligible contracts: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Failed to fetch contracts: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Get contract details for renewal (copy data to quotation)
+     */
+    public function getContractForRenewal($contractId)
+    {
+        try {
+            $contract = Contract::with([
+                'customer',
+                'contractRooms.room',
+                'contractRooms.billingGroup',
+                'contractRentals.masterRental',
+                'contractRentals.room',
+                'quotation.survey.surveyDetails',
+                'quotation.quotationRooms',
+                'quotation.primaryPic',
+                'quotation.primaryPic.customerContact',
+                'quotation.quotationDetails',
+                'quotation.quotationDetails.masterRoom'
+            ])->findOrFail($contractId);
+
+            $eligibility = ContractRenewal::isEligibleForRenewal($contractId);
+
+            if (!$eligibility['eligible']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $eligibility['reason']
+                ], 403);
+            }
+
+            // Explicitly calculate days until expiry for frontend display
+            // Use actual_end_date (BA date based) - if null, contract hasn't started yet
+            $actualEndDate = $contract->actual_end_date;
+            $daysUntilExpiry = null;
+            
+            if ($actualEndDate) {
+                $daysUntilExpiry = \Carbon\Carbon::now()->diffInDays(\Carbon\Carbon::parse($actualEndDate), false);
+            }
+            
+            // Add days_until_expiry to eligibility array if missing
+            if (!isset($eligibility['days_until_expiry'])) {
+                $eligibility['days_until_expiry'] = $daysUntilExpiry !== null ? (int)$daysUntilExpiry : null;
+            }
+            
+            // Prepare data for quotation wizard
+            // Use actual_start_date and actual_end_date (BA date based)
+            $renewalData = [
+                'contract_id' => $contract->id,
+                'contract_number' => $contract->contract_number,
+                'customer' => $contract->customer,
+                'start_date' => $contract->actual_start_date,
+                'end_date' => $contract->actual_end_date,
+                'contract_value' => $contract->contract_value,
+                'payment_terms' => $contract->payment_terms,
+                'contract_terms' => $contract->contract_terms,
+                'marketing_id' => $contract->marketing_id,
+                'branch_id' => $contract->quotation->branch_id ?? null,
+                'survey_id' => $contract->quotation->survey_id ?? null,
+                'survey_number' => $contract->quotation->survey->survey_number ?? null,
+ // Add Survey ID
+                'rental_period' => $contract->quotation->rental_period ?? 12,
+                'rental_unit' => $contract->quotation->rental_unit ?? 'bulan',
+                'payment_method' => $contract->quotation->payment_method ?? 'After Service',
+                'term_of_payment' => $contract->quotation->terms_of_payment ?? $contract->payment_terms ?? 'Tahunan',
+                
+                'notes_operation' => $contract->notes_operation,
+                'notes_finance' => $contract->notes_finance,
+                'notes_sales' => $contract->notes_sales, // Will trigger pop-up in renewal wizard
+                'rooms' => $contract->contractRooms->map(function ($room) use ($contract) {
+                    $quotRoom = $contract->quotation->quotationRooms->where('room_id', $room->room_id)->first();
+                    
+                    // Fallback to name match if room_id match fails
+                    if (!$quotRoom && $room->room) {
+                        $roomName = $room->room->room_name;
+                        $quotRoom = $contract->quotation->quotationRooms
+                            ->filter(function($qr) use ($roomName) {
+                                return strtolower(trim($qr->room_name)) === strtolower(trim($roomName));
+                            })->first();
+                    }
+
+                    return [
+                        'room_id' => $room->room_id, // MasterRoom ID
+                        'contract_room_id' => $room->id,
+                        'room_name' => $room->room->room_name ?? '',
+                        'billing_group_id' => $room->billing_group_id,
+                        'aroma_product_id' => $quotRoom->aroma_product_id ?? null,
+                        'aroma_variant' => $quotRoom->aroma_variant ?? null,
+                    ];
+                }),
+                'rentals' => $contract->contractRentals->map(function ($rental) use ($contract) {
+                    
+                    // Fallback search for Room info
+                    $resolvedRoomId = $rental->room_id;
+                    $resolvedRoomName = $rental->room->room_name ?? '';
+                    $resolvedRoomType = $rental->room->room_type ?? '';
+                    $resolvedSurveyId = $contract->quotation->survey_id; // Default to main survey
+
+                    if (!$resolvedRoomId) {
+                        // Try to find ANY quotation detail with same rental (first match)
+                        // Ideally we should match by some other unique prop, but for renewal likely 1:1 or good enough
+                        $quotDetail = $contract->quotation->quotationDetails
+                            ->where('master_rental_id', $rental->master_rental_id)
+                            ->first();
+
+                        if ($quotDetail) {
+                            if ($quotDetail->masterRoom) {
+                                 $resolvedRoomId = $quotDetail->room_id;
+                                 $resolvedRoomName = $quotDetail->masterRoom->room_name;
+                                 $resolvedRoomType = $quotDetail->masterRoom->room_type;
+                                 \Log::info("Renewal: Recovered room {$resolvedRoomId} for rental {$rental->id} via MasterRoom");
+                            } elseif ($quotDetail->room_name) {
+                                 // Legacy fallback: Use stored room_name string if ID is missing
+                                 $resolvedRoomName = $quotDetail->room_name;
+                                 \Log::info("Renewal: Recovered room name '{$resolvedRoomName}' for rental {$rental->id} via string fallback");
+                            } else {
+                                \Log::info("Renewal: QuotDetail found for rental {$rental->id} but NO MasterRoom and NO room_name string. Dump:", $quotDetail->toArray());
+                            }
+                        } else {
+                             \Log::info("Renewal: No QuotDetail found for rental {$rental->id} (Master Rental: {$rental->master_rental_id})");
+                        }
+                    }
+
+                    // Resolve Survey ID for this Room
+                    if ($resolvedRoomId) {
+                        // Check if the main survey has this room
+                        $mainSurveyHasRoom = $contract->quotation->survey 
+                            && $contract->quotation->survey->surveyDetails
+                            && $contract->quotation->survey->surveyDetails->contains('room_id', $resolvedRoomId);
+                        
+                        if (!$mainSurveyHasRoom && $contract->quotation->quotationSurveys->isNotEmpty()) {
+                            // Check additional surveys
+                            foreach ($contract->quotation->quotationSurveys as $quotSurvey) {
+                                if ($quotSurvey->survey->surveyDetails->contains('room_id', $resolvedRoomId)) {
+                                    $resolvedSurveyId = $quotSurvey->survey_id;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    return [
+                        'rental_id' => $rental->master_rental_id,
+                        'room_id' => $resolvedRoomId,
+                        'room_name' => $resolvedRoomName,
+                        'room_type' => $resolvedRoomType,
+                        'survey_id' => $resolvedSurveyId, // Add resolved survey ID
+                        'contract_rental_id' => $rental->id,
+                        'rental_code' => $rental->masterRental->rental_code ?? '',
+                        'rental_name' => $rental->masterRental->rental_name ?? '',
+                        'rental_price' => $rental->unit_price ?? $rental->masterRental->rental_price ?? 0,
+                        'quantity' => $rental->quantity ?? 1,
+                        'unit' => $rental->masterRental->unit ?? 'unit',
+                        'notes' => $rental->notes, 
+                        'rental_alias' => $rental->rental_alias,
+                    ];
+                }),
+                'survey' => $contract->quotation->survey ? [
+                    'id' => $contract->quotation->survey->id,
+                    'survey_number' => $contract->quotation->survey->survey_number,
+                    'customer_name' => $contract->customer->name ?? ''
+                ] : null,
+                'remark_internal' => $contract->internal_remark ?? ($contract->quotation->internal_notes ?? ''),
+                'remark_external' => $contract->external_remark ?? ($contract->quotation->additional_notes ?? ''),
+                'pic_id' => $contract->quotation->primaryPic->customer_contact_id ?? null,
+                'pic_name' => $contract->quotation->primaryPic->customerContact->name ?? $contract->quotation->pic_name ?? null,
+                'price_basis' => $contract->quotation->price_basis ?? 'rental',
+                'eligibility' => $eligibility
+            ];
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $renewalData
+            ]);
+        } catch (\Exception $e) {
+            Log::error("Error fetching contract for renewal: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Failed to fetch contract details: ' . $e->getMessage()], 500);
+        }
+    }
+}
+

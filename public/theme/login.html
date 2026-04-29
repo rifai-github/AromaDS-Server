@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Aroma Delivery System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link href="css/main.css" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+        }
+
+        .login-container {
+            background: white;
+            width: 100%;
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .login-form {
+            flex: 1;
+            padding: 60px 50px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .login-image {
+            flex: 1;
+            background: linear-gradient(135deg, #14ADD6 0%, #384295 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            position: relative;
+        }
+
+        .login-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 0;
+        }
+
+        .logo-section {
+            text-align: left;
+            margin-bottom: 40px;
+        }
+
+        .logo-section img {
+            height: 80px;
+            margin-bottom: 20px;
+        }
+
+        .welcome-text {
+            text-align: left;
+            margin-bottom: 40px;
+        }
+
+        .welcome-text h1 {
+            color: #666;
+            font-size: 18px;
+            font-weight: 400;
+            margin-bottom: 10px;
+        }
+
+        .welcome-text p {
+            color: #214589;
+            font-size: 32px;
+            font-weight: 700;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+            position: relative;
+        }
+
+        .form-group label {
+            display: block;
+            color: #214589;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .input-container {
+            position: relative;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 18px 20px;
+            border: 2px solid #E5E7EB;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 500;
+            color: #214589;
+            background: white;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+
+        .form-input:focus {
+            border-color: #14ADD6;
+            box-shadow: 0 0 0 3px rgba(20, 173, 214, 0.1);
+        }
+
+        .form-input.error {
+            border-color: #EF4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+        }
+
+        .form-input.success {
+            border-color: #10B981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #9CA3AF;
+            cursor: pointer;
+            font-size: 18px;
+            transition: color 0.3s ease;
+        }
+
+        .password-toggle:hover {
+            color: #14ADD6;
+        }
+
+        .remember-me {
+            margin: 20px 0;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #214589;
+            user-select: none;
+        }
+
+        .checkbox-container input {
+            position: absolute;
+            opacity: 0;
+            cursor: pointer;
+            height: 0;
+            width: 0;
+        }
+
+        .checkmark {
+            height: 18px;
+            width: 18px;
+            background-color: white;
+            border: 2px solid #E5E7EB;
+            border-radius: 4px;
+            margin-right: 10px;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .checkbox-container:hover input ~ .checkmark {
+            border-color: #14ADD6;
+        }
+
+        .checkbox-container input:checked ~ .checkmark {
+            background-color: #14ADD6;
+            border-color: #14ADD6;
+        }
+
+        .checkmark:after {
+            content: "";
+            position: absolute;
+            display: none;
+        }
+
+        .checkbox-container input:checked ~ .checkmark:after {
+            display: block;
+        }
+
+        .checkbox-container .checkmark:after {
+            left: 5px;
+            top: 2px;
+            width: 4px;
+            height: 8px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+        }
+
+        .error-message {
+            color: #EF4444;
+            font-size: 12px;
+            font-weight: 500;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .login-button {
+            width: 100%;
+            padding: 18px;
+            background: #E5E7EB;
+            color: #9CA3AF;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: not-allowed;
+            transition: all 0.3s ease;
+            margin-top: 30px;
+        }
+
+        .login-button.active {
+            background: linear-gradient(135deg, #14ADD6 0%, #384295 100%);
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(20, 173, 214, 0.3);
+        }
+
+        .login-button.active:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(20, 173, 214, 0.4);
+        }
+
+        .forgot-password {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .forgot-password a {
+            color: #14ADD6;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: color 0.3s ease;
+        }
+
+        .forgot-password a:hover {
+            color: #384295;
+        }
+
+        @media (max-width: 768px) {
+            .login-container {
+                flex-direction: column;
+            }
+
+            .login-image {
+                display: none;
+            }
+
+            .login-form {
+                padding: 50px 40px;
+            }
+
+            .logo-section {
+                text-align: left;
+            }
+
+            .welcome-text {
+                text-align: left;
+            }
+
+            .welcome-text h1 {
+                font-size: 16px;
+            }
+
+            .welcome-text p {
+                font-size: 28px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .login-form {
+                padding: 30px 20px;
+            }
+
+            .welcome-text h1 {
+                font-size: 14px;
+            }
+
+            .welcome-text p {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <!-- Login Form Section -->
+        <div class="login-form">
+            <!-- Logo -->
+            <div class="logo-section">
+                <img src="assets/images/logo.svg" alt="Aroma Delivery System Logo">
+            </div>
+
+            <!-- Welcome Text -->
+            <div class="welcome-text">
+                <h1>Welcome back</h1>
+                <p>Please sign in</p>
+            </div>
+
+            <!-- Login Form -->
+            <form id="loginForm">
+            <!-- Username Field -->
+            <div class="form-group">
+                <label for="username">User ID or username</label>
+                <div class="input-container">
+                    <input 
+                        type="text" 
+                        id="username" 
+                        class="form-input" 
+                        placeholder="Enter your user ID or username"
+                        autocomplete="username"
+                    >
+                </div>
+                <div class="error-message" id="usernameError">User ID or username is required</div>
+            </div>
+
+            <!-- Password Field -->
+            <div class="form-group">
+                <label for="password">Password</label>
+                <div class="input-container">
+                    <input 
+                        type="password" 
+                        id="password" 
+                        class="form-input" 
+                        placeholder="Enter your password"
+                        autocomplete="current-password"
+                    >
+                    <button type="button" class="password-toggle" id="passwordToggle">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
+                <div class="error-message" id="passwordError">Password is required</div>
+            </div>
+
+            <!-- Remember Me Checkbox -->
+            <div class="remember-me">
+                <label class="checkbox-container">
+                    <input type="checkbox" id="rememberMe">
+                    <span class="checkmark"></span>
+                    Remember me
+                </label>
+            </div>
+
+            <!-- Login Button -->
+            <button type="submit" class="login-button" id="loginButton">
+                Sign in
+            </button>
+        </form>
+
+            
+        </div>
+
+        <!-- Login Image Section -->
+        <div class="login-image">
+            <img src="assets/images/login2.png" alt="Login Illustration">
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const loginForm = document.getElementById('loginForm');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const loginButton = document.getElementById('loginButton');
+        const passwordToggle = document.getElementById('passwordToggle');
+        const usernameError = document.getElementById('usernameError');
+        const passwordError = document.getElementById('passwordError');
+        const rememberMeCheckbox = document.getElementById('rememberMe');
+
+        // Password Toggle Functionality
+        passwordToggle.addEventListener('click', function() {
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            
+            const icon = this.querySelector('i');
+            if (type === 'text') {
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        });
+
+        // Input Validation Functions
+        function validateUsername() {
+            const username = usernameInput.value.trim();
+            if (username === '') {
+                usernameInput.classList.remove('success');
+                usernameInput.classList.add('error');
+                usernameError.classList.add('show');
+                return false;
+            } else {
+                usernameInput.classList.remove('error');
+                usernameInput.classList.add('success');
+                usernameError.classList.remove('show');
+                return true;
+            }
+        }
+
+        function validatePassword() {
+            const password = passwordInput.value.trim();
+            if (password === '') {
+                passwordInput.classList.remove('success');
+                passwordInput.classList.add('error');
+                passwordError.classList.add('show');
+                return false;
+            } else {
+                passwordInput.classList.remove('error');
+                passwordInput.classList.add('success');
+                passwordError.classList.remove('show');
+                return true;
+            }
+        }
+
+        function updateLoginButton() {
+            const usernameValid = validateUsername();
+            const passwordValid = validatePassword();
+            
+            if (usernameValid && passwordValid) {
+                loginButton.classList.add('active');
+            } else {
+                loginButton.classList.remove('active');
+            }
+        }
+
+        // Event Listeners
+        usernameInput.addEventListener('input', updateLoginButton);
+        usernameInput.addEventListener('blur', validateUsername);
+        passwordInput.addEventListener('input', updateLoginButton);
+        passwordInput.addEventListener('blur', validatePassword);
+
+        // Form Submission
+        loginForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const usernameValid = validateUsername();
+            const passwordValid = validatePassword();
+            
+            if (usernameValid && passwordValid) {
+                // Simulate login process
+                loginButton.textContent = 'Signing in...';
+                loginButton.disabled = true;
+                
+                // Simulate API call
+                setTimeout(() => {
+                    // Redirect to dashboard (you can change this to your actual dashboard URL)
+                    window.location.href = 'dashboard.html';
+                }, 2000);
+            }
+        });
+
+        // Real-time validation
+        usernameInput.addEventListener('input', function() {
+            if (this.value.trim() !== '') {
+                this.classList.remove('error');
+                this.classList.add('success');
+                usernameError.classList.remove('show');
+            } else {
+                this.classList.remove('success');
+            }
+            updateLoginButton();
+        });
+
+        passwordInput.addEventListener('input', function() {
+            if (this.value.trim() !== '') {
+                this.classList.remove('error');
+                this.classList.add('success');
+                passwordError.classList.remove('show');
+            } else {
+                this.classList.remove('success');
+            }
+            updateLoginButton();
+        });
+
+        // Initialize button state
+        updateLoginButton();
+    </script>
+</body>
+</html>
