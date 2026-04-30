@@ -1735,7 +1735,11 @@ class JobController extends Controller
                     ->first();
             }
 
-            if ($recentCompletedScheduleRoom) {
+            if (
+                $recentCompletedScheduleRoom
+                && $this->jobScheduleRoomHasPhotoType($recentCompletedScheduleRoom->id, 'Before Work')
+                && $this->jobScheduleRoomHasPhotoType($recentCompletedScheduleRoom->id, 'After Work')
+            ) {
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Room completed successfully (duplicate)',
@@ -1904,64 +1908,39 @@ class JobController extends Controller
                 ], 422);
             }
 
+            \DB::beginTransaction();
+
             // Upload and save before photos if provided
             if ($request->hasFile('before_photos')) {
-                $uploadPath = public_path('uploads/job-verifications');
-                if (!file_exists($uploadPath)) {
-                    mkdir($uploadPath, 0755, true);
-                }
-                
-                foreach ($request->file('before_photos') as $photo) {
-                    if ($photo && $photo->isValid()) {
-                        $filename = time() . '_' . uniqid() . '_before.' . $photo->getClientOriginalExtension();
-                        $photo->move($uploadPath, $filename);
-                        $path = 'job-verifications/' . $filename;
-                        
-                        if ($jobSchedule) {
-                            \App\Models\JobPhoto::create([
-                                'job_schedule_id' => $jobSchedule->id,
-                                'job_schedule_room_id' => $jobScheduleRoom->id ?? null,
-                                'photo_path' => $path,
-                                'photo_type' => 'Before Work',
-                                'description' => 'Foto sebelum pengerjaan - Room: ' . ($room->room_name ?? 'N/A'),
-                                'uploaded_by' => Auth::id(),
-                            ]);
-                            
-                        } else {
-                            \Log::error("❌ Before photo NOT saved for room {$roomId} - Job Schedule not found!");
-                        }
-                    }
-                }
+                $this->saveRoomCompletionPhotos(
+                    $request,
+                    'before_photos',
+                    $jobSchedule,
+                    $jobScheduleRoom,
+                    'Before Work',
+                    'before',
+                    'Foto sebelum pengerjaan - Room: ' . ($room->room_name ?? 'N/A')
+                );
             }
             
             // Upload and save after photos if provided
             if ($request->hasFile('after_photos')) {
-                $uploadPath = public_path('uploads/job-verifications');
-                if (!file_exists($uploadPath)) {
-                    mkdir($uploadPath, 0755, true);
-                }
-                
-                foreach ($request->file('after_photos') as $photo) {
-                    if ($photo && $photo->isValid()) {
-                        $filename = time() . '_' . uniqid() . '_after.' . $photo->getClientOriginalExtension();
-                        $photo->move($uploadPath, $filename);
-                        $path = 'job-verifications/' . $filename;
-                        
-                        if ($jobSchedule) {
-                            \App\Models\JobPhoto::create([
-                                'job_schedule_id' => $jobSchedule->id,
-                                'job_schedule_room_id' => $jobScheduleRoom->id ?? null,
-                                'photo_path' => $path,
-                                'photo_type' => 'After Work',
-                                'description' => 'Foto sesudah pengerjaan - Room: ' . ($room->room_name ?? 'N/A'),
-                                'uploaded_by' => Auth::id(),
-                            ]);
-                            
-                        } else {
-                            \Log::error("❌ After photo NOT saved for room {$roomId} - Job Schedule not found!");
-                        }
-                    }
-                }
+                $this->saveRoomCompletionPhotos(
+                    $request,
+                    'after_photos',
+                    $jobSchedule,
+                    $jobScheduleRoom,
+                    'After Work',
+                    'after',
+                    'Foto sesudah pengerjaan - Room: ' . ($room->room_name ?? 'N/A')
+                );
+            }
+
+            if (
+                !$this->jobScheduleRoomHasPhotoType($jobScheduleRoom->id, 'Before Work')
+                || !$this->jobScheduleRoomHasPhotoType($jobScheduleRoom->id, 'After Work')
+            ) {
+                throw new \RuntimeException('Foto sebelum dan sesudah belum tersimpan. Room tidak diselesaikan.');
             }
             
             // Update JobAdviceRoom status to completed
@@ -2007,10 +1986,7 @@ class JobController extends Controller
             $jobAdvice = $room->jobAdvice;
             if (!$jobAdvice) {
                 \Log::warning("Job advice not found for room: {$roomId}");
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Job advice not found'
-                ], 404);
+                throw new \RuntimeException('Job advice not found');
             }
             
             // reload rooms to get fresh data
@@ -2063,6 +2039,8 @@ class JobController extends Controller
                     }
                 }
             }
+
+            \DB::commit();
             
             return response()->json([
                 'status' => 'success',
@@ -2074,6 +2052,10 @@ class JobController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
+            if (\DB::transactionLevel() > 0) {
+                \DB::rollBack();
+            }
+
             \Log::error("Error completing room {$roomId}: {$e->getMessage()}", [
                 'trace' => $e->getTraceAsString()
             ]);
@@ -2082,6 +2064,52 @@ class JobController extends Controller
                 'status' => 'error',
                 'message' => 'Failed to complete room: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    private function saveRoomCompletionPhotos(
+        Request $request,
+        string $requestKey,
+        JobSchedule $jobSchedule,
+        \App\Models\JobScheduleRoom $jobScheduleRoom,
+        string $photoType,
+        string $filenameSuffix,
+        string $description
+    ): void {
+        if (!$request->hasFile($requestKey)) {
+            return;
+        }
+
+        $uploadPath = public_path('uploads/job-verifications');
+        if (!is_dir($uploadPath) && !mkdir($uploadPath, 0775, true) && !is_dir($uploadPath)) {
+            throw new \RuntimeException('Folder upload foto pekerjaan tidak bisa dibuat.');
+        }
+
+        if (!is_writable($uploadPath)) {
+            throw new \RuntimeException('Folder upload foto pekerjaan tidak writable.');
+        }
+
+        $files = $request->file($requestKey);
+        $files = is_array($files) ? $files : [$files];
+
+        foreach ($files as $photo) {
+            if (!$photo || !$photo->isValid()) {
+                continue;
+            }
+
+            $filename = time() . '_' . uniqid() . '_' . $filenameSuffix . '.' . $photo->getClientOriginalExtension();
+            if (!$photo->move($uploadPath, $filename)) {
+                throw new \RuntimeException("Gagal menyimpan foto {$photoType}.");
+            }
+
+            \App\Models\JobPhoto::create([
+                'job_schedule_id' => $jobSchedule->id,
+                'job_schedule_room_id' => $jobScheduleRoom->id,
+                'photo_path' => 'job-verifications/' . $filename,
+                'photo_type' => $photoType,
+                'description' => $description,
+                'uploaded_by' => Auth::id(),
+            ]);
         }
     }
 
