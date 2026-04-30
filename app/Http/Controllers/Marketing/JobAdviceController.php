@@ -3347,6 +3347,10 @@ class JobAdviceController extends Controller
             ->whereNotNull('job_advice_room_id')
             ->get()
             ->unique(function ($room) {
+                if ($room->job_advice_room_id) {
+                    return 'ja-room:' . $room->job_advice_room_id;
+                }
+
                 if ($room->room_id) {
                     return 'room:' . $room->room_id;
                 }
@@ -3372,6 +3376,10 @@ class JobAdviceController extends Controller
         $roomsNeedingRemove = $jobAdvice->rooms
             ->whereIn('id', $completedJobAdviceRoomIds)
             ->unique(function ($room) {
+                if ($room->id) {
+                    return 'ja-room:' . $room->id;
+                }
+
                 $roomId = $room->room_id
                     ?? $room->contractRoom?->room_id
                     ?? $room->quotationRoom?->room_id;
@@ -3391,8 +3399,7 @@ class JobAdviceController extends Controller
                     : 'name:' . strtolower(trim((string) $room->room_name));
 
                 return !$completedPhysicalRoomKeys->contains($key)
-                    || $this->activeRemoveRoomExistsForJobAdviceRoom((int) $room->id)
-                    || $this->activeRemoveRoomExistsForPhysicalRoom($roomId, $room->room_name);
+                    || $this->activeRemoveRoomExistsForJobAdviceRoom((int) $room->id);
             })
             ->values();
 
@@ -3506,6 +3513,10 @@ class JobAdviceController extends Controller
             ->whereNotNull('job_advice_room_id')
             ->get()
             ->unique(function ($room) {
+                if ($room->job_advice_room_id) {
+                    return 'ja-room:' . $room->job_advice_room_id;
+                }
+
                 if ($room->room_id) {
                     return 'room:' . $room->room_id;
                 }
@@ -3533,6 +3544,10 @@ class JobAdviceController extends Controller
         $roomsNeedingRemove = $jobAdvice->rooms
             ->whereIn('id', $completedJobAdviceRoomIds)
             ->unique(function ($room) {
+                if ($room->id) {
+                    return 'ja-room:' . $room->id;
+                }
+
                 $roomId = $room->room_id
                     ?? $room->contractRoom?->room_id
                     ?? $room->quotationRoom?->room_id;
@@ -3552,8 +3567,7 @@ class JobAdviceController extends Controller
                     : 'name:' . strtolower(trim((string) $room->room_name));
 
                 return !$completedPhysicalRoomKeys->contains($key)
-                    || $this->activeRemoveRoomExistsForJobAdviceRoom((int) $room->id)
-                    || $this->activeRemoveRoomExistsForPhysicalRoom($roomId, $room->room_name);
+                    || $this->activeRemoveRoomExistsForJobAdviceRoom((int) $room->id);
             })
             ->values();
 

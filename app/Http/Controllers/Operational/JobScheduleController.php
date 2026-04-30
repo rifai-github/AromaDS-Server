@@ -2997,9 +2997,9 @@ class JobScheduleController extends Controller
                         }
                     }
                     
-                    // Process Invoice & Remove Job generation ONCE for the whole Job Number
-                    // Flag to prevent duplicating Remove Free creation
-                    $removeJobCreated = false;
+                    // Process Invoice & Remove Job generation for every completed schedule.
+                    // The Remove Free generator is idempotent per JobAdviceRoom, so do not stop
+                    // after the first IF room: grouped/web completions can finish multiple IFs.
                     
                     foreach ($schedulesToComplete as $completedSchedule) {
                         $completedSchedule->refresh();
@@ -3021,12 +3021,11 @@ class JobScheduleController extends Controller
                                 $isInstallFree = ($jaTypeLower === 'install_free' || $jaTypeLower === 'install free');
                             }
                             
-                            if ($isInstallFree && !$removeJobCreated) {
+                            if ($isInstallFree) {
                                 // Generate per completed room, not per JA. A previous room may already
                                 // have its remove job while another room finishes later.
                                 $jobAdviceController = new \App\Http\Controllers\Marketing\JobAdviceController();
                                 $jobAdviceController->generateRemoveFreeSchedule($jobAdvice, $completedSchedule);
-                                $removeJobCreated = true;
                             } else if (!$isInstallFree) {
                             }
                         }
@@ -5229,6 +5228,10 @@ class JobScheduleController extends Controller
                 ->whereNotNull('job_advice_room_id')
                 ->get()
                 ->unique(function ($room) {
+                    if ($room->job_advice_room_id) {
+                        return 'ja-room:' . $room->job_advice_room_id;
+                    }
+
                     if ($room->room_id) {
                         return 'room:' . $room->room_id;
                     }
@@ -5254,6 +5257,10 @@ class JobScheduleController extends Controller
             $roomsNeedingRemove = $jobAdvice->rooms
                 ->whereIn('id', $completedJobAdviceRoomIds)
                 ->unique(function ($room) {
+                    if ($room->id) {
+                        return 'ja-room:' . $room->id;
+                    }
+
                     $roomId = $room->room_id
                         ?? $room->contractRoom?->room_id
                         ?? $room->quotationRoom?->room_id;
@@ -5273,8 +5280,7 @@ class JobScheduleController extends Controller
                         : 'name:' . strtolower(trim((string) $room->room_name));
 
                     return $completedPhysicalRoomKeys->contains($key)
-                        && !$this->activeRemoveRoomExistsForJobAdviceRoom((int) $room->id)
-                        && !$this->activeRemoveRoomExistsForPhysicalRoom($roomId, $room->room_name);
+                        && !$this->activeRemoveRoomExistsForJobAdviceRoom((int) $room->id);
                 })
                 ->values();
 
