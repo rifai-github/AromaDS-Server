@@ -237,11 +237,35 @@ class JobController extends Controller
 
     private function isJobScheduleRoomCompleted(JobSchedule $jobSchedule, $jobAdviceRoom, ?int $roomId = null): bool
     {
-        $jobScheduleRoom = $this->resolveJobScheduleRoomForAdviceRoom(
-            (int) $jobSchedule->id,
-            $jobAdviceRoom,
-            $roomId
-        );
+        $jobAdviceRoomId = $jobAdviceRoom->id ?? null;
+        $jobScheduleRoom = $jobAdviceRoomId
+            ? \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
+                ->where('job_advice_room_id', $jobAdviceRoomId)
+                ->first()
+            : null;
+
+        if (!$jobScheduleRoom && $jobAdviceRoomId) {
+            $pivotRoom = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
+                ->whereHas('rentals', function ($query) use ($jobAdviceRoomId) {
+                    $query->where('job_advice_room_id', $jobAdviceRoomId);
+                })
+                ->with('rentals')
+                ->first();
+
+            if ($pivotRoom && $pivotRoom->rentals->count() <= 1) {
+                $jobScheduleRoom = $pivotRoom;
+            } elseif ($pivotRoom) {
+                return false;
+            }
+        }
+
+        if (!$jobScheduleRoom) {
+            $jobScheduleRoom = $this->resolveJobScheduleRoomForAdviceRoom(
+                (int) $jobSchedule->id,
+                $jobAdviceRoom,
+                $roomId
+            );
+        }
 
         return $jobScheduleRoom && $jobScheduleRoom->status === 'completed';
     }
@@ -340,26 +364,127 @@ class JobController extends Controller
 
     private function resolveJobScheduleRoomForAdviceRoom(int $jobScheduleId, $jobAdviceRoom, ?int $roomId = null)
     {
-        $query = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobScheduleId);
-
         $jobAdviceRoomId = $jobAdviceRoom->id ?? null;
         if ($jobAdviceRoomId) {
-            $query->where(function ($roomQuery) use ($jobAdviceRoomId) {
-                $roomQuery->where('job_advice_room_id', $jobAdviceRoomId)
-                    ->orWhereHas('rentals', function ($rentalQuery) use ($jobAdviceRoomId) {
-                        $rentalQuery->where('job_advice_room_id', $jobAdviceRoomId);
-                    });
-            });
+            $directRoom = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobScheduleId)
+                ->where('job_advice_room_id', $jobAdviceRoomId)
+                ->orderByDesc('id')
+                ->first();
+
+            if ($directRoom) {
+                return $directRoom;
+            }
         }
 
         if ($roomId) {
-            $query->orWhere(function ($roomQuery) use ($jobScheduleId, $roomId) {
-                $roomQuery->where('job_schedule_id', $jobScheduleId)
-                    ->where('room_id', $roomId);
-            });
+            $physicalRoom = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobScheduleId)
+                ->where('room_id', $roomId)
+                ->orderByDesc('id')
+                ->first();
+
+            if ($physicalRoom && (!$jobAdviceRoomId || (int) $physicalRoom->job_advice_room_id === (int) $jobAdviceRoomId)) {
+                return $physicalRoom;
+            }
         }
 
-        return $query->orderByDesc('id')->first();
+        if ($jobAdviceRoomId) {
+            return \App\Models\JobScheduleRoom::where('job_schedule_id', $jobScheduleId)
+                ->whereHas('rentals', function ($rentalQuery) use ($jobAdviceRoomId) {
+                    $rentalQuery->where('job_advice_room_id', $jobAdviceRoomId);
+                })
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        return null;
+    }
+
+    private function ensureMobileRentalScheduleRoom(JobSchedule $jobSchedule, $jobAdviceRoom, ?int $roomId = null)
+    {
+        $existing = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
+            ->where('job_advice_room_id', $jobAdviceRoom->id)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        $pivotRoom = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
+            ->whereHas('rentals', function ($query) use ($jobAdviceRoom) {
+                $query->where('job_advice_room_id', $jobAdviceRoom->id);
+            })
+            ->with('rentals')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($pivotRoom && $pivotRoom->rentals->count() <= 1) {
+            return $pivotRoom;
+        }
+
+        $newRoom = \App\Models\JobScheduleRoom::create([
+            'job_schedule_id' => $jobSchedule->id,
+            'job_advice_room_id' => $jobAdviceRoom->id,
+            'room_name' => $jobAdviceRoom->room_name ?? $pivotRoom?->room_name,
+            'room_id' => $roomId ?? $pivotRoom?->room_id,
+            'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
+            'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
+            'notes' => 'Mobile rental-level tracking',
+            'created_by' => auth()->id(),
+            'updated_by' => auth()->id(),
+        ]);
+
+        \App\Models\JobScheduleRoomRental::firstOrCreate(
+            [
+                'job_schedule_room_id' => $newRoom->id,
+                'job_advice_room_id' => $jobAdviceRoom->id,
+            ],
+            [
+                'is_primary' => false,
+            ]
+        );
+
+        return $newRoom;
+    }
+
+    private function ensureMobileRentalScheduleRoomsForJob(JobSchedule $jobSchedule): void
+    {
+        $scheduleRooms = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
+            ->with(['rentals.jobAdviceRoom'])
+            ->get();
+
+        foreach ($scheduleRooms as $scheduleRoom) {
+            foreach ($scheduleRoom->rentals as $rentalLink) {
+                if ($rentalLink->jobAdviceRoom) {
+                    $this->ensureMobileRentalScheduleRoom(
+                        $jobSchedule,
+                        $rentalLink->jobAdviceRoom,
+                        $scheduleRoom->room_id
+                    );
+                }
+            }
+        }
+    }
+
+    private function getJobAdviceRoomRentalDisplayName($jobAdviceRoom): string
+    {
+        if ($jobAdviceRoom?->contract_rental_id) {
+            $contractRental = \App\Models\ContractRental::find($jobAdviceRoom->contract_rental_id);
+            if ($contractRental && !empty($contractRental->rental_alias)) {
+                return $contractRental->rental_alias;
+            }
+        }
+
+        if ($jobAdviceRoom?->quotation_detail_id) {
+            $quotationDetail = \App\Models\QuotationDetail::find($jobAdviceRoom->quotation_detail_id);
+            if ($quotationDetail && !empty($quotationDetail->rental_alias)) {
+                return $quotationDetail->rental_alias;
+            }
+        }
+
+        return $jobAdviceRoom?->rentalProduct?->rental_name
+            ?? $jobAdviceRoom?->rental_name
+            ?? '-';
     }
     
     private function mapJobToArray($job, $user, $jobAssign, $room = null, $totalRooms = 0, $completedRooms = 0)
@@ -1091,6 +1216,8 @@ class JobController extends Controller
                     'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat dikerjakan ulang dari aplikasi teknisi.'
                 ], 423);
             }
+
+            $this->ensureMobileRentalScheduleRoomsForJob($job);
             
             // Get job assign schedule for material issue items lookup
             $jobAssign = $job->jobAssignSchedules->where('status', '!=', 'cancelled')->sortByDesc('id')->first();
@@ -1561,12 +1688,21 @@ class JobController extends Controller
                 }
             }
 
-            $jobScheduleRoom = $this->resolveJobScheduleRoomForAdviceRoom($specificJobScheduleId, $room, $masterRoom?->id);
+            $specificJobSchedule = $specificJobScheduleId === $job->id
+                ? $job
+                : JobSchedule::find($specificJobScheduleId);
+            $jobScheduleRoom = $specificJobSchedule
+                ? $this->ensureMobileRentalScheduleRoom($specificJobSchedule, $room, $masterRoom?->id)
+                : $this->resolveJobScheduleRoomForAdviceRoom($specificJobScheduleId, $room, $masterRoom?->id);
             $roomStatus = $jobScheduleRoom->status ?? 'scheduled';
+            $rentalName = $this->getJobAdviceRoomRentalDisplayName($room);
+            $displayName = $rentalName !== '-' ? "{$roomName} - {$rentalName}" : $roomName;
 
             return [
                 'id' => $room->id,
                 'name' => $roomName,
+                'display_name' => $displayName,
+                'rental_name' => $rentalName,
                 'status' => $roomStatus,
                 'status_label' => $this->getJobStatusLabel($roomStatus),
                 'is_blocked_by_ir' => $isBlockedByIr,
@@ -1876,6 +2012,8 @@ class JobController extends Controller
                 ], 423);
             }
 
+            $this->ensureMobileRentalScheduleRoomsForJob($jobSchedule);
+
             $serviceCompletableStatuses = ['in_progress', 'teknisi_sedang_pengerjaan', 'teknisi_tiba_dilokasi', 'barang_diambil'];
             if ($this->isServiceLikeJob($jobSchedule) && !in_array($jobSchedule->status, $serviceCompletableStatuses, true)) {
                 return response()->json([
@@ -1892,6 +2030,11 @@ class JobController extends Controller
                 $jobScheduleRoom = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
                     ->where('job_advice_room_id', $roomId)
                     ->first();
+
+                if (!$jobScheduleRoom) {
+                    $masterRoomId = $room->contractRoom?->room_id ?? $room->quotationRoom?->room_id ?? null;
+                    $jobScheduleRoom = $this->ensureMobileRentalScheduleRoom($jobSchedule, $room, $masterRoomId);
+                }
             }
 
             if (!$jobScheduleRoom) {
