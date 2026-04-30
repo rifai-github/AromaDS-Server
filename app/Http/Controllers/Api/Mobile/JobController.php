@@ -144,51 +144,59 @@ class JobController extends Controller
                 ->whereNull('deleted_at')
                 ->first();
             
-            // Calculate total and completed rooms for the entire GROUP
-            $totalRooms = 0;
-            $completedRooms = 0;
-            $roomNames = [];
-            $processedRoomIds = []; // Track processed room IDs to avoid duplication
+            $roomSummary = $this->summarizeAssignedRoomsForJobList($job, $user);
 
-            foreach ($group as $gItem) {
-                $itemRoomId = $gItem->room_id;
-                $adviceRooms = $gItem->jobAdvice->rooms ?? collect();
-                
-                if ($itemRoomId) {
-                    if (in_array($itemRoomId, $processedRoomIds)) continue;
-                    $processedRoomIds[] = $itemRoomId;
+            if ($roomSummary) {
+                $totalRooms = $roomSummary['total_rooms'];
+                $completedRooms = $roomSummary['completed_rooms'];
+                $roomNames = $roomSummary['room_names'];
+            } else {
+                // Calculate total and completed rooms for the entire GROUP
+                $totalRooms = 0;
+                $completedRooms = 0;
+                $roomNames = [];
+                $processedRoomIds = []; // Track processed room IDs to avoid duplication
 
-                    $specificRoom = $adviceRooms->first(function($r) use ($itemRoomId) {
-                        return ($r->contractRoom && $r->contractRoom->room_id == $itemRoomId) || 
-                               ($r->quotationRoom && $r->quotationRoom->room_id == $itemRoomId);
-                    });
+                foreach ($group as $gItem) {
+                    $itemRoomId = $gItem->room_id;
+                    $adviceRooms = $gItem->jobAdvice->rooms ?? collect();
                     
-                    if ($specificRoom) {
-                        $totalRooms++;
-                        if ($this->isJobScheduleRoomCompleted($gItem, $specificRoom, $itemRoomId)) {
-                            $completedRooms++;
-                        }
-                        $roomNames[] = $specificRoom->room_name;
-                    } else {
-                        // Fallback: one job schedule = one conceptual room
-                        $totalRooms++;
-                        if ($gItem->status == 'completed' || $gItem->status == 'done_job') {
-                            $completedRooms++;
-                        }
-                        $roomNames[] = $gItem->room_name ?? $gItem->room?->room_name ?? '-';
-                    }
-                } else {
-                    // If no specific room_id, count all rooms in JA (legacy/catch-all)
-                    // But ONLY if we haven't processed any rooms for this group yet to avoid overcounting
-                    if (empty($processedRoomIds)) {
-                        $totalRooms = $adviceRooms->count();
-                        $completedRooms = $adviceRooms->filter(function ($adviceRoom) use ($gItem) {
-                            return $this->isJobScheduleRoomCompleted($gItem, $adviceRoom);
-                        })->count();
-                        foreach($adviceRooms as $ar) $roomNames[] = $ar->room_name;
+                    if ($itemRoomId) {
+                        if (in_array($itemRoomId, $processedRoomIds)) continue;
+                        $processedRoomIds[] = $itemRoomId;
+
+                        $specificRoom = $adviceRooms->first(function($r) use ($itemRoomId) {
+                            return ($r->contractRoom && $r->contractRoom->room_id == $itemRoomId) || 
+                                   ($r->quotationRoom && $r->quotationRoom->room_id == $itemRoomId);
+                        });
                         
-                        // Mark all advice room IDs as processed to prevent further counting in this group
-                        $processedRoomIds = $adviceRooms->pluck('id')->toArray();
+                        if ($specificRoom) {
+                            $totalRooms++;
+                            if ($this->isJobScheduleRoomCompleted($gItem, $specificRoom, $itemRoomId)) {
+                                $completedRooms++;
+                            }
+                            $roomNames[] = $specificRoom->room_name;
+                        } else {
+                            // Fallback: one job schedule = one conceptual room
+                            $totalRooms++;
+                            if ($gItem->status == 'completed' || $gItem->status == 'done_job') {
+                                $completedRooms++;
+                            }
+                            $roomNames[] = $gItem->room_name ?? $gItem->room?->room_name ?? '-';
+                        }
+                    } else {
+                        // If no specific room_id, count all rooms in JA (legacy/catch-all)
+                        // But ONLY if we haven't processed any rooms for this group yet to avoid overcounting
+                        if (empty($processedRoomIds)) {
+                            $totalRooms = $adviceRooms->count();
+                            $completedRooms = $adviceRooms->filter(function ($adviceRoom) use ($gItem) {
+                                return $this->isJobScheduleRoomCompleted($gItem, $adviceRoom);
+                            })->count();
+                            foreach($adviceRooms as $ar) $roomNames[] = $ar->room_name;
+                            
+                            // Mark all advice room IDs as processed to prevent further counting in this group
+                            $processedRoomIds = $adviceRooms->pluck('id')->toArray();
+                        }
                     }
                 }
             }
@@ -236,6 +244,98 @@ class JobController extends Controller
         );
 
         return $jobScheduleRoom && $jobScheduleRoom->status === 'completed';
+    }
+
+    private function summarizeAssignedRoomsForJobList(JobSchedule $job, $user): ?array
+    {
+        $siblingJobIds = $this->getSiblingJobIdsForMobileJob($job);
+        $userTeamIds = $this->getUserTeamIds($user->id);
+
+        $assignedJobScheduleRoomIds = \App\Models\JobScheduleRoomAssignment::whereIn('job_schedule_id', $siblingJobIds)
+            ->whereIn('team_id', $userTeamIds)
+            ->where('status', '!=', 'cancelled')
+            ->pluck('job_schedule_room_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($assignedJobScheduleRoomIds->isEmpty()) {
+            return null;
+        }
+
+        $assignedScheduleRooms = \App\Models\JobScheduleRoom::whereIn('id', $assignedJobScheduleRoomIds)
+            ->get();
+
+        $assignedRoomIds = $assignedScheduleRooms
+            ->pluck('room_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($assignedRoomIds)) {
+            return [
+                'total_rooms' => 0,
+                'completed_rooms' => 0,
+                'room_names' => [],
+            ];
+        }
+
+        $allRooms = $job->jobAdvice->rooms ?? collect();
+        $targetRooms = $allRooms->filter(function ($room) use ($assignedRoomIds) {
+            $roomId = $room->contractRoom?->room_id ?? $room->quotationRoom?->room_id ?? null;
+
+            return $roomId && in_array($roomId, $assignedRoomIds);
+        });
+
+        $completedRooms = $targetRooms->filter(function ($room) use ($job, $assignedScheduleRooms) {
+            $masterRoomId = $room->contractRoom?->room_id ?? $room->quotationRoom?->room_id ?? null;
+            if (!$masterRoomId) {
+                return false;
+            }
+
+            $roomJob = JobSchedule::where('job_number', $job->job_number)
+                ->where('job_advice_id', $job->job_advice_id)
+                ->where('type', $job->type)
+                ->where('room_id', $masterRoomId)
+                ->first();
+
+            if ($roomJob) {
+                return $this->isJobScheduleRoomCompleted($roomJob, $room, $masterRoomId);
+            }
+
+            return $assignedScheduleRooms
+                ->where('room_id', $masterRoomId)
+                ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
+                ->isNotEmpty();
+        })->count();
+
+        return [
+            'total_rooms' => $targetRooms->count(),
+            'completed_rooms' => $completedRooms,
+            'room_names' => $targetRooms->pluck('room_name')->filter()->values()->all(),
+        ];
+    }
+
+    private function getSiblingJobIdsForMobileJob(JobSchedule $job): array
+    {
+        if ($job->job_number) {
+            return JobSchedule::where('job_number', $job->job_number)
+                ->where('job_advice_id', $job->job_advice_id)
+                ->pluck('id')
+                ->toArray();
+        }
+
+        if ($job->job_advice_id) {
+            return JobSchedule::where('job_advice_id', $job->job_advice_id)
+                ->where('type', $job->type)
+                ->where('building_id', $job->building_id)
+                ->whereDate('schedule_date', $job->schedule_date)
+                ->pluck('id')
+                ->toArray();
+        }
+
+        return [$job->id];
     }
 
     private function resolveJobScheduleRoomForAdviceRoom(int $jobScheduleId, $jobAdviceRoom, ?int $roomId = null)
