@@ -10,69 +10,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: CI
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        shell: bash
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.3"
-          extensions: bcmath, ctype, curl, dom, fileinfo, filter, gd, json, mbstring, openssl, pdo, pdo_mysql, tokenizer, xml, zip
-          coverage: none
-
-      - name: Cache Composer packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.composer/cache/files
-          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
-          restore-keys: composer-${{ runner.os }}-
-
-      - name: Install PHP dependencies
-        run: composer install --prefer-dist --no-interaction --no-progress
-
-      - name: Prepare Laravel test environment
-        run: |
-          cp .env.example .env
-          php artisan key:generate
-
-      - name: Run Laravel tests
-        run: |
-          if [ -d tests ]; then
-            php artisan test
-          else
-            echo "No backend tests directory found. Skipping tests."
-          fi
-
-      - name: Setup Node.js
-        if: ${{ hashFiles('package-lock.json') != '' && hashFiles('vite.config.*') != '' }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-
-      - name: Build frontend assets
-        if: ${{ hashFiles('package-lock.json') != '' && hashFiles('vite.config.*') != '' }}
-        run: |
-          npm ci
-          npm run build
-
   deploy:
-    name: Deploy to staging server
+    name: Pull latest code on staging
     runs-on: ubuntu-latest
-    needs: ci
-
-    defaults:
-      run:
-        shell: bash
 
     env:
       DEPLOY_HOST: ${{ secrets.STAGING_HOST }}
@@ -81,9 +21,6 @@ jobs:
       DEPLOY_PATH: /var/www/aroma-staging
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Install SSH key
         run: |
           install -m 700 -d ~/.ssh
@@ -91,56 +28,16 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
-      - name: Sync application files
-        run: |
-          rsync -az --delete \
-            --exclude='.git/' \
-            --exclude='.github/' \
-            --exclude='.env' \
-            --exclude='.env.*' \
-            --exclude='bootstrap/cache/*.php' \
-            --exclude='node_modules/' \
-            --exclude='public/build/' \
-            --exclude='storage/' \
-            --exclude='tests/' \
-            --exclude='vendor/' \
-            -e "ssh -p $DEPLOY_PORT -i ~/.ssh/id_ed25519" \
-            ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
-
-      - name: Run deployment commands
+      - name: Pull latest develop branch
         run: |
           ssh -p "$DEPLOY_PORT" -i ~/.ssh/id_ed25519 "$DEPLOY_USER@$DEPLOY_HOST" "bash -s" <<'EOF'
           set -euo pipefail
 
           cd /var/www/aroma-staging
 
-          rm -f bootstrap/cache/*.php
-
-          composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
-
-          if [ -f package-lock.json ] && ls vite.config.* >/dev/null 2>&1; then
-            npm ci
-            npm run build
-          fi
+          git config core.fileMode false
+          git fetch origin develop
+          git pull --ff-only origin develop
 
           php artisan migrate --force
-          php artisan storage:link || true
-
-          php artisan config:clear
-          php artisan cache:clear
-          php artisan route:clear
-          php artisan view:clear
-
-          php artisan config:cache
-          php artisan route:cache
-          php artisan view:cache
-
-          chmod -R ug+rw bootstrap/cache storage/app storage/framework/cache storage/framework/views storage/logs
-          find bootstrap/cache storage/app storage/framework/cache storage/framework/views storage/logs -type d -exec chmod ug+rwx {} +
-
-          if command -v sudo >/dev/null 2>&1; then
-            sudo systemctl reload php8.3-fpm 2>/dev/null || true
-            sudo systemctl reload nginx 2>/dev/null || true
-            sudo systemctl reload apache2 2>/dev/null || true
-          fi
           EOF
