@@ -343,6 +343,7 @@ class QuotationWizardController extends Controller
             $validator = Validator::make($request->all(), [
                 'marketing_id' => 'required|exists:users,id',
                 'branch_id' => 'nullable|exists:branches,id',
+                'quotation_date' => 'required|date',
                 'quotation_type' => 'required|in:new,renewal',
                 'survey_tags' => 'required|array',
                 'survey_tags.*' => 'exists:surveys,id',
@@ -367,6 +368,7 @@ class QuotationWizardController extends Controller
 
             // Get action parameter
             $action = $request->get('action', 'draft');
+            $quotationDate = \Carbon\Carbon::parse($request->get('quotation_date'))->toDateString();
             
             // MOM10: Generate quotation number using DocumentNumberService
             // Get branch code from selected branch_id or from survey's building location
@@ -444,8 +446,8 @@ class QuotationWizardController extends Controller
                 'prospect_id' => $prospectId,
                 'customer_id' => $survey ? $survey->customer_id : null,
                 'survey_id' => $firstSurveyId,
-                'quotation_date' => now(),
-                'valid_until' => now()->addDays(30), // 30 days validity
+                'quotation_date' => $quotationDate,
+                'valid_until' => \Carbon\Carbon::parse($quotationDate)->addDays(30)->toDateString(), // 30 days validity
                 'company_name' => $survey && $survey->customer ? $survey->customer->name : ($survey && $survey->prospect ? $survey->prospect->company_name : 'Unknown Company'),
                 'pic_name' => $request->get('pic_quotation') ?? 'Unknown PIC',
                 'billing_methods' => $request->get('payment_method'),
@@ -692,6 +694,7 @@ class QuotationWizardController extends Controller
             $validator = Validator::make($request->all(), [
                 'marketing_id' => 'required|exists:users,id',
                 'branch_id' => 'nullable|exists:branches,id',
+                'quotation_date' => 'required|date',
                 'quotation_type' => 'required|in:new,renewal',
                 'survey_tags' => 'required|array',
                 'survey_tags.*' => 'exists:surveys,id',
@@ -716,6 +719,7 @@ class QuotationWizardController extends Controller
 
             // Get action parameter
             $action = $request->get('action', 'draft');
+            $quotationDate = \Carbon\Carbon::parse($request->get('quotation_date'))->toDateString();
 
             DB::beginTransaction();
 
@@ -761,8 +765,8 @@ class QuotationWizardController extends Controller
                     'prospect_id' => $prospectId,
                     'customer_id' => $survey ? $survey->customer_id : null,
                     'survey_id' => $firstSurveyId, // Primary survey
-                    // 'quotation_date' => now(), // Keep original date? Or update? Usually keep original creation date.
-                    // 'valid_until' => ..., // Keep validity? Or extend? Let's keep original unless logic changes.
+                    'quotation_date' => $quotationDate,
+                    'valid_until' => \Carbon\Carbon::parse($quotationDate)->addDays(30)->toDateString(),
                     'company_name' => $survey && $survey->customer ? $survey->customer->name : ($survey && $survey->prospect ? $survey->prospect->company_name : 'Unknown Company'),
                     'pic_name' => $request->get('pic_quotation') ?? 'Unknown PIC',
                     'billing_methods' => $request->get('payment_method'),

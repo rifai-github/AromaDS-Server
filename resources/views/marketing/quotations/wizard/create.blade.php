@@ -720,7 +720,7 @@
                                     
                                     <!-- Branch Selection Field -->
                                     <div class="row">
-                                        <div class="col-md-12">
+                                        <div class="col-md-6">
                                             <div class="form-group" id="branch-field-container">
                                                 <label for="branch_id" class="form-label">
                                                     Cabang <span class="required-indicator"></span>
@@ -735,6 +735,22 @@
                                                 </div>
                                                 <div class="invalid-feedback"></div>
                                                 <small class="text-muted">Cabang menentukan kode nomor quotation</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-group">
+                                                <label for="quotation_date" class="form-label">
+                                                    Tanggal Quotation <span class="required-indicator"></span>
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    class="form-control"
+                                                    id="quotation_date"
+                                                    name="quotation_date"
+                                                    value="{{ old('quotation_date', isset($quotation) && $quotation->quotation_date ? $quotation->quotation_date->format('Y-m-d') : now()->toDateString()) }}"
+                                                    required
+                                                >
+                                                <div class="invalid-feedback"></div>
                                             </div>
                                         </div>
                                     </div>
@@ -1621,6 +1637,7 @@ function initializeFromExistingQuotation(data) {
     const step1Data = {
         marketing_id: data.marketing_id,
         branch_id: data.branch_id,
+        quotation_date: data.quotation_date ? String(data.quotation_date).slice(0, 10) : null,
         quotation_type: data.quotation_type,
         existing_contract_id: data.existing_contract_id,
         rental_period: rentalPeriod,
@@ -2250,6 +2267,7 @@ $(document).ready(function() {
         const step1Data = {
             marketing_id: $('#marketing_id').val(),
             branch_id: $('#branch_id').val() || $('#branch_id_hidden').val(),
+            quotation_date: $('#quotation_date').val(),
             quotation_type: $('#quotation_type').val(),
             existing_contract_id: $('#existing_contract_id').val(),
             rental_period: $('#rental_period').val(),
@@ -2289,6 +2307,10 @@ $(document).ready(function() {
                     $('#quotation_type').val(data.quotation_type);
                     console.log('✓ Restored quotation_type:', data.quotation_type);
                 }
+                if (data.quotation_date) {
+                    $('#quotation_date').val(data.quotation_date);
+                    console.log('✓ Restored quotation_date:', data.quotation_date);
+                }
                 if (data.rental_period) {
                     $('#rental_period').val(data.rental_period);
                     console.log('✓ Restored rental_period:', data.rental_period);
@@ -2310,6 +2332,7 @@ $(document).ready(function() {
                 console.log('Verification after restore:');
                 console.log('  marketing_id:', $('#marketing_id').val());
                 console.log('  branch_id:', $('#branch_id').val() || $('#branch_id_hidden').val());
+                console.log('  quotation_date:', $('#quotation_date').val());
                 console.log('  quotation_type:', $('#quotation_type').val());
                 console.log('  rental_period:', $('#rental_period').val());
                 console.log('  rental_unit:', $('#rental_unit').val());
@@ -4806,6 +4829,7 @@ $(document).ready(function() {
             case 1:
                 if (!window.isPopulatingData) console.log('=== STEP 1 VALIDATION DEBUG ===');
                 console.log('Marketing ID:', $('#marketing_id').val());
+                console.log('Quotation Date:', $('#quotation_date').val());
                 console.log('Quotation Type:', $('#quotation_type').val());
                 console.log('Rental Period:', $('#rental_period').val());
                 console.log('Rental Unit:', $('#rental_unit').val());
@@ -4814,6 +4838,10 @@ $(document).ready(function() {
                 
                 if (!$('#marketing_id').val()) {
                     missingFields.push('Marketing');
+                    isValid = false;
+                }
+                if (!$('#quotation_date').val()) {
+                    missingFields.push('Tanggal Quotation');
                     isValid = false;
                 }
                 if (!$('#quotation_type').val()) {
