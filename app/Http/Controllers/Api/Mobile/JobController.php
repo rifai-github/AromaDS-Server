@@ -2186,6 +2186,407 @@ class JobController extends Controller
 
         $job->unsetRelation('jobScheduleRooms');
     }
+
+    private function handleCannotCompleteAllRooms(JobSchedule $job, $now): void
+    {
+        $affectedJobs = $this->getPartialCompletionAffectedJobs($job);
+        $processedAnyRoom = false;
+
+        foreach ($affectedJobs as $sourceJob) {
+            $sourceJob->loadMissing([
+                'jobScheduleRooms.rentals',
+                'jobAssignSchedules.team',
+                'building',
+            ]);
+
+            $roomsToMove = $sourceJob->jobScheduleRooms
+                ->filter(fn ($room) => $room->status !== \App\Models\JobScheduleRoom::STATUS_CANCELLED)
+                ->values();
+
+            if ($roomsToMove->isNotEmpty()) {
+                $processedAnyRoom = true;
+                $returnContext = $this->preparePartialCompletionReturnContext($sourceJob, $roomsToMove, $now);
+                $jobAssignScheduleIds = $sourceJob->jobAssignSchedules()->pluck('id');
+
+                foreach ($roomsToMove as $room) {
+                    $newJob = $this->findOrCreatePartialCompletionFollowUpJob($sourceJob, $room, $now);
+                    $newRoom = $this->findOrCreatePartialCompletionFollowUpRoom($sourceJob, $newJob, $room);
+                    $this->syncPartialCompletionRoomRentals($room, $newRoom);
+                    $this->processPartialCompletionMaterialReturnItems($sourceJob, $room, $jobAssignScheduleIds, $returnContext, $now);
+
+                    $room->update([
+                        'status' => \App\Models\JobScheduleRoom::STATUS_CANCELLED,
+                        'material_return_status' => $returnContext['material_return']
+                            ? \App\Models\JobScheduleRoom::MATERIAL_RETURN_RETURNED
+                            : \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
+                        'material_return_id' => $returnContext['material_return']?->id,
+                        'material_return_at' => $returnContext['material_return'] ? $now : null,
+                        'material_return_by' => $returnContext['material_return'] ? auth()->id() : null,
+                        'notes' => 'Pekerjaan tidak selesai, dipindahkan ke Job baru.',
+                        'updated_by' => auth()->id(),
+                    ]);
+                }
+            }
+
+            $sourceJob->status = 'meninggalkan_lokasi';
+            $sourceJob->completed_at = null;
+            $sourceJob->updated_by = Auth::id();
+            $sourceJob->save();
+        }
+
+        if (!$processedAnyRoom) {
+            $job->status = 'meninggalkan_lokasi';
+            $job->completed_at = null;
+            $job->updated_by = Auth::id();
+        }
+    }
+
+    private function getPartialCompletionAffectedJobs(JobSchedule $job)
+    {
+        if (!$job->job_number) {
+            return collect([$job]);
+        }
+
+        return JobSchedule::where('job_number', $job->job_number)
+            ->where('job_advice_id', $job->job_advice_id)
+            ->where('building_id', $job->building_id)
+            ->where('type', $job->type)
+            ->whereNotIn('status', ['done_job', 'completed', 'selesai', 'undone'])
+            ->whereNotIn('type', ['remove', 'remove_free', 'remove free'])
+            ->lockForUpdate()
+            ->get()
+            ->whenEmpty(fn () => collect([$job]));
+    }
+
+    private function preparePartialCompletionReturnContext(JobSchedule $job, $roomsToMove, $now): array
+    {
+        $team = $job->jobAssignSchedules()->first()?->team;
+        $warehouse = $this->resolvePartialCompletionWarehouse($job, $team);
+        $materialReturn = null;
+        $inventoryReceiving = null;
+
+        if (!$warehouse) {
+            \Log::warning("verifyJob: No warehouse resolved for incomplete job {$job->job_number}. Outstanding job will still be created without auto material return.");
+
+            return [
+                'warehouse' => null,
+                'material_return' => null,
+                'inventory_receiving' => null,
+            ];
+        }
+
+        $roomNames = $roomsToMove->pluck('room_name')->implode(', ');
+        $receivingNote = "Auto-return dari Aplikasi teknisi via Job {$job->job_number} (Pekerjaan tidak selesai). Room: {$roomNames}";
+
+        $materialReturn = \App\Models\MaterialReturn::where('job_schedule_id', $job->id)
+            ->where('status', \App\Models\MaterialReturn::STATUS_RETURNED)
+            ->where('notes', 'like', 'Auto-return dari Aplikasi teknisi via Job ' . $job->job_number . '%')
+            ->lockForUpdate()
+            ->latest('id')
+            ->first();
+
+        if (!$materialReturn) {
+            $returnNumber = \App\Models\MaterialReturn::generateReturnNumber($job->id);
+
+            $materialReturn = \App\Models\MaterialReturn::create([
+                'return_number' => $returnNumber,
+                'job_schedule_id' => $job->id,
+                'warehouse_id' => $warehouse->id,
+                'team_id' => $team?->id,
+                'status' => \App\Models\MaterialReturn::STATUS_RETURNED,
+                'return_date' => $now->toDateString(),
+                'return_reason' => 'Pekerjaan tidak selesai (Auto-return via Mobile App)',
+                'notes' => $receivingNote,
+                'returned_by' => auth()->id(),
+                'returned_at' => $now,
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ]);
+        }
+
+        $inventoryReceiving = \App\Models\InventoryReceiving::where('reference_no', $job->job_number)
+            ->where('notes', 'like', 'Auto-return dari Aplikasi teknisi via Job ' . $job->job_number . '%')
+            ->lockForUpdate()
+            ->latest('id')
+            ->first();
+
+        if (!$inventoryReceiving) {
+            $inventoryReceiving = \App\Models\InventoryReceiving::create([
+                'receiving_number' => str_replace('RTR', 'IRC', $materialReturn->return_number),
+                'reference_no' => $job->job_number,
+                'branch_id' => $warehouse->branch_id ?? $job->branch_id,
+                'received_from' => auth()->id(),
+                'received_by_old' => auth()->id(),
+                'receive_date' => $now->toDateString(),
+                'status' => 'received',
+                'notes' => $receivingNote,
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ]);
+        }
+
+        return [
+            'warehouse' => $warehouse,
+            'material_return' => $materialReturn,
+            'inventory_receiving' => $inventoryReceiving,
+        ];
+    }
+
+    private function resolvePartialCompletionWarehouse(JobSchedule $job, $team)
+    {
+        $materialIssue = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function ($query) use ($job) {
+            $query->where('job_schedule_id', $job->id);
+        })->latest('id')->first();
+
+        if ($materialIssue && $materialIssue->warehouse_id) {
+            return \App\Models\Warehouse::find($materialIssue->warehouse_id);
+        }
+
+        if ($team?->branch_office) {
+            $warehouse = \App\Models\Warehouse::where('branch_id', $team->branch_office)
+                ->where('is_active', true)
+                ->orderByDesc('is_center')
+                ->orderBy('id')
+                ->first();
+
+            if ($warehouse) {
+                return $warehouse;
+            }
+        }
+
+        if ($job->building?->branch_id) {
+            return \App\Models\Warehouse::where('branch_id', $job->building->branch_id)
+                ->where('is_active', true)
+                ->orderByDesc('is_center')
+                ->orderBy('id')
+                ->first();
+        }
+
+        return null;
+    }
+
+    private function findOrCreatePartialCompletionFollowUpJob(JobSchedule $sourceJob, $room, $now): JobSchedule
+    {
+        $jobAdviceRoomIds = $this->getJobScheduleRoomAdviceRoomIds($room);
+
+        $existingJob = \App\Models\JobSchedule::where('job_advice_id', $sourceJob->job_advice_id)
+            ->where('building_id', $sourceJob->building_id)
+            ->where('type', $sourceJob->type)
+            ->where('internal_notes', 'like', "Lanjutan dari Job {$sourceJob->job_number}%")
+            ->whereNotIn('status', ['cancelled', 'done_job', 'completed', 'selesai'])
+            ->whereHas('jobScheduleRooms', function ($query) use ($jobAdviceRoomIds) {
+                $query->whereIn('job_advice_room_id', $jobAdviceRoomIds)
+                    ->orWhereHas('rentals', function ($rentalQuery) use ($jobAdviceRoomIds) {
+                        $rentalQuery->whereIn('job_advice_room_id', $jobAdviceRoomIds);
+                    });
+            })
+            ->latest('id')
+            ->first();
+
+        if ($existingJob) {
+            return $existingJob;
+        }
+
+        $newJob = new \App\Models\JobSchedule();
+        if (\Illuminate\Support\Facades\Schema::hasColumn('job_schedules', 'customer_id')) {
+            $newJob->customer_id = $sourceJob->customer_id;
+        }
+        $newJob->building_id = $sourceJob->building_id;
+        $newJob->building_name = $sourceJob->building_name;
+        $newJob->company_name = $sourceJob->company_name;
+        $newJob->job_advice_id = $sourceJob->job_advice_id;
+        $newJob->contract_number = $sourceJob->contract_number;
+        $newJob->quotation_number = $sourceJob->quotation_number;
+        $newJob->type = $sourceJob->type;
+        $newJob->status = 'new_job';
+        $newJob->schedule_date = $now->toDateString();
+        $newJob->expected_date = $sourceJob->expected_date;
+        $newJob->job_number = null;
+        $newJob->internal_notes = "Lanjutan dari Job {$sourceJob->job_number} (Pekerjaan tidak selesai). Room: {$room->room_name}.";
+        $newJob->created_by = auth()->id();
+        $newJob->updated_by = auth()->id();
+        $newJob->save();
+
+        return $newJob;
+    }
+
+    private function findOrCreatePartialCompletionFollowUpRoom(JobSchedule $sourceJob, JobSchedule $newJob, $room)
+    {
+        return \App\Models\JobScheduleRoom::firstOrCreate(
+            [
+                'job_schedule_id' => $newJob->id,
+                'job_advice_room_id' => $room->job_advice_room_id,
+            ],
+            [
+                'room_name' => $room->room_name,
+                'room_id' => $room->room_id,
+                'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
+                'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
+                'notes' => "Pindahan dari Job {$sourceJob->job_number}",
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ]
+        );
+    }
+
+    private function syncPartialCompletionRoomRentals($sourceRoom, $targetRoom): void
+    {
+        $sourceRoom->loadMissing('rentals');
+        $rentals = $sourceRoom->rentals;
+
+        if ($rentals->isEmpty() && $sourceRoom->job_advice_room_id) {
+            $rentals = collect([(object) [
+                'job_advice_room_id' => $sourceRoom->job_advice_room_id,
+                'is_primary' => true,
+            ]]);
+        }
+
+        foreach ($rentals as $rental) {
+            $link = \App\Models\JobScheduleRoomRental::withTrashed()->firstOrNew([
+                'job_schedule_room_id' => $targetRoom->id,
+                'job_advice_room_id' => $rental->job_advice_room_id,
+            ]);
+            $link->is_primary = (bool) $rental->is_primary;
+            $link->save();
+
+            if (method_exists($link, 'trashed') && $link->trashed()) {
+                $link->restore();
+            }
+        }
+    }
+
+    private function getJobScheduleRoomAdviceRoomIds($room): array
+    {
+        $room->loadMissing('rentals');
+
+        return $room->rentals
+            ->pluck('job_advice_room_id')
+            ->push($room->job_advice_room_id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function processPartialCompletionMaterialReturnItems(JobSchedule $job, $room, $jobAssignScheduleIds, array $returnContext, $now): void
+    {
+        $materialReturn = $returnContext['material_return'];
+        $inventoryReceiving = $returnContext['inventory_receiving'];
+        $warehouse = $returnContext['warehouse'];
+
+        if (!$materialReturn || !$inventoryReceiving || !$warehouse) {
+            return;
+        }
+
+        $materialIssueItems = \App\Models\MaterialIssueItem::whereIn('job_assign_schedule_id', $jobAssignScheduleIds)
+            ->whereRaw('LOWER(TRIM(room_name)) = ?', [strtolower(trim((string) $room->room_name))])
+            ->get();
+
+        if ($materialIssueItems->isEmpty()) {
+            $materialIssueItems = \App\Models\MaterialIssueItem::whereHas('materialIssue.jobAssignMaterialIssues.jobAssignSchedule', function ($query) use ($job) {
+                $query->where('job_schedule_id', $job->id);
+            })
+                ->whereRaw('LOWER(TRIM(room_name)) = ?', [strtolower(trim((string) $room->room_name))])
+                ->get();
+        }
+
+        foreach ($materialIssueItems as $issueItem) {
+            if (!$issueItem->product_id) {
+                continue;
+            }
+
+            $issuedItem = \App\Models\InventoryIssuingItem::whereIn('job_assign_schedule_id', $jobAssignScheduleIds)
+                ->where('product_id', $issueItem->product_id)
+                ->whereRaw('LOWER(TRIM(room_name)) = ?', [strtolower(trim((string) $room->room_name))])
+                ->whereHas('inventoryIssuing', function ($query) {
+                    $query->whereIn('status', ['processed', 'sent', 'received']);
+                })
+                ->latest('id')
+                ->first();
+
+            $quantityToReturn = $issuedItem && (float) $issuedItem->quantity_issued > 0
+                ? (float) $issuedItem->quantity_issued
+                : (float) ($issueItem->quantity ?? 0);
+
+            $returnItem = \App\Models\MaterialReturnItem::firstOrCreate(
+                [
+                    'material_return_id' => $materialReturn->id,
+                    'material_issue_item_id' => $issueItem->id,
+                ],
+                [
+                    'product_id' => $issueItem->product_id,
+                    'room_name' => $room->room_name,
+                    'room_id' => $room->room_id,
+                    'quantity' => $quantityToReturn,
+                    'notes' => "Auto-return dari Room {$room->room_name}",
+                    'created_by' => auth()->id(),
+                    'updated_by' => auth()->id(),
+                ]
+            );
+
+            $receivingItem = \App\Models\InventoryReceivingItem::firstOrCreate(
+                [
+                    'inventory_receiving_id' => $inventoryReceiving->id,
+                    'master_product_id' => $issueItem->product_id,
+                    'notes' => "Auto-return dari Room {$room->room_name} (MI Item {$issueItem->id})",
+                ],
+                [
+                    'quantity' => $quantityToReturn,
+                    'quantity_received' => $quantityToReturn,
+                ]
+            );
+
+            if ($issuedItem?->serial_number_id) {
+                $sn = \App\Models\SerialNumber::find($issuedItem->serial_number_id);
+                if ($sn) {
+                    $returnedSnCode = $sn->serial_number;
+
+                    $sn->update([
+                        'status' => 'ready',
+                        'location_type' => 'warehouse',
+                        'location_id' => $warehouse->id,
+                        'inventory_receiving_id' => $inventoryReceiving->id,
+                        'updated_by' => auth()->id(),
+                    ]);
+
+                    $issuedItem->update([
+                        'serial_number_id' => null,
+                        'updated_by' => auth()->id(),
+                        'notes' => trim((string) $issuedItem->notes . ' | Auto-returned to warehouse via partial completion on Job ' . $job->job_number . ' | SN released: ' . $returnedSnCode),
+                    ]);
+                }
+            }
+
+            if ($returnItem->wasRecentlyCreated || $receivingItem->wasRecentlyCreated) {
+                $warehouseProduct = \App\Models\WarehouseProduct::firstOrCreate(
+                    [
+                        'warehouse_id' => $warehouse->id,
+                        'master_product_id' => $issueItem->product_id,
+                    ],
+                    [
+                        'quantity' => 0,
+                        'created_by' => auth()->id(),
+                        'updated_by' => auth()->id(),
+                    ]
+                );
+                $warehouseProduct->increment('quantity', $quantityToReturn);
+
+                \App\Models\InventoryMovement::create([
+                    'warehouse_id' => $warehouse->id,
+                    'master_product_id' => $issueItem->product_id,
+                    'movement_type' => 'in',
+                    'quantity' => abs($quantityToReturn),
+                    'movement_date' => $now->toDateString(),
+                    'reference_no' => $inventoryReceiving->receiving_number,
+                    'reference_type' => 'inventory_receiving',
+                    'movement_no' => str_replace('IRC-', 'REC-', $inventoryReceiving->receiving_number),
+                    'notes' => "Auto-return via Job {$job->job_number} (Parsial, MI Item {$issueItem->id})",
+                    'created_by' => auth()->id(),
+                    'updated_by' => auth()->id(),
+                ]);
+            }
+        }
+    }
     
     /**
      * Upload photo for a job
@@ -3143,322 +3544,7 @@ class JobController extends Controller
             $cannotCompleteAllRooms = $this->requestIndicatesCannotCompleteAllRooms($request);
             
             if ($cannotCompleteAllRooms) {
-                $now = now();
-
-                // Reload job with relationships
-                $job->load(['jobScheduleRooms', 'jobAssignSchedules.team', 'building']);
-                
-                // Get unfinished rooms (status != 'completed')
-                $unfinishedRooms = $job->jobScheduleRooms()
-                    ->whereNotIn('status', [
-                        \App\Models\JobScheduleRoom::STATUS_COMPLETED,
-                        \App\Models\JobScheduleRoom::STATUS_CANCELLED,
-                    ])
-                    ->get();
-                
-                if ($unfinishedRooms->isNotEmpty()) {
-                    // Get team and warehouse
-                    $team = $job->jobAssignSchedules()->first()?->team;
-                    $warehouse = null;
-                    $materialReturn = null;
-                    $inventoryReceiving = null;
-                    
-                    // Get warehouse from material issue
-                    $materialIssue = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function($q) use ($job) {
-                        $q->where('job_schedule_id', $job->id);
-                    })->latest('id')->first();
-                    
-                    if ($materialIssue && $materialIssue->warehouse_id) {
-                        $warehouse = \App\Models\Warehouse::find($materialIssue->warehouse_id);
-                    }
-
-                    if (!$warehouse && $team?->branch_office) {
-                        $warehouse = \App\Models\Warehouse::where('branch_id', $team->branch_office)
-                            ->where('is_active', true)
-                            ->orderByDesc('is_center')
-                            ->orderBy('id')
-                            ->first();
-                    }
-
-                    if (!$warehouse && $job->building?->branch_id) {
-                        $warehouse = \App\Models\Warehouse::where('branch_id', $job->building->branch_id)
-                            ->where('is_active', true)
-                            ->orderByDesc('is_center')
-                            ->orderBy('id')
-                            ->first();
-                    }
-
-                    if ($warehouse) {
-                        // 1. Create Material Return Record for better UI integration
-                        $roomNames = $unfinishedRooms->pluck('room_name')->implode(', ');
-                        $receivingNote = "Auto-return dari Aplikasi teknisi via Job {$job->job_number} (Pekerjaan tidak selesai). Room: {$roomNames}";
-
-                        $materialReturn = \App\Models\MaterialReturn::where('job_schedule_id', $job->id)
-                            ->where('status', \App\Models\MaterialReturn::STATUS_RETURNED)
-                            ->where('notes', 'like', 'Auto-return dari Aplikasi teknisi via Job ' . $job->job_number . '%')
-                            ->lockForUpdate()
-                            ->latest('id')
-                            ->first();
-
-                        if (!$materialReturn) {
-                            $receivingNumber = \App\Models\MaterialReturn::generateReturnNumber($job->id); // Using MaterialReturn format
-
-                            $materialReturn = \App\Models\MaterialReturn::create([
-                                'return_number' => $receivingNumber,
-                                'job_schedule_id' => $job->id,
-                                'warehouse_id' => $warehouse->id,
-                                'team_id' => $team?->id,
-                                'status' => \App\Models\MaterialReturn::STATUS_RETURNED,
-                                'return_date' => $now->toDateString(),
-                                'return_reason' => 'Pekerjaan tidak selesai (Auto-return via Mobile App)',
-                                'notes' => $receivingNote,
-                                'returned_by' => auth()->id(),
-                                'returned_at' => $now,
-                                'created_by' => auth()->id(),
-                                'updated_by' => auth()->id(),
-                            ]);
-                        }
-
-                        // Also create Inventory Receiving for stock integrity
-                        $inventoryReceiving = \App\Models\InventoryReceiving::where('reference_no', $job->job_number)
-                            ->where('notes', 'like', 'Auto-return dari Aplikasi teknisi via Job ' . $job->job_number . '%')
-                            ->lockForUpdate()
-                            ->latest('id')
-                            ->first();
-
-                        if (!$inventoryReceiving) {
-                            $inventoryReceiving = \App\Models\InventoryReceiving::create([
-                                'receiving_number' => str_replace('RTR', 'IRC', $materialReturn->return_number), // Consistently map RTR to IRC
-                                'reference_no' => $job->job_number,
-                                'branch_id' => $warehouse->branch_id ?? $job->branch_id, // Use warehouse branch if available
-                                'received_from' => auth()->id(),
-                                'received_by_old' => auth()->id(),
-                                'receive_date' => $now->toDateString(),
-                                'status' => 'received',
-                                'notes' => $receivingNote,
-                                'created_by' => auth()->id(),
-                                'updated_by' => auth()->id(),
-                            ]);
-                        }
-                    } else {
-                        \Log::warning("verifyJob: No warehouse resolved for incomplete job {$job->job_number}. Outstanding job will still be created without auto material return.");
-                    }
-
-                    // 2. Create one New JobSchedule for all unfinished rooms
-                    $newJob = \App\Models\JobSchedule::where('job_advice_id', $job->job_advice_id)
-                        ->where('building_id', $job->building_id)
-                        ->where('type', $job->type)
-                        ->where('internal_notes', 'like', "Lanjutan dari Job {$job->job_number}%")
-                        ->whereNotIn('status', ['cancelled', 'done_job', 'completed', 'selesai'])
-                        ->whereHas('jobScheduleRooms', function ($query) use ($unfinishedRooms) {
-                            $query->whereIn('job_advice_room_id', $unfinishedRooms->pluck('job_advice_room_id')->filter()->unique()->values());
-                        })
-                        ->latest('id')
-                        ->first();
-
-                    if (!$newJob) {
-                        $newJob = new \App\Models\JobSchedule();
-                        if (\Illuminate\Support\Facades\Schema::hasColumn('job_schedules', 'customer_id')) {
-                            $newJob->customer_id = $job->customer_id;
-                        }
-                        $newJob->building_id = $job->building_id;
-                        $newJob->building_name = $job->building_name;
-                        $newJob->company_name = $job->company_name;
-                        $newJob->job_advice_id = $job->job_advice_id;
-                        $newJob->contract_number = $job->contract_number;
-                        $newJob->quotation_number = $job->quotation_number;
-                        $newJob->type = $job->type;
-                        $newJob->status = 'new_job';
-                        $newJob->schedule_date = $now->toDateString();
-                        $newJob->expected_date = $job->expected_date;
-                        $newJob->job_number = null;
-                        $newJob->internal_notes = "Lanjutan dari Job {$job->job_number} (Pekerjaan tidak selesai).";
-                        $newJob->created_by = auth()->id();
-                        $newJob->updated_by = auth()->id();
-                        $newJob->save();
-                    }
-
-                    $jobAssignScheduleIds = $job->jobAssignSchedules()->pluck('id');
-
-                    foreach ($unfinishedRooms as $room) {
-                        // Move room to new job
-                        \App\Models\JobScheduleRoom::firstOrCreate(
-                            [
-                                'job_schedule_id' => $newJob->id,
-                                'job_advice_room_id' => $room->job_advice_room_id,
-                            ],
-                            [
-                                'room_name' => $room->room_name,
-                                'room_id' => $room->room_id,
-                                'status' => 'pending',
-                                'notes' => "Pindahan dari Job {$job->job_number}",
-                                'created_by' => auth()->id(),
-                                'updated_by' => auth()->id(),
-                            ]
-                        );
-
-                        // Get material issue items for this room
-                        $materialIssueItems = \App\Models\MaterialIssueItem::whereIn('job_assign_schedule_id', $jobAssignScheduleIds)
-                            ->whereRaw('LOWER(TRIM(room_name)) = ?', [strtolower(trim((string) $room->room_name))])
-                            ->get();
-
-                        if ($materialIssueItems->isEmpty()) {
-                            $materialIssueItems = \App\Models\MaterialIssueItem::whereHas('materialIssue.jobAssignMaterialIssues.jobAssignSchedule', function($q) use ($job) {
-                                $q->where('job_schedule_id', $job->id);
-                            })
-                            ->whereRaw('LOWER(TRIM(room_name)) = ?', [strtolower(trim((string) $room->room_name))])
-                            ->get();
-                        }
-
-                        if ($materialReturn && $inventoryReceiving && $warehouse) {
-                            foreach ($materialIssueItems as $issueItem) {
-                                if (!$issueItem->product_id) {
-                                    continue;
-                                }
-
-                                $issuedItem = \App\Models\InventoryIssuingItem::whereIn('job_assign_schedule_id', $jobAssignScheduleIds)
-                                    ->where('product_id', $issueItem->product_id)
-                                    ->whereRaw('LOWER(TRIM(room_name)) = ?', [strtolower(trim((string) $room->room_name))])
-                                    ->whereHas('inventoryIssuing', function ($query) {
-                                        $query->whereIn('status', ['processed', 'sent', 'received']);
-                                    })
-                                    ->latest('id')
-                                    ->first();
-
-                                $quantityToReturn = $issuedItem && (float) $issuedItem->quantity_issued > 0
-                                    ? (float) $issuedItem->quantity_issued
-                                    : (float) ($issueItem->quantity ?? 0);
-
-                                // Create Material Return Item
-                                $returnItem = \App\Models\MaterialReturnItem::firstOrCreate(
-                                    [
-                                        'material_return_id' => $materialReturn->id,
-                                        'material_issue_item_id' => $issueItem->id,
-                                    ],
-                                    [
-                                        'product_id' => $issueItem->product_id,
-                                        'room_name' => $room->room_name,
-                                        'room_id' => $room->room_id,
-                                        'quantity' => $quantityToReturn,
-                                        'notes' => "Auto-return dari Room {$room->room_name}",
-                                        'created_by' => auth()->id(),
-                                        'updated_by' => auth()->id(),
-                                    ]
-                                );
-
-                                // Create Receiving Item
-                                $receivingItem = \App\Models\InventoryReceivingItem::firstOrCreate(
-                                    [
-                                        'inventory_receiving_id' => $inventoryReceiving->id,
-                                        'master_product_id' => $issueItem->product_id,
-                                        'notes' => "Auto-return dari Room {$room->room_name} (MI Item {$issueItem->id})",
-                                    ],
-                                    [
-                                        'quantity' => $quantityToReturn,
-                                        'quantity_received' => $quantityToReturn,
-                                    ]
-                                );
-
-                                // UPDATE SERIAL NUMBER STATUS IF ANY
-                                if ($issuedItem?->serial_number_id) {
-                                    $sn = \App\Models\SerialNumber::find($issuedItem->serial_number_id);
-                                    if ($sn) {
-                                        $returnedSnCode = $sn->serial_number;
-
-                                        $sn->update([
-                                            'status' => 'ready',
-                                            'location_type' => 'warehouse',
-                                            'location_id' => $warehouse->id,
-                                            'inventory_receiving_id' => $inventoryReceiving->id,
-                                            'updated_by' => auth()->id(),
-                                        ]);
-
-                                        // IMPORTANT:
-                                        // When partial completion auto-returns a unit with SN,
-                                        // the stock/SN can already be back in warehouse while the
-                                        // old Inventory Issuing Item still keeps serial_number_id.
-                                        // That stale WI linkage makes the SN look "reserved" and
-                                        // blocks future usage even though it is physically returned.
-                                        //
-                                        // Release the SN from the old issuing row after the return
-                                        // has been recorded in Material Return + Inventory Receiving.
-                                        $issuedItem->update([
-                                            'serial_number_id' => null,
-                                            'updated_by' => auth()->id(),
-                                            'notes' => trim((string) $issuedItem->notes . ' | Auto-returned to warehouse via partial completion on Job ' . $job->job_number . ' | SN released: ' . $returnedSnCode),
-                                        ]);
-                                    }
-                                }
-
-                                if ($returnItem->wasRecentlyCreated || $receivingItem->wasRecentlyCreated) {
-                                    // Update Stock (Auto-Approved) once per returned material row.
-                                    $warehouseProduct = \App\Models\WarehouseProduct::firstOrCreate(
-                                        [
-                                            'warehouse_id' => $warehouse->id,
-                                            'master_product_id' => $issueItem->product_id,
-                                        ],
-                                        [
-                                            'quantity' => 0,
-                                            'created_by' => auth()->id(),
-                                            'updated_by' => auth()->id(),
-                                        ]
-                                    );
-                                    $warehouseProduct->increment('quantity', $quantityToReturn);
-
-                                    \App\Models\InventoryMovement::create([
-                                        'warehouse_id' => $warehouse->id,
-                                        'master_product_id' => $issueItem->product_id,
-                                        'movement_type' => 'in',
-                                        'quantity' => abs($quantityToReturn),
-                                        'movement_date' => $now->toDateString(),
-                                        'reference_no' => $inventoryReceiving->receiving_number,
-                                        'reference_type' => 'inventory_receiving',
-                                        'movement_no' => str_replace('IRC-', 'REC-', $inventoryReceiving->receiving_number),
-                                        'notes' => "Auto-return via Job {$job->job_number} (Parsial, MI Item {$issueItem->id})",
-                                        'created_by' => auth()->id(),
-                                        'updated_by' => auth()->id(),
-                                    ]);
-                                }
-                            }
-                        }
-
-                        // Cancel room from current job and link to material return
-                        $room->update([
-                            'status' => 'cancelled',
-                            'material_return_status' => $materialReturn
-                                ? \App\Models\JobScheduleRoom::MATERIAL_RETURN_RETURNED
-                                : \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
-                            'material_return_id' => $materialReturn?->id,
-                            'material_return_at' => $materialReturn ? $now : null,
-                            'material_return_by' => $materialReturn ? auth()->id() : null,
-                            'notes' => "Pekerjaan tidak selesai, dipindahkan ke Job baru.",
-                            'updated_by' => auth()->id(),
-                        ]);
-                    }
-                    
-                    // Partial completion means the technician left the location.
-                    // Keep the original job out of completion/invoice flow; unfinished rooms
-                    // are already moved to a follow-up job above.
-                    $job->status = 'meninggalkan_lokasi';
-                    $job->completed_at = null;
-                } else {
-                    if ($job->job_number) {
-                        $relatedJobs = JobSchedule::where('job_number', $job->job_number)
-                            ->whereNotIn('status', ['done_job', 'completed', 'selesai', 'meninggalkan_lokasi', 'undone'])
-                            ->whereNotIn('type', ['remove', 'remove_free', 'remove free'])
-                            ->get();
-
-                        foreach ($relatedJobs as $rJob) {
-                            $rJob->status = 'meninggalkan_lokasi';
-                            $rJob->completed_at = null;
-                            $rJob->updated_by = Auth::id();
-                            $rJob->save();
-                        }
-                    }
-
-                    $job->status = 'meninggalkan_lokasi';
-                    $job->completed_at = null;
-                }
+                $this->handleCannotCompleteAllRooms($job, now());
             } else {
                 // Normal flow: all rooms completed
                 // Multi-Job Sync Fix: Update ALL related jobs in this visit to done_job (By Job Number, NOT Job Advice ID)
