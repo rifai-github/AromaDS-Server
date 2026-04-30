@@ -1360,6 +1360,7 @@ class JobController extends Controller
                                 'unit' => $unit->product->unit ?? 'pcs',
                                 'source' => 'unit_on_wall',
                                 'serial_number' => $serialNumber, // Include serial number
+                                'unit_on_wall_id' => $unit->id,
                                 'requires_serial_number' => $unit->product->requiresSerialNumber(),
                                 'is_unit' => $unit->product->productType?->is_unit ?? $unit->product->productCategory?->is_unit ?? false,
                             ];
