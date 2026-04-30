@@ -299,7 +299,8 @@ class MasterRentalController extends Controller
             ->orderBy('name')
             ->get();
             
-        $masterProducts = MasterProduct::where('is_active', true)
+        $masterProducts = MasterProduct::with(['productCategory', 'productType', 'packagingSize'])
+            ->where('is_active', true)
             ->orderBy('name')
             ->get();
             
@@ -866,7 +867,11 @@ class MasterRentalController extends Controller
     {
         try {
             // Load allowed products with packaging size and product category for dropdown display
-            $detail->load(['allowedProducts.packagingSize', 'allowedProducts.productCategory']);
+            $detail->load([
+                'allowedProducts.packagingSize',
+                'allowedProducts.productCategory',
+                'allowedProducts.productType',
+            ]);
             $scopedProductCategoryId = $detail->product_category_id;
             $scopedProductTypeId = $detail->product_type_id;
             
@@ -886,7 +891,7 @@ class MasterRentalController extends Controller
                     'sku' => $product->sku ?? '',
                     'packaging_size' => $packagingSize,
                     'packaging_size_id' => $product->packaging_size_id,
-                    'is_unit' => $product->productCategory->is_unit ?? false,
+                    'is_unit' => $this->productIsUnit($product),
                     'bom_quantity' => $product->bom_quantity ?? 0
                 ];
             });
@@ -907,7 +912,7 @@ class MasterRentalController extends Controller
             
             // Scope selectable products to the detail context so a rental component only sees relevant products.
             $productTypesQuery = \App\Models\ProductCategory::with(['masterProducts' => function($query) use ($scopedProductCategoryId, $scopedProductTypeId) {
-                $query->with('packagingSize')
+                $query->with(['packagingSize', 'productCategory', 'productType'])
                     ->where('is_active', true)
                     ->when($scopedProductTypeId, fn ($q) => $q->where('product_type_id', $scopedProductTypeId))
                     ->when(!$scopedProductTypeId && $scopedProductCategoryId, fn ($q) => $q->where('product_category_id', $scopedProductCategoryId))
@@ -934,6 +939,7 @@ class MasterRentalController extends Controller
                             'name' => $product->name,
                             'packaging_size' => $product->packagingSize ? $product->packagingSize->name : null,
                             'packaging_size_id' => $product->packaging_size_id,
+                            'is_unit' => $this->productIsUnit($product),
                             'bom_quantity' => $product->bom_quantity ?? 0
                         ];
                     })->toArray(),
@@ -942,7 +948,7 @@ class MasterRentalController extends Controller
             });
             
             // Get all products only from the same category/type context as the rental detail.
-            $allProducts = \App\Models\MasterProduct::with('packagingSize')
+            $allProducts = \App\Models\MasterProduct::with(['packagingSize', 'productCategory', 'productType'])
                 ->where('is_active', true)
                 ->when($scopedProductTypeId, fn ($query) => $query->where('product_type_id', $scopedProductTypeId))
                 ->when(!$scopedProductTypeId && $scopedProductCategoryId, fn ($query) => $query->where('product_category_id', $scopedProductCategoryId))
@@ -957,6 +963,7 @@ class MasterRentalController extends Controller
                         'product_category_id' => $product->product_category_id,
                         'packaging_size' => $product->packagingSize ? $product->packagingSize->name : null,
                         'packaging_size_id' => $product->packaging_size_id,
+                        'is_unit' => $this->productIsUnit($product),
                         'bom_quantity' => $product->bom_quantity ?? 0
                     ];
                 });
@@ -1022,6 +1029,19 @@ class MasterRentalController extends Controller
                 'message' => 'Terjadi kesalahan: ' . $e->getMessage()
             ], 422);
         }
+    }
+
+    private function productIsUnit(MasterProduct $product): bool
+    {
+        if ($product->productCategory && $product->productCategory->is_unit !== null) {
+            return (bool) $product->productCategory->is_unit;
+        }
+
+        if ($product->productType && $product->productType->is_unit !== null) {
+            return (bool) $product->productType->is_unit;
+        }
+
+        return false;
     }
 
     // Rental Prices

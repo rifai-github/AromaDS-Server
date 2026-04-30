@@ -990,7 +990,7 @@ const masterProductsCatalog = {{ \Illuminate\Support\Js::from(
             'product_category_id' => $product->product_category_id,
             'product_type_id' => $product->product_type_id,
             'packaging_size' => optional($product->packagingSize)->name,
-            'is_unit' => optional($product->productCategory)->is_unit ?? false,
+            'is_unit' => optional($product->productCategory)->is_unit ?? optional($product->productType)->is_unit ?? false,
             'bom_quantity' => $product->bom_quantity ?? 0,
         ];
     })->values()
