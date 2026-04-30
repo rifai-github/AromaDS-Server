@@ -3812,8 +3812,7 @@ class JobController extends Controller
                 $job->status = 'done_job';
                 $job->completed_at = now();
                 $job->save();
-                app(\App\Services\Operational\JobMaterialCompletionService::class)
-                    ->finalizeForCompletedJob($job);
+                $this->finalizeMobileJobMaterials($job);
                 // Note: verified_at column doesn't exist in job_schedules table
                 // Verification is tracked via JobReport table instead
             }
@@ -3825,8 +3824,7 @@ class JobController extends Controller
             $job->refresh();
 
             if (in_array($job->status, ['completed', 'done_job', 'selesai'], true)) {
-                app(\App\Services\Operational\JobMaterialCompletionService::class)
-                    ->finalizeForCompletedJob($job);
+                $this->finalizeMobileJobMaterials($job);
             }
             
             // AUTO-CREATE UNIT ON WALL and REMOVE JOB for install jobs
@@ -4045,6 +4043,22 @@ class JobController extends Controller
                 'message' => $errorMessage,
                 'error_details' => config('app.debug') ? $e->getMessage() : null,
             ], 500);
+        }
+    }
+
+    private function finalizeMobileJobMaterials(JobSchedule $job): void
+    {
+        try {
+            app(\App\Services\Operational\JobMaterialCompletionService::class)
+                ->finalizeForCompletedJob($job);
+        } catch (\Throwable $e) {
+            \Log::error('verifyJob: Failed to finalize job materials after mobile verification', [
+                'job_schedule_id' => $job->id,
+                'job_number' => $job->job_number,
+                'job_type' => $job->type,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
         }
     }
     
