@@ -114,6 +114,8 @@ jobs:
 
           cd /var/www/aroma-staging
 
+          rm -f bootstrap/cache/*.php
+
           composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
 
           if [ -f package-lock.json ] && ls vite.config.* >/dev/null 2>&1; then
