@@ -1347,6 +1347,7 @@
                 @endif
                 @if(auth()->user()->canAccessMenuItem('operational.master-rooms'))
                 <li data-tooltip="Master Room" class="{{ request()->routeIs('operational.master-rooms.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('operational.master-rooms.index') }}')">Master Room</li>
+                <li data-tooltip="Jenis Ruangan" class="{{ request()->routeIs('operational.master-rooms.room-types') ? 'active' : '' }}" onclick="navigateTo('{{ route('operational.master-rooms.room-types') }}')">Jenis Ruangan</li>
                 @endif
                 @if(auth()->user()->canAccessMenuItem('operational.room-rental-units'))
                <!-- <li data-tooltip="Room Rental Unit" class="{{ request()->routeIs('operational.room-rental-units.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('operational.room-rental-units.index') }}')">Room Rental Unit</li> -->

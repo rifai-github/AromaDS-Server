@@ -760,6 +760,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
                 ], 500);
             }
         })->name('buildings.debug');
+        Route::get('master-rooms/room-types', [MasterRoomController::class, 'roomTypes'])->name('master-rooms.room-types');
         Route::resource('master-rooms', MasterRoomController::class);
         Route::post('master-rooms/bulk-delete', [MasterRoomController::class, 'bulkDelete'])->name('master-rooms.bulk-delete');
         Route::resource('room-rental-units', RoomRentalUnitController::class);

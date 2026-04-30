@@ -17,6 +17,57 @@ use App\Http\Traits\ColumnFilterTrait;
 class MasterRoomController extends Controller
 {
     use ColumnFilterTrait;
+
+    private const ROOM_TYPE_OPTION_NAME = 'Room Type';
+
+    private const DEFAULT_ROOM_TYPES = [
+        'Office Room',
+        'Meeting Room',
+        'Conference Room',
+        'Ball Room',
+        'Lobby',
+        'Reception',
+    ];
+
+    private function roomTypeMasterOption(): MasterOption
+    {
+        return DB::transaction(function () {
+            $masterOption = MasterOption::firstOrCreate(
+                ['name' => self::ROOM_TYPE_OPTION_NAME],
+                [
+                    'description' => 'Jenis ruangan untuk Master Room, Survey, Quotation, Contract, dan Job.',
+                    'system_reserved' => false,
+                    'is_active' => true,
+                    'created_by' => Auth::id(),
+                ]
+            );
+
+            if ($masterOption->optionDetails()->count() === 0) {
+                foreach (self::DEFAULT_ROOM_TYPES as $roomType) {
+                    $masterOption->optionDetails()->firstOrCreate(
+                        ['option_name' => $roomType],
+                        [
+                            'label' => $roomType,
+                            'option_description' => $roomType,
+                            'is_active' => true,
+                            'created_by' => Auth::id(),
+                        ]
+                    );
+                }
+            }
+
+            return $masterOption->fresh(['optionDetails']);
+        });
+    }
+
+    public function roomTypes()
+    {
+        $masterOption = $this->roomTypeMasterOption();
+        $optionDetails = $masterOption->optionDetails()->orderBy('option_name')->get();
+
+        return view('other.option-details.index', compact('masterOption', 'optionDetails'));
+    }
+
     public function index(Request $request)
     {
         $query = MasterRoom::with(['building', 'customer', 'creator', 'updater']);
@@ -105,7 +156,7 @@ class MasterRoomController extends Controller
         $buildings = Building::all();
         
         // Get dropdown data from MasterOption (same as wizard)
-        $roomTypes = MasterOption::where('name', 'Room Type')->first()?->optionDetails ?? collect();
+        $roomTypes = $this->roomTypeMasterOption()->optionDetails;
         $floors = MasterOption::where('name', 'Floor')->first()?->optionDetails ?? collect();
         $intensities = MasterOption::where('name', 'Scent Intensity')->first()?->optionDetails ?? collect();
         $installationTypes = MasterOption::where('name', 'Installation Type')->first()?->optionDetails ?? collect();
@@ -340,7 +391,7 @@ class MasterRoomController extends Controller
         $rentalUnits = $rentalUnits->sortByDesc('updated_at');
 
         // Fetch Master Options for dropdowns (MOM14 Point 3)
-        $roomTypes = \App\Models\MasterOption::where('name', 'Room Type')->first()?->optionDetails()->where('is_active', true)->get() ?? collect();
+        $roomTypes = $this->roomTypeMasterOption()->optionDetails()->where('is_active', true)->get();
         $floors = \App\Models\MasterOption::where('name', 'Floor')->first()?->optionDetails()->where('is_active', true)->get() ?? collect();
         $installationTypes = \App\Models\MasterOption::where('name', 'Installation Type')->first()?->optionDetails()->where('is_active', true)->get() ?? collect();
 
