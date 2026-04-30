@@ -1433,7 +1433,9 @@ class JobController extends Controller
                                             'unit' => $item->product->unit ?? 'pcs',
                                             'source' => 'inventory_issuing', 
                                             'serial_number' => '', 
-                                            'requires_serial_number' => $item->product->requiresSerialNumber(),
+                                            'requires_serial_number' => $this->isCsrJob($job)
+                                                ? false
+                                                : $item->product->requiresSerialNumber(),
                                             'is_unit' => $item->product->productType?->is_unit ?? $item->product->productCategory?->is_unit ?? false,
                                             'job_assign_schedule_id' => $item->job_assign_schedule_id,
                                             'room_name' => $item->room_name,
@@ -1470,7 +1472,9 @@ class JobController extends Controller
                                             'unit' => $item->product->unit ?? 'pcs',
                                             'source' => 'material_issue',
                                             'serial_number' => '',
-                                            'requires_serial_number' => $item->product->requiresSerialNumber(),
+                                            'requires_serial_number' => $this->isCsrJob($job)
+                                                ? false
+                                                : $item->product->requiresSerialNumber(),
                                             'is_unit' => $item->product->productType?->is_unit ?? $item->product->productCategory?->is_unit ?? false,
                                         ];
                                     }
@@ -2180,6 +2184,18 @@ class JobController extends Controller
             'csr',
             'change_rental',
             'change rental',
+        ], true);
+    }
+
+    private function isCsrJob($jobOrType): bool
+    {
+        $type = is_string($jobOrType) ? $jobOrType : ($jobOrType->type ?? '');
+        $normalized = strtolower(trim(str_replace('-', '_', (string) $type)));
+
+        return in_array($normalized, [
+            'csr',
+            'customer_service_report',
+            'customer service report',
         ], true);
     }
 
