@@ -1886,13 +1886,18 @@ function openViewModal(id) {
             `;
             
             // Add modal footer for view modal with enhanced actions
+            const isRemoveJob = isRemoveJobType(data.data.type);
+            const materialButton = isRemoveJob ? '' : `
+                <button type="button" class="btn btn-success" onclick="openMaterialModal(${data.data.id})" title="Materials">
+                    <i class="fas fa-boxes"></i> Material Assign
+                </button>
+            `;
+
             document.getElementById('modalFooter').innerHTML = `
                 <button type="button" class="btn btn-primary" onclick="openTeamAssignmentModal(${data.data.id})" title="Assign Team">
                     <i class="fas fa-users"></i> Team Assign
                 </button>
-                <button type="button" class="btn btn-success" onclick="openMaterialModal(${data.data.id})" title="Materials">
-                    <i class="fas fa-boxes"></i> Material Assign
-                </button>
+                ${materialButton}
                 <button type="button" class="btn btn-warning" onclick="openForceMajeureModal(${data.data.id})" title="Report Force Majeure">
                     <i class="fas fa-exclamation-triangle"></i> Force Majeure
                 </button>
@@ -3189,9 +3194,25 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         const checkboxes = document.querySelectorAll('.row-checkbox:checked');
         const btnProposeTeam = document.getElementById('btnProposeTeam');
         const teamCode = document.getElementById('filterTeamCode')?.value;
+        const actionSelect = document.getElementById('actionType');
+        const materialAssignOption = actionSelect?.querySelector('option[value="material_assign"]');
+        const hasSelectedRemoveJob = Array.from(checkboxes)
+            .some(cb => isRemoveJobType(cb.getAttribute('data-type')));
         
         if (btnProposeTeam) {
             btnProposeTeam.disabled = !(checkboxes.length > 0 && teamCode);
+        }
+
+        if (materialAssignOption) {
+            materialAssignOption.disabled = hasSelectedRemoveJob;
+            materialAssignOption.title = hasSelectedRemoveJob
+                ? 'Job Remove tidak membutuhkan Material Assign. Gunakan Assign Team.'
+                : '';
+
+            if (hasSelectedRemoveJob && actionSelect.value === 'material_assign') {
+                actionSelect.value = '';
+                updateApplyButton();
+            }
         }
     }
 
@@ -3280,6 +3301,16 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         });
     }
 
+    function isRemoveJobType(type) {
+        return ['remove', 'remove_free', 'remove free', 'removal'].includes((type || '').toString().toLowerCase().trim());
+    }
+
+    function getSelectedJobTypes() {
+        return Array.from(document.querySelectorAll('.row-checkbox:checked'))
+            .map(cb => cb.getAttribute('data-type') || '')
+            .filter(Boolean);
+    }
+
     function applySuspendDpf() {
         const actionSelect = document.getElementById('actionType');
         const actionType = actionSelect.value;
@@ -3303,7 +3334,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                     .map(id => id.trim())
                     .filter(Boolean);
 
-                return actionType === 'material_assign' ? roomIds : [];
+                return (actionType === 'material_assign' || actionType.startsWith('assign_team_')) ? roomIds : [];
             }))];
         
         if (viewMode === 'room') {
@@ -3325,6 +3356,20 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
 
         if (ids.length === 0) {
             Swal.fire('Gagal', 'Silakan pilih setidaknya satu item.', 'error');
+            actionSelect.value = "";
+            return;
+        }
+
+        const selectedJobTypes = getSelectedJobTypes();
+        const hasSelectedRemoveJob = selectedJobTypes.some(isRemoveJobType);
+
+        if (actionType === 'material_assign' && hasSelectedRemoveJob) {
+            Swal.fire({
+                title: 'Aksi Tidak Sesuai',
+                text: 'Job Remove tidak membutuhkan Material Assign. Silakan gunakan Assign Team untuk menugaskan teknisi.',
+                icon: 'warning',
+                confirmButtonColor: '#214589'
+            });
             actionSelect.value = "";
             return;
         }
@@ -3422,13 +3467,19 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                     allowOutsideClick: false
                 });
 
+                const assignmentCheckPayload = { job_ids: ids };
+                if (selectedRoomIdsFromTable.length > 0) {
+                    assignmentCheckPayload.selected_room_ids = selectedRoomIdsFromTable;
+                    assignmentCheckPayload.strict_selection = true;
+                }
+
                 fetch('{{ route("operational.job-schedules.check-bulk-assignments") }}', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRF-TOKEN': '{{ csrf_token() }}'
                     },
-                    body: JSON.stringify({ job_ids: ids })
+                    body: JSON.stringify(assignmentCheckPayload)
                 })
                 .then(response => response.json())
                 .then(data => {
