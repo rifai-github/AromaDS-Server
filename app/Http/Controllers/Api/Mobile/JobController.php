@@ -1775,7 +1775,7 @@ class JobController extends Controller
                 // Priority 2: Check remove_job_schedule_id in JobAdviceRoom (for remove jobs)
                 if (!$jobSchedule && $room->remove_job_schedule_id) {
                     $jobSchedule = JobSchedule::find($room->remove_job_schedule_id);
-                    if (!($jobSchedule && in_array(strtolower($jobSchedule->type), ['remove', 'remove_free', 'remove free']))) {
+                    if (!($jobSchedule && in_array(strtolower($jobSchedule->type), ['remove', 'rv', 'remove_free', 'remove free', 'rf']))) {
                         $jobSchedule = null; // Reset if type doesn't match
                     }
                 }
@@ -1783,7 +1783,7 @@ class JobController extends Controller
                 // Priority 3: Check install_job_schedule_id (for install jobs)
                 if (!$jobSchedule && $room->install_job_schedule_id) {
                     $jobSchedule = JobSchedule::find($room->install_job_schedule_id);
-                    if (!($jobSchedule && in_array(strtolower($jobSchedule->type), ['install', 'install_free', 'install free']))) {
+                    if (!($jobSchedule && in_array(strtolower($jobSchedule->type), ['install', 'ir', 'install_free', 'install free', 'if']))) {
                         $jobSchedule = null; // Reset if type doesn't match
                     }
                 }
@@ -1797,7 +1797,7 @@ class JobController extends Controller
                     
                     // Prefer remove job if exists, otherwise service/CSR, then install job
                     $removeJobScheduleRoom = $jobScheduleRooms->first(function($jsr) {
-                        return $jsr->jobSchedule && in_array(strtolower($jsr->jobSchedule->type), ['remove', 'remove_free', 'remove free']);
+                        return $jsr->jobSchedule && in_array(strtolower($jsr->jobSchedule->type), ['remove', 'rv', 'remove_free', 'remove free', 'rf']);
                     });
                     
                     if ($removeJobScheduleRoom && $removeJobScheduleRoom->jobSchedule) {
@@ -1805,7 +1805,7 @@ class JobController extends Controller
                     } else {
                     // Check for service/CSR job (e.g. tipe 'service', 'service_first', 'service_routine')
                     $serviceJobScheduleRoom = $jobScheduleRooms->first(function($jsr) {
-                            return $jsr->jobSchedule && in_array(strtolower($jsr->jobSchedule->type), ['service', 'servis', 'service_first', 'service_routine', 'change_rental', 'change rental', 'csr']);
+                            return $jsr->jobSchedule && in_array(strtolower($jsr->jobSchedule->type), ['service', 'servis', 'service_first', 'service_routine', 'change_rental', 'change rental', 'csr', 'customer_service_report', 'customer service report']);
                     });
                         
                         if ($serviceJobScheduleRoom && $serviceJobScheduleRoom->jobSchedule) {
@@ -1813,7 +1813,7 @@ class JobController extends Controller
                         } else {
                             // Fallback to install job
                             $installJobScheduleRoom = $jobScheduleRooms->first(function($jsr) {
-                                return $jsr->jobSchedule && in_array(strtolower($jsr->jobSchedule->type), ['install', 'install_free', 'install free']);
+                                return $jsr->jobSchedule && in_array(strtolower($jsr->jobSchedule->type), ['install', 'ir', 'install_free', 'install free', 'if']);
                             });
                             
                             if ($installJobScheduleRoom && $installJobScheduleRoom->jobSchedule) {
@@ -1830,7 +1830,7 @@ class JobController extends Controller
                 if (!$jobSchedule) {
                     // Check if there's a remove job for this job advice (for remove job photo saving)
                     $removeJob = JobSchedule::where('job_advice_id', $jobAdvice->id)
-                        ->whereIn('type', ['remove', 'remove_free'])
+                        ->whereIn('type', ['remove', 'rv', 'remove_free', 'remove free', 'rf'])
                         ->first();
                     
                     if ($removeJob) {
@@ -1838,7 +1838,7 @@ class JobController extends Controller
                     } else {
                         // Cari service/CSR job terlebih dahulu
                         $serviceJob = JobSchedule::where('job_advice_id', $jobAdvice->id)
-                            ->whereIn('type', ['service', 'servis', 'service_first', 'service_routine', 'change_rental', 'change rental', 'csr'])
+                            ->whereIn('type', ['service', 'servis', 'service_first', 'service_routine', 'change_rental', 'change rental', 'csr', 'customer_service_report', 'customer service report'])
                             ->first();
                         
                         if ($serviceJob) {
@@ -1846,7 +1846,7 @@ class JobController extends Controller
                         } else {
                             // Fallback: get install job
                             $installJob = JobSchedule::where('job_advice_id', $jobAdvice->id)
-                                ->whereIn('type', ['install', 'install_free', 'install free'])
+                                ->whereIn('type', ['install', 'ir', 'install_free', 'install free', 'if'])
                                 ->first();
                             
                             if ($installJob) {
@@ -2182,6 +2182,8 @@ class JobController extends Controller
             'service_routine',
             'service routine',
             'csr',
+            'customer_service_report',
+            'customer service report',
             'change_rental',
             'change rental',
         ], true);
@@ -2829,37 +2831,8 @@ class JobController extends Controller
         
         \Storage::disk('public')->put('signatures/' . $filename, $signatureData);
         
-        // Multi-Job Sync Fix: Update ALL related jobs in this visit to done_job (By Job Number, NOT Job Advice ID)
-        if ($job->job_number) {
-            $relatedJobsByNumber = JobSchedule::where('job_number', $job->job_number)
-                ->whereNotIn('status', ['done_job', 'completed', 'selesai', 'undone'])
-                ->whereNotIn('type', ['remove', 'remove_free', 'remove free']) // Don't auto-complete removal jobs
-                ->get();
-                
-            foreach ($relatedJobsByNumber as $rJob) {
-                $siblingReadiness = $this->validateJobReadyForMobileCompletion($rJob);
-                if (!$siblingReadiness['ok']) {
-                    \Log::info('submitSignature: skipping sibling auto-completion because it is not independently ready', [
-                        'primary_job_id' => $job->id,
-                        'sibling_job_id' => $rJob->id,
-                        'reason' => $siblingReadiness['message'],
-                    ]);
-                    continue;
-                }
-
-                $rJob->signature_path = 'signatures/' . $filename;
-                $rJob->pic_name = $request->pic_name;
-                $rJob->pic_phone = $request->pic_phone;
-                $rJob->status = 'done_job';
-                $rJob->completed_at = now();
-                $rJob->updated_by = Auth::id();
-                $rJob->save();
-                app(\App\Services\Operational\JobMaterialCompletionService::class)
-                    ->finalizeForCompletedJob($rJob);
-            }
-        }
-        
-        // Ensure the primary job is updated even if it was not in the related query
+        // Complete only the job schedule being verified. A single visit/job_number can contain
+        // independent IR, CSR, IF, RV, and RF schedules that must not be auto-completed together.
         if ($job->status !== 'done_job') {
             $job->signature_path = 'signatures/' . $filename;
             $job->pic_name = $request->pic_name;
@@ -2876,7 +2849,7 @@ class JobController extends Controller
             $job->load('jobAdvice');
             $jobAdvice = $job->jobAdvice;
             if ($jobAdvice) {
-                $installTypes = ['install', 'install_free', 'service', 'change_rental', 'change rental'];
+                $installTypes = ['install', 'ir', 'install_free', 'install free', 'if', 'service', 'csr', 'customer_service_report', 'customer service report', 'change_rental', 'change rental'];
                 $jobTypeLower = strtolower(trim($job->type));
                 if (in_array($jobTypeLower, $installTypes)) {
                     $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
@@ -3690,39 +3663,8 @@ class JobController extends Controller
             if ($cannotCompleteAllRooms) {
                 $this->handleCannotCompleteAllRooms($job, now());
             } else {
-                // Normal flow: all rooms completed
-                // Multi-Job Sync Fix: Update ALL related jobs in this visit to done_job (By Job Number, NOT Job Advice ID)
-                // Using job_number ensures only jobs in the SAME visit are synced, protecting future routine services.
-                if ($job->job_number) {
-                    $relatedJobs = JobSchedule::where('job_number', $job->job_number)
-                        ->where('id', '!=', $job->id)
-                        ->whereNotIn('status', ['done_job', 'completed', 'selesai', 'undone'])
-                        ->whereNotIn('type', ['remove', 'remove_free', 'remove free']) // Don't auto-complete removal jobs
-                        ->get();
-                    
-                    foreach ($relatedJobs as $rJob) {
-                        $siblingReadiness = $this->validateJobReadyForMobileCompletion($rJob);
-                        if (!$siblingReadiness['ok']) {
-                            \Log::info('verifyJob: skipping sibling auto-completion because it is not independently ready', [
-                                'primary_job_id' => $job->id,
-                                'sibling_job_id' => $rJob->id,
-                                'job_number' => $rJob->job_number,
-                                'type' => $rJob->type,
-                                'reason' => $siblingReadiness['message'],
-                            ]);
-                            continue;
-                        }
-
-                        $rJob->status = 'done_job';
-                        $rJob->completed_at = now();
-                        $rJob->updated_by = Auth::id();
-                        $rJob->save();
-                        app(\App\Services\Operational\JobMaterialCompletionService::class)
-                            ->finalizeForCompletedJob($rJob);
-                    }
-                }
-                
-                // Ensure primary job is set correctly just in case
+                // Complete only the current schedule. Related schedules under the same job_number
+                // represent separate IR/CSR/IF/RV/RF work and must be finished independently.
                 $job->status = 'done_job';
                 $job->completed_at = now();
                 $job->save();
@@ -3751,7 +3693,7 @@ class JobController extends Controller
                 $jobAdvice = $job->jobAdvice;
                 
                 if ($jobAdvice) {
-                    $installTypes = ['install', 'install_free', 'service', 'change_rental', 'change rental'];
+                    $installTypes = ['install', 'ir', 'install_free', 'install free', 'if', 'service', 'csr', 'customer_service_report', 'customer service report', 'change_rental', 'change rental'];
                     $jobTypeLower = strtolower(trim($job->type));
                     if (in_array($jobTypeLower, $installTypes)) {
                         // Trigger auto-create logic from JobScheduleController
@@ -3816,7 +3758,7 @@ class JobController extends Controller
             
             if ($jobAdvice) {
                 // Auto-update last_service_date for service jobs
-                if (in_array(strtolower($job->type), ['service', 'service_first', 'service_routine'])) {
+                if (in_array(strtolower($job->type), ['service', 'service_first', 'service_routine', 'csr', 'customer_service_report', 'customer service report'])) {
                     try {
                         if (!isset($jobScheduleController)) {
                             $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
@@ -3832,7 +3774,7 @@ class JobController extends Controller
                         $autoUpdateLastServiceDateMethod->invoke($jobScheduleController, $job, $jobAdvice);
                         
                         // MOM13: Trigger routine services generation if first service is done
-                        if ($job->period == 1 && in_array(strtolower($job->type), ['service', 'service_first'])) {
+                        if ($job->period == 1 && in_array(strtolower($job->type), ['service', 'service_first', 'csr', 'customer_service_report', 'customer service report'])) {
                             try {
                                 $methodGen = $reflection->getMethod('generateAllRemainingServices');
                                 $methodGen->setAccessible(true);
@@ -3865,7 +3807,7 @@ class JobController extends Controller
                 // AUTO-REMOVE/HIDE UNIT ON WALL when remove job is completed
                 // "ketika remove job sudah selesai, unit on wall akan otomatis ter-hide/removed"
                 // Trigger only if status changed from non-completed to completed/done_job
-                if (in_array(strtolower($job->type), ['remove', 'remove_free', 'remove free']) && !in_array($oldStatus, ['completed', 'done_job']) && in_array($job->status, ['completed', 'done_job'])) {
+                if (in_array(strtolower($job->type), ['remove', 'rv', 'remove_free', 'remove free', 'rf']) && !in_array($oldStatus, ['completed', 'done_job']) && in_array($job->status, ['completed', 'done_job'])) {
                     try {
                         if (!isset($jobScheduleController)) {
                             $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
@@ -4061,16 +4003,23 @@ class JobController extends Controller
     private function getJobTypeLabel($type)
     {
         $labels = [
-            'install' => 'Pemasangan',
-            'install_free' => 'Pemasangan',
-            'install free' => 'Pemasangan',
+            'install' => 'IR',
+            'ir' => 'IR',
+            'install_free' => 'IF',
+            'install free' => 'IF',
+            'if' => 'IF',
             'service' => 'Servis',
             'service_first' => 'Servis',
             'service_routine' => 'Servis',
             'servis' => 'Servis',
-            'remove' => 'Pembongkaran',
-            'remove_free' => 'Pembongkaran',
-            'remove free' => 'Pembongkaran',
+            'csr' => 'CSR',
+            'customer_service_report' => 'CSR',
+            'customer service report' => 'CSR',
+            'remove' => 'RV',
+            'rv' => 'RV',
+            'remove_free' => 'RF',
+            'remove free' => 'RF',
+            'rf' => 'RF',
             'maintenance' => 'Pemeliharaan',
             'extra' => 'Extra',
             'complain' => 'Komplain',
