@@ -1672,7 +1672,16 @@ class JobAdviceController extends Controller
             // Check if job schedules already exist for this job advice
             $existingJobSchedules = \App\Models\JobSchedule::where('job_advice_id', $jobAdvice->id)->count();
             if ($existingJobSchedules > 0) {
-                \Log::info("âš ï¸ Job schedules already exist for Job Advice: {$jobAdvice->job_advice_number} (Count: {$existingJobSchedules}). Skipping duplicate creation.");
+                \Log::info("Job schedules already exist for Job Advice: {$jobAdvice->job_advice_number} (Count: {$existingJobSchedules}). Checking missing CSR schedules.");
+                $createdServiceSchedules = $this->ensureMissingFirstServiceSchedulesForInstallContinuation($jobAdvice);
+
+                if ($createdServiceSchedules->isNotEmpty()) {
+                    $cancelledCount = $this->cancelPendingRemoveFreeJobsForServiceContinuation($jobAdvice, $createdServiceSchedules);
+                    if ($cancelledCount > 0) {
+                        \Log::info("Auto-cancelled {$cancelledCount} pending Remove Free Job(s) after missing CSR schedule(s) were generated for {$jobAdvice->job_advice_number}.");
+                    }
+                }
+
                 return;
             }
             
@@ -2206,6 +2215,12 @@ class JobAdviceController extends Controller
                 && $jobAdvice->contract_id
                 && in_array(strtolower((string) $jobAdvice->type), ['install', 'service'], true)
             ) {
+                $missingServiceSchedules = $this->ensureMissingFirstServiceSchedulesForInstallContinuation($jobAdvice);
+                if ($missingServiceSchedules->isNotEmpty()) {
+                    $createdServiceSchedules = $createdServiceSchedules->merge($missingServiceSchedules);
+                    $totalJobsCreated += $missingServiceSchedules->count();
+                }
+
                 $cancelledCount = $this->cancelPendingRemoveFreeJobsForServiceContinuation($jobAdvice, $createdServiceSchedules);
                 if ($cancelledCount > 0) {
                     \Log::info("Auto-cancelled {$cancelledCount} pending Remove Free Job(s) after contract JA {$jobAdvice->job_advice_number} was generated.");
@@ -2222,6 +2237,105 @@ class JobAdviceController extends Controller
             \Log::error("Failed to auto-create JobSchedule(s) for JobAdvice {$jobAdvice->job_advice_number}: " . $e->getMessage());
             throw $e; // Re-throw to trigger transaction rollback
         }
+    }
+
+    private function ensureMissingFirstServiceSchedulesForInstallContinuation(JobAdvice $jobAdvice): \Illuminate\Support\Collection
+    {
+        $createdServiceSchedules = collect();
+        $jobAdviceType = strtolower(trim((string) $jobAdvice->type));
+
+        if ($jobAdviceType !== 'install') {
+            return $createdServiceSchedules;
+        }
+
+        $jobAdvice->loadMissing([
+            'contract.quotation.survey.building',
+            'rooms.contractRoom.room.building',
+            'rooms.quotationRoom.room.building',
+            'rooms.rentalProduct.serviceFrequency',
+            'rooms.rentalProduct.rentalDetails.masterProduct.productType',
+        ]);
+
+        if (!$jobAdvice->contract_id || $jobAdvice->rooms->isEmpty()) {
+            return $createdServiceSchedules;
+        }
+
+        $roomsByUniqueRoom = $jobAdvice->rooms->groupBy(function ($item) {
+            return $item->contract_room_id
+                ? 'c_' . $item->contract_room_id
+                : ($item->quotation_room_id ? 'q_' . $item->quotation_room_id : 'n_' . $item->room_name);
+        });
+
+        foreach ($roomsByUniqueRoom as $roomsInGroup) {
+            $jaRoom = $roomsInGroup->first();
+            $jaRoomIds = $roomsInGroup->pluck('id')->all();
+
+            if ($this->activeServiceScheduleExistsForJobAdviceRooms($jobAdvice->id, $jaRoomIds)) {
+                continue;
+            }
+
+            $room = $jaRoom->contractRoom?->room ?? $jaRoom->quotationRoom?->room;
+            $building = $room?->building
+                ?? $jobAdvice->contract?->quotation?->survey?->building;
+
+            if (!$building) {
+                \Log::warning("Cannot create missing CSR for {$jobAdvice->job_advice_number}: building not found.", [
+                    'job_advice_room_id' => $jaRoom->id,
+                    'room_name' => $jaRoom->room_name,
+                ]);
+                continue;
+            }
+
+            $hasServiceMaterials = $roomsInGroup->contains(function ($roomItem) {
+                $rentalType = strtolower((string) ($roomItem->rentalProduct?->rental_type ?? 'unit_refill'));
+                return $rentalType !== 'unit_only';
+            });
+
+            $roomNote = "\n[Room: {$jaRoom->room_name}] (Rentals: {$roomsInGroup->count()})";
+            $serviceJobs = $this->createJobSchedulesPerRoom(
+                $jobAdvice,
+                $roomsInGroup,
+                'service_first',
+                $building,
+                $roomNote,
+                1,
+                !$hasServiceMaterials
+            );
+
+            if ($serviceJobs->isEmpty()) {
+                continue;
+            }
+
+            $serviceJob = $serviceJobs->first();
+            foreach ($roomsInGroup as $roomToLink) {
+                $roomToLink->update([
+                    'service_job_schedule_id' => $serviceJob->id,
+                    'rental_has_service' => true,
+                    'unit_already_installed' => true,
+                    'updated_by' => Auth::id(),
+                ]);
+            }
+
+            $createdServiceSchedules = $createdServiceSchedules->merge($serviceJobs);
+            \Log::info("Created missing first CSR for JA {$jobAdvice->job_advice_number}, room {$jaRoom->room_name}.");
+        }
+
+        return $createdServiceSchedules;
+    }
+
+    private function activeServiceScheduleExistsForJobAdviceRooms(int $jobAdviceId, array $jobAdviceRoomIds): bool
+    {
+        return \App\Models\JobSchedule::where('job_advice_id', $jobAdviceId)
+            ->whereIn('type', ['service', 'service_first', 'service_routine'])
+            ->whereNotIn('status', ['cancelled', 'undone'])
+            ->where(function ($query) use ($jobAdviceRoomIds) {
+                $query->whereHas('jobScheduleRooms', function ($roomQuery) use ($jobAdviceRoomIds) {
+                    $roomQuery->whereIn('job_advice_room_id', $jobAdviceRoomIds);
+                })->orWhereHas('jobScheduleRooms.rentals', function ($rentalQuery) use ($jobAdviceRoomIds) {
+                    $rentalQuery->whereIn('job_advice_room_id', $jobAdviceRoomIds);
+                });
+            })
+            ->exists();
     }
 
     private function cancelPendingRemoveFreeJobsForServiceContinuation(JobAdvice $jobAdvice, $serviceSchedules): int
