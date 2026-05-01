@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\JobSchedule;
 use App\Models\InventoryIssuing;
 use App\Models\InventoryIssuingItem;
+use App\Services\Warehouse\SerialNumberIssuingLinkService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -198,6 +199,31 @@ class MaterialVerificationController extends Controller
                         $serialNumber = \App\Models\SerialNumber::find($material['serial_number_id']);
                         
                         if ($serialNumber && $serialNumber->master_product_id == $sItem->product_id) {
+                            $serialLinkService = app(SerialNumberIssuingLinkService::class);
+
+                            if (! $serialLinkService->isReadyInWarehouse($serialNumber)) {
+                                DB::rollBack();
+
+                                return response()->json([
+                                    'status' => 'error',
+                                    'message' => "Serial Number {$serialNumber->serial_number} tidak siap di warehouse atau masih aktif di Unit On Wall.",
+                                    'code' => 'INVALID_SERIAL_NUMBER_STATE',
+                                ], 400);
+                            }
+
+                            $serialLinkService->releaseStaleLinks($serialNumber, $sItem->id, auth()->id());
+
+                            $preparedLink = $serialLinkService->findPreparedLink($serialNumber->id, $sItem->id);
+                            if ($preparedLink) {
+                                DB::rollBack();
+
+                                return response()->json([
+                                    'status' => 'error',
+                                    'message' => "Serial Number {$serialNumber->serial_number} masih dipakai di Inventory Issuing {$preparedLink->inventoryIssuing?->issuing_number}. Tidak bisa dipakai di dua WI yang masih disiapkan.",
+                                    'code' => 'SERIAL_NUMBER_RESERVED',
+                                ], 400);
+                            }
+
                             // Link SN to issuing item
                             $updateData['serial_number_id'] = $serialNumber->id;
                             Log::info("Linking serial number {$serialNumber->serial_number} to inventory issuing item {$sItem->id}");

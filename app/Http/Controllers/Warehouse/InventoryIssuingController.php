@@ -10,6 +10,7 @@ use App\Models\Branch;
 use App\Models\Warehouse;
 use App\Models\MasterProduct;
 use App\Models\User;
+use App\Services\Warehouse\SerialNumberIssuingLinkService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -1022,15 +1023,6 @@ class InventoryIssuingController extends Controller
                 ], 422);
             }
 
-            $reservedItem = $this->findActiveIssuingItemUsingSerial($sn->id, $issuingItem->id);
-            if ($reservedItem) {
-                DB::rollBack();
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "Serial Number {$serialNumber} sudah dipakai di Inventory Issuing {$reservedItem->inventoryIssuing?->issuing_number}. Tidak bisa dipakai di dua WI aktif."
-                ], 422);
-            }
-
             // Validasi 2: SN harus sesuai dengan produk yang di-issue
             if ($sn->master_product_id !== $issuingItem->product_id) {
                 DB::rollBack();
@@ -1070,6 +1062,17 @@ class InventoryIssuingController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => "Serial Number {$serialNumber} berasal dari {$sourceWarehouse}. SN ini harus dari warehouse {$correctWarehouse}."
+                ], 422);
+            }
+
+            app(SerialNumberIssuingLinkService::class)->releaseStaleLinks($sn, $issuingItem->id, Auth::id());
+
+            $reservedItem = $this->findActiveIssuingItemUsingSerial($sn->id, $issuingItem->id);
+            if ($reservedItem) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Serial Number {$serialNumber} masih dipakai di Inventory Issuing {$reservedItem->inventoryIssuing?->issuing_number}. Tidak bisa dipakai di dua WI yang masih disiapkan."
                 ], 422);
             }
 
@@ -1212,7 +1215,7 @@ class InventoryIssuingController extends Controller
                         ->from('inventory_issuing_items')
                         ->join('inventory_issuings', 'inventory_issuings.id', '=', 'inventory_issuing_items.inventory_issuing_id')
                         ->whereNotNull('inventory_issuing_items.serial_number_id')
-                        ->whereIn('inventory_issuings.status', ['pending', 'processed', 'sent']);
+                        ->whereIn('inventory_issuings.status', ['pending', 'processed']);
                 })
                 ->with('warehouse:id,name')
                 ->orderBy('serial_number');
@@ -1408,7 +1411,7 @@ public function getUserTeams($userId)
             ->where('serial_number_id', $serialNumberId)
             ->when($exceptItemId, fn ($query) => $query->where('id', '!=', $exceptItemId))
             ->whereHas('inventoryIssuing', function ($query) {
-                $query->whereIn('status', ['pending', 'processed', 'sent']);
+                $query->whereIn('status', ['pending', 'processed']);
             })
             ->latest('id')
             ->first();
@@ -1523,20 +1526,22 @@ public function getUserTeams($userId)
                     ], 422);
                 }
 
-                $reservedItem = $this->findActiveIssuingItemUsingSerial($sn->id);
-                if ($reservedItem) {
-                    DB::rollBack();
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => "Serial Number {$sn->serial_number} sudah dipakai di Inventory Issuing {$reservedItem->inventoryIssuing?->issuing_number}. Tidak bisa dipakai di dua WI aktif."
-                    ], 422);
-                }
-
                 if (!in_array($sn->status, ['ready', 'available'], true)) {
                     DB::rollBack();
                     return response()->json([
                         'status' => 'error',
                         'message' => "Serial Number {$sn->serial_number} status tidak ready (Status: {$sn->status_text})."
+                    ], 422);
+                }
+
+                app(SerialNumberIssuingLinkService::class)->releaseStaleLinks($sn, null, Auth::id());
+
+                $reservedItem = $this->findActiveIssuingItemUsingSerial($sn->id);
+                if ($reservedItem) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "Serial Number {$sn->serial_number} masih dipakai di Inventory Issuing {$reservedItem->inventoryIssuing?->issuing_number}. Tidak bisa dipakai di dua WI yang masih disiapkan."
                     ], 422);
                 }
             }
