@@ -86,6 +86,13 @@ jobs:
           cd /var/www/aroma-staging
 
           git config core.fileMode false
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Staging server has local changes. Resetting them before deploy:"
+            git status --short
+            git reset --hard HEAD
+          fi
+
           git fetch origin develop
           git pull --ff-only origin develop
 
