@@ -26,6 +26,7 @@ Primary manifests/config:
 - For dashboard/web bugs, actually open and exercise the affected dashboard flow whenever possible. Do not rely only on PHPUnit, static inspection, or route/controller checks for UI-facing fixes.
 - Use `agent-browser` for direct dashboard testing: open the local/staging dashboard URL, log in with the correct role account, navigate the affected page, perform the relevant action, and inspect the resulting UI state.
 - When using `agent-browser`, take a fresh snapshot after navigation, form submissions, modal opens, or dynamic updates before interacting with new elements.
+- Default credential for dashboard : password123
 - Test with realistic staging/local data that matches the reported scenario, including the correct user role and permission set.
 - When investigating staging data, prefer read-only checks first: route/controller inspection, logs, database selects, and dashboard reproduction steps.
 - If staging access or a command requires approval, request it and explain the purpose of the check.

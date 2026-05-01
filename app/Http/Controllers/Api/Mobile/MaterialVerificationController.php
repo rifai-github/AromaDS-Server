@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\JobSchedule;
 use App\Models\InventoryIssuing;
 use App\Models\InventoryIssuingItem;
-use App\Services\DocumentNumberService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -330,36 +329,6 @@ class MaterialVerificationController extends Controller
                     Log::error("Failed to create Inventory Movement for issuing: " . $e->getMessage());
                     // Don't throw, continue with other items
                 }
-            }
-            
-            // Auto-create a receiving record (if not exists)
-            $existingReceiving = \App\Models\InventoryReceiving::where('issuing_id', $inventoryIssuing->id)->first();
-            if (!$existingReceiving) {
-                // Generate receiving number via Service
-                $documentNumberService = app(DocumentNumberService::class);
-                $receivingNumber = $documentNumberService->generate(
-                    'receiving_report',
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    $inventoryIssuing->branch_id
-                );
-                
-                \App\Models\InventoryReceiving::create([
-                    'receiving_number' => $receivingNumber,
-                    'reference_no' => $inventoryIssuing->reference_no,
-                    'issuing_id' => $inventoryIssuing->id,
-                    'branch_id' => $inventoryIssuing->branch_id,
-                    'received_from' => $inventoryIssuing->issued_by,
-                    'receive_date' => null,
-                    'notes' => 'Auto-created from Issuing ' . $inventoryIssuing->issuing_number,
-                    'status' => 'pending',
-                    'created_by' => auth()->id(),
-                ]);
-                
-                Log::info("Auto-created receiving record {$receivingNumber} for issuing {$inventoryIssuing->issuing_number}");
             }
             
             Log::info("Inventory issuing {$inventoryIssuing->issuing_number} auto-finalized successfully with stock movements");
