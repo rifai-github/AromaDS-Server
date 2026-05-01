@@ -2937,6 +2937,18 @@ class JobScheduleController extends Controller
             }
 
             $jobSchedule->update($updateData);
+
+            if (
+                isset($updateData['status'])
+                && $oldStatus !== 'cancelled'
+                && $updateData['status'] === 'cancelled'
+                && in_array(strtolower((string) $jobSchedule->type), ['remove_free', 'remove free'], true)
+            ) {
+                $createdCsrCount = $this->ensureFirstServiceAfterCancelledRemoveFree($jobSchedule->fresh());
+                if ($createdCsrCount > 0) {
+                    \Log::info("Auto-created {$createdCsrCount} CSR schedule(s) after cancelling Remove Free {$jobSchedule->job_number}.");
+                }
+            }
             
             // AUTO-EXECUTE LOGIC when status changes to completion statuses
             // MOM13: completed, done_job, suspend (selesai tanpa tagih), dpf (selesai tetap tagih)
@@ -3045,7 +3057,10 @@ class JobScheduleController extends Controller
                     // AUTO-REMOVE/HIDE UNIT ON WALL when remove job (Return) is completed
                     // "ketika remove job sudah selesai, unit on wall akan otomatis ter-hide/removed"
                     $removeTypes = ['remove', 'remove_free', 'remove free'];
-                    if (in_array(strtolower($jobSchedule->type), $removeTypes)) {
+                    if (
+                        in_array(strtolower($jobSchedule->type), $removeTypes, true)
+                        && in_array($updateData['status'], ['completed', 'done_job'], true)
+                    ) {
                         $this->autoRemoveUnitOnWall($jobSchedule, $jobAdvice);
                         
                         // MOM8: Skip invoice untuk remove job dari install free/trial
@@ -3188,6 +3203,17 @@ class JobScheduleController extends Controller
                 'sub_district' => $request->input('sub_district', $jobSchedule->sub_district),
                 'updated_by' => Auth::id()
             ], $autoFillData));
+
+            if (
+                $oldStatus !== 'cancelled'
+                && $newStatus === 'cancelled'
+                && in_array(strtolower((string) $jobSchedule->type), ['remove_free', 'remove free'], true)
+            ) {
+                $createdCsrCount = $this->ensureFirstServiceAfterCancelledRemoveFree($jobSchedule->fresh());
+                if ($createdCsrCount > 0) {
+                    \Log::info("Auto-created {$createdCsrCount} CSR schedule(s) after cancelling Remove Free {$jobSchedule->job_number}.");
+                }
+            }
 
 
             // MOM: Handle Team Assignment (Linked to JobAssignSchedule)
@@ -3374,7 +3400,10 @@ class JobScheduleController extends Controller
                 
                 // AUTO-REMOVE/HIDE UNIT ON WALL when remove job is completed
                 // "ketika remove job sudah selesai, unit on wall akan otomatis ter-hide/removed"
-                if (in_array($jobSchedule->type, ['remove', 'remove_free', 'remove free'])) {
+                if (
+                    in_array($jobSchedule->type, ['remove', 'remove_free', 'remove free'], true)
+                    && in_array($newStatus, ['completed', 'done_job'], true)
+                ) {
                     $this->autoRemoveUnitOnWall($jobSchedule, $jobAdvice);
                     
                     // MOM8: Skip invoice untuk remove job dari install free/trial
@@ -3402,7 +3431,10 @@ class JobScheduleController extends Controller
                 
                 // AUTO-REMOVE/HIDE UNIT ON WALL when remove job is completed
                 // "ketika remove job sudah selesai, unit on wall akan otomatis ter-hide/removed"
-                if (in_array($jobSchedule->type, ['remove', 'remove_free', 'remove free'])) {
+                if (
+                    in_array($jobSchedule->type, ['remove', 'remove_free', 'remove free'], true)
+                    && in_array($newStatus, ['completed', 'done_job'], true)
+                ) {
                     $this->autoRemoveUnitOnWall($jobSchedule, $jobAdvice);
                 }
 
@@ -6242,6 +6274,194 @@ class JobScheduleController extends Controller
             \Log::error("Failed to auto-update last_service_date for Service Job {$serviceJob->job_number}: " . $e->getMessage());
             // Don't throw - non-critical error
         }
+    }
+
+    private function ensureFirstServiceAfterCancelledRemoveFree(JobSchedule $removeJob): int
+    {
+        try {
+            $removeJob->loadMissing([
+                'jobAdvice.quotation',
+                'jobScheduleRooms.rentals.jobAdviceRoom',
+            ]);
+
+            $quotationNumber = $removeJob->quotation_number
+                ?: $removeJob->jobAdvice?->quotation?->quotation_number;
+
+            $roomIds = $removeJob->jobScheduleRooms
+                ->pluck('room_id')
+                ->push($removeJob->room_id)
+                ->filter()
+                ->unique()
+                ->values();
+
+            if (!$quotationNumber || $roomIds->isEmpty()) {
+                \Log::warning('Cannot auto-create CSR after Remove Free cancellation: missing quotation number or room scope.', [
+                    'job_schedule_id' => $removeJob->id,
+                    'job_number' => $removeJob->job_number,
+                    'quotation_number' => $quotationNumber,
+                    'room_ids' => $roomIds->all(),
+                ]);
+
+                return 0;
+            }
+
+            $contract = \App\Models\Contract::with([
+                    'quotation',
+                    'contractRooms.room.building',
+                ])
+                ->whereHas('quotation', function ($query) use ($quotationNumber) {
+                    $query->where('quotation_number', $quotationNumber);
+                })
+                ->latest('id')
+                ->first();
+
+            if (!$contract) {
+                return 0;
+            }
+
+            $jobAdvices = \App\Models\JobAdvice::with([
+                    'contract.quotation',
+                    'rooms.contractRoom.room.building',
+                    'rooms.rentalProduct.serviceFrequency',
+                ])
+                ->where('contract_id', $contract->id)
+                ->where('status', 'approved')
+                ->whereIn(DB::raw('LOWER(type)'), ['install', 'service'])
+                ->orderBy('id')
+                ->get();
+
+            $createdCount = 0;
+
+            foreach ($jobAdvices as $jobAdvice) {
+                $roomsByPhysicalRoom = $jobAdvice->rooms
+                    ->filter(function ($jaRoom) use ($roomIds, $jobAdvice) {
+                        $roomId = $jaRoom->contractRoom?->room_id;
+
+                        if (!$roomId || !$roomIds->contains($roomId)) {
+                            return false;
+                        }
+
+                        return \App\Models\UnitOnWall::where('customer_id', $jobAdvice->customer_id)
+                            ->where('room_id', $roomId)
+                            ->whereIn('status', $this->activeUnitOnWallStatusesForScheduling())
+                            ->whereNotNull('serial_number_id')
+                            ->exists();
+                    })
+                    ->groupBy(function ($jaRoom) {
+                        return $jaRoom->contract_room_id
+                            ? 'contract-room:' . $jaRoom->contract_room_id
+                            : 'room:' . ($jaRoom->contractRoom?->room_id ?? $jaRoom->room_name);
+                    });
+
+                foreach ($roomsByPhysicalRoom as $roomGroup) {
+                    $jaRoomIds = $roomGroup->pluck('id')->all();
+
+                    if ($this->activeServiceScheduleExistsForJobAdviceRooms($jobAdvice->id, $jaRoomIds)) {
+                        continue;
+                    }
+
+                    DB::transaction(function () use ($jobAdvice, $roomGroup, &$createdCount) {
+                        $primaryRoom = $roomGroup->first();
+                        $contractRoom = $primaryRoom->contractRoom;
+                        $room = $contractRoom?->room;
+                        $building = $room?->building;
+                        $roomId = $contractRoom?->room_id;
+                        $hasServiceMaterials = $roomGroup->contains(function ($item) {
+                            $rentalType = strtolower((string) ($item->rentalProduct?->rental_type ?? 'unit_refill'));
+                            return $rentalType !== 'unit_only';
+                        });
+                        $rental = $primaryRoom->rentalProduct;
+                        $serviceFrequencyObj = $rental?->serviceFrequency;
+                        $serviceFrequency = $serviceFrequencyObj?->frequency_times_per_month
+                            ?? $serviceFrequencyObj?->frequency_months
+                            ?? null;
+
+                        $schedule = JobSchedule::create([
+                            'job_number' => null,
+                            'type' => 'service_first',
+                            'status' => 'scheduled',
+                            'job_advice_id' => $jobAdvice->id,
+                            'building_id' => $building?->id,
+                            'building_name' => $building?->nama_gedung ?? $building?->name,
+                            'room_id' => $roomId,
+                            'room_name' => $primaryRoom->room_name,
+                            'company_name' => $jobAdvice->company_name,
+                            'contract_number' => $jobAdvice->contract?->contract_number,
+                            'quotation_number' => $jobAdvice->contract?->quotation?->quotation_number,
+                            'schedule_date' => $jobAdvice->first_service_date ?? $jobAdvice->expected_date,
+                            'expected_date' => $jobAdvice->first_service_date ?? $jobAdvice->expected_date,
+                            'period' => 1,
+                            'service_frequency' => $serviceFrequency,
+                            'service_period_type' => $serviceFrequencyObj?->name ?? 'monthly',
+                            'reference_number' => $jobAdvice->job_advice_number,
+                            'internal_notes' => "Auto-generated first CSR because related Remove Free was cancelled while Unit On Wall remains installed. JA: {$jobAdvice->job_advice_number}",
+                            'material_checked' => !$hasServiceMaterials,
+                            'material_checked_at' => !$hasServiceMaterials ? now() : null,
+                            'created_by' => Auth::id(),
+                            'updated_by' => Auth::id(),
+                        ]);
+
+                        $jobScheduleRoom = \App\Models\JobScheduleRoom::create([
+                            'job_schedule_id' => $schedule->id,
+                            'job_advice_room_id' => $primaryRoom->id,
+                            'room_name' => $primaryRoom->room_name,
+                            'room_id' => $roomId,
+                            'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
+                            'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
+                            'notes' => 'Auto-generated first CSR after Remove Free cancellation.',
+                            'created_by' => Auth::id(),
+                            'updated_by' => Auth::id(),
+                        ]);
+
+                        $isPrimary = true;
+                        foreach ($roomGroup as $rentalItem) {
+                            \App\Models\JobScheduleRoomRental::create([
+                                'job_schedule_room_id' => $jobScheduleRoom->id,
+                                'job_advice_room_id' => $rentalItem->id,
+                                'is_primary' => $isPrimary,
+                            ]);
+
+                            $rentalItem->update([
+                                'service_job_schedule_id' => $schedule->id,
+                                'rental_has_service' => true,
+                                'unit_already_installed' => true,
+                                'updated_by' => Auth::id(),
+                            ]);
+
+                            $isPrimary = false;
+                        }
+
+                        $createdCount++;
+                    });
+                }
+            }
+
+            return $createdCount;
+        } catch (\Exception $e) {
+            \Log::error("Failed to auto-create CSR after cancelling Remove Free {$removeJob->job_number}: " . $e->getMessage());
+
+            return 0;
+        }
+    }
+
+    private function activeServiceScheduleExistsForJobAdviceRooms(int $jobAdviceId, array $jobAdviceRoomIds): bool
+    {
+        return JobSchedule::where('job_advice_id', $jobAdviceId)
+            ->whereIn('type', ['service', 'service_first', 'service_routine'])
+            ->whereNotIn('status', ['cancelled', 'undone'])
+            ->where(function ($query) use ($jobAdviceRoomIds) {
+                $query->whereHas('jobScheduleRooms', function ($roomQuery) use ($jobAdviceRoomIds) {
+                    $roomQuery->whereIn('job_advice_room_id', $jobAdviceRoomIds);
+                })->orWhereHas('jobScheduleRooms.rentals', function ($rentalQuery) use ($jobAdviceRoomIds) {
+                    $rentalQuery->whereIn('job_advice_room_id', $jobAdviceRoomIds);
+                });
+            })
+            ->exists();
+    }
+
+    private function activeUnitOnWallStatusesForScheduling(): array
+    {
+        return ['active', 'installed', 'on_wall', 'on wall', 'onwall'];
     }
 
     /**
