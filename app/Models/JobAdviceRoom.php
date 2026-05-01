@@ -185,8 +185,8 @@ class JobAdviceRoom extends Model
     {
         // Check if there's an existing ACTIVE UnitOnWall for this room
         // User Request: "kuncinya adalah serial number atau SN di unit on wall"
-        // Must have status Active/Installed AND a valid Serial Number
-        $query = UnitOnWall::whereIn('status', ['active', 'installed'])
+        // Must have a wall-active status AND a valid Serial Number.
+        $query = UnitOnWall::whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall'])
                ->whereNotNull('serial_number_id');
 
         if ($this->contract_room_id) {

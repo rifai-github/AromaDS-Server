@@ -2181,12 +2181,14 @@ class JobScheduleController extends Controller
                 $unitOnWallQuery = \App\Models\UnitOnWall::where('customer_id', $jobAdvice->customer_id)
                     ->where('building_id', $jobSchedule->building_id);
                 
+                $activeUnitOnWallStatuses = ['active', 'installed', 'on_wall', 'on wall', 'onwall'];
+
                 // MOM: If job is already done, we must include 'removed' status units 
                 // because the auto-remove process has already run.
                 if (in_array(strtolower($jobSchedule->status), ['completed', 'done_job', 'done job'])) {
-                    $unitOnWallQuery->whereIn('status', ['active', 'removed']);
+                    $unitOnWallQuery->whereIn('status', array_merge($activeUnitOnWallStatuses, ['removed']));
                 } else {
-                    $unitOnWallQuery->where('status', 'active');
+                    $unitOnWallQuery->whereIn('status', $activeUnitOnWallStatuses);
                 }
                 
                 // Filter by rooms if available
@@ -2235,7 +2237,7 @@ class JobScheduleController extends Controller
                     $unitOnWalls = \App\Models\UnitOnWall::whereIn('serial_number_id', $installJobSns)
                         ->where('customer_id', $jobAdvice->customer_id)
                         ->where('building_id', $jobSchedule->building_id)
-                        ->whereIn('status', ['active', 'removed'])
+                        ->whereIn('status', array_merge($activeUnitOnWallStatuses, ['removed']))
                         ->with(['serialNumber.masterProduct.productType', 'serialNumber.warehouse'])
                         ->get();
                     
@@ -5759,7 +5761,7 @@ class JobScheduleController extends Controller
                 $existingUnit = \App\Models\UnitOnWall::where('room_id', $roomId)
                     ->where('rental_id', $rental->id)
                     ->where('building_id', $installJob->building_id)
-                    ->where('status', 'active')
+                    ->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall'])
                     ->first();
                 
                 if ($existingUnit) {
@@ -6025,7 +6027,7 @@ class JobScheduleController extends Controller
                 $unitsQuery = \App\Models\UnitOnWall::where('room_id', $roomId)
                     ->where('rental_id', $rental->id)
                     ->where('building_id', $removeJob->building_id)
-                    ->where('status', 'active');
+                    ->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall']);
                 
                 // MOM: Apply strict SN filter if available to prevent removing units from other jobs
                 if (!empty($installJobSns)) {
@@ -6195,7 +6197,7 @@ class JobScheduleController extends Controller
             // Multi-room jobs often store room data in job_schedule_rooms, not job_schedules.room_id.
             $units = \App\Models\UnitOnWall::where('customer_id', $jobAdvice->customer_id)
                 ->where('building_id', $serviceJob->building_id)
-                ->where('status', 'active')
+                ->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall'])
                 ->where(function ($query) use ($serviceRooms) {
                     foreach ($serviceRooms as $room) {
                         $query->orWhere(function ($roomQuery) use ($room) {
@@ -6387,8 +6389,8 @@ class JobScheduleController extends Controller
             
             // Load rental product to get service frequency
             $jobAdvice->load(['rooms.rentalProduct.serviceFrequency', 'contract']);
-            $completedInstallJob->loadMissing('jobScheduleRooms');
-            $eligibleRoomIds = $completedInstallJob->jobScheduleRooms
+            $installJob->loadMissing('jobScheduleRooms');
+            $eligibleRoomIds = $installJob->jobScheduleRooms
                 ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
                 ->pluck('room_id')
                 ->filter()
@@ -6397,7 +6399,7 @@ class JobScheduleController extends Controller
                 ->all();
 
             if (empty($eligibleRoomIds)) {
-                \Log::warning("No completed install rooms found for {$completedInstallJob->job_number}. Skipping first service generation.");
+                \Log::warning("No completed install rooms found for {$installJob->job_number}. Skipping first service generation.");
                 return;
             }
             
