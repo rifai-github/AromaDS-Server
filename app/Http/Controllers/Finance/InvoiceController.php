@@ -1619,13 +1619,10 @@ class InvoiceController extends Controller
                 'status' => 'cancelled',
             ]);
             
-            // Create activity log
-            InvoiceActivity::create([
-                'invoice_id' => $invoice->id,
+            $invoice->invoiceActivities()->create([
                 'activity_type' => 'cancelled',
-                'description' => 'Invoice cancelled',
-                'performed_by' => Auth::id(),
-                'performed_at' => now(),
+                'notes' => 'Invoice cancelled',
+                'created_by' => Auth::id(),
             ]);
 
             DB::commit();
