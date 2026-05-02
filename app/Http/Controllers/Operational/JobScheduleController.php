@@ -2296,7 +2296,7 @@ class JobScheduleController extends Controller
 
         $serialNumbers = collect($serialNumbers)
             ->filter()
-            ->unique(fn ($serialNumber) => $serialNumber->serial_number ?: $serialNumber->id)
+            ->unique(fn ($serialNumber) => strtoupper(trim((string) $serialNumber->serial_number)) ?: $serialNumber->id)
             ->values();
         
         // Get team location history for this job schedule (and siblings in Job View)
