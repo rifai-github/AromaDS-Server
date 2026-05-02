@@ -2949,7 +2949,14 @@ class JobScheduleController extends Controller
                 && $updateData['status'] === 'cancelled'
                 && in_array(strtolower((string) $jobSchedule->type), ['remove_free', 'remove free'], true)
             ) {
-                $createdCsrCount = $this->ensureFirstServiceAfterCancelledRemoveFree($jobSchedule->fresh());
+                $cancelledRemoveJob = $jobSchedule->fresh();
+                $restoredSerials = app(\App\Services\Operational\CancelledRemoveFreeSerialRestoreService::class)
+                    ->restore($cancelledRemoveJob, true);
+                if ($restoredSerials->isNotEmpty()) {
+                    \Log::info("Restored {$restoredSerials->count()} SN(s) to In Use after cancelling Remove Free {$jobSchedule->job_number}.");
+                }
+
+                $createdCsrCount = $this->ensureFirstServiceAfterCancelledRemoveFree($cancelledRemoveJob);
                 if ($createdCsrCount > 0) {
                     \Log::info("Auto-created {$createdCsrCount} CSR schedule(s) after cancelling Remove Free {$jobSchedule->job_number}.");
                 }
@@ -3214,7 +3221,14 @@ class JobScheduleController extends Controller
                 && $newStatus === 'cancelled'
                 && in_array(strtolower((string) $jobSchedule->type), ['remove_free', 'remove free'], true)
             ) {
-                $createdCsrCount = $this->ensureFirstServiceAfterCancelledRemoveFree($jobSchedule->fresh());
+                $cancelledRemoveJob = $jobSchedule->fresh();
+                $restoredSerials = app(\App\Services\Operational\CancelledRemoveFreeSerialRestoreService::class)
+                    ->restore($cancelledRemoveJob, true);
+                if ($restoredSerials->isNotEmpty()) {
+                    \Log::info("Restored {$restoredSerials->count()} SN(s) to In Use after cancelling Remove Free {$jobSchedule->job_number}.");
+                }
+
+                $createdCsrCount = $this->ensureFirstServiceAfterCancelledRemoveFree($cancelledRemoveJob);
                 if ($createdCsrCount > 0) {
                     \Log::info("Auto-created {$createdCsrCount} CSR schedule(s) after cancelling Remove Free {$jobSchedule->job_number}.");
                 }
