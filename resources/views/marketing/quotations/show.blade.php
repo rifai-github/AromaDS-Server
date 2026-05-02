@@ -862,7 +862,7 @@ function updateQuotationDate(newDate, input = document.getElementById('quotation
     const originalValue = input.value;
     input.disabled = true;
 
-    fetch('{{ route("marketing.quotations.update-editable-fields", $quotation->id) }}', {
+    fetch('{{ url("marketing/quotations/{$quotation->id}/editable-fields") }}', {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json',
