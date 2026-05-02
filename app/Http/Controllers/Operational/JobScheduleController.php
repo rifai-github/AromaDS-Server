@@ -976,6 +976,13 @@ class JobScheduleController extends Controller
         // Revert to Assign Team
         $jobSchedule = JobSchedule::with(['jobAssignSchedules.jobAssignMaterialIssues.materialIssue.items.product', 'jobAssignSchedules.jobAssignMaterialIssues.materialIssue.warehouse'])
             ->findOrFail($id);
+
+        if ($this->isRemoveJobType($jobSchedule->type)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Job Remove/RF tidak menggunakan alur material, sehingga Unpost Issue tidak dapat dilakukan. Gunakan Unassign Team jika perlu mengembalikan job ke New Job.',
+            ], 422);
+        }
             
         // Check if any material issue is already processed (Inventory Issuing status check)
         foreach ($jobSchedule->jobAssignSchedules as $jas) {
@@ -1764,6 +1771,11 @@ class JobScheduleController extends Controller
                 
                 if (!$job) continue;
 
+                if ($this->isRemoveJobType($job->type)) {
+                    $skippedCount++;
+                    continue;
+                }
+
                 // Only revert if status is 'assign_material'
                 if ($job->status !== 'assign_material') {
                     $skippedCount++;
@@ -1848,6 +1860,14 @@ class JobScheduleController extends Controller
             }
 
             DB::commit();
+
+            if ($successCount === 0 && $skippedCount > 0) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Job Remove/RF tidak menggunakan alur material, sehingga UnAssign Material tidak dapat dilakukan.',
+                    'success' => false
+                ], 422);
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -6511,6 +6531,11 @@ class JobScheduleController extends Controller
     private function activeUnitOnWallStatusesForScheduling(): array
     {
         return ['active', 'installed', 'on_wall', 'on wall', 'onwall'];
+    }
+
+    private function isRemoveJobType(?string $type): bool
+    {
+        return in_array(strtolower(trim((string) $type)), ['remove', 'remove_free', 'remove free', 'removal', 'rv', 'rf'], true);
     }
 
     /**

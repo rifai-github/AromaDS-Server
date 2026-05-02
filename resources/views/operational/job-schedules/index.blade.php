@@ -3401,10 +3401,16 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         const selectedJobTypes = getSelectedJobTypes();
         const hasSelectedRemoveJob = selectedJobTypes.some(isRemoveJobType);
 
-        if (actionType === 'material_assign' && hasSelectedRemoveJob) {
+        if (['material_assign', 'unpost_issue', 'unassign_material'].includes(actionType) && hasSelectedRemoveJob) {
+            const actionLabels = {
+                material_assign: 'Material Assign',
+                unpost_issue: 'Unpost Issue',
+                unassign_material: 'UnAssign Material'
+            };
+
             Swal.fire({
                 title: 'Aksi Tidak Sesuai',
-                text: 'Job Remove tidak membutuhkan Material Assign. Silakan gunakan Assign Team untuk menugaskan teknisi.',
+                text: `Job Remove/RF tidak menggunakan alur material, sehingga ${actionLabels[actionType]} tidak dapat dilakukan. Silakan gunakan Assign Team atau Unassign Team sesuai kebutuhan.`,
                 icon: 'warning',
                 confirmButtonColor: '#214589'
             });
