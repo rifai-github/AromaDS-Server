@@ -3248,8 +3248,8 @@
                         const columnType = th.getAttribute('data-type') || 'text';
                         
                         const input = document.createElement('input');
-                        input.type = 'text';
-                        input.placeholder = 'Filter...';
+                        input.type = columnType === 'date' ? 'date' : 'text';
+                        input.placeholder = columnType === 'date' ? 'Select date...' : 'Filter...';
                         input.style.width = '100%';
                         input.style.padding = '4px 6px';
                         input.style.fontSize = '12px';
@@ -3278,6 +3278,11 @@
                                 applyFilter(table, input);
                             }
                         });
+                        if (columnType === 'date') {
+                            input.addEventListener('change', function() {
+                                applyFilter(table, input);
+                            });
+                        }
                         cell.appendChild(input);
                     }
                     filterRow.appendChild(cell);
