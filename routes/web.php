@@ -370,6 +370,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('quotations/{quotation}/send', [QuotationController::class, 'send'])->name('quotations.send');
         Route::post('quotations/{quotation}/accept', [QuotationController::class, 'accept'])->name('quotations.accept');
         Route::post('quotations/{quotation}/update-goal', [QuotationController::class, 'updateGoal'])->name('quotations.update-goal');
+        Route::put('quotations/{quotation}/editable-fields', [QuotationController::class, 'updateEditableFields'])->name('quotations.update-editable-fields');
         Route::post('quotations/{quotation}/convert-to-contract', [QuotationController::class, 'convertToContract'])->name('quotations.convert-to-contract');
         Route::post('quotations/{quotation}/copy', [QuotationController::class, 'copy'])->name('quotations.copy');
         

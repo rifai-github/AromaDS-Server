@@ -723,6 +723,54 @@ class QuotationController extends Controller
         }
     }
 
+    public function updateEditableFields(Request $request, Quotation $quotation)
+    {
+        $validated = $request->validate([
+            'quotation_date' => 'nullable|date',
+        ]);
+
+        if ($quotation->contracts()->exists() || in_array($quotation->status, ['cancelled', 'contract'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tanggal Quotation tidak bisa diubah untuk SQ ini.'
+            ], 422);
+        }
+
+        try {
+            $updateData = [];
+
+            if (array_key_exists('quotation_date', $validated) && $validated['quotation_date']) {
+                $quotationDate = \Carbon\Carbon::parse($validated['quotation_date'])->toDateString();
+                $updateData['quotation_date'] = $quotationDate;
+                $updateData['valid_until'] = \Carbon\Carbon::parse($quotationDate)->addDays(30)->toDateString();
+            }
+
+            if (empty($updateData)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Tidak ada data yang diperbarui.'
+                ], 422);
+            }
+
+            $updateData['updated_by'] = Auth::id();
+            $quotation->update($updateData);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Tanggal Quotation berhasil diperbarui',
+                'data' => [
+                    'quotation_date' => $quotation->quotation_date?->format('Y-m-d'),
+                    'valid_until' => $quotation->valid_until?->format('Y-m-d'),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal memperbarui Tanggal Quotation: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function destroy(Quotation $quotation, Request $request)
     {
         // Only allow deletion if status is 'draft'

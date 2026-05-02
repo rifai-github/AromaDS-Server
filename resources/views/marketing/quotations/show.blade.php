@@ -235,7 +235,25 @@
                                     </div>
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">Tanggal Quotation</div>
-                                        <div class="quotation-field-value">{{ $quotation->quotation_date ? $quotation->quotation_date->locale('id')->isoFormat('D MMM Y') : '-' }}</div>
+                                        <div class="quotation-field-value">
+                                            @php
+                                                $canEditQuotationDate = $quotation->contracts->isEmpty() && !in_array($quotation->status, ['cancelled', 'contract'], true);
+                                            @endphp
+                                            @if($canEditQuotationDate)
+                                                <div class="position-relative" style="max-width: 160px;">
+                                                    <input type="text"
+                                                           id="quotationDateInput"
+                                                           class="form-control form-control-sm pe-4"
+                                                           value="{{ $quotation->quotation_date ? $quotation->quotation_date->format('Y-m-d') : '' }}"
+                                                           placeholder="Select date"
+                                                           readonly>
+                                                    <i class="fas fa-calendar-alt text-muted small position-absolute"
+                                                       style="right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none;"></i>
+                                                </div>
+                                            @else
+                                                {{ $quotation->quotation_date ? $quotation->quotation_date->locale('id')->isoFormat('D MMM Y') : '-' }}
+                                            @endif
+                                        </div>
                                     </div>
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">Jenis Penawaran</div>
@@ -585,6 +603,8 @@
 @push('styles')
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
 <link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.bootstrap4.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/airbnb.css">
 <style>
     /* Force layout fixes */
     .container-fluid {
@@ -758,6 +778,7 @@
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
 <script src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
 <script src="https://cdn.datatables.net/responsive/2.5.0/js/responsive.bootstrap4.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
 $(document).ready(function() {
     console.log('Quotation show page loaded');
@@ -802,6 +823,84 @@ $(document).ready(function() {
         console.log('Target element display:', $(target).css('display'));
     });
 });
+
+document.addEventListener('DOMContentLoaded', function() {
+    const quotationDateInput = document.getElementById('quotationDateInput');
+
+    if (!quotationDateInput) {
+        return;
+    }
+
+    if (typeof flatpickr !== 'undefined') {
+        flatpickr(quotationDateInput, {
+            dateFormat: 'Y-m-d',
+            altInput: true,
+            altFormat: 'd M Y',
+            allowInput: false,
+            clickOpens: true,
+            defaultDate: quotationDateInput.value || null,
+            onChange: function(selectedDates, dateStr) {
+                updateQuotationDate(dateStr, quotationDateInput);
+            }
+        });
+
+        return;
+    }
+
+    quotationDateInput.type = 'date';
+    quotationDateInput.readOnly = false;
+    quotationDateInput.addEventListener('change', function() {
+        updateQuotationDate(this.value, this);
+    });
+});
+
+function updateQuotationDate(newDate, input = document.getElementById('quotationDateInput')) {
+    if (!newDate || !input) {
+        return;
+    }
+
+    const originalValue = input.value;
+    input.disabled = true;
+
+    fetch('{{ route("marketing.quotations.update-editable-fields", $quotation->id) }}', {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+            quotation_date: newDate
+        })
+    })
+    .then(async response => {
+        const data = await response.json();
+
+        if (!response.ok || data.status !== 'success') {
+            throw new Error(data.message || 'Gagal memperbarui Tanggal Quotation');
+        }
+
+        input.value = data.data?.quotation_date || newDate;
+        Swal.fire({
+            icon: 'success',
+            title: 'Berhasil',
+            text: data.message || 'Tanggal Quotation berhasil diperbarui',
+            timer: 1800,
+            showConfirmButton: false
+        });
+    })
+    .catch(error => {
+        input.value = originalValue;
+        Swal.fire({
+            icon: 'error',
+            title: 'Gagal',
+            text: error.message || 'Gagal memperbarui Tanggal Quotation'
+        });
+    })
+    .finally(() => {
+        input.disabled = false;
+    });
+}
 
 // Finalize quotation function with operational area validation
 async function finalizeQuotation() {
