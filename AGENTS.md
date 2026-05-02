@@ -19,6 +19,7 @@ Primary manifests/config:
 
 ## Staging Server Testing
 
+- url: http://103.247.11.46/
 - When checking the staging server, use `ssh aroma-staging` (path /var/www/aroma-staging).
 - Treat staging as a live-like environment: inspect data carefully before changing anything, and do not run destructive repair/backfill/import commands unless the user explicitly approves.
 - The staging script/code should match the deploy branch. If behavior differs locally and on staging, compare against the deployed branch before assuming the bug is only data-related.

@@ -67,7 +67,7 @@
                                     if($contract->customer->contacts) {
                                         $allContacts = $allContacts->merge($contract->customer->contacts);
                                     }
-                                    if($contract->customer->customer_contacts) { // Handle legacy relation if exists
+                                    if($contract->customer->customerContacts) { // Handle legacy relation if exists
                                         $allContacts = $allContacts->merge($contract->customer->customerContacts ?? []);
                                     }
                                     // Unique by ID/Name to avoid dupes if logic overlaps
