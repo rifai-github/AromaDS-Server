@@ -6,6 +6,7 @@ use App\Models\JobSchedule;
 use App\Models\UnitOnWall;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class CancelledRemoveFreeSerialRestoreService
 {
@@ -24,12 +25,15 @@ class CancelledRemoveFreeSerialRestoreService
             'jobScheduleRooms.jobAdviceRoom',
         ]);
 
-        $criteria = $this->buildUnitCriteria($removeJob);
-        if ($criteria->isEmpty()) {
-            return collect();
-        }
+        $units = $this->queryScannedActiveUnits($removeJob);
 
-        $units = $this->queryActiveUnits($removeJob, $criteria)->get();
+        $criteria = $this->buildUnitCriteria($removeJob);
+        if ($criteria->isNotEmpty()) {
+            $units = $units
+                ->merge($this->queryActiveUnits($removeJob, $criteria)->get())
+                ->unique('id')
+                ->values();
+        }
 
         $rows = collect();
 
@@ -111,6 +115,34 @@ class CancelledRemoveFreeSerialRestoreService
         return $criteria
             ->unique(fn ($item) => $item['room_id'] . ':' . implode(',', $item['rental_ids']))
             ->values();
+    }
+
+    private function queryScannedActiveUnits(JobSchedule $removeJob): Collection
+    {
+        $unitIds = DB::table('job_schedule_units')
+            ->where('job_schedule_id', $removeJob->id)
+            ->whereNotNull('unit_on_wall_id')
+            ->pluck('unit_on_wall_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($unitIds->isEmpty()) {
+            return collect();
+        }
+
+        return UnitOnWall::with('serialNumber')
+            ->whereIn('id', $unitIds->all())
+            ->whereIn('status', self::ACTIVE_UNIT_STATUSES)
+            ->whereNotNull('serial_number_id')
+            ->whereHas('serialNumber', function ($serialQuery) {
+                $serialQuery->where('status', 'on_hand_remove');
+            })
+            ->orderBy('room_id')
+            ->orderBy('rental_id')
+            ->orderBy('id')
+            ->get();
     }
 
     private function queryActiveUnits(JobSchedule $removeJob, Collection $criteria)
