@@ -251,6 +251,8 @@ class BillingGroupController extends Controller
             'payment_method' => 'nullable|string|max:50',
             'virtual_account_number' => 'nullable|string|max:255',
             'bank_name' => 'nullable|string|max:100',
+            'building_ids' => 'nullable|array',
+            'building_ids.*' => 'exists:buildings,id',
         ]);
 
         if ($validator->fails()) {
@@ -307,40 +309,7 @@ class BillingGroupController extends Controller
 
             // Sync building assignments if provided
             if ($request->has('building_ids')) {
-                // Get existing pivot data to preserve billing amounts if building is re-selected
-                // Or simply detach all and re-attach with default values? 
-                // Better to syncWithPivotValues if we had extra pivot data handling in UI, but simple array sync is safer for now
-                // However, we have 'billing_amount', 'notes', 'is_active' in pivot.
-                // For this quick fix, we assume 'billing_amount' comes from group default or stays null.
-                
-                // Let's use sync() but we need to pass associated data if we want to keep it?
-                // Actually, if we just pass IDs, sync() will detach missing and attach new ones with default values (nulls).
-                // Existing pivot data for stayed IDs will be kept if we don't overwrite them? No, sync() overwrites.
-                // To preserve pivot data for existing ones, we need to pass them.
-                
-                $currentBuildings = $billingGroup->billingGroupBuildings()->get()->keyBy('building_id');
-                $syncData = [];
-                
-                foreach ($request->building_ids as $bId) {
-                    if (isset($currentBuildings[$bId])) {
-                        // Preserve existing pivot data
-                        $syncData[$bId] = [
-                            'billing_amount' => $currentBuildings[$bId]->billing_amount,
-                            'notes' => $currentBuildings[$bId]->notes,
-                            'is_active' => $currentBuildings[$bId]->is_active,
-                            'created_by' => $currentBuildings[$bId]->created_by, // Keep original creator? Or update?
-                        ];
-                    } else {
-                        // New assignment
-                        $syncData[$bId] = [
-                            'billing_amount' => $billingGroup->billing_amount, // Default to group amount
-                            'is_active' => true,
-                            'created_by' => auth()->id(),
-                        ];
-                    }
-                }
-                
-                $billingGroup->buildings()->sync($syncData);
+                $this->syncBuildingAssignments($billingGroup, $request->building_ids);
             }
 
             // Get contract_id from request or billing group
@@ -358,12 +327,15 @@ class BillingGroupController extends Controller
     public function destroy($id)
     {
         try {
-            $billingGroup = BillingGroup::findOrFail($id);
-            
-            // Delete all building assignments first
-            $billingGroup->billingGroupBuildings()->delete();
-            
-            $billingGroup->delete();
+            DB::transaction(function () use ($id) {
+                $billingGroup = BillingGroup::findOrFail($id);
+
+                // Delete all active building assignments first. The pivot model uses
+                // SoftDeletes, so stale assignments are hidden and can be restored later.
+                $billingGroup->billingGroupBuildings()->delete();
+
+                $billingGroup->delete();
+            });
 
             // Return JSON for AJAX/API requests
             if (request()->ajax() || request()->expectsJson()) {
@@ -483,12 +455,15 @@ class BillingGroupController extends Controller
         try {
             $billingGroup = BillingGroup::with('contract')->findOrFail($id);
             
-            // Check if building is already assigned to this billing group
-            $existing = BillingGroupBuilding::where('billing_group_id', $id)
+            // Check if building is already assigned to this billing group.
+            // Include trashed rows so a re-assignment restores the old pivot instead
+            // of creating a duplicate row for the same building.
+            $existing = BillingGroupBuilding::withTrashed()
+                ->where('billing_group_id', $id)
                 ->where('building_id', $request->building_id)
                 ->first();
 
-            if ($existing) {
+            if ($existing && ! $existing->trashed()) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Building is already assigned to this billing group'
@@ -513,14 +488,25 @@ class BillingGroupController extends Controller
                 ], 400);
             }
 
-            $billingGroupBuilding = BillingGroupBuilding::create([
-                'billing_group_id' => $id,
-                'building_id' => $request->building_id,
-                'billing_amount' => $request->billing_amount ?? $billingGroup->billing_amount,
-                'notes' => $request->notes,
-                'is_active' => true,
-                'created_by' => auth()->id(),
-            ]);
+            if ($existing && $existing->trashed()) {
+                $existing->restore();
+                $existing->update([
+                    'billing_amount' => $request->billing_amount ?? $existing->billing_amount ?? $billingGroup->billing_amount,
+                    'notes' => $request->notes ?? $existing->notes,
+                    'is_active' => true,
+                    'updated_by' => auth()->id(),
+                ]);
+                $billingGroupBuilding = $existing;
+            } else {
+                $billingGroupBuilding = BillingGroupBuilding::create([
+                    'billing_group_id' => $id,
+                    'building_id' => $request->building_id,
+                    'billing_amount' => $request->billing_amount ?? $billingGroup->billing_amount,
+                    'notes' => $request->notes,
+                    'is_active' => true,
+                    'created_by' => auth()->id(),
+                ]);
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -1085,33 +1071,9 @@ class BillingGroupController extends Controller
         // Get customer contacts for PIC selection (Multi PIC support)
         // We load them through the customer relationships later
             
-        // Get buildings already assigned to OTHER billing groups for this contract
-        $assignedBuildingIds = DB::table('billing_group_buildings')
-            ->join('billing_groups', 'billing_group_buildings.billing_group_id', '=', 'billing_groups.id')
-            ->where('billing_groups.contract_id', $contract->id)
-            ->pluck('billing_group_buildings.building_id')
-            ->toArray();
-
-        // Get all buildings linked to the contract through rooms or surveys
-        $buildings = collect();
-        
-        // 1. From Contract Rooms
-        $contract->load(['contractRooms.room.building', 'contractSurveys.survey.building']);
-        foreach($contract->contractRooms as $room) {
-            if ($room->room && $room->room->building) {
-                $buildings->push($room->room->building);
-            }
-        }
-        
-        // 2. From Contract Surveys
-        foreach($contract->contractSurveys as $survey) {
-            if ($survey->survey && $survey->survey->building) {
-                $buildings->push($survey->survey->building);
-            }
-        }
-
-        // Filter and Unique
-        $buildings = $buildings->unique('id')->filter(function($b) use ($assignedBuildingIds) {
+        // Get all active buildings linked to the contract through rooms or surveys.
+        $assignedBuildingIds = $this->getAssignedBuildingIdsForContract($contract);
+        $buildings = $this->getContractBuildings($contract)->filter(function($b) use ($assignedBuildingIds) {
             return !in_array($b->id, $assignedBuildingIds);
         });
 
@@ -1314,11 +1276,9 @@ class BillingGroupController extends Controller
                     'created_by' => auth()->id() ?? 1,
                 ]);
                 
-                // Attach buildings
-                if ($request->has('building_ids')) {
-                    $billingGroup->buildings()->sync($request->building_ids);
-                }
             }
+
+            $this->syncBuildingAssignments($billingGroup, $request->building_ids ?? []);
 
             DB::commit();
 
@@ -1343,13 +1303,8 @@ class BillingGroupController extends Controller
         // Get active bank payments
         $bankPayments = BankPayment::with('bank')->active()->get();
 
-        // Get buildings already assigned to OTHER billing groups for this contract
-        $otherAssignedBuildingIds = DB::table('billing_group_buildings')
-            ->join('billing_groups', 'billing_group_buildings.billing_group_id', '=', 'billing_groups.id')
-            ->where('billing_groups.contract_id', $contract->id)
-            ->where('billing_groups.id', '!=', $billingGroup->id)
-            ->pluck('billing_group_buildings.building_id')
-            ->toArray();
+        // Get buildings already assigned to OTHER active billing groups for this contract.
+        $otherAssignedBuildingIds = $this->getAssignedBuildingIdsForContract($contract, $billingGroup->id);
 
         return view('finance.billing-groups.editbg', compact('contract', 'billingGroup', 'bankPayments', 'otherAssignedBuildingIds'));
     }
@@ -1414,23 +1369,16 @@ class BillingGroupController extends Controller
     public function getBuildingCoverage(Contract $contract)
     {
         try {
-            // Get all buildings from contract rooms through room relationship
-            $allBuildingIds = $contract->contractRooms()
-                ->join('rooms', 'contract_rooms.room_id', '=', 'rooms.id')
-                ->distinct()
-                ->pluck('rooms.building_id')
+            // Get all buildings from contract rooms and contract surveys.
+            $allBuildingIds = $this->getContractBuildings($contract)
+                ->pluck('id')
+                ->values()
                 ->toArray();
             
             $totalBuildings = count($allBuildingIds);
 
-            // Get billing groups for this contract
-            $billingGroups = BillingGroup::where('contract_id', $contract->id)->pluck('id');
-
-            // Get assigned building IDs
-            $assignedBuildingIds = BillingGroupBuilding::whereIn('billing_group_id', $billingGroups)
-                ->distinct()
-                ->pluck('building_id')
-                ->toArray();
+            // Get assigned building IDs from active billing groups and active pivots.
+            $assignedBuildingIds = $this->getAssignedBuildingIdsForContract($contract);
             
             $assignedBuildings = count($assignedBuildingIds);
 
@@ -1468,15 +1416,18 @@ class BillingGroupController extends Controller
     public function getBuildingsForBillingGroup(Contract $contract, BillingGroup $billingGroup)
     {
         try {
-            // Get all buildings from contract rooms through room relationship
-            $contractBuildingIds = $contract->contractRooms()
-                ->join('rooms', 'contract_rooms.room_id', '=', 'rooms.id')
-                ->distinct()
-                ->pluck('rooms.building_id')
-                ->toArray();
+            if ((int) $billingGroup->contract_id !== (int) $contract->id) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Billing group does not belong to this contract'
+                ], 404);
+            }
 
-            // Get all billing groups for this contract
-            $allBillingGroups = BillingGroup::where('contract_id', $contract->id)->pluck('id');
+            // Get all buildings from contract rooms and contract surveys.
+            $contractBuildingIds = $this->getContractBuildings($contract)
+                ->pluck('id')
+                ->values()
+                ->toArray();
 
             // Get buildings assigned to THIS billing group
             $assignedBuildings = BillingGroupBuilding::where('billing_group_id', $billingGroup->id)
@@ -1491,8 +1442,12 @@ class BillingGroupController extends Controller
                 });
 
             // Get buildings assigned to OTHER billing groups
-            $otherAssignedBuildingIds = BillingGroupBuilding::whereIn('billing_group_id', $allBillingGroups)
-                ->where('billing_group_id', '!=', $billingGroup->id)
+            $otherAssignedBuildingIds = BillingGroupBuilding::whereIn(
+                    'billing_group_id',
+                    BillingGroup::where('contract_id', $contract->id)
+                        ->where('id', '!=', $billingGroup->id)
+                        ->pluck('id')
+                )
                 ->with('billingGroup')
                 ->get()
                 ->keyBy('building_id');
@@ -1532,6 +1487,101 @@ class BillingGroupController extends Controller
                 'message' => 'Error getting buildings: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function getContractBuildings(Contract $contract)
+    {
+        $contract->loadMissing([
+            'contractRooms.room.building',
+            'contractSurveys.survey.building',
+        ]);
+
+        $buildings = collect();
+
+        foreach ($contract->contractRooms as $contractRoom) {
+            $building = $contractRoom->room?->building ?? $contractRoom->building;
+            if ($building) {
+                $buildings->push($building);
+            }
+        }
+
+        foreach ($contract->contractSurveys as $contractSurvey) {
+            $building = $contractSurvey->survey?->building;
+            if ($building) {
+                $buildings->push($building);
+            }
+        }
+
+        return $buildings->unique('id')->values();
+    }
+
+    private function getAssignedBuildingIdsForContract(Contract $contract, ?int $exceptBillingGroupId = null): array
+    {
+        $billingGroupIds = BillingGroup::where('contract_id', $contract->id)
+            ->when($exceptBillingGroupId, function ($query) use ($exceptBillingGroupId) {
+                $query->where('id', '!=', $exceptBillingGroupId);
+            })
+            ->pluck('id');
+
+        if ($billingGroupIds->isEmpty()) {
+            return [];
+        }
+
+        return BillingGroupBuilding::whereIn('billing_group_id', $billingGroupIds)
+            ->distinct()
+            ->pluck('building_id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->toArray();
+    }
+
+    private function syncBuildingAssignments(BillingGroup $billingGroup, array $buildingIds): void
+    {
+        $buildingIds = collect($buildingIds)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $existingAssignments = BillingGroupBuilding::withTrashed()
+            ->where('billing_group_id', $billingGroup->id)
+            ->get()
+            ->keyBy('building_id');
+
+        foreach ($buildingIds as $buildingId) {
+            $assignment = $existingAssignments->get($buildingId);
+
+            if ($assignment) {
+                if ($assignment->trashed()) {
+                    $assignment->restore();
+                }
+
+                $assignment->update([
+                    'billing_amount' => $assignment->billing_amount ?? $billingGroup->billing_amount,
+                    'is_active' => true,
+                    'updated_by' => auth()->id(),
+                ]);
+
+                continue;
+            }
+
+            BillingGroupBuilding::create([
+                'billing_group_id' => $billingGroup->id,
+                'building_id' => $buildingId,
+                'billing_amount' => $billingGroup->billing_amount,
+                'is_active' => true,
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ]);
+        }
+
+        $deleteQuery = BillingGroupBuilding::where('billing_group_id', $billingGroup->id);
+
+        if ($buildingIds->isNotEmpty()) {
+            $deleteQuery->whereNotIn('building_id', $buildingIds->all());
+        }
+
+        $deleteQuery->delete();
     }
 
     /**

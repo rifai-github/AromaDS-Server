@@ -83,6 +83,7 @@ class BillingGroup extends Model
     {
         return $this->belongsToMany(Building::class, 'billing_group_buildings', 'billing_group_id', 'building_id')
                     ->withPivot('billing_amount', 'notes', 'is_active', 'created_by', 'updated_by', 'created_at', 'updated_at')
+                    ->wherePivotNull('deleted_at')
                     ->withTimestamps();
     }
 
