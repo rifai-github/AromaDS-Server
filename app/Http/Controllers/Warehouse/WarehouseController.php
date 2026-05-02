@@ -539,15 +539,15 @@ class WarehouseController extends Controller
             }
             
             // Unit status: ready, broken, on service, in_use, on hand
-            // PRIORITY: If SN status is 'on_hand' (with technician), show it even if linked to a wall (removal case)
+            // Active Unit On Wall is the source of truth: installed units must remain "in use"
+            // even if the SN status was temporarily changed to on_hand/on_hand_remove by an RF flow.
             $unitStatus = 'ready'; // default
             $snStatus = strtolower($sn->status ?? 'ready');
             
-            if ($snStatus === 'on_hand' || $snStatus === 'on_hand_remove') {
-                $unitStatus = 'on hand';
-            } elseif ($unitOnWall) {
-                // If SN is in active unit_on_wall and not with technician, it's definitely "in use"
+            if ($unitOnWall) {
                 $unitStatus = 'in use';
+            } elseif ($snStatus === 'on_hand' || $snStatus === 'on_hand_remove') {
+                $unitStatus = 'on hand';
             } else {
                 // Only check other DB statuses if not on hand or on wall
                 if (in_array($snStatus, ['broken', 'damaged'])) { // Legacy support

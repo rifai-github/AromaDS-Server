@@ -2163,19 +2163,44 @@ class JobScheduleController extends Controller
             // Remove job: Get serial numbers from Unit On Wall
             $jobAdvice = $jobSchedule->jobAdvice;
             if ($jobAdvice && $jobAdvice->customer_id) {
+                $jobSchedule->loadMissing([
+                    'jobScheduleRooms.rentals.jobAdviceRoom',
+                    'jobScheduleRooms.jobAdviceRoom',
+                ]);
+
                 // Load job advice rooms for filtering
                 $jobAdvice->load(['rooms.contractRoom', 'rooms.quotationRoom']);
-                $roomIds = $jobAdvice->rooms->map(function($jr) {
+
+                $assignedRoomIds = $jobSchedule->jobScheduleRooms
+                    ->pluck('room_id')
+                    ->filter()
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values();
+
+                $assignedRentalIds = $jobSchedule->jobScheduleRooms
+                    ->flatMap(function ($scheduleRoom) {
+                        return $scheduleRoom->rentals
+                            ->map(fn ($rentalLink) => $rentalLink->jobAdviceRoom?->rental_product_id)
+                            ->push($scheduleRoom->jobAdviceRoom?->rental_product_id);
+                    })
+                    ->filter()
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values();
+
+                $roomIds = $assignedRoomIds->isNotEmpty()
+                    ? $assignedRoomIds->all()
+                    : $jobAdvice->rooms->map(function($jr) {
                     if ($jr->room_id) return $jr->room_id;
                     if ($jr->contractRoom) return $jr->contractRoom->room_id;
                     if ($jr->quotationRoom) return $jr->quotationRoom->room_id;
                     return null;
-                })->filter()->unique()->toArray();
+                    })->filter()->unique()->toArray();
                 
                 // MOM: Also filter by rental_id to ensure we only target the specific items for this job
                 // This prevents showing other units in the same room that are not part of this removal
-                // REVERT: Disabled because it caused missing units (DFJKT012) when rental_id data is inconsistent
-                // $rentalIds = $jobAdvice->rooms->pluck('rental_product_id')->filter()->unique()->toArray();
+                $rentalIds = $assignedRentalIds->all();
                 
                 // Build query for Unit On Wall
                 $unitOnWallQuery = \App\Models\UnitOnWall::where('customer_id', $jobAdvice->customer_id)
@@ -2197,10 +2222,9 @@ class JobScheduleController extends Controller
                 }
                 
                 // Filter by rental_ids if available
-                // REVERT: Disabled strict filter
-                // if (!empty($rentalIds)) {
-                //     $unitOnWallQuery->whereIn('rental_id', $rentalIds);
-                // }
+                if (!empty($rentalIds)) {
+                    $unitOnWallQuery->whereIn('rental_id', $rentalIds);
+                }
 
                 // MOM: Strict Install-Remove Mirroring
                 $installJobSns = [];
@@ -2234,10 +2258,16 @@ class JobScheduleController extends Controller
                 // we should ONLY show those SNs for the remove job. This prevents "stray" SNs from other
                 // jobs in the same room from appearing.
                 if (!empty($installJobSns)) {
+                    $displayUnitStatuses = in_array(strtolower($jobSchedule->status), ['completed', 'done_job', 'done job'])
+                        ? array_merge($activeUnitOnWallStatuses, ['removed'])
+                        : $activeUnitOnWallStatuses;
+
                     $unitOnWalls = \App\Models\UnitOnWall::whereIn('serial_number_id', $installJobSns)
                         ->where('customer_id', $jobAdvice->customer_id)
                         ->where('building_id', $jobSchedule->building_id)
-                        ->whereIn('status', array_merge($activeUnitOnWallStatuses, ['removed']))
+                        ->whereIn('status', $displayUnitStatuses)
+                        ->when(!empty($roomIds), fn ($query) => $query->whereIn('room_id', $roomIds))
+                        ->when(!empty($rentalIds), fn ($query) => $query->whereIn('rental_id', $rentalIds))
                         ->with(['serialNumber.masterProduct.productType', 'serialNumber.warehouse'])
                         ->get();
                     
