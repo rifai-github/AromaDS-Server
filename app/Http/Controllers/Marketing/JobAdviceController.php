@@ -3800,6 +3800,21 @@ class JobAdviceController extends Controller
 
     private function jobAdviceRoomHasActiveUnitOnWall(\App\Models\JobAdvice $jobAdvice, \App\Models\JobAdviceRoom $jaRoom, $building = null): bool
     {
+        if ($jaRoom->existing_unit_on_wall_id) {
+            $linkedUnitStillActive = \App\Models\UnitOnWall::whereKey($jaRoom->existing_unit_on_wall_id)
+                ->whereIn('status', $this->activeUnitOnWallStatuses())
+                ->whereNotNull('serial_number_id')
+                ->exists();
+
+            if ($linkedUnitStillActive) {
+                return true;
+            }
+        }
+
+        if ($jaRoom->unit_already_installed) {
+            return true;
+        }
+
         $roomId = $jaRoom->contractRoom?->room_id ?? $jaRoom->quotationRoom?->room_id;
         $roomName = trim((string) ($jaRoom->room_name ?: ($jaRoom->contractRoom?->room?->room_name ?? $jaRoom->quotationRoom?->room?->room_name)));
         $normalizedRoomName = mb_strtolower(preg_replace('/\s+/', ' ', $roomName));
@@ -3808,10 +3823,13 @@ class JobAdviceController extends Controller
             ?? $jaRoom->quotationRoom?->room?->building_id
             ?? null;
 
+        if (!$roomId && ($normalizedRoomName === '' || !$buildingId)) {
+            return false;
+        }
+
         return \App\Models\UnitOnWall::query()
-            ->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall'])
+            ->whereIn('status', $this->activeUnitOnWallStatuses())
             ->whereNotNull('serial_number_id')
-            ->where('customer_id', $jobAdvice->customer_id)
             ->where(function ($query) use ($roomId, $buildingId, $normalizedRoomName) {
                 if ($roomId) {
                     $query->where('room_id', $roomId);

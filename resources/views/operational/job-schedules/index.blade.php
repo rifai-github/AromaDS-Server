@@ -1113,6 +1113,52 @@
                         } else {
                             $teamName = $job->jobAssignSchedules->where('status', '!=', 'cancelled')->sortByDesc('id')->first()?->team?->team_name ?? 'unassign';
                         }
+
+                        $jobViewRows = collect();
+                        $jobViewStatuses = collect();
+                        $jobViewTeams = collect();
+                        if (!$isRoomView && $job->allGroupedRooms && $job->allGroupedRooms->count() > 0) {
+                            foreach ($job->allGroupedRooms as $room) {
+                                $roomJob = $room->jobSchedule;
+                                $displayJobNumber = $roomJob?->job_number ?? 'unassign';
+                                $displayRoomName = $room->room_name ?? 'No Room';
+
+                                $jobViewRows->push([
+                                    'key' => $displayJobNumber . '|' . $displayRoomName,
+                                    'job_number' => $displayJobNumber,
+                                    'room_name' => $displayRoomName,
+                                ]);
+
+                                $jobViewStatuses->push([
+                                    'key' => ($room->status_text ?? '') . '|' . ($room->status_badge_class ?? ''),
+                                    'text' => $room->status_text,
+                                    'class' => $room->status_badge_class,
+                                ]);
+
+                                if ($hasAnyRoomAssignment) {
+                                    $displayTeamName = $room->roomAssignment?->team?->team_name ?? 'unassign';
+                                } else {
+                                    $displayTeamName = $roomJob?->jobAssignSchedules?->where('status', '!=', 'cancelled')->sortByDesc('id')->first()?->team?->team_name ?? 'unassign';
+                                }
+
+                                $jobViewTeams->push($displayTeamName);
+                            }
+
+                            $jobViewRows = $jobViewRows->unique('key')->values();
+                            $jobViewStatuses = $jobViewStatuses->unique('key')->values();
+                            $jobViewTeams = $jobViewTeams
+                                ->filter()
+                                ->unique()
+                                ->values();
+
+                            $assignedJobViewTeams = $jobViewTeams->reject(fn($name) => strtolower(trim((string) $name)) === 'unassign')->values();
+                            if ($assignedJobViewTeams->isNotEmpty()) {
+                                $jobViewTeams = $assignedJobViewTeams;
+                                $teamName = $jobViewTeams->first();
+                            } elseif ($jobViewTeams->isEmpty()) {
+                                $jobViewTeams = collect(['unassign']);
+                            }
+                        }
                     @endphp
                     <tr data-id="{{ $schedule->id }}" data-view-mode="{{ $viewMode ?? 'job' }}" 
                         onclick="window.location.href = '{{ route('operational.job-schedules.show', $job->id) }}?view_mode={{ $viewMode ?? 'job' }}&{{ $isRoomView ? 'room_id=' . ($schedule->room_id ?? '') : 'building_id=' . ($job->building_id ?? '') }}'" 
@@ -1145,10 +1191,10 @@
                         <td onclick="event.stopPropagation()">
                             <a href="{{ route('operational.job-schedules.show', $job->id) }}?view_mode={{ $viewMode ?? 'job' }}&{{ $isRoomView ? 'room_id=' . ($schedule->room_id ?? '') : 'building_id=' . ($job->building_id ?? '') }}" class="text-blue-600 hover:underline">
                                 @if(!$isRoomView)
-                                    @if($job->allGroupedRooms && $job->allGroupedRooms->count() > 0)
-                                        @foreach($job->allGroupedRooms as $index => $room)
+                                    @if($jobViewRows->isNotEmpty())
+                                        @foreach($jobViewRows as $index => $row)
                                             <div class="{{ $index > 0 ? 'mt-1 pt-1 border-t border-gray-100' : '' }}">
-                                                {{ $room->jobSchedule->job_number ?? 'unassign' }} - {{ $room->room_name ?? 'No Room' }}
+                                                {{ $row['job_number'] }} - {{ $row['room_name'] }}
                                             </div>
                                         @endforeach
                                     @else
@@ -1168,11 +1214,11 @@
                         
                         <!-- 4. Status -->
                         <td>
-                            @if(!$isRoomView && $job->allGroupedRooms && $job->allGroupedRooms->count() > 0)
-                                @foreach($job->allGroupedRooms as $index => $room)
+                            @if(!$isRoomView && $jobViewStatuses->isNotEmpty())
+                                @foreach($jobViewStatuses as $index => $statusRow)
                                     <div class="{{ $index > 0 ? 'mt-1 pt-1 border-t border-gray-100' : '' }}">
-                                        <span class="status-badge {{ $room->status_badge_class }}">
-                                            {{ $room->status_text }}
+                                        <span class="status-badge {{ $statusRow['class'] }}">
+                                            {{ $statusRow['text'] }}
                                         </span>
                                     </div>
                                 @endforeach
@@ -1189,18 +1235,10 @@
                         
                         <!-- 5. Nama Team -->
                         <td>
-                             @if(!$isRoomView && $job->allGroupedRooms && $job->allGroupedRooms->count() > 0)
-                                @foreach($job->allGroupedRooms as $index => $room)
+                             @if(!$isRoomView && $jobViewTeams->isNotEmpty())
+                                @foreach($jobViewTeams as $index => $displayTeamName)
                                     <div class="{{ $index > 0 ? 'mt-1 pt-1 border-t border-gray-100' : '' }}">
-                                        @php
-                                            $rTeam = 'unassign';
-                                            if ($hasAnyRoomAssignment) {
-                                                $rTeam = $room->roomAssignment?->team?->team_name ?? 'unassign';
-                                            } else {
-                                                $rTeam = $room->jobSchedule->jobAssignSchedules->where('status', '!=', 'cancelled')->sortByDesc('id')->first()?->team?->team_name ?? 'unassign';
-                                            }
-                                        @endphp
-                                        {{ $rTeam }}
+                                        {{ $displayTeamName }}
                                     </div>
                                 @endforeach
                             @else
