@@ -1168,11 +1168,10 @@ class ContractController extends Controller
             $type = request('type');
             $typeLower = strtolower((string) $type);
             $shouldIncludeUsedRooms = $type && in_array(strtolower($type), ['extra', 'change', 'complain', 'remove', 'change_unit', 'change unit', 'removal', 'service']);
-            $isInstallJobAdvice = $typeLower === 'install';
             $isServiceJobAdvice = $typeLower === 'service';
             
             $contractRooms = $contract->contractRooms
-                ->filter(function ($contractRoom) use ($contract, $usedContractRoomIds, $shouldIncludeUsedRooms, $isInstallJobAdvice, $isServiceJobAdvice, $id) {
+                ->filter(function ($contractRoom) use ($contract, $usedContractRoomIds, $shouldIncludeUsedRooms, $isServiceJobAdvice, $id) {
                     // Only include rooms that exist
                     // If shouldIncludeUsedRooms is true, we ignore the used filtering
                     if ($contractRoom->room === null) {
@@ -1180,12 +1179,6 @@ class ContractController extends Controller
                     }
 
                     if (!$shouldIncludeUsedRooms && in_array($contractRoom->id, $usedContractRoomIds)) {
-                        return false;
-                    }
-
-                    // Install JA must only show rooms that still need installation.
-                    // Rooms with an active/on-wall unit are service/remove candidates, not install candidates.
-                    if ($isInstallJobAdvice && $this->contractRoomHasActiveUnitOnWall($contract, $contractRoom)) {
                         return false;
                     }
 
