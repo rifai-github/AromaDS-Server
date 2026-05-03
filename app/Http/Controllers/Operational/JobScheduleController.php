@@ -8479,21 +8479,42 @@ class JobScheduleController extends Controller
      */
     protected function isAromaRentalDetail($detail, $product = null): bool
     {
-        $haystack = strtolower(implode(' ', array_filter([
+        $haystack = $this->buildMaterialClassificationText([
             $detail->productCategory->name ?? null,
             $detail->productType->name ?? null,
             $product->productCategory->name ?? null,
             $product->productType->name ?? null,
             $product->name ?? null,
-        ])));
+            $product->sku ?? null,
+            $product->brand_line ?? null,
+            $product->variant_name ?? null,
+        ]);
 
-        foreach (['aroma', 'refill', 'variant', 'scent', 'liquid', 'fragrance', 'oil'] as $needle) {
+        if ($this->containsHandSanitizerMaterialKeywords($haystack)) {
+            return false;
+        }
+
+        foreach (['aroma', 'scent', 'fragrance', 'luxo', 'artisan', 'signature'] as $needle) {
             if (str_contains($haystack, $needle)) {
                 return true;
             }
         }
 
-        return false;
+        return preg_match('/\boil\b/', $haystack) === 1;
+    }
+
+    protected function buildMaterialClassificationText(array $parts): string
+    {
+        return preg_replace('/\s+/', ' ', strtolower(trim(implode(' ', array_filter($parts)))));
+    }
+
+    protected function containsHandSanitizerMaterialKeywords(string $haystack): bool
+    {
+        return str_contains($haystack, 'hand sanitizer')
+            || str_contains($haystack, 'sanitizer')
+            || preg_match('/\bhs\s*refill\b/', $haystack) === 1
+            || preg_match('/\bhsr[-\s]/', $haystack) === 1
+            || preg_match('/\bhsd[-\s]/', $haystack) === 1;
     }
 
     /**

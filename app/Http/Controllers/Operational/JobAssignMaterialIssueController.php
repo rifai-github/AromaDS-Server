@@ -131,26 +131,79 @@ class JobAssignMaterialIssueController extends Controller
             return false;
         }
 
-        $haystack = strtolower(implode(' ', array_filter([
+        $haystack = $this->buildMaterialClassificationText([
             $product->name ?? null,
+            $product->sku ?? null,
             $product->variant_name ?? null,
             $product->brand_line ?? null,
             $product->productType?->name ?? null,
             $product->productCategory?->name ?? null,
-        ])));
+        ]);
 
-        $isUnit = (bool) ($product->productType?->is_unit ?? $product->productCategory?->is_unit ?? false);
+        if ($this->containsHandSanitizerMaterialKeywords($haystack)) {
+            return false;
+        }
+
+        $isUnit = (bool) ($product->productCategory?->is_unit ?? $product->productType?->is_unit ?? false);
         $hasSerialNumber = (bool) ($product->productCategory?->has_serial_number ?? $product->productType?->has_serial_number ?? false);
 
         return !$isUnit
             && !$hasSerialNumber
-            && (str_contains($haystack, 'aroma')
-                || str_contains($haystack, 'refill')
-                || str_contains($haystack, 'fragrance')
-                || str_contains($haystack, 'scent')
-                || str_contains($haystack, 'luxo')
-                || str_contains($haystack, 'artisan')
-                || str_contains($haystack, 'signature'));
+            && $this->containsAromaMaterialKeywords($haystack);
+    }
+
+    private function isQuotationAromaMaterialSlot($detail, ?MasterProduct $product = null, ?string $extraName = null): bool
+    {
+        $haystack = $this->buildMaterialClassificationText([
+            $extraName,
+            $detail->productCategory->name ?? null,
+            $detail->productType->name ?? null,
+            $product->name ?? null,
+            $product->sku ?? null,
+            $product->variant_name ?? null,
+            $product->brand_line ?? null,
+            $product->productCategory?->name ?? null,
+            $product->productType?->name ?? null,
+        ]);
+
+        if ($this->containsHandSanitizerMaterialKeywords($haystack)) {
+            return false;
+        }
+
+        return $this->containsAromaMaterialKeywords($haystack);
+    }
+
+    private function isQuotationAromaComponentName(?string $componentName): bool
+    {
+        $haystack = $this->buildMaterialClassificationText([$componentName]);
+
+        return !$this->containsHandSanitizerMaterialKeywords($haystack)
+            && $this->containsAromaMaterialKeywords($haystack);
+    }
+
+    private function buildMaterialClassificationText(array $parts): string
+    {
+        return preg_replace('/\s+/', ' ', strtolower(trim(implode(' ', array_filter($parts)))));
+    }
+
+    private function containsHandSanitizerMaterialKeywords(string $haystack): bool
+    {
+        return str_contains($haystack, 'hand sanitizer')
+            || str_contains($haystack, 'sanitizer')
+            || preg_match('/\bhs\s*refill\b/', $haystack) === 1
+            || preg_match('/\bhsr[-\s]/', $haystack) === 1
+            || preg_match('/\bhsd[-\s]/', $haystack) === 1;
+    }
+
+    private function containsAromaMaterialKeywords(string $haystack): bool
+    {
+        foreach (['aroma', 'scent', 'fragrance', 'luxo', 'artisan', 'signature'] as $needle) {
+            if (str_contains($haystack, $needle)) {
+                return true;
+            }
+        }
+
+        return preg_match('/\boil\b/', $haystack) === 1;
     }
 
     private function resolveQuotationAromaProductForDetail($detail, ?MasterProduct $quotationProduct, ?MasterProduct $fallbackProduct): ?MasterProduct
@@ -769,15 +822,8 @@ class JobAssignMaterialIssueController extends Controller
                                 ->get();
                             
                             foreach ($detailProducts as $product) {
-                                // Filter logic: if it's an aroma type, it must match one of the selected aromas (variants)
-                                $typeName = $product->productType->name ?? '';
-                                $isAromaType = (
-                                    str_contains($typeName, 'Aroma') || 
-                                    str_contains($typeName, 'Refill') ||
-                                    str_contains($typeName, 'Variant') ||
-                                    str_contains($typeName, 'Fragrance') ||
-                                    str_contains($typeName, 'Scent')
-                                );
+                                // Filter logic: aroma products must match one of the selected aromas (variants).
+                                $isAromaType = $this->isAromaMaterialProduct($product);
 
                                 if ($isAromaType && !empty($selectedAromaVariants)) {
                                     $matchFound = false;
@@ -1026,12 +1072,8 @@ class JobAssignMaterialIssueController extends Controller
                     $product = null;
                     $productCategoryName = $detail->productCategory->name ?? $detail->productType->name ?? null;
                     
-                    // PRIORITY: For aroma/refill/variant product type, use aromaProduct from quotation FIRST
-                    $isAromaType = $productCategoryName && (
-                        stripos($productCategoryName, 'aroma') !== false || 
-                        stripos($productCategoryName, 'refill') !== false ||
-                        stripos($productCategoryName, 'variant') !== false
-                    );
+                    // PRIORITY: For aroma material slots, use aromaProduct from quotation FIRST.
+                    $isAromaType = $this->isQuotationAromaMaterialSlot($detail, $detail->masterProduct, $productCategoryName);
                     
                     if ($isAromaType && $aromaProduct) {
                         // PRIORITY: Aroma dari Quotation (jasmine dari quotation) > Aroma dari Master Rental
@@ -1331,12 +1373,8 @@ class JobAssignMaterialIssueController extends Controller
                         $product->load(['productCategory', 'productType', 'packagingSize']);
                         \Log::info("MOM12 EDIT: Using saved product: {$product->name} (ID: {$product->id})");
                     } else {
-                        // PRIORITY: For aroma/refill/variant product type, use aromaProduct from quotation FIRST
-                        $isAromaType = $productCategoryName && (
-                            stripos($productCategoryName, 'aroma') !== false || 
-                            stripos($productCategoryName, 'refill') !== false ||
-                            stripos($productCategoryName, 'variant') !== false
-                        );
+                        // PRIORITY: For aroma material slots, use aromaProduct from quotation FIRST.
+                        $isAromaType = $this->isQuotationAromaMaterialSlot($detail, $detail->masterProduct, $productCategoryName);
                         
                         if ($isAromaType && $aromaProduct) {
                             // PRIORITY: Aroma dari Quotation (jasmine dari quotation) > Aroma dari Master Rental
@@ -1364,13 +1402,9 @@ class JobAssignMaterialIssueController extends Controller
                     // Component name sudah dari master rental, jadi product_type di product array tidak perlu ditampilkan
                     $productTypeInProduct = null; // Selalu kosong/null
                     
-                    // Get available packaging sizes ONLY for aroma/refill/variant product categories
+                    // Get available packaging sizes ONLY for aroma product categories.
                     $packagingSizes = [];
-                    $isAromaType = $productCategoryName && (
-                        stripos($productCategoryName, 'aroma') !== false || 
-                        stripos($productCategoryName, 'refill') !== false ||
-                        stripos($productCategoryName, 'variant') !== false
-                    );
+                    $isAromaType = $this->isQuotationAromaMaterialSlot($detail, $product, $productCategoryName);
                     
                     if ($isAromaType) {
                         // Only show packaging sizes for aroma/refill/variant
@@ -1672,10 +1706,8 @@ class JobAssignMaterialIssueController extends Controller
                         foreach ($components as $component) {
                             $product = null;
                             
-                            // PRIORITY: For aroma/refill component, use aromaProduct from quotation FIRST
-                            $isAromaComponent = (stripos($component->component_name, 'aroma') !== false || 
-                                                stripos($component->component_name, 'refill') !== false ||
-                                                stripos($component->component_name, 'variant') !== false);
+                            // PRIORITY: For aroma component, use aromaProduct from quotation FIRST.
+                            $isAromaComponent = $this->isQuotationAromaComponentName($component->component_name);
                             
                             if ($isAromaComponent && $aromaProduct) {
                                 // PRIORITY: Aroma dari Quotation (jasmine dari quotation) > Aroma dari Master Rental (lavender)
@@ -3602,9 +3634,8 @@ class JobAssignMaterialIssueController extends Controller
                         foreach ($components as $component) {
                             $product = null;
                             
-                            // Check if aroma component
-                            $isAromaComponent = (stripos($component->component_name, 'aroma') !== false || 
-                                                stripos($component->component_name, 'refill') !== false);
+                            // Check if aroma component.
+                            $isAromaComponent = $this->isQuotationAromaComponentName($component->component_name);
                             
                             if ($isAromaComponent && $aromaProduct) {
                                 $product = $aromaProduct;
@@ -3825,30 +3856,7 @@ class JobAssignMaterialIssueController extends Controller
                 $productName = $product->name ?? '';
                 $categoryName = $product->productCategory->name ?? '';
                 
-                // Enhanced detection for aroma/scent products
-                // Added categories: Luxo, Artisan, Signature
-                $isAromaType = ($productTypeName && (
-                    stripos($productTypeName, 'aroma') !== false || 
-                    stripos($productTypeName, 'refill') !== false ||
-                    stripos($productTypeName, 'variant') !== false ||
-                    stripos($productTypeName, 'scent') !== false ||
-                    stripos($productTypeName, 'liquid') !== false ||
-                    stripos($productTypeName, 'fragrance') !== false ||
-                    stripos($productTypeName, 'oil') !== false
-                )) || (
-                    stripos($productName, 'aroma') !== false ||
-                    stripos($productName, 'refill') !== false ||
-                    stripos($productName, 'scent') !== false
-                ) || (
-                    $categoryName && (
-                        stripos($categoryName, 'luxo') !== false ||
-                        stripos($categoryName, 'artisan') !== false ||
-                        stripos($categoryName, 'signature') !== false ||
-                        stripos($categoryName, 'aroma') !== false ||
-                        stripos($categoryName, 'scent') !== false ||
-                        stripos($categoryName, 'fragrance') !== false
-                    )
-                );
+                $isAromaType = $this->isQuotationAromaMaterialSlot($detail, $product, $productTypeName ?: $categoryName ?: $productName);
                 
                 // MOM12: Check if form data has changes for this room+component
                 $formKey = $jaRoom->room_name . '_' . $detail->id;
