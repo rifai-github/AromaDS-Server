@@ -88,6 +88,35 @@ function completedJobStatuses(): array
     return ['completed', 'done_job', 'selesai'];
 }
 
+function jobAdviceRoomGroupKey(JobAdviceRoom $room): string
+{
+    if ($room->contract_room_id) {
+        return 'contract_room:' . $room->contract_room_id;
+    }
+
+    $roomId = $room->contractRoom?->room_id ?? $room->room_id;
+    if ($roomId) {
+        return 'room:' . $roomId;
+    }
+
+    return 'name:' . strtolower(trim((string) $room->room_name));
+}
+
+function activeServiceScheduleExists(int $jobAdviceId, array $jobAdviceRoomIds): bool
+{
+    return JobSchedule::where('job_advice_id', $jobAdviceId)
+        ->whereIn('type', ['service', 'service_first', 'service_routine'])
+        ->whereNotIn('status', ['cancelled', 'undone'])
+        ->where(function ($query) use ($jobAdviceRoomIds) {
+            $query->whereHas('jobScheduleRooms', function ($roomQuery) use ($jobAdviceRoomIds) {
+                $roomQuery->whereIn('job_advice_room_id', $jobAdviceRoomIds);
+            })->orWhereHas('jobScheduleRooms.rentals', function ($rentalQuery) use ($jobAdviceRoomIds) {
+                $rentalQuery->whereIn('job_advice_room_id', $jobAdviceRoomIds);
+            });
+        })
+        ->exists();
+}
+
 function runRepair(string $section, callable $callback): void
 {
     global $prefix, $only;
@@ -429,8 +458,17 @@ runRepair('contract-onwall-services', function () use ($dryRun, $limit, &$stats,
     $createdCount = 0;
 
     foreach ($jobAdvices as $jobAdvice) {
-        foreach ($jobAdvice->rooms as $jaRoom) {
-            if ($jaRoom->service_job_schedule_id) {
+        $roomsByPhysicalRoom = $jobAdvice->rooms->groupBy(fn (JobAdviceRoom $room) => jobAdviceRoomGroupKey($room));
+
+        foreach ($roomsByPhysicalRoom as $roomsInGroup) {
+            $jaRoom = $roomsInGroup->first();
+            $jobAdviceRoomIds = $roomsInGroup->pluck('id')->all();
+
+            if ($roomsInGroup->contains(fn (JobAdviceRoom $room) => !empty($room->service_job_schedule_id))) {
+                continue;
+            }
+
+            if (activeServiceScheduleExists((int) $jobAdvice->id, $jobAdviceRoomIds)) {
                 continue;
             }
 
@@ -448,20 +486,25 @@ runRepair('contract-onwall-services', function () use ($dryRun, $limit, &$stats,
                 continue;
             }
 
-            $rental = $jaRoom->rentalProduct ?: $jaRoom->contractRoom?->rentalProduct;
-            $rentalType = strtolower((string) ($rental?->rental_type ?? 'unit_refill'));
+            $primaryRental = $jaRoom->rentalProduct ?: $jaRoom->contractRoom?->rentalProduct;
+            $hasServiceMaterials = $roomsInGroup->contains(function (JobAdviceRoom $room) {
+                $rental = $room->rentalProduct ?: $room->contractRoom?->rentalProduct;
+                $rentalType = strtolower((string) ($rental?->rental_type ?? 'unit_refill'));
+
+                return $rentalType !== 'unit_only';
+            });
             $serviceType = 'service_first';
-            $doesNotNeedMaterial = $rentalType === 'unit_only';
+            $doesNotNeedMaterial = !$hasServiceMaterials;
             $building = $jaRoom->contractRoom?->room?->building;
 
-            echo "- JA {$jobAdvice->job_advice_number} room={$jaRoom->room_name}: active Unit On Wall found, create {$serviceType} period 1; skip duplicate IR.\n";
+            echo "- JA {$jobAdvice->job_advice_number} room={$jaRoom->room_name}: active Unit On Wall found, create one {$serviceType} period 1 for {$roomsInGroup->count()} rental row(s); skip duplicate IR.\n";
             addStat($stats, 'contract_onwall_services');
 
             if ($dryRun) {
                 continue;
             }
 
-            DB::transaction(function () use ($jobAdvice, $jaRoom, $roomId, $rental, $serviceType, $doesNotNeedMaterial, $building, $actorId, &$createdCount) {
+            DB::transaction(function () use ($jobAdvice, $jaRoom, $roomsInGroup, $roomId, $primaryRental, $serviceType, $doesNotNeedMaterial, $building, $actorId, &$createdCount) {
                 $schedule = JobSchedule::create([
                     'job_number' => null,
                     'type' => $serviceType,
@@ -477,7 +520,7 @@ runRepair('contract-onwall-services', function () use ($dryRun, $limit, &$stats,
                     'schedule_date' => $jobAdvice->expected_date,
                     'expected_date' => $jobAdvice->expected_date,
                     'period' => 1,
-                    'service_period_type' => $rental?->serviceFrequency?->name ?? 'monthly',
+                    'service_period_type' => $primaryRental?->serviceFrequency?->name ?? 'monthly',
                     'reference_number' => $jobAdvice->job_advice_number,
                     'internal_notes' => "Auto-repaired first {$serviceType} for contract room already installed from trial/Install Free. JA: {$jobAdvice->job_advice_number}",
                     'material_checked' => $doesNotNeedMaterial,
@@ -498,18 +541,20 @@ runRepair('contract-onwall-services', function () use ($dryRun, $limit, &$stats,
                     'updated_by' => $actorId,
                 ]);
 
-                JobScheduleRoomRental::create([
-                    'job_schedule_room_id' => $jobScheduleRoom->id,
-                    'job_advice_room_id' => $jaRoom->id,
-                    'is_primary' => true,
-                ]);
+                foreach ($roomsInGroup->values() as $index => $roomInGroup) {
+                    JobScheduleRoomRental::create([
+                        'job_schedule_room_id' => $jobScheduleRoom->id,
+                        'job_advice_room_id' => $roomInGroup->id,
+                        'is_primary' => $index === 0,
+                    ]);
 
-                $jaRoom->update([
-                    'service_job_schedule_id' => $schedule->id,
-                    'rental_has_service' => true,
-                    'unit_already_installed' => true,
-                    'updated_by' => $actorId,
-                ]);
+                    $roomInGroup->update([
+                        'service_job_schedule_id' => $schedule->id,
+                        'rental_has_service' => true,
+                        'unit_already_installed' => true,
+                        'updated_by' => $actorId,
+                    ]);
+                }
 
                 $createdCount++;
             });
