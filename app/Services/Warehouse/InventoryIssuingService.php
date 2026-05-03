@@ -10,6 +10,7 @@ use App\Models\JobScheduleRoom;
 use App\Models\JobScheduleRoomAssignment;
 use App\Models\MaterialIssue;
 use App\Models\SerialNumber;
+use App\Models\WarehouseProduct;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -40,6 +41,11 @@ class InventoryIssuingService
 
         DB::beginTransaction();
         try {
+            // Ensure stock was posted when the issuing became Ready. This is mainly
+            // for older processed records that were created before the Ready-step
+            // stock posting was centralized here.
+            $this->postReadyStockIfMissing($issuing);
+
             // 1. Update status to sent (Finish)
             $issuing->update([
                 'status' => 'sent',
@@ -49,10 +55,7 @@ class InventoryIssuingService
             // 2. Update Serial Number Lifecycle
             $this->updateSerialNumberLifecycle($issuing);
 
-            // 3. Create Inventory Movement (Stock Out)
-            $this->createInventoryMovements($issuing);
-
-            // 4. Sync Job Schedule Status if related
+            // 3. Sync Job Schedule Status if related
             $this->syncJobScheduleStatus($issuing);
 
             DB::commit();
@@ -61,6 +64,47 @@ class InventoryIssuingService
             DB::rollBack();
             throw $e;
         }
+    }
+
+    public function postReadyStockIfMissing(InventoryIssuing $issuing): bool
+    {
+        $issuing->loadMissing(['items.product', 'warehouse', 'branch']);
+
+        if ($this->hasInventoryIssuingStockMovement($issuing)) {
+            return false;
+        }
+
+        if ($this->hasLegacyMaterialIssueStockMovement($issuing)) {
+            $this->convertLegacyMaterialIssueMovements($issuing);
+            return false;
+        }
+
+        $this->createInventoryMovements($issuing);
+        return true;
+    }
+
+    public function rollbackPostedStock(InventoryIssuing $issuing): int
+    {
+        $legacyMovements = $this->legacyMaterialIssueStockMovements($issuing)->get();
+        if ($legacyMovements->isNotEmpty()) {
+            $rolledBack = $this->rollbackMovements($legacyMovements);
+
+            $this->inventoryIssuingStockMovements($issuing)->delete();
+
+            return $rolledBack;
+        }
+
+        return $this->rollbackMovements($this->inventoryIssuingStockMovements($issuing)->get());
+    }
+
+    public function rollbackMaterialIssueStock(MaterialIssue $materialIssue): int
+    {
+        $movements = InventoryMovement::where('reference_no', $materialIssue->issue_number)
+            ->where('reference_type', 'material_issue')
+            ->where('movement_type', 'out')
+            ->get();
+
+        return $this->rollbackMovements($movements);
     }
 
     /**
@@ -97,6 +141,21 @@ class InventoryIssuingService
                 continue;
             }
 
+            $warehouseProduct = WarehouseProduct::where('warehouse_id', $issuing->warehouse_id)
+                ->where('master_product_id', $item->product_id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$warehouseProduct || $warehouseProduct->quantity < $item->quantity_requested) {
+                $productName = $item->product->name ?? "Product ID: {$item->product_id}";
+                $available = $warehouseProduct?->quantity ?? 0;
+                throw new Exception("Stock {$productName} tidak cukup untuk Ready to Issue. Butuh {$item->quantity_requested}, tersedia {$available}.");
+            }
+
+            $warehouseProduct->decrement('quantity', $item->quantity_requested, [
+                'updated_by' => Auth::id() ?? 1,
+            ]);
+
             $issuingNumber = $issuing->issuing_number ?? "ISU-{$issuing->id}";
             $productName = $item->product->name ?? "Product ID: {$item->product_id}";
             $branchName = $issuing->branch->name ?? "Branch ID: {$issuing->branch_id}";
@@ -115,6 +174,83 @@ class InventoryIssuingService
                 'updated_by' => Auth::id() ?? 1,
             ]);
         }
+    }
+
+    protected function rollbackMovements(Collection $movements): int
+    {
+        $rolledBack = 0;
+
+        foreach ($movements as $movement) {
+            $quantity = abs((float) $movement->quantity);
+            if ($quantity <= 0) {
+                $movement->delete();
+                continue;
+            }
+
+            $warehouseProduct = WarehouseProduct::firstOrCreate(
+                [
+                    'warehouse_id' => $movement->warehouse_id,
+                    'master_product_id' => $movement->master_product_id,
+                ],
+                [
+                    'quantity' => 0,
+                    'minimum_stock' => 0,
+                    'maximum_stock' => 1000,
+                    'created_by' => Auth::id() ?? 1,
+                    'updated_by' => Auth::id() ?? 1,
+                ]
+            );
+
+            $warehouseProduct->increment('quantity', $quantity, [
+                'updated_by' => Auth::id() ?? 1,
+            ]);
+
+            $movement->delete();
+            $rolledBack++;
+        }
+
+        return $rolledBack;
+    }
+
+    protected function hasInventoryIssuingStockMovement(InventoryIssuing $issuing): bool
+    {
+        return $this->inventoryIssuingStockMovements($issuing)->exists();
+    }
+
+    protected function hasLegacyMaterialIssueStockMovement(InventoryIssuing $issuing): bool
+    {
+        return $this->legacyMaterialIssueStockMovements($issuing)->exists();
+    }
+
+    protected function inventoryIssuingStockMovements(InventoryIssuing $issuing)
+    {
+        return InventoryMovement::where('reference_no', $issuing->issuing_number)
+            ->where('reference_type', 'inventory_issuing')
+            ->where('movement_type', 'out');
+    }
+
+    protected function legacyMaterialIssueStockMovements(InventoryIssuing $issuing)
+    {
+        return InventoryMovement::where('reference_no', $issuing->reference_no)
+            ->where('reference_type', 'material_issue')
+            ->where('movement_type', 'out');
+    }
+
+    protected function convertLegacyMaterialIssueMovements(InventoryIssuing $issuing): int
+    {
+        $converted = 0;
+
+        foreach ($this->legacyMaterialIssueStockMovements($issuing)->get() as $movement) {
+            $movement->update([
+                'reference_no' => $issuing->issuing_number,
+                'reference_type' => 'inventory_issuing',
+                'notes' => trim(($movement->notes ?: '') . ' [Converted from legacy material issue stock posting]'),
+                'updated_by' => Auth::id() ?? 1,
+            ]);
+            $converted++;
+        }
+
+        return $converted;
     }
 
     /**

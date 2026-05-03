@@ -142,6 +142,13 @@ class MaterialVerificationController extends Controller
                 
                 Log::info("Job schedule {$jobSchedule->job_number} status reverted to 'barang_dipersiapkan' to fix inconsistency.");
             }
+
+            if ($inventoryIssuing->status !== 'processed') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Material belum Ready to Issue. Harap tunggu gudang memproses Inventory Issuing terlebih dahulu.'
+                ], 400);
+            }
             
             // Verify all materials are checked
             $allVerified = true;
@@ -260,11 +267,13 @@ class MaterialVerificationController extends Controller
             
             Log::info("Inventory issuing {$inventoryIssuing->issuing_number} marked as processed by user " . auth()->id());
             
-            // AUTO-FINALIZE: Update inventory issuing to 'sent' status and update stock
-            // Reload issuing with relationships for finalize process
+            // AUTO-FINALIZE: stock is posted once when WI reaches Ready (processed),
+            // then pickup verification only moves the WI to sent/on-hand.
             $inventoryIssuing->load(['items.product', 'warehouse', 'branch']);
-            
-            // Update status to 'sent' (finalized/issued)
+
+            app(\App\Services\Warehouse\InventoryIssuingService::class)
+                ->postReadyStockIfMissing($inventoryIssuing);
+
             $inventoryIssuing->update([
                 'status' => 'sent', // Final status: issued
                 'updated_by' => auth()->id(),
@@ -287,77 +296,7 @@ class MaterialVerificationController extends Controller
             }
             
             Log::info("Inventory issuing {$inventoryIssuing->issuing_number} auto-finalized to 'sent' status after material verification");
-            
-            // Create inventory movement records for each item (stock keluar)
-            foreach ($inventoryIssuing->items as $item) {
-                if (!$item->product_id || !$item->quantity_requested || $item->quantity_requested <= 0) {
-                    continue;
-                }
-                
-                // Ensure warehouse_id exists
-                if (!$inventoryIssuing->warehouse_id) {
-                    Log::warning("Issuing {$inventoryIssuing->id} has no warehouse_id, skipping movement creation");
-                    continue;
-                }
-                
-                $productName = $item->product->name ?? 'Product ID: ' . $item->product_id;
-                $issuingNumber = $inventoryIssuing->issuing_number ?? "ISU-{$inventoryIssuing->id}";
-                $branchName = $inventoryIssuing->branch->name ?? ($inventoryIssuing->branch_id ? 'Branch ID: ' . $inventoryIssuing->branch_id : 'Unknown Branch');
-                
-                $movementData = [
-                    'warehouse_id' => $inventoryIssuing->warehouse_id,
-                    'master_product_id' => $item->product_id,
-                    'movement_type' => 'out', // Stock keluar
-                    'quantity' => -abs($item->quantity_requested), // Pastikan negatif untuk keluar
-                    'notes' => "Inventory issued (auto-finalized from mobile verification). Issuing Number: {$issuingNumber}, Product: {$productName}, Branch: {$branchName}",
-                    'created_by' => auth()->id() ?? 1,
-                    'updated_by' => auth()->id() ?? 1,
-                ];
-                
-                // Add optional columns only if they exist in database
-                try {
-                    $columns = \Illuminate\Support\Facades\Schema::getColumnListing('inventory_movements');
-                    
-                    if (in_array('movement_date', $columns)) {
-                        $movementData['movement_date'] = $inventoryIssuing->issue_date ?? now()->toDateString();
-                    }
-                    
-                    if (in_array('reference_no', $columns)) {
-                        $movementData['reference_no'] = $issuingNumber;
-                    }
-                    
-                    if (in_array('reference_type', $columns)) {
-                        $movementData['reference_type'] = 'inventory_issuing';
-                    }
-                    
-                    if (in_array('reference_id', $columns)) {
-                        $movementData['reference_id'] = $inventoryIssuing->id;
-                    }
-                    
-                    if (in_array('movement_no', $columns)) {
-                        $movementData['movement_no'] = 'ISU-' . str_replace('ISU-', '', $issuingNumber);
-                    }
-                    
-                    if (in_array('unit_price', $columns) && isset($item->unit_price) && $item->unit_price > 0) {
-                        $movementData['unit_price'] = $item->unit_price;
-                        if (in_array('total_value', $columns)) {
-                            $movementData['total_value'] = $item->quantity_requested * $item->unit_price;
-                        }
-                    }
-                } catch (\Exception $e) {
-                    Log::warning("Could not check inventory_movements columns: " . $e->getMessage());
-                }
-                
-                try {
-                    \App\Models\InventoryMovement::create($movementData);
-                    Log::info("Inventory Movement created for issuing: Product {$item->product_id}, Quantity: -{$item->quantity_requested}");
-                } catch (\Exception $e) {
-                    Log::error("Failed to create Inventory Movement for issuing: " . $e->getMessage());
-                    // Don't throw, continue with other items
-                }
-            }
-            
-            Log::info("Inventory issuing {$inventoryIssuing->issuing_number} auto-finalized successfully with stock movements");
+            Log::info("Inventory issuing {$inventoryIssuing->issuing_number} auto-finalized successfully");
             
             // MOM9: Update ALL related job schedules for this material issue (Multiple rooms/grouped jobs)
             $materialIssueNum = $inventoryIssuing->reference_no;

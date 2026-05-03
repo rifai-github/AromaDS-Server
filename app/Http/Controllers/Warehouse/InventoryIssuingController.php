@@ -441,35 +441,9 @@ class InventoryIssuingController extends Controller
                 return back()->with('error', 'Cannot delete issued inventory. Only pending (Un-prepared) issuings can be deleted.');
             }
 
-            // 1. ROLLBACK STOCK (Revert movements created in Submit to Issue)
-            // Get movements related to THIS Material Issue (via reference_no)
-            $movements = \App\Models\InventoryMovement::where('reference_no', $issuing->reference_no)
-                ->where('reference_type', 'material_issue')
-                ->where('movement_type', 'out')
-                ->get();
-
-            foreach ($movements as $movement) {
-                // Find current stock
-                $warehouseProduct = \App\Models\WarehouseProduct::where('warehouse_id', $movement->warehouse_id)
-                    ->where('master_product_id', $movement->master_product_id)
-                    ->first();
-                
-                if ($warehouseProduct) {
-                    // Re-add the quantity (movement->quantity is negative for 'out')
-                    $revertQty = abs($movement->quantity);
-                    $newQty = $warehouseProduct->quantity + $revertQty;
-                    
-                    $warehouseProduct->update([
-                        'quantity' => $newQty,
-                        'updated_by' => Auth::id()
-                    ]);
-                    
-                    \Log::info("Rollback Stock: Reverted {$revertQty} units for Product ID {$movement->master_product_id} in Warehouse ID {$movement->warehouse_id}");
-                }
-                
-                // Delete the movement record
-                $movement->delete();
-            }
+            // Roll back stock only if this pending WI came from legacy code that
+            // posted stock before the WI was processed to Ready.
+            $syncService->rollbackPostedStock($issuing);
 
             // 2. RESET MATERIAL ISSUE STATUS
             $materialIssue = \App\Models\MaterialIssue::where('issue_number', $issuing->reference_no)->first();
@@ -534,6 +508,9 @@ class InventoryIssuingController extends Controller
                 return back()->with('error', "Gagal! Item berikut membutuhkan Serial Number namun belum diisi: {$itemNames}. Harap isi SN terlebih dahulu di tab Serial Number.");
             }
 
+            $syncService = new \App\Services\Warehouse\InventoryIssuingService();
+            $syncService->postReadyStockIfMissing($issuing);
+
             $issuing->update([
                 'status' => 'processed', // Status: Ready
                 'issued_by' => Auth::id(),
@@ -541,7 +518,7 @@ class InventoryIssuingController extends Controller
             ]);
 
             // MOM9: Sinkronisasi status ke Job Schedule
-            $this->syncJobScheduleStatus($issuing);
+            $syncService->syncJobScheduleStatus($issuing);
 
             DB::commit();
 
@@ -575,13 +552,8 @@ class InventoryIssuingController extends Controller
                 \Log::info("Deleted associated InventoryReceiving ID {$receiving->id} for Issuing ID {$issuing->id} (Reverted to Draft)");
             }
 
-            // Fix: Delete associated InventoryMovement (stock out)
-            // Since we are reverting to draft, the stock out should be reversed (deleted)
-            \App\Models\InventoryMovement::where('reference_type', 'inventory_issuing')
-                ->where('reference_no', $issuing->issuing_number)
-                ->delete();
-            
-            \Log::info("Deleted associated InventoryMovement for Issuing ID {$issuing->id} (Reverted to Draft)");
+            $syncService = new \App\Services\Warehouse\InventoryIssuingService();
+            $syncService->rollbackPostedStock($issuing);
 
             $issuing->update([
                 'status' => 'pending', // Status: Un Prepare
@@ -593,7 +565,7 @@ class InventoryIssuingController extends Controller
             ]);
 
             // Sync deletion to Job Schedule
-            $this->syncJobScheduleStatus($issuing);
+            $syncService->syncJobScheduleStatus($issuing);
 
             DB::commit();
 
@@ -648,11 +620,6 @@ class InventoryIssuingController extends Controller
             // Delete associated InventoryReceiving (if exists)
             \App\Models\InventoryReceiving::where('issuing_id', $issuing->id)->delete();
 
-            // Delete associated InventoryMovement (stock out)
-            \App\Models\InventoryMovement::where('reference_type', 'inventory_issuing')
-                ->where('reference_no', $issuing->issuing_number)
-                ->delete();
-
             // Revert Issuing status to processed (Ready)
             $issuing->update([
                 'status' => 'processed',
@@ -683,6 +650,9 @@ class InventoryIssuingController extends Controller
             if ($issuing->status !== 'processed') {
                 return back()->with('error', 'Only processed issuings can be sent.');
             }
+
+            $syncService = new \App\Services\Warehouse\InventoryIssuingService();
+            $syncService->postReadyStockIfMissing($issuing);
 
             $issuing->update([
                 'status' => 'sent',
@@ -926,13 +896,7 @@ class InventoryIssuingController extends Controller
                 }
 
                 \App\Models\InventoryReceiving::where('issuing_id', $issuing->id)->delete();
-                \App\Models\InventoryMovement::where('reference_no', $issuing->reference_no)
-                    ->where('reference_type', 'material_issue')
-                    ->where('movement_type', 'out')
-                    ->delete();
-                \App\Models\InventoryMovement::where('reference_no', $issuing->issuing_number)
-                    ->where('reference_type', 'inventory_issuing')
-                    ->delete();
+                $syncService->rollbackPostedStock($issuing);
 
                 $issuing->items()->delete();
                 $issuing->delete();
@@ -1777,31 +1741,33 @@ public function getUserTeams($userId)
                 'created_by' => Auth::id()
             ]);
 
-            // Keep warehouse stock accurate: the old aroma was already deducted when MI was issued.
-            // Changing it before final send means old stock returns and new stock is consumed.
-            $oldWarehouseStock = \App\Models\WarehouseProduct::firstOrCreate(
-                [
-                    'warehouse_id' => $issuing->warehouse_id,
-                    'master_product_id' => $oldProductId,
-                ],
-                [
-                    'quantity' => 0,
-                    'created_by' => Auth::id(),
-                    'updated_by' => Auth::id(),
-                ]
-            );
-            $oldWarehouseStock->increment('quantity', $request->quantity);
+            // Stock is only posted once WI is Ready (processed). Pending WI edits only
+            // change the preparation document; Ready WI edits must rebalance stock.
+            if ($issuing->status === 'processed') {
+                $oldWarehouseStock = \App\Models\WarehouseProduct::firstOrCreate(
+                    [
+                        'warehouse_id' => $issuing->warehouse_id,
+                        'master_product_id' => $oldProductId,
+                    ],
+                    [
+                        'quantity' => 0,
+                        'created_by' => Auth::id(),
+                        'updated_by' => Auth::id(),
+                    ]
+                );
+                $oldWarehouseStock->increment('quantity', $request->quantity);
 
-            $newWarehouseStock = \App\Models\WarehouseProduct::where('warehouse_id', $issuing->warehouse_id)
-                ->where('master_product_id', $newProduct->id)
-                ->lockForUpdate()
-                ->first();
+                $newWarehouseStock = \App\Models\WarehouseProduct::where('warehouse_id', $issuing->warehouse_id)
+                    ->where('master_product_id', $newProduct->id)
+                    ->lockForUpdate()
+                    ->first();
 
-            if (!$newWarehouseStock || $newWarehouseStock->quantity < $request->quantity) {
-                throw new \Exception("Insufficient stock for new aroma.");
+                if (!$newWarehouseStock || $newWarehouseStock->quantity < $request->quantity) {
+                    throw new \Exception("Insufficient stock for new aroma.");
+                }
+
+                $newWarehouseStock->decrement('quantity', $request->quantity);
             }
-
-            $newWarehouseStock->decrement('quantity', $request->quantity);
 
             if ($contract && $contractRoom) {
                 // 4. Create and Approve Aroma Change for contract-based jobs.

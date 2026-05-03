@@ -2201,10 +2201,6 @@ class JobAssignMaterialIssueController extends Controller
                     // 4. Inventory Issuing status berubah menjadi 'processed'
                     // 5. Job Schedule status baru berubah menjadi 'barang_diambil'
 
-                    // AUTO-UPDATE WAREHOUSE STOCK when material is issued (MOM11: untuk semua items dari rental)
-                    $this->updateWarehouseStockOnIssue($jobAssignMaterialIssue);
-                    \Log::info("Warehouse stock updated for material issue {$materialIssue->issue_number}");
-
                     // AUTO-CREATE INVENTORY ISSUING (warehouse1.md: issuing berasal dari material issued)
                     // MOM11: Create inventory issuing dengan items dari rental
                     try {
@@ -2346,9 +2342,6 @@ class JobAssignMaterialIssueController extends Controller
             $materialIssue = $jobAssignMaterialIssue->materialIssue;
             $materialIssue->issue();
 
-            // AUTO-UPDATE WAREHOUSE STOCK when material is issued (Berdasarkan BRD)
-            $this->updateWarehouseStockOnIssue($materialIssue);
-
             // AUTO-CREATE INVENTORY ISSUING (warehouse1.md: issuing berasal dari material issued)
             $inventoryIssuing = $this->createInventoryIssuingFromMaterialIssue($jobAssignMaterialIssue);
             if ($inventoryIssuing) {
@@ -2395,6 +2388,7 @@ class JobAssignMaterialIssueController extends Controller
             DB::beginTransaction();
 
             $materialIssue = $jobAssignMaterialIssue->materialIssue;
+            $syncService = new \App\Services\Warehouse\InventoryIssuingService();
             
             // Validation: Check Inventory Issuing status
             $inventoryIssuing = \App\Models\InventoryIssuing::where('reference_no', $materialIssue->issue_number)->first();
@@ -2403,20 +2397,21 @@ class JobAssignMaterialIssueController extends Controller
                 if ($inventoryIssuing->status !== 'pending') {
                     throw new \Exception("Cannot unissue. Inventory Issuing {$inventoryIssuing->issuing_number} is already {$inventoryIssuing->status} (must be pending).");
                 }
+
+                $syncService->rollbackPostedStock($inventoryIssuing);
                 
                 // Delete Inventory Issuing
                 $inventoryIssuing->items()->delete();
                 $inventoryIssuing->delete();
                 \Log::info("Deleted Inventory Issuing {$inventoryIssuing->issuing_number} during unissue.");
+            } else {
+                $syncService->rollbackMaterialIssueStock($materialIssue);
             }
 
             // Revert status to 'pending' (as per request)
             $materialIssue->update(['status' => 'pending']);
 
-            // AUTO-UPDATE WAREHOUSE STOCK when material is returned (Berdasarkan BRD)
-            $this->updateWarehouseStockOnReturn($materialIssue);
-
-            (new \App\Services\Warehouse\InventoryIssuingService())->syncGroupedJobMaterialLifecycleFromMaterialIssue($materialIssue);
+            $syncService->syncGroupedJobMaterialLifecycleFromMaterialIssue($materialIssue);
 
             DB::commit();
 
@@ -2489,18 +2484,19 @@ class JobAssignMaterialIssueController extends Controller
                 $materialIssue = $jobAssignMaterialIssue->materialIssue;
                 
                 // Delete Inv Issuing if pending
+                $syncService = new \App\Services\Warehouse\InventoryIssuingService();
                 if ($inventoryIssuing && $inventoryIssuing->status === 'pending') {
+                    $syncService->rollbackPostedStock($inventoryIssuing);
                     $inventoryIssuing->items()->delete();
                     $inventoryIssuing->delete();
+                } elseif (!$inventoryIssuing) {
+                    $syncService->rollbackMaterialIssueStock($materialIssue);
                 }
 
                 // Revert Status
                 $materialIssue->update(['status' => 'pending']);
 
-                // AUTO-UPDATE WAREHOUSE STOCK when material is returned
-                $this->updateWarehouseStockOnReturn($materialIssue);
-
-                (new \App\Services\Warehouse\InventoryIssuingService())->syncGroupedJobMaterialLifecycleFromMaterialIssue($materialIssue);
+                $syncService->syncGroupedJobMaterialLifecycleFromMaterialIssue($materialIssue);
 
                 // Count original occurrences for user feedback
                 $occurrences = count(array_keys($request->ids, $id));
