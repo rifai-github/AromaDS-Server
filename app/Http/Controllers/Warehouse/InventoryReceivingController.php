@@ -3,17 +3,15 @@
 namespace App\Http\Controllers\Warehouse;
 
 use App\Http\Controllers\Controller;
-use App\Models\InventoryReceiving;
+use App\Http\Traits\AccessControlFilterTrait;
 use App\Models\InventoryMovement;
-use App\Models\Warehouse;
+use App\Models\InventoryReceiving;
 use App\Models\Product;
 use App\Models\User;
+use App\Models\Warehouse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
-use App\Http\Traits\ColumnFilterTrait;
-use App\Http\Traits\AccessControlFilterTrait;
 
 class InventoryReceivingController extends Controller
 {
@@ -62,9 +60,67 @@ class InventoryReceivingController extends Controller
 
         $productNames = \App\Models\MasterProduct::whereIn('id', $duplicateIds)->pluck('name')->implode(', ');
         throw \Illuminate\Validation\ValidationException::withMessages([
-            'items' => 'Produk tidak boleh double dalam satu inventory receiving: ' . ($productNames ?: $duplicateIds->implode(', ')),
+            'items' => 'Produk tidak boleh double dalam satu inventory receiving: '.($productNames ?: $duplicateIds->implode(', ')),
         ]);
     }
+
+    private function buildReceivingItemsFromIssuing(?\App\Models\InventoryIssuing $issuing): array
+    {
+        if (! $issuing) {
+            return [];
+        }
+
+        $issuing->loadMissing(['items.product']);
+
+        return $issuing->items
+            ->map(function ($item) use ($issuing) {
+                if (! $item->product_id) {
+                    return null;
+                }
+
+                $issuedQty = (float) $item->quantity_issued;
+                $requestedQty = (float) $item->quantity_requested;
+                $quantity = $issuedQty > 0 ? $issuedQty : $requestedQty;
+                if ($quantity <= 0) {
+                    return null;
+                }
+
+                $notes = "Copied from Inventory Issuing {$issuing->issuing_number}";
+                if ($item->room_name) {
+                    $notes .= "; Room: {$item->room_name}";
+                }
+                $notes .= "; WI Item: {$item->id}";
+                if ($item->notes) {
+                    $notes .= "; {$item->notes}";
+                }
+
+                return [
+                    'master_product_id' => $item->product_id,
+                    'quantity' => $quantity,
+                    'quantity_received' => 0,
+                    'notes' => $notes,
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function resolveReceivingItemsForStore(Request $request): array
+    {
+        if ($request->has('items') && is_array($request->items) && count($request->items) > 0) {
+            return $request->items;
+        }
+
+        if (! $request->filled('issuing_id')) {
+            return [];
+        }
+
+        $issuing = \App\Models\InventoryIssuing::with('items')->find($request->issuing_id);
+
+        return $this->buildReceivingItemsFromIssuing($issuing);
+    }
+
     /**
      * Display a listing of the resource.
      */
@@ -72,15 +128,15 @@ class InventoryReceivingController extends Controller
     {
         // Query with proper relationships according to BRD
         $query = InventoryReceiving::with(['branch', 'receivedFrom', 'receivedBy', 'updatedBy', 'createdBy', 'issuing.branch', 'issuing.warehouse.branch']);
-        
+
         // Apply AutoFilterable
         $query->filter($request->all());
-        
+
         // Apply Access Control
         $user = Auth::user();
         // Uses 'branch_id' for branch separation and 'issuing.warehouse_id' for warehouse manager access
         // 'received_from' added as marketing field to allow receivers to see the data
-        $query = $this->applyAccessControlFilter($query, $user, 'created_by', 'received_from', 'branch_id', function($q) use ($user) {
+        $query = $this->applyAccessControlFilter($query, $user, 'created_by', 'received_from', 'branch_id', function ($q) use ($user) {
             // Allow if user is the receiver
             $q->orWhere('received_by_old', $user->id);
         }, 'issuing.warehouse_id');
@@ -98,38 +154,38 @@ class InventoryReceivingController extends Controller
         // Filter by search (receiving number or reference)
         if ($request->filled('search')) {
             $searchTerm = $request->search;
-            $query->where(function($q) use ($searchTerm) {
+            $query->where(function ($q) use ($searchTerm) {
                 $q->where('receiving_number', 'like', "%{$searchTerm}%")
-                  ->orWhere('reference_no', 'like', "%{$searchTerm}%")
-                  ->orWhere('id', 'like', "%{$searchTerm}%");
+                    ->orWhere('reference_no', 'like', "%{$searchTerm}%")
+                    ->orWhere('id', 'like', "%{$searchTerm}%");
             });
         }
-        
+
         // Filter by date range (only if provided in request)
         if ($request->filled('date_from')) {
             $dateFrom = $request->date_from;
-            $query->where(function($q) use ($dateFrom) {
+            $query->where(function ($q) use ($dateFrom) {
                 // If received, check receive_date. If pending/other and receive_date is null, fallback to created_at
                 $q->where('receive_date', '>=', $dateFrom)
-                  ->orWhere(function($subq) use ($dateFrom) {
-                      $subq->whereNull('receive_date')
-                           ->whereDate('created_at', '>=', $dateFrom);
-                  });
+                    ->orWhere(function ($subq) use ($dateFrom) {
+                        $subq->whereNull('receive_date')
+                            ->whereDate('created_at', '>=', $dateFrom);
+                    });
             });
         }
         if ($request->filled('date_to')) {
             $dateTo = $request->date_to;
-            $query->where(function($q) use ($dateTo) {
+            $query->where(function ($q) use ($dateTo) {
                 $q->where('receive_date', '<=', $dateTo)
-                  ->orWhere(function($subq) use ($dateTo) {
-                      $subq->whereNull('receive_date')
-                           ->whereDate('created_at', '<=', $dateTo);
-                  });
+                    ->orWhere(function ($subq) use ($dateTo) {
+                        $subq->whereNull('receive_date')
+                            ->whereDate('created_at', '<=', $dateTo);
+                    });
             });
         }
-        
+
         $receivings = $query->orderBy('created_at', 'desc')->paginate(5);
-        
+
         // Get dropdown data
         $branches = \App\Models\Branch::where('is_active', true)->orderBy('name')->get();
         $users = User::orderBy('name')->get();
@@ -160,7 +216,7 @@ class InventoryReceivingController extends Controller
                 'branches' => $branches,
                 'users' => $users,
                 'issuings' => $issuings,
-            ]
+            ],
         ]);
     }
 
@@ -188,9 +244,14 @@ class InventoryReceivingController extends Controller
         try {
             DB::beginTransaction();
 
+            $receivingItems = $this->resolveReceivingItemsForStore($request);
+            if ($request->filled('issuing_id') && empty($receivingItems)) {
+                throw new \RuntimeException('Inventory issuing yang dipilih tidak memiliki item yang bisa dibuatkan receiving.');
+            }
+
             // Generate unique receiving number
             $receivingNumber = $this->generateReceivingNumber();
-            
+
             $receiving = InventoryReceiving::create([
                 'receiving_number' => $receivingNumber,
                 'reference_no' => $request->reference_no,
@@ -205,11 +266,12 @@ class InventoryReceivingController extends Controller
             ]);
 
             // Create receiving items if provided
-            if ($request->has('items') && is_array($request->items)) {
-                foreach ($request->items as $item) {
+            if (! empty($receivingItems)) {
+                foreach ($receivingItems as $item) {
                     $receiving->items()->create([
                         'master_product_id' => $item['master_product_id'],
                         'quantity' => $item['quantity'],
+                        'quantity_received' => $item['quantity_received'] ?? null,
                         'notes' => $item['notes'] ?? null,
                     ]);
                 }
@@ -221,14 +283,15 @@ class InventoryReceivingController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Inventory receiving created successfully.',
-                'data' => $receiving->load(['branch', 'receivedFrom', 'receivedBy', 'items.product'])
+                'data' => $receiving->load(['branch', 'receivedFrom', 'receivedBy', 'items.product']),
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+
             // Always return JSON for AJAX requests
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to create inventory receiving: ' . $e->getMessage()
+                'message' => 'Failed to create inventory receiving: '.$e->getMessage(),
             ], 422);
         }
     }
@@ -239,10 +302,10 @@ class InventoryReceivingController extends Controller
     public function show($id)
     {
         $inventoryReceiving = InventoryReceiving::with(['branch', 'receivedFrom', 'receivedBy', 'issuing', 'items.product.productType'])->find($id);
-        
-        if (!$inventoryReceiving) {
+
+        if (! $inventoryReceiving) {
             if (request()->expectsJson()) {
-                return response()->json(['status' => 'error','message' => 'Inventory receiving not found'], 404);
+                return response()->json(['status' => 'error', 'message' => 'Inventory receiving not found'], 404);
             }
             abort(404);
         }
@@ -261,14 +324,14 @@ class InventoryReceivingController extends Controller
                     'status' => $inventoryReceiving->status,
                     'notes' => $inventoryReceiving->notes,
                     'issuing_number' => $inventoryReceiving->issuing?->issuing_number,
-                ]
+                ],
             ]);
         }
 
         // Load serial numbers for products in this receiving (only SNs linked to this receiving)
         $serialNumbers = [];
         $remainingQuantities = []; // Store remaining quantity for each product
-        
+
         foreach ($inventoryReceiving->items->groupBy('master_product_id') as $productId => $items) {
             if ($productId) {
                 $sns = \App\Models\SerialNumber::where('master_product_id', $productId)
@@ -277,18 +340,18 @@ class InventoryReceivingController extends Controller
                     ->orderBy('created_at', 'desc')
                     ->get();
                 $serialNumbers[$productId] = $sns;
-                
+
                 // Calculate remaining quantity across all rows for this product.
                 $registeredSNCount = $sns->count();
                 $requestedQty = (float) $items->sum('quantity');
                 $remainingQuantities[$productId] = max(0, $requestedQty - $registeredSNCount);
             }
         }
-        
+
         return view('warehouse.inventory-receivings.show', [
             'receiving' => $inventoryReceiving,
             'serialNumbers' => $serialNumbers,
-            'remainingQuantities' => $remainingQuantities
+            'remainingQuantities' => $remainingQuantities,
         ]);
     }
 
@@ -300,7 +363,7 @@ class InventoryReceivingController extends Controller
         if ($inventoryReceiving->status !== 'pending') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Cannot edit receiving that is not in pending status.'
+                'message' => 'Cannot edit receiving that is not in pending status.',
             ], 400);
         }
 
@@ -316,7 +379,7 @@ class InventoryReceivingController extends Controller
                 'branches' => $branches,
                 'users' => $users,
                 'issuings' => $issuings,
-            ]
+            ],
         ]);
     }
 
@@ -328,41 +391,41 @@ class InventoryReceivingController extends Controller
         // Support partial update (for modal edits)
         $validationRules = [];
         $updateData = ['updated_by' => Auth::id()];
-        
+
         if ($request->has('branch_id')) {
             $validationRules['branch_id'] = 'nullable|exists:branches,id';
             $updateData['branch_id'] = $request->branch_id;
         }
-        
+
         if ($request->has('receive_date')) {
             $validationRules['receive_date'] = 'nullable|date';
             $updateData['receive_date'] = $request->receive_date;
         }
-        
+
         if ($request->has('schedule_date')) {
             $validationRules['schedule_date'] = 'nullable|date';
             $updateData['schedule_date'] = $request->schedule_date;
         }
-        
+
         if ($request->has('received_from')) {
             $validationRules['received_from'] = 'nullable|exists:users,id';
             $updateData['received_from'] = $request->received_from;
         }
-        
+
         if ($request->has('notes')) {
             $validationRules['notes'] = 'nullable|string';
             $updateData['notes'] = $request->notes;
         }
-        
+
         // Full update validation (if status provided)
         if ($request->has('status')) {
             if ($inventoryReceiving->status !== 'pending' && $request->status !== $inventoryReceiving->status) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Cannot update receiving that is not in pending status.'
+                    'message' => 'Cannot update receiving that is not in pending status.',
                 ], 400);
             }
-            
+
             $validationRules = array_merge($validationRules, [
                 'reference_no' => 'required|string|max:100',
                 'issuing_id' => 'nullable|exists:inventory_issuings,id',
@@ -371,7 +434,7 @@ class InventoryReceivingController extends Controller
                 'receive_date' => 'required|date',
                 'status' => 'required|in:pending,received,cancelled',
             ]);
-            
+
             $updateData = array_merge($updateData, [
                 'reference_no' => $request->reference_no,
                 'issuing_id' => $request->issuing_id,
@@ -381,13 +444,36 @@ class InventoryReceivingController extends Controller
                 'status' => $request->status,
             ]);
         }
-        
+
         $request->validate($validationRules);
 
         try {
             DB::beginTransaction();
 
             $inventoryReceiving->update($updateData);
+
+            if (
+                $inventoryReceiving->status === 'pending'
+                && $request->filled('issuing_id')
+                && $inventoryReceiving->items()->doesntExist()
+            ) {
+                $issuing = \App\Models\InventoryIssuing::with('items')->find($request->issuing_id);
+                $receivingItems = $this->buildReceivingItemsFromIssuing($issuing);
+
+                if (empty($receivingItems)) {
+                    throw new \RuntimeException('Inventory issuing yang dipilih tidak memiliki item yang bisa dibuatkan receiving.');
+                }
+
+                foreach ($receivingItems as $item) {
+                    $inventoryReceiving->items()->create([
+                        'master_product_id' => $item['master_product_id'],
+                        'quantity' => $item['quantity'],
+                        'quantity_received' => $item['quantity_received'] ?? null,
+                        'notes' => $item['notes'] ?? null,
+                    ]);
+                }
+            }
+
             $inventoryReceiving->load(['branch', 'receivedFrom', 'receivedBy']);
 
             DB::commit();
@@ -405,14 +491,15 @@ class InventoryReceivingController extends Controller
                     'received_from' => $inventoryReceiving->received_from,
                     'received_from_name' => $inventoryReceiving->receivedFrom?->name,
                     'notes' => $inventoryReceiving->notes,
-                ]
+                ],
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+
             // Always return JSON for AJAX requests
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to update inventory receiving: ' . $e->getMessage()
+                'message' => 'Failed to update inventory receiving: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -425,7 +512,7 @@ class InventoryReceivingController extends Controller
         if ($inventoryReceiving->status !== 'pending') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Cannot delete receiving that is not in pending status.'
+                'message' => 'Cannot delete receiving that is not in pending status.',
             ], 400);
         }
 
@@ -438,13 +525,14 @@ class InventoryReceivingController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Inventory receiving deleted successfully.'
+                'message' => 'Inventory receiving deleted successfully.',
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to delete inventory receiving: ' . $e->getMessage()
+                'message' => 'Failed to delete inventory receiving: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -457,7 +545,7 @@ class InventoryReceivingController extends Controller
         if ($inventoryReceiving->status !== 'pending') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Can only receive pending inventory.'
+                'message' => 'Can only receive pending inventory.',
             ], 400);
         }
 
@@ -466,12 +554,12 @@ class InventoryReceivingController extends Controller
 
             // Load items and issuing to get warehouse_id
             $inventoryReceiving->load(['items.product', 'issuing.warehouse']);
-            
+
             // Get warehouse_id from issuing or branch
             $warehouseId = null;
             if ($inventoryReceiving->issuing && $inventoryReceiving->issuing->warehouse_id) {
                 $warehouseId = $inventoryReceiving->issuing->warehouse_id;
-            } else if ($inventoryReceiving->branch_id) {
+            } elseif ($inventoryReceiving->branch_id) {
                 // Get warehouse from branch (first active warehouse in that branch)
                 $warehouse = \App\Models\Warehouse::where('branch_id', $inventoryReceiving->branch_id)
                     ->where('is_active', true)
@@ -480,12 +568,13 @@ class InventoryReceivingController extends Controller
                     $warehouseId = $warehouse->id;
                 }
             }
-            
-            if (!$warehouseId) {
+
+            if (! $warehouseId) {
                 DB::rollback();
+
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Cannot determine warehouse for stock update.'
+                    'message' => 'Cannot determine warehouse for stock update.',
                 ], 400);
             }
 
@@ -499,10 +588,10 @@ class InventoryReceivingController extends Controller
             // Auto-update stock in warehouse_products for each item
             $updatedProducts = [];
             foreach ($inventoryReceiving->items as $item) {
-                if (!$item->master_product_id || !$item->quantity) {
+                if (! $item->master_product_id || ! $item->quantity) {
                     continue;
                 }
-                
+
                 // Find or create warehouse_product record
                 $warehouseProduct = \App\Models\WarehouseProduct::firstOrCreate(
                     [
@@ -517,35 +606,36 @@ class InventoryReceivingController extends Controller
                         'updated_by' => Auth::id(),
                     ]
                 );
-                
+
                 // Increment stock quantity
                 $oldQuantity = $warehouseProduct->quantity;
                 $newQuantity = $oldQuantity + $item->quantity;
-                
+
                 $warehouseProduct->update([
                     'quantity' => $newQuantity,
                     'updated_by' => Auth::id(),
                 ]);
-                
+
                 $updatedProducts[] = [
                     'product_name' => $item->product->name ?? 'Unknown',
                     'old_quantity' => $oldQuantity,
                     'received_quantity' => $item->quantity,
                     'new_quantity' => $newQuantity,
                 ];
-                
+
                 \Log::info("Stock updated for product {$item->master_product_id} in warehouse {$warehouseId}: {$oldQuantity} + {$item->quantity} = {$newQuantity}");
-                
+
                 // Create inventory movement record for receiving (stock masuk)
                 // Ensure all required data exists
-                if (!$warehouseId || !$item->master_product_id || !$item->quantity || $item->quantity <= 0) {
+                if (! $warehouseId || ! $item->master_product_id || ! $item->quantity || $item->quantity <= 0) {
                     \Log::warning("Skipping movement creation - missing required data: warehouse_id={$warehouseId}, product_id={$item->master_product_id}, quantity={$item->quantity}");
+
                     continue;
                 }
-                
-                $productName = $item->product->name ?? ($item->masterProduct->name ?? 'Product ID: ' . $item->master_product_id);
+
+                $productName = $item->product->name ?? ($item->masterProduct->name ?? 'Product ID: '.$item->master_product_id);
                 $receivingNumber = $inventoryReceiving->receiving_number ?? "REC-{$inventoryReceiving->id}";
-                
+
                 $movementData = [
                     'warehouse_id' => $warehouseId,
                     'master_product_id' => $item->master_product_id,
@@ -555,23 +645,23 @@ class InventoryReceivingController extends Controller
                     'created_by' => Auth::id() ?? 1, // Fallback to system user
                     'updated_by' => Auth::id() ?? 1, // Fallback to system user
                 ];
-                
+
                 // Fill movement data directly using new columns
                 $movementData['movement_date'] = $inventoryReceiving->receive_date ?? now()->toDateString();
                 $movementData['reference_no'] = $receivingNumber;
                 $movementData['reference_type'] = 'inventory_receiving';
-                $movementData['movement_no'] = 'REC-' . str_replace('REC-', '', $receivingNumber);
-                
+                $movementData['movement_no'] = 'REC-'.str_replace('REC-', '', $receivingNumber);
+
                 if (isset($item->unit_price) && $item->unit_price > 0) {
                     $movementData['unit_price'] = $item->unit_price;
                     $movementData['total_value'] = abs($item->quantity) * $item->unit_price;
                 }
-                
+
                 try {
                     InventoryMovement::create($movementData);
                     \Log::info("Inventory Movement created for receiving: Product {$item->master_product_id}, Quantity: {$item->quantity}");
                 } catch (\Exception $e) {
-                    \Log::error("Failed to create Inventory Movement for receiving: " . $e->getMessage());
+                    \Log::error('Failed to create Inventory Movement for receiving: '.$e->getMessage());
                     // Don't throw, continue with other items
                 }
             }
@@ -585,12 +675,12 @@ class InventoryReceivingController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollback();
-            \Log::error('Failed to receive inventory: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
-            
+            \Log::error('Failed to receive inventory: '.$e->getMessage());
+            \Log::error('Stack trace: '.$e->getTraceAsString());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to receive inventory: ' . $e->getMessage()
+                'message' => 'Failed to receive inventory: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -603,7 +693,7 @@ class InventoryReceivingController extends Controller
         if ($inventoryReceiving->status !== 'pending') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Can only cancel pending receiving.'
+                'message' => 'Can only cancel pending receiving.',
             ], 400);
         }
 
@@ -620,13 +710,14 @@ class InventoryReceivingController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Inventory receiving cancelled successfully.'
+                'message' => 'Inventory receiving cancelled successfully.',
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to cancel receiving: ' . $e->getMessage()
+                'message' => 'Failed to cancel receiving: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -645,7 +736,7 @@ class InventoryReceivingController extends Controller
 
             // Load items and get warehouse_id
             $inventoryReceiving->load(['items.product', 'branch']);
-            
+
             // Validate Serial Numbers for products that require them
             $serialNumbers = \App\Models\SerialNumber::where('inventory_receiving_id', $inventoryReceiving->id)
                 ->get()
@@ -658,7 +749,7 @@ class InventoryReceivingController extends Controller
                 $snCount = (int) ($snCountsByProduct[$productId] ?? 0);
                 $isSerialTracked = $this->productRequiresSerialNumber($firstItem->product) || $snCount > 0;
 
-                if (!$isSerialTracked) {
+                if (! $isSerialTracked) {
                     continue;
                 }
 
@@ -666,6 +757,7 @@ class InventoryReceivingController extends Controller
 
                 if ($snCount != $expectedQty) {
                     DB::rollback();
+
                     return back()->with('error', "Product '{$firstItem->product?->name}' requires Serial Number. Found {$snCount}, expected {$expectedQty}. Please input all serial numbers before finalizing.");
                 }
 
@@ -674,27 +766,28 @@ class InventoryReceivingController extends Controller
 
             $inventoryReceiving->load(['items.product', 'branch']);
 
-        // Get warehouse_id from branch (first active warehouse in that branch)
+            // Get warehouse_id from branch (first active warehouse in that branch)
             $warehouse = \App\Models\Warehouse::where('branch_id', $inventoryReceiving->branch_id)
                 ->where('is_active', true)
                 ->first();
-            
-            if (!$warehouse) {
+
+            if (! $warehouse) {
                 DB::rollback();
+
                 return back()->with('error', 'Cannot find active warehouse for this branch.');
             }
 
             // Update stock in warehouse_products for each item
             $updatedProducts = [];
             foreach ($inventoryReceiving->items as $item) {
-                if (!$item->master_product_id || !$item->quantity) {
+                if (! $item->master_product_id || ! $item->quantity) {
                     continue;
                 }
 
                 // Determine received quantity based on SN requirement
                 $hasSerial = $this->productRequiresSerialNumber($item->product)
                     || (($snCountsByProduct[$item->master_product_id] ?? 0) > 0);
-                
+
                 if ($hasSerial) {
                     // For SN items, strict adherence to what was scanned/inputted. Default to 0 if null.
                     $receivedQty = (float) ($item->quantity_received ?? 0);
@@ -706,10 +799,10 @@ class InventoryReceivingController extends Controller
 
                 // Persist the determined quantity to the item so it displays correctly in UI and Inventory Request
                 if ($item->quantity_received != $receivedQty) {
-                     $item->update(['quantity_received' => $receivedQty]);
-                     $item->quantity_received = $receivedQty; // Update instance for later use in this request
+                    $item->update(['quantity_received' => $receivedQty]);
+                    $item->quantity_received = $receivedQty; // Update instance for later use in this request
                 }
-                
+
                 // Find or create warehouse_product record
                 $warehouseProduct = \App\Models\WarehouseProduct::firstOrCreate(
                     [
@@ -724,35 +817,36 @@ class InventoryReceivingController extends Controller
                         'updated_by' => Auth::id(),
                     ]
                 );
-                
+
                 // Increment stock quantity using finalized received quantity
                 $oldQuantity = $warehouseProduct->quantity;
                 $newQuantity = $oldQuantity + $receivedQty;
-                
+
                 $warehouseProduct->update([
                     'quantity' => $newQuantity,
                     'updated_by' => Auth::id(),
                 ]);
-                
+
                 $updatedProducts[] = [
                     'product_name' => $item->product->name ?? 'Unknown',
                     'old_quantity' => $oldQuantity,
                     'received_quantity' => $receivedQty,
                     'new_quantity' => $newQuantity,
                 ];
-                
+
                 \Log::info("Stock updated for product {$item->master_product_id} in warehouse {$warehouse->id}: {$oldQuantity} + {$receivedQty} = {$newQuantity}");
-                
+
                 // Create inventory movement record for receiving (stock masuk)
                 // Ensure all required data exists
-                if (!$warehouse->id || !$item->master_product_id || !$item->quantity || $item->quantity <= 0) {
+                if (! $warehouse->id || ! $item->master_product_id || ! $item->quantity || $item->quantity <= 0) {
                     \Log::warning("Skipping movement creation - missing required data: warehouse_id={$warehouse->id}, product_id={$item->master_product_id}, quantity={$item->quantity}");
+
                     continue;
                 }
-                
-                $productName = $item->product->name ?? ($item->masterProduct->name ?? 'Product ID: ' . $item->master_product_id);
+
+                $productName = $item->product->name ?? ($item->masterProduct->name ?? 'Product ID: '.$item->master_product_id);
                 $receivingNumber = $inventoryReceiving->receiving_number ?? "REC-{$inventoryReceiving->id}";
-                
+
                 $movementData = [
                     'warehouse_id' => $warehouse->id,
                     'master_product_id' => $item->master_product_id,
@@ -762,23 +856,23 @@ class InventoryReceivingController extends Controller
                     'created_by' => Auth::id() ?? 1, // Fallback to system user
                     'updated_by' => Auth::id() ?? 1, // Fallback to system user
                 ];
-                
+
                 // Fill movement data directly using new columns
                 $movementData['movement_date'] = $inventoryReceiving->receive_date ?? now()->toDateString();
                 $movementData['reference_no'] = $receivingNumber;
                 $movementData['reference_type'] = 'inventory_receiving';
-                $movementData['movement_no'] = 'REC-' . str_replace('REC-', '', $receivingNumber);
-                
+                $movementData['movement_no'] = 'REC-'.str_replace('REC-', '', $receivingNumber);
+
                 if (isset($item->unit_price) && $item->unit_price > 0) {
                     $movementData['unit_price'] = $item->unit_price;
                     $movementData['total_value'] = abs($receivedQty) * $item->unit_price;
                 }
-                
+
                 try {
                     InventoryMovement::create($movementData);
                     \Log::info("Inventory Movement created for receiving: Product {$item->master_product_id}, Quantity: {$receivedQty}");
                 } catch (\Exception $e) {
-                    \Log::error("Failed to create Inventory Movement for receiving: " . $e->getMessage());
+                    \Log::error('Failed to create Inventory Movement for receiving: '.$e->getMessage());
                     // Don't throw, continue with other items
                 }
             }
@@ -791,7 +885,7 @@ class InventoryReceivingController extends Controller
                     'updated_by' => Auth::id(),
                     'updated_at' => now(),
                 ]);
-            
+
             if ($updatedSNCount > 0) {
                 \Log::info("Updated {$updatedSNCount} Serial Numbers to 'ready' status for Receiving {$inventoryReceiving->receiving_number}");
             }
@@ -812,45 +906,45 @@ class InventoryReceivingController extends Controller
                         'status' => 'completed',
                         'completed_at' => now(),
                     ]);
-                    
+
                     // Auto-sync received_qty to inventory request items
                     // RELOAD items to ensure we get the latest quantity_received values from DB
                     // (especially for Non-SN items that were just updated in the previous loop)
                     $inventoryReceiving->load('items');
-                    
+
                     foreach ($inventoryReceiving->items as $receivingItem) {
-                        if (!$receivingItem->master_product_id || !$receivingItem->quantity) {
+                        if (! $receivingItem->master_product_id || ! $receivingItem->quantity) {
                             continue;
                         }
-                        
+
                         // Find matching request item by product_id
                         $requestItem = $request->items()
                             ->where('master_product_id', $receivingItem->master_product_id)
                             ->first();
-                        
+
                         if ($requestItem) {
                             // Get the received quantity
                             // If quantity_received is explicitly set (including 0), use it.
                             // If null, default to 0 (assume nothing received if not specified)
                             // This prevents "Auto-Receive" behavior which caused confusion
                             $receivedQty = (float) ($receivingItem->quantity_received ?? 0);
-                            
+
                             // Calculate returned_qty = issued_qty - received_qty
                             // issued_qty is what was sent from central warehouse
                             $issuedQty = (float) ($requestItem->issued_qty ?? $requestItem->quantity ?? 0);
                             $returnedQty = max(0, $issuedQty - $receivedQty);
-                            
+
                             // Update both received_qty and returned_qty
                             $requestItem->update([
                                 'received_qty' => $receivedQty,
                                 'returned_qty' => $returnedQty,
                                 'updated_by' => Auth::id(),
                             ]);
-                            
+
                             \Log::info("Auto-synced for request item {$requestItem->id}: received_qty={$receivedQty}, returned_qty={$returnedQty} (issued_qty was {$issuedQty})");
                         }
                     }
-                    
+
                     \Log::info("Inventory Request {$request->request_number} marked as completed with received quantities synced");
                 }
             }
@@ -860,10 +954,10 @@ class InventoryReceivingController extends Controller
             return back()->with('success', 'Inventory receiving finalized successfully! Stock updated and request completed.');
         } catch (\Exception $e) {
             DB::rollback();
-            \Log::error('Failed to finalize receiving: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
-            
-            return back()->with('error', 'Failed to finalize receiving: ' . $e->getMessage());
+            \Log::error('Failed to finalize receiving: '.$e->getMessage());
+            \Log::error('Stack trace: '.$e->getTraceAsString());
+
+            return back()->with('error', 'Failed to finalize receiving: '.$e->getMessage());
         }
     }
 
@@ -882,7 +976,7 @@ class InventoryReceivingController extends Controller
         if ($inventoryReceiving->status !== 'pending') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Hanya bisa input Serial Number untuk receiving dengan status pending.'
+                'message' => 'Hanya bisa input Serial Number untuk receiving dengan status pending.',
             ], 422);
         }
 
@@ -890,17 +984,18 @@ class InventoryReceivingController extends Controller
             DB::beginTransaction();
 
             $serialNumber = strtoupper(trim($request->serial_number));
-            
+
             // Get warehouse from receiving branch
             $warehouse = \App\Models\Warehouse::where('branch_id', $inventoryReceiving->branch_id)
                 ->where('is_active', true)
                 ->first();
-            
-            if (!$warehouse) {
+
+            if (! $warehouse) {
                 DB::rollBack();
+
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Warehouse tidak ditemukan untuk branch ini.'
+                    'message' => 'Warehouse tidak ditemukan untuk branch ini.',
                 ], 422);
             }
 
@@ -909,35 +1004,35 @@ class InventoryReceivingController extends Controller
             $existingSN = \App\Models\SerialNumber::withTrashed()
                 ->where('serial_number', $serialNumber)
                 ->first();
-            
+
             if ($existingSN) {
                 // MOM16: Allow existing SN if status is on_hand or on_hand_remove (returning from technician)
                 $allowedReturnStatuses = ['on_hand', 'on_hand_remove'];
-                
+
                 if (in_array($existingSN->status, $allowedReturnStatuses)) {
                     // Update existing SN to point to this receiving
                     $existingSN->update([
                         'inventory_receiving_id' => $inventoryReceiving->id,
                         'warehouse_id' => $warehouse->id,
                         'status' => 'pending', // Pending until receiving is finalized
-                        'notes' => ($existingSN->notes ? $existingSN->notes . "\n" : "") . "Returned via Receiving: {$inventoryReceiving->receiving_number}. User Note: " . $request->notes,
-                        'updated_by' => Auth::id()
+                        'notes' => ($existingSN->notes ? $existingSN->notes."\n" : '')."Returned via Receiving: {$inventoryReceiving->receiving_number}. User Note: ".$request->notes,
+                        'updated_by' => Auth::id(),
                     ]);
-                    
+
                     $newSerialNumber = $existingSN;
                     \Log::info("Serial Number {$serialNumber} (ID: {$existingSN->id}) is being RETURNED via Receiving {$inventoryReceiving->receiving_number}");
                 } else {
                     DB::rollBack();
-                    
+
                     // Buat pesan error yang lebih informatif
                     $errorMessage = "Serial Number <strong>{$serialNumber}</strong> sudah terdaftar di sistem dengan status <strong>{$existingSN->status_text}</strong>. ";
-                    
+
                     if ($existingSN->trashed()) {
-                        $errorMessage .= "SN ini pernah terdaftar namun sudah dihapus.";
+                        $errorMessage .= 'SN ini pernah terdaftar namun sudah dihapus.';
                     } else {
                         $productName = $existingSN->masterProduct->name ?? 'Unknown Product';
                         $warehouseName = $existingSN->warehouse->name ?? 'Unknown Warehouse';
-                        
+
                         if ($existingSN->inventory_receiving_id) {
                             $receiving = \App\Models\InventoryReceiving::find($existingSN->inventory_receiving_id);
                             $receivingNumber = $receiving ? $receiving->receiving_number : 'Unknown';
@@ -946,10 +1041,10 @@ class InventoryReceivingController extends Controller
                             $errorMessage .= "SN ini sudah terdaftar untuk produk <strong>{$productName}</strong> di warehouse <strong>{$warehouseName}</strong>. Hanya bisa mengembalikan SN yang berstatus On Hand Teknisi.";
                         }
                     }
-                    
+
                     return response()->json([
                         'status' => 'error',
-                        'message' => $errorMessage
+                        'message' => $errorMessage,
                     ], 422);
                 }
             } else {
@@ -962,7 +1057,7 @@ class InventoryReceivingController extends Controller
                     'status' => 'pending', // SN pending until receiving is finalized
                     'notes' => $request->notes,
                     'created_by' => Auth::id(),
-                    'updated_by' => Auth::id()
+                    'updated_by' => Auth::id(),
                 ]);
             }
 
@@ -988,17 +1083,17 @@ class InventoryReceivingController extends Controller
                 'status' => 'success',
                 'message' => "Serial Number {$serialNumber} berhasil disimpan!",
                 'remaining_quantity' => max(0, $requestedQty - $currentSNCount),
-                'data' => $newSerialNumber->load(['warehouse', 'masterProduct'])
+                'data' => $newSerialNumber->load(['warehouse', 'masterProduct']),
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Failed to scan serial number: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
-            
+            \Log::error('Failed to scan serial number: '.$e->getMessage());
+            \Log::error('Stack trace: '.$e->getTraceAsString());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Gagal menyimpan Serial Number: ' . $e->getMessage()
+                'message' => 'Gagal menyimpan Serial Number: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1067,12 +1162,12 @@ class InventoryReceivingController extends Controller
                     'users' => $users,
                     'issuings' => $issuings,
                     'products' => $products,
-                ]
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to load modal data: ' . $e->getMessage()
+                'message' => 'Failed to load modal data: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1084,14 +1179,14 @@ class InventoryReceivingController extends Controller
     {
         $prefix = 'RC';
         $date = now()->format('Ymd');
-        
+
         // Get the last receiving number for today (excluding soft-deleted)
         $lastReceiving = InventoryReceiving::withoutTrashed()
             ->whereDate('created_at', today())
-            ->where('receiving_number', 'like', $prefix . '-' . $date . '-%')
+            ->where('receiving_number', 'like', $prefix.'-'.$date.'-%')
             ->orderBy('receiving_number', 'desc')
             ->first();
-        
+
         if ($lastReceiving) {
             // Extract the sequence number and increment
             $lastSequence = (int) substr($lastReceiving->receiving_number, -4);
@@ -1099,8 +1194,8 @@ class InventoryReceivingController extends Controller
         } else {
             $sequence = '0001';
         }
-        
-        return $prefix . '-' . $date . '-' . $sequence;
+
+        return $prefix.'-'.$date.'-'.$sequence;
     }
 
     /**
@@ -1110,7 +1205,7 @@ class InventoryReceivingController extends Controller
     {
         $request->validate([
             'ids' => 'required|array',
-            'ids.*' => 'exists:inventory_receivings,id'
+            'ids.*' => 'exists:inventory_receivings,id',
         ]);
 
         try {
@@ -1124,14 +1219,14 @@ class InventoryReceivingController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => "Successfully deleted {$count} inventory receiving(s)."
+                'message' => "Successfully deleted {$count} inventory receiving(s).",
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to delete inventory receivings: ' . $e->getMessage()
+                'message' => 'Failed to delete inventory receivings: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1149,11 +1244,11 @@ class InventoryReceivingController extends Controller
         try {
             // Find the item
             $item = $inventoryReceiving->items()->where('id', $request->item_id)->first();
-            
-            if (!$item) {
+
+            if (! $item) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Item tidak ditemukan.'
+                    'message' => 'Item tidak ditemukan.',
                 ], 404);
             }
 
@@ -1161,7 +1256,7 @@ class InventoryReceivingController extends Controller
             if ($request->quantity_received > $item->quantity) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Quantity Received tidak boleh melebihi Quantity (' . $item->quantity . ').'
+                    'message' => 'Quantity Received tidak boleh melebihi Quantity ('.$item->quantity.').',
                 ], 422);
             }
 
@@ -1177,14 +1272,14 @@ class InventoryReceivingController extends Controller
                 'data' => [
                     'item_id' => $item->id,
                     'quantity_received' => $item->quantity_received,
-                ]
+                ],
             ]);
         } catch (\Exception $e) {
-            \Log::error('Failed to update item quantity: ' . $e->getMessage());
-            
+            \Log::error('Failed to update item quantity: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Gagal mengupdate Quantity Received: ' . $e->getMessage()
+                'message' => 'Gagal mengupdate Quantity Received: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1205,11 +1300,11 @@ class InventoryReceivingController extends Controller
             $serialNumber = \App\Models\SerialNumber::where('id', $request->serial_number_id)
                 ->where('inventory_receiving_id', $inventoryReceiving->id)
                 ->first();
-            
-            if (!$serialNumber) {
+
+            if (! $serialNumber) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Serial Number tidak ditemukan atau tidak terkait dengan receiving ini.'
+                    'message' => 'Serial Number tidak ditemukan atau tidak terkait dengan receiving ini.',
                 ], 404);
             }
 
@@ -1217,7 +1312,7 @@ class InventoryReceivingController extends Controller
             if ($serialNumber->status !== 'pending' && $inventoryReceiving->status !== 'pending') {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Serial Number tidak dapat dihapus karena sudah dalam status ' . $serialNumber->status . '.'
+                    'message' => 'Serial Number tidak dapat dihapus karena sudah dalam status '.$serialNumber->status.'.',
                 ], 422);
             }
 
@@ -1248,15 +1343,15 @@ class InventoryReceivingController extends Controller
                 'data' => [
                     'product_id' => $productId,
                     'remaining_quantity' => max(0, $requestedQty - $currentSNCount),
-                ]
+                ],
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Failed to delete serial number: ' . $e->getMessage());
-            
+            \Log::error('Failed to delete serial number: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Gagal menghapus Serial Number: ' . $e->getMessage()
+                'message' => 'Gagal menghapus Serial Number: '.$e->getMessage(),
             ], 500);
         }
     }

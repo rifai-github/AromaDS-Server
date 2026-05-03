@@ -11,19 +11,20 @@ Artisan::command('inspire', function () {
 Artisan::command('user:list', function () {
     $this->info('Users in database:');
     $this->newLine();
-    
+
     $users = \App\Models\User::all(['id', 'name', 'email', 'username', 'is_active']);
-    
+
     if ($users->isEmpty()) {
         $this->warn('No users found in database!');
+
         return 1;
     }
-    
+
     foreach ($users as $user) {
         $status = $user->is_active ? '✅ Active' : '❌ Inactive';
         $this->line("ID: {$user->id} | Name: {$user->name} | Email: {$user->email} | Username: {$user->username} | Status: {$status}");
     }
-    
+
     return 0;
 })->purpose('List all users in database');
 
@@ -39,43 +40,44 @@ Artisan::command('user:check-login', function () {
         $userIssues = [];
 
         // Check if user is active
-        if (!$user->is_active) {
+        if (! $user->is_active) {
             $userIssues[] = 'User is inactive';
         }
 
         // Check if email is set
-        if (!$user->email) {
+        if (! $user->email) {
             $userIssues[] = 'Email is missing';
         }
 
         // Check if username is set
-        if (!$user->username) {
+        if (! $user->username) {
             $userIssues[] = 'Username is missing';
         }
 
         // Check if password is set
-        if (!$user->password) {
+        if (! $user->password) {
             $userIssues[] = 'Password is missing';
         }
 
-        if (!empty($userIssues)) {
+        if (! empty($userIssues)) {
             $issues[] = [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'username' => $user->username,
                 'is_active' => $user->is_active,
-                'issues' => $userIssues
+                'issues' => $userIssues,
             ];
         }
     }
 
     if (empty($issues)) {
         $this->info('✅ All users are properly configured for login!');
+
         return 0;
     }
 
-    $this->warn('❌ Found ' . count($issues) . ' users with login issues:');
+    $this->warn('❌ Found '.count($issues).' users with login issues:');
     $this->newLine();
 
     foreach ($issues as $issue) {
@@ -83,8 +85,8 @@ Artisan::command('user:check-login', function () {
         $this->line("Name: {$issue['name']}");
         $this->line("Email: {$issue['email']}");
         $this->line("Username: {$issue['username']}");
-        $this->line("Active: " . ($issue['is_active'] ? 'Yes' : 'No'));
-        $this->line("Issues:");
+        $this->line('Active: '.($issue['is_active'] ? 'Yes' : 'No'));
+        $this->line('Issues:');
         foreach ($issue['issues'] as $userIssue) {
             $this->line("  - {$userIssue}");
         }
@@ -103,8 +105,9 @@ Artisan::command('user:fix-login {--email=} {--username=} {--password=}', functi
     $username = $this->option('username');
     $password = $this->option('password');
 
-    if (!$email && !$username) {
+    if (! $email && ! $username) {
         $this->error('Please provide either --email or --username option');
+
         return 1;
     }
 
@@ -116,15 +119,16 @@ Artisan::command('user:fix-login {--email=} {--username=} {--password=}', functi
         $user = \App\Models\User::where('username', $username)->first();
     }
 
-    if (!$user) {
+    if (! $user) {
         $this->error('User not found!');
+
         return 1;
     }
 
     $this->info("Found user: {$user->name} (ID: {$user->id})");
     $this->info("Current email: {$user->email}");
     $this->info("Current username: {$user->username}");
-    $this->info("Is active: " . ($user->is_active ? 'Yes' : 'No'));
+    $this->info('Is active: '.($user->is_active ? 'Yes' : 'No'));
 
     // Update password if provided
     if ($password) {
@@ -133,26 +137,26 @@ Artisan::command('user:fix-login {--email=} {--username=} {--password=}', functi
     }
 
     // Ensure user is active
-    if (!$user->is_active) {
+    if (! $user->is_active) {
         $user->is_active = true;
         $this->info('User activated');
     }
 
     // Ensure email and username are set
-    if (!$user->email) {
-        $user->email = $user->username . '@aroma.com';
-        $this->info('Email set to: ' . $user->email);
+    if (! $user->email) {
+        $user->email = $user->username.'@aroma.com';
+        $this->info('Email set to: '.$user->email);
     }
 
-    if (!$user->username) {
+    if (! $user->username) {
         $user->username = explode('@', $user->email)[0];
-        $this->info('Username set to: ' . $user->username);
+        $this->info('Username set to: '.$user->username);
     }
 
     $user->save();
 
     $this->info('User data updated successfully!');
-    $this->info("You can now login with:");
+    $this->info('You can now login with:');
     $this->info("- Email: {$user->email}");
     $this->info("- Username: {$user->username}");
     if ($password) {
@@ -164,34 +168,34 @@ Artisan::command('user:fix-login {--email=} {--username=} {--password=}', functi
 
 // Service Scheduling Commands (Berdasarkan BRD)
 Artisan::command('service:generate-schedules {--contract=} {--overdue} {--all}', function () {
-    $serviceSchedulingService = new \App\Services\Operational\ServiceSchedulingService();
+    $serviceSchedulingService = new \App\Services\Operational\ServiceSchedulingService;
 
     if ($this->option('contract')) {
         $contractId = $this->option('contract');
         $this->info("Generating service schedules for contract ID: {$contractId}");
-        
+
         $result = $serviceSchedulingService->generateServiceSchedulesForContract($contractId);
-        
+
         if ($result['success']) {
             $this->info("✅ Successfully generated {$result['count']} service schedules");
         } else {
             $this->error("❌ Failed: {$result['message']}");
         }
     } elseif ($this->option('overdue')) {
-        $this->info("Generating overdue service schedules...");
-        
+        $this->info('Generating overdue service schedules...');
+
         $result = $serviceSchedulingService->generateOverdueServiceSchedules();
-        
+
         if ($result['success']) {
             $this->info("✅ Generated {$result['total_generated']} overdue schedules for {$result['contracts_processed']} contracts");
         } else {
             $this->error("❌ Failed: {$result['message']}");
         }
     } elseif ($this->option('all')) {
-        $this->info("Generating service schedules for all active contracts...");
-        
+        $this->info('Generating service schedules for all active contracts...');
+
         $result = $serviceSchedulingService->generateServiceSchedulesForAllActiveContracts();
-        
+
         if ($result['success']) {
             $this->info("✅ Generated {$result['total_schedules']} schedules for {$result['contracts_processed']} contracts");
         } else {
@@ -199,6 +203,7 @@ Artisan::command('service:generate-schedules {--contract=} {--overdue} {--all}',
         }
     } else {
         $this->info('Please specify an option: --contract=ID, --overdue, or --all');
+
         return 1;
     }
 
@@ -208,12 +213,12 @@ Artisan::command('service:generate-schedules {--contract=} {--overdue} {--all}',
 // Job Schedule Expected Date Update Command
 Artisan::command('job-schedules:update-expected-dates', function () {
     $this->info('Starting to update job schedule expected dates...');
-    
+
     try {
         $updatedCount = \App\Models\JobSchedule::updateAllExpectedDates();
-        
+
         $this->info("Successfully updated {$updatedCount} job schedules.");
-        
+
         if ($updatedCount > 0) {
             $this->info('Updated job schedules:');
             $this->line('- Expected dates have been recalculated based on service frequency');
@@ -221,11 +226,12 @@ Artisan::command('job-schedules:update-expected-dates', function () {
         } else {
             $this->info('No job schedules needed updating.');
         }
-        
+
         return 0;
-        
+
     } catch (\Exception $e) {
-        $this->error('Error updating job schedule expected dates: ' . $e->getMessage());
+        $this->error('Error updating job schedule expected dates: '.$e->getMessage());
+
         return 1;
     }
 })->purpose('Update expected dates for job schedules based on service frequency');
@@ -245,6 +251,7 @@ Artisan::command('finance:repair-contract-invoices {contract : Contract ID or co
 
     if (! $contract) {
         $this->error("Contract not found: {$contractInput}");
+
         return 1;
     }
 
@@ -263,9 +270,9 @@ Artisan::command('finance:repair-contract-invoices {contract : Contract ID or co
 
     if ($dedupe) {
         $invoices = \App\Models\Finance\Invoice::where(function ($query) use ($contract) {
-                $query->where('contract_id', $contract->id)
-                    ->orWhere('contract_number', $contract->contract_number);
-            })
+            $query->where('contract_id', $contract->id)
+                ->orWhere('contract_number', $contract->contract_number);
+        })
             ->where('invoice_status', '!=', \App\Models\Finance\Invoice::STATUS_CANCELLED)
             ->orderBy('id')
             ->get();
@@ -282,7 +289,7 @@ Artisan::command('finance:repair-contract-invoices {contract : Contract ID or co
             foreach ($periodInvoices->skip(1) as $duplicate) {
                 $duplicate->update([
                     'invoice_status' => \App\Models\Finance\Invoice::STATUS_CANCELLED,
-                    'additional_notes' => trim(($duplicate->additional_notes ? $duplicate->additional_notes . "\n" : '') . 'Cancelled as duplicate by finance:repair-contract-invoices'),
+                    'additional_notes' => trim(($duplicate->additional_notes ? $duplicate->additional_notes."\n" : '').'Cancelled as duplicate by finance:repair-contract-invoices'),
                 ]);
                 $cancelled++;
                 $this->line("CANCELLED duplicate invoice {$duplicate->invoice_number} for period {$period} (kept {$keep->invoice_number})");
@@ -294,6 +301,7 @@ Artisan::command('finance:repair-contract-invoices {contract : Contract ID or co
 
     if (! $generateMissing) {
         $this->warn('Skipping invoice generation because --generate-missing was not provided.');
+
         return 0;
     }
 
@@ -304,6 +312,7 @@ Artisan::command('finance:repair-contract-invoices {contract : Contract ID or co
         $periods = $periods->filter(fn ($period) => strcasecmp($period['rental_period'] ?? '', $periodFilter) === 0);
         if ($periods->isEmpty()) {
             $this->error("Period not found: {$periodFilter}");
+
             return 1;
         }
     }
@@ -316,6 +325,7 @@ Artisan::command('finance:repair-contract-invoices {contract : Contract ID or co
         if (($period['status'] ?? null) !== 'completed') {
             $this->line("SKIP {$period['rental_period']}: status={$period['status']}");
             $skipped++;
+
             continue;
         }
 
@@ -355,6 +365,7 @@ Artisan::command('operational:repair-material-issue-items {job_number? : Optiona
         $fallbackUserId = \App\Models\User::query()->orderBy('id')->value('id');
         if (! $fallbackUserId) {
             $this->error('No valid user found for audit fields. Provide --user=<existing_user_id>.');
+
             return 1;
         }
 
@@ -376,6 +387,7 @@ Artisan::command('operational:repair-material-issue-items {job_number? : Optiona
     $assignments = $query->get();
     if ($assignments->isEmpty()) {
         $this->warn($jobNumber ? "No assignment found for {$jobNumber}" : 'No assignments found.');
+
         return 0;
     }
 
@@ -396,6 +408,7 @@ Artisan::command('operational:repair-material-issue-items {job_number? : Optiona
     }
 
     $this->info("Done. Processed {$processed} assignment(s).");
+
     return 0;
 })->purpose('Repair missing material issue items from rental details');
 
@@ -411,6 +424,7 @@ Artisan::command('operational:repair-ba-evidence {job_number? : Optional job num
     $jobIds = $jobQuery->pluck('id');
     if ($jobIds->isEmpty()) {
         $this->warn($jobNumber ? "No job schedule found for {$jobNumber}" : 'No job schedules found.');
+
         return 0;
     }
 
@@ -429,6 +443,7 @@ Artisan::command('operational:repair-ba-evidence {job_number? : Optional job num
 
     if ($reports->isEmpty()) {
         $this->info('No BA evidence timestamps need repair.');
+
         return 0;
     }
 
@@ -468,10 +483,12 @@ Artisan::command('operational:repair-ba-evidence {job_number? : Optional job num
 
     if (! $apply) {
         $this->warn('Preview only. Re-run with --apply to persist these repairs.');
+
         return 0;
     }
 
     $this->info("Done. Repaired {$repairedReports} report(s) and {$repairedSchedules} job schedule timestamp(s).");
+
     return 0;
 })->purpose('Restore evidence timestamps accidentally cleared by BA cancellation');
 
@@ -491,6 +508,7 @@ Artisan::command('operational:repair-job-schedule-rentals {job_number? : Optiona
 
     if ($jobs->isEmpty()) {
         $this->warn($jobNumber ? "No job schedule found for {$jobNumber}" : 'No job schedules found.');
+
         return 0;
     }
 
@@ -508,7 +526,7 @@ Artisan::command('operational:repair-job-schedule-rentals {job_number? : Optiona
 
         return $roomId
             ? "room:{$buildingId}:{$roomId}"
-            : 'name:' . $buildingId . ':' . strtolower(trim((string) $jaRoom->room_name));
+            : 'name:'.$buildingId.':'.strtolower(trim((string) $jaRoom->room_name));
     };
 
     $physicalRoomId = function ($jaRoom): ?int {
@@ -573,7 +591,7 @@ Artisan::command('operational:repair-job-schedule-rentals {job_number? : Optiona
                     'room_id' => $physicalRoomId($primaryJaRoom),
                     'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
                     'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
-                    'notes' => $roomGroup->count() > 1 ? 'Rentals in this room: ' . $roomGroup->count() : null,
+                    'notes' => $roomGroup->count() > 1 ? 'Rentals in this room: '.$roomGroup->count() : null,
                     'created_by' => auth()->id() ?? null,
                     'updated_by' => auth()->id() ?? null,
                 ]);
@@ -606,10 +624,12 @@ Artisan::command('operational:repair-job-schedule-rentals {job_number? : Optiona
 
     if (! $apply) {
         $this->warn('Preview only. Re-run with --apply to persist these rental links.');
+
         return 0;
     }
 
     $this->info("Done. Processed {$processedJobs} job(s), created {$createdRooms} room row(s), created {$createdLinks} rental link(s).");
+
     return 0;
 })->purpose('Repair JobScheduleRoom multi-rental links from JobAdviceRoom data');
 
@@ -627,6 +647,7 @@ Artisan::command('marketing:repair-ja-room-materials
 
     if ($jaNumber === '') {
         $this->error('Option --ja is required.');
+
         return 1;
     }
 
@@ -642,6 +663,7 @@ Artisan::command('marketing:repair-ja-room-materials
 
     if (! $jobAdvice) {
         $this->error("Job Advice {$jaNumber} not found.");
+
         return 1;
     }
 
@@ -678,6 +700,7 @@ Artisan::command('marketing:repair-ja-room-materials
 
             if (! $quotationRoom || ! $quotationDetail || ! $quotationDetail->master_rental_id) {
                 $this->warn("Skip invalid map {$entry['quotation_room_id']}:{$entry['quotation_detail_id']}");
+
                 continue;
             }
 
@@ -787,7 +810,7 @@ Artisan::command('marketing:repair-ja-room-materials
 
         return $roomId
             ? "room:{$buildingId}:{$roomId}"
-            : 'name:' . $buildingId . ':' . strtolower(trim((string) $jaRoom->room_name));
+            : 'name:'.$buildingId.':'.strtolower(trim((string) $jaRoom->room_name));
     };
 
     $roomIdOf = fn ($jaRoom) => $jaRoom->contractRoom?->room_id ?? $jaRoom->quotationRoom?->room_id ?? null;
@@ -839,6 +862,7 @@ Artisan::command('marketing:repair-ja-room-materials
             $scheduleRoom = $job->jobScheduleRooms
                 ->first(function ($scheduleRoom) use ($roomGroup) {
                     $linkedIds = $scheduleRoom->rentals->pluck('job_advice_room_id')->push($scheduleRoom->job_advice_room_id)->filter();
+
                     return $linkedIds->intersect($roomGroup->pluck('id'))->isNotEmpty();
                 });
 
@@ -853,7 +877,7 @@ Artisan::command('marketing:repair-ja-room-materials
                         'room_id' => $roomIdOf($primary),
                         'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
                         'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
-                        'notes' => $roomGroup->count() > 1 ? 'Rentals in this room: ' . $roomGroup->count() : null,
+                        'notes' => $roomGroup->count() > 1 ? 'Rentals in this room: '.$roomGroup->count() : null,
                         'created_by' => auth()->id(),
                         'updated_by' => auth()->id(),
                     ]);
@@ -862,7 +886,7 @@ Artisan::command('marketing:repair-ja-room-materials
                         'job_advice_room_id' => $primary->id,
                         'room_name' => $primary->room_name,
                         'room_id' => $roomIdOf($primary),
-                        'notes' => $roomGroup->count() > 1 ? 'Rentals in this room: ' . $roomGroup->count() : $scheduleRoom->notes,
+                        'notes' => $roomGroup->count() > 1 ? 'Rentals in this room: '.$roomGroup->count() : $scheduleRoom->notes,
                         'updated_by' => auth()->id(),
                     ]);
                 }
@@ -954,10 +978,12 @@ Artisan::command('marketing:repair-ja-room-materials
 
     if (! $apply) {
         $this->warn('Preview only. Re-run with --apply to persist these repairs.');
+
         return 0;
     }
 
-    $this->info('Done. Material issues rebuilt: ' . $touchedMaterialIssues->filter()->unique()->implode(', '));
+    $this->info('Done. Material issues rebuilt: '.$touchedMaterialIssues->filter()->unique()->implode(', '));
+
     return 0;
 })->purpose('Repair quotation-based Job Advice room/rental links and related material issue items');
 
@@ -988,12 +1014,12 @@ Artisan::command('ops:repair-patch-data
         }
 
         $this->newLine();
-        $this->info('$ php artisan ' . $command . ' ' . collect($parameters)->map(function ($value, $key) {
+        $this->info('$ php artisan '.$command.' '.collect($parameters)->map(function ($value, $key) {
             if ($value === true) {
                 return $key;
             }
 
-            return $key . '=' . $value;
+            return $key.'='.$value;
         })->implode(' '));
 
         Artisan::call($command, $parameters);
@@ -1006,7 +1032,7 @@ Artisan::command('ops:repair-patch-data
 
         if ($apply) {
             $this->newLine();
-            $this->info('$ php artisan operational:repair-material-issue-items ' . $jobNumber . ' --user=' . $auditUserId);
+            $this->info('$ php artisan operational:repair-material-issue-items '.$jobNumber.' --user='.$auditUserId);
             Artisan::call('operational:repair-material-issue-items', ['job_number' => $jobNumber, '--user' => $auditUserId]);
             $this->line(Artisan::output());
         } else {
@@ -1042,6 +1068,7 @@ Artisan::command('ops:repair-patch-data
         $requests = $query->get();
         if ($requests->isEmpty()) {
             $this->warn($inventoryRequestNumber ? "Inventory request {$inventoryRequestNumber} not found." : 'No inventory requests found.');
+
             return;
         }
 
@@ -1067,7 +1094,7 @@ Artisan::command('ops:repair-patch-data
                     continue;
                 }
 
-                $this->line("InventoryRequest {$request->request_number} item {$item->id}: would set " . collect($changes)->map(fn ($value, $field) => "{$field}={$value}")->implode(', '));
+                $this->line("InventoryRequest {$request->request_number} item {$item->id}: would set ".collect($changes)->map(fn ($value, $field) => "{$field}={$value}")->implode(', '));
 
                 if ($apply) {
                     $item->update($changes + ['updated_by' => auth()->id()]);
@@ -1077,7 +1104,7 @@ Artisan::command('ops:repair-patch-data
             }
         }
 
-        $this->info(($apply ? 'Updated' : 'Previewed') . " {$updated} inventory request item(s).");
+        $this->info(($apply ? 'Updated' : 'Previewed')." {$updated} inventory request item(s).");
     };
 
     $repairInventoryRequests();
@@ -1090,6 +1117,7 @@ Artisan::command('ops:repair-patch-data
 
         if ($installJobs->isEmpty()) {
             $this->warn("Install Free job {$ifJobNumber} not found.");
+
             continue;
         }
 
@@ -1108,6 +1136,7 @@ Artisan::command('ops:repair-patch-data
 
             if ($completedRoomIds->isEmpty()) {
                 $this->warn("Install Free {$ifJobNumber}: no room_id found; cannot safely repair Remove Free scope.");
+
                 continue;
             }
 
@@ -1169,11 +1198,13 @@ Artisan::command('operational:repair-active-grouped-room-sn
 
     if (! $pendingSn) {
         $this->error("Pending-room SN {$pendingSnCode} not found.");
+
         return 1;
     }
 
     if (! $doneSn) {
         $this->error("Completed-room SN {$doneSnCode} not found.");
+
         return 1;
     }
 
@@ -1221,6 +1252,7 @@ Artisan::command('operational:repair-active-grouped-room-sn
 
     if ($irJobs->isEmpty()) {
         $this->error("IR job {$irJobNumber} not found.");
+
         return 1;
     }
 
@@ -1262,15 +1294,17 @@ Artisan::command('operational:repair-active-grouped-room-sn
             continue;
         }
 
-        $this->line("CSR {$job->job_number} / {$job->room_name}: status remains {$job->status}; room rows pending: " . $job->jobScheduleRooms->where('status', '!=', \App\Models\JobScheduleRoom::STATUS_COMPLETED)->count());
+        $this->line("CSR {$job->job_number} / {$job->room_name}: status remains {$job->status}; room rows pending: ".$job->jobScheduleRooms->where('status', '!=', \App\Models\JobScheduleRoom::STATUS_COMPLETED)->count());
     }
 
     if (! $apply) {
         $this->warn('Preview only. Re-run with --apply to persist these repairs.');
+
         return 0;
     }
 
     $this->info('Done. Active grouped room/SN data repaired.');
+
     return 0;
 })->purpose('Repair active grouped IR/CSR room data where one room completion incorrectly locked sibling serial numbers');
 
@@ -1288,6 +1322,7 @@ Artisan::command('operational:repair-aroma-switching-data
         $fallbackUserId = \App\Models\User::query()->orderBy('id')->value('id');
         if (! $fallbackUserId) {
             $this->error('No valid user found for audit fields. Provide --user=<existing_user_id>.');
+
             return 1;
         }
 
@@ -1366,6 +1401,7 @@ Artisan::command('operational:repair-aroma-switching-data
         $quotation = \App\Models\Quotation::where('quotation_number', $quotationNumber)->first();
         if (! $quotation) {
             $this->error("Quotation {$quotationNumber} not found.");
+
             return 1;
         }
         $quotationIds->push($quotation->id);
@@ -1375,6 +1411,7 @@ Artisan::command('operational:repair-aroma-switching-data
         $jobAdvice = \App\Models\JobAdvice::where('job_advice_number', $jobAdviceNumber)->first();
         if (! $jobAdvice) {
             $this->error("Job Advice {$jobAdviceNumber} not found.");
+
             return 1;
         }
 
@@ -1394,6 +1431,7 @@ Artisan::command('operational:repair-aroma-switching-data
 
     if ($quotationIds->isEmpty()) {
         $this->warn('No quotation scope provided. Use --quotation=... or --job-advice=...');
+
         return 1;
     }
 
@@ -1445,7 +1483,7 @@ Artisan::command('operational:repair-aroma-switching-data
                 || ($replacement && (int) $targetQuotationRoom->aroma_product_id !== (int) $replacement->id));
 
         if ($replacement && ((int) $change->new_product_id !== (int) $replacement->id || $targetNeedsApply)) {
-            $this->line("AromaChange {$change->change_number}: new_product_id " . ($change->new_product_id ?: 'NULL') . " -> {$replacement->id} ({$replacement->name})");
+            $this->line("AromaChange {$change->change_number}: new_product_id ".($change->new_product_id ?: 'NULL')." -> {$replacement->id} ({$replacement->name})");
             if ($apply) {
                 $change->new_product_id = $replacement->id;
                 $change->new_aroma_name = $replacement->variant_name ?: $change->new_aroma_name;
@@ -1468,8 +1506,8 @@ Artisan::command('operational:repair-aroma-switching-data
         ->all();
 
     $materialIssues = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule.jobSchedule', function ($query) use ($jobAdviceIds) {
-            $query->whereIn('job_advice_id', $jobAdviceIds);
-        })
+        $query->whereIn('job_advice_id', $jobAdviceIds);
+    })
         ->whereNotIn('status', ['issued', 'sent', 'received', 'completed'])
         ->with('jobAssignMaterialIssues')
         ->get();
@@ -1498,10 +1536,12 @@ Artisan::command('operational:repair-aroma-switching-data
 
     if (! $apply) {
         $this->warn('Preview only. Re-run with --apply to persist these repairs.');
+
         return 0;
     }
 
     $this->info("Done. Fixed {$fixedQuotationRooms} quotation room(s), regenerated {$regeneratedIssues} material issue(s).");
+
     return 0;
 })->purpose('Repair quotation/job-advice/material issue aroma data after aroma switching stored an invalid or empty product');
 
@@ -1512,6 +1552,7 @@ Artisan::command('operational:repair-inventory-warehouse-scope {--job=} {--apply
 
     if ($jobNumber === '') {
         $this->error('Use --job=<job_number>, example: --job=MKS-IF/26-04/0002');
+
         return 1;
     }
 
@@ -1523,6 +1564,7 @@ Artisan::command('operational:repair-inventory-warehouse-scope {--job=} {--apply
 
     if ($jobs->isEmpty()) {
         $this->error("Job {$jobNumber} not found.");
+
         return 1;
     }
 
@@ -1571,10 +1613,11 @@ Artisan::command('operational:repair-inventory-warehouse-scope {--job=} {--apply
 
     foreach ($jobs as $job) {
         [$branch, $warehouse] = $resolveWarehouseForJob($job);
-        $this->line("Job {$job->job_number}#{$job->id}: building={$job->building?->nama_gedung}, city={$job->building?->city?->name}, target_branch=" . ($branch?->name ?: '-') . ', target_warehouse=' . ($warehouse?->name ?: '-'));
+        $this->line("Job {$job->job_number}#{$job->id}: building={$job->building?->nama_gedung}, city={$job->building?->city?->name}, target_branch=".($branch?->name ?: '-').', target_warehouse='.($warehouse?->name ?: '-'));
 
         if (! $branch || ! $warehouse) {
             $this->error("Cannot resolve target warehouse for job {$job->id}.");
+
             return 1;
         }
 
@@ -1593,6 +1636,7 @@ Artisan::command('operational:repair-inventory-warehouse-scope {--job=} {--apply
     $materialIssues = $materialIssues->unique('id')->values();
     if ($materialIssues->isEmpty()) {
         $this->warn('No Material Issue linked to this job.');
+
         return 0;
     }
 
@@ -1657,6 +1701,7 @@ Artisan::command('operational:repair-inventory-warehouse-scope {--job=} {--apply
     }
 
     $this->info('Done.');
+
     return 0;
 })->purpose('Repair active job material issue / inventory issuing warehouse scope from job building branch');
 
@@ -1667,6 +1712,7 @@ Artisan::command('operational:diagnose-warehouse-branch {--job=} {--apply} {--br
 
     if ($jobNumber === '') {
         $this->error('Use --job=<job_number>, example: --job=JKT-IR/26-04/0011');
+
         return 1;
     }
 
@@ -1681,6 +1727,7 @@ Artisan::command('operational:diagnose-warehouse-branch {--job=} {--apply} {--br
 
     if ($jobs->isEmpty()) {
         $this->error("Job {$jobNumber} not found.");
+
         return 1;
     }
 
@@ -1704,15 +1751,16 @@ Artisan::command('operational:diagnose-warehouse-branch {--job=} {--apply} {--br
 
         $this->newLine();
         $this->line("Schedule #{$job->id} {$job->job_number} type={$job->type} status={$job->status}");
-        $this->line('Building: ' . ($building?->id ?: '-') . ' / ' . ($building?->nama_gedung ?? $building?->name ?? '-'));
-        $this->line("Building branch_id=" . ($building?->branch_id ?: '-') . ", city_id=" . ($cityId ?: '-') . ', province_id=' . ($provinceId ?: '-'));
-        $this->line('Team branch ids: ' . ($teamBranchIds->isNotEmpty() ? $teamBranchIds->implode(',') : '-'));
+        $this->line('Building: '.($building?->id ?: '-').' / '.($building?->nama_gedung ?? $building?->name ?? '-'));
+        $this->line('Building branch_id='.($building?->branch_id ?: '-').', city_id='.($cityId ?: '-').', province_id='.($provinceId ?: '-'));
+        $this->line('Team branch ids: '.($teamBranchIds->isNotEmpty() ? $teamBranchIds->implode(',') : '-'));
 
         $candidateBranches = collect();
 
         if ($building?->branch_id) {
             $candidateBranches = $candidateBranches->merge(\App\Models\Branch::where('id', $building->branch_id)->get()->map(function ($branch) {
                 $branch->diagnose_source = 'building.branch_id';
+
                 return $branch;
             }));
         }
@@ -1720,6 +1768,7 @@ Artisan::command('operational:diagnose-warehouse-branch {--job=} {--apply} {--br
         if ($cityId) {
             $candidateBranches = $candidateBranches->merge(\App\Models\Branch::where('city_id', $cityId)->get()->map(function ($branch) {
                 $branch->diagnose_source = 'branch.city_id';
+
                 return $branch;
             }));
         }
@@ -1727,6 +1776,7 @@ Artisan::command('operational:diagnose-warehouse-branch {--job=} {--apply} {--br
         if ($provinceId) {
             $candidateBranches = $candidateBranches->merge(\App\Models\Branch::where('province_id', $provinceId)->get()->map(function ($branch) {
                 $branch->diagnose_source = 'branch.province_id';
+
                 return $branch;
             }));
         }
@@ -1734,6 +1784,7 @@ Artisan::command('operational:diagnose-warehouse-branch {--job=} {--apply} {--br
         if ($teamBranchIds->isNotEmpty()) {
             $candidateBranches = $candidateBranches->merge(\App\Models\Branch::whereIn('id', $teamBranchIds)->get()->map(function ($branch) {
                 $branch->diagnose_source = 'team.branch_id';
+
                 return $branch;
             }));
         }
@@ -1745,6 +1796,7 @@ Artisan::command('operational:diagnose-warehouse-branch {--job=} {--apply} {--br
 
             if (! $explicitBranch) {
                 $this->error("Explicit branch {$branchOption} not found.");
+
                 return 1;
             }
 
@@ -1756,6 +1808,7 @@ Artisan::command('operational:diagnose-warehouse-branch {--job=} {--apply} {--br
 
         if ($candidateBranches->isEmpty()) {
             $this->warn('No branch candidate found from building city/province/team.');
+
             continue;
         }
 
@@ -1785,6 +1838,7 @@ Artisan::command('operational:diagnose-warehouse-branch {--job=} {--apply} {--br
 
             if ($apply && ! $buildingHasBranchColumn) {
                 $this->error('Cannot apply: buildings.branch_id column is missing. Deploy migration and run php artisan migrate first.');
+
                 return 1;
             }
 
@@ -1813,11 +1867,13 @@ Artisan::command('operational:diagnose-repair-grouped-job-rooms {--job=} {--appl
 
     if ($jobNumber === '') {
         $this->error('Use --job=<job_number>, example: --job=JKT-IF/26-04/0019');
+
         return 1;
     }
 
     if (! in_array($reopenStatus, $allowedReopenStatuses, true)) {
-        $this->error('Invalid --reopen-status. Allowed: ' . implode(', ', $allowedReopenStatuses));
+        $this->error('Invalid --reopen-status. Allowed: '.implode(', ', $allowedReopenStatuses));
+
         return 1;
     }
 
@@ -1834,6 +1890,7 @@ Artisan::command('operational:diagnose-repair-grouped-job-rooms {--job=} {--appl
 
     if ($jobs->isEmpty()) {
         $this->error("Job {$jobNumber} not found.");
+
         return 1;
     }
 
@@ -1918,6 +1975,7 @@ Artisan::command('operational:repair-service-period-room-scope {--job=} {--apply
 
     if ($jobNumber === '') {
         $this->error('Use --job=<completed CSR/service job number>, example: --job=JKT-CSR/26-04/0012');
+
         return 1;
     }
 
@@ -1928,6 +1986,7 @@ Artisan::command('operational:repair-service-period-room-scope {--job=} {--apply
 
     if (! $completedService) {
         $this->error("Service/CSR job {$jobNumber} not found.");
+
         return 1;
     }
 
@@ -1945,11 +2004,12 @@ Artisan::command('operational:repair-service-period-room-scope {--job=} {--apply
 
     if ($eligibleRoomIds->isEmpty()) {
         $this->error("No completed rooms found on {$jobNumber}; cannot determine allowed service period room scope.");
+
         return 1;
     }
 
     $this->line($apply ? 'APPLY mode: ineligible rooms will be removed from future service schedules.' : 'Preview only. Re-run with --apply to persist repairs.');
-    $this->line("Source {$completedService->job_number}: JA={$completedService->jobAdvice?->job_advice_number}, period=" . ($completedService->period ?: '-') . ', eligible_room_ids=' . $eligibleRoomIds->implode(','));
+    $this->line("Source {$completedService->job_number}: JA={$completedService->jobAdvice?->job_advice_number}, period=".($completedService->period ?: '-').', eligible_room_ids='.$eligibleRoomIds->implode(','));
 
     $futureQuery = \App\Models\JobSchedule::with('jobScheduleRooms')
         ->where('job_advice_id', $completedService->job_advice_id)
@@ -1970,6 +2030,7 @@ Artisan::command('operational:repair-service-period-room-scope {--job=} {--apply
 
     if ($futureSchedules->isEmpty()) {
         $this->info('No future active service schedules found to repair.');
+
         return 0;
     }
 
@@ -2029,12 +2090,171 @@ Artisan::command('operational:repair-service-period-room-scope {--job=} {--apply
     return 0;
 })->purpose('Repair future service periods so only rooms completed in the source CSR/service job are carried forward');
 
+Artisan::command('warehouse:repair-empty-receiving-from-issuing {--receiving=} {--all} {--apply}', function () {
+    $receivingNumber = trim((string) $this->option('receiving'));
+    $repairAll = (bool) $this->option('all');
+    $apply = (bool) $this->option('apply');
+
+    if ($receivingNumber === '' && ! $repairAll) {
+        $this->error('Use --receiving=<receiving_number> or --all. Add --apply to persist repairs.');
+        $this->line('Example: php artisan warehouse:repair-empty-receiving-from-issuing --receiving=JKT-RR/26-04/0034');
+
+        return 1;
+    }
+
+    $query = \App\Models\InventoryReceiving::with(['issuing.items.product', 'items'])
+        ->whereNotNull('issuing_id')
+        ->whereDoesntHave('items')
+        ->orderBy('id');
+
+    if ($receivingNumber !== '') {
+        $query->where('receiving_number', $receivingNumber);
+    }
+
+    $receivings = $query->get();
+
+    if ($receivings->isEmpty()) {
+        $this->info('No empty receiving records linked to inventory issuing were found.');
+
+        return 0;
+    }
+
+    $buildItemsFromIssuing = function ($issuing): array {
+        if (! $issuing) {
+            return [];
+        }
+
+        return $issuing->items
+            ->map(function ($item) use ($issuing) {
+                if (! $item->product_id) {
+                    return null;
+                }
+
+                $issuedQty = (float) $item->quantity_issued;
+                $requestedQty = (float) $item->quantity_requested;
+                $quantity = $issuedQty > 0 ? $issuedQty : $requestedQty;
+
+                if ($quantity <= 0) {
+                    return null;
+                }
+
+                $notes = "Repaired from Inventory Issuing {$issuing->issuing_number}";
+                if ($item->room_name) {
+                    $notes .= "; Room: {$item->room_name}";
+                }
+                $notes .= "; WI Item: {$item->id}";
+                if ($item->notes) {
+                    $notes .= "; {$item->notes}";
+                }
+
+                return [
+                    'master_product_id' => $item->product_id,
+                    'quantity' => $quantity,
+                    'quantity_received' => 0,
+                    'notes' => $notes,
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    };
+
+    $this->line($apply ? 'APPLY mode: receiving items will be created.' : 'Preview only. Re-run with --apply to persist these repairs.');
+
+    $repairedReceivings = 0;
+    $createdItems = 0;
+    $skipped = 0;
+
+    foreach ($receivings as $receiving) {
+        $movementExists = \App\Models\InventoryMovement::where('reference_no', $receiving->receiving_number)->exists();
+        $candidateItems = $buildItemsFromIssuing($receiving->issuing);
+
+        $this->line(sprintf(
+            '%s | status=%s | ref=%s | issuing=%s | source_items=%d | movements=%s',
+            $receiving->receiving_number,
+            $receiving->status,
+            $receiving->reference_no ?: '-',
+            $receiving->issuing?->issuing_number ?: '-',
+            count($candidateItems),
+            $movementExists ? 'yes' : 'no'
+        ));
+
+        if ($receiving->status !== 'pending') {
+            $this->warn('  skip: receiving is not pending.');
+            $skipped++;
+
+            continue;
+        }
+
+        if ($movementExists) {
+            $this->warn('  skip: receiving already has inventory movements.');
+            $skipped++;
+
+            continue;
+        }
+
+        if (empty($candidateItems)) {
+            $this->warn('  skip: linked issuing has no usable item quantity.');
+            $skipped++;
+
+            continue;
+        }
+
+        foreach ($candidateItems as $item) {
+            $productName = \App\Models\MasterProduct::whereKey($item['master_product_id'])->value('name') ?: $item['master_product_id'];
+            $this->line("  item: {$productName} qty={$item['quantity']}");
+        }
+
+        if (! $apply) {
+            continue;
+        }
+
+        \DB::transaction(function () use ($receiving, $buildItemsFromIssuing, &$repairedReceivings, &$createdItems) {
+            $lockedReceiving = \App\Models\InventoryReceiving::with(['issuing.items'])
+                ->whereKey($receiving->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $lockedReceiving || $lockedReceiving->status !== 'pending' || $lockedReceiving->items()->exists()) {
+                return;
+            }
+
+            if (\App\Models\InventoryMovement::where('reference_no', $lockedReceiving->receiving_number)->exists()) {
+                return;
+            }
+
+            $items = $buildItemsFromIssuing($lockedReceiving->issuing);
+            if (empty($items)) {
+                return;
+            }
+
+            foreach ($items as $item) {
+                $lockedReceiving->items()->create($item);
+                $createdItems++;
+            }
+
+            $repairedReceivings++;
+        });
+    }
+
+    if (! $apply) {
+        $this->warn('Preview only. Re-run with --apply to persist these repairs.');
+
+        return 0;
+    }
+
+    $this->info("Done. Repaired {$repairedReceivings} receiving record(s), created {$createdItems} item row(s), skipped {$skipped}.");
+
+    return 0;
+})->purpose('Backfill empty pending inventory receivings from their linked inventory issuing items');
+
 Artisan::command('warehouse:repair-receiving-sn-stock {--receiving=} {--apply}', function () {
     $receivingNumber = trim((string) $this->option('receiving'));
     $apply = (bool) $this->option('apply');
 
     if ($receivingNumber === '') {
         $this->error('Use --receiving=<receiving_number>, example: --receiving=JKT-IRC/26-04/0008');
+
         return 1;
     }
 
@@ -2044,6 +2264,7 @@ Artisan::command('warehouse:repair-receiving-sn-stock {--receiving=} {--apply}',
 
     if (! $receiving) {
         $this->error("Receiving {$receivingNumber} not found.");
+
         return 1;
     }
 
@@ -2057,6 +2278,7 @@ Artisan::command('warehouse:repair-receiving-sn-stock {--receiving=} {--apply}',
 
     if (! $warehouse) {
         $this->error('Cannot resolve warehouse for receiving stock correction.');
+
         return 1;
     }
 
@@ -2137,8 +2359,8 @@ Artisan::command('warehouse:repair-receiving-sn-stock {--receiving=} {--apply}',
                 'movement_date' => now()->toDateString(),
                 'reference_no' => $receiving->receiving_number,
                 'reference_type' => 'inventory_receiving_correction',
-                'movement_no' => 'IRCOR-' . $receiving->id . '-' . $productId . '-' . now()->format('His'),
-                'notes' => "Correction: receiving credited more stock than registered serial numbers.",
+                'movement_no' => 'IRCOR-'.$receiving->id.'-'.$productId.'-'.now()->format('His'),
+                'notes' => 'Correction: receiving credited more stock than registered serial numbers.',
                 'created_by' => \Auth::id() ?: (\App\Models\User::query()->orderBy('id')->value('id') ?: 1),
                 'updated_by' => \Auth::id() ?: (\App\Models\User::query()->orderBy('id')->value('id') ?: 1),
             ]);
@@ -2167,10 +2389,12 @@ Artisan::command('warehouse:repair-receiving-sn-stock {--receiving=} {--apply}',
 
     if (! $apply) {
         $this->warn('Preview only. Re-run with --apply to persist these repairs.');
+
         return 0;
     }
 
     $this->info("Done. Corrected {$fixedProducts} SN product group(s).");
+
     return 0;
 })->purpose('Repair received SN products where stock quantity exceeded registered serial numbers');
 
@@ -2203,12 +2427,14 @@ Artisan::command('warehouse:repair-stale-issued-sn-links {--job=} {--wi=} {--sn=
         $jobScheduleIds = \App\Models\JobSchedule::where('job_number', $jobNumber)->pluck('id');
         if ($jobScheduleIds->isEmpty()) {
             $this->error("Job {$jobNumber} not found.");
+
             return 1;
         }
 
         $jobAssignScheduleIds = \App\Models\JobAssignSchedule::whereIn('job_schedule_id', $jobScheduleIds)->pluck('id');
         if ($jobAssignScheduleIds->isEmpty()) {
             $this->error("Job {$jobNumber} has no job assignment rows.");
+
             return 1;
         }
 
@@ -2219,14 +2445,15 @@ Artisan::command('warehouse:repair-stale-issued-sn-links {--job=} {--wi=} {--sn=
 
     if ($items->isEmpty()) {
         $this->info('No issuing items with serial numbers found for the given filter.');
+
         return 0;
     }
 
     $this->line($apply ? 'APPLY mode: stale SN links will be released from old Inventory Issuing items.' : 'Preview only. Re-run with --apply to persist these repairs.');
     $this->line('Scope: '
-        . ($jobNumber !== '' ? "job={$jobNumber} " : '')
-        . ($issuingNumber !== '' ? "wi={$issuingNumber} " : '')
-        . ($serialNumberFilter !== '' ? "sn={$serialNumberFilter}" : '')
+        .($jobNumber !== '' ? "job={$jobNumber} " : '')
+        .($issuingNumber !== '' ? "wi={$issuingNumber} " : '')
+        .($serialNumberFilter !== '' ? "sn={$serialNumberFilter}" : '')
     );
 
     $released = 0;
@@ -2244,6 +2471,7 @@ Artisan::command('warehouse:repair-stale-issued-sn-links {--job=} {--wi=} {--sn=
         if (! $issuing || ! $serialNumber) {
             $this->warn("SKIP item #{$item->id}: missing issuing or serial number relation.");
             $skipped++;
+
             continue;
         }
 
@@ -2289,8 +2517,9 @@ Artisan::command('warehouse:repair-stale-issued-sn-links {--job=} {--wi=} {--sn=
                 $skipReasons[] = 'SN still active on unit on wall';
             }
 
-            $this->warn('  SKIP: ' . implode('; ', $skipReasons));
+            $this->warn('  SKIP: '.implode('; ', $skipReasons));
             $skipped++;
+
             continue;
         }
 
@@ -2302,7 +2531,7 @@ Artisan::command('warehouse:repair-stale-issued-sn-links {--job=} {--wi=} {--sn=
             $item->update([
                 'serial_number_id' => null,
                 'updated_by' => \Auth::id() ?: $item->updated_by,
-                'notes' => trim((string) $item->notes . ' | Repair stale SN link on ' . now()->format('Y-m-d H:i:s') . ' | Released SN: ' . ($serialNumber->serial_number ?? '-') . ($job?->job_number ? ' | Source Job: ' . $job->job_number : '')),
+                'notes' => trim((string) $item->notes.' | Repair stale SN link on '.now()->format('Y-m-d H:i:s').' | Released SN: '.($serialNumber->serial_number ?? '-').($job?->job_number ? ' | Source Job: '.$job->job_number : '')),
             ]);
 
             $released++;
@@ -2312,11 +2541,13 @@ Artisan::command('warehouse:repair-stale-issued-sn-links {--job=} {--wi=} {--sn=
     }
 
     if (! $apply) {
-        $this->warn("Preview complete. Candidate stale links: " . ($items->count() - $skipped) . ", skipped: {$skipped}.");
+        $this->warn('Preview complete. Candidate stale links: '.($items->count() - $skipped).", skipped: {$skipped}.");
         $this->warn('Re-run with --apply to persist these repairs.');
+
         return 0;
     }
 
     $this->info("Done. Released {$released} stale SN link(s). Skipped {$skipped} item(s).");
+
     return 0;
 })->purpose('Release stale serial-number links from old inventory issuing items after SN has already returned to warehouse');
