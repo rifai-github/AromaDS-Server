@@ -454,6 +454,10 @@ class Contract extends Model
             return "Contract {$this->contract_number} sudah memiliki contract renewal/current contract.";
         }
 
+        if (!$this->actual_start_date || !$this->actual_end_date) {
+            return "Contract {$this->contract_number} belum dimulai/belum memiliki BA date. Renewal hanya bisa dibuat setelah seluruh job contract lama selesai.";
+        }
+
         return null;
     }
 

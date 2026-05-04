@@ -306,11 +306,14 @@ class ContractRenewalController extends Controller
 
             $contracts = $query->get()
                 ->filter(function ($contract) use ($includeId) {
+                    $eligibility = ContractRenewal::isEligibleForRenewal($contract->id);
+
                     return ($includeId && (int) $contract->id === (int) $includeId)
-                        || $contract->canBeRenewedSafely();
+                        || $eligibility['eligible'];
                 })
                 ->values()
                 ->map(function ($contract) use ($includeId) {
+                    $eligibility = ContractRenewal::isEligibleForRenewal($contract->id);
                 // Calculate remaining duration string
                 $endDate = \Carbon\Carbon::parse($contract->end_date);
                 $now = now();
@@ -342,8 +345,8 @@ class ContractRenewalController extends Controller
                     'remaining_duration' => 'sisa masa kontrak ' . $remainingDuration,
                     'contract_rooms_count' => $contract->contractRooms->count(),
                     'contract_rooms' => $contract->contractRooms,
-                    'eligible' => $contract->canBeRenewedSafely(),
-                    'block_reason' => $contract->getRenewalBlockReason(),
+                    'eligible' => $eligibility['eligible'],
+                    'block_reason' => $eligibility['eligible'] ? null : ($eligibility['reason'] ?? $contract->getRenewalBlockReason()),
                     'is_current' => ($includeId && $contract->id == $includeId)
                 ];
             });
