@@ -15,6 +15,7 @@ use App\Models\MasterOption;
 use App\Models\ContractRemark;
 use App\Models\ContractRevision;
 use App\Services\ContractMergeService;
+use App\Services\Operational\ContractOnWallCsrService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
@@ -1645,19 +1646,26 @@ class ContractController extends Controller
             // Auto-create Virtual Account for customer if not exists
             $this->createVirtualAccountForContract($contract);
             $this->completeRenewalSourceContractLink($contract);
+            $createdOnWallCsrCount = app(ContractOnWallCsrService::class)
+                ->createForContract($contract->refresh(), Auth::id(), 'approved');
             
             // Log the action
-            Log::info("Contract {$contract->contract_number} approved by user " . Auth::id());
+            Log::info("Contract {$contract->contract_number} approved by user " . Auth::id(), [
+                'created_on_wall_csr_count' => $createdOnWallCsrCount,
+            ]);
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Contract approved successfully',
+                'message' => $createdOnWallCsrCount > 0
+                    ? "Contract approved successfully. {$createdOnWallCsrCount} first CSR job(s) created for active Unit On Wall room(s)."
+                    : 'Contract approved successfully',
                 'data' => [
                     'contract_id' => $contract->id,
                     'contract_number' => $contract->contract_number,
                     'contract_status' => $contract->contract_status,
                     'approved_by' => $contract->approved_by,
                     'date_approved' => $contract->date_approved,
+                    'created_on_wall_csr_count' => $createdOnWallCsrCount,
                 ]
             ]);
         } catch (\Exception $e) {
@@ -1793,6 +1801,8 @@ class ContractController extends Controller
             // Auto-create Virtual Account for customer if not exists
             $this->createVirtualAccountForContract($contract);
             $this->completeRenewalSourceContractLink($contract);
+            $createdOnWallCsrCount = app(ContractOnWallCsrService::class)
+                ->createForContract($contract->refresh(), Auth::id(), 'posted');
             
             // Auto-generate schedule if applicable
             if ($contract->canGenerateSchedule()) {
@@ -1801,11 +1811,14 @@ class ContractController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Contract posted successfully',
+                'message' => $createdOnWallCsrCount > 0
+                    ? "Contract posted successfully. {$createdOnWallCsrCount} first CSR job(s) created for active Unit On Wall room(s)."
+                    : 'Contract posted successfully',
                 'data' => [
                     'contract' => $contract,
                     'posted_at' => $contract->posted_at,
-                    'schedule_generated' => $contract->schedule_generated
+                    'schedule_generated' => $contract->schedule_generated,
+                    'created_on_wall_csr_count' => $createdOnWallCsrCount,
                 ]
             ]);
         } catch (\Exception $e) {
