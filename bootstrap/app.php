@@ -39,6 +39,10 @@ return Application::configure(basePath: dirname(__DIR__))
             if (class_exists(\App\Http\Middleware\CheckLoginRestriction::class)) {
                 $middleware->appendToGroup('web', \App\Http\Middleware\CheckLoginRestriction::class);
             }
+
+            // Track request duration only for inventory and mobile endpoints.
+            $middleware->appendToGroup('web', \App\Http\Middleware\ApiPerformanceMiddleware::class);
+            $middleware->appendToGroup('api', \App\Http\Middleware\ApiPerformanceMiddleware::class);
             
             // Add Sanctum middleware for API authentication
             $middleware->statefulApi();
