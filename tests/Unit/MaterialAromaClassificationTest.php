@@ -48,6 +48,18 @@ class MaterialAromaClassificationTest extends TestCase
         $this->assertFalse($method->invoke($controller, $product));
     }
 
+    public function test_job_assign_material_issue_does_not_treat_hand_sanitizer_refill_as_quotation_aroma_slot(): void
+    {
+        $controller = new JobAssignMaterialIssueController();
+        $method = (new ReflectionClass($controller))->getMethod('isQuotationAromaMaterialSlot');
+        $method->setAccessible(true);
+
+        $detail = $this->rentalDetail('HS Refill', null);
+        $product = $this->product('Hand Sanitizer Gel', 'HSR-HAND-SANITIZER-GEL-1000', 'HS Refill', 'Hand Sanitizer Refill');
+
+        $this->assertFalse($method->invoke($controller, $detail, $product, 'HS Refill'));
+    }
+
     public function test_job_assign_material_issue_still_filters_aroma_products_by_quotation_variant(): void
     {
         $controller = new JobAssignMaterialIssueController();

@@ -1222,7 +1222,12 @@
                                                 $currentProduct->variant_name ?? '',
                                                 $currentProduct->brand_line ?? '',
                                             ])));
-                                            $isAromaType = str_contains($productDetectionHaystack, 'aroma')
+                                            $isHandSanitizerType = str_contains($productDetectionHaystack, 'hand sanitizer')
+                                                || str_contains($productDetectionHaystack, 'sanitizer')
+                                                || preg_match('/\bhs\s*refill\b/', $productDetectionHaystack)
+                                                || preg_match('/\bhsr[-\s]/', $productDetectionHaystack)
+                                                || preg_match('/\bhsd[-\s]/', $productDetectionHaystack);
+                                            $isAromaType = !$isHandSanitizerType && (str_contains($productDetectionHaystack, 'aroma')
                                                 || str_contains($productDetectionHaystack, 'variant')
                                                 || str_contains($productDetectionHaystack, 'fragrance')
                                                 || str_contains($productDetectionHaystack, 'scent')
@@ -1232,7 +1237,7 @@
                                                 || str_contains($productDetectionHaystack, 'oil')
                                                 || str_contains($productDetectionHaystack, 'signature')
                                                 || str_contains($productDetectionHaystack, 'artisan')
-                                                || str_contains($productDetectionHaystack, 'luxo');
+                                                || str_contains($productDetectionHaystack, 'luxo'));
                                         }
 
                                         $allowedProductIds = [];
@@ -2065,11 +2070,18 @@ function openEditModal(id) {
                                         // MOM12: Check if this is a unit product (cannot be edited)
                                         const isUnit = item.is_unit || false;
                                         const productTypeId = item.product_type_id || null;
+                                        const productCategoryId = item.product_category_id || null;
+                                        const allowedProductIds = (item.allowed_product_ids || []).map(id => String(id));
                                         
-                                        // MOM12: Filter available products by product_type_id (component)
-                                        const filteredProducts = productTypeId 
-                                            ? availableProducts.filter(p => p.product_type_id == productTypeId || (p.productType && p.productType.id == productTypeId))
-                                            : availableProducts;
+                                        // Material options must follow the exact Material List selected in Rental Detail.
+                                        let filteredProducts = availableProducts;
+                                        if (allowedProductIds.length > 0) {
+                                            filteredProducts = availableProducts.filter(p => allowedProductIds.includes(String(p.id)));
+                                        } else if (productTypeId) {
+                                            filteredProducts = availableProducts.filter(p => p.product_type_id == productTypeId || (p.productType && p.productType.id == productTypeId));
+                                        } else if (productCategoryId) {
+                                            filteredProducts = availableProducts.filter(p => p.product_category_id == productCategoryId || (p.productCategory && p.productCategory.id == productCategoryId));
+                                        }
                                         
                                         // Unit row styling
                                         const rowStyle = isUnit ? 'background-color: #f9fafb; opacity: 0.8;' : '';
@@ -2093,12 +2105,17 @@ function openEditModal(id) {
                                         if (isUnit) {
                                             productCell = '<div style="padding: 8px 12px; background: #f3f4f6; border-radius: 6px; color: #6b7280;"><i class="fas fa-lock" style="margin-right: 6px; font-size: 11px;"></i>' + item.product.name + '</div><input type="hidden" name="rental_products[' + index + '][product_id]" value="' + item.product.id + '">';
                                         } else {
-                                            // Add current product as first option with selected attribute
-                                            let options = '<option value="' + item.product.id + '" selected>' + item.product.name + '</option>';
-                                            filteredProducts.filter(p => p.id != item.product.id).forEach(p => {
-                                                options += '<option value="' + p.id + '">' + p.name + '</option>';
+                                            let optionProducts = filteredProducts.slice();
+                                            if (!optionProducts.some(p => String(p.id) === String(item.product.id))) {
+                                                optionProducts.unshift(item.product);
+                                            }
+
+                                            let options = '';
+                                            optionProducts.forEach(p => {
+                                                const selected = String(p.id) === String(item.product.id) ? ' selected' : '';
+                                                options += '<option value="' + p.id + '"' + selected + '>' + p.name + '</option>';
                                             });
-                                            productCell = '<select name="rental_products[' + index + '][product_id]" id="product_select_' + index + '" class="form-input product-select" data-original-product-id="' + item.product.id + '" data-component-id="' + item.component_id + '" data-product-type-id="' + productTypeId + '" onchange="handleRentalProductChange(this, ' + index + ')" style="min-width: 200px;">' + options + '</select>';
+                                            productCell = '<select name="rental_products[' + index + '][product_id]" id="product_select_' + index + '" class="form-input product-select" data-original-product-id="' + item.product.id + '" data-component-id="' + item.component_id + '" data-product-type-id="' + (productTypeId || '') + '" data-product-category-id="' + (productCategoryId || '') + '" data-allowed-product-ids="' + allowedProductIds.join(',') + '" onchange="handleRentalProductChange(this, ' + index + ')" style="min-width: 200px;">' + options + '</select>';
                                         }
                                         
                                         // Build packaging size cell
@@ -2269,10 +2286,20 @@ function handleComponentChange(selectElement, rowIndex) {
         return;
     }
     
-    // Filter products by new product type
-    const filteredProducts = newProductTypeId 
-        ? window.availableProducts.filter(p => p.product_type_id == newProductTypeId || (p.productType && p.productType.id == newProductTypeId))
-        : window.availableProducts;
+    const allowedProductIds = (productSelect.dataset.allowedProductIds || '')
+        .split(',')
+        .map(id => id.trim())
+        .filter(Boolean);
+    const productCategoryId = productSelect.dataset.productCategoryId || '';
+
+    let filteredProducts = window.availableProducts;
+    if (allowedProductIds.length > 0) {
+        filteredProducts = window.availableProducts.filter(p => allowedProductIds.includes(String(p.id)));
+    } else if (newProductTypeId) {
+        filteredProducts = window.availableProducts.filter(p => p.product_type_id == newProductTypeId || (p.productType && p.productType.id == newProductTypeId));
+    } else if (productCategoryId) {
+        filteredProducts = window.availableProducts.filter(p => p.product_category_id == productCategoryId || (p.productCategory && p.productCategory.id == productCategoryId));
+    }
     
     // Rebuild options
     let options = '<option value="">-- Select Product --</option>';

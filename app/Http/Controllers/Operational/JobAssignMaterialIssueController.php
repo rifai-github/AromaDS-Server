@@ -216,7 +216,7 @@ class JobAssignMaterialIssueController extends Controller
         $brandLine = $this->normalizeProductBrandLine($quotationProduct->brand_line);
 
         $allowedProducts = $detail->allowedProducts
-            ? $detail->allowedProducts->where('pivot.is_active', true)->values()
+            ? $detail->allowedProducts->where('pivot.is_selected', true)->values()
             : collect();
 
         $candidates = $allowedProducts->isNotEmpty()
@@ -1278,7 +1278,12 @@ class JobAssignMaterialIssueController extends Controller
                 if (!$rental) continue;
                 
                 // Load rental_details dengan relationships (termasuk packagingSize)
-                $rental->load(['rentalDetails.productType', 'rentalDetails.masterProduct.packagingSize']);
+                $rental->load([
+                    'rentalDetails.productType',
+                    'rentalDetails.productCategory',
+                    'rentalDetails.masterProduct.packagingSize',
+                    'rentalDetails.allowedProducts',
+                ]);
                 
                 // Get quotation room for aroma/variant
                 // PRIORITY: Aroma dari Quotation lebih tinggi dari Master Rental
@@ -1344,6 +1349,14 @@ class JobAssignMaterialIssueController extends Controller
                     $productCategoryName = $detail->productCategory->name ?? $detail->productType->name ?? null;
                     $productCategoryId = $detail->product_category_id ?? null;
                     $productTypeId = $detail->product_type_id ?? null;
+                    $allowedProductIds = $detail->allowedProducts
+                        ? $detail->allowedProducts
+                            ->where('pivot.is_selected', true)
+                            ->pluck('id')
+                            ->map(fn ($id) => (int) $id)
+                            ->values()
+                            ->all()
+                        : [];
                     
                     // MOM12: Check for saved item - try exact match first, then fallback to index
                     $savedItemKey = $jaRoom->room_name . '_' . $detail->id;
@@ -1448,6 +1461,7 @@ class JobAssignMaterialIssueController extends Controller
                         'component_id' => $detail->id, // Use detail ID - PENTING untuk save function!
                         'product_type_id' => $productTypeId, // MOM12: For filtering products dropdown
                         'product_category_id' => $productCategoryId,
+                        'allowed_product_ids' => $allowedProductIds,
                         'is_unit' => $productIsUnit, // MOM12: Flag untuk disable edit jika unit
                         'product' => [
                             'id' => $product->id,
