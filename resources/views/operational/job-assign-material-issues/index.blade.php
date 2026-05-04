@@ -882,10 +882,10 @@
                 <!-- Tanggal MA (Issued Date) -->
                 <div class="flex flex-col gap-1">
                     <label class="text-sm font-medium text-gray-700">Tanggal MA (Issued Date):</label>
-                    <input type="text" id="filterIssuedDate" name="issued_date" 
-                           class="flatpickr-date px-3 py-1.5 border border-gray-300 rounded text-sm w-full" 
-                           data-date-value="{{ request('issued_date') }}" 
-                           data-filter-active="{{ request('issued_date') ? 'true' : 'false' }}"
+                    <input type="text" id="filterIssuedDate" name="issue_date"
+                           class="flatpickr-date px-3 py-1.5 border border-gray-300 rounded text-sm w-full"
+                           data-date-value="{{ request('issue_date') }}"
+                           data-filter-active="{{ request('issue_date') ? 'true' : 'false' }}"
                            placeholder="Select date..." readonly>
                 </div>
                 
@@ -1717,6 +1717,7 @@
 </div>
 
 
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
 // Global variables
 let selectedIdsForRetry = [];
@@ -2577,13 +2578,16 @@ function applyFilters() {
     const dateFrom = document.getElementById('filterDateFrom').value;
     const dateTo = document.getElementById('filterDateTo').value;
     const teamName = document.getElementById('filterTeamCode').value;
-    const issueDate = document.getElementById('filterIssuedDate').value; // Fixed ID typo
+    const issueDate = document.getElementById('filterIssuedDate').value;
+    const perPage = document.getElementById('perPage')?.value;
     
-    const params = new URLSearchParams();
-    if (dateFrom) params.append('date_from', dateFrom);
-    if (dateTo) params.append('date_to', dateTo);
-    if (teamName) params.append('team_name', teamName);
-    if (issueDate) params.append('issue_date', issueDate);
+    const params = new URLSearchParams(window.location.search);
+    dateFrom ? params.set('date_from', dateFrom) : params.delete('date_from');
+    dateTo ? params.set('date_to', dateTo) : params.delete('date_to');
+    teamName ? params.set('team_name', teamName) : params.delete('team_name');
+    issueDate ? params.set('issue_date', issueDate) : params.delete('issue_date');
+    perPage ? params.set('per_page', perPage) : params.delete('per_page');
+    params.set('page', '1');
     
     window.location.href = '{{ route("operational.job-assign-material-issues.index") }}?' + params.toString();
 }
@@ -4093,6 +4097,22 @@ document.addEventListener('DOMContentLoaded', function() {
     
         // Flatpickr initialization for date inputs
         if (typeof flatpickr !== 'undefined') {
+            document.querySelectorAll('.flatpickr-date').forEach(el => {
+                const isActive = el.dataset.filterActive === 'true';
+                const dateValue = el.dataset.dateValue || '';
+
+                flatpickr(el, {
+                    dateFormat: 'Y-m-d',
+                    altInput: true,
+                    altFormat: 'j M Y',
+                    allowInput: true,
+                    defaultDate: isActive && dateValue ? dateValue : null,
+                    onChange: function() {
+                        applyFilters();
+                    }
+                });
+            });
+
             document.querySelectorAll('input[type="date"]').forEach(el => {
                 flatpickr(el, {
                     dateFormat: 'Y-m-d',

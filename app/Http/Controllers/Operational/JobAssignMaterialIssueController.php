@@ -410,10 +410,23 @@ class JobAssignMaterialIssueController extends Controller
             });
         }
 
+        // Filter by job schedule date range
+        if ($request->filled('date_from')) {
+            $query->whereHas('jobAssignSchedule.jobSchedule', function($q) use ($request) {
+                $q->whereDate('schedule_date', '>=', $request->date_from);
+            });
+        }
+
+        if ($request->filled('date_to')) {
+            $query->whereHas('jobAssignSchedule.jobSchedule', function($q) use ($request) {
+                $q->whereDate('schedule_date', '<=', $request->date_to);
+            });
+        }
+
         // Filter by issue date
         if ($request->filled('issue_date')) {
             $query->whereHas('materialIssue', function($q) use ($request) {
-                $q->where('issue_date', $request->issue_date);
+                $q->whereDate('issue_date', $request->issue_date);
             });
         }
 
