@@ -1252,13 +1252,18 @@
                                             ? strtolower(trim(preg_replace('/\s+/', ' ', $currentProduct->brand_line)))
                                             : null;
                                         $hasSpecificVariant = $isAromaType && !empty($normalizedCurrentVariant);
+                                        $hasStrictAllowedProductList = $rentalDetailId && !empty($allowedProductIds);
 
                                         // Filter products list to the checked Material List for this rental detail.
                                         // Aroma/refill variants are expanded by variant name so all packaging sizes appear.
-                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBrandLine, $hasSpecificVariant, $item, $allowedProductIds, $rentalDetailId) {
-                                            // Always include the currently selected product
-                                            if ($p->id == $item->product_id) return true;
+                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $item, $allowedProductIds, $rentalDetailId) {
+                                            if ($hasStrictAllowedProductList) {
+                                                return in_array((int) $p->id, $allowedProductIds, true);
+                                            }
 
+                                            // Keep current saved product only when no exact rental material list exists.
+                                            if ($p->id == $item->product_id) return true;
+                                            
                                             $productBrandLine = $p->brand_line
                                                 ? strtolower(trim(preg_replace('/\s+/', ' ', $p->brand_line)))
                                                 : null;
@@ -2106,11 +2111,15 @@ function openEditModal(id) {
                                             productCell = '<div style="padding: 8px 12px; background: #f3f4f6; border-radius: 6px; color: #6b7280;"><i class="fas fa-lock" style="margin-right: 6px; font-size: 11px;"></i>' + item.product.name + '</div><input type="hidden" name="rental_products[' + index + '][product_id]" value="' + item.product.id + '">';
                                         } else {
                                             let optionProducts = filteredProducts.slice();
-                                            if (!optionProducts.some(p => String(p.id) === String(item.product.id))) {
+                                            const currentProductAllowed = optionProducts.some(p => String(p.id) === String(item.product.id));
+                                            if (allowedProductIds.length === 0 && !currentProductAllowed) {
                                                 optionProducts.unshift(item.product);
                                             }
 
                                             let options = '';
+                                            if (!currentProductAllowed) {
+                                                options += '<option value="" selected>-- Select Material --</option>';
+                                            }
                                             optionProducts.forEach(p => {
                                                 const selected = String(p.id) === String(item.product.id) ? ' selected' : '';
                                                 options += '<option value="' + p.id + '"' + selected + '>' + p.name + '</option>';
