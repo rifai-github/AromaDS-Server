@@ -2490,7 +2490,10 @@ class JobController extends Controller
             ]);
 
             $roomsToMove = $sourceJob->jobScheduleRooms
-                ->filter(fn ($room) => $room->status !== \App\Models\JobScheduleRoom::STATUS_CANCELLED)
+                ->filter(fn ($room) => !in_array($room->status, [
+                    \App\Models\JobScheduleRoom::STATUS_COMPLETED,
+                    \App\Models\JobScheduleRoom::STATUS_CANCELLED,
+                ], true))
                 ->values();
 
             if ($roomsToMove->isNotEmpty()) {
@@ -2797,6 +2800,27 @@ class JobController extends Controller
             $quantityToReturn = $issuedItem && (float) $issuedItem->quantity_issued > 0
                 ? (float) $issuedItem->quantity_issued
                 : (float) ($issueItem->quantity ?? 0);
+
+            if ($issuedItem?->serial_number_id) {
+                $sn = \App\Models\SerialNumber::find($issuedItem->serial_number_id);
+                $hasActiveUnitOnWall = $sn
+                    ? \App\Models\UnitOnWall::where('serial_number_id', $sn->id)
+                        ->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall'])
+                        ->exists()
+                    : false;
+
+                if ($sn && ($sn->status === 'in_use' || $sn->location_type === 'customer' || $hasActiveUnitOnWall)) {
+                    \Log::warning('Skipping partial completion material return for installed serial number', [
+                        'job_schedule_id' => $job->id,
+                        'job_number' => $job->job_number,
+                        'room_name' => $room->room_name,
+                        'serial_number' => $sn->serial_number,
+                        'serial_status' => $sn->status,
+                    ]);
+
+                    continue;
+                }
+            }
 
             $returnItem = \App\Models\MaterialReturnItem::firstOrCreate(
                 [
@@ -3379,41 +3403,9 @@ class JobController extends Controller
                     
             }
 
-            // 4. Also save to unit_on_walls for warehouse tracking (if needed)
-            // Note: unit_on_walls uses serial_number_id, not unit_id
-            
-            // MANDATORY FIX: Update Serial Number status to 'in_use' for install jobs
-            // This ensures consistent tracking in the database (On Hand -> In Use)
-            if (!$isRemoveJob) {
-                 $macInput = trim((string) $request->mac);
-                 
-                 if ($macInput !== '' && $macInput !== '-') {
-                 // Enhanced logic: Try to find serial number from MAC (serial_number string)
-                 // OR find from units table
-                 $sn = \App\Models\SerialNumber::where('serial_number', $macInput)->first();
-                 
-                 if (!$sn) {
-                     // Try to find SN via MAC in units table
-                     $unit = \DB::table('units')->where('mac', $macInput)->first();
-                     if ($unit && $unit->serial_number) {
-                         $sn = \App\Models\SerialNumber::where('serial_number', $unit->serial_number)->first();
-                         if ($sn) {
-                         }
-                     }
-                 }
-
-                 if ($sn) {
-                     $sn->update([
-                         'status' => 'in_use',
-                         'location_type' => 'customer',
-                         'location_id' => $jobSchedule->jobAdvice->customer_id ?? null,
-                         'updated_by' => auth()->id()
-                     ]);
-                 } else {
-                     \Log::warning("⚠️ saveScannedUnit: Could not find Serial Number for MAC/Input: {$request->mac}");
-                 }
-                 }
-            }
+            // SN lifecycle is finalized by completeRoom/verifyJob after photos and
+            // room completion are saved. Keep this scan-save step data-only so a
+            // frozen app cannot leave the job pending while the SN is locked.
             
             \DB::commit();
             
@@ -4514,8 +4506,11 @@ class JobController extends Controller
                         })
                         ->first();
 
-                    // Check SN Status
-                    if ($serialNumber->status === 'in_use' && !$activeUnitOnWallForThisJob) {
+                    // Check SN Status. If a previous saveScannedUnit request succeeded
+                    // but the app froze before completeRoom, allow the same job/room
+                    // to continue instead of locking the technician out.
+                    $existingScanForThisJob = $this->hasExistingInstallScanForSerial($job, $serialNumberInput, $selectedRoomName);
+                    if ($serialNumber->status === 'in_use' && !$activeUnitOnWallForThisJob && !$existingScanForThisJob) {
                          return response()->json([
                             'status' => 'error',
                             'message' => "Serial Number {$serialNumberInput} sudah terdaftar di Unit On Wall (In Use). Tidak dapat digunakan kembali."
@@ -4946,6 +4941,24 @@ class JobController extends Controller
             'status' => 'error',
             'message' => 'Serial number tidak terdaftar untuk job ini. Pastikan SN sudah terverifikasi saat verifikasi material.'
         ], 404);
+    }
+
+    private function hasExistingInstallScanForSerial(JobSchedule $job, string $serialNumber, ?string $selectedRoomName = null): bool
+    {
+        $query = \DB::table('job_schedule_units as jsu')
+            ->leftJoin('job_advice_rooms as jar', 'jar.id', '=', 'jsu.job_advice_room_id')
+            ->where('jsu.job_schedule_id', $job->id)
+            ->whereRaw('UPPER(TRIM(jsu.mac)) = ?', [strtoupper(trim($serialNumber))]);
+
+        if ($selectedRoomName) {
+            $normalizedRoomName = strtolower(trim($selectedRoomName));
+            $query->where(function ($roomQuery) use ($normalizedRoomName) {
+                $roomQuery->whereRaw('LOWER(TRIM(jar.room_name)) = ?', [$normalizedRoomName])
+                    ->orWhereRaw('LOWER(TRIM(jsu.device_name)) = ?', [$normalizedRoomName]);
+            });
+        }
+
+        return $query->exists();
     }
     
     /**

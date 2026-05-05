@@ -1178,7 +1178,7 @@
                                                     $materialReturnStatus = $jobScheduleRoom->material_return_status;
                                                     $returnJobStatus = $jobScheduleRoom->jobSchedule?->status ?? $jobSchedule->status;
                                                     $canCreateMaterialReturn = !in_array($returnJobStatus, ['done_job', 'completed', 'selesai'], true)
-                                                        && in_array($jobScheduleRoom->status, ['completed', 'in_progress', 'cancelled'], true);
+                                                        && in_array($jobScheduleRoom->status, ['in_progress', 'cancelled'], true);
                                                 @endphp
                                                 <div class="d-flex align-items-center gap-2">
                                                     @if($materialReturn)

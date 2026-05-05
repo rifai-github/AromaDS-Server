@@ -4264,6 +4264,14 @@ class JobScheduleController extends Controller
                 ], 422);
             }
 
+            if ($jobScheduleRoom->status === \App\Models\JobScheduleRoom::STATUS_COMPLETED) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Material return tidak bisa dibuat untuk room yang sudah completed karena material/SN dianggap sudah terpakai.',
+                ], 422);
+            }
+
             if ($jobScheduleRoom->material_return_id) {
                 DB::rollBack();
                 return response()->json([
