@@ -5108,9 +5108,6 @@ $(document).ready(function() {
     // Load eligible contracts for renewal
     // Load eligible contracts for renewal
     function loadEligibleContracts() {
-        // Get selected marketing ID
-        const marketingId = $('#marketing_id').val();
-        
         // If we're in edit mode, get the current contract ID to ensure it's included
         let includeId = null;
         const savedData = localStorage.getItem('quotation_step1_data');
@@ -5121,13 +5118,10 @@ $(document).ready(function() {
             } catch(e) {}
         }
         
-        console.log('Loading eligible contracts for marketing:', marketingId, 'Including ID:', includeId);
+        console.log('Loading eligible contracts. Including ID:', includeId);
         
         // Prepare data object
         const requestData = {};
-        if (marketingId) {
-            requestData.marketing_id = marketingId;
-        }
         if (includeId) {
             requestData.include_id = includeId;
         }

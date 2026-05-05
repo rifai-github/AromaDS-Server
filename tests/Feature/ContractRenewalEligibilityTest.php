@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\Contract;
 use App\Models\ContractRenewal;
+use App\Http\Controllers\Marketing\ContractRenewalController;
 use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -18,13 +20,23 @@ class ContractRenewalEligibilityTest extends TestCase
 
         Carbon::setTestNow('2026-05-04 10:00:00');
 
+        Schema::create('customers', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('contracts', function (Blueprint $table) {
             $table->id();
             $table->string('contract_number')->nullable();
             $table->string('contract_status')->nullable();
+            $table->foreignId('customer_id')->nullable();
+            $table->foreignId('marketing_id')->nullable();
             $table->date('start_date')->nullable();
             $table->date('end_date')->nullable();
             $table->foreignId('quotation_id')->nullable();
+            $table->decimal('contract_value', 12, 2)->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('updated_by')->nullable();
             $table->timestamps();
@@ -65,15 +77,40 @@ class ContractRenewalEligibilityTest extends TestCase
             $table->timestamps();
             $table->softDeletes();
         });
+
+        Schema::create('master_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->string('room_name')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('billing_groups', function (Blueprint $table) {
+            $table->id();
+            $table->string('billing_group_name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('contract_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('contract_id')->nullable();
+            $table->foreignId('room_id')->nullable();
+            $table->foreignId('billing_group_id')->nullable();
+            $table->timestamps();
+        });
     }
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('contract_rooms');
+        Schema::dropIfExists('billing_groups');
+        Schema::dropIfExists('master_rooms');
         Schema::dropIfExists('job_schedules');
         Schema::dropIfExists('job_advices');
         Schema::dropIfExists('contract_renewals');
         Schema::dropIfExists('quotations');
         Schema::dropIfExists('contracts');
+        Schema::dropIfExists('customers');
 
         Carbon::setTestNow();
 
@@ -111,14 +148,43 @@ class ContractRenewalEligibilityTest extends TestCase
         $this->assertTrue($eligibility['eligible']);
     }
 
-    private function createContract(string $contractNumber): Contract
+    public function test_dropdown_includes_eligible_contract_with_past_original_end_date_and_different_marketing(): void
     {
-        return Contract::create([
+        DB::table('customers')->insert([
+            'id' => 1,
+            'name' => 'Maju sejahtera Indonesia',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $contract = $this->createContract('BDG-CA/26-05/0001', [
+            'customer_id' => 1,
+            'marketing_id' => 99,
+            'start_date' => '2026-04-01',
+            'end_date' => '2026-05-01',
+        ]);
+        $this->createJob($contract, 'BDG-CSR/26-05/0001', 'service', 'done_job', '2026-04-10');
+
+        $response = app(ContractRenewalController::class)->getEligibleContracts(
+            Request::create('/marketing/contract-renewals/eligible-contracts', 'GET', [
+                'marketing_id' => 7,
+            ])
+        );
+
+        $payload = $response->getData(true);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertContains('BDG-CA/26-05/0001', collect($payload['data'])->pluck('contract_number')->all());
+    }
+
+    private function createContract(string $contractNumber, array $overrides = []): Contract
+    {
+        return Contract::create(array_merge([
             'contract_number' => $contractNumber,
             'contract_status' => 'active',
             'start_date' => '2025-05-01',
             'end_date' => '2026-05-15',
-        ]);
+        ], $overrides));
     }
 
     private function createJob(Contract $contract, string $jobNumber, string $type, string $status, ?string $baDate = null): void
