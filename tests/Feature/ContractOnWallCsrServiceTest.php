@@ -71,6 +71,25 @@ class ContractOnWallCsrServiceTest extends TestCase
         $this->assertDatabaseCount('job_schedule_room_rentals', 1);
     }
 
+    public function test_it_creates_first_csr_when_active_unit_on_wall_has_no_serial_number(): void
+    {
+        $contract = $this->seedContractWithOnWallRoom();
+
+        DB::table('unit_on_walls')->where('id', 1)->update([
+            'serial_number_id' => null,
+            'serial_number' => null,
+        ]);
+
+        $createdCount = app(ContractOnWallCsrService::class)->createForContract($contract->fresh(), 7, 'approved');
+
+        $this->assertSame(1, $createdCount);
+        $this->assertDatabaseHas('job_schedules', [
+            'contract_number' => 'JKT-CA/26-05/0001',
+            'type' => 'service_first',
+            'room_id' => 1,
+        ]);
+    }
+
     public function test_it_does_not_create_duplicate_csr_for_same_contract_room(): void
     {
         $contract = $this->seedContractWithOnWallRoom();

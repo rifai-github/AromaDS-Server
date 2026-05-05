@@ -146,7 +146,6 @@ class ContractOnWallCsrService
 
         return UnitOnWall::query()
             ->whereIn('status', self::ACTIVE_UNIT_STATUSES)
-            ->whereNotNull('serial_number_id')
             ->where('customer_id', $contract->customer_id)
             ->where(function ($query) use ($contractRoom, $buildingId, $normalizedRoomName) {
                 if ($contractRoom->room_id) {

@@ -32,6 +32,90 @@ class JobScheduleController extends Controller
 {
     use AccessControlFilterTrait;
     use \App\Http\Traits\ColumnFilterTrait;
+
+    private function extractRentalModelTokens(?string $value): array
+    {
+        if (!$value) {
+            return [];
+        }
+
+        preg_match_all('/[A-Z]+\s*-?\d+[A-Z0-9-]*/i', strtoupper($value), $matches);
+
+        return collect($matches[0] ?? [])
+            ->map(fn ($token) => preg_replace('/[^A-Z0-9]/', '', $token))
+            ->filter(fn ($token) => preg_match('/[A-Z]/', $token) && preg_match('/\d/', $token))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    protected function resolvePreferredRentalDetailProduct($detail, $rental, $fallbackProduct = null)
+    {
+        $selectedProducts = $detail->allowedProducts
+            ? $detail->allowedProducts->where('pivot.is_selected', true)->values()
+            : collect();
+
+        if ($selectedProducts->isEmpty()) {
+            return $fallbackProduct;
+        }
+
+        $tokens = array_values(array_unique(array_merge(
+            $this->extractRentalModelTokens($rental->rental_name ?? null),
+            $this->extractRentalModelTokens($rental->rental_code ?? null)
+        )));
+
+        $scoredCandidates = $selectedProducts->map(function ($candidate) use ($tokens, $detail, $fallbackProduct) {
+            $haystack = strtoupper(implode(' ', array_filter([
+                $candidate->name ?? null,
+                $candidate->sku ?? null,
+                $candidate->variant_name ?? null,
+            ])));
+            $normalizedHaystack = preg_replace('/[^A-Z0-9]/', '', $haystack);
+
+            $score = 0;
+            foreach ($tokens as $token) {
+                if ($token && str_contains($normalizedHaystack, $token)) {
+                    $score += 100;
+                }
+            }
+
+            if ($fallbackProduct && $candidate->id === $fallbackProduct->id) {
+                $score += 25;
+            }
+
+            if ($detail->product_type_id && $candidate->product_type_id === $detail->product_type_id) {
+                $score += 10;
+            }
+
+            if ($detail->product_category_id && $candidate->product_category_id === $detail->product_category_id) {
+                $score += 5;
+            }
+
+            return [
+                'product' => $candidate,
+                'score' => $score,
+                'sort_order' => $candidate->pivot->sort_order ?? 9999,
+            ];
+        })->sortBy([
+            ['score', 'desc'],
+            ['sort_order', 'asc'],
+        ])->values();
+
+        $bestCandidate = $scoredCandidates->first();
+        if (!$bestCandidate) {
+            return $fallbackProduct;
+        }
+
+        if (($bestCandidate['score'] ?? 0) > 0) {
+            return $bestCandidate['product'];
+        }
+
+        if ($fallbackProduct && $selectedProducts->contains('id', $fallbackProduct->id)) {
+            return $fallbackProduct;
+        }
+
+        return $selectedProducts->sortBy(fn ($product) => $product->pivot->sort_order ?? 9999)->first();
+    }
     
     public function index(Request $request)
     {
@@ -8149,6 +8233,8 @@ class JobScheduleController extends Controller
                 'rentalDetails.productType',
                 'rentalDetails.masterProduct.productCategory',
                 'rentalDetails.masterProduct.productType',
+                'rentalDetails.allowedProducts.productCategory',
+                'rentalDetails.allowedProducts.productType',
             ]);
             
             // Prepare for aroma substitution
@@ -8180,7 +8266,7 @@ class JobScheduleController extends Controller
 
             if ($rentalProduct->rentalDetails && $rentalProduct->rentalDetails->isNotEmpty()) {
                 foreach ($rentalProduct->rentalDetails as $detail) {
-                    $product = $detail->masterProduct;
+                    $product = $this->resolvePreferredRentalDetailProduct($detail, $rentalProduct, $detail->masterProduct);
                     $isAromaType = $this->isAromaRentalDetail($detail, $product);
 
                     if (!$product && $isAromaType && $aromaProduct) {

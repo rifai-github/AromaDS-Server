@@ -1353,7 +1353,6 @@ class JobAdviceController extends Controller
 
         $hasUnitOnWall = UnitOnWall::where('room_id', $roomId)
             ->whereIn('status', $this->activeUnitOnWallStatuses())
-            ->whereNotNull('serial_number_id')
             ->exists();
 
         if ($hasUnitOnWall) {
@@ -1565,7 +1564,6 @@ class JobAdviceController extends Controller
         if ($roomId) {
             $existingUnit = \App\Models\UnitOnWall::where('room_id', $roomId)
                 ->whereIn('status', $this->activeUnitOnWallStatuses())
-                ->whereNotNull('serial_number_id')
                 ->first();
             
             if ($existingUnit) {
@@ -3803,7 +3801,6 @@ class JobAdviceController extends Controller
         if ($jaRoom->existing_unit_on_wall_id) {
             $linkedUnitStillActive = \App\Models\UnitOnWall::whereKey($jaRoom->existing_unit_on_wall_id)
                 ->whereIn('status', $this->activeUnitOnWallStatuses())
-                ->whereNotNull('serial_number_id')
                 ->exists();
 
             if ($linkedUnitStillActive) {
@@ -3829,7 +3826,6 @@ class JobAdviceController extends Controller
 
         return \App\Models\UnitOnWall::query()
             ->whereIn('status', $this->activeUnitOnWallStatuses())
-            ->whereNotNull('serial_number_id')
             ->where(function ($query) use ($roomId, $buildingId, $normalizedRoomName) {
                 if ($roomId) {
                     $query->where('room_id', $roomId);

@@ -1021,7 +1021,13 @@ class JobAssignMaterialIssueController extends Controller
                 if (!$rental) continue;
                 
                 // Load rental_details dengan relationships (termasuk packagingSize)
-                $rental->load(['rentalDetails.productCategory', 'rentalDetails.productType', 'rentalDetails.masterProduct.packagingSize']);
+                $rental->load([
+                    'rentalDetails.productCategory',
+                    'rentalDetails.productType',
+                    'rentalDetails.masterProduct.packagingSize',
+                    'rentalDetails.allowedProducts.productCategory',
+                    'rentalDetails.allowedProducts.productType',
+                ]);
                 
                 // Get quotation room for aroma/variant
                 // MOM9: Check quotation directly (for job advice from quotation) or through contract
@@ -1090,15 +1096,19 @@ class JobAssignMaterialIssueController extends Controller
                     
                     if ($isAromaType && $aromaProduct) {
                         // PRIORITY: Aroma dari Quotation (jasmine dari quotation) > Aroma dari Master Rental
-                        $product = $aromaProduct;
+                        $product = $this->resolveQuotationAromaProductForDetail($detail, $aromaProduct, $detail->masterProduct)
+                            ?? $aromaProduct;
                         \Log::info("  ✓ Detail '{$productCategoryName}': PRIORITY - Menggunakan aromaProduct dari quotation: {$aromaProduct->name} (ID: {$aromaProduct->id})");
                     } else if ($detail->masterProduct) {
                         // Use product from rental_detail
                         $product = $detail->masterProduct;
                         \Log::info("  ✓ Detail '{$productCategoryName}': Menggunakan product dari rental_detail: {$product->name} (ID: {$product->id})");
                     } else {
-                        \Log::warning("  ⚠️ Detail '{$productCategoryName}' (ID: {$detail->id}) tidak memiliki product. Detail akan di-skip.");
-                        continue;
+                        $product = $this->resolvePreferredRentalDetailProduct($detail, $rental, null);
+                        if (!$product) {
+                            \Log::warning("  Detail '{$productCategoryName}' (ID: {$detail->id}) tidak memiliki product atau Material List. Detail akan di-skip.");
+                            continue;
+                        }
                     }
                     
                     if (!$product) {
@@ -1295,7 +1305,8 @@ class JobAssignMaterialIssueController extends Controller
                     'rentalDetails.productType',
                     'rentalDetails.productCategory',
                     'rentalDetails.masterProduct.packagingSize',
-                    'rentalDetails.allowedProducts',
+                    'rentalDetails.allowedProducts.productCategory',
+                    'rentalDetails.allowedProducts.productType',
                 ]);
                 
                 // Get quotation room for aroma/variant
@@ -1404,12 +1415,13 @@ class JobAssignMaterialIssueController extends Controller
                         
                         if ($isAromaType && $aromaProduct) {
                             // PRIORITY: Aroma dari Quotation (jasmine dari quotation) > Aroma dari Master Rental
-                            $product = $aromaProduct;
+                            $product = $this->resolveQuotationAromaProductForDetail($detail, $aromaProduct, $detail->masterProduct)
+                                ?? $aromaProduct;
                         } else if ($detail->masterProduct) {
                             // Use product from rental_detail
                             $product = $detail->masterProduct;
                         } else {
-                            continue;
+                            $product = $this->resolvePreferredRentalDetailProduct($detail, $rental, null);
                         }
                     }
                     

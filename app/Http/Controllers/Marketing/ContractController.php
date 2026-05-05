@@ -1351,7 +1351,6 @@ class ContractController extends Controller
 
         return \App\Models\UnitOnWall::query()
             ->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall'])
-            ->whereNotNull('serial_number_id')
             ->where('customer_id', $contract->customer_id)
             ->where(function ($query) use ($contractRoom, $buildingId, $normalizedRoomName) {
                 if ($contractRoom->room_id) {

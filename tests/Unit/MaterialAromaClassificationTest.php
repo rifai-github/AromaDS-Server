@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Http\Controllers\Operational\JobAssignMaterialIssueController;
 use App\Http\Controllers\Operational\JobScheduleController;
 use App\Models\MasterProduct;
+use App\Models\MasterRental;
 use App\Models\ProductCategory;
 use App\Models\ProductType;
 use App\Models\RentalDetail;
@@ -69,6 +70,31 @@ class MaterialAromaClassificationTest extends TestCase
         $product = $this->product('White Rose 100ml', 'ART-WRO-100', 'Aroma Refill', 'Aroma Refill', 'Artisan');
 
         $this->assertTrue($method->invoke($controller, $product));
+    }
+
+    public function test_job_schedule_uses_selected_material_list_product_when_detail_has_no_default_product(): void
+    {
+        $controller = new JobScheduleController();
+        $method = (new ReflectionClass($controller))->getMethod('resolvePreferredRentalDetailProduct');
+        $method->setAccessible(true);
+
+        $detail = $this->rentalDetail('Cleaner', null);
+        $detail->product_category_id = 22;
+
+        $cleaner = $this->product('ADS Cleaner 500ml', 'CLN-500', 'Cleaner', 'Cleaner');
+        $cleaner->id = 88;
+        $cleaner->product_category_id = 22;
+        $cleaner->setRelation('pivot', (object) [
+            'is_selected' => true,
+            'sort_order' => 1,
+        ]);
+        $detail->setRelation('allowedProducts', collect([$cleaner]));
+
+        $rental = new MasterRental([
+            'rental_name' => 'Wall Diffuser Unit + Refill',
+        ]);
+
+        $this->assertSame($cleaner, $method->invoke($controller, $detail, $rental, null));
     }
 
     private function rentalDetail(?string $categoryName, ?string $typeName): RentalDetail
