@@ -46,6 +46,16 @@
                 ? 'PPN (0%)'
                 : 'PPN (' . number_format($taxRate, 2) . '%)')
             : null;
+
+        $invoiceSignatoryValue = function (string $key, ?string $default = null): ?string {
+            $setting = \App\Models\SystemSetting::active()->byKey($key)->first();
+            $value = $setting?->getRawOriginal('setting_value');
+
+            return filled($value) ? trim((string) $value) : $default;
+        };
+
+        $authorizedName = $invoiceSignatoryValue('invoice_authorized_by_name');
+        $authorizedPosition = $invoiceSignatoryValue('invoice_authorized_by_position', 'Finance Manager');
     @endphp
 
     <!-- Header -->
@@ -205,6 +215,12 @@
                 <p>Authorized By</p>
                 <br><br><br>
                 <hr style="width: 80%; border-top: 1px solid #ccc;">
+                @if($authorizedName)
+                    <p style="margin-bottom: 2px;">{{ $authorizedName }}</p>
+                @endif
+                @if($authorizedPosition)
+                    <p style="margin-top: 0; margin-bottom: 2px;">{{ $authorizedPosition }}</p>
+                @endif
                 <p>{{ $company->name ?? 'Management' }}</p>
             </td>
         </tr>
