@@ -160,7 +160,12 @@ class ServiceSchedulingService
             $documentTypeMap[strtolower($serviceType)] ?? 'job_schedule',
             null,
             null,
-            $contract->id
+            $contract->id,
+            null,
+            null,
+            null,
+            null,
+            $serviceDate
         );
         
         // Get building from contract (first building)

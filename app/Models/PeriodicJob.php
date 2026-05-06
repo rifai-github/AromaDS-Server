@@ -211,7 +211,12 @@ class PeriodicJob extends Model
             $documentType,
             null,
             $this->building_id,
-            $this->contract_id
+            $this->contract_id,
+            null,
+            null,
+            null,
+            null,
+            $this->next_job_date
         );
     }
 

@@ -163,6 +163,7 @@ class DocumentNumberService
      * @param int|null $quotationId Quotation ID (for getting branch from quotation)
      * @param int|null $surveyId Survey ID (for getting branch from survey)
      * @param int|null $warehouseId Warehouse ID (for getting branch from warehouse)
+     * @param \DateTimeInterface|string|null $documentDate Date used for YY-MM prefix (defaults to today)
      * @return string Generated document number
      */
     public function generate(
@@ -173,7 +174,8 @@ class DocumentNumberService
         ?int $quotationId = null,
         ?int $surveyId = null,
         ?int $warehouseId = null,
-        ?int $branchId = null
+        ?int $branchId = null,
+        \DateTimeInterface|string|null $documentDate = null
     ): string {
         // Get type code
         $typeCode = self::TYPE_CODES[$documentType] ?? strtoupper(substr($documentType, 0, 2));
@@ -196,9 +198,9 @@ class DocumentNumberService
             Log::info("DocumentNumberService: Branch code not found, using default JKT for {$documentType}");
         }
         
-        // Get current year and month (2 digits)
-        $year = date('y');
-        $month = date('m');
+        $numberDate = $documentDate ? Carbon::parse($documentDate) : Carbon::now();
+        $year = $numberDate->format('y');
+        $month = $numberDate->format('m');
         
         // Generate prefix
         $prefix = "{$branchCode}-{$typeCode}/{$year}-{$month}/";

@@ -664,7 +664,9 @@ class JobScheduleController extends Controller
                     $firstJob->jobAdvice?->contract_id ?? null,
                     $firstJob->jobAdvice?->quotation_id ?? null,
                     null,
-                    null
+                    null,
+                    null,
+                    $firstJob->schedule_date
                 );
             }
 
@@ -1701,7 +1703,9 @@ class JobScheduleController extends Controller
                             $job->jobAdvice?->contract_id ?? null,
                             $job->jobAdvice?->quotation_id ?? null,
                             null,
-                            null
+                            null,
+                            null,
+                            $job->schedule_date
                         );
                         $batchJobNumbers[$batchKey] = $sharedJobNumber;
                     }
@@ -2052,7 +2056,7 @@ class JobScheduleController extends Controller
             }
             
             // Generate job number with shared document-number rules.
-            $jobNumber = $this->generateJobNumber($jobScheduleType, $jobAdvice);
+            $jobNumber = $this->generateJobNumber($jobScheduleType, $jobAdvice, $request->schedule_date);
             
             // MOM13: Get building for auto-fill location data
             $building = \App\Models\Building::with(['district', 'subdistrict'])->find($request->building_id);
@@ -2939,7 +2943,9 @@ class JobScheduleController extends Controller
                             $refJob->jobAdvice?->contract_id ?? null,
                             $refJob->jobAdvice?->quotation_id ?? null,
                             null,
-                            null
+                            null,
+                            null,
+                            $date
                         );
                     }
                     
@@ -5489,7 +5495,13 @@ class JobScheduleController extends Controller
             $jobNumber = $documentNumberService->generate(
                 $isInstallFree ? 'remove_free' : 'remove',
                 null, // Branch code will be determined from building
-                $installJob->building_id
+                $installJob->building_id,
+                null,
+                null,
+                null,
+                null,
+                null,
+                $jobAdvice->remove_date
             );
             
             // MOM13: Build room list for internal_notes
@@ -7072,7 +7084,7 @@ class JobScheduleController extends Controller
             };
             
             // Generate job number
-            $jobNumber = $this->generateJobNumber('service', $jobAdvice);
+            $jobNumber = $this->generateJobNumber('service', $jobAdvice, $firstServiceDate);
             
             // Build room list for internal_notes
             $roomNames = $jobAdvice->rooms->pluck('room_name')->filter()->toArray();
@@ -7157,7 +7169,7 @@ class JobScheduleController extends Controller
             }
 
             // Generate job number with proper CSR code
-            $jobNumber = $this->generateJobNumber('service', $jobAdvice);
+            $jobNumber = $this->generateJobNumber('service', $jobAdvice, $nextServiceDate);
             
             // MOM8: Calculate next period number (urutan service ke berapa)
             // Period = urutan service (1, 2, 3, dst), bukan service_frequency
@@ -7301,7 +7313,7 @@ class JobScheduleController extends Controller
      * RV = Remove
      * RF = Remove Free
      */
-    private function generateJobNumber($type, $jobAdvice = null)
+    private function generateJobNumber($type, $jobAdvice = null, $scheduleDate = null)
     {
         $typeLower = strtolower($type ?? '');
         $jobAdviceType = strtolower($jobAdvice->type ?? '');
@@ -7321,7 +7333,11 @@ class JobScheduleController extends Controller
             null,
             null,
             $jobAdvice?->contract_id,
-            $jobAdvice?->quotation_id
+            $jobAdvice?->quotation_id,
+            null,
+            null,
+            null,
+            $scheduleDate
         );
     }
     
@@ -7417,7 +7433,9 @@ class JobScheduleController extends Controller
                     $job->jobAdvice?->contract_id ?? null,
                     $job->jobAdvice?->quotation_id ?? null,
                     null,
-                    null
+                    null,
+                    null,
+                    $job->schedule_date
                 );
                 \Log::info("✅ Generated NEW Shared Job Number {$sharedJobNumber} for Job #{$job->id}");
             }
@@ -7486,7 +7504,9 @@ class JobScheduleController extends Controller
                 $job->jobAdvice?->contract_id ?? null,
                 $job->jobAdvice?->quotation_id ?? null,
                 null,
-                null
+                null,
+                null,
+                $job->schedule_date
             );
             \Log::info("âœ… Generated NEW Shared Job Number {$sharedJobNumber} for Job #{$job->id}");
         }
