@@ -314,6 +314,95 @@ class JobAssignMaterialIssueController extends Controller
 
         return null;
     }
+
+    private function getUserBranchAccessIds($user): array
+    {
+        $branchIds = collect();
+
+        $branchAccess = $user->accessLevels()
+            ->where('access_type', 'branch')
+            ->where('is_active', true)
+            ->first();
+
+        if ($branchAccess) {
+            $config = $branchAccess->access_config ?? [];
+            $branchIds = $branchIds->merge($config['allowed_branches'] ?? []);
+            $branchIds = $branchIds->merge($config['allowed_branch_ids'] ?? []);
+
+            if ($branchIds->isEmpty() && $user->branch_id) {
+                $branchIds->push($user->branch_id);
+            }
+        }
+
+        if (method_exists($user, 'assignedBranches')) {
+            $branchIds = $branchIds->merge($user->assignedBranches()->pluck('branches.id'));
+        }
+
+        return $branchIds
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function applyMaterialAssignIssueAccessFilter($query, $user)
+    {
+        if ($user->hasRoleStartingWith('Management')) {
+            return $query;
+        }
+
+        $companyAccess = $user->accessLevels()
+            ->where('access_type', 'company')
+            ->where('is_active', true)
+            ->exists();
+
+        if ($companyAccess) {
+            return $query;
+        }
+
+        $accessibleUserIds = $this->getAccessibleUserIds($user);
+
+        $userTeamIds = \DB::table('teams')
+            ->where('team_head_id', $user->id)
+            ->pluck('id')
+            ->merge(
+                \DB::table('team_members')
+                    ->where('user_id', $user->id)
+                    ->pluck('team_id')
+            )
+            ->unique()
+            ->values()
+            ->all();
+
+        $branchIds = $this->getUserBranchAccessIds($user);
+
+        return $query->where(function ($q) use ($accessibleUserIds, $userTeamIds, $branchIds) {
+            $q->whereIn('created_by', $accessibleUserIds)
+                ->orWhereHas('jobAssignSchedule.jobSchedule.jobAdvice', function ($subQ) use ($accessibleUserIds) {
+                    $subQ->whereIn('created_by', $accessibleUserIds)
+                        ->orWhereIn('request_by', $accessibleUserIds);
+                });
+
+            if (!empty($userTeamIds)) {
+                $q->orWhereHas('jobAssignSchedule', function ($subQ) use ($userTeamIds) {
+                    $subQ->whereIn('team_id', $userTeamIds);
+                });
+            }
+
+            if (!empty($branchIds)) {
+                $q->orWhereHas('materialIssue.warehouse', function ($subQ) use ($branchIds) {
+                    $subQ->whereIn('branch_id', $branchIds);
+                })
+                ->orWhereHas('jobAssignSchedule.team', function ($subQ) use ($branchIds) {
+                    $subQ->whereIn('branch_office', $branchIds);
+                })
+                ->orWhereHas('jobAssignSchedule.jobSchedule.building', function ($subQ) use ($branchIds) {
+                    $subQ->whereIn('branch_id', $branchIds);
+                });
+            }
+        });
+    }
     
     /**
      * Display a listing of the resource.
@@ -346,37 +435,7 @@ class JobAssignMaterialIssueController extends Controller
             'updatedBy:id,name'
         ]);
 
-        // Apply access control filter (hierarchical data)
-        // Default: Jika tidak set hirarki, hanya bisa lihat data sendiri
-        // Filter by created_by and also by jobAssignSchedule.jobSchedule.jobAdvice.created_by/requested_by
-        $user = Auth::user();
-        if (!$user->hasRoleStartingWith('Management')) {
-            $accessibleUserIds = $this->getAccessibleUserIds($user);
-            
-            // Get teams where user is leader or member
-            $userTeamIds = \DB::table('teams')
-                ->where('team_head_id', $user->id)
-                ->pluck('id')
-                ->merge(
-                    \DB::table('team_members')
-                        ->where('user_id', $user->id)
-                        ->pluck('team_id')
-                )
-                ->unique()
-                ->toArray();
-            
-            $query->where(function($q) use ($accessibleUserIds, $userTeamIds) {
-                $q->whereIn('created_by', $accessibleUserIds)
-                  ->orWhereHas('jobAssignSchedule.jobSchedule.jobAdvice', function($subQ) use ($accessibleUserIds) {
-                      $subQ->whereIn('created_by', $accessibleUserIds)
-                           ->orWhereIn('request_by', $accessibleUserIds);
-                  })
-                  // Include material issues for user's teams
-                  ->orWhereHas('jobAssignSchedule', function($subQ) use ($userTeamIds) {
-                      $subQ->whereIn('team_id', $userTeamIds);
-                  });
-            });
-        }
+        $query = $this->applyMaterialAssignIssueAccessFilter($query, Auth::user());
 
         // Filter by job number
         if ($request->filled('job_number')) {
