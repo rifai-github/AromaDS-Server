@@ -144,6 +144,26 @@ class InvoicePrintTemplateTest extends TestCase
         $this->assertStringContainsString('Finance Director', $html);
     }
 
+    public function test_invoice_print_template_falls_back_when_system_settings_schema_is_legacy(): void
+    {
+        Schema::dropIfExists('system_settings');
+        Schema::create('system_settings', function (Blueprint $table) {
+            $table->id();
+            $table->string('key')->nullable();
+            $table->text('value')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        $invoice = $this->makeInvoice();
+
+        $html = View::make('finance.invoices.print_template', compact('invoice'))->render();
+
+        $this->assertStringContainsString('Authorized By', $html);
+        $this->assertStringContainsString('Finance Manager', $html);
+    }
+
     private function makeInvoice(): Invoice
     {
         DB::table('companies')->insert([
