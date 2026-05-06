@@ -18,6 +18,7 @@ use App\Models\UnitOnWall;
 use App\Services\DocumentNumberService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -454,6 +455,11 @@ class JobAdviceController extends Controller
             return back()->withErrors(['contract_id' => 'Either Contract or Quotation must be selected.'])->withInput();
         }
 
+        $lock = Cache::lock('job-advice:create:' . $this->buildJobAdviceCreateLockKey($request), 30);
+        if (! $lock->get()) {
+            return $this->jobAdviceCreateInProgressResponse($request);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -565,9 +571,22 @@ class JobAdviceController extends Controller
                 }
             }
             
-            
+            $recentDuplicate = $this->findRecentDuplicateJobAdvice(
+                $request,
+                $contractId,
+                $quotationId,
+                $customerId,
+                $referenceNumber
+            );
+
+            if ($recentDuplicate) {
+                DB::rollBack();
+
+                return $this->duplicateJobAdviceResponse($request, $recentDuplicate);
+            }
+
             $documentNumberService = new DocumentNumberService();
-            
+
             // Check if type is Complain to use different prefix (COM)
             $documentType = 'job_advice';
             if (!empty($request->type) && strtolower($request->type) === 'complain') {
@@ -687,7 +706,128 @@ class JobAdviceController extends Controller
             }
             
             return back()->withInput()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+        } finally {
+            optional($lock)->release();
         }
+    }
+
+    private function buildJobAdviceCreateLockKey(Request $request): string
+    {
+        $payload = [
+            'user_id' => Auth::id(),
+            'contract_id' => $request->contract_id,
+            'quotation_id' => $request->quotation_id,
+            'type' => strtolower(trim((string) $request->type)),
+            'request_by' => $request->request_by ?? Auth::id(),
+            'customer_contact_id' => $request->customer_contact_id,
+            'expected_date' => $request->expected_date,
+            'remove_date' => $request->remove_date,
+            'rooms' => $this->normalizeJobAdviceRequestRooms($request->input('rooms', [])),
+        ];
+
+        return sha1(json_encode($payload));
+    }
+
+    private function findRecentDuplicateJobAdvice(
+        Request $request,
+        $contractId,
+        $quotationId,
+        $customerId,
+        ?string $referenceNumber
+    ): ?JobAdvice {
+        $requestRooms = $this->normalizeJobAdviceRequestRooms($request->input('rooms', []));
+
+        $candidates = JobAdvice::with('rooms')
+            ->where('created_by', Auth::id())
+            ->where('customer_id', $customerId)
+            ->where('type', $request->type)
+            ->where('request_by', $request->request_by ?? Auth::id())
+            ->whereDate('expected_date', $request->expected_date)
+            ->where('created_at', '>=', now()->subMinutes(5))
+            ->whereIn('status', ['draft', 'waiting_for_approval', 'submitted'])
+            ->when($referenceNumber, fn ($query) => $query->where('reference_number', $referenceNumber), fn ($query) => $query->whereNull('reference_number'))
+            ->when($request->filled('customer_contact_id'), fn ($query) => $query->where('customer_contact_id', $request->customer_contact_id), fn ($query) => $query->whereNull('customer_contact_id'))
+            ->when($request->filled('remove_date'), fn ($query) => $query->whereDate('remove_date', $request->remove_date), fn ($query) => $query->whereNull('remove_date'))
+            ->when($contractId, fn ($query) => $query->where('contract_id', $contractId), fn ($query) => $query->whereNull('contract_id'))
+            ->when($quotationId, fn ($query) => $query->where('quotation_id', $quotationId), fn ($query) => $query->whereNull('quotation_id'))
+            ->latest('id')
+            ->get();
+
+        return $candidates->first(function (JobAdvice $jobAdvice) use ($requestRooms) {
+            return $this->normalizeExistingJobAdviceRooms($jobAdvice) === $requestRooms;
+        });
+    }
+
+    private function normalizeJobAdviceRequestRooms($rooms): array
+    {
+        return collect(is_array($rooms) ? $rooms : [])
+            ->map(function ($room) {
+                return [
+                    'contract_room_id' => $this->nullableInt($room['contract_room_id'] ?? null),
+                    'quotation_room_id' => $this->nullableInt($room['quotation_room_id'] ?? null),
+                    'quotation_rental_id' => $this->nullableInt($room['quotation_rental_id'] ?? null),
+                    'quotation_detail_id' => $this->nullableInt($room['quotation_detail_id'] ?? null),
+                    'rental_product_id' => $this->nullableInt($room['rental_product_id'] ?? null),
+                    'quantity' => (int) ($room['quantity'] ?? 1),
+                ];
+            })
+            ->sortBy(fn ($room) => implode('|', array_map(fn ($value) => (string) ($value ?? ''), $room)))
+            ->values()
+            ->all();
+    }
+
+    private function normalizeExistingJobAdviceRooms(JobAdvice $jobAdvice): array
+    {
+        return $jobAdvice->rooms
+            ->map(function ($room) {
+                return [
+                    'contract_room_id' => $this->nullableInt($room->contract_room_id),
+                    'quotation_room_id' => $this->nullableInt($room->quotation_room_id),
+                    'quotation_rental_id' => $this->nullableInt($room->quotation_rental_id),
+                    'quotation_detail_id' => $this->nullableInt($room->quotation_detail_id),
+                    'rental_product_id' => $this->nullableInt($room->rental_product_id),
+                    'quantity' => (int) ($room->quantity ?? 1),
+                ];
+            })
+            ->sortBy(fn ($room) => implode('|', array_map(fn ($value) => (string) ($value ?? ''), $room)))
+            ->values()
+            ->all();
+    }
+
+    private function nullableInt($value): ?int
+    {
+        return $value === null || $value === '' ? null : (int) $value;
+    }
+
+    private function duplicateJobAdviceResponse(Request $request, JobAdvice $jobAdvice)
+    {
+        $jobAdvice->loadMissing(['contract', 'customer']);
+
+        if ($request->expectsJson() || $request->header('Accept') === 'application/json') {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Job Advice sudah dibuat dari request yang sama.',
+                'data' => $jobAdvice,
+                'duplicate_prevented' => true,
+            ]);
+        }
+
+        return redirect()->route('marketing.job-advices.show', $jobAdvice)
+            ->with('success', 'Job Advice sudah dibuat dari request yang sama.');
+    }
+
+    private function jobAdviceCreateInProgressResponse(Request $request)
+    {
+        $message = 'Request pembuatan Job Advice sedang diproses. Mohon tunggu sebentar.';
+
+        if ($request->expectsJson() || $request->header('Accept') === 'application/json') {
+            return response()->json([
+                'status' => 'error',
+                'message' => $message,
+            ], 409);
+        }
+
+        return back()->withInput()->with('error', $message);
     }
 
     public function show($id)

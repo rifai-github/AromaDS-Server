@@ -2954,6 +2954,22 @@ function openEditModal(id) {
         });
 }
 
+function setJobAdviceSubmitting(form, isSubmitting) {
+    if (!form) return;
+
+    form.dataset.submitting = isSubmitting ? '1' : '0';
+    document.querySelectorAll('#modalFooter .btn-primary, #jobAdviceForm button[type="submit"]').forEach(button => {
+        button.disabled = isSubmitting;
+        if (isSubmitting) {
+            button.dataset.originalText = button.innerHTML;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+        } else if (button.dataset.originalText) {
+            button.innerHTML = button.dataset.originalText;
+            delete button.dataset.originalText;
+        }
+    });
+}
+
 window.submitForm = function(event, id = null) {
     event.preventDefault();
     
@@ -2961,6 +2977,10 @@ window.submitForm = function(event, id = null) {
     const form = document.getElementById('jobAdviceForm');
     if (!form) {
         console.error('Job Advice form not found!');
+        return;
+    }
+
+    if (form.dataset.submitting === '1') {
         return;
     }
     
@@ -3005,6 +3025,8 @@ window.submitForm = function(event, id = null) {
     if (!validateJobAdviceDates(data)) {
         return;
     }
+
+    setJobAdviceSubmitting(form, true);
     
     // Set default values for fields not in create modal
     if (!id) {
@@ -3130,10 +3152,12 @@ window.submitForm = function(event, id = null) {
                 location.reload();
             }
         } else {
+            setJobAdviceSubmitting(form, false);
             alert('Error: ' + (result.message || 'Something went wrong'));
         }
     })
     .catch(error => {
+        setJobAdviceSubmitting(form, false);
         console.error('Error details:', error);
         console.error('Error message:', error.message);
         console.error('Error stack:', error.stack);
