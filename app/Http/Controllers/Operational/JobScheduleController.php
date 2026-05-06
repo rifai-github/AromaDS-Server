@@ -2556,12 +2556,12 @@ class JobScheduleController extends Controller
             return $photo->created_at ?? now();
         })->values();
 
-        // For re-work after unpost, keep historical files in storage/database but
-        // only show the latest active PIC/signature snapshot per job room in the
-        // main Photos tab so users do not see duplicate verification rows.
+        // For slow/retried mobile uploads, keep one active evidence snapshot
+        // per job room and photo type. Older files may remain in storage, but
+        // the main Photos tab should not stack duplicate proof rows.
         $latestSnapshotKeys = [];
         $jobPhotos = $jobPhotos->filter(function ($photo) use (&$latestSnapshotKeys) {
-            if (!in_array($photo->photo_type, ['PIC Photo', 'Digital Signature'])) {
+            if (!in_array($photo->photo_type, ['Before Work', 'After Work', 'PIC Photo', 'Digital Signature'])) {
                 return true;
             }
 

@@ -2044,19 +2044,52 @@ class JobController extends Controller
                 ], 422);
             }
 
+            \DB::beginTransaction();
+
+            $jobScheduleRoom = \App\Models\JobScheduleRoom::whereKey($jobScheduleRoom->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$jobScheduleRoom) {
+                \DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Room ini tidak terdaftar pada job schedule yang sedang dikerjakan.'
+                ], 422);
+            }
+
             $hasNewBeforePhoto = $this->requestHasAnyFile($request, 'before_photos');
             $hasNewAfterPhoto = $this->requestHasAnyFile($request, 'after_photos');
             $hasExistingBeforePhoto = $this->jobScheduleRoomHasPhotoType($jobScheduleRoom->id, 'Before Work');
             $hasExistingAfterPhoto = $this->jobScheduleRoomHasPhotoType($jobScheduleRoom->id, 'After Work');
 
+            if (
+                $jobScheduleRoom->status === \App\Models\JobScheduleRoom::STATUS_COMPLETED
+                && $hasExistingBeforePhoto
+                && $hasExistingAfterPhoto
+            ) {
+                \DB::commit();
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Room completed successfully (duplicate)',
+                    'data' => [
+                        'room_id' => $room->id,
+                        'room_status' => $room->status,
+                        'all_completed' => $jobSchedule ? $jobSchedule->areAllRoomsCompleted() : true,
+                    ]
+                ]);
+            }
+
             if ((!$hasNewBeforePhoto && !$hasExistingBeforePhoto) || (!$hasNewAfterPhoto && !$hasExistingAfterPhoto)) {
+                \DB::rollBack();
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Foto sebelum dan sesudah pengerjaan wajib diupload untuk menyelesaikan room.'
                 ], 422);
             }
-
-            \DB::beginTransaction();
 
             // Upload and save before photos if provided
             if ($request->hasFile('before_photos')) {
@@ -2250,14 +2283,13 @@ class JobController extends Controller
                 throw new \RuntimeException("Gagal menyimpan foto {$photoType}.");
             }
 
-            \App\Models\JobPhoto::create([
-                'job_schedule_id' => $jobSchedule->id,
-                'job_schedule_room_id' => $jobScheduleRoom->id,
-                'photo_path' => 'job-verifications/' . $filename,
-                'photo_type' => $photoType,
-                'description' => $description,
-                'uploaded_by' => Auth::id(),
-            ]);
+            $this->syncJobPhotoRecord(
+                $jobSchedule->id,
+                $photoType,
+                'job-verifications/' . $filename,
+                $description,
+                $jobScheduleRoom->id
+            );
         }
     }
 
