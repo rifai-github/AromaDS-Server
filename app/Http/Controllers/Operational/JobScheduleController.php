@@ -9596,17 +9596,25 @@ class JobScheduleController extends Controller
 
         $selectedRoomIds = null;
         $targetJobNumbers = [];
+        $targetJobIds = collect();
 
         if ($viewMode === 'room') {
             // User selected specific rooms. Only print those specific rooms.
             $selectedRoomIds = $ids;
-            $targetJobNumbers = \App\Models\JobScheduleRoom::whereIn('job_schedule_rooms.id', $ids)
+            $roomJobQuery = \App\Models\JobScheduleRoom::whereIn('job_schedule_rooms.id', $ids)
                 ->join('job_schedules', 'job_schedule_rooms.job_schedule_id', '=', 'job_schedules.id')
-                ->pluck('job_schedules.job_number')
+                ->select('job_schedules.id', 'job_schedules.job_number')
+                ->get();
+
+            $targetJobIds = $roomJobQuery->pluck('id')->filter()->unique()->values();
+            $targetJobNumbers = $roomJobQuery->pluck('job_number')
+                ->filter()
                 ->unique();
         } else {
             // User selected Job Groups. Fetch the whole group (siblings).
-            $targetJobNumbers = JobSchedule::whereIn('id', $ids)->pluck('job_number')->unique();
+            $selectedJobs = JobSchedule::whereIn('id', $ids)->get(['id', 'job_number']);
+            $targetJobIds = $selectedJobs->pluck('id')->filter()->unique()->values();
+            $targetJobNumbers = $selectedJobs->pluck('job_number')->filter()->unique();
         }
 
         // Fetch jobs - ensure we check validity again for security
@@ -9619,7 +9627,15 @@ class JobScheduleController extends Controller
             'jobScheduleRooms.room',
             'jobScheduleRooms.jobAdviceRoom.rentalProduct'
         ])
-            ->whereIn('job_number', $targetJobNumbers)
+            ->where(function ($query) use ($targetJobIds, $targetJobNumbers) {
+                if ($targetJobIds->isNotEmpty()) {
+                    $query->whereIn('id', $targetJobIds);
+                }
+
+                if ($targetJobNumbers->isNotEmpty()) {
+                    $query->orWhereIn('job_number', $targetJobNumbers);
+                }
+            })
             ->whereNotIn('status', ['cancelled', 'terminated'])
             ->get();
 
@@ -9628,7 +9644,7 @@ class JobScheduleController extends Controller
     }
 
     // Group by Job Number
-    $groupedJobs = $jobs->groupBy('job_number');
+    $groupedJobs = $jobs->groupBy(fn ($job) => $job->job_number ?: 'JOB-' . $job->id);
 
     // Note: View will be created in next step
     $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('operational.job-schedules.pdf-csr', compact('groupedJobs', 'selectedRoomIds'));
