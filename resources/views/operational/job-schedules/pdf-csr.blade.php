@@ -65,6 +65,20 @@
             
             // Collect Rooms
             $rooms = collect();
+            $formatJobType = function (?string $type): string {
+                $normalized = strtolower(str_replace([' ', '-'], '_', (string) $type));
+
+                return match (true) {
+                    in_array($normalized, ['service', 'service_first', 'service_routine', 'csr', 'maintenance'], true) => 'Service/Refill',
+                    in_array($normalized, ['install', 'installation', 'install_free'], true) => 'Install',
+                    in_array($normalized, ['check', 'cek'], true) => 'Cek',
+                    str_contains($normalized, 'complain') || str_contains($normalized, 'extra') => 'No Regular',
+                    str_contains($normalized, 'remove') => 'Remove',
+                    str_contains($normalized, 'change') => 'Change Rental',
+                    default => $type ? ucwords(str_replace('_', ' ', $type)) : '-',
+                };
+            };
+
             foreach($schedules as $sch) {
                 // Determine Type Code
                 $typeCode = 'S'; // Default Service
@@ -82,25 +96,35 @@
                             continue;
                         }
 
+                        $jobAdviceRoom = $roomPivot->jobAdviceRoom;
+                        $itemName = $jobAdviceRoom?->rentalProduct?->rental_name
+                            ?? $jobAdviceRoom?->rentalProduct?->name
+                            ?? $jobAdviceRoom?->rental_name
+                            ?? $roomPivot->display_rental_name
+                            ?? '-';
+
                         $rooms->push([
-                            'item' => $roomPivot->display_rental_name,
+                            'item' => $itemName,
+                            'qty' => $jobAdviceRoom?->quantity ?? 1,
                             'name' => $roomPivot->room->room_name ?? 'Unknown Room',
-                            'job_no' => $sch->job_number ?? '-', 
+                            'type' => $formatJobType($sch->type ?? $mainJob->type ?? null),
                             'period' => $sch->period ?? '-'
                         ]);
                     }
                 } elseif ($sch->room) {
                     $rooms->push([
                          'item' => $sch->room->room_type ?? 'General Service',
+                         'qty' => 1,
                          'name' => $sch->room->room_name,
-                         'job_no' => $sch->job_number ?? '-',
+                         'type' => $formatJobType($sch->type ?? $mainJob->type ?? null),
                          'period' => $sch->period ?? '-'
                     ]);
                 } else {
                      $rooms->push([
                         'item' => 'General Service',
+                        'qty' => 1,
                         'name' => 'General Area',
-                        'job_no' => $sch->job_number ?? '-',
+                         'type' => $formatJobType($sch->type ?? $mainJob->type ?? null),
                          'period' => $sch->period ?? '-'
                     ]);
                 }
@@ -163,10 +187,11 @@
             <thead>
                 <tr>
                     <th style="width: 5%;" class="center">No</th>
-                    <th style="width: 35%;">Item</th>
-                    <th style="width: 25%;">Room</th>
-                    <th style="width: 20%;" class="center">Job No</th>
-                    <th style="width: 15%;" class="center">Period</th>
+                    <th style="width: 32%;">Item</th>
+                    <th style="width: 10%;" class="center">Qty</th>
+                    <th style="width: 23%;">Room</th>
+                    <th style="width: 18%;" class="center">Type</th>
+                    <th style="width: 12%;" class="center">Period</th>
                 </tr>
             </thead>
             <tbody>
@@ -174,8 +199,9 @@
                 <tr>
                     <td class="center">{{ $index + 1 }}</td>
                     <td>{{ $room['item'] }}</td>
+                    <td class="center">{{ $room['qty'] }}</td>
                     <td>{{ $room['name'] }}</td>
-                    <td class="center">{{ $room['job_no'] }}</td>
+                    <td class="center">{{ $room['type'] }}</td>
                     <td class="center">{{ $room['period'] }}</td>
                 </tr>
                 @endforeach

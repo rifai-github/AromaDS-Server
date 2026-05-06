@@ -3428,10 +3428,9 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                 
                 const statusLower = (status || '').toLowerCase();
 
-                // Flexible check: Job must be done/completed. (Type check removed to allow any type)
-                const isDone = statusLower.includes('done') || statusLower === 'completed';
+                const isPrintable = !['cancelled', 'terminated'].includes(statusLower);
                 
-                if (!isDone) {
+                if (!isPrintable) {
                     invalidCount++;
                 }
             }
@@ -3439,7 +3438,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
             if (invalidCount > 0) {
                 Swal.fire({
                     title: 'Validasi Gagal',
-                    text: 'Laporan cetak hanya bisa dibuat untuk job yang sudah selesai (Status: Done Job/Completed).',
+                    text: 'Laporan cetak tidak bisa dibuat untuk job Cancelled/Terminated.',
                     icon: 'warning'
                 });
                 actionSelect.value = "";

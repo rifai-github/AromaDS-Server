@@ -9620,11 +9620,11 @@ class JobScheduleController extends Controller
             'jobScheduleRooms.jobAdviceRoom.rentalProduct'
         ])
             ->whereIn('job_number', $targetJobNumbers)
-            ->whereIn('status', ['done_job', 'completed']) 
+            ->whereNotIn('status', ['cancelled', 'terminated'])
             ->get();
 
     if ($jobs->isEmpty()) {
-         return response('No valid completed jobs found to print.', 404);
+         return response('No valid jobs found to print.', 404);
     }
 
     // Group by Job Number
