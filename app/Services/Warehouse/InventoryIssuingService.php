@@ -107,6 +107,53 @@ class InventoryIssuingService
         return $this->rollbackMovements($movements);
     }
 
+    public function reopenMaterialIssuesForPendingIssuingDeletion(InventoryIssuing $issuing): Collection
+    {
+        $materialIssues = $this->resolveMaterialIssuesForPendingIssuingDeletion($issuing);
+
+        foreach ($materialIssues as $materialIssue) {
+            $materialIssue->update([
+                'status' => 'approved',
+                'updated_by' => Auth::id(),
+            ]);
+        }
+
+        return $materialIssues;
+    }
+
+    public function resolveMaterialIssuesForPendingIssuingDeletion(InventoryIssuing $issuing): Collection
+    {
+        if (!empty($issuing->reference_no)) {
+            $byReference = MaterialIssue::where('issue_number', $issuing->reference_no)->get();
+            if ($byReference->isNotEmpty()) {
+                return $byReference;
+            }
+        }
+
+        $jobAssignScheduleIds = $issuing->items()
+            ->whereNotNull('job_assign_schedule_id')
+            ->pluck('job_assign_schedule_id')
+            ->unique()
+            ->values();
+
+        if ($jobAssignScheduleIds->isEmpty()) {
+            return collect();
+        }
+
+        return MaterialIssue::where('status', 'issued')
+            ->whereHas('jobAssignMaterialIssues', function ($query) use ($jobAssignScheduleIds) {
+                $query->whereIn('job_assign_schedule_id', $jobAssignScheduleIds->all());
+            })
+            ->get()
+            ->filter(function (MaterialIssue $materialIssue) use ($issuing) {
+                return !InventoryIssuing::where('id', '!=', $issuing->id)
+                    ->where('reference_no', $materialIssue->issue_number)
+                    ->whereIn('status', ['pending', 'processed', 'sent', 'received'])
+                    ->exists();
+            })
+            ->values();
+    }
+
     /**
      * Update SN status to 'on_hand' for technician.
      */

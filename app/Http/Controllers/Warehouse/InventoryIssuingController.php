@@ -445,13 +445,9 @@ class InventoryIssuingController extends Controller
             // posted stock before the WI was processed to Ready.
             $syncService->rollbackPostedStock($issuing);
 
-            // 2. RESET MATERIAL ISSUE STATUS
-            $materialIssue = \App\Models\MaterialIssue::where('issue_number', $issuing->reference_no)->first();
-            if ($materialIssue) {
-                $materialIssue->update([
-                    'status' => 'approved', // Revert from 'issued' to 'approved'
-                    'updated_by' => Auth::id()
-                ]);
+            // 2. RESET RELATED MATERIAL ISSUE STATUS
+            $materialIssues = $syncService->reopenMaterialIssuesForPendingIssuingDeletion($issuing);
+            foreach ($materialIssues as $materialIssue) {
                 \Log::info("Reset MaterialIssue {$materialIssue->issue_number} status to 'approved'");
             }
 
@@ -466,7 +462,7 @@ class InventoryIssuingController extends Controller
             $issuing->items()->delete();
             $issuing->delete();
 
-            if ($materialIssue) {
+            foreach ($materialIssues as $materialIssue) {
                 $syncService->syncGroupedJobMaterialLifecycleFromMaterialIssue($materialIssue);
             }
 
@@ -887,13 +883,7 @@ class InventoryIssuingController extends Controller
                     continue;
                 }
 
-                $materialIssue = \App\Models\MaterialIssue::where('issue_number', $issuing->reference_no)->first();
-                if ($materialIssue) {
-                    $materialIssue->update([
-                        'status' => 'approved',
-                        'updated_by' => Auth::id(),
-                    ]);
-                }
+                $materialIssues = $syncService->reopenMaterialIssuesForPendingIssuingDeletion($issuing);
 
                 \App\Models\InventoryReceiving::where('issuing_id', $issuing->id)->delete();
                 $syncService->rollbackPostedStock($issuing);
@@ -901,7 +891,7 @@ class InventoryIssuingController extends Controller
                 $issuing->items()->delete();
                 $issuing->delete();
 
-                if ($materialIssue) {
+                foreach ($materialIssues as $materialIssue) {
                     $syncService->syncGroupedJobMaterialLifecycleFromMaterialIssue($materialIssue);
                 }
 
