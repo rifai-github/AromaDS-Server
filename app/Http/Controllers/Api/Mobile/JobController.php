@@ -2542,11 +2542,13 @@ class JobController extends Controller
                     $room->update([
                         'status' => \App\Models\JobScheduleRoom::STATUS_CANCELLED,
                         'material_return_status' => $returnContext['material_return']
-                            ? \App\Models\JobScheduleRoom::MATERIAL_RETURN_RETURNED
+                            ? ($returnContext['material_return']->status === \App\Models\MaterialReturn::STATUS_RETURNED
+                                ? \App\Models\JobScheduleRoom::MATERIAL_RETURN_RETURNED
+                                : \App\Models\JobScheduleRoom::MATERIAL_RETURN_PENDING)
                             : \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
                         'material_return_id' => $returnContext['material_return']?->id,
-                        'material_return_at' => $returnContext['material_return'] ? $now : null,
-                        'material_return_by' => $returnContext['material_return'] ? auth()->id() : null,
+                        'material_return_at' => $returnContext['material_return']?->returned_at,
+                        'material_return_by' => $returnContext['material_return']?->returned_by,
                         'notes' => 'Pekerjaan tidak selesai, dipindahkan ke Job baru.',
                         'updated_by' => auth()->id(),
                     ]);
@@ -2604,7 +2606,11 @@ class JobController extends Controller
         $receivingNote = "Auto-return dari Aplikasi teknisi via Job {$job->job_number} (Pekerjaan tidak selesai). Room: {$roomNames}";
 
         $materialReturn = \App\Models\MaterialReturn::where('job_schedule_id', $job->id)
-            ->where('status', \App\Models\MaterialReturn::STATUS_RETURNED)
+            ->whereIn('status', [
+                \App\Models\MaterialReturn::STATUS_PENDING,
+                \App\Models\MaterialReturn::STATUS_APPROVED,
+                \App\Models\MaterialReturn::STATUS_RETURNED,
+            ])
             ->where('notes', 'like', 'Auto-return dari Aplikasi teknisi via Job ' . $job->job_number . '%')
             ->lockForUpdate()
             ->latest('id')
@@ -2618,12 +2624,10 @@ class JobController extends Controller
                 'job_schedule_id' => $job->id,
                 'warehouse_id' => $warehouse->id,
                 'team_id' => $team?->id,
-                'status' => \App\Models\MaterialReturn::STATUS_RETURNED,
+                'status' => \App\Models\MaterialReturn::STATUS_PENDING,
                 'return_date' => $now->toDateString(),
                 'return_reason' => 'Pekerjaan tidak selesai (Auto-return via Mobile App)',
                 'notes' => $receivingNote,
-                'returned_by' => auth()->id(),
-                'returned_at' => $now,
                 'created_by' => auth()->id(),
                 'updated_by' => auth()->id(),
             ]);
@@ -2636,14 +2640,17 @@ class JobController extends Controller
             ->first();
 
         if (!$inventoryReceiving) {
+            $receivingNumber = app(\App\Services\DocumentNumberService::class)
+                ->generate('inventory_receiving', warehouseId: $warehouse->id);
+
             $inventoryReceiving = \App\Models\InventoryReceiving::create([
-                'receiving_number' => str_replace('RTR', 'IRC', $materialReturn->return_number),
+                'receiving_number' => $receivingNumber,
                 'reference_no' => $job->job_number,
                 'branch_id' => $warehouse->branch_id ?? $job->branch_id,
                 'received_from' => auth()->id(),
                 'received_by_old' => auth()->id(),
-                'receive_date' => $now->toDateString(),
-                'status' => 'received',
+                'schedule_date' => $now->toDateString(),
+                'status' => 'pending',
                 'notes' => $receivingNote,
                 'created_by' => auth()->id(),
                 'updated_by' => auth()->id(),
@@ -2878,59 +2885,9 @@ class JobController extends Controller
                 ],
                 [
                     'quantity' => $quantityToReturn,
-                    'quantity_received' => $quantityToReturn,
+                    'quantity_received' => 0,
                 ]
             );
-
-            if ($issuedItem?->serial_number_id) {
-                $sn = \App\Models\SerialNumber::find($issuedItem->serial_number_id);
-                if ($sn) {
-                    $returnedSnCode = $sn->serial_number;
-
-                    $sn->update([
-                        'status' => 'ready',
-                        'location_type' => 'warehouse',
-                        'location_id' => $warehouse->id,
-                        'inventory_receiving_id' => $inventoryReceiving->id,
-                        'updated_by' => auth()->id(),
-                    ]);
-
-                    $issuedItem->update([
-                        'serial_number_id' => null,
-                        'updated_by' => auth()->id(),
-                        'notes' => trim((string) $issuedItem->notes . ' | Auto-returned to warehouse via partial completion on Job ' . $job->job_number . ' | SN released: ' . $returnedSnCode),
-                    ]);
-                }
-            }
-
-            if ($returnItem->wasRecentlyCreated || $receivingItem->wasRecentlyCreated) {
-                $warehouseProduct = \App\Models\WarehouseProduct::firstOrCreate(
-                    [
-                        'warehouse_id' => $warehouse->id,
-                        'master_product_id' => $issueItem->product_id,
-                    ],
-                    [
-                        'quantity' => 0,
-                        'created_by' => auth()->id(),
-                        'updated_by' => auth()->id(),
-                    ]
-                );
-                $warehouseProduct->increment('quantity', $quantityToReturn);
-
-                \App\Models\InventoryMovement::create([
-                    'warehouse_id' => $warehouse->id,
-                    'master_product_id' => $issueItem->product_id,
-                    'movement_type' => 'in',
-                    'quantity' => abs($quantityToReturn),
-                    'movement_date' => $now->toDateString(),
-                    'reference_no' => $inventoryReceiving->receiving_number,
-                    'reference_type' => 'inventory_receiving',
-                    'movement_no' => str_replace('IRC-', 'REC-', $inventoryReceiving->receiving_number),
-                    'notes' => "Auto-return via Job {$job->job_number} (Parsial, MI Item {$issueItem->id})",
-                    'created_by' => auth()->id(),
-                    'updated_by' => auth()->id(),
-                ]);
-            }
         }
     }
     
