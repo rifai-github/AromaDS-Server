@@ -239,7 +239,11 @@ class JobController extends Controller
         })
         ->values(); // Re-index array
 
-        Log::info('mobile_jobs_today_polled', [
+        Log::build([
+            'driver' => 'single',
+            'path' => storage_path('logs/mobile-sync.log'),
+            'level' => 'info',
+        ])->info('mobile_jobs_today_polled', [
             'user_id' => $user->id,
             'team_ids' => $userTeamIds,
             'raw_jobs_count' => $rawJobCount,
