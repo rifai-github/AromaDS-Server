@@ -14,6 +14,8 @@ use App\Models\User;
 use App\Models\MasterOption;
 use App\Models\ContractRemark;
 use App\Models\ContractRevision;
+use App\Models\Finance\BillingGroup;
+use App\Models\Finance\BillingGroupBuilding;
 use App\Services\ContractMergeService;
 use App\Services\Operational\ContractOnWallCsrService;
 use Illuminate\Http\Request;
@@ -2198,6 +2200,19 @@ class ContractController extends Controller
                 ], 400);
             }
 
+            $missingBillingGroupBuildings = $this->getBuildingsMissingBillingGroup($contract);
+
+            if ($missingBillingGroupBuildings->isNotEmpty()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Contract belum bisa difinalize. Building berikut belum memiliki billing group: ' .
+                        $missingBillingGroupBuildings->pluck('name')->implode(', '),
+                    'data' => [
+                        'missing_buildings' => $missingBillingGroupBuildings->values(),
+                    ],
+                ], 422);
+            }
+
             // Update contract status to waiting_for_approval (requires manager approval)
             $contract->update([
                 'contract_status' => 'waiting_for_approval',
@@ -2224,6 +2239,62 @@ class ContractController extends Controller
                 'message' => 'Failed to finalize contract: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function getBuildingsMissingBillingGroup(Contract $contract)
+    {
+        $contract->loadMissing([
+            'contractRooms.room.building',
+            'contractSurveys.survey.building',
+        ]);
+
+        $contractBuildings = collect();
+
+        foreach ($contract->contractRooms as $contractRoom) {
+            $building = $contractRoom->room?->building ?? $contractRoom->building;
+            if ($building) {
+                $contractBuildings->push($building);
+            }
+        }
+
+        foreach ($contract->contractSurveys as $contractSurvey) {
+            $building = $contractSurvey->survey?->building;
+            if ($building) {
+                $contractBuildings->push($building);
+            }
+        }
+
+        $contractBuildings = $contractBuildings->unique('id')->values();
+
+        if ($contractBuildings->isEmpty()) {
+            return collect();
+        }
+
+        $billingGroupIds = BillingGroup::where('contract_id', $contract->id)
+            ->where('is_active', true)
+            ->pluck('id');
+
+        if ($billingGroupIds->isEmpty()) {
+            return $contractBuildings->map(fn ($building) => [
+                'id' => $building->id,
+                'name' => $building->nama_gedung ?? $building->name ?? 'Building #' . $building->id,
+            ]);
+        }
+
+        $assignedBuildingIds = BillingGroupBuilding::whereIn('billing_group_id', $billingGroupIds)
+            ->where('is_active', true)
+            ->distinct()
+            ->pluck('building_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return $contractBuildings
+            ->reject(fn ($building) => in_array((int) $building->id, $assignedBuildingIds, true))
+            ->map(fn ($building) => [
+                'id' => $building->id,
+                'name' => $building->nama_gedung ?? $building->name ?? 'Building #' . $building->id,
+            ])
+            ->values();
     }
 
 
