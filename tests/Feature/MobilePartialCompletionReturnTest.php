@@ -69,7 +69,58 @@ class MobilePartialCompletionReturnTest extends TestCase
             $table->string('status')->nullable();
             $table->foreignId('job_advice_id')->nullable();
             $table->foreignId('building_id')->nullable();
+            $table->string('building_name')->nullable();
+            $table->string('company_name')->nullable();
+            $table->string('contract_number')->nullable();
+            $table->string('quotation_number')->nullable();
             $table->foreignId('branch_id')->nullable();
+            $table->date('schedule_date')->nullable();
+            $table->date('expected_date')->nullable();
+            $table->date('ba_date')->nullable();
+            $table->string('ba_number')->nullable();
+            $table->timestamp('completed_at')->nullable();
+            $table->text('internal_notes')->nullable();
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('job_advices', function (Blueprint $table) {
+            $table->id();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('job_advice_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('job_schedule_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_id')->nullable();
+            $table->foreignId('job_advice_room_id')->nullable();
+            $table->string('room_name')->nullable();
+            $table->foreignId('room_id')->nullable();
+            $table->string('status')->nullable();
+            $table->string('material_return_status')->nullable();
+            $table->foreignId('material_return_id')->nullable();
+            $table->timestamp('material_return_at')->nullable();
+            $table->foreignId('material_return_by')->nullable();
+            $table->text('notes')->nullable();
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('job_schedule_room_rentals', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_room_id')->nullable();
+            $table->foreignId('job_advice_room_id')->nullable();
+            $table->boolean('is_primary')->default(false);
             $table->timestamps();
             $table->softDeletes();
         });
@@ -241,6 +292,24 @@ class MobilePartialCompletionReturnTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('job_reports', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_id')->nullable();
+            $table->foreignId('technician_id')->nullable();
+            $table->string('job_type')->nullable();
+            $table->text('notes')->nullable();
+            $table->string('photo_pic')->nullable();
+            $table->string('signature_file')->nullable();
+            $table->text('signature_data')->nullable();
+            $table->string('pic_name')->nullable();
+            $table->json('photos')->nullable();
+            $table->string('photo_before')->nullable();
+            $table->string('photo_after')->nullable();
+            $table->timestamp('completed_at')->nullable();
+            $table->timestamp('signature_at')->nullable();
+            $table->timestamps();
+        });
+
         DB::table('users')->insert([
             'id' => 1,
             'name' => 'Administrator',
@@ -270,7 +339,12 @@ class MobilePartialCompletionReturnTest extends TestCase
             'job_assign_material_issues',
             'material_issues',
             'job_assign_schedules',
+            'job_reports',
+            'job_schedule_room_rentals',
+            'job_schedule_rooms',
             'job_schedules',
+            'job_advice_rooms',
+            'job_advices',
             'warehouses',
             'teams',
             'buildings',
@@ -339,6 +413,94 @@ class MobilePartialCompletionReturnTest extends TestCase
 
         $this->assertDatabaseCount('warehouse_products', 0);
         $this->assertDatabaseCount('inventory_movements', 0);
+    }
+
+    public function test_partial_completion_marks_source_job_done_and_moves_unfinished_room_to_follow_up(): void
+    {
+        $this->seedPartialCompletionScenario();
+
+        DB::table('job_advices')->insert([
+            'id' => 70,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            ['id' => 80, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 81, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_schedules')->where('id', 10)->update([
+            'job_advice_id' => 70,
+            'status' => 'in_progress',
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            [
+                'id' => 90,
+                'job_schedule_id' => 10,
+                'job_advice_room_id' => 80,
+                'room_name' => 'OFFICE ROOM',
+                'room_id' => 800,
+                'status' => 'completed',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 91,
+                'job_schedule_id' => 10,
+                'job_advice_room_id' => 81,
+                'room_name' => 'VIP ROOM',
+                'room_id' => 900,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $controller = app(JobController::class);
+        $job = JobSchedule::findOrFail(10);
+
+        $method = new ReflectionMethod($controller, 'handleCannotCompleteAllRooms');
+        $method->setAccessible(true);
+        $method->invoke($controller, $job, now());
+
+        $this->assertDatabaseHas('job_schedules', [
+            'id' => 10,
+            'status' => 'done_job',
+        ]);
+        $this->assertNotNull(DB::table('job_schedules')->where('id', 10)->value('completed_at'));
+
+        $this->assertDatabaseHas('job_schedule_rooms', [
+            'id' => 91,
+            'status' => 'cancelled',
+            'material_return_status' => 'pending',
+        ]);
+
+        $followUpJob = DB::table('job_schedules')
+            ->where('id', '!=', 10)
+            ->where('job_advice_id', 70)
+            ->first();
+
+        $this->assertNotNull($followUpJob);
+        $this->assertSame('new_job', $followUpJob->status);
+
+        $this->assertDatabaseHas('job_schedule_rooms', [
+            'job_schedule_id' => $followUpJob->id,
+            'job_advice_room_id' => 81,
+            'room_name' => 'VIP ROOM',
+            'status' => 'pending',
+        ]);
+
+        $this->assertDatabaseHas('material_returns', [
+            'job_schedule_id' => 10,
+            'status' => 'pending',
+        ]);
+
+        $this->assertDatabaseHas('inventory_receivings', [
+            'reference_no' => 'BDG-IR/26-05/0002',
+            'status' => 'pending',
+        ]);
     }
 
     private function seedPartialCompletionScenario(): void

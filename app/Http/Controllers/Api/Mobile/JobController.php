@@ -2555,15 +2555,15 @@ class JobController extends Controller
                 }
             }
 
-            $sourceJob->status = 'meninggalkan_lokasi';
-            $sourceJob->completed_at = null;
+            $sourceJob->status = 'done_job';
+            $sourceJob->completed_at = $sourceJob->completed_at ?: $now;
             $sourceJob->updated_by = Auth::id();
             $sourceJob->save();
         }
 
         if (!$processedAnyRoom) {
-            $job->status = 'meninggalkan_lokasi';
-            $job->completed_at = null;
+            $job->status = 'done_job';
+            $job->completed_at = $job->completed_at ?: $now;
             $job->updated_by = Auth::id();
         }
     }
@@ -3659,16 +3659,12 @@ class JobController extends Controller
             // Update job updated_by
             $job->updated_by = Auth::id();
             
-            // Partial/left-location jobs must not be stamped as BA-completed.
-            // They may carry evidence for audit, but invoice/completion flow is status-driven.
-            if (!$cannotCompleteAllRooms) {
-                if (!$job->ba_date) {
-                    $job->ba_date = now()->toDateString();
-                }
-                if (!$job->ba_number) {
-                    $documentNumberService = new \App\Services\DocumentNumberService();
-                    $job->ba_number = $documentNumberService->generate('berita_acara', null, null, null, $job->id);
-                }
+            if (!$job->ba_date) {
+                $job->ba_date = now()->toDateString();
+            }
+            if (!$job->ba_number) {
+                $documentNumberService = new \App\Services\DocumentNumberService();
+                $job->ba_number = $documentNumberService->generate('berita_acara', null, null, null, $job->id);
             }
             
             // Store verification data in internal_notes or create JobReport
@@ -3699,7 +3695,7 @@ class JobController extends Controller
                         'photos' => !empty($photoUrls) ? $photoUrls : ($existingJobReport?->photos ?: null),
                         'photo_before' => $beforeWorkPhoto ?: $existingJobReport?->photo_before,
                         'photo_after' => $afterWorkPhoto ?: $existingJobReport?->photo_after,
-                        'completed_at' => $cannotCompleteAllRooms ? null : now(),
+                        'completed_at' => now(),
                         'signature_at' => $signaturePath ? now() : $existingJobReport?->signature_at,
                     ]
                 );
@@ -3976,8 +3972,8 @@ class JobController extends Controller
             
             \DB::commit();
             
-            $message = $cannotCompleteAllRooms 
-                ? 'Pekerjaan berhasil diverifikasi. Material Return otomatis dibuat untuk ruangan yang belum selesai.'
+            $message = $cannotCompleteAllRooms
+                ? 'Pekerjaan berhasil diselesaikan. Material Return otomatis dibuat untuk ruangan yang belum selesai.'
                 : 'Pekerjaan berhasil diverifikasi';
             
             return response()->json([
