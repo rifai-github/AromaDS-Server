@@ -786,7 +786,7 @@
         </div>
         <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 15px; margin-top: 15px; border-bottom: none; border-top: 1px solid #dee2e6; position: sticky; bottom: 0; background: #fefefe;">
             <button type="button" class="btn btn-secondary" onclick="closeAddTaxModal(); return false;" style="padding: 8px 20px; border: 1px solid #ccc; border-radius: 4px; background: #6c757d; color: white; cursor: pointer;">Cancel</button>
-            <button type="button" class="btn btn-primary" onclick="saveTaxData(); return false;" style="padding: 8px 20px; border: 1px solid #007bff; border-radius: 4px; background: #007bff; color: white; cursor: pointer;">Save</button>
+            <button type="button" id="saveTaxButton" class="btn btn-primary" onclick="saveTaxData(); return false;" style="padding: 8px 20px; border: 1px solid #007bff; border-radius: 4px; background: #007bff; color: white; cursor: pointer;">Save</button>
         </div>
     </div>
 </div>
@@ -1714,7 +1714,48 @@ function displayQuotationSummary(quotation) {
 }
 
 // Step 4: Billing Address functions
-// Populate Tax Dropdown - NPWP+NITKU Paired Options
+function normalizeTaxSettingForBilling(setting) {
+    const taxName = (setting.tax_name || '').toUpperCase();
+    const taxNumber = (setting.tax_number || '').replace(/\D/g, '');
+    const savedNitku = (setting.nitku || '').replace(/\D/g, '');
+
+    if (taxName === 'NITKU') {
+        const fullNitku = taxNumber.length === 22 ? taxNumber : `${taxNumber}${savedNitku}`.replace(/\D/g, '');
+
+        return {
+            label: `NITKU: ${fullNitku || taxNumber}`,
+            npwp: fullNitku.length >= 16 ? fullNitku.substring(0, 16) : '',
+            nitku: fullNitku.length >= 22 ? fullNitku.substring(16, 22) : (savedNitku || ''),
+            nik: '',
+        };
+    }
+
+    if (taxName === 'NPWP') {
+        return {
+            label: `NPWP: ${taxNumber}`,
+            npwp: taxNumber,
+            nitku: savedNitku || '000000',
+            nik: '',
+        };
+    }
+
+    if (taxName === 'NIK') {
+        return {
+            label: `NIK: ${taxNumber}`,
+            npwp: '',
+            nitku: savedNitku || '000000',
+            nik: taxNumber,
+        };
+    }
+
+    return {
+        label: `${taxName}: ${taxNumber}`,
+        npwp: '',
+        nitku: '',
+        nik: taxNumber,
+    };
+}
+
 // Populate Tax Dropdown - NPWP+NITKU Paired Options
 function populateTaxDropdown(addressIndex) {
     const select = document.getElementById(`taxSelect_${addressIndex}`);
@@ -1732,38 +1773,18 @@ function populateTaxDropdown(addressIndex) {
     // Iterate over customer_tax_settings
     if (customer.customer_tax_settings && customer.customer_tax_settings.length > 0) {
         customer.customer_tax_settings.forEach(setting => {
-            const taxName = (setting.tax_name || '').toUpperCase();
-            const taxNumber = (setting.tax_number || '').trim();
-            const nitku = (setting.nitku || '').trim();
             const taxAddress = (setting.tax_address || '').trim();
-            
-            let label = '';
-            let npwpVal = '', nitkuVal = '', nikVal = '';
-
-            if (taxName === 'NPWP' || taxName === 'NITKU') {
-                label = `${taxName}: ${taxNumber}`;
-                if (nitku) label += ` - NITKU: ${nitku}`;
-                npwpVal = taxNumber;
-                nitkuVal = nitku || (taxNumber + '000000'); 
-            } else if (taxName === 'NIK') {
-                label = `NIK: ${taxNumber}`;
-                if (nitku) label += ` - NITKU: ${nitku}`;
-                nikVal = taxNumber;
-                nitkuVal = nitku || '000000';
-            } else {
-                // OTHER/KITAS
-                label = `${taxName}: ${taxNumber}`;
-                nikVal = taxNumber; 
-            }
+            const normalizedTax = normalizeTaxSettingForBilling(setting);
+            let label = normalizedTax.label;
             
             if (taxAddress) label += ` - ${taxAddress}`;
 
             const valueData = JSON.stringify({
                 source: 'Settings',
                 setting_id: setting.id,
-                npwp: npwpVal,
-                nitku: nitkuVal,
-                nik: nikVal,
+                npwp: normalizedTax.npwp,
+                nitku: normalizedTax.nitku,
+                nik: normalizedTax.nik,
                 address: taxAddress,
                 ppn_code: setting.ppn_code || (setting.tax_type ? setting.tax_type.slice(0, 2) : '')
             });
@@ -1771,9 +1792,9 @@ function populateTaxDropdown(addressIndex) {
             const option = document.createElement('option');
             option.value = valueData;
             option.textContent = label;
-            option.setAttribute('data-npwp', npwpVal);
-            option.setAttribute('data-nitku', nitkuVal);
-            option.setAttribute('data-nik', nikVal);
+            option.setAttribute('data-npwp', normalizedTax.npwp);
+            option.setAttribute('data-nitku', normalizedTax.nitku);
+            option.setAttribute('data-nik', normalizedTax.nik);
             option.setAttribute('data-ppn-code', setting.ppn_code || (setting.tax_type ? setting.tax_type.slice(0, 2) : ''));
             option.setAttribute('data-address', taxAddress);
             
@@ -3970,6 +3991,7 @@ async function finalizeContract() {
 
 // Add Tax Modal Logic
 let currentAddressIndexForTax = null;
+let isSavingTaxData = false;
 
 function openAddTaxModal(addressIndex) {
     currentAddressIndexForTax = addressIndex;
@@ -4091,12 +4113,22 @@ function updateTaxNumberMaxLength(mode) {
 }
 
 function saveTaxData() {
+    if (isSavingTaxData) return;
+
     const form = document.getElementById('addTaxForm');
+    const saveButton = document.getElementById('saveTaxButton');
     syncModalTaxRateFromCode();
 
     if (!form.checkValidity()) {
         form.reportValidity();
         return;
+    }
+
+    isSavingTaxData = true;
+    const originalButtonText = saveButton ? saveButton.innerHTML : 'Save';
+    if (saveButton) {
+        saveButton.disabled = true;
+        saveButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Saving...';
     }
 
     Swal.fire({
@@ -4124,10 +4156,27 @@ function saveTaxData() {
         },
         body: JSON.stringify(data)
     })
-    .then(response => response.json())
+    .then(async response => {
+        const responseText = await response.text();
+        let result = {};
+
+        try {
+            result = responseText ? JSON.parse(responseText) : {};
+        } catch (error) {
+            throw new Error('Server mengembalikan response yang tidak valid. Silakan refresh halaman dan coba lagi.');
+        }
+
+        if (!response.ok) {
+            const validationErrors = result.errors
+                ? Object.values(result.errors).flat().join('\n')
+                : null;
+            throw new Error(validationErrors || result.message || 'Gagal menyimpan data pajak.');
+        }
+
+        return result;
+    })
     .then(result => {
         if (result.status === 'success') {
-            Swal.fire('Berhasil!', 'Data pajak berhasil disimpan.', 'success');
             closeAddTaxModal();
             
             // Update global quotationData.customer.customer_tax_settings
@@ -4164,13 +4213,21 @@ function saveTaxData() {
                     }
                 }, 100);
             }
+            Swal.fire('Berhasil!', 'Data pajak berhasil disimpan.', 'success');
         } else {
             Swal.fire('Error', result.message || 'Gagal menyimpan data pajak.', 'error');
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        Swal.fire('Error', 'Terjadi kesalahan saat menyimpan data pajak.', 'error');
+        Swal.fire('Error', error.message || 'Terjadi kesalahan saat menyimpan data pajak.', 'error');
+    })
+    .finally(() => {
+        isSavingTaxData = false;
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.innerHTML = originalButtonText;
+        }
     });
 }
 </script>
