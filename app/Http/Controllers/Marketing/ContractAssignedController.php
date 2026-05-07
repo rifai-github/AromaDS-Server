@@ -3,8 +3,9 @@
 namespace App\Http\Controllers\Marketing;
 
 use App\Http\Controllers\Controller;
-use App\Models\ContractAssigned;
+use App\Http\Traits\AccessControlFilterTrait;
 use App\Models\Contract;
+use App\Models\ContractAssigned;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\Validator;
 
 class ContractAssignedController extends Controller
 {
+    use AccessControlFilterTrait;
+
     public function index(Request $request)
     {
         $query = ContractAssigned::with([
@@ -22,8 +25,10 @@ class ContractAssignedController extends Controller
             'newMarketing',
             'initiatedBy',
             'approvedBy',
-            'executedBy'
+            'executedBy',
         ]);
+
+        $query = $this->applyContractAssignedAccessFilter($query);
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -55,14 +60,14 @@ class ContractAssignedController extends Controller
         $assigned = $query->orderBy('created_at', 'desc')->paginate(15)->withQueryString();
 
         // Calculate stats
-        $allAssigned = ContractAssigned::all();
+        $statsQuery = $this->applyContractAssignedAccessFilter(ContractAssigned::query());
         $stats = [
-            'draft' => $allAssigned->where('status', 'draft')->count(),
-            'pending' => $allAssigned->where('status', 'pending_approval')->count(),
-            'approved' => $allAssigned->where('status', 'approved')->count(),
-            'completed' => $allAssigned->where('status', 'completed')->count(),
-            'rejected' => $allAssigned->where('status', 'rejected')->count(),
-            'total' => $allAssigned->count()
+            'draft' => (clone $statsQuery)->where('status', 'draft')->count(),
+            'pending' => (clone $statsQuery)->where('status', 'pending_approval')->count(),
+            'approved' => (clone $statsQuery)->where('status', 'approved')->count(),
+            'completed' => (clone $statsQuery)->where('status', 'completed')->count(),
+            'rejected' => (clone $statsQuery)->where('status', 'rejected')->count(),
+            'total' => (clone $statsQuery)->count(),
         ];
 
         if ($request->expectsJson() || $request->ajax()) {
@@ -85,7 +90,7 @@ class ContractAssignedController extends Controller
             'new_marketing_id' => 'required|exists:users,id',
             'switching_reason' => 'required|string|max:500',
             'switching_description' => 'nullable|string|max:2000',
-            'switching_notes' => 'nullable|string|max:1000'
+            'switching_notes' => 'nullable|string|max:1000',
         ]);
 
         if ($validator->fails()) {
@@ -93,17 +98,18 @@ class ContractAssignedController extends Controller
         }
 
         try {
-            DB::beginTransaction();
-
             $oldContract = Contract::findOrFail($request->old_contract_id);
+            $this->ensureCanUseContractForAssignment($oldContract);
+
+            DB::beginTransaction();
 
             // Validation: cannot switch to same marketing
             if ($oldContract->marketing_id == $request->new_marketing_id) {
                 DB::rollBack();
 
                 return response()->json([
-                    'status' => 'error', 
-                    'message' => 'New marketing must be different from current marketing'
+                    'status' => 'error',
+                    'message' => 'New marketing must be different from current marketing',
                 ], 422);
             }
 
@@ -117,7 +123,7 @@ class ContractAssignedController extends Controller
                 'switching_notes' => $request->switching_notes,
                 'status' => ContractAssigned::STATUS_DRAFT,
                 'initiated_by' => Auth::id(),
-                'created_by' => Auth::id()
+                'created_by' => Auth::id(),
             ]);
 
             DB::commit();
@@ -127,27 +133,30 @@ class ContractAssignedController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Contract assigned created successfully',
-                'data' => $assigned->load(['oldContract', 'oldMarketing', 'newMarketing'])
+                'data' => $assigned->load(['oldContract', 'oldMarketing', 'newMarketing']),
             ]);
         } catch (\Exception $e) {
             DB::rollback();
-            Log::error("Error creating contract assigned: " . $e->getMessage());
+            Log::error('Error creating contract assigned: '.$e->getMessage());
+
             return response()->json([
-                'status' => 'error', 
-                'message' => 'Failed to create contract assigned: ' . $e->getMessage()
+                'status' => 'error',
+                'message' => 'Failed to create contract assigned: '.$e->getMessage(),
             ], 500);
         }
     }
 
     public function show(ContractAssigned $contractAssigned)
     {
+        $this->authorizeContractAssignedAccess($contractAssigned);
+
         $contractAssigned->load([
             'oldContract.customer',
             'oldMarketing',
             'newMarketing',
             'initiatedBy',
             'approvedBy',
-            'executedBy'
+            'executedBy',
         ]);
 
         return response()->json(['status' => 'success', 'data' => $contractAssigned]);
@@ -155,20 +164,26 @@ class ContractAssignedController extends Controller
 
     public function submitForApproval(ContractAssigned $contractAssigned)
     {
+        $this->authorizeContractAssignedAccess($contractAssigned);
+
         try {
             $contractAssigned->submitForApproval();
             Log::info("Contract Assigned submitted: {$contractAssigned->switching_number}");
+
             return response()->json(['status' => 'success', 'message' => 'Assignment submitted for approval']);
         } catch (\Exception $e) {
-            Log::error("Error submitting assignment: " . $e->getMessage());
+            Log::error('Error submitting assignment: '.$e->getMessage());
+
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
     }
 
     public function approve(Request $request, ContractAssigned $contractAssigned)
     {
+        $this->authorizeContractAssignedAccess($contractAssigned);
+
         $validator = Validator::make($request->all(), [
-            'approval_notes' => 'nullable|string|max:1000'
+            'approval_notes' => 'nullable|string|max:1000',
         ]);
 
         if ($validator->fails()) {
@@ -178,17 +193,21 @@ class ContractAssignedController extends Controller
         try {
             $contractAssigned->approve(Auth::id(), $request->approval_notes);
             Log::info("Contract Assigned approved: {$contractAssigned->switching_number}");
+
             return response()->json(['status' => 'success', 'message' => 'Assignment approved successfully']);
         } catch (\Exception $e) {
-            Log::error("Error approving assignment: " . $e->getMessage());
+            Log::error('Error approving assignment: '.$e->getMessage());
+
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
     }
 
     public function reject(Request $request, ContractAssigned $contractAssigned)
     {
+        $this->authorizeContractAssignedAccess($contractAssigned);
+
         $validator = Validator::make($request->all(), [
-            'rejection_reason' => 'required|string|max:1000'
+            'rejection_reason' => 'required|string|max:1000',
         ]);
 
         if ($validator->fails()) {
@@ -198,21 +217,27 @@ class ContractAssignedController extends Controller
         try {
             $contractAssigned->reject(Auth::id(), $request->rejection_reason);
             Log::info("Contract Assigned rejected: {$contractAssigned->switching_number}");
+
             return response()->json(['status' => 'success', 'message' => 'Assignment rejected']);
         } catch (\Exception $e) {
-            Log::error("Error rejecting assignment: " . $e->getMessage());
+            Log::error('Error rejecting assignment: '.$e->getMessage());
+
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
     }
 
     public function cancel(ContractAssigned $contractAssigned)
     {
+        $this->authorizeContractAssignedAccess($contractAssigned);
+
         try {
             $contractAssigned->cancel();
             Log::info("Contract Assigned cancelled: {$contractAssigned->switching_number}");
+
             return response()->json(['status' => 'success', 'message' => 'Assignment cancelled']);
         } catch (\Exception $e) {
-            Log::error("Error cancelling assignment: " . $e->getMessage());
+            Log::error('Error cancelling assignment: '.$e->getMessage());
+
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
     }
@@ -222,21 +247,24 @@ class ContractAssignedController extends Controller
      */
     public function execute(ContractAssigned $contractAssigned)
     {
+        $this->authorizeContractAssignedAccess($contractAssigned);
+
         try {
             $contract = $contractAssigned->execute(Auth::id());
-            
+
             Log::info("Contract Assigned executed: {$contractAssigned->switching_number}");
-            
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Contract marketing assigned successfully',
                 'data' => [
                     'assigned' => $contractAssigned->fresh(),
-                    'contract' => $contract
-                ]
+                    'contract' => $contract,
+                ],
             ]);
         } catch (\Exception $e) {
-            Log::error("Error executing assignment: " . $e->getMessage());
+            Log::error('Error executing assignment: '.$e->getMessage());
+
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
     }
@@ -265,6 +293,7 @@ class ContractAssignedController extends Controller
     protected function buildTransferableContractCollection($marketingId = null)
     {
         $activeStatuses = ['active', 'approved', 'aktif', 'Active', 'Approved', 'Aktif'];
+        $accessibleMarketingIds = $this->getContractAssignedAccessibleUserIds();
 
         $query = Contract::with(['customer', 'marketing'])
             ->whereNull('deleted_at')
@@ -273,49 +302,61 @@ class ContractAssignedController extends Controller
                     ->orWhereIn('status', $activeStatuses);
             });
 
-        if (!empty($marketingId)) {
+        if ($accessibleMarketingIds !== null) {
+            $query->whereIn('marketing_id', $accessibleMarketingIds);
+        }
+
+        if (! empty($marketingId)) {
             $query->where('marketing_id', $marketingId);
         }
 
         return $query->orderBy('contract_number', 'desc')
             ->get()
-            ->map(function($contract) {
+            ->map(function ($contract) {
                 return [
                     'id' => $contract->id,
                     'contract_number' => $contract->contract_number,
                     'customer' => [
-                        'name' => $contract->customer->name ?? '-'
+                        'name' => $contract->customer->name ?? '-',
                     ],
                     'customer_name' => $contract->customer->name ?? '-',
                     'current_marketing' => $contract->marketing->name ?? '-',
                     'marketing_id' => $contract->marketing_id,
                     'start_date' => $contract->start_date,
                     'end_date' => $contract->end_date,
-                    'status' => $contract->contract_status ?: $contract->status ?: 'active'
+                    'status' => $contract->contract_status ?: $contract->status ?: 'active',
                 ];
             });
     }
 
     protected function buildMarketingUserCollection()
     {
-        return User::with(['department', 'roles'])
+        $accessibleMarketingIds = $this->getContractAssignedAccessibleUserIds();
+
+        $query = User::with(['department', 'roles'])
             ->where('is_active', true)
-            ->where(function($query) {
-                $query->whereHas('department', function($q) {
+            ->where(function ($query) {
+                $query->whereHas('department', function ($q) {
                     $q->where('name', 'LIKE', '%marketing%')
                         ->orWhere('name', 'LIKE', '%sales%');
                 })
-                ->orWhere('department_name', 'LIKE', '%marketing%')
-                ->orWhere('department_name', 'LIKE', '%sales%')
-                ->orWhere('position_name', 'LIKE', '%marketing%')
-                ->orWhere('position_name', 'LIKE', '%sales%')
-                ->orWhereHas('roles', function($q) {
-                    $q->where('name', 'LIKE', '%marketing%')
-                        ->orWhere('name', 'LIKE', '%sales%');
-                })
-                ->orWhere('roles', 'LIKE', '%marketing%')
-                ->orWhere('roles', 'LIKE', '%sales%');
-            })
+                    ->orWhere('department_name', 'LIKE', '%marketing%')
+                    ->orWhere('department_name', 'LIKE', '%sales%')
+                    ->orWhere('position_name', 'LIKE', '%marketing%')
+                    ->orWhere('position_name', 'LIKE', '%sales%')
+                    ->orWhereHas('roles', function ($q) {
+                        $q->where('name', 'LIKE', '%marketing%')
+                            ->orWhere('name', 'LIKE', '%sales%');
+                    })
+                    ->orWhere('roles', 'LIKE', '%marketing%')
+                    ->orWhere('roles', 'LIKE', '%sales%');
+            });
+
+        if ($accessibleMarketingIds !== null) {
+            $query->whereIn('id', $accessibleMarketingIds);
+        }
+
+        return $query
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'position_name', 'department_name'])
             ->map(function ($user) {
@@ -327,5 +368,69 @@ class ContractAssignedController extends Controller
                     'department_name' => $user->department_name,
                 ];
             });
+    }
+
+    protected function applyContractAssignedAccessFilter($query, ?User $user = null)
+    {
+        $accessibleUserIds = $this->getContractAssignedAccessibleUserIds($user);
+
+        if ($accessibleUserIds === null) {
+            return $query;
+        }
+
+        return $query->where(function ($q) use ($accessibleUserIds) {
+            $q->whereIn('created_by', $accessibleUserIds)
+                ->orWhereIn('initiated_by', $accessibleUserIds)
+                ->orWhereIn('old_marketing_id', $accessibleUserIds)
+                ->orWhereIn('new_marketing_id', $accessibleUserIds);
+        });
+    }
+
+    protected function getContractAssignedAccessibleUserIds(?User $user = null): ?array
+    {
+        $user ??= Auth::user();
+
+        if (! $user) {
+            return [];
+        }
+
+        if ($user->hasRoleStartingWith('Management')) {
+            return null;
+        }
+
+        $hasCompanyAccess = $user->accessLevels()
+            ->where('access_type', 'company')
+            ->where('is_active', true)
+            ->exists();
+
+        if ($hasCompanyAccess) {
+            return null;
+        }
+
+        return $this->getAccessibleUserIds($user);
+    }
+
+    protected function authorizeContractAssignedAccess(ContractAssigned $contractAssigned): void
+    {
+        $canAccess = $this->applyContractAssignedAccessFilter(
+            ContractAssigned::whereKey($contractAssigned->getKey())
+        )->exists();
+
+        abort_unless($canAccess, 403, 'You do not have access to this contract assignment.');
+    }
+
+    protected function ensureCanUseContractForAssignment(Contract $contract): void
+    {
+        $accessibleMarketingIds = $this->getContractAssignedAccessibleUserIds();
+
+        if ($accessibleMarketingIds === null) {
+            return;
+        }
+
+        abort_unless(
+            in_array((int) $contract->marketing_id, array_map('intval', $accessibleMarketingIds), true),
+            403,
+            'You do not have access to this contract.'
+        );
     }
 }
