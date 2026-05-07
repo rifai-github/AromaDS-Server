@@ -13,10 +13,24 @@ use App\Models\CustomerContact;
 use App\Services\Finance\VirtualAccountRuleService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
 class BillingGroupController extends Controller
 {
+    private function prepareBillingGroupAttributes(array $attributes): array
+    {
+        static $hasPpnCodeColumn = null;
+
+        $hasPpnCodeColumn ??= Schema::hasColumn('billing_groups', 'ppn_code');
+
+        if (!$hasPpnCodeColumn) {
+            unset($attributes['ppn_code']);
+        }
+
+        return $attributes;
+    }
+
     public function index(Request $request)
     {
         $query = BillingGroup::with(['contract:id,contract_number,customer_id', 'creator:id,name', 'updater:id,name']);
@@ -149,7 +163,7 @@ class BillingGroupController extends Controller
             $taxType = !empty($taxTypes) ? implode(', ', $taxTypes) : ($request->tax_type ?? null);
             $taxNumber = !empty($taxNumbers) ? implode(', ', $taxNumbers) : ($request->tax_number ?? $request->npwp_number ?? null);
 
-            $billingGroup = BillingGroup::create([
+            $billingGroup = BillingGroup::create($this->prepareBillingGroupAttributes([
                 'billing_group_name' => $request->billing_group_name,
                 'contract_id' => $request->contract_id,
                 'billing_frequency' => $request->billing_frequency,
@@ -175,7 +189,7 @@ class BillingGroupController extends Controller
                 'virtual_account_number' => $vaNumber,
                 'bank_name' => $request->bank_name,
                 'created_by' => auth()->id(),
-            ]);
+            ]));
 
             // Handle building assignments
             if ($request->has('buildings')) {
@@ -1242,7 +1256,7 @@ class BillingGroupController extends Controller
                     $ppnCode = $request->ppn_code;
                 }
 
-                $billingGroup = BillingGroup::create([
+                $billingGroup = BillingGroup::create($this->prepareBillingGroupAttributes([
                     'billing_group_name' => $contract->contract_number . ' - ' . ($request->pic_name ?? 'BG'),
                     'contract_id' => $contract->id,
                     'customer_id' => $contract->customer_id,
@@ -1274,7 +1288,7 @@ class BillingGroupController extends Controller
                     'virtual_account_number' => $request->virtual_account_number,
                     'bank_name' => $request->bank_name,
                     'created_by' => auth()->id() ?? 1,
-                ]);
+                ]));
                 
             }
 
