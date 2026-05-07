@@ -1438,39 +1438,14 @@ $(document).ready(function() {
     // Header PRINT -> Open Print Template with Validation
     $('#btnHeaderPrint').on('click', function() {
         const status = "{{ $invoice->invoice_status }}";
-        const hasFaktur = @json(!empty($invoice->faktur_pajak));
 
-        if (status === 'draft' || !hasFaktur) {
-            if (status === 'draft' && !hasFaktur) {
-                Swal.fire({
-                    title: 'Persyaratan Belum Lengkap',
-                    text: 'Mohon Approve Invoice terlebih dahulu sebelum mencetak, dan pastikan faktur pajak sudah anda upload.',
-                    icon: 'warning',
-                    confirmButtonColor: '#3085d6'
-                });
-            } else if (status === 'draft') {
-                Swal.fire({
-                    title: 'Belum di-Approve',
-                    text: 'Mohon Approve Invoice terlebih dahulu sebelum mencetak.',
-                    icon: 'warning',
-                    confirmButtonColor: '#3085d6'
-                });
-            } else {
-                // Only missing Faktur Pajak
-                Swal.fire({
-                    title: 'Faktur Pajak Belum Ada',
-                    text: 'Mohon upload Faktur Pajak terlebih dahulu di tab File(s).',
-                    icon: 'warning',
-                    confirmButtonColor: '#3085d6',
-                    showCancelButton: true,
-                    confirmButtonText: 'Ke Tab File(s)',
-                    cancelButtonText: 'Tutup'
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        $('.nav-tabs button[data-bs-target="#files"]').tab('show');
-                    }
-                });
-            }
+        if (status === 'draft') {
+            Swal.fire({
+                title: 'Belum di-Approve',
+                text: 'Mohon Approve Invoice terlebih dahulu sebelum mencetak.',
+                icon: 'warning',
+                confirmButtonColor: '#3085d6'
+            });
             return;
         }
 

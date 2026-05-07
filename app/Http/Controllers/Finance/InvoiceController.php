@@ -1331,17 +1331,10 @@ class InvoiceController extends Controller
             $selectedIds = $allFiles->pluck('id')->toArray();
         }
 
-        // 0. Validation: Ensure invoice is ready for print/download
-        // Based on user report: "button print tetap bisa print meski belum ada faktur pajak"
-        // We enforce strict server-side validation here.
+        // 0. Validation: Ensure invoice is ready for print/download.
+        // Approved invoices can be printed even before Faktur Pajak is uploaded.
         if ($invoice->invoice_status === 'draft') {
             abort(403, 'Invoice must be approved before printing.');
-        }
-
-        if (empty($invoice->faktur_pajak) && !$request->has('force')) { // Added check for safety, though `force` isn't standard yet
-             // Exception: If system allows printing without tax invoice in specific cases, add logic here.
-             // But user requirement is strict: "harusnya ada 2 proteksi".
-             abort(403, 'Faktur Pajak must be uploaded before printing.');
         }
 
         try {
