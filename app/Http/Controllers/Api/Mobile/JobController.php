@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class JobController extends Controller
@@ -27,6 +28,7 @@ class JobController extends Controller
      */
     public function getTodayJobs(Request $request)
     {
+        $startedAt = microtime(true);
         $user = $request->user();
 
         if (!$user) {
@@ -97,6 +99,14 @@ class JobController extends Controller
         })
         ->orderBy('id', 'desc') // Newest jobs first (by ID)
         ->get();
+
+        $rawJobCount = $jobs->count();
+        $latestJobUpdatedAt = $jobs->pluck('updated_at')->filter()->sortDesc()->first();
+        $latestAssignmentUpdatedAt = $jobs
+            ->flatMap(fn ($job) => $job->jobAssignSchedules->pluck('updated_at'))
+            ->filter()
+            ->sortDesc()
+            ->first();
 
         $this->primeFavoriteLookup($jobs->pluck('id')->all(), $user->id);
         
@@ -228,6 +238,17 @@ class JobController extends Controller
             return $isNewB ? 1 : -1;
         })
         ->values(); // Re-index array
+
+        Log::info('mobile_jobs_today_polled', [
+            'user_id' => $user->id,
+            'team_ids' => $userTeamIds,
+            'raw_jobs_count' => $rawJobCount,
+            'jobs_count' => $jobs->count(),
+            'latest_job_updated_at' => $latestJobUpdatedAt?->toDateTimeString(),
+            'latest_assignment_updated_at' => $latestAssignmentUpdatedAt?->toDateTimeString(),
+            'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+            'polled_at' => now()->toDateTimeString(),
+        ]);
         
         return response()->json([
             'status' => 'success',

@@ -8529,7 +8529,7 @@ class JobScheduleController extends Controller
                 'warehouse_id' => $warehouse->id, // Dynamic warehouse based on building branch
                 'team_id' => $jobAssignSchedule->team_id,
                 'issued_by' => $actorId,
-                'issue_date' => $jobAssignSchedule->assigned_date ?? now(),
+                'issue_date' => $jobSchedule->schedule_date ?? $jobAssignSchedule->assigned_date ?? now(),
                 'status' => 'pending',
                 'notes' => "Auto-created from Job Schedule {$jobSchedule->job_number}",
                 'created_by' => $actorId

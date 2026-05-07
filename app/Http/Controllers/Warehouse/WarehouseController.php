@@ -432,7 +432,9 @@ class WarehouseController extends Controller
         $movements = \App\Models\InventoryMovement::where('warehouse_id', $warehouse->id)
             ->where('master_product_id', $productId)
             ->with(['creator', 'updater', 'masterProduct'])
+            ->orderBy('movement_date', 'desc')
             ->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc')
             ->get();
         
         // Load serial numbers for this product in this warehouse

@@ -733,9 +733,30 @@ class SurveyWizardController extends Controller
     {
         $query = $request->get('q', '');
         
-        $customers = Customer::where('name', 'like', '%' . $query . '%')
+        $customers = Customer::with('customerTaxSettings')
+            ->where('name', 'like', '%' . $query . '%')
+            ->orderBy('name')
             ->limit(10)
-            ->get(['id', 'name', 'customer_type']);
+            ->get(['id', 'name', 'customer_type', 'company_type'])
+            ->map(function (Customer $customer) {
+                $tax = $customer->customerTaxSettings->first();
+                $label = $customer->name;
+
+                if ($tax) {
+                    $npwp = $tax->tax_number ?: '-';
+                    $address = $tax->tax_address ?: '-';
+                    $shortAddress = strlen($address) > 30 ? substr($address, 0, 30) . '...' : $address;
+                    $label = "{$customer->name} - {$npwp} - {$shortAddress}";
+                }
+
+                return [
+                    'id' => $customer->id,
+                    'name' => $customer->name,
+                    'text' => $label,
+                    'customer_type' => $customer->customer_type,
+                    'company_type' => $customer->company_type,
+                ];
+            });
 
         return response()->json($customers);
     }

@@ -1188,12 +1188,50 @@ $(document).ready(function() {
                 placeholder: 'Pilih atau ketik untuk mencari...',
                 allowClear: true
             });
+            initializeCustomerSelect2();
             console.log('Select2 initialized successfully on', $('.select2').length, 'elements');
             return true;
         } else {
             console.log('Select2 not ready, retrying...');
             return false;
         }
+    }
+
+    function initializeCustomerSelect2() {
+        const customerSelect = $('#customer_id');
+        if (!customerSelect.length || typeof $.fn.select2 === 'undefined') {
+            return;
+        }
+
+        if (customerSelect.hasClass('select2-hidden-accessible')) {
+            customerSelect.select2('destroy');
+        }
+
+        customerSelect.select2({
+            placeholder: 'Pilih atau ketik untuk mencari...',
+            allowClear: true,
+            minimumInputLength: 0,
+            ajax: {
+                url: '{{ route("marketing.surveys.wizard.get-customers") }}',
+                dataType: 'json',
+                delay: 250,
+                cache: false,
+                data: function(params) {
+                    return { q: params.term || '' };
+                },
+                processResults: function(data) {
+                    return {
+                        results: $.map(data || [], function(customer) {
+                            return {
+                                id: customer.id,
+                                text: customer.text || customer.name,
+                                company_type: customer.company_type || '',
+                            };
+                        })
+                    };
+                }
+            }
+        });
     }
     
     // Wait for Select2 to be available
@@ -1908,6 +1946,13 @@ $(document).ready(function() {
     });
 
     // Customer change handler
+    $('#customer_id').on('select2:select', function(e) {
+        const selected = e.params.data || {};
+        if (selected.element && selected.company_type) {
+            $(selected.element).attr('data-company-type', selected.company_type);
+        }
+    });
+
     $('#customer_id').change(function() {
         const customerId = $(this).val();
         console.log('Customer changed, customerId:', customerId);

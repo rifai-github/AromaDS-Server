@@ -523,6 +523,7 @@ class CustomerController extends Controller
                 }
             }
 
+            $this->forgetSurveyWizardCustomerCaches();
             
             return response()->json([
                 'status' => 'success',
