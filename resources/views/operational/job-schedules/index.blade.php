@@ -83,6 +83,8 @@
 
     /* Table Container */
     .table-container {
+        --job-schedule-select-col-width: 50px;
+        --job-schedule-job-col-width: 200px;
         background: white;
         box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
         border-radius: 0 0 10px 10px;
@@ -200,6 +202,58 @@
     .responsive-table th:nth-child(7), .responsive-table td:nth-child(7) { width: 100px; min-width: 100px; }
     .responsive-table th:nth-child(8), .responsive-table td:nth-child(8) { width: 150px; min-width: 150px; }
     .responsive-table th:nth-child(9), .responsive-table td:nth-child(9) { width: 120px; min-width: 120px; }
+
+    .responsive-table th:nth-child(1),
+    .responsive-table td:nth-child(1) {
+        position: sticky !important;
+        left: 0 !important;
+        z-index: 12;
+        background-color: white;
+    }
+
+    .responsive-table th:nth-child(2),
+    .responsive-table td:nth-child(2) {
+        position: sticky !important;
+        left: var(--job-schedule-select-col-width) !important;
+        z-index: 12;
+        background-color: white;
+        box-shadow: 8px 0 12px -12px rgba(15, 23, 42, 0.75);
+    }
+
+    .responsive-table thead tr:first-child th:nth-child(1),
+    .responsive-table thead tr:first-child th:nth-child(2) {
+        position: sticky !important;
+        background-color: #214589;
+        z-index: 24;
+    }
+
+    .responsive-table thead tr:first-child th:nth-child(1) {
+        left: 0 !important;
+    }
+
+    .responsive-table thead tr:first-child th:nth-child(2) {
+        left: var(--job-schedule-select-col-width) !important;
+    }
+
+    .responsive-table thead tr:not(:first-child) th:nth-child(1),
+    .responsive-table thead tr:not(:first-child) th:nth-child(2) {
+        position: sticky !important;
+        background-color: white;
+        z-index: 18;
+    }
+
+    .responsive-table thead tr:not(:first-child) th:nth-child(1) {
+        left: 0 !important;
+    }
+
+    .responsive-table thead tr:not(:first-child) th:nth-child(2) {
+        left: var(--job-schedule-select-col-width) !important;
+    }
+
+    .responsive-table tbody tr:hover td:nth-child(1),
+    .responsive-table tbody tr:hover td:nth-child(2) {
+        background-color: #eff6ff;
+    }
 
     /* Pagination Specific Styles */
         .pagination-controls {
