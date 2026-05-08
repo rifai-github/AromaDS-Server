@@ -2,20 +2,17 @@
 
 namespace App\Models;
 
+use App\Http\Traits\AutoFilterable;
+use App\Traits\HasComprehensiveAuditTrail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Traits\HasComprehensiveAuditTrail;
-use App\Http\Traits\AutoFilterable;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Request;
-use App\Models\AuditLog;
 
 class User extends Authenticatable
 {
-    use HasApiTokens, HasFactory, Notifiable, SoftDeletes, HasComprehensiveAuditTrail, AutoFilterable;
+    use AutoFilterable, HasApiTokens, HasComprehensiveAuditTrail, HasFactory, Notifiable, SoftDeletes;
 
     protected ?array $resolvedRoleNamesCache = null;
 
@@ -74,7 +71,7 @@ class User extends Authenticatable
         'screenshot_allowed',
         'is_commission_achiever',
         'created_by',
-        'updated_by'
+        'updated_by',
     ];
 
     protected $hidden = [
@@ -109,6 +106,7 @@ class User extends Authenticatable
         if ($value) {
             return \Carbon\Carbon::parse($value)->setTimezone('Asia/Jakarta')->format('Y-m-d');
         }
+
         return $value;
     }
 
@@ -118,8 +116,6 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Department::class);
     }
-
-
 
     public function branch()
     {
@@ -286,13 +282,13 @@ class User extends Authenticatable
     public function roles()
     {
         return $this->belongsToMany(Role::class, 'user_roles', 'user_id', 'role_id')
-                    ->withTimestamps();
+            ->withTimestamps();
     }
-    
+
     /**
      * Override the roles attribute to always return the relationship
      * This fixes conflict with the 'roles' column in database
-     * 
+     *
      * IMPORTANT: When you need the raw string value from database column,
      * use getRolesColumnValue() instead of $this->roles
      */
@@ -302,20 +298,21 @@ class User extends Authenticatable
         if ($this->relationLoaded('roles')) {
             return $this->getRelation('roles');
         }
-        
+
         // Otherwise load and return the relationship
         return $this->roles()->get();
     }
-    
+
     /**
      * Get the raw roles column value from database (string)
      * Use this when you need the string value, not the relationship collection
-     * 
+     *
      * @return string|null
      */
     public function getRolesColumnValue()
     {
         $rolesColumn = $this->getAttributes()['roles'] ?? null;
+
         return ($rolesColumn && is_string($rolesColumn)) ? $rolesColumn : null;
     }
 
@@ -338,8 +335,8 @@ class User extends Authenticatable
     public function teams()
     {
         return $this->belongsToMany(Team::class, 'team_members', 'user_id', 'team_id')
-                    ->withPivot('role', 'is_active', 'joined_date', 'left_date', 'notes')
-                    ->withTimestamps();
+            ->withPivot('role', 'is_active', 'joined_date', 'left_date', 'notes')
+            ->withTimestamps();
     }
 
     public function jobAssignments()
@@ -434,7 +431,7 @@ class User extends Authenticatable
     // Accessors
     public function getFullNameAttribute()
     {
-        return $this->salutation . ' ' . $this->name;
+        return $this->salutation.' '.$this->name;
     }
 
     public function getStatusTextAttribute()
@@ -448,9 +445,9 @@ class User extends Authenticatable
         if (empty($value) && $this->relationLoaded('department') && $this->department) {
             return $this->department->name ?? null;
         }
-        
+
         // If department_name is JSON string, decode it
-        if (!empty($value)) {
+        if (! empty($value)) {
             // Check if it's a JSON string
             $decoded = json_decode($value, true);
             if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
@@ -462,7 +459,7 @@ class User extends Authenticatable
                 return $decoded['name'] ?? $decoded['title'] ?? $decoded['department_name'] ?? $value;
             }
         }
-        
+
         return $value;
     }
 
@@ -476,7 +473,7 @@ class User extends Authenticatable
         }
 
         if (is_array($role)) {
-            return !empty(array_intersect($role, $roleNames));
+            return ! empty(array_intersect($role, $roleNames));
         }
 
         return false;
@@ -488,7 +485,7 @@ class User extends Authenticatable
             $roles = [$roles];
         }
 
-        return !empty(array_intersect($roles, $this->getResolvedRoleNames()));
+        return ! empty(array_intersect($roles, $this->getResolvedRoleNames()));
     }
 
     public function hasPermission($permission)
@@ -502,7 +499,7 @@ class User extends Authenticatable
         }
 
         return false;
-        
+
         // Fallback: Handle permission name variations/aliases
         // company.customers.* → marketing.company.customers.*
         if (str_starts_with($permission, 'company.customers.')) {
@@ -514,7 +511,7 @@ class User extends Authenticatable
                 }
             }
         }
-        
+
         // marketing.customers.* → marketing.company.customers.*
         if (str_starts_with($permission, 'marketing.customers.')) {
             $altPermission = str_replace('marketing.customers.', 'marketing.company.customers.', $permission);
@@ -523,7 +520,7 @@ class User extends Authenticatable
                     return true;
                 }
             }
-            
+
             // Also try fallback to company.customers.* (for roles with only company.customers.view)
             $altPermission2 = str_replace('marketing.customers.', 'company.customers.', $permission);
             foreach ($userRoles as $role) {
@@ -532,7 +529,7 @@ class User extends Authenticatable
                 }
             }
         }
-        
+
         return false;
     }
 
@@ -541,31 +538,31 @@ class User extends Authenticatable
         if (is_string($permissions)) {
             $permissions = [$permissions];
         }
-        
+
         foreach ($permissions as $permission) {
             if ($this->hasPermission($permission)) {
                 return true;
             }
         }
-        
+
         return false;
     }
 
     public function getAllPermissions()
     {
         $permissions = collect();
-        
+
         // Get direct permissions (load if not loaded)
-        if (!$this->relationLoaded('permissions')) {
+        if (! $this->relationLoaded('permissions')) {
             $this->load('permissions');
         }
         $permissions = $permissions->merge($this->permissions);
-        
+
         // Get role permissions from relationship
         if ($this->roles && $this->roles->count() > 0) {
             foreach ($this->roles as $role) {
                 // Load permissions for each role if not loaded
-                if (!$role->relationLoaded('permissions')) {
+                if (! $role->relationLoaded('permissions')) {
                     $role->load('permissions');
                 }
                 if ($role->permissions) {
@@ -573,7 +570,7 @@ class User extends Authenticatable
                 }
             }
         }
-        
+
         return $permissions->unique('id');
     }
 
@@ -588,15 +585,15 @@ class User extends Authenticatable
             "{$module}.dashboard",
             "{$module}.view",
             "{$module}.read",
-            "{$module}.*"
+            "{$module}.*",
         ];
-        
+
         foreach ($modulePermissions as $permission) {
             if ($this->hasPermission($permission)) {
                 return $this->resolvedModuleAccessCache[$module] = true;
             }
         }
-        
+
         // Check for specific module permissions (e.g., marketing.pipeline, marketing.surveys)
         foreach (array_keys($this->getResolvedPermissionLookup()) as $permissionName) {
             if (str_starts_with($permissionName, "{$module}.")) {
@@ -604,7 +601,6 @@ class User extends Authenticatable
             }
         }
 
-        
         // Allow role-based access for main departments
         // e.g. "Marketing Staff" can access "marketing" module
         if ($this->hasRoleStartingWith(ucfirst($module))) {
@@ -615,10 +611,10 @@ class User extends Authenticatable
         if ($this->hasRoleStartingWith('Management') || $this->hasRole('Admin')) {
             return $this->resolvedModuleAccessCache[$module] = true;
         }
-        
+
         return $this->resolvedModuleAccessCache[$module] = false;
     }
-    
+
     /**
      * Check if user can access a specific menu item by permission name
      */
@@ -632,7 +628,7 @@ class User extends Authenticatable
         if ($this->hasRoleStartingWith('Management') || $this->hasRole('Admin')) {
             return $this->resolvedMenuAccessCache[$permissionName] = true;
         }
-        
+
         // Check exact permission
         if ($this->hasPermission($permissionName)) {
             return $this->resolvedMenuAccessCache[$permissionName] = true;
@@ -640,10 +636,10 @@ class User extends Authenticatable
 
         // Check for .view suffix (common pattern for menu access)
         // If app checks "marketing.dashboard", we also check "marketing.dashboard.view"
-        if ($this->hasPermission($permissionName . '.view')) {
+        if ($this->hasPermission($permissionName.'.view')) {
             return $this->resolvedMenuAccessCache[$permissionName] = true;
         }
-        
+
         return $this->resolvedMenuAccessCache[$permissionName] = false;
     }
 
@@ -653,13 +649,13 @@ class User extends Authenticatable
         if ($this->hasRoleStartingWith('Management') || $this->hasRole('Admin') || $this->hasRole('super_admin')) {
             return true;
         }
-        
+
         // Allow Marketing Staff/Manager to create in marketing module
         if ($module === 'marketing' && $this->hasRoleStartingWith('Marketing')) {
             return true;
         }
-        
-        return $this->hasPermission("{$module}.create") || 
+
+        return $this->hasPermission("{$module}.create") ||
                $this->hasPermission("{$module}.write");
     }
 
@@ -669,8 +665,8 @@ class User extends Authenticatable
         if ($this->hasRoleStartingWith('Management') || $this->hasRole('Admin') || $this->hasRole('super_admin')) {
             return true;
         }
-        
-        return $this->hasPermission("{$module}.edit") || 
+
+        return $this->hasPermission("{$module}.edit") ||
                $this->hasPermission("{$module}.write");
     }
 
@@ -680,20 +676,20 @@ class User extends Authenticatable
         if ($this->hasRoleStartingWith('Management') || $this->hasRole('Admin') || $this->hasRole('super_admin')) {
             return true;
         }
-        
-        return $this->hasPermission("{$module}.delete") || 
+
+        return $this->hasPermission("{$module}.delete") ||
                $this->hasPermission("{$module}.admin");
     }
 
     /**
      * Check if user can approve items in a specific module
-     * 
+     *
      * Checks:
      * 1. Specific approval permission (e.g., surveys.approve)
      * 2. Manager data restriction
      * 3. Admin/Management role
-     * 
-     * @param string $module Module name (surveys, quotations, contracts, job_advices, contract_files)
+     *
+     * @param  string  $module  Module name (surveys, quotations, contracts, job_advices, contract_files)
      * @return bool
      */
     public function canApprove($module)
@@ -701,15 +697,15 @@ class User extends Authenticatable
         // Check for specific permission
         // Try prefixed format first (e.g. marketing.surveys.approve)
         $possiblePermissions = [
-            $module . '.approve',
-            'marketing.' . $module . '.approve',
-            'operational.' . $module . '.approve',
-            'finance.' . $module . '.approve',
-            'warehouse.' . $module . '.approve',
-            'system.' . $module . '.approve',
+            $module.'.approve',
+            'marketing.'.$module.'.approve',
+            'operational.'.$module.'.approve',
+            'finance.'.$module.'.approve',
+            'warehouse.'.$module.'.approve',
+            'system.'.$module.'.approve',
             // Handle kebab-case variations
-            str_replace('_', '-', $module) . '.approve',
-            'marketing.' . str_replace('_', '-', $module) . '.approve',
+            str_replace('_', '-', $module).'.approve',
+            'marketing.'.str_replace('_', '-', $module).'.approve',
         ];
 
         foreach ($possiblePermissions as $perm) {
@@ -717,7 +713,7 @@ class User extends Authenticatable
                 return true;
             }
         }
-        
+
         return false;
     }
 
@@ -732,11 +728,11 @@ class User extends Authenticatable
         if ($this->canViewAllData()) {
             return true;
         }
-        
+
         if ($this->data_restriction === 'branch') {
             return $branchId === null || $this->branch_id == $branchId;
         }
-        
+
         return false;
     }
 
@@ -745,11 +741,11 @@ class User extends Authenticatable
         if ($this->canViewAllData()) {
             return true;
         }
-        
+
         if ($this->data_restriction === 'department') {
             return $departmentId === null || $this->department_id == $departmentId;
         }
-        
+
         return false;
     }
 
@@ -758,11 +754,11 @@ class User extends Authenticatable
         if ($this->canViewAllData()) {
             return true;
         }
-        
+
         if ($this->data_restriction === 'own') {
             return $userId === null || $this->id == $userId;
         }
-        
+
         return false;
     }
 
@@ -779,7 +775,7 @@ class User extends Authenticatable
     // Department-based role assignment
     public function getDepartmentRole()
     {
-        if (!$this->department_id) {
+        if (! $this->department_id) {
             return null;
         }
 
@@ -798,7 +794,7 @@ class User extends Authenticatable
         if ($userRole) {
             return $userRole->name;
         }
-        
+
         // Fallback: Check if user has individual role set in database column (for backward compatibility)
         $rolesColumn = $this->getAttributes()['roles'] ?? null;
         if ($rolesColumn && is_string($rolesColumn)) {
@@ -807,12 +803,14 @@ class User extends Authenticatable
 
         // Otherwise, get role from department
         $departmentRole = $this->getDepartmentRole();
+
         return $departmentRole ? $departmentRole->name : null;
     }
 
     public function hasEffectiveRole($role)
     {
         $effectiveRole = $this->getEffectiveRole();
+
         return $effectiveRole === $role;
     }
 
@@ -838,7 +836,7 @@ class User extends Authenticatable
     // Position-based role assignment
     public function getPositionRole()
     {
-        if (!$this->department_id || !$this->position_name) {
+        if (! $this->department_id || ! $this->position_name) {
             return null;
         }
 
@@ -859,6 +857,7 @@ class User extends Authenticatable
     {
         // MOM10: Use only Individual Role from relationship
         $userRole = $this->roles()->first();
+
         return $userRole ? $userRole->name : null;
     }
 
@@ -872,14 +871,14 @@ class User extends Authenticatable
         if (is_string($role)) {
             return $this->roles()->where('name', $role)->exists();
         }
-        
+
         if (is_array($role)) {
             return $this->roles()->whereIn('name', $role)->exists();
         }
-        
+
         return false;
     }
-    
+
     /**
      * Check if user has any of the specified roles (using Individual Role only)
      */
@@ -888,9 +887,10 @@ class User extends Authenticatable
         if (is_string($roles)) {
             $roles = [$roles];
         }
+
         return $this->roles()->whereIn('name', $roles)->exists();
     }
-    
+
     /**
      * Get user's role name (first role from relationship)
      */
@@ -909,7 +909,7 @@ class User extends Authenticatable
 
         return $this->resolvedPrimaryRoleNameCache = $this->getResolvedRoleNames()[0] ?? null;
     }
-    
+
     /**
      * Check if user role name starts with department name (e.g., "Marketing Staff" starts with "Marketing")
      */
@@ -920,7 +920,7 @@ class User extends Authenticatable
                 return true;
             }
         }
-        
+
         return false;
     }
 
@@ -976,14 +976,14 @@ class User extends Authenticatable
         $permissionNames = [];
 
         foreach ($this->permissions as $permission) {
-            if (!empty($permission->name)) {
+            if (! empty($permission->name)) {
                 $permissionNames[] = $permission->name;
             }
         }
 
         foreach ($this->roles as $role) {
             foreach ($role->permissions as $permission) {
-                if (!empty($permission->name)) {
+                if (! empty($permission->name)) {
                     $permissionNames[] = $permission->name;
                 }
             }
@@ -996,12 +996,12 @@ class User extends Authenticatable
                     ->where('name', $roleName)
                     ->first();
 
-                if (!$roleModel) {
+                if (! $roleModel) {
                     continue;
                 }
 
                 foreach ($roleModel->permissions as $permission) {
-                    if (!empty($permission->name)) {
+                    if (! empty($permission->name)) {
                         $permissionNames[] = $permission->name;
                     }
                 }
@@ -1018,7 +1018,7 @@ class User extends Authenticatable
         $candidates = [$permission];
 
         if (str_starts_with($permission, 'contracts.')) {
-            $candidates[] = 'marketing.' . $permission;
+            $candidates[] = 'marketing.'.$permission;
         }
 
         if (str_starts_with($permission, 'marketing.contracts.')) {
@@ -1063,39 +1063,23 @@ class User extends Authenticatable
     }
 
     /**
-     * Check if user is always allowed to take screenshots (administrator/management)
+     * Check if user is always allowed to take screenshots.
+     *
+     * Screenshot access is controlled explicitly from the screenshot_allowed flag,
+     * including for administrator/management users.
      */
     public function isAlwaysAllowedScreenshot()
     {
-        return $this->hasPermission('system.access-control.bypass') || $this->hasPermission('admin.view');
+        return false;
     }
 
     /**
      * Check if user is allowed to take screenshots/print screen
-     * Administrator, Admin, Super Admin, and Management Manager are always allowed (via permission)
-     * Other users check from screenshot_allowed field (default: false)
+     * All users check from screenshot_allowed field (default: false).
      */
     public function canTakeScreenshot()
     {
-        // Priority 1: Check from bypass permission
-        if ($this->isAlwaysAllowedScreenshot()) {
-            return true;
-        }
-        
-        // Priority 2: Fallback to database column (for backward compatibility during migration)
-        $rolesColumn = $this->getRolesColumnValue();
-        if ($rolesColumn) {
-            $rolesLower = strtolower($rolesColumn);
-            if (stripos($rolesLower, 'administrator') !== false || 
-                stripos($rolesLower, 'admin') !== false ||
-                stripos($rolesLower, 'super_admin') !== false ||
-                stripos($rolesLower, 'management manager') !== false) {
-                return true;
-            }
-        }
-        
-        // For other users, check screenshot_allowed field (default: false)
-        return (bool)($this->screenshot_allowed ?? false);
+        return (bool) ($this->screenshot_allowed ?? false);
     }
 
     /**
@@ -1129,6 +1113,7 @@ class User extends Authenticatable
 
         if ($buildingUser) {
             $buildingUser->deactivate();
+
             return true;
         }
 
@@ -1144,6 +1129,7 @@ class User extends Authenticatable
 
         if ($buildingUser) {
             $buildingUser->setAsPrimary();
+
             return true;
         }
 
@@ -1219,12 +1205,12 @@ class User extends Authenticatable
             ->where('is_active', true)
             ->first();
 
-        if (!$buildingUser) {
+        if (! $buildingUser) {
             return [];
         }
 
         $permissions = [];
-        
+
         // Basic permissions based on role
         switch ($buildingUser->role) {
             case 'admin':
