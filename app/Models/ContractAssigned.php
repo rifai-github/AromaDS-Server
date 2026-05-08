@@ -216,14 +216,28 @@ class ContractAssigned extends Model
     /**
      * Execute contract switching - Transfer marketing responsibility
      */
-    public function execute($executedBy)
+    public function execute($executedBy, bool $allowDirectApproval = false, ?string $approvalNotes = null)
     {
-        if (!$this->isApproved) {
+        $canDirectApprove = in_array($this->status, [
+            self::STATUS_DRAFT,
+            self::STATUS_PENDING_APPROVAL,
+        ], true);
+
+        if (!$this->isApproved && (!$allowDirectApproval || !$canDirectApprove)) {
             throw new \Exception('Switching must be approved before execution');
         }
 
         try {
             DB::beginTransaction();
+
+            if (!$this->isApproved) {
+                $this->update([
+                    'status' => self::STATUS_APPROVED,
+                    'approved_at' => now(),
+                    'approved_by' => $executedBy,
+                    'approval_notes' => $approvalNotes
+                ]);
+            }
 
             $this->update([
                 'executed_at' => now(),
@@ -232,9 +246,12 @@ class ContractAssigned extends Model
 
             // Update contract's marketing_id
             $contract = $this->oldContract;
+            $oldMarketingName = $this->oldMarketing->name ?? '-';
+            $newMarketingName = $this->newMarketing->name ?? '-';
+
             $contract->update([
                 'marketing_id' => $this->new_marketing_id,
-                'notes' => ($contract->notes ?? '') . "\n\nMarketing transferred from {$this->oldMarketing->name} to {$this->newMarketing->name} on " . now()->format('Y-m-d H:i:s') . " (Switching: {$this->switching_number})"
+                'notes' => ($contract->notes ?? '') . "\n\nMarketing transferred from {$oldMarketingName} to {$newMarketingName} on " . now()->format('Y-m-d H:i:s') . " (Switching: {$this->switching_number})"
             ]);
 
             // Complete switching
@@ -247,8 +264,8 @@ class ContractAssigned extends Model
 
             Log::info("Contract Switching executed: {$this->switching_number}", [
                 'contract' => $contract->contract_number,
-                'old_marketing' => $this->oldMarketing->name,
-                'new_marketing' => $this->newMarketing->name
+                'old_marketing' => $oldMarketingName,
+                'new_marketing' => $newMarketingName
             ]);
 
             return $contract;

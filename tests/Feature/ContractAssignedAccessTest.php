@@ -74,6 +74,7 @@ class ContractAssignedAccessTest extends TestCase
             $table->foreignId('marketing_id')->nullable();
             $table->string('contract_status')->nullable();
             $table->string('status')->nullable();
+            $table->text('notes')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('updated_by')->nullable();
             $table->timestamps();
@@ -88,7 +89,16 @@ class ContractAssignedAccessTest extends TestCase
             $table->foreignId('new_marketing_id')->nullable();
             $table->string('switching_reason')->nullable();
             $table->string('status')->nullable();
+            $table->text('approval_notes')->nullable();
+            $table->text('rejection_reason')->nullable();
+            $table->timestamp('approved_at')->nullable();
+            $table->timestamp('rejected_at')->nullable();
+            $table->timestamp('executed_at')->nullable();
+            $table->timestamp('completed_at')->nullable();
             $table->foreignId('initiated_by')->nullable();
+            $table->foreignId('approved_by')->nullable();
+            $table->foreignId('rejected_by')->nullable();
+            $table->foreignId('executed_by')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('updated_by')->nullable();
             $table->timestamps();
@@ -225,5 +235,91 @@ class ContractAssignedAccessTest extends TestCase
         $filteredQuery = $method->invoke($controller, ContractAssigned::query());
 
         $this->assertSame([10], $filteredQuery->pluck('id')->all());
+    }
+
+    public function test_draft_contract_assigned_can_be_directly_executed_with_explicit_permission(): void
+    {
+        DB::table('users')->insert([
+            [
+                'id' => 1,
+                'name' => 'Old Marketing',
+                'email' => 'old@example.test',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 2,
+                'name' => 'New Marketing',
+                'email' => 'new@example.test',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 3,
+                'name' => 'Administrator',
+                'email' => 'admin@example.test',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('contracts')->insert([
+            'id' => 1,
+            'contract_number' => 'JKT-CA/26-05/0001',
+            'marketing_id' => 1,
+            'contract_status' => 'active',
+            'notes' => 'Existing note',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('contract_assigned')->insert([
+            'id' => 1,
+            'switching_number' => 'JKT-CAS/26-05/0001',
+            'old_contract_id' => 1,
+            'old_marketing_id' => 1,
+            'new_marketing_id' => 2,
+            'status' => ContractAssigned::STATUS_DRAFT,
+            'initiated_by' => 3,
+            'created_by' => 3,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $assigned = ContractAssigned::findOrFail(1);
+        $contract = $assigned->execute(3, true, 'Approved while executing');
+
+        $assigned->refresh();
+
+        $this->assertSame(ContractAssigned::STATUS_COMPLETED, $assigned->status);
+        $this->assertSame(3, $assigned->approved_by);
+        $this->assertSame(3, $assigned->executed_by);
+        $this->assertNotNull($assigned->approved_at);
+        $this->assertNotNull($assigned->executed_at);
+        $this->assertNotNull($assigned->completed_at);
+        $this->assertSame(2, $contract->fresh()->marketing_id);
+        $this->assertStringContainsString('Marketing transferred from Old Marketing to New Marketing', $contract->fresh()->notes);
+    }
+
+    public function test_draft_contract_assigned_still_requires_explicit_direct_execute_permission(): void
+    {
+        DB::table('contract_assigned')->insert([
+            'id' => 1,
+            'switching_number' => 'JKT-CAS/26-05/0001',
+            'old_contract_id' => 1,
+            'old_marketing_id' => 1,
+            'new_marketing_id' => 2,
+            'status' => ContractAssigned::STATUS_DRAFT,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage('Switching must be approved before execution');
+
+        ContractAssigned::findOrFail(1)->execute(3);
     }
 }

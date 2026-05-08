@@ -250,7 +250,11 @@ class ContractAssignedController extends Controller
         $this->authorizeContractAssignedAccess($contractAssigned);
 
         try {
-            $contract = $contractAssigned->execute(Auth::id());
+            $contract = $contractAssigned->execute(
+                Auth::id(),
+                true,
+                'Auto-approved during direct execute'
+            );
 
             Log::info("Contract Assigned executed: {$contractAssigned->switching_number}");
 

@@ -687,8 +687,8 @@
                                         <i class="fas fa-eye"></i>
                                     </button>
                                     @if($item->status == 'draft')
-                                    <button class="btn btn-primary btn-sm" onclick="submitAssigned({{ $item->id }})" title="Submit">
-                                        <i class="fas fa-paper-plane"></i>
+                                    <button class="btn btn-warning btn-sm" onclick="executeAssigned({{ $item->id }})" title="Execute">
+                                        <i class="fas fa-play"></i>
                                     </button>
                                     @endif
                                     @if($item->status == 'pending_approval')
@@ -1294,7 +1294,7 @@ function rejectAssigned(id) {
 
 // Execute
 function executeAssigned(id) {
-    if(!confirm('Jalankan assignment ini? Tindakan ini akan memperbarui marketing pada contract dan tidak bisa dibatalkan.')) return;
+    if(!confirm('Jalankan assignment ini sekarang? Tindakan ini akan otomatis menyetujui assignment jika masih draft, memperbarui marketing pada contract, dan tidak bisa dibatalkan.')) return;
     $.ajax({
         url: `/marketing/contract-assigned/${id}/execute`,
         method: 'POST',
