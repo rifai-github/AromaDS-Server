@@ -3357,8 +3357,9 @@
             'btn-save', 'btn-create', 'submit-btn', 'save-btn'
         ];
         
-        // Durasi disable (ms) - auto re-enable jika tidak ada redirect
-        const DISABLE_DURATION = 8000; // 8 detik
+        // Durasi lock click ganda dan visual loading dipisah supaya UI tidak terlihat "muter" terlalu lama.
+        const CLICK_LOCK_DURATION = 3000; // fallback 3 detik jika tidak ada redirect/AJAX completion
+        const VISUAL_FEEDBACK_DURATION = 1200; // spinner singkat, lock tetap jalan di background
         
         // Storage untuk button yang sedang diproses
         const processingButtons = new WeakSet();
@@ -3443,6 +3444,7 @@
             // Visual feedback - tapi JANGAN disable dulu, biarkan action jalan
             button.style.opacity = '0.6';
             button.style.cursor = 'wait';
+            button.classList.add('btn-click-locked');
             button.classList.add('btn-processing');
             
             // Add loading indicator ke text
@@ -3456,13 +3458,39 @@
             setTimeout(() => {
                 button.disabled = true;
             }, 100);
+
+            // Spinner/opacity tidak perlu bertahan sepanjang lock. Click berikutnya tetap diblok oleh processingButtons.
+            button._visualTimeout = setTimeout(() => {
+                restoreButtonVisualState(button);
+            }, VISUAL_FEEDBACK_DURATION);
             
             // Auto re-enable after timeout (fallback jika tidak ada redirect)
             button._reenableTimeout = setTimeout(() => {
                 enableButton(button);
-            }, DISABLE_DURATION);
+            }, CLICK_LOCK_DURATION);
             
             return true;
+        }
+
+        /**
+         * Restore tampilan tombol tanpa melepas lock double-click.
+         */
+        function restoreButtonVisualState(button) {
+            if (!button) return;
+
+            if (button._visualTimeout) {
+                clearTimeout(button._visualTimeout);
+                delete button._visualTimeout;
+            }
+
+            if (button.dataset.originalText) {
+                button.innerHTML = button.dataset.originalText;
+            }
+
+            button.disabled = button.dataset.originalDisabled === 'true';
+            button.style.opacity = '';
+            button.style.cursor = '';
+            button.classList.remove('btn-processing');
         }
         
         /**
@@ -3479,14 +3507,8 @@
                 delete button._reenableTimeout;
             }
             
-            // Restore original state
-            if (button.dataset.originalText) {
-                button.innerHTML = button.dataset.originalText;
-            }
-            button.disabled = button.dataset.originalDisabled === 'true';
-            button.style.opacity = '';
-            button.style.cursor = '';
-            button.classList.remove('btn-processing');
+            restoreButtonVisualState(button);
+            button.classList.remove('btn-click-locked');
             
             // Clean up data attributes
             delete button.dataset.originalText;
@@ -3542,7 +3564,7 @@
          * Re-enable buttons on AJAX error
          */
         window.addEventListener('unhandledrejection', function(e) {
-            document.querySelectorAll('.btn-processing').forEach(button => {
+            document.querySelectorAll('.btn-click-locked, .btn-processing').forEach(button => {
                 enableButton(button);
             });
         });
@@ -3552,7 +3574,7 @@
          */
         window.addEventListener('pageshow', function(e) {
             if (e.persisted) {
-                document.querySelectorAll('.btn-processing').forEach(button => {
+                document.querySelectorAll('.btn-click-locked, .btn-processing').forEach(button => {
                     enableButton(button);
                 });
             }
@@ -3563,18 +3585,39 @@
          */
         document.addEventListener('visibilitychange', function() {
             if (document.visibilityState === 'visible') {
-                // Re-enable buttons yang sudah lebih dari 5 detik dalam processing state
-                document.querySelectorAll('.btn-processing').forEach(button => {
+                document.querySelectorAll('.btn-click-locked, .btn-processing').forEach(button => {
                     enableButton(button);
                 });
             }
         });
+
+        /**
+         * Jika flow memakai AJAX, buka lock begitu request selesai agar user tidak menunggu fallback timeout.
+         */
+        function resetLockedButtons() {
+            document.querySelectorAll('.btn-click-locked, .btn-processing').forEach(button => {
+                enableButton(button);
+            });
+        }
+
+        function bindAjaxButtonReset() {
+            if (window.jQuery && !window.__buttonAjaxResetBound) {
+                window.__buttonAjaxResetBound = true;
+                window.jQuery(document).ajaxStop(function() {
+                    resetLockedButtons();
+                });
+            }
+        }
+
+        bindAjaxButtonReset();
+        document.addEventListener('DOMContentLoaded', bindAjaxButtonReset);
+        window.addEventListener('load', bindAjaxButtonReset);
         
         // Expose functions untuk manual control
         window.enableSubmitButton = enableButton;
         window.disableSubmitButton = disableButton;
         window.resetAllSubmitButtons = function() {
-            document.querySelectorAll('.btn-processing').forEach(enableButton);
+            resetLockedButtons();
         };
         
         console.log('✅ Global double-click prevention initialized');
