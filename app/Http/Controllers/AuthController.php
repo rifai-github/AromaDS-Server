@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use App\Models\User;
 use App\Services\AccessControlService;
@@ -100,13 +101,29 @@ class AuthController extends Controller
             }
         }
 
-        // Attempt authentication
-        $credentials = [
-            'email' => $user->email, // Use the actual email from database
-            'password' => $password
-        ];
+        if (!Hash::check($password, $user->password)) {
+            // Log failed login attempt - wrong password
+            $this->logLoginAttempt($request, $user->id, false, 'Password salah', $loginField);
 
-        if (Auth::attempt($credentials, $request->filled('remember'))) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Email/Username atau password salah'
+            ], 401);
+        }
+
+        if ($this->singleSessionManager->hasActiveWebSession($user)) {
+            $this->logLoginAttempt($request, $user->id, false, 'User masih login di perangkat lain', $loginField);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Akun ini masih aktif di perangkat lain. Silakan logout dari perangkat tersebut terlebih dahulu atau hubungi administrator.'
+            ], 409);
+        }
+
+        // Attempt authentication
+        Auth::login($user, $request->filled('remember'));
+
+        if (Auth::check()) {
             $request->session()->regenerate();
             $user = Auth::user();
 
@@ -128,8 +145,7 @@ class AuthController extends Controller
             ]);
         }
 
-        // Log failed login attempt - wrong password
-        $this->logLoginAttempt($request, $user->id, false, 'Password salah', $loginField);
+        $this->logLoginAttempt($request, $user->id, false, 'Login gagal', $loginField);
 
         return response()->json([
             'status' => 'error',

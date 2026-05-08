@@ -28,6 +28,49 @@ class SingleSessionManager
         $this->syncUserSessionRecord($user, $request, $sessionId);
     }
 
+    public function hasActiveWebSession(User $user): bool
+    {
+        if ($user->multi_login) {
+            return false;
+        }
+
+        $cachedSessionId = Cache::get($this->cacheKey($user));
+
+        if (!empty($cachedSessionId)) {
+            if (!$this->hasUserSessionsTable()) {
+                return true;
+            }
+
+            $hasActiveCachedSession = UserSession::active()
+                ->where('user_id', $user->id)
+                ->where('session_id', $cachedSessionId)
+                ->exists();
+
+            if ($hasActiveCachedSession) {
+                return true;
+            }
+
+            Cache::forget($this->cacheKey($user));
+        }
+
+        if (!$this->hasUserSessionsTable()) {
+            return false;
+        }
+
+        $activeSession = UserSession::active()
+            ->where('user_id', $user->id)
+            ->orderByDesc('last_activity')
+            ->first();
+
+        if (!$activeSession) {
+            return false;
+        }
+
+        Cache::put($this->cacheKey($user), $activeSession->session_id, now()->addMinutes(config('session.lifetime', 120)));
+
+        return true;
+    }
+
     public function touchCurrentSession(User $user, Request $request): void
     {
         $sessionId = $request->session()->getId();
