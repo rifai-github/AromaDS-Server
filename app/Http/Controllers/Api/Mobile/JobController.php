@@ -343,6 +343,15 @@ class JobController extends Controller
                 return false;
             }
 
+            $assignedRoomCompleted = $assignedScheduleRooms
+                ->where('room_id', $masterRoomId)
+                ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
+                ->isNotEmpty();
+
+            if ($assignedRoomCompleted) {
+                return true;
+            }
+
             $roomJob = JobSchedule::where('job_number', $job->job_number)
                 ->where('job_advice_id', $job->job_advice_id)
                 ->where('type', $job->type)
@@ -353,10 +362,7 @@ class JobController extends Controller
                 return $this->isJobScheduleRoomCompleted($roomJob, $room, $masterRoomId);
             }
 
-            return $assignedScheduleRooms
-                ->where('room_id', $masterRoomId)
-                ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
-                ->isNotEmpty();
+            return false;
         })->count();
 
         return [
