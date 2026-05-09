@@ -189,7 +189,11 @@ class BillingGroupService
     /**
      * Auto-generate invoice when all jobs in billing group are completed (Berdasarkan BRD)
      */
-    public function autoGenerateInvoiceWhenJobsCompleted(int $billingGroupId, ?Carbon $billingDate = null): array
+    public function autoGenerateInvoiceWhenJobsCompleted(
+        int $billingGroupId,
+        ?Carbon $billingDate = null,
+        ?Invoice $sourceCancelledInvoice = null
+    ): array
     {
         try {
             DB::beginTransaction();
@@ -203,8 +207,13 @@ class BillingGroupService
 
             // Check if all jobs in current billing period are completed
             $allJobsCompleted = $this->checkAllJobsCompletedInBillingGroup($billingGroup, $targetInvoiceDate);
+            $canReuseCancelledSnapshot = $this->canReuseCancelledInvoiceSnapshot(
+                $sourceCancelledInvoice,
+                $billingGroup,
+                $targetInvoiceDate
+            );
             
-            if (!$allJobsCompleted) {
+            if (!$allJobsCompleted && !$canReuseCancelledSnapshot) {
                 DB::rollBack();
                 return [
                     'success' => false,
@@ -230,8 +239,14 @@ class BillingGroupService
             // Generate invoice for current billing period
             $invoice = $this->createInvoiceForBillingGroup($billingGroup, $targetInvoiceDate);
 
-            // Create rental details for the invoice
-            $this->createDetailsForInvoice($invoice, $billingGroup, true, $targetInvoiceDate);
+            if ($allJobsCompleted) {
+                // Create rental details for the invoice
+                $this->createDetailsForInvoice($invoice, $billingGroup, true, $targetInvoiceDate);
+            } elseif ($sourceCancelledInvoice) {
+                // Regeneration after invoice cancel must not require technicians to redo
+                // finished work. Reuse the previous billable snapshot for this period.
+                $this->copyInvoiceDetailsFromSource($invoice, $sourceCancelledInvoice);
+            }
 
             if (
                 !$invoice->invoiceRentalDetails()->exists() &&
@@ -297,6 +312,62 @@ class BillingGroupService
             ->count('job_schedules.id');
 
         return $totalJobs > 0 && $totalJobs === $completedJobs;
+    }
+
+    private function canReuseCancelledInvoiceSnapshot(
+        ?Invoice $sourceInvoice,
+        BillingGroup $billingGroup,
+        Carbon $targetInvoiceDate
+    ): bool {
+        if (!$sourceInvoice || $sourceInvoice->invoice_status !== Invoice::STATUS_CANCELLED) {
+            return false;
+        }
+
+        if ((int) $sourceInvoice->billing_group_id !== (int) $billingGroup->id) {
+            return false;
+        }
+
+        if (!$sourceInvoice->invoice_date) {
+            return false;
+        }
+
+        $sourceInvoiceDate = Carbon::parse($sourceInvoice->invoice_date);
+        if (!$sourceInvoiceDate->isSameMonth($targetInvoiceDate, true)) {
+            return false;
+        }
+
+        return $sourceInvoice->invoiceRentalDetails()->exists()
+            || $sourceInvoice->invoiceDetails()->exists();
+    }
+
+    private function copyInvoiceDetailsFromSource(Invoice $targetInvoice, Invoice $sourceInvoice): void
+    {
+        $sourceInvoice->loadMissing(['invoiceDetails', 'invoiceRentalDetails']);
+        $userId = auth()->id() ?? \App\Models\User::first()->id ?? null;
+
+        foreach ($sourceInvoice->invoiceDetails as $detail) {
+            $targetInvoice->invoiceDetails()->create([
+                'description' => $detail->description,
+                'quantity' => $detail->quantity,
+                'unit_price' => $detail->unit_price,
+                'total_price' => $detail->total_price,
+                'created_by' => $userId,
+            ]);
+        }
+
+        foreach ($sourceInvoice->invoiceRentalDetails as $detail) {
+            $targetInvoice->invoiceRentalDetails()->create([
+                'master_rental_id' => $detail->master_rental_id,
+                'job_no' => $detail->job_no,
+                'building_name' => $detail->building_name,
+                'room_name' => $detail->room_name,
+                'rental_name' => $detail->rental_name,
+                'quantity' => $detail->quantity,
+                'unit_price' => $detail->unit_price,
+                'total_price' => $detail->total_price,
+                'created_by' => $userId,
+            ]);
+        }
     }
 
     /**

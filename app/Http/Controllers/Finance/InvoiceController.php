@@ -2365,7 +2365,8 @@ class InvoiceController extends Controller
                 $result = app(\App\Services\Finance\BillingGroupService::class)
                     ->autoGenerateInvoiceWhenJobsCompleted(
                         $context['billing_group_id'],
-                        $context['billing_date'] ?? null
+                        $context['billing_date'] ?? null,
+                        $invoice
                     );
             } else {
                 $result = app(InvoiceGenerationService::class)

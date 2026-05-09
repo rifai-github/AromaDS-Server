@@ -5249,8 +5249,8 @@ $(document).ready(function() {
                     // Check compatibility before setting
                     let rentalMonths = data.rental_period || 12;
                     let topMonths = 0;
-                    if (topValue === 'Tahunan') topMonths = 12;
-                    else if (topValue.includes('bulan')) topMonths = parseInt(topValue);
+                    if (topValue.includes('bulan')) topMonths = parseInt(topValue);
+                    else if (topValue !== 'Tahunan' && topValue.includes('tahunan')) topMonths = parseInt(topValue) * 12;
                     
                     if (topMonths > 0 && rentalMonths % topMonths !== 0) {
                         console.warn(`Incompatible TOP "${topValue}" for rental period ${rentalMonths}. Standardizing...`);
@@ -5591,7 +5591,8 @@ $(document).ready(function() {
             if (termOfPayment.includes('bulan')) {
                 topMonths = parseInt(termOfPayment.split(' ')[0]);
             } else if (termOfPayment === 'Tahunan') {
-                topMonths = 12;
+                console.log('Validation PASSED: Tahunan means 1x payment for the whole contract period');
+                return;
             } else if (termOfPayment.includes('tahunan')) {
                 topMonths = parseInt(termOfPayment.split(' ')[0]) * 12;
             }
