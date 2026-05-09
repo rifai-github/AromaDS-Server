@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Models\User;
 use App\Models\UserSession;
+use App\Models\UserLoginRestriction;
 use App\Services\SingleSessionManager;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
@@ -28,10 +29,22 @@ class SingleSessionManagerTest extends TestCase
             $table->integer('last_activity')->nullable();
             $table->timestamps();
         });
+
+        Schema::create('user_login_restrictions', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->nullable();
+            $table->time('start_time')->nullable();
+            $table->time('end_time')->nullable();
+            $table->json('allowed_days')->nullable();
+            $table->integer('idle_timeout')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
     }
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('user_login_restrictions');
         Schema::dropIfExists('user_sessions');
 
         Cache::flush();
@@ -59,7 +72,27 @@ class SingleSessionManagerTest extends TestCase
         UserSession::create([
             'user_id' => 1,
             'session_id' => 'expired-session',
-            'last_activity' => now()->subMinutes(config('session.lifetime', 120) + 1)->timestamp,
+            'last_activity' => now()->subMinutes(31)->timestamp,
+        ]);
+
+        $user = new User(['multi_login' => false]);
+        $user->id = 1;
+
+        $this->assertFalse(app(SingleSessionManager::class)->hasActiveWebSession($user));
+    }
+
+    public function test_single_login_user_uses_configured_idle_timeout_for_blocking_second_login(): void
+    {
+        UserLoginRestriction::create([
+            'user_id' => 1,
+            'idle_timeout' => 15,
+            'is_active' => true,
+        ]);
+
+        UserSession::create([
+            'user_id' => 1,
+            'session_id' => 'idle-session',
+            'last_activity' => now()->subMinutes(16)->timestamp,
         ]);
 
         $user = new User(['multi_login' => false]);

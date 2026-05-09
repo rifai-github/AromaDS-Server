@@ -12,6 +12,11 @@ class SingleSessionManager
 {
     protected static ?bool $hasUserSessionsTable = null;
 
+    public function __construct(
+        protected AccessControlService $accessControlService
+    ) {
+    }
+
     public function registerCurrentSession(User $user, Request $request): void
     {
         $sessionId = $request->session()->getId();
@@ -41,7 +46,7 @@ class SingleSessionManager
                 return true;
             }
 
-            $hasActiveCachedSession = UserSession::active()
+            $hasActiveCachedSession = UserSession::where('last_activity', '>', $this->activeSessionThreshold($user))
                 ->where('user_id', $user->id)
                 ->where('session_id', $cachedSessionId)
                 ->exists();
@@ -57,7 +62,7 @@ class SingleSessionManager
             return false;
         }
 
-        $activeSession = UserSession::active()
+        $activeSession = UserSession::where('last_activity', '>', $this->activeSessionThreshold($user))
             ->where('user_id', $user->id)
             ->orderByDesc('last_activity')
             ->first();
@@ -193,6 +198,13 @@ class SingleSessionManager
             // The existing user_sessions table stores last_activity as an integer unix timestamp.
             'last_activity' => now()->timestamp,
         ];
+    }
+
+    protected function activeSessionThreshold(User $user): int
+    {
+        $idleTimeout = max(1, (int) $this->accessControlService->getIdleTimeout($user));
+
+        return now()->subMinutes($idleTimeout)->timestamp;
     }
 
     protected function cacheKey(User $user): string
