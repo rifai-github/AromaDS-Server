@@ -77,7 +77,7 @@ class JobController extends Controller
         // Exclude suspend/dpf and internal admin rollback jobs.
         // "undone" is only for BA Date correction in Job Schedule and must not
         // re-open work in the technician app after the technician finished it.
-        ->whereNotIn('status', ['completed', 'done_job', 'selesai', 'suspend', 'dpf', 'undone', 'meninggalkan_lokasi'])
+        ->whereNotIn('status', ['completed', 'done_job', 'selesai', 'suspend', 'dpf', 'undone'])
         ->when($statusFilter, function($q) use ($statusFilter) {
             return $q->where('status', $statusFilter);
         })
@@ -145,6 +145,10 @@ class JobController extends Controller
                     'job_number' => $job->job_number,
                     'job_advice_id' => $job->job_advice_id,
                 ]);
+                return null;
+            }
+
+            if ($job->status === 'meninggalkan_lokasi' && !$this->partialCompletionFollowUpsResolved($job)) {
                 return null;
             }
             
@@ -2451,7 +2455,7 @@ class JobController extends Controller
 
     private function validateJobReadyForMobileCompletion(JobSchedule $job): array
     {
-        $job->loadMissing(['jobScheduleRooms', 'jobAdvice.rooms']);
+        $job->loadMissing(['jobScheduleRooms.rentals', 'jobAdvice.rooms']);
 
         if ($job->jobAdvice && $job->jobAdvice->rooms->isNotEmpty() && $job->jobScheduleRooms->isEmpty()) {
             return [
@@ -2461,13 +2465,26 @@ class JobController extends Controller
         }
 
         if (!$job->areAllRoomsCompleted()) {
-            return [
-                'ok' => false,
-                'message' => 'Masih ada room yang belum diselesaikan pada job ini.',
-            ];
+            if (!$this->jobRoomsAreClosedForMobileVerification($job)) {
+                return [
+                    'ok' => false,
+                    'message' => 'Masih ada room yang belum diselesaikan pada job ini.',
+                ];
+            }
+
+            if (!$this->partialCompletionFollowUpsResolved($job)) {
+                return [
+                    'ok' => false,
+                    'message' => 'Job lanjutan untuk room yang belum selesai masih New Job. Admin perlu set Suspend atau DPF sebelum verifikasi pekerjaan.',
+                ];
+            }
         }
 
         foreach ($job->jobScheduleRooms as $room) {
+            if ($room->status === \App\Models\JobScheduleRoom::STATUS_CANCELLED) {
+                continue;
+            }
+
             $hasBefore = $this->jobScheduleRoomHasPhotoType($room->id, 'Before Work');
             $hasAfter = $this->jobScheduleRoomHasPhotoType($room->id, 'After Work');
 
@@ -2480,6 +2497,76 @@ class JobController extends Controller
         }
 
         return ['ok' => true, 'message' => null];
+    }
+
+    private function jobRoomsAreClosedForMobileVerification(JobSchedule $job): bool
+    {
+        if ($job->jobScheduleRooms->isEmpty()) {
+            return true;
+        }
+
+        return $job->jobScheduleRooms
+            ->every(fn ($room) => in_array($room->status, [
+                \App\Models\JobScheduleRoom::STATUS_COMPLETED,
+                \App\Models\JobScheduleRoom::STATUS_CANCELLED,
+            ], true));
+    }
+
+    private function partialCompletionFollowUpsResolved(JobSchedule $job): bool
+    {
+        $partialRooms = $this->getPartialCompletionSourceRooms($job);
+
+        if ($partialRooms->isEmpty()) {
+            return false;
+        }
+
+        foreach ($partialRooms as $room) {
+            $followUp = $this->findPartialCompletionFollowUpForRoom($job, $room);
+
+            if (!$followUp || !in_array($followUp->status, ['suspend', 'dpf'], true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function getPartialCompletionSourceRooms(JobSchedule $job)
+    {
+        $job->loadMissing('jobScheduleRooms.rentals');
+
+        return $job->jobScheduleRooms
+            ->filter(function ($room) {
+                return $room->status === \App\Models\JobScheduleRoom::STATUS_CANCELLED
+                    && str_contains((string) $room->notes, 'Pekerjaan tidak selesai');
+            })
+            ->values();
+    }
+
+    private function findPartialCompletionFollowUpForRoom(JobSchedule $job, $room): ?JobSchedule
+    {
+        if (!$job->job_number) {
+            return null;
+        }
+
+        $jobAdviceRoomIds = $this->getJobScheduleRoomAdviceRoomIds($room);
+
+        if (empty($jobAdviceRoomIds)) {
+            return null;
+        }
+
+        return JobSchedule::where('job_advice_id', $job->job_advice_id)
+            ->where('building_id', $job->building_id)
+            ->where('type', $job->type)
+            ->where('internal_notes', 'like', "Lanjutan dari Job {$job->job_number}%")
+            ->whereHas('jobScheduleRooms', function ($query) use ($jobAdviceRoomIds) {
+                $query->whereIn('job_advice_room_id', $jobAdviceRoomIds)
+                    ->orWhereHas('rentals', function ($rentalQuery) use ($jobAdviceRoomIds) {
+                        $rentalQuery->whereIn('job_advice_room_id', $jobAdviceRoomIds);
+                    });
+            })
+            ->latest('id')
+            ->first();
     }
 
     private function syncInstallRoomsFromActiveUnitOnWall(JobSchedule $job): void
@@ -2586,15 +2673,13 @@ class JobController extends Controller
                 }
             }
 
-            $sourceJob->status = 'done_job';
-            $sourceJob->completed_at = $sourceJob->completed_at ?: $now;
+            $sourceJob->status = 'meninggalkan_lokasi';
             $sourceJob->updated_by = Auth::id();
             $sourceJob->save();
         }
 
         if (!$processedAnyRoom) {
-            $job->status = 'done_job';
-            $job->completed_at = $job->completed_at ?: $now;
+            $job->status = 'meninggalkan_lokasi';
             $job->updated_by = Auth::id();
         }
     }
@@ -3576,6 +3661,25 @@ class JobController extends Controller
 
             $this->syncInstallRoomsFromActiveUnitOnWall($job);
 
+            if ($cannotCompleteAllRooms) {
+                $this->handleCannotCompleteAllRooms($job, now());
+                $job->save();
+                $job->refresh();
+
+                \DB::commit();
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Room yang belum selesai berhasil dipindahkan menjadi job outstanding. Verifikasi final bisa dilakukan setelah admin set Suspend atau DPF.',
+                    'data' => [
+                        'job_schedule_id' => $job->id,
+                        'job_report_id' => null,
+                        'job_status' => $job->status,
+                        'cannot_complete_all_rooms' => true,
+                    ]
+                ]);
+            }
+
             if (!$cannotCompleteAllRooms) {
                 $readiness = $this->validateJobReadyForMobileCompletion($job);
                 if (!$readiness['ok']) {
@@ -3838,7 +3942,10 @@ class JobController extends Controller
             // AUTO-CREATE UNIT ON WALL and REMOVE JOB for install jobs
             // This logic should match what happens in JobScheduleController@update
             // Trigger auto-create only if status changed from non-completed to completed/done_job
-            if (in_array($job->status, ['completed', 'done_job']) && $job->areAllRoomsCompleted()) {
+            $roomsClosedForFinalization = $job->areAllRoomsCompleted()
+                || ($this->jobRoomsAreClosedForMobileVerification($job) && $this->partialCompletionFollowUpsResolved($job));
+
+            if (in_array($job->status, ['completed', 'done_job']) && $roomsClosedForFinalization) {
                 $job->load('jobAdvice');
                 $jobAdvice = $job->jobAdvice;
                 
@@ -4004,7 +4111,7 @@ class JobController extends Controller
             \DB::commit();
             
             $message = $cannotCompleteAllRooms
-                ? 'Pekerjaan berhasil diselesaikan. Material Return otomatis dibuat untuk ruangan yang belum selesai.'
+                ? 'Room yang belum selesai berhasil dipindahkan menjadi job outstanding. Verifikasi final bisa dilakukan setelah admin set Suspend atau DPF.'
                 : 'Pekerjaan berhasil diverifikasi';
             
             return response()->json([

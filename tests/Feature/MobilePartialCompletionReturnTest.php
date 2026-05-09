@@ -94,6 +94,7 @@ class MobilePartialCompletionReturnTest extends TestCase
 
         Schema::create('job_advice_rooms', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('job_advice_id')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -310,6 +311,16 @@ class MobilePartialCompletionReturnTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('job_photos', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_id')->nullable();
+            $table->foreignId('job_schedule_room_id')->nullable();
+            $table->string('photo_path')->nullable();
+            $table->string('photo_type')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         DB::table('users')->insert([
             'id' => 1,
             'name' => 'Administrator',
@@ -339,6 +350,7 @@ class MobilePartialCompletionReturnTest extends TestCase
             'job_assign_material_issues',
             'material_issues',
             'job_assign_schedules',
+            'job_photos',
             'job_reports',
             'job_schedule_room_rentals',
             'job_schedule_rooms',
@@ -415,7 +427,7 @@ class MobilePartialCompletionReturnTest extends TestCase
         $this->assertDatabaseCount('inventory_movements', 0);
     }
 
-    public function test_partial_completion_marks_source_job_done_and_moves_unfinished_room_to_follow_up(): void
+    public function test_partial_completion_keeps_source_job_waiting_and_moves_unfinished_room_to_follow_up(): void
     {
         $this->seedPartialCompletionScenario();
 
@@ -426,8 +438,8 @@ class MobilePartialCompletionReturnTest extends TestCase
         ]);
 
         DB::table('job_advice_rooms')->insert([
-            ['id' => 80, 'created_at' => now(), 'updated_at' => now()],
-            ['id' => 81, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 80, 'job_advice_id' => 70, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 81, 'job_advice_id' => 70, 'created_at' => now(), 'updated_at' => now()],
         ]);
 
         DB::table('job_schedules')->where('id', 10)->update([
@@ -467,9 +479,9 @@ class MobilePartialCompletionReturnTest extends TestCase
 
         $this->assertDatabaseHas('job_schedules', [
             'id' => 10,
-            'status' => 'done_job',
+            'status' => 'meninggalkan_lokasi',
         ]);
-        $this->assertNotNull(DB::table('job_schedules')->where('id', 10)->value('completed_at'));
+        $this->assertNull(DB::table('job_schedules')->where('id', 10)->value('completed_at'));
 
         $this->assertDatabaseHas('job_schedule_rooms', [
             'id' => 91,
@@ -501,6 +513,95 @@ class MobilePartialCompletionReturnTest extends TestCase
             'reference_no' => 'BDG-IR/26-05/0002',
             'status' => 'pending',
         ]);
+    }
+
+    public function test_partial_completion_final_verification_waits_until_follow_up_is_suspend_or_dpf(): void
+    {
+        $this->seedPartialCompletionScenario();
+
+        DB::table('job_advices')->insert([
+            'id' => 70,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            ['id' => 80, 'job_advice_id' => 70, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 81, 'job_advice_id' => 70, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_schedules')->where('id', 10)->update([
+            'job_advice_id' => 70,
+            'status' => 'in_progress',
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            [
+                'id' => 90,
+                'job_schedule_id' => 10,
+                'job_advice_room_id' => 80,
+                'room_name' => 'OFFICE ROOM',
+                'room_id' => 800,
+                'status' => 'completed',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 91,
+                'job_schedule_id' => 10,
+                'job_advice_room_id' => 81,
+                'room_name' => 'VIP ROOM',
+                'room_id' => 900,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $controller = app(JobController::class);
+
+        $partialMethod = new ReflectionMethod($controller, 'handleCannotCompleteAllRooms');
+        $partialMethod->setAccessible(true);
+        $partialMethod->invoke($controller, JobSchedule::findOrFail(10), now());
+
+        $validateMethod = new ReflectionMethod($controller, 'validateJobReadyForMobileCompletion');
+        $validateMethod->setAccessible(true);
+
+        $waitingResult = $validateMethod->invoke($controller, JobSchedule::findOrFail(10));
+        $this->assertFalse($waitingResult['ok']);
+        $this->assertStringContainsString('masih New Job', $waitingResult['message']);
+
+        $followUpJob = DB::table('job_schedules')
+            ->where('id', '!=', 10)
+            ->where('job_advice_id', 70)
+            ->first();
+
+        DB::table('job_schedules')->where('id', $followUpJob->id)->update([
+            'status' => 'suspend',
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_photos')->insert([
+            [
+                'job_schedule_id' => 10,
+                'job_schedule_room_id' => 90,
+                'photo_path' => 'before.jpg',
+                'photo_type' => 'Before Work',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'job_schedule_id' => 10,
+                'job_schedule_room_id' => 90,
+                'photo_path' => 'after.jpg',
+                'photo_type' => 'After Work',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $readyResult = $validateMethod->invoke($controller, JobSchedule::findOrFail(10));
+        $this->assertTrue($readyResult['ok']);
     }
 
     private function seedPartialCompletionScenario(): void
