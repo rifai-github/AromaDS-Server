@@ -1012,8 +1012,8 @@
                         <!-- 8. Building Name -->
                         <th data-column="building.nama_gedung">Building Name</th>
                         
-                        <!-- 9. Branch Service (Area Service/City) -->
-                        <th data-column="building.district.name">Branch Service</th>
+                        <!-- 9. Branch Service (Building City) -->
+                        <th data-column="building.city.name">Branch Service</th>
                         
                         <!-- 10. P.Service -->
                         <th data-column="period">P.Service</th>
@@ -1075,7 +1075,7 @@
                         <th><input type="text" class="column-filter w-full px-2 py-1 text-[11px] border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" data-column="company_name" placeholder="Customer..." value="{{ request('filter.company_name') }}"></th>
                         <th><input type="text" class="column-filter w-full px-2 py-1 text-[11px] border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" data-column="contract_number" placeholder="Contract..." value="{{ request('filter.contract_number') }}"></th>
                         <th><input type="text" class="column-filter w-full px-2 py-1 text-[11px] border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" data-column="building__nama_gedung" placeholder="Building..." value="{{ request('filter.building__nama_gedung') }}"></th>
-                        <th><input type="text" class="column-filter w-full px-2 py-1 text-[11px] border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" data-column="building__district__name" placeholder="Branch..." value="{{ request('filter.building__district__name') }}"></th>
+                        <th><input type="text" class="column-filter w-full px-2 py-1 text-[11px] border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" data-column="building__city__name" placeholder="Branch..." value="{{ request('filter.building__city__name') ?? request('filter.building__district__name') }}"></th>
                         <th><input type="text" class="column-filter w-full px-2 py-1 text-[11px] border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" data-column="period" placeholder="Period..." value="{{ request('filter.period') }}"></th>
                         <th><input type="text" class="column-filter w-full px-2 py-1 text-[11px] border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" data-column="p_invoice" placeholder="Inv..." value="{{ request('filter.p_invoice') }}"></th>
                         
@@ -1135,11 +1135,12 @@
                             }
                         }
                         
-                        // Logic for Branch Service (MOM15: Show City Name from Master Branch)
-                        $branchService = $job->jobAdvice?->quotation?->branch?->city?->name 
-                                         ?? $job->jobAdvice?->contract?->quotation?->branch?->city?->name 
-                                         ?? $job->building?->district?->name 
-                                         ?? $job->district 
+                        // Branch Service follows the job building city, not the contract branch.
+                        $branchService = $job->building?->city?->name
+                                         ?? $job->building?->branch?->city?->name
+                                         ?? $job->building?->branch?->name
+                                         ?? $job->building?->district?->name
+                                         ?? $job->district
                                          ?? '-';
                         
                         // Logic for P.Invoice (From Quotation)

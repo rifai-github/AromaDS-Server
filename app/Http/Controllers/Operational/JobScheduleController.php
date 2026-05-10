@@ -15,6 +15,7 @@ use App\Models\MasterProduct;
 use App\Models\Company;
 use App\Models\Contract;
 use App\Models\Building;
+use App\Models\Branch;
 use App\Models\User;
 use App\Models\Quotation;
 use App\Models\Warehouse;
@@ -125,7 +126,9 @@ class JobScheduleController extends Controller
             $query = \App\Models\JobScheduleRoom::with([
                 'jobSchedule.jobAdvice.customer',
                 'jobSchedule.jobAdvice.contract.quotation.branch.city',
-                'jobSchedule.building',
+                'jobSchedule.building.city',
+                'jobSchedule.building.branch.city',
+                'jobSchedule.building.district',
                 'jobSchedule.assignedTechnician',
                 'jobSchedule.createdBy',
                 'jobSchedule.updatedBy',
@@ -139,7 +142,9 @@ class JobScheduleController extends Controller
             $query = JobSchedule::with([
                 'jobAdvice.customer',
                 'jobAdvice.contract.quotation.branch.city',
-                'building',
+                'building.city',
+                'building.branch.city',
+                'building.district',
                 'room',
                 'assignedTechnician',
                 'createdBy',
@@ -195,22 +200,31 @@ class JobScheduleController extends Controller
                     $branchIds = [$user->branch_id];
                 }
             }
+            $branchIds = collect($branchIds)->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+            $branchCityIds = empty($branchIds)
+                ? []
+                : Branch::whereIn('id', $branchIds)->pluck('city_id')->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
             
             if ($viewMode === 'room') {
-                $query->whereHas('jobSchedule', function($q) use ($accessibleUserIds, $userTeamIds, $branchIds) {
-                    $q->where(function($subQ) use ($accessibleUserIds, $userTeamIds, $branchIds) {
+                $query->whereHas('jobSchedule', function($q) use ($accessibleUserIds, $userTeamIds, $branchIds, $branchCityIds) {
+                    $q->where(function($subQ) use ($accessibleUserIds, $userTeamIds, $branchIds, $branchCityIds) {
                          $subQ->whereIn('created_by', $accessibleUserIds)
-                              ->orWhereHas('jobAdvice', function($adviceQ) use ($accessibleUserIds, $branchIds) {
+                              ->orWhereHas('jobAdvice', function($adviceQ) use ($accessibleUserIds) {
                                   $adviceQ->whereIn('created_by', $accessibleUserIds)
                                           ->orWhereIn('request_by', $accessibleUserIds);
-                                  
-                                  if (!empty($branchIds)) {
-                                      $adviceQ->orWhereHas('quotation', function($qQ) use ($branchIds) {
-                                          $qQ->whereIn('branch_id', $branchIds);
-                                      })->orWhereHas('contract.quotation', function($qQ) use ($branchIds) {
-                                          $qQ->whereIn('branch_id', $branchIds);
+                              })
+                              ->when(!empty($branchIds) || !empty($branchCityIds), function ($accessQ) use ($branchIds, $branchCityIds) {
+                                  $accessQ->orWhereHas('building', function ($buildingQ) use ($branchIds, $branchCityIds) {
+                                      $buildingQ->where(function ($branchQ) use ($branchIds, $branchCityIds) {
+                                          if (!empty($branchIds) && \Schema::hasColumn('buildings', 'branch_id')) {
+                                              $branchQ->whereIn('branch_id', $branchIds);
+                                          }
+
+                                          if (!empty($branchCityIds)) {
+                                              $branchQ->orWhereIn('city_id', $branchCityIds);
+                                          }
                                       });
-                                  }
+                                  });
                               })
                               ->orWhereHas('jobAssignSchedules', function($assignQ) use ($userTeamIds) {
                                   $assignQ->whereIn('team_id', $userTeamIds);
@@ -218,19 +232,24 @@ class JobScheduleController extends Controller
                     });
                 });
             } else {
-                $query->where(function($q) use ($accessibleUserIds, $userTeamIds, $branchIds) {
+                $query->where(function($q) use ($accessibleUserIds, $userTeamIds, $branchIds, $branchCityIds) {
                     $q->whereIn('created_by', $accessibleUserIds)
-                      ->orWhereHas('jobAdvice', function($subQ) use ($accessibleUserIds, $branchIds) {
+                      ->orWhereHas('jobAdvice', function($subQ) use ($accessibleUserIds) {
                           $subQ->whereIn('created_by', $accessibleUserIds)
                                ->orWhereIn('request_by', $accessibleUserIds);
-                          
-                          if (!empty($branchIds)) {
-                              $subQ->orWhereHas('quotation', function($qQ) use ($branchIds) {
-                                  $qQ->whereIn('branch_id', $branchIds);
-                              })->orWhereHas('contract.quotation', function($qQ) use ($branchIds) {
-                                  $qQ->whereIn('branch_id', $branchIds);
+                      })
+                      ->when(!empty($branchIds) || !empty($branchCityIds), function ($accessQ) use ($branchIds, $branchCityIds) {
+                          $accessQ->orWhereHas('building', function ($buildingQ) use ($branchIds, $branchCityIds) {
+                              $buildingQ->where(function ($branchQ) use ($branchIds, $branchCityIds) {
+                                  if (!empty($branchIds) && \Schema::hasColumn('buildings', 'branch_id')) {
+                                      $branchQ->whereIn('branch_id', $branchIds);
+                                  }
+
+                                  if (!empty($branchCityIds)) {
+                                      $branchQ->orWhereIn('city_id', $branchCityIds);
+                                  }
                               });
-                          }
+                          });
                       })
                       ->orWhereHas('jobAssignSchedules', function($subQ) use ($userTeamIds) {
                           $subQ->whereIn('team_id', $userTeamIds);
@@ -368,24 +387,45 @@ class JobScheduleController extends Controller
                     continue; 
                 }
 
-                // Smart Branch Filter: Includes City Name from Branch or District Name from Building
-                if ($normalizedKey === 'building.district.name' || $key === 'building__district__name') {
-                    $query->where(function($q) use ($value) {
-                        // 1. Check District name from Building relation
-                        $q->whereHas('building.district', function($sub) use ($value) {
-                            $sub->where('name', 'like', "%{$value}%");
-                        })
-                        // 2. Or check City name from Branch relation (via JA -> Quotation)
-                        ->orWhereHas('jobAdvice.quotation.branch.city', function($sub) use ($value) {
-                            $sub->where('name', 'like', "%{$value}%");
-                        })
-                        // 3. Or check City name from Branch relation (via JA -> Contract -> Quotation)
-                        ->orWhereHas('jobAdvice.contract.quotation.branch.city', function($sub) use ($value) {
-                            $sub->where('name', 'like', "%{$value}%");
-                        })
-                        // 4. Fallback to direct district field on JobSchedule
-                        ->orWhere('district', 'like', "%{$value}%");
-                    });
+                // Branch Service follows the job building city, not the contract/quotation branch.
+                if (in_array($normalizedKey, ['building.city.name', 'building.district.name'], true) || in_array($key, ['building__city__name', 'building__district__name'], true)) {
+                    if ($viewMode === 'room') {
+                        $query->where(function($q) use ($value) {
+                            $q->whereHas('jobSchedule.building.city', function($sub) use ($value) {
+                                $sub->where('name', 'like', "%{$value}%");
+                            })
+                            ->orWhereHas('jobSchedule.building.branch.city', function($sub) use ($value) {
+                                $sub->where('name', 'like', "%{$value}%");
+                            })
+                            ->orWhereHas('jobSchedule.building.branch', function($sub) use ($value) {
+                                $sub->where('name', 'like', "%{$value}%")
+                                    ->orWhere('code', 'like', "%{$value}%");
+                            })
+                            ->orWhereHas('jobSchedule.building.district', function($sub) use ($value) {
+                                $sub->where('name', 'like', "%{$value}%");
+                            })
+                            ->orWhereHas('jobSchedule', function($jobQ) use ($value) {
+                                $jobQ->where('district', 'like', "%{$value}%");
+                            });
+                        });
+                    } else {
+                        $query->where(function($q) use ($value) {
+                            $q->whereHas('building.city', function($sub) use ($value) {
+                                $sub->where('name', 'like', "%{$value}%");
+                            })
+                            ->orWhereHas('building.branch.city', function($sub) use ($value) {
+                                $sub->where('name', 'like', "%{$value}%");
+                            })
+                            ->orWhereHas('building.branch', function($sub) use ($value) {
+                                $sub->where('name', 'like', "%{$value}%")
+                                    ->orWhere('code', 'like', "%{$value}%");
+                            })
+                            ->orWhereHas('building.district', function($sub) use ($value) {
+                                $sub->where('name', 'like', "%{$value}%");
+                            })
+                            ->orWhere('district', 'like', "%{$value}%");
+                        });
+                    }
                     continue;
                 }
                 if ($normalizedKey === 'status') {
