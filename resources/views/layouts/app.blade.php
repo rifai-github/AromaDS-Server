@@ -1888,6 +1888,9 @@
             if (tokenMeta && newToken) {
                 tokenMeta.setAttribute('content', newToken);
                 window.axios.defaults.headers.common['X-CSRF-TOKEN'] = newToken;
+                document.querySelectorAll('input[name="_token"]').forEach(input => {
+                    input.value = newToken;
+                });
             }
         }
         
@@ -1937,21 +1940,83 @@
             }
         );
         
+        function applyCsrfTokenToFetchOptions(options, token, force = false) {
+            if (!options.headers) {
+                options.headers = {};
+            }
+
+            const headers = new Headers(options.headers);
+            if (force || (!headers.has('X-CSRF-TOKEN') && !headers.has('x-csrf-token'))) {
+                headers.set('X-CSRF-TOKEN', token);
+            }
+            options.headers = headers;
+
+            if (options.body instanceof FormData) {
+                options.body.set('_token', token);
+                return options;
+            }
+
+            if (typeof options.body === 'string' && headers.get('Content-Type')?.includes('application/json')) {
+                try {
+                    const payload = JSON.parse(options.body);
+                    payload._token = token;
+                    options.body = JSON.stringify(payload);
+                } catch (error) {
+                    // Keep original body when it is not valid JSON.
+                }
+            }
+
+            return options;
+        }
+
+        let csrfRefreshPromise = null;
+        function refreshCsrfToken() {
+            if (!csrfRefreshPromise) {
+                csrfRefreshPromise = originalFetch('/csrf-token', {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Unable to refresh CSRF token');
+                        }
+
+                        const headerToken = response.headers.get('x-csrf-token') || response.headers.get('X-CSRF-TOKEN');
+                        return response.json()
+                            .catch(() => ({}))
+                            .then(data => data.token || headerToken);
+                    })
+                    .then(newToken => {
+                        if (!newToken) {
+                            throw new Error('CSRF token refresh returned empty token');
+                        }
+
+                        updateCsrfToken(newToken);
+                        return newToken;
+                    })
+                    .finally(() => {
+                        csrfRefreshPromise = null;
+                    });
+            }
+
+            return csrfRefreshPromise;
+        }
+
         // Global fetch wrapper untuk handle CSRF token refresh
         const originalFetch = window.fetch;
         window.fetch = function(...args) {
             const url = args[0];
             const options = args[1] || {};
+            args[1] = options;
             
             // Ensure CSRF token is included
-            if (!options.headers) {
-                options.headers = {};
-            }
-            if (!options.headers['X-CSRF-TOKEN'] && !options.headers['x-csrf-token']) {
-                const token = getCsrfToken();
-                if (token) {
-                    options.headers['X-CSRF-TOKEN'] = token;
-                }
+            const token = getCsrfToken();
+            if (token) {
+                applyCsrfTokenToFetchOptions(options, token);
             }
             
             return originalFetch.apply(this, args)
@@ -1964,30 +2029,26 @@
                     
                     // Handle 419 error
                     if (response.status === 419) {
-                        // Coba refresh token
-                        const refreshToken = response.headers.get('x-csrf-token') || response.headers.get('X-CSRF-TOKEN');
-                        if (refreshToken) {
-                            updateCsrfToken(refreshToken);
-                            // Retry request dengan token baru
-                            if (options.headers) {
-                                options.headers['X-CSRF-TOKEN'] = refreshToken;
-                            }
-                            return originalFetch.apply(this, args);
-                        } else {
-                            // Reload halaman jika tidak ada token baru
-                            showConfirmDialog({
-                                title: 'Sesi Berakhir',
-                                text: 'Sesi Anda sudah berakhir. Muat ulang halaman untuk melanjutkan?',
-                                icon: 'warning',
-                                confirmButtonText: 'Muat Ulang',
-                                cancelButtonText: 'Nanti'
-                            }).then((result) => {
-                                if (result.isConfirmed) {
-                                    window.location.reload();
-                                }
+                        return refreshCsrfToken()
+                            .then(refreshToken => {
+                                applyCsrfTokenToFetchOptions(options, refreshToken, true);
+                                return originalFetch.apply(this, args);
+                            })
+                            .catch(() => {
+                                // Reload halaman jika token tidak bisa diperbarui
+                                showConfirmDialog({
+                                    title: 'Sesi Berakhir',
+                                    text: 'Sesi Anda sudah berakhir. Muat ulang halaman untuk melanjutkan?',
+                                    icon: 'warning',
+                                    confirmButtonText: 'Muat Ulang',
+                                    cancelButtonText: 'Nanti'
+                                }).then((result) => {
+                                    if (result.isConfirmed) {
+                                        window.location.reload();
+                                    }
+                                });
+                                return Promise.reject(new Error('CSRF token expired'));
                             });
-                            return Promise.reject(new Error('CSRF token expired'));
-                        }
                     }
                     
                     return response;

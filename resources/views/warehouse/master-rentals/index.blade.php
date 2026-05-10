@@ -2397,7 +2397,10 @@ function handleRentalSubmit(event) {
     })
     .catch(error => {
         console.error('Error:', error);
-        showErrorDialog('Gagal', 'Terjadi kesalahan saat menyimpan rental: ' + error.message);
+        const message = error.message && error.message.includes('CSRF token expired')
+            ? 'Sesi halaman sudah berakhir. Silakan muat ulang halaman, lalu coba simpan lagi.'
+            : 'Terjadi kesalahan saat menyimpan rental: ' + error.message;
+        showErrorDialog('Gagal', message);
         // Re-enable button on error
         if (submitBtn) {
             submitBtn.disabled = false;

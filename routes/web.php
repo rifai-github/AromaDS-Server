@@ -137,6 +137,13 @@ Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.post');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 Route::get('/logout', [AuthController::class, 'logout'])->name('logout.get');
+Route::get('/csrf-token', function () {
+    $token = csrf_token();
+
+    return response()
+        ->json(['token' => $token])
+        ->header('X-CSRF-TOKEN', $token);
+})->name('csrf-token');
 
 // Public API Routes (no authentication required)
 Route::get('/email/verify/{token}', [App\Http\Controllers\Company\CustomerContactController::class, 'verifyEmail'])->name('email.verify');
