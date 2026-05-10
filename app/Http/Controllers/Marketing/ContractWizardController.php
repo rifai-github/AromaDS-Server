@@ -9,6 +9,7 @@ use App\Models\ContractBuilding;
 use App\Models\ContractRental;
 use App\Models\Customer;
 use App\Models\CustomerContact;
+use App\Models\CustomerTax;
 use App\Models\FinanceTaxCode;
 use App\Models\TaxSetting;
 use App\Models\User;
@@ -29,6 +30,13 @@ class ContractWizardController extends Controller
      */
     private function buildQuotationWizardPayload(Quotation $quotation): array
     {
+        $quotation->loadMissing('customer.customerTaxSettings');
+
+        if ($quotation->customer) {
+            $this->attachCustomerTaxSettingsFallback($quotation->customer);
+            $quotation->setRelation('customer', $quotation->customer);
+        }
+
         return [
             'success' => true,
             'quotation' => $quotation,
@@ -36,6 +44,37 @@ class ContractWizardController extends Controller
             'marketing' => $quotation->marketing,
             'quotationDetails' => $quotation->quotationDetails->values(),
         ];
+    }
+
+    private function attachCustomerTaxSettingsFallback(Customer $customer): void
+    {
+        $customer->loadMissing('customerTaxSettings');
+
+        if ($customer->customerTaxSettings->isNotEmpty()) {
+            return;
+        }
+
+        $normalizedName = trim((string) $customer->name);
+        if ($normalizedName === '') {
+            return;
+        }
+
+        $fallbackTaxes = CustomerTax::query()
+            ->where(function ($query) {
+                $query->where('is_active', true)
+                    ->orWhere('status', 'active');
+            })
+            ->whereHas('customer', function ($query) use ($customer, $normalizedName) {
+                $query->where('id', '!=', $customer->id)
+                    ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($normalizedName)]);
+            })
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id')
+            ->get();
+
+        if ($fallbackTaxes->isNotEmpty()) {
+            $customer->setRelation('customerTaxSettings', $fallbackTaxes);
+        }
     }
 
     /**
