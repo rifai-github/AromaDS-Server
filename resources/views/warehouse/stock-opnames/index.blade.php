@@ -1045,6 +1045,7 @@ function openViewModal(id) {
             const isApprover = {{ auth()->user()->hasPermission('warehouse.stock-opnames.approve') ? 'true' : 'false' }};
             const status = data.data.status;
             const canEdit = status === 'draft' || status === 'in-progress';
+            const canViewSystemStock = isApprover && !['draft', 'in-progress'].includes(status);
 
             let itemsHtml = `
                 <div class="modal-section mt-6">
@@ -1055,9 +1056,9 @@ function openViewModal(id) {
                                 <tr class="bg-gray-50">
                                     <th class="border p-2 text-left">Product Code</th>
                                     <th class="border p-2 text-left">Product Name</th>
-                                    ${isAdmin ? '<th class="border p-2 text-right">System Stock</th>' : ''}
+                                    ${canViewSystemStock ? '<th class="border p-2 text-right">System Stock</th>' : ''}
                                     <th class="border p-2 text-right">Physical Stock</th>
-                                    ${isAdmin ? '<th class="border p-2 text-right">Variance</th>' : ''}
+                                    ${canViewSystemStock ? '<th class="border p-2 text-right">Variance</th>' : ''}
                                     <th class="border p-2 text-center" style="width: 50px;"><i class="fas fa-qrcode"></i></th>
                                     <th class="border p-2 text-left">Notes</th>
                                 </tr>
@@ -1065,21 +1066,21 @@ function openViewModal(id) {
                             <tbody>
                                 ${items.map(item => {
                                     const hasVariance = item.variance != 0;
-                                    const rowClass = hasVariance && isAdmin ? 'bg-red-50' : '';
+                                    const rowClass = hasVariance && canViewSystemStock ? 'bg-red-50' : '';
                                     return `
                                         <tr class="${rowClass}">
                                             <td class="border p-2">${item.master_product?.sku || '-'}</td>
                                             <td class="border p-2">${item.master_product?.name || '-'}</td>
-                                            ${isAdmin ? `<td class="border p-2 text-right">${item.system_stock}</td>` : ''}
+                                            ${canViewSystemStock ? `<td class="border p-2 text-right">${item.system_stock}</td>` : ''}
                                             <td class="border p-2 text-right">
                                                 ${canEdit ? 
                                                     `<input type="number" class="w-24 border rounded px-2 py-1 text-right" 
                                                         value="${item.physical_stock ?? ''}" 
-                                                        onchange="updateOpnameDetail(${item.id}, this.value, ${item.system_stock})">` : 
+                                                        onchange="updateOpnameDetail(${item.id}, this.value)">` : 
                                                     (item.physical_stock ?? '-')
                                                 }
                                             </td>
-                                            ${isAdmin ? 
+                                            ${canViewSystemStock ? 
                                                 `<td class="border p-2 text-right font-bold ${hasVariance ? 'text-red-600' : 'text-green-600'}" id="variance-${item.id}">
                                                     ${item.variance}
                                                 </td>` : ''
@@ -1389,13 +1390,10 @@ function closeErrorModal() {
     document.body.style.overflow = 'auto';
 }
 
-function updateOpnameDetail(detailId, value, systemStock) {
-    const variance = value - systemStock;
+function updateOpnameDetail(detailId, value) {
     const varianceEl = document.getElementById(`variance-${detailId}`);
     if (varianceEl) {
-        varianceEl.textContent = variance;
-        varianceEl.className = `border p-2 text-right font-bold ${variance != 0 ? 'text-red-600' : 'text-green-600'}`;
-        varianceEl.closest('tr').className = (variance != 0) ? 'bg-red-50' : '';
+        varianceEl.textContent = '...';
     }
 
     fetch(`/warehouse/stock-opnames/details/${detailId}/update`, {
@@ -1410,6 +1408,14 @@ function updateOpnameDetail(detailId, value, systemStock) {
     .then(result => {
         if (result.status !== 'success') {
             showErrorDialog('Gagal', 'Data tidak berhasil diperbarui: ' + result.message);
+            return;
+        }
+
+        if (varianceEl && result.data?.variance !== null && result.data?.variance !== undefined) {
+            const variance = result.data.variance;
+            varianceEl.textContent = variance;
+            varianceEl.className = `border p-2 text-right font-bold ${variance != 0 ? 'text-red-600' : 'text-green-600'}`;
+            varianceEl.closest('tr').className = (variance != 0) ? 'bg-red-50' : '';
         }
     });
 }

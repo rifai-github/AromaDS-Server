@@ -4,6 +4,11 @@
 
 @section('content')
 
+@php
+    $canViewSystemStock = auth()->user()->hasPermission('warehouse.stock-opnames.approve')
+        && in_array($stockOpname->status, ['waiting for approval', 'completed', 'approved'], true);
+@endphp
+
 <style>
     /* Helper classes similar to Inventory Request */
     .cursor-pointer { cursor: pointer; }
@@ -210,11 +215,11 @@
                                 <tr>
                                     <th style="width: 30%; background-color: #f8f9fa; color: #495057;">Product</th>
                                     <th style="width: 15%; background-color: #f8f9fa; color: #495057;">Package</th>
-                                    @if(auth()->user()->hasPermission('warehouse.stock-opnames.approve'))
+                                    @if($canViewSystemStock)
                                     <th class="text-center" style="width: 15%; background-color: #f8f9fa; color: #495057;">System Stock</th>
                                     @endif
                                     <th class="text-center" style="width: 25%; background-color: #f8f9fa; color: #495057;">Physical Stock</th>
-                                    @if(auth()->user()->hasPermission('warehouse.stock-opnames.approve'))
+                                    @if($canViewSystemStock)
                                     <th class="text-center" style="width: 15%; background-color: #f8f9fa; color: #495057;">Variance</th>
                                     @endif
                                 </tr>
@@ -233,7 +238,7 @@
                                             {{ $detail->masterProduct->packaging_size ?? '-' }} {{ $detail->masterProduct->unit ?? '' }}
                                         </div>
                                     </td>
-                                    @if(auth()->user()->hasPermission('warehouse.stock-opnames.approve'))
+                                    @if($canViewSystemStock)
                                     <td class="text-center font-weight-bold text-muted" style="vertical-align: middle; padding: 12px;">
                                         {{ number_format($detail->system_stock, 0) }}
                                     </td>
@@ -269,7 +274,7 @@
                                             </span>
                                         @endif
                                     </td>
-                                    @if(auth()->user()->hasPermission('warehouse.stock-opnames.approve'))
+                                    @if($canViewSystemStock)
                                     <td class="text-center variance-c" id="variance-{{ $detail->id }}" style="vertical-align: middle; padding: 12px;">
                                         @php
                                             $variance = (float)($detail->variance ?? 0);
