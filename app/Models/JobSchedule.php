@@ -388,10 +388,10 @@ class JobSchedule extends Model
             'assign_material' => 'Material Assign', // User requested label
             
             // Refactored Statuses
-            'material_issue' => 'Material in Prep',     // Permintaan harmonisasi
+            'material_issue' => 'Material Prepare',     // Permintaan harmonisasi
             
             // Legacy Statuses
-            'barang_dipersiapkan' => 'Material in Prep',
+            'barang_dipersiapkan' => 'Material Prepare',
             'barang_siap_diambil' => 'Material Ready',
             'barang_diambil' => 'Material Issued',     // Sesuai permintaan: "material telah di issue"
             

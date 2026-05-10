@@ -713,7 +713,7 @@ class JobScheduleController extends Controller
             $batchJobNumbers[$batchKey] = $sharedJobNumber;
 
             foreach ($jobs as $job) {
-                if (!in_array($job->status, ['new_job', 'scheduled', 'assign_material'], true)) {
+                if (!in_array($job->status, ['new_job', 'scheduled', 'assign_material', 'barang_dipersiapkan'], true)) {
                     continue;
                 }
 
@@ -1707,7 +1707,7 @@ class JobScheduleController extends Controller
                 }
 
                 // Validation: Only for new_job or scheduled
-                if (!in_array($job->status, ['new_job', 'scheduled', 'assign_material'])) {
+                if (!in_array($job->status, ['new_job', 'scheduled', 'assign_material', 'barang_dipersiapkan'])) {
                     $skippedCount++;
                     continue;
                 }
@@ -1715,7 +1715,7 @@ class JobScheduleController extends Controller
                 // If already assign_material, we might be adding more rooms OR it's a retry
                 // But generally document number is generated once.
                 
-                if ($job->status !== 'assign_material') {
+                if (!in_array($job->status, ['assign_material', 'barang_dipersiapkan'], true)) {
                     // Determine document type for Job Number generation
                     $type = strtolower($job->type);
                     $jaType = strtolower($job->jobAdvice->type ?? '');
@@ -1904,8 +1904,8 @@ class JobScheduleController extends Controller
                     continue;
                 }
 
-                // Only revert if status is 'assign_material'
-                if ($job->status !== 'assign_material') {
+                // Only revert if material is still in assign/prepare stage.
+                if (!in_array($job->status, ['assign_material', 'barang_dipersiapkan'], true)) {
                     $skippedCount++;
                     continue;
                 }
@@ -1999,7 +1999,7 @@ class JobScheduleController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => "Berhasil membatalkan material assign untuk {$successCount} job. " . ($skippedCount > 0 ? "({$skippedCount} job dilewati karena status bukan 'assign_material')" : ""),
+                'message' => "Berhasil membatalkan material assign untuk {$successCount} job. " . ($skippedCount > 0 ? "({$skippedCount} job dilewati karena status bukan Material Assign/Material Prepare)" : ""),
                 'success' => true
             ]);
 
@@ -8623,6 +8623,31 @@ class JobScheduleController extends Controller
                     'error' => $e->getMessage()
                 ]);
             }
+        }
+
+        $hasMaterialItemsForAssignment = $materialIssue->items()
+            ->where('job_assign_schedule_id', $jobAssignSchedule->id)
+            ->exists();
+
+        $lockedStatuses = [
+            'barang_siap_diambil',
+            'barang_diambil',
+            'teknisi_tiba_dilokasi',
+            'teknisi_sedang_pengerjaan',
+            'teknisi_selesai_pengerjaan',
+            'meninggalkan_lokasi',
+            'done_job',
+            'completed',
+            'cancelled',
+            'suspend',
+            'dpf',
+        ];
+
+        if ($hasMaterialItemsForAssignment && !in_array($jobSchedule->status, $lockedStatuses, true)) {
+            $jobSchedule->update([
+                'status' => 'barang_dipersiapkan',
+                'updated_by' => $actorId,
+            ]);
         }
     }
 

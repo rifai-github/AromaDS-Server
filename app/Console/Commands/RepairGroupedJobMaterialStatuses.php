@@ -120,8 +120,11 @@ class RepairGroupedJobMaterialStatuses extends Command
             ->orderBy('job_number')
             ->orderBy('id')
             ->get()
-            ->groupBy('job_number')
-            ->filter(fn ($group) => $group->count() > 1);
+            ->groupBy('job_number');
+
+        if ($jobNumbers->isEmpty()) {
+            $jobs = $jobs->filter(fn ($group) => $group->count() > 1);
+        }
 
         if ($jobNumbers->isEmpty()) {
             $jobs = $jobs->take($limit);
@@ -136,7 +139,7 @@ class RepairGroupedJobMaterialStatuses extends Command
         $currentStatuses = $jobs->pluck('status')->unique()->values()->all();
         $advancedStatuses = ['teknisi_tiba_dilokasi', 'in_progress', 'teknisi_sedang_pengerjaan', 'teknisi_selesai_pengerjaan', 'done_job', 'completed'];
 
-        $jobAssignMaterialIssues = JobAssignMaterialIssue::with(['materialIssue'])
+        $jobAssignMaterialIssues = JobAssignMaterialIssue::with(['materialIssue.items'])
             ->whereHas('jobAssignSchedule', function ($query) use ($jobIds) {
                 $query->whereIn('job_schedule_id', $jobIds);
             })
@@ -216,6 +219,17 @@ class RepairGroupedJobMaterialStatuses extends Command
         }
 
         if ($inventoryIssuings->contains(fn ($issuing) => $issuing->status === 'pending')) {
+            return 'barang_dipersiapkan';
+        }
+
+        $hasPreparedMaterialItems = $jobAssignMaterialIssues->contains(function ($assignMaterialIssue) {
+            return $assignMaterialIssue->materialIssue
+                && $assignMaterialIssue->materialIssue->items
+                    ->where('job_assign_schedule_id', $assignMaterialIssue->job_assign_schedule_id)
+                    ->isNotEmpty();
+        });
+
+        if ($hasPreparedMaterialItems) {
             return 'barang_dipersiapkan';
         }
 
