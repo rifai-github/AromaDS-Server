@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 
 class SurveyWizardController extends Controller
 {
@@ -53,6 +54,36 @@ class SurveyWizardController extends Controller
     {
         Cache::forget('survey-wizard:buildings:all-active');
         Cache::forget($this->surveyWizardBuildingsCacheKey());
+    }
+
+    private function surveyWizardSubmissionCacheKey(Request $request): string
+    {
+        $payload = $request->except(['_token']);
+        $this->recursiveKeySort($payload);
+
+        return 'survey-wizard:submission:' . Auth::id() . ':' . sha1(json_encode($payload));
+    }
+
+    private function recursiveKeySort(array &$value): void
+    {
+        ksort($value);
+
+        foreach ($value as &$item) {
+            if (is_array($item)) {
+                $this->recursiveKeySort($item);
+            }
+        }
+    }
+
+    private function duplicateSurveyResponse(int $surveyId): \Illuminate\Http\JsonResponse
+    {
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Survey sudah tersimpan dari request yang sama.',
+            'survey_id' => $surveyId,
+            'duplicate_prevented' => true,
+            'redirect_url' => route('surveys.show', $surveyId),
+        ]);
     }
 
     private function normalizeLookupValue(?string $value): string
@@ -1447,9 +1478,24 @@ class SurveyWizardController extends Controller
         $addNewContact = filter_var($request->add_new_contact, FILTER_VALIDATE_BOOLEAN);
         $addNewBuilding = filter_var($request->add_new_building, FILTER_VALIDATE_BOOLEAN);
 
+        $submissionCacheKey = $this->surveyWizardSubmissionCacheKey($request);
+        $existingSurveyId = Cache::get($submissionCacheKey);
+        if ($existingSurveyId) {
+            return $this->duplicateSurveyResponse((int) $existingSurveyId);
+        }
 
+        $submissionLock = Cache::lock($submissionCacheKey . ':lock', 30);
+        $submissionLockAcquired = false;
 
         try {
+            $submissionLock->block(10);
+            $submissionLockAcquired = true;
+
+            $existingSurveyId = Cache::get($submissionCacheKey);
+            if ($existingSurveyId) {
+                return $this->duplicateSurveyResponse((int) $existingSurveyId);
+            }
+
             DB::beginTransaction();
 
             // ========================================
@@ -1800,6 +1846,8 @@ class SurveyWizardController extends Controller
 
             DB::commit();
 
+            Cache::put($submissionCacheKey, $survey->id, now()->addMinutes(10));
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Survey saved successfully',
@@ -1810,6 +1858,11 @@ class SurveyWizardController extends Controller
                 ]
             ]);
 
+        } catch (LockTimeoutException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Survey sedang diproses. Mohon tunggu sebentar dan cek kembali sebelum submit ulang.'
+            ], 429);
         } catch (\Exception $e) {
             DB::rollback();
             \Log::error('Survey save error:', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
@@ -1818,6 +1871,10 @@ class SurveyWizardController extends Controller
                 'status' => 'error',
                 'message' => 'Failed to save survey: ' . $e->getMessage()
             ], 500);
+        } finally {
+            if ($submissionLockAcquired) {
+                $submissionLock->release();
+            }
         }
     }
 
