@@ -502,6 +502,9 @@ class JobSchedule extends Model
         ];
         
         $type = strtolower($this->type ?? '');
+        if (in_array($type, ['service', 'service_first', 'service_routine'], true) && $this->material_checked) {
+            return 'Check (CHK)';
+        }
         
         return $typeLabels[$type] ?? ucfirst(str_replace('_', ' ', $this->type ?? '-'));
     }

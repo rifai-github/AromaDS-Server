@@ -1780,6 +1780,151 @@ class JobAdviceController extends Controller
      * 2. Skip install if unit already installed from trial
      * 3. Create separate install and service jobs if needed
      */
+    private function splitRoomsByRentalJobFlow($rooms): array
+    {
+        $installRooms = collect();
+        $serviceRooms = collect();
+        $checkRooms = collect();
+
+        foreach ($rooms as $room) {
+            $flow = $this->determineRentalJobFlow($room);
+
+            if ($flow['needs_install']) {
+                $installRooms->push($room);
+            }
+
+            if ($flow['needs_service']) {
+                $serviceRooms->push($room);
+            }
+
+            if ($flow['needs_check']) {
+                $checkRooms->push($room);
+            }
+        }
+
+        return [
+            'install' => $installRooms,
+            'service' => $serviceRooms,
+            'check' => $checkRooms,
+        ];
+    }
+
+    private function determineRentalJobFlow($jaRoom): array
+    {
+        $rental = $jaRoom->rentalProduct;
+        $rentalType = strtolower(trim((string) ($rental?->rental_type ?? '')));
+
+        if ($rentalType === 'unit_only') {
+            return [
+                'needs_install' => true,
+                'needs_service' => false,
+                'needs_check' => true,
+            ];
+        }
+
+        if ($rentalType === 'refill_only') {
+            return [
+                'needs_install' => false,
+                'needs_service' => true,
+                'needs_check' => false,
+            ];
+        }
+
+        $composition = $this->detectRentalMaterialComposition($rental);
+
+        if ($composition['has_unit'] && !$composition['has_non_unit']) {
+            return [
+                'needs_install' => true,
+                'needs_service' => false,
+                'needs_check' => true,
+            ];
+        }
+
+        if (!$composition['has_unit'] && $composition['has_non_unit']) {
+            return [
+                'needs_install' => false,
+                'needs_service' => true,
+                'needs_check' => false,
+            ];
+        }
+
+        return [
+            'needs_install' => true,
+            'needs_service' => true,
+            'needs_check' => false,
+        ];
+    }
+
+    private function detectRentalMaterialComposition($rental): array
+    {
+        $hasUnit = false;
+        $hasNonUnit = false;
+
+        if (!$rental) {
+            return ['has_unit' => false, 'has_non_unit' => false];
+        }
+
+        $rental->loadMissing([
+            'rentalDetails.productCategory',
+            'rentalDetails.productType',
+            'rentalDetails.masterProduct.productCategory',
+            'rentalDetails.masterProduct.productType',
+            'rentalDetails.allowedProducts.productCategory',
+            'rentalDetails.allowedProducts.productType',
+        ]);
+
+        foreach ($rental->rentalDetails as $detail) {
+            $isUnit = $this->rentalDetailIsUnit($detail);
+
+            if ($isUnit === true) {
+                $hasUnit = true;
+            } elseif ($isUnit === false) {
+                $hasNonUnit = true;
+            }
+
+            if ($hasUnit && $hasNonUnit) {
+                break;
+            }
+        }
+
+        return ['has_unit' => $hasUnit, 'has_non_unit' => $hasNonUnit];
+    }
+
+    private function rentalDetailIsUnit($detail): ?bool
+    {
+        if ($detail->productCategory && $detail->productCategory->is_unit !== null) {
+            return (bool) $detail->productCategory->is_unit;
+        }
+
+        if ($detail->productType && $detail->productType->is_unit !== null) {
+            return (bool) $detail->productType->is_unit;
+        }
+
+        $product = $detail->masterProduct;
+        if ($product) {
+            if ($product->productCategory && $product->productCategory->is_unit !== null) {
+                return (bool) $product->productCategory->is_unit;
+            }
+
+            if ($product->productType && $product->productType->is_unit !== null) {
+                return (bool) $product->productType->is_unit;
+            }
+        }
+
+        $allowedProduct = $detail->allowedProducts->first();
+        if ($allowedProduct) {
+            if ($allowedProduct->productCategory && $allowedProduct->productCategory->is_unit !== null) {
+                return (bool) $allowedProduct->productCategory->is_unit;
+            }
+
+            if ($allowedProduct->productType && $allowedProduct->productType->is_unit !== null) {
+                return (bool) $allowedProduct->productType->is_unit;
+            }
+        }
+
+        return null;
+    }
+
     private function createJobSchedulesFromJobAdvice(JobAdvice $jobAdvice)
     {
         try {
@@ -1794,14 +1939,24 @@ class JobAdviceController extends Controller
                     'quotation.customer', 
                     'quotation.prospect',
                     'rooms.quotationRoom.room.building', // MOM9: Load quotation room with building (for Study Case A)
-                    'rooms.rentalProduct.rentalDetails.masterProduct.productType' // Unit detection
+                    'rooms.rentalProduct.rentalDetails.productCategory',
+                    'rooms.rentalProduct.rentalDetails.productType',
+                    'rooms.rentalProduct.rentalDetails.masterProduct.productCategory',
+                    'rooms.rentalProduct.rentalDetails.masterProduct.productType',
+                    'rooms.rentalProduct.rentalDetails.allowedProducts.productCategory',
+                    'rooms.rentalProduct.rentalDetails.allowedProducts.productType',
                 ]);
             } else {
                 // Load from contract (existing flow)
                 $jobAdvice->load([
                     'rooms.contractRoom.room.building', // STUDY CASE A: Load building for each room
                     'contract.quotation.survey.building',
-                    'rooms.rentalProduct.rentalDetails.masterProduct.productType' // Unit detection
+                    'rooms.rentalProduct.rentalDetails.productCategory',
+                    'rooms.rentalProduct.rentalDetails.productType',
+                    'rooms.rentalProduct.rentalDetails.masterProduct.productCategory',
+                    'rooms.rentalProduct.rentalDetails.masterProduct.productType',
+                    'rooms.rentalProduct.rentalDetails.allowedProducts.productCategory',
+                    'rooms.rentalProduct.rentalDetails.allowedProducts.productType',
                 ]);
             }
             
@@ -2055,58 +2210,11 @@ class JobAdviceController extends Controller
                                 foreach ($roomsByUniqueRoom as $roomKey => $roomsInGroup) {
                                     // Use first room in group as representative for room info
                                     $jaRoom = $roomsInGroup->first();
-                                    $allRoomsInGroup = $roomsInGroup; // Keep all for linking
                                     $roomNote = "\n[Room: {$jaRoom->room_name}] (Rentals: {$roomsInGroup->count()})";
-                                    
-                                    // MOM15: Determine Rental Type
-                                    $rentalType = $jaRoom->rentalProduct->rental_type ?? 'unit_refill';
-                                    
-                                    // REQ 1: Deep check for Unit + Refill composition
-                                    $hasUnitItems = false;
-                                    $hasNonUnitItems = false;
-                                    
-                                    if ($jaRoom->rentalProduct && $jaRoom->rentalProduct->rentalDetails) {
-                                        foreach ($jaRoom->rentalProduct->rentalDetails as $detail) {
-                                            // Check product type is_unit
-                                            if ($detail->product && $detail->product->productType) {
-                                                if ($detail->product->productType->is_unit) {
-                                                    $hasUnitItems = true;
-                                                } else {
-                                                    $hasNonUnitItems = true;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    
-                                    // Default logic based on declared rental_type
-                                    $shouldCreateInstall = ($rentalType !== 'refill_only');
-                                    $serviceJobType = ($rentalType === 'unit_only') ? 'service_first' : 'service_first';
-                                    $serviceDoesNotNeedMaterial = ($rentalType === 'unit_only');
-                                    
-                                    // REQ 1: Override based on actual composition if rental_type is 'unit_refill'
-                                    if ($rentalType === 'unit_refill') {
-                                        if ($hasUnitItems && !$hasNonUnitItems) {
-                                            // Case 1a: Unit Only content -> IR + CHK
-                                            $shouldCreateInstall = true;
-                                            $serviceJobType = 'service_first'; // Unit-only follow-up service, no material needed.
-                                            $serviceDoesNotNeedMaterial = true;
-                                            \Log::info("Unit+Refill with Unit Only: Switching to IR + CHK for room {$jaRoom->room_name}");
-                                        } elseif (!$hasUnitItems && $hasNonUnitItems) {
-                                            // Case 1b: Non-Unit Only content -> CSR Only (Skip IR)
-                                            $shouldCreateInstall = false; // Skip IR
-                                            $serviceJobType = 'service_routine'; // Treat as routine service? User said "generate job service saja atau CSR"
-                                            // Or keep 'service_first' if it's the first one? Let's use service_first for consistency of first job.
-                                            // But strictly "service routine" implies standard CSR.
-                                            $serviceJobType = 'service_first'; 
-                                            $serviceDoesNotNeedMaterial = false;
-                                            \Log::info("Unit+Refill with Non-Unit Only: Switching to CSR Only for room {$jaRoom->room_name}");
-                                        }
-                                        // Case 1c: Mixed -> Standard IR + CSR (Default)
-                                    }
-                                    
-                                    if (!$shouldCreateInstall) {
-                                        \Log::info("Refill Only (or Non-Unit content): Skipping Install Job for room {$jaRoom->room_name}");
-                                    }
+                                    $flowRooms = $this->splitRoomsByRentalJobFlow($roomsInGroup);
+                                    $installRooms = $flowRooms['install'];
+                                    $serviceRooms = $flowRooms['service'];
+                                    $checkRooms = $flowRooms['check'];
 
                                     $roomAlreadyOnWall = $this->jobAdviceRoomHasActiveUnitOnWall($jobAdvice, $jaRoom, $groupBuilding);
 
@@ -2115,30 +2223,29 @@ class JobAdviceController extends Controller
                                     // This rule must NOT apply to Install Free itself: an Install Free JA should
                                     // always generate IF and let material assignment follow the selected rental.
                                     if (!$isInstallFree && $roomAlreadyOnWall) {
-                                        $shouldCreateInstall = false;
-                                        $serviceJobType = 'service_first';
+                                        $installRooms = collect();
                                         \Log::info("Room {$jaRoom->room_name} already has active Unit On Wall. Skipping Install and creating first service/check instead.");
                                     }
 
-                                    if ($shouldCreateInstall) {
+                                    if ($installRooms->isNotEmpty()) {
                                         // Determine JS Type: 'install' or 'install_free'
                                         $installType = $isInstallFree ? 'install_free' : 'install';
                                         
                                         $installJobs = $this->createJobSchedulesPerRoom(
                                             $jobAdvice,
-                                            $roomsInGroup, // Pass all rentals for materials
+                                            $installRooms,
                                             $installType,
                                             $groupBuilding,
-                                            $roomNote
+                                            "\n[Room: {$jaRoom->room_name}] (Install rentals: {$installRooms->count()})"
                                         );
                                         
                                         if ($installJobs->isNotEmpty()) {
                                             $jobsCreated[] = 'install';
                                             $totalJobsCreated += $installJobs->count();
                                             
-                                            // Link ALL rooms in group to the same job schedule
+                                            // Link unit-bearing rentals to the install job schedule.
                                             $installJob = $installJobs->first();
-                                            foreach ($roomsInGroup as $roomToLink) {
+                                            foreach ($installRooms as $roomToLink) {
                                                 $roomToLink->update(['install_job_schedule_id' => $installJob->id]);
                                             }
                                             
@@ -2147,17 +2254,70 @@ class JobAdviceController extends Controller
                                     }
     
                                     // Logic 1.b: Service/Check Logic
+                                    // Unit-only rentals continue as Check jobs, while refill-only
+                                    // rentals continue as Service/Refill jobs.
+                                    if (!$isInstallFree && $checkRooms->isNotEmpty()) {
+                                        $checkJobs = $this->createJobSchedulesPerRoom(
+                                            $jobAdvice,
+                                            $checkRooms,
+                                            'check',
+                                            $groupBuilding,
+                                            "\n[Room: {$jaRoom->room_name}] (Check rentals: {$checkRooms->count()})",
+                                            1,
+                                            true
+                                        );
+
+                                        if ($checkJobs->isNotEmpty()) {
+                                            $jobsCreated[] = 'check';
+                                            $totalJobsCreated += $checkJobs->count();
+                                            $createdServiceSchedules = $createdServiceSchedules->merge($checkJobs);
+
+                                            $checkJob = $checkJobs->first();
+                                            foreach ($checkRooms as $roomToLink) {
+                                                $roomToLink->update([
+                                                    'service_job_schedule_id' => $checkJob->id,
+                                                    'rental_has_service' => false,
+                                                    'updated_by' => Auth::id(),
+                                                ]);
+                                            }
+
+                                            \Log::info("Created Check JobSchedule for room '{$jaRoom->room_name}' with {$checkRooms->count()} unit-only rental(s)");
+                                        }
+                                    }
+
+                                    if (!$isInstallFree && $serviceRooms->isNotEmpty()) {
+                                        $serviceJobs = $this->createJobSchedulesPerRoom(
+                                            $jobAdvice,
+                                            $serviceRooms,
+                                            'service_first',
+                                            $groupBuilding,
+                                            "\n[Room: {$jaRoom->room_name}] (Service rentals: {$serviceRooms->count()})",
+                                            1,
+                                            false
+                                        );
+
+                                        if ($serviceJobs->isNotEmpty()) {
+                                            $jobsCreated[] = 'service';
+                                            $totalJobsCreated += $serviceJobs->count();
+                                            $createdServiceSchedules = $createdServiceSchedules->merge($serviceJobs);
+
+                                            $serviceJob = $serviceJobs->first();
+                                            foreach ($serviceRooms as $roomToLink) {
+                                                $roomToLink->update([
+                                                    'service_job_schedule_id' => $serviceJob->id,
+                                                    'rental_has_service' => true,
+                                                    'updated_by' => Auth::id(),
+                                                ]);
+                                            }
+
+                                            \Log::info("Created First Service JobSchedule for room '{$jaRoom->room_name}' with {$serviceRooms->count()} refill rental(s)");
+                                        }
+                                    }
+
+                                    // Legacy block disabled; rental splitting above owns Check vs Service creation.
                                     // Standard Install OR Refill Only ==> Create Service (or Check)
                                     // OR if we skipped install because of Non-Unit Only content in Unit+Refill mode
-                                    $shouldCreateService = !$isInstallFree
-                                        && (
-                                            ($rentalType === 'refill_only')
-                                            || $isInstall
-                                            || $roomAlreadyOnWall
-                                            || (!$shouldCreateInstall && $rentalType === 'unit_refill')
-                                        );
-                                    
-                                    if ($shouldCreateService) {
+                                    if (false) {
                                         // serviceJobType is already determined above
                                         
                                         $serviceJobs = $this->createJobSchedulesPerRoom(
@@ -2391,7 +2551,12 @@ class JobAdviceController extends Controller
             'rooms.contractRoom.room.building',
             'rooms.quotationRoom.room.building',
             'rooms.rentalProduct.serviceFrequency',
+            'rooms.rentalProduct.rentalDetails.productCategory',
+            'rooms.rentalProduct.rentalDetails.productType',
+            'rooms.rentalProduct.rentalDetails.masterProduct.productCategory',
             'rooms.rentalProduct.rentalDetails.masterProduct.productType',
+            'rooms.rentalProduct.rentalDetails.allowedProducts.productCategory',
+            'rooms.rentalProduct.rentalDetails.allowedProducts.productType',
         ]);
 
         if (!$jobAdvice->contract_id || $jobAdvice->rooms->isEmpty()) {
