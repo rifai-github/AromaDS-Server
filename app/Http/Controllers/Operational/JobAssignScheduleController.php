@@ -1621,6 +1621,17 @@ class JobAssignScheduleController extends Controller
                     ]
                 );
 
+                $hasMaterialItemsForAssignment = \App\Models\MaterialIssueItem::where('material_issue_id', $materialIssue->id)
+                    ->where('job_assign_schedule_id', $jobAssignSchedule->id)
+                    ->exists();
+
+                if ($hasMaterialItemsForAssignment && in_array($jobSchedule->status, ['assign_material', 'assign_team', 'scheduled', 'new_job'], true)) {
+                    $jobSchedule->update([
+                        'status' => 'barang_dipersiapkan',
+                        'updated_by' => Auth::id(),
+                    ]);
+                }
+
                 
             } catch (\Exception $e) {
                 \Log::error("❌ Failed to create Material Issue: " . $e->getMessage());

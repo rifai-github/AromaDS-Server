@@ -774,7 +774,7 @@ class JobAssignMaterialIssueController extends Controller
                 
                 // Check if status allows update to 'material_issue'
                 // Expanded checking to be safe
-                if (in_array($jobSchedule->status, ['assign_team', 'scheduled', 'new_job'])) {
+                if (in_array($jobSchedule->status, ['assign_material', 'assign_team', 'scheduled', 'new_job'], true)) {
                     $jobSchedule->update([
                         'status' => 'barang_dipersiapkan', // Changed from material_issue (invalid enum)
                         'updated_by' => Auth::id()

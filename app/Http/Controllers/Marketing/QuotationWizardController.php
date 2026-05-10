@@ -27,34 +27,16 @@ class QuotationWizardController extends Controller
 {
     private function surveySelectionDuplicateKey(Survey $survey): string
     {
-        $rooms = $survey->surveyDetails
-            ->map(function ($detail) {
-                $specs = is_array($detail->specifications)
-                    ? $detail->specifications
-                    : (json_decode((string) $detail->specifications, true) ?: []);
-
-                return [
-                    'room_name' => strtolower(trim((string) $detail->room_name)),
-                    'room_type' => strtolower(trim((string) $detail->room_type)),
-                    'floor' => strtolower(trim((string) ($specs['floor'] ?? ''))),
-                    'intensity' => strtolower(trim((string) ($specs['intensity'] ?? ''))),
-                    'installation_type' => strtolower(trim((string) ($specs['installation_type'] ?? ''))),
-                    'qty' => (int) ($specs['qty'] ?? $detail->quantity_needed ?? 0),
-                    'length' => (string) ($specs['length'] ?? ''),
-                    'width' => (string) ($specs['width'] ?? ''),
-                    'height' => (string) ($specs['height'] ?? ''),
-                    'remark' => strtolower(trim((string) ($specs['remark'] ?? ''))),
-                ];
-            })
-            ->sortBy(fn ($room) => implode('|', $room))
-            ->values()
-            ->all();
+        $customerName = strtolower(trim((string) ($survey->customer?->name ?? $survey->customer_id)));
+        $buildingName = strtolower(trim((string) (
+            $survey->building?->name
+            ?? $survey->building?->nama_gedung
+            ?? $survey->building_id
+        )));
 
         return implode('|', [
-            (string) $survey->customer_id,
-            (string) $survey->building_id,
-            optional($survey->survey_date)->format('Y-m-d') ?? (string) $survey->survey_date,
-            sha1(json_encode($rooms)),
+            $customerName,
+            $buildingName,
         ]);
     }
 

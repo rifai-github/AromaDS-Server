@@ -96,12 +96,45 @@ class QuotationSurveySelectionDedupTest extends TestCase
         $this->assertSame('JKT-SR/26-05/0006', $payload[0]['survey_number']);
     }
 
-    private function insertSurvey(int $id, string $number, $createdAt): void
+    public function test_survey_selection_hides_duplicate_display_rows_even_when_customer_ids_differ(): void
+    {
+        DB::table('customers')->insert([
+            'id' => 2,
+            'name' => 'Hotel JKT45',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->insertSurvey(10, 'JKT-SR/26-05/0005', now()->subMinutes(2), customerId: 1, roomName: 'Lobby');
+        $this->insertSurvey(11, 'JKT-SR/26-05/0006', now()->subMinute(), customerId: 2, roomName: 'Lantai 2');
+        $this->insertSurvey(12, 'JKT-SR/26-05/0008', now(), customerId: 1, roomName: 'Lantai 1 Lobby');
+
+        $controller = app(QuotationWizardController::class);
+        $response = $controller->getSurveysByCustomer(Request::create(
+            '/marketing/quotations/wizard/get-surveys-by-customer',
+            'GET',
+            ['marketing_id' => 7]
+        ));
+
+        $payload = $response->getData(true);
+
+        $this->assertCount(1, $payload);
+        $this->assertSame(12, $payload[0]['id']);
+        $this->assertSame('JKT-SR/26-05/0008', $payload[0]['survey_number']);
+    }
+
+    private function insertSurvey(
+        int $id,
+        string $number,
+        $createdAt,
+        int $customerId = 1,
+        string $roomName = 'Lobby'
+    ): void
     {
         DB::table('surveys')->insert([
             'id' => $id,
             'survey_number' => $number,
-            'customer_id' => 1,
+            'customer_id' => $customerId,
             'building_id' => 1,
             'marketing_id' => 7,
             'survey_date' => '2026-05-10',
@@ -112,7 +145,7 @@ class QuotationSurveySelectionDedupTest extends TestCase
 
         DB::table('survey_details')->insert([
             'survey_id' => $id,
-            'room_name' => 'Lobby',
+            'room_name' => $roomName,
             'room_type' => 'Office',
             'quantity_needed' => 1,
             'specifications' => json_encode([
