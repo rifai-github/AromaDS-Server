@@ -472,27 +472,37 @@
     }
 
     function onScanSuccess(decodedText, decodedResult) {
-        if (!scannedSNs.includes(decodedText)) {
-            const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
-            audio.play().catch(e => {});
-            scannedSNs.push(decodedText);
-            updateScannedListUI();
-        }
+        const sn = String(decodedText || '').trim();
+        if (!sn) return;
+
+        const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+        audio.play().catch(e => {});
+        scannedSNs.push(sn);
+        updateScannedListUI();
     }
 
     function addManualSN() {
         const input = document.getElementById('manualInput');
         const sn = input.value.trim();
-        if (sn && !scannedSNs.includes(sn)) {
+        if (sn) {
             scannedSNs.push(sn);
             updateScannedListUI();
             input.value = '';
         }
     }
 
-    function removeSN(sn) {
-        scannedSNs = scannedSNs.filter(s => s !== sn);
+    function removeSNAt(index) {
+        scannedSNs.splice(index, 1);
         updateScannedListUI();
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 
     function updateScannedListUI() {
@@ -501,10 +511,10 @@
         if (!list || !countSpan) return;
         
         list.innerHTML = '';
-        scannedSNs.forEach(sn => {
+        scannedSNs.forEach((sn, index) => {
             const li = document.createElement('li');
             li.className = 'list-group-item d-flex justify-content-between align-items-center py-2 px-3';
-            li.innerHTML = `${sn} <button class="btn btn-danger btn-sm py-0 px-2" onclick="removeSN('${sn}')">&times;</button>`;
+            li.innerHTML = `${escapeHtml(sn)} <button class="btn btn-danger btn-sm py-0 px-2" onclick="removeSNAt(${index})">&times;</button>`;
             list.appendChild(li);
         });
         countSpan.textContent = scannedSNs.length;

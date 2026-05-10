@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Warehouse\StockOpnameController;
 use App\Models\StockOpname;
+use App\Models\StockOpnameDetail;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -229,6 +231,31 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
         $this->assertStringContainsString('System Stock', $html);
         $this->assertStringContainsString('Variance', $html);
         $this->assertMatchesRegularExpression('/>\s*42\s*<\/td>/', $html);
+    }
+
+    public function test_scanned_serial_numbers_preserve_duplicate_batch_values(): void
+    {
+        Auth::login(User::findOrFail(10));
+
+        $this->renderStockOpname('in-progress');
+
+        $request = Request::create('/warehouse/stock-opnames/details/1/update', 'POST', [
+            'scanned_serial_numbers' => ['BATCH-001', 'BATCH-001', 'BATCH-002'],
+        ]);
+
+        $response = app(StockOpnameController::class)
+            ->updateDetail($request, StockOpnameDetail::where('stock_opname_id', 20)->firstOrFail());
+
+        $this->assertSame(200, $response->getStatusCode());
+
+        $stored = json_decode(
+            DB::table('stock_opname_details')
+                ->where('stock_opname_id', 20)
+                ->value('scanned_serial_numbers'),
+            true
+        );
+
+        $this->assertSame(['BATCH-001', 'BATCH-001', 'BATCH-002'], $stored);
     }
 
     private function renderStockOpname(string $status): string
