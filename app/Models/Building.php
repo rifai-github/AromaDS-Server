@@ -70,6 +70,11 @@ class Building extends Model
         return $this->belongsTo(City::class);
     }
 
+    public function branch()
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
     public function district()
     {
         return $this->belongsTo(District::class);
