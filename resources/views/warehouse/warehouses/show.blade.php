@@ -605,23 +605,25 @@
                                 <td>
                                     <strong>{{ number_format($warehouseProduct->quantity, 0) }}</strong>
                                 </td>
-                                <td>{{ number_format($warehouseProduct->masterProduct->minimum_stock ?? 0, 0) }}</td>
-                                <td>{{ number_format($warehouseProduct->masterProduct->maximum_stock ?? 0, 0) }}</td>
+                                <td>{{ number_format($warehouseProduct->minimum_stock ?? 0, 0) }}</td>
+                                <td>{{ number_format($warehouseProduct->maximum_stock ?? 0, 0) }}</td>
                                 <td>
                                     @php
                                         $status = 'normal';
                                         $statusClass = 'badge-info';
                                         $statusText = 'Normal';
+                                        $minimumStock = (int) ($warehouseProduct->minimum_stock ?? 0);
+                                        $maximumStock = (int) ($warehouseProduct->maximum_stock ?? 0);
                                         
                                         if ($warehouseProduct->quantity <= 0) {
                                             $status = 'out_of_stock';
                                             $statusClass = 'badge-danger';
                                             $statusText = 'Out of Stock';
-                                        } elseif ($warehouseProduct->quantity <= ($warehouseProduct->masterProduct->minimum_stock ?? 0)) {
+                                        } elseif ($minimumStock > 0 && $warehouseProduct->quantity <= $minimumStock) {
                                             $status = 'low_stock';
                                             $statusClass = 'badge-warning';
                                             $statusText = 'Low Stock';
-                                        } elseif (($warehouseProduct->masterProduct->maximum_stock ?? 0) && $warehouseProduct->quantity > $warehouseProduct->masterProduct->maximum_stock) {
+                                        } elseif ($maximumStock > 0 && $warehouseProduct->quantity > $maximumStock) {
                                             $status = 'over_stock';
                                             $statusClass = 'badge-warning';
                                             $statusText = 'Over Stock';
