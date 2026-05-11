@@ -1012,7 +1012,7 @@
                         <!-- 8. Building Name -->
                         <th data-column="building.nama_gedung">Building Name</th>
                         
-                        <!-- 9. Branch Service (Building City) -->
+                        <!-- 9. Branch Service -->
                         <th data-column="building.city.name">Branch Service</th>
                         
                         <!-- 10. P.Service -->
@@ -1135,13 +1135,8 @@
                             }
                         }
                         
-                        // Branch Service follows the job building city, not the contract branch.
-                        $branchService = $job->building?->city?->name
-                                         ?? $job->building?->branch?->city?->name
-                                         ?? $job->building?->branch?->name
-                                         ?? $job->building?->district?->name
-                                         ?? $job->district
-                                         ?? '-';
+                        // Branch Service follows the registered service branch for the building city.
+                        $branchService = \App\Services\OperationalAreaService::getServiceBranchLabelForBuilding($job->building);
                         
                         // Logic for P.Invoice (From Quotation)
                         $pInvoice = $job->invoice_period ?? '-';

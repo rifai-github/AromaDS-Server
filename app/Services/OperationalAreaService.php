@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\OperationalArea;
 use App\Models\Building;
+use App\Models\Branch;
 
 /**
  * Service for Operational Area validation
@@ -11,6 +12,8 @@ use App\Models\Building;
  */
 class OperationalAreaService
 {
+    private static array $serviceBranchByCity = [];
+
     /**
      * Check if a city is registered in any operational area
      *
@@ -51,6 +54,88 @@ class OperationalAreaService
             ->first();
             
         return $operationalArea?->branch;
+    }
+
+    /**
+     * Resolve service branch for job scheduling from a building city.
+     * Priority: exact branch city, operational area branch, then explicit building branch fallback.
+     */
+    public static function resolveServiceBranchForBuilding(?Building $building): ?Branch
+    {
+        if (!$building) {
+            return null;
+        }
+
+        $branch = self::resolveServiceBranchForCity($building->city_id);
+
+        if ($branch) {
+            return $branch;
+        }
+
+        $fallbackBranch = $building->relationLoaded('branch')
+            ? $building->branch
+            : $building->branch()->first();
+
+        if ($fallbackBranch && !$fallbackBranch->is_active) {
+            return null;
+        }
+
+        return $fallbackBranch;
+    }
+
+    /**
+     * Resolve service branch for a city using registered branch data.
+     */
+    public static function resolveServiceBranchForCity(?int $cityId): ?Branch
+    {
+        if (!$cityId) {
+            return null;
+        }
+
+        if (array_key_exists($cityId, self::$serviceBranchByCity)) {
+            return self::$serviceBranchByCity[$cityId];
+        }
+
+        $branch = Branch::where('city_id', $cityId)
+            ->where('is_active', true)
+            ->orderByDesc('has_warehouse')
+            ->orderBy('id')
+            ->first();
+
+        if (!$branch) {
+            $branch = OperationalArea::where('city_id', $cityId)
+                ->whereNull('delete_at')
+                ->where('is_active', true)
+                ->whereHas('branch', function ($query) {
+                    $query->where('is_active', true);
+                })
+                ->with('branch')
+                ->orderBy('id')
+                ->first()?->branch;
+        }
+
+        self::$serviceBranchByCity[$cityId] = $branch;
+
+        return $branch;
+    }
+
+    public static function getServiceBranchLabelForBuilding(?Building $building): string
+    {
+        if (!$building) {
+            return '-';
+        }
+
+        $branch = self::resolveServiceBranchForBuilding($building);
+        $label = $branch?->code ?: $branch?->name;
+
+        if (!$label) {
+            $label = $building->city?->name
+                ?? $building->branch?->name
+                ?? $building->district?->name
+                ?? '-';
+        }
+
+        return $label;
     }
     
     /**

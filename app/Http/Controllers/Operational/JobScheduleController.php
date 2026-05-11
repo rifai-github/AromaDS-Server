@@ -16,6 +16,7 @@ use App\Models\Company;
 use App\Models\Contract;
 use App\Models\Building;
 use App\Models\Branch;
+use App\Models\OperationalArea;
 use App\Models\User;
 use App\Models\Quotation;
 use App\Models\Warehouse;
@@ -204,6 +205,22 @@ class JobScheduleController extends Controller
             $branchCityIds = empty($branchIds)
                 ? []
                 : Branch::whereIn('id', $branchIds)->pluck('city_id')->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+            $operationalAreaCityIds = empty($branchIds)
+                ? []
+                : OperationalArea::whereIn('branch_id', $branchIds)
+                    ->where('is_active', true)
+                    ->whereNull('delete_at')
+                    ->pluck('city_id')
+                    ->filter()
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values()
+                    ->all();
+            $branchCityIds = collect($branchCityIds)
+                ->merge($operationalAreaCityIds)
+                ->unique()
+                ->values()
+                ->all();
             
             if ($viewMode === 'room') {
                 $query->whereHas('jobSchedule', function($q) use ($accessibleUserIds, $userTeamIds, $branchIds, $branchCityIds) {
@@ -387,22 +404,39 @@ class JobScheduleController extends Controller
                     continue; 
                 }
 
-                // Branch Service follows the job building city, not the contract/quotation branch.
+                // Branch Service resolves the job building city to the registered service branch.
                 if (in_array($normalizedKey, ['building.city.name', 'building.district.name'], true) || in_array($key, ['building__city__name', 'building__district__name'], true)) {
                     if ($viewMode === 'room') {
                         $query->where(function($q) use ($value) {
-                            $q->whereHas('jobSchedule.building.city', function($sub) use ($value) {
-                                $sub->where('name', 'like', "%{$value}%");
-                            })
-                            ->orWhereHas('jobSchedule.building.branch.city', function($sub) use ($value) {
-                                $sub->where('name', 'like', "%{$value}%");
-                            })
-                            ->orWhereHas('jobSchedule.building.branch', function($sub) use ($value) {
-                                $sub->where('name', 'like', "%{$value}%")
-                                    ->orWhere('code', 'like', "%{$value}%");
-                            })
-                            ->orWhereHas('jobSchedule.building.district', function($sub) use ($value) {
-                                $sub->where('name', 'like', "%{$value}%");
+                            $q->whereHas('jobSchedule.building', function($buildingQ) use ($value) {
+                                $buildingQ->whereHas('city.branches', function($branchQ) use ($value) {
+                                    $branchQ->where('is_active', true)
+                                        ->where(function ($branchSearchQ) use ($value) {
+                                            $branchSearchQ->where('code', 'like', "%{$value}%")
+                                                ->orWhere('name', 'like', "%{$value}%");
+                                        });
+                                })
+                                ->orWhereIn('city_id', OperationalArea::query()
+                                    ->select('city_id')
+                                    ->where('is_active', true)
+                                    ->whereNull('delete_at')
+                                    ->whereHas('branch', function ($branchQ) use ($value) {
+                                        $branchQ->where('is_active', true)
+                                            ->where(function ($branchSearchQ) use ($value) {
+                                                $branchSearchQ->where('code', 'like', "%{$value}%")
+                                                    ->orWhere('name', 'like', "%{$value}%");
+                                            });
+                                    }))
+                                ->orWhereHas('branch', function($branchQ) use ($value) {
+                                    $branchQ->where('name', 'like', "%{$value}%")
+                                        ->orWhere('code', 'like', "%{$value}%");
+                                })
+                                ->orWhereHas('city', function($cityQ) use ($value) {
+                                    $cityQ->where('name', 'like', "%{$value}%");
+                                })
+                                ->orWhereHas('district', function($districtQ) use ($value) {
+                                    $districtQ->where('name', 'like', "%{$value}%");
+                                });
                             })
                             ->orWhereHas('jobSchedule', function($jobQ) use ($value) {
                                 $jobQ->where('district', 'like', "%{$value}%");
@@ -410,18 +444,35 @@ class JobScheduleController extends Controller
                         });
                     } else {
                         $query->where(function($q) use ($value) {
-                            $q->whereHas('building.city', function($sub) use ($value) {
-                                $sub->where('name', 'like', "%{$value}%");
-                            })
-                            ->orWhereHas('building.branch.city', function($sub) use ($value) {
-                                $sub->where('name', 'like', "%{$value}%");
-                            })
-                            ->orWhereHas('building.branch', function($sub) use ($value) {
-                                $sub->where('name', 'like', "%{$value}%")
-                                    ->orWhere('code', 'like', "%{$value}%");
-                            })
-                            ->orWhereHas('building.district', function($sub) use ($value) {
-                                $sub->where('name', 'like', "%{$value}%");
+                            $q->whereHas('building', function($buildingQ) use ($value) {
+                                $buildingQ->whereHas('city.branches', function($branchQ) use ($value) {
+                                    $branchQ->where('is_active', true)
+                                        ->where(function ($branchSearchQ) use ($value) {
+                                            $branchSearchQ->where('code', 'like', "%{$value}%")
+                                                ->orWhere('name', 'like', "%{$value}%");
+                                        });
+                                })
+                                ->orWhereIn('city_id', OperationalArea::query()
+                                    ->select('city_id')
+                                    ->where('is_active', true)
+                                    ->whereNull('delete_at')
+                                    ->whereHas('branch', function ($branchQ) use ($value) {
+                                        $branchQ->where('is_active', true)
+                                            ->where(function ($branchSearchQ) use ($value) {
+                                                $branchSearchQ->where('code', 'like', "%{$value}%")
+                                                    ->orWhere('name', 'like', "%{$value}%");
+                                            });
+                                    }))
+                                ->orWhereHas('branch', function($branchQ) use ($value) {
+                                    $branchQ->where('name', 'like', "%{$value}%")
+                                        ->orWhere('code', 'like', "%{$value}%");
+                                })
+                                ->orWhereHas('city', function($cityQ) use ($value) {
+                                    $cityQ->where('name', 'like', "%{$value}%");
+                                })
+                                ->orWhereHas('district', function($districtQ) use ($value) {
+                                    $districtQ->where('name', 'like', "%{$value}%");
+                                });
                             })
                             ->orWhere('district', 'like', "%{$value}%");
                         });
