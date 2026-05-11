@@ -4,6 +4,9 @@
 @section('breadcrumb', 'Home / Warehouse / Stock Opnames')
 
 @section('content')
+@php
+    $canDeleteStockOpname = auth()->user()->hasPermission('warehouse.stock-opnames.delete');
+@endphp
 <style>
     /* Global overflow control */
     html, body {
@@ -722,6 +725,7 @@
         <!-- Controls Row -->
         <div class="flex flex-row justify-between items-center w-full p-4 bg-white">
             <div class="flex flex-row justify-start items-center w-full">
+                @if($canDeleteStockOpname)
                 <div class="flex flex-row justify-start items-center w-auto">
                     <div class="flex flex-row items-center w-auto">
                         <input type="checkbox" id="selectAll" class="w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer">
@@ -736,6 +740,7 @@
                     <i class="fas fa-trash"></i>
                     <span>Delete</span>
                 </button>
+                @endif
             </div>
             
         </div>
@@ -746,9 +751,11 @@
                 <!-- Table Header -->
                 <thead>
                     <tr>
+                        @if($canDeleteStockOpname)
                         <th data-no-filter>
                             <input type="checkbox" id="headerSelectAll" class="w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer">
                         </th>
+                        @endif
                         <th data-column="opname_no">Opname Number</th>
                         <th data-column="branch__name">Branch</th>
                         <th data-column="warehouse__name">Warehouse</th>
@@ -765,9 +772,11 @@
                 <tbody>
                     @forelse($stockOpnames ?? [] as $opname)
                     <tr data-id="{{ $opname->id }}" onclick="window.location.href='{{ route('warehouse.stock-opnames.show', $opname->id) }}'" class="cursor-pointer hover:bg-gray-50">
+                        @if($canDeleteStockOpname)
                         <td class="text-center">
                             <input type="checkbox" class="row-checkbox w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer" value="{{ $opname->id }}" onclick="event.stopPropagation()">
                         </td>
+                        @endif
                         <td class="font-medium">{{ $opname->opname_no ?? '-' }}</td>
                         <td>{{ $opname->branch->name ?? '-' }}</td>
                         <td>{{ $opname->warehouse->name ?? '-' }}</td>
@@ -785,7 +794,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="12" class="p-8 text-center">
+                        <td colspan="{{ $canDeleteStockOpname ? 12 : 11 }}" class="p-8 text-center">
                             <div class="text-gray-600">
                                 <i class="fas fa-inbox text-4xl mb-3"></i>
                                 <p class="text-lg">No stock opnames found</p>
@@ -929,23 +938,36 @@
 // Global variables
 let selectedIdsForRetry = [];
 let successModalTimer = null;
+const canDeleteStockOpname = @json($canDeleteStockOpname);
 
 // Select All functionality
-document.getElementById('selectAll').addEventListener('change', function() {
-    const checkboxes = document.querySelectorAll('.row-checkbox');
-    checkboxes.forEach(checkbox => {
-        checkbox.checked = this.checked;
+const selectAll = document.getElementById('selectAll');
+if (selectAll) {
+    selectAll.addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('.row-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = this.checked;
+        });
+        const headerSelectAll = document.getElementById('headerSelectAll');
+        if (headerSelectAll) {
+            headerSelectAll.checked = this.checked;
+        }
     });
-    document.getElementById('headerSelectAll').checked = this.checked;
-});
+}
 
-document.getElementById('headerSelectAll').addEventListener('change', function() {
-    const checkboxes = document.querySelectorAll('.row-checkbox');
-    checkboxes.forEach(checkbox => {
-        checkbox.checked = this.checked;
+const headerSelectAll = document.getElementById('headerSelectAll');
+if (headerSelectAll) {
+    headerSelectAll.addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('.row-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = this.checked;
+        });
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) {
+            selectAll.checked = this.checked;
+        }
     });
-    document.getElementById('selectAll').checked = this.checked;
-});
+}
 
 // Individual checkbox functionality
 document.addEventListener('change', function(e) {
@@ -953,6 +975,9 @@ document.addEventListener('change', function(e) {
         const checkboxes = document.querySelectorAll('.row-checkbox');
         const selectAllCheckbox = document.getElementById('selectAll');
         const headerSelectAllCheckbox = document.getElementById('headerSelectAll');
+        if (!selectAllCheckbox || !headerSelectAllCheckbox) {
+            return;
+        }
         
         const allChecked = Array.from(checkboxes).every(checkbox => checkbox.checked);
         const anyChecked = Array.from(checkboxes).some(checkbox => checkbox.checked);
@@ -1315,33 +1340,65 @@ function closeDeleteModal() {
     document.body.style.overflow = 'auto';
 }
 
+async function parseJsonResponse(response) {
+    const contentType = response.headers.get('content-type') || '';
+
+    if (contentType.includes('application/json')) {
+        return response.json();
+    }
+
+    const text = await response.text();
+    if (response.status === 403) {
+        return { success: false, message: 'Anda tidak memiliki akses untuk menghapus/menyembunyikan stock opname.' };
+    }
+    if (response.status === 419) {
+        return { success: false, message: 'Sesi halaman sudah berakhir. Silakan refresh halaman lalu coba lagi.' };
+    }
+
+    return {
+        success: false,
+        message: text ? `Stock opname belum berhasil disembunyikan. Server mengembalikan status ${response.status}.` : 'Stock opname belum berhasil disembunyikan.'
+    };
+}
+
 function confirmDelete() {
     closeDeleteModal();
+
+    if (!canDeleteStockOpname) {
+        showErrorModal('Anda tidak memiliki akses untuk menghapus/menyembunyikan stock opname.');
+        return;
+    }
     
     fetch('/warehouse/stock-opnames/bulk-delete', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'Accept': 'application/json',
             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
         },
         body: JSON.stringify({ ids: selectedIdsForRetry })
     })
-    .then(response => response.json())
+    .then(response => parseJsonResponse(response))
     .then(result => {
         if (result.success) {
             showSuccessModal(result.count);
         } else {
-            showErrorModal(result.message);
+            showErrorModal(result.message || 'Stock opname belum berhasil disembunyikan.');
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        showErrorModal('Terjadi kesalahan jaringan.');
+        showErrorModal('Koneksi ke server bermasalah atau response tidak bisa dibaca. Silakan refresh halaman lalu coba lagi.');
     });
 }
 
 // Bulk operations
 function deleteSelected() {
+    if (!canDeleteStockOpname) {
+        showErrorModal('Anda tidak memiliki akses untuk menghapus/menyembunyikan stock opname.');
+        return;
+    }
+
     const checkboxes = document.querySelectorAll('.row-checkbox:checked');
     if (checkboxes.length === 0) {
         showWarningDialog('Pilih minimal satu stock opname yang ingin disembunyikan.');
