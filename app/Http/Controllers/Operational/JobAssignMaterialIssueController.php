@@ -4827,8 +4827,26 @@ class JobAssignMaterialIssueController extends Controller
 
             $item = \App\Models\MaterialIssueItem::with('product')->findOrFail($itemId);
             $newProduct = MasterProduct::findOrFail($request->product_id);
+            $productChanged = (int) $request->product_id !== (int) $item->product_id;
+            $rentalDetailId = $this->extractSavedItemComponentId($item->notes);
+            $isAllowedProductForRentalDetail = false;
 
-            if ((int) $request->product_id !== (int) $item->product_id && !$this->productsHaveSameBrandLine($item->product, $newProduct)) {
+            if ($rentalDetailId && $productChanged) {
+                $isAllowedProductForRentalDetail = DB::table('rental_detail_materials')
+                    ->where('rental_detail_id', $rentalDetailId)
+                    ->where('master_product_id', $request->product_id)
+                    ->where('is_selected', true)
+                    ->exists();
+
+                if (!$isAllowedProductForRentalDetail) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Material ini tidak termasuk daftar material yang dipilih untuk detail rental tersebut.'
+                    ], 422);
+                }
+            }
+
+            if ($productChanged && !$isAllowedProductForRentalDetail && !$this->productsHaveSameBrandLine($item->product, $newProduct)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => sprintf(
@@ -4837,22 +4855,6 @@ class JobAssignMaterialIssueController extends Controller
                         $newProduct->brand_line ?: '-'
                     )
                 ], 422);
-            }
-
-            $rentalDetailId = $this->extractSavedItemComponentId($item->notes);
-            if ($rentalDetailId && (int) $request->product_id !== (int) $item->product_id) {
-                $isAllowedProduct = DB::table('rental_detail_materials')
-                    ->where('rental_detail_id', $rentalDetailId)
-                    ->where('master_product_id', $request->product_id)
-                    ->where('is_selected', true)
-                    ->exists();
-
-                if (!$isAllowedProduct) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Material ini tidak termasuk daftar material yang dipilih untuk detail rental tersebut.'
-                    ], 422);
-                }
             }
             
             // Allow changing material if:
