@@ -249,9 +249,17 @@ class JobController extends Controller
             'level' => 'info',
         ])->info('mobile_jobs_today_polled', [
             'user_id' => $user->id,
+            'user_name' => $user->name ?? $user->email ?? $user->username,
             'team_ids' => $userTeamIds,
             'raw_jobs_count' => $rawJobCount,
             'jobs_count' => $jobs->count(),
+            'job_numbers' => $jobs->pluck('job_number')->filter()->take(100)->values()->all(),
+            'filters' => [
+                'status' => $statusFilter,
+                'type' => $typeFilter,
+                'search' => $searchQuery,
+                'favorite_only' => (bool) $favoriteOnly,
+            ],
             'latest_job_updated_at' => $latestJobUpdatedAt?->toDateTimeString(),
             'latest_assignment_updated_at' => $latestAssignmentUpdatedAt?->toDateTimeString(),
             'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),

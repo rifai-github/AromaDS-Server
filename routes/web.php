@@ -239,6 +239,8 @@ Route::get('debug-transfer/{id}', function($id) {
 Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.logging', 'report.logging'])->group(function () {
     // Dashboard
     Route::get('/dashboard', [App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/internal/mobile-job-visibility-check', [App\Http\Controllers\Internal\MobileJobVisibilityController::class, 'index'])
+        ->name('internal.mobile-job-visibility-check');
 
     // Profile Routes
     Route::get('/profile', [ProfileController::class, 'index'])->name('profile.index');
