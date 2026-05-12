@@ -2508,15 +2508,6 @@ class InvoiceController extends Controller
 
         if ($invoice->billing_group_id) {
             $invoiceDate = $invoice->invoice_date ? Carbon::parse($invoice->invoice_date) : now();
-            $billingGroup = $invoice->billingGroup;
-
-            if (!$billingGroup) {
-                return [
-                    'can_regenerate' => false,
-                    'message' => 'Billing group invoice tidak ditemukan.',
-                ];
-            }
-
             $existingInvoice = Invoice::where('billing_group_id', $invoice->billing_group_id)
                 ->where('id', '!=', $invoice->id)
                 ->where('invoice_status', '!=', Invoice::STATUS_CANCELLED)
@@ -2528,16 +2519,6 @@ class InvoiceController extends Controller
                 return [
                     'can_regenerate' => false,
                     'message' => 'Invoice pengganti sudah ada: ' . $existingInvoice->invoice_number,
-                ];
-            }
-
-            $readiness = app(\App\Services\Finance\BillingGroupService::class)
-                ->getBillingGroupInvoiceReadiness($billingGroup, $invoiceDate);
-
-            if (!$readiness['ready']) {
-                return [
-                    'can_regenerate' => false,
-                    'message' => $readiness['message'] ?? 'Belum semua job/BA dalam billing group selesai.',
                 ];
             }
 

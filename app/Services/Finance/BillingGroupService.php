@@ -205,20 +205,19 @@ class BillingGroupService
                 throw new \Exception('Billing group is not active');
             }
 
-            // Check if all jobs in current billing period are completed and have BA date.
-            $readiness = $this->getBillingGroupInvoiceReadiness($billingGroup, $targetInvoiceDate);
-            $allJobsCompleted = (bool) $readiness['ready'];
+            // Check if all jobs in current billing period are completed
+            $allJobsCompleted = $this->checkAllJobsCompletedInBillingGroup($billingGroup, $targetInvoiceDate);
             $canReuseCancelledSnapshot = $this->canReuseCancelledInvoiceSnapshot(
                 $sourceCancelledInvoice,
                 $billingGroup,
                 $targetInvoiceDate
             );
             
-            if (!$allJobsCompleted) {
+            if (!$allJobsCompleted && !$canReuseCancelledSnapshot) {
                 DB::rollBack();
                 return [
                     'success' => false,
-                    'message' => $readiness['message']
+                    'message' => 'Not all jobs in billing group are completed yet'
                 ];
             }
 
@@ -240,14 +239,13 @@ class BillingGroupService
             // Generate invoice for current billing period
             $invoice = $this->createInvoiceForBillingGroup($billingGroup, $targetInvoiceDate);
 
-            if ($canReuseCancelledSnapshot) {
-                // Regeneration after invoice cancel must not require technicians to redo
-                // finished work. Reuse the previous billable snapshot for this period,
-                // but only after the billing group completion/BA rule above passes.
-                $this->copyInvoiceDetailsFromSource($invoice, $sourceCancelledInvoice);
-            } else {
+            if ($allJobsCompleted) {
                 // Create rental details for the invoice
                 $this->createDetailsForInvoice($invoice, $billingGroup, true, $targetInvoiceDate);
+            } elseif ($sourceCancelledInvoice) {
+                // Regeneration after invoice cancel must not require technicians to redo
+                // finished work. Reuse the previous billable snapshot for this period.
+                $this->copyInvoiceDetailsFromSource($invoice, $sourceCancelledInvoice);
             }
 
             if (
@@ -289,97 +287,31 @@ class BillingGroupService
      */
     private function checkAllJobsCompletedInBillingGroup(BillingGroup $billingGroup, ?Carbon $billingDate = null): bool
     {
-        return (bool) $this->getBillingGroupInvoiceReadiness($billingGroup, $billingDate)['ready'];
-    }
-
-    /**
-     * Check whether a billing group can generate an invoice for the target period.
-     */
-    public function getBillingGroupInvoiceReadiness(BillingGroup $billingGroup, ?Carbon $billingDate = null): array
-    {
-        if (!$billingGroup->is_active) {
-            return [
-                'ready' => false,
-                'message' => 'Billing group is not active',
-                'total_jobs' => 0,
-                'completed_jobs' => 0,
-            ];
-        }
-
-        [$totalJobs, $completedJobs] = $this->getBillingGroupJobCompletionCounts($billingGroup, $billingDate);
-
-        if ($totalJobs <= 0) {
-            return [
-                'ready' => false,
-                'message' => 'No billable jobs found for this billing group period',
-                'total_jobs' => $totalJobs,
-                'completed_jobs' => $completedJobs,
-            ];
-        }
-
-        if ($totalJobs !== $completedJobs) {
-            return [
-                'ready' => false,
-                'message' => "Belum semua job/BA dalam billing group selesai ({$completedJobs}/{$totalJobs}).",
-                'total_jobs' => $totalJobs,
-                'completed_jobs' => $completedJobs,
-            ];
-        }
-
-        return [
-            'ready' => true,
-            'message' => 'All jobs and BA in billing group are completed',
-            'total_jobs' => $totalJobs,
-            'completed_jobs' => $completedJobs,
-        ];
-    }
-
-    private function getBillingGroupJobCompletionCounts(BillingGroup $billingGroup, ?Carbon $billingDate = null): array
-    {
         $contractId = $billingGroup->contract_id;
         [$billingStartDate, $billingEndDate] = $this->getBillingDateRange($billingGroup, $billingDate);
-        $eligibleRooms = $billingGroup->contract
-            ? $this->getEligibleContractRoomsForBillingGroup($billingGroup, $billingGroup->contract)
-            : collect();
-        $roomIds = $eligibleRooms->pluck('room_id')->filter()->unique()->values();
-        $buildingIds = $eligibleRooms
-            ->map(fn ($contractRoom) => $contractRoom->room?->building_id)
-            ->filter()
-            ->unique()
-            ->values();
 
         // Count billable jobs in the invoice period only. Partial/cancel/admin-correction jobs
         // must not block regeneration for an already cancelled invoice period.
-        $baseQuery = DB::table('job_schedules')
+        $totalJobs = DB::table('job_schedules')
             ->join('job_advices', 'job_schedules.job_advice_id', '=', 'job_advices.id')
             ->where('job_advices.contract_id', $contractId)
             ->whereBetween('job_schedules.schedule_date', [$billingStartDate, $billingEndDate])
             ->whereNotIn('job_schedules.status', self::NON_BILLABLE_JOB_STATUSES)
-            ->whereRaw("LOWER(COALESCE(job_schedules.type, '')) NOT IN (?, ?, ?, ?)", self::NON_BILLABLE_JOB_TYPES);
-
-        if ($roomIds->isNotEmpty() || $buildingIds->isNotEmpty()) {
-            $baseQuery->where(function ($query) use ($roomIds, $buildingIds) {
-                if ($roomIds->isNotEmpty()) {
-                    $query->orWhereIn('job_schedules.room_id', $roomIds->all());
-                }
-
-                if ($buildingIds->isNotEmpty()) {
-                    $query->orWhereIn('job_schedules.building_id', $buildingIds->all());
-                }
-            });
-        }
-
-        $totalJobs = (clone $baseQuery)
+            ->whereRaw("LOWER(COALESCE(job_schedules.type, '')) NOT IN (?, ?, ?, ?)", self::NON_BILLABLE_JOB_TYPES)
             ->distinct()
             ->count('job_schedules.id');
 
-        $completedJobs = (clone $baseQuery)
+        $completedJobs = DB::table('job_schedules')
+            ->join('job_advices', 'job_schedules.job_advice_id', '=', 'job_advices.id')
+            ->where('job_advices.contract_id', $contractId)
+            ->whereBetween('job_schedules.schedule_date', [$billingStartDate, $billingEndDate])
+            ->whereNotIn('job_schedules.status', self::NON_BILLABLE_JOB_STATUSES)
+            ->whereRaw("LOWER(COALESCE(job_schedules.type, '')) NOT IN (?, ?, ?, ?)", self::NON_BILLABLE_JOB_TYPES)
             ->whereIn('job_schedules.status', self::BILLABLE_COMPLETED_STATUSES)
-            ->whereNotNull('job_schedules.ba_date')
             ->distinct()
             ->count('job_schedules.id');
 
-        return [$totalJobs, $completedJobs];
+        return $totalJobs > 0 && $totalJobs === $completedJobs;
     }
 
     private function canReuseCancelledInvoiceSnapshot(
@@ -558,7 +490,6 @@ class BillingGroupService
             })
             ->whereBetween('schedule_date', [$billingStartDate, $billingEndDate])
             ->whereIn('status', self::BILLABLE_COMPLETED_STATUSES)
-            ->whereNotNull('ba_date')
             ->whereRaw("LOWER(COALESCE(type, '')) NOT IN (?, ?, ?)", ['remove', 'remove free', 'remove_free'])
             ->get();
 
