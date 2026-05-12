@@ -794,7 +794,12 @@ function openScanSNModal(preSelectedProductId = null) {
                                 </div>
                             </div>
                             <small class="text-muted mt-1 d-block">
-                                <i class="fas fa-info-circle me-1"></i>System akan mengecek apakah SN sudah terdaftar. Jika sudah ada, SN tidak bisa dimasukkan.
+                                <i class="fas fa-info-circle me-1"></i>
+                                @if($receiving->issuing_id)
+                                    Untuk receiving dari issuing/return, SN harus sudah terdaftar dan berstatus On Hand Teknisi.
+                                @else
+                                    System akan mengecek agar SN tidak duplikat. Jika SN belum ada, SN baru akan dibuat.
+                                @endif
                             </small>
                         </div>
                         <div class="mb-4">

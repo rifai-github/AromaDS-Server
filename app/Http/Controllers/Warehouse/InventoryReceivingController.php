@@ -962,8 +962,8 @@ class InventoryReceivingController extends Controller
     }
 
     /**
-     * Scan/Input Serial Number for Inventory Receiving
-     * Validates if SN already exists, if not, creates new SN
+     * Scan/Input Serial Number for Inventory Receiving.
+     * Return receivings must use an existing technician-held SN.
      */
     public function scanSerialNumber(Request $request, InventoryReceiving $inventoryReceiving)
     {
@@ -1005,7 +1005,24 @@ class InventoryReceivingController extends Controller
                 ->where('serial_number', $serialNumber)
                 ->first();
 
+            $selectedProduct = \App\Models\MasterProduct::find($request->master_product_id);
+            $isReceivingFromIssuing = (bool) $inventoryReceiving->issuing_id
+                || (! empty($inventoryReceiving->reference_no)
+                    && \App\Models\InventoryIssuing::where('issuing_number', $inventoryReceiving->reference_no)->exists());
+
             if ($existingSN) {
+                if ((int) $existingSN->master_product_id !== (int) $request->master_product_id) {
+                    DB::rollBack();
+
+                    $existingProductName = $existingSN->masterProduct->name ?? 'Unknown Product';
+                    $selectedProductName = $selectedProduct->name ?? 'produk yang dipilih';
+
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "Serial Number <strong>{$serialNumber}</strong> terdaftar untuk produk <strong>{$existingProductName}</strong>, bukan <strong>{$selectedProductName}</strong>.",
+                    ], 422);
+                }
+
                 // MOM16: Allow existing SN if status is on_hand or on_hand_remove (returning from technician)
                 $allowedReturnStatuses = ['on_hand', 'on_hand_remove'];
 
@@ -1048,6 +1065,15 @@ class InventoryReceivingController extends Controller
                     ], 422);
                 }
             } else {
+                if ($isReceivingFromIssuing) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "Serial Number <strong>{$serialNumber}</strong> tidak ditemukan di sistem. Untuk receiving dari issuing/return, SN harus sudah terdaftar dan berstatus <strong>On Hand Teknisi</strong>.",
+                    ], 422);
+                }
+
                 // Create new Serial Number
                 $newSerialNumber = \App\Models\SerialNumber::create([
                     'serial_number' => $serialNumber,
