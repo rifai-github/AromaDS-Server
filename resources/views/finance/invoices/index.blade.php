@@ -957,7 +957,7 @@
                     </label>
                 @empty
                     <div style="padding: 18px; color: #6b7280;">
-                        Tidak ada contract active/current yang bisa diproses.
+                        Tidak ada contract active/current dengan job dan BA yang sudah selesai.
                     </div>
                 @endforelse
             </div>

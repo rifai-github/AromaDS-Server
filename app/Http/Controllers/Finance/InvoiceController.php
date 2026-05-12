@@ -232,6 +232,8 @@ class InvoiceController extends Controller
 
     private function getInvoiceRegenerationContracts()
     {
+        $invoiceService = app(InvoiceGenerationService::class);
+
         return Contract::with(['customer:id,name', 'quotation:id,payment_method,billing_methods,existing_contract_id'])
             ->where(function ($query) {
                 $query->where('contract_status', 'active')
@@ -243,7 +245,16 @@ class InvoiceController extends Controller
                     ->whereNotNull('new_contract_id');
             })
             ->orderByDesc('id')
-            ->get();
+            ->get()
+            ->filter(function (Contract $contract) use ($invoiceService) {
+                try {
+                    return collect($invoiceService->getRentalPeriodsForContract($contract->id))
+                        ->contains(fn ($period) => ($period['status'] ?? null) === 'completed');
+                } catch (\Throwable $e) {
+                    return false;
+                }
+            })
+            ->values();
     }
 
     public function regenerateMissing(Request $request)
