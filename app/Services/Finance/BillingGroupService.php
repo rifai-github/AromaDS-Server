@@ -213,7 +213,7 @@ class BillingGroupService
                 $targetInvoiceDate
             );
             
-            if (!$allJobsCompleted && !$canReuseCancelledSnapshot) {
+            if (!$allJobsCompleted) {
                 DB::rollBack();
                 return [
                     'success' => false,
@@ -239,13 +239,13 @@ class BillingGroupService
             // Generate invoice for current billing period
             $invoice = $this->createInvoiceForBillingGroup($billingGroup, $targetInvoiceDate);
 
-            if ($allJobsCompleted) {
+            if ($canReuseCancelledSnapshot && $sourceCancelledInvoice) {
+                // Regeneration should reproduce the cancelled invoice snapshot after
+                // the billing period passes the completed-job/BA readiness check.
+                $this->copyInvoiceDetailsFromSource($invoice, $sourceCancelledInvoice);
+            } else {
                 // Create rental details for the invoice
                 $this->createDetailsForInvoice($invoice, $billingGroup, true, $targetInvoiceDate);
-            } elseif ($sourceCancelledInvoice) {
-                // Regeneration after invoice cancel must not require technicians to redo
-                // finished work. Reuse the previous billable snapshot for this period.
-                $this->copyInvoiceDetailsFromSource($invoice, $sourceCancelledInvoice);
             }
 
             if (
@@ -560,6 +560,7 @@ class BillingGroupService
             'tax_amount' => $taxAmount,
             'total_amount' => $grandTotal,
             'grand_total' => $grandTotal,
+            'total_invoice' => $grandTotal,
             'outstanding' => max($grandTotal - $totalPaid, 0),
         ]);
     }

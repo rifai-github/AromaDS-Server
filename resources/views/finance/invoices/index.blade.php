@@ -828,7 +828,14 @@
                                 {{ $invoice->tax_obligation ? 'Yes' : 'No' }}
                             </span>
                         </td>
-                        <td class="text-right font-semibold">{{ number_format($invoice->total_invoice ?? 0, 0, ',', '.') }}</td>
+                        <td class="text-right font-semibold">
+                            @php
+                                $displayTotalInvoice = $invoice->total_invoice > 0
+                                    ? $invoice->total_invoice
+                                    : ($invoice->grand_total ?: $invoice->total_amount);
+                            @endphp
+                            {{ number_format($displayTotalInvoice ?? 0, 0, ',', '.') }}
+                        </td>
                         <td class="text-right">
                             @php
                                 $outstanding = $invoice->outstanding > 0 ? $invoice->outstanding : ($invoice->total_amount - $invoice->total_paid);
