@@ -422,6 +422,8 @@ class Contract extends Model
     {
         $contractNumber = $this->contract_number;
         $finalStatuses = self::finalJobScheduleStatuses();
+        $futurePendingStatuses = ['scheduled', 'new_job', 'new job'];
+        $today = now()->toDateString();
 
         return \App\Models\JobSchedule::query()
             ->where(function ($query) use ($contractNumber) {
@@ -436,6 +438,11 @@ class Contract extends Model
             ->where(function ($query) use ($finalStatuses) {
                 $query->whereNull('status')
                     ->orWhereNotIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(status))'), $finalStatuses);
+            })
+            ->where(function ($query) use ($futurePendingStatuses, $today) {
+                $query->whereNull('schedule_date')
+                    ->orWhereDate('schedule_date', '<=', $today)
+                    ->orWhereNotIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(status))'), $futurePendingStatuses);
             });
     }
 
