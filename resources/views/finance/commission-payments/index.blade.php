@@ -443,13 +443,13 @@
                         <th data-column="user__name">User</th>
                         <th data-column="amount">Amount</th>
                         <th data-column="payment_method">Method</th>
-                        <th data-column="payment_date">Date</th>
+                        <th data-column="payment_date" data-type="date">Date</th>
                         <th data-column="status">Status</th>
                         <th data-column="payment_reference">Reference</th>
                         <th data-column="createdBy__name">Created By</th>
-                        <th data-column="created_at">Created At</th>
+                        <th data-column="created_at" data-type="date">Created At</th>
                         <th data-column="updatedBy__name">Updated By</th>
-                        <th data-column="updated_at">Updated At</th>
+                        <th data-column="updated_at" data-type="date">Updated At</th>
                         <th data-no-filter>Actions</th>
                     </tr>
                     <tr class="filter-row">
@@ -457,13 +457,13 @@
                         <th><input type="text" class="form-control form-control-sm table-filter" data-column="user__name" placeholder="Search..." value="{{ request('filter.user__name') }}"></th>
                         <th><input type="text" class="form-control form-control-sm table-filter" data-column="amount" placeholder="Filter..." value="{{ request('filter.amount') }}"></th>
                         <th><input type="text" class="form-control form-control-sm table-filter" data-column="payment_method" placeholder="Filter..." value="{{ request('filter.payment_method') }}"></th>
-                        <th><input type="text" class="form-control form-control-sm table-filter" data-column="payment_date" placeholder="Filter..." value="{{ request('filter.payment_date') }}"></th>
+                        <th><input type="date" class="form-control form-control-sm table-filter" data-column="payment_date" value="{{ request('filter.payment_date') }}"></th>
                         <th><input type="text" class="form-control form-control-sm table-filter" data-column="status" placeholder="Filter..." value="{{ request('filter.status') }}"></th>
                         <th><input type="text" class="form-control form-control-sm table-filter" data-column="payment_reference" placeholder="Filter..." value="{{ request('filter.payment_reference') }}"></th>
                         <th><input type="text" class="form-control form-control-sm table-filter" data-column="createdBy__name" placeholder="Search..." value="{{ request('filter.createdBy__name') }}"></th>
-                        <th><input type="text" class="form-control form-control-sm table-filter" data-column="created_at" placeholder="Filter..." value="{{ request('filter.created_at') }}"></th>
+                        <th><input type="date" class="form-control form-control-sm table-filter" data-column="created_at" value="{{ request('filter.created_at') }}"></th>
                         <th><input type="text" class="form-control form-control-sm table-filter" data-column="updatedBy__name" placeholder="Search..." value="{{ request('filter.updatedBy__name') }}"></th>
-                        <th><input type="text" class="form-control form-control-sm table-filter" data-column="updated_at" placeholder="Filter..." value="{{ request('filter.updated_at') }}"></th>
+                        <th><input type="date" class="form-control form-control-sm table-filter" data-column="updated_at" value="{{ request('filter.updated_at') }}"></th>
                         <th></th>
                     </tr>
                 </thead>

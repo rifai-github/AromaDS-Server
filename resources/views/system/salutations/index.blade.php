@@ -229,9 +229,9 @@
                     <th data-column="option_name">Salutation</th>
                     <th data-column="option_description">Description</th>
                     <th data-column="is_active">Status</th>
-                    <th data-column="created_at">Created At</th>
+                    <th data-column="created_at" data-type="date">Created At</th>
                     <th data-column="createdBy.name">Created By</th>
-                    <th data-column="updated_at">Updated At</th>
+                    <th data-column="updated_at" data-type="date">Updated At</th>
                     <th data-column="updatedBy.name">Updated By</th>
                     <th data-no-filter>Actions</th>
                 </tr>
@@ -240,9 +240,9 @@
                     <th><input type="text" placeholder="Filter Salutation" class="form-control form-control-sm"></th>
                     <th><input type="text" placeholder="Filter Description" class="form-control form-control-sm"></th>
                     <th><input type="text" placeholder="Filter Status" class="form-control form-control-sm"></th>
-                    <th><input type="text" placeholder="Filter Date" class="form-control form-control-sm"></th>
+                    <th><input type="date" class="form-control form-control-sm"></th>
                     <th><input type="text" placeholder="Filter User" class="form-control form-control-sm"></th>
-                    <th><input type="text" placeholder="Filter Date" class="form-control form-control-sm"></th>
+                    <th><input type="date" class="form-control form-control-sm"></th>
                     <th><input type="text" placeholder="Filter User" class="form-control form-control-sm"></th>
                     <th></th>
                 </tr>

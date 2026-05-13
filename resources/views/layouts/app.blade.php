@@ -3242,6 +3242,42 @@
     </style>
 
     <script>
+    // Open native date picker when any part of a date input is clicked.
+    (function() {
+        function openDateInputPicker(input) {
+            if (!input || input.type !== 'date' || input.disabled || input.readOnly) return;
+
+            if (typeof input.showPicker === 'function') {
+                try {
+                    input.showPicker();
+                } catch (error) {
+                    input.focus();
+                }
+            } else {
+                input.focus();
+            }
+        }
+
+        function markDateInputs(scope) {
+            (scope || document).querySelectorAll('input[type="date"]').forEach(function(input) {
+                input.style.cursor = 'pointer';
+            });
+        }
+
+        document.addEventListener('click', function(event) {
+            const input = event.target.closest('input[type="date"]');
+            openDateInputPicker(input);
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            markDateInputs(document);
+        });
+
+        document.addEventListener('table:enhance', function(event) {
+            markDateInputs(event.detail && event.detail.scope ? event.detail.scope : document);
+        });
+    })();
+
     // Global Table Filter Injector with auto column detection
     (function() {
         let __autoTableId = 0;
@@ -3341,17 +3377,6 @@
                         });
                         if (columnType === 'date') {
                             input.style.cursor = 'pointer';
-                            input.addEventListener('click', function() {
-                                if (typeof input.showPicker === 'function') {
-                                    try {
-                                        input.showPicker();
-                                    } catch (error) {
-                                        input.focus();
-                                    }
-                                } else {
-                                    input.focus();
-                                }
-                            });
                             input.addEventListener('change', function() {
                                 applyFilter(table, input);
                             });

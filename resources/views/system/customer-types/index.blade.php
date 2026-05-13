@@ -242,9 +242,9 @@
                     <th><input type="text" placeholder="Filter Name" class="form-control form-control-sm"></th>
                     <th><input type="text" placeholder="Filter Description" class="form-control form-control-sm"></th>
                     <th><input type="text" placeholder="Filter Status" class="form-control form-control-sm"></th>
-                    <th><input type="text" placeholder="Filter Date" class="form-control form-control-sm"></th>
+                    <th><input type="date" class="form-control form-control-sm"></th>
                     <th><input type="text" placeholder="Filter User" class="form-control form-control-sm"></th>
-                    <th><input type="text" placeholder="Filter Date" class="form-control form-control-sm"></th>
+                    <th><input type="date" class="form-control form-control-sm"></th>
                     <th><input type="text" placeholder="Filter User" class="form-control form-control-sm"></th>
                     <th></th>
                 </tr>
