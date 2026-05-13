@@ -375,28 +375,36 @@ class ContractRenewalController extends Controller
                 'quotation.quotationDetails.masterRoom'
             ])->findOrFail($contractId);
 
-            $eligibility = ContractRenewal::isEligibleForRenewal($contractId);
+            $blockReason = $contract->getRenewalBlockReason();
 
-            if (!$eligibility['eligible']) {
+            if ($blockReason) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => $eligibility['reason']
+                    'message' => $blockReason
                 ], 403);
             }
 
             // Explicitly calculate days until expiry for frontend display
             // Use actual_end_date (BA date based) - if null, contract hasn't started yet
+            $actualStartDate = $contract->actual_start_date;
             $actualEndDate = $contract->actual_end_date;
             $daysUntilExpiry = null;
+            $renewalWindowDays = null;
             
             if ($actualEndDate) {
                 $daysUntilExpiry = \Carbon\Carbon::now()->diffInDays(\Carbon\Carbon::parse($actualEndDate), false);
             }
-            
-            // Add days_until_expiry to eligibility array if missing
-            if (!isset($eligibility['days_until_expiry'])) {
-                $eligibility['days_until_expiry'] = $daysUntilExpiry !== null ? (int)$daysUntilExpiry : null;
+
+            if ($actualStartDate && $actualEndDate) {
+                $renewalWindowDays = ContractRenewal::calculateRenewalWindowDays($actualStartDate, $actualEndDate);
             }
+
+            $eligibility = [
+                'eligible' => true,
+                'reason' => null,
+                'days_until_expiry' => $daysUntilExpiry !== null ? (int) $daysUntilExpiry : null,
+                'renewal_window_days' => $renewalWindowDays,
+            ];
             
             // Prepare data for quotation wizard
             // Use actual_start_date and actual_end_date (BA date based)
