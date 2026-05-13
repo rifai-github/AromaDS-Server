@@ -400,7 +400,7 @@
                     </div>
                     <div class="modal-footer" style="background-color: #f9fafb; border-radius: 0 0 12px 12px; padding: 16px 20px; border-top: 1px solid #e5e7eb; gap: 10px;">
                         <button type="button" class="btn btn-secondary" onclick="closeQRModal()">Close</button>
-                        <button type="button" class="btn btn-success" onclick="saveScannedSNs()"><i class="fas fa-save me-1"></i>Save & Update Stock</button>
+                        <button type="button" id="saveScannedSNsBtn" class="btn btn-success no-double-click-prevention" onclick="saveScannedSNs(this)"><i class="fas fa-save me-1"></i>Save & Update Stock</button>
                     </div>
                 </div>
             </div>
@@ -452,9 +452,10 @@
     function stopQRScanner() {
         const container = document.getElementById('qrReaderContainer');
         const scanBtn = document.getElementById('scanQRBtn');
+        let stopPromise = Promise.resolve();
         
         if (html5QrcodeScanner && isScannerActive) {
-            html5QrcodeScanner.stop().catch(err => console.error(err));
+            stopPromise = html5QrcodeScanner.stop().catch(err => console.error(err));
             html5QrcodeScanner = null;
         }
         
@@ -462,13 +463,18 @@
         
         if (container) container.style.display = 'none';
         if (scanBtn) scanBtn.innerHTML = '<i class="fas fa-camera me-1"></i>Scan';
+
+        return stopPromise;
     }
 
     function closeQRModal() {
-        stopQRScanner();
+        const stopPromise = stopQRScanner();
         isScannerActive = false;
         const modal = document.getElementById('customQRModal');
         if (modal) modal.remove();
+        document.body.classList.remove('modal-open');
+        document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+        stopPromise.finally(() => {});
     }
 
     function onScanSuccess(decodedText, decodedResult) {
@@ -520,36 +526,84 @@
         countSpan.textContent = scannedSNs.length;
     }
 
-    function saveScannedSNs() {
+    function updateDetailRowAfterSN(detailId, detailData, snCount) {
+        const physicalInput = document.getElementById(`physical-${detailId}`);
+        if (physicalInput) {
+            physicalInput.value = snCount;
+            physicalInput.dataset.lastValue = String(snCount);
+            physicalInput.classList.remove('bg-warning', 'bg-opacity-25', 'is-invalid');
+            physicalInput.classList.add('is-valid');
+            setTimeout(() => physicalInput.classList.remove('is-valid'), 1500);
+        }
+
+        const countLabel = document.getElementById(`sn-count-${detailId}`);
+        if (countLabel) {
+            countLabel.innerHTML = snCount > 0
+                ? `<i class="fas fa-check-circle text-success"></i> ${snCount} SN Scanned`
+                : '';
+        }
+
+        const varianceBadge = document.querySelector(`#variance-${detailId} span`);
+        if (varianceBadge && detailData && detailData.variance !== null && detailData.variance !== undefined) {
+            const varianceValue = parseFloat(detailData.variance);
+            const prefix = varianceValue > 0 ? '+' : '';
+            varianceBadge.textContent = prefix + varianceValue;
+            varianceBadge.style.backgroundColor = varianceValue < 0 ? '#ef4444' : (varianceValue > 0 ? '#10b981' : '#6b7280');
+            varianceBadge.style.color = 'white';
+        }
+    }
+
+    function saveScannedSNs(button = null) {
         if (!currentDetailId) return;
+        const detailId = currentDetailId;
+        const snCount = scannedSNs.length;
+        const originalButtonHtml = button ? button.innerHTML : null;
+
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Saving...';
+        }
+
         existingScannedData[currentDetailId] = [...scannedSNs];
         
-        // HANYA simpan daftar SN, TIDAK mengubah physical_stock
+        // Save SN list and keep the visible physical stock in sync with the count.
         fetch(`/warehouse/stock-opnames/details/${currentDetailId}/update`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': '{{ csrf_token() }}'
             },
-            body: JSON.stringify({ scanned_serial_numbers: scannedSNs })
+            body: JSON.stringify({
+                scanned_serial_numbers: scannedSNs,
+                physical_stock: snCount
+            })
         })
-        .then(response => response.json())
+        .then(async response => {
+            const data = await response.json().catch(() => null);
+            if (!response.ok || !data) {
+                throw new Error(data?.message || 'Response tidak valid.');
+            }
+
+            return data;
+        })
         .then(data => {
             if(data.status === 'success') {
-                // Update SN count label di tabel
-                const countLabel = document.getElementById(`sn-count-${currentDetailId}`);
-                if (countLabel) {
-                    countLabel.textContent = `${scannedSNs.length} SN`;
-                }
+                updateDetailRowAfterSN(detailId, data.data || {}, snCount);
                 closeQRModal();
-                // Tidak perlu reload, update UI saja
+                showToast('SN dan physical stock tersimpan', 'success');
             } else {
-                showErrorDialog('Gagal', 'Daftar SN tidak berhasil disimpan.');
+                throw new Error(data.message || 'Daftar SN tidak berhasil disimpan.');
             }
         })
         .catch(err => {
             console.error('Error:', err);
-            showErrorDialog('Gagal', 'Terjadi kesalahan saat menyimpan.');
+            showErrorDialog(err.message || 'Terjadi kesalahan saat menyimpan.', 'Gagal');
+        })
+        .finally(() => {
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = originalButtonHtml;
+            }
         });
     }
 
