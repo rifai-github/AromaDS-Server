@@ -999,6 +999,21 @@ function validateCurrentStep() {
                     }
                     return false;
                 }
+
+                const buildings = billingAddresses[i].buildings || [];
+                if (buildings.length === 0) {
+                    alert(`Mohon pilih minimal satu building untuk Billing Group ${i + 1}`);
+
+                    const addressSelect = document.getElementById(`addressSelect_${i}`);
+                    if (addressSelect) {
+                        addressSelect.focus();
+                        addressSelect.style.borderColor = 'red';
+                        addressSelect.addEventListener('change', function() {
+                            this.style.borderColor = '';
+                        }, { once: true });
+                    }
+                    return false;
+                }
             }
             return true;
         case 5:

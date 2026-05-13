@@ -198,6 +198,26 @@ class ContractWizardController extends Controller
             ], 422);
         }
 
+        $billingAddresses = $request->input('billing_addresses', []);
+        if (empty($billingAddresses) || !is_array($billingAddresses)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Minimal satu billing group wajib dibuat dan setiap billing group wajib memiliki building.',
+            ], 422);
+        }
+
+        foreach ($billingAddresses as $index => $billingAddress) {
+            $hasReusableBillingGroup = !empty($billingAddress['billing_group_id']);
+            $hasSelectedBuildings = !empty($billingAddress['buildings']) && is_array($billingAddress['buildings']);
+
+            if (!$hasReusableBillingGroup && !$hasSelectedBuildings) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Billing Group ' . ($index + 1) . ' wajib memiliki minimal satu building.',
+                ], 422);
+            }
+        }
+
         try {
             DB::beginTransaction();
 
