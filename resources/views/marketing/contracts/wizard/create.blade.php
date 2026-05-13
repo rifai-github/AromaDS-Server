@@ -786,7 +786,7 @@
         </div>
         <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 15px; margin-top: 15px; border-bottom: none; border-top: 1px solid #dee2e6; position: sticky; bottom: 0; background: #fefefe;">
             <button type="button" class="btn btn-secondary" onclick="closeAddTaxModal(); return false;" style="padding: 8px 20px; border: 1px solid #ccc; border-radius: 4px; background: #6c757d; color: white; cursor: pointer;">Cancel</button>
-            <button type="button" id="saveTaxButton" class="btn btn-primary" onclick="saveTaxData(); return false;" style="padding: 8px 20px; border: 1px solid #007bff; border-radius: 4px; background: #007bff; color: white; cursor: pointer;">Save</button>
+            <button type="button" id="saveTaxButton" class="btn btn-primary no-double-click-prevention" onclick="saveTaxData(); return false;" style="padding: 8px 20px; border: 1px solid #007bff; border-radius: 4px; background: #007bff; color: white; cursor: pointer;">Save</button>
         </div>
     </div>
 </div>
