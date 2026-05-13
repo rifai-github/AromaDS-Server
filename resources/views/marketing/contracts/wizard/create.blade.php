@@ -4018,8 +4018,8 @@ function openAddTaxModal(addressIndex) {
         return;
     }
 
-    document.getElementById('taxModalCustomerId').value = quotationData.customer.id;
     document.getElementById('addTaxForm').reset();
+    document.getElementById('taxModalCustomerId').value = quotationData.customer.id;
 
     syncModalTaxRateFromCode();
     
@@ -4132,7 +4132,22 @@ function saveTaxData() {
 
     const form = document.getElementById('addTaxForm');
     const saveButton = document.getElementById('saveTaxButton');
-    syncModalTaxRateFromCode();
+    const originalButtonText = saveButton ? saveButton.innerHTML : 'Save';
+    const resetSaveState = () => {
+        isSavingTaxData = false;
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.innerHTML = originalButtonText;
+        }
+    };
+
+    try {
+        syncModalTaxRateFromCode();
+    } catch (error) {
+        console.error('Error syncing tax code:', error);
+        Swal.fire('Error', 'Gagal membaca kode pajak. Silakan coba lagi.', 'error');
+        return;
+    }
 
     if (!form.checkValidity()) {
         form.reportValidity();
@@ -4140,7 +4155,6 @@ function saveTaxData() {
     }
 
     isSavingTaxData = true;
-    const originalButtonText = saveButton ? saveButton.innerHTML : 'Save';
     if (saveButton) {
         saveButton.disabled = true;
         saveButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Saving...';
@@ -4160,12 +4174,19 @@ function saveTaxData() {
     
     // Add status/is_active mapping
     data.is_active = data.status === 'active' ? '1' : '0';
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+    if (!csrfToken) {
+        resetSaveState();
+        Swal.fire('Error', 'Token halaman tidak ditemukan. Silakan refresh halaman dan coba lagi.', 'error');
+        return;
+    }
 
     fetch('/company/customer-taxes', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-CSRF-TOKEN': csrfToken,
             'Accept': 'application/json',
             'X-Requested-With': 'XMLHttpRequest'
         },
@@ -4238,11 +4259,7 @@ function saveTaxData() {
         Swal.fire('Error', error.message || 'Terjadi kesalahan saat menyimpan data pajak.', 'error');
     })
     .finally(() => {
-        isSavingTaxData = false;
-        if (saveButton) {
-            saveButton.disabled = false;
-            saveButton.innerHTML = originalButtonText;
-        }
+        resetSaveState();
     });
 }
 </script>
