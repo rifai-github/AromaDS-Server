@@ -208,7 +208,10 @@ class ContractWizardController extends Controller
 
         foreach ($billingAddresses as $index => $billingAddress) {
             $hasReusableBillingGroup = !empty($billingAddress['billing_group_id']);
-            $hasSelectedBuildings = !empty($billingAddress['buildings']) && is_array($billingAddress['buildings']);
+            $selectedBuildings = collect($billingAddress['buildings'] ?? [])
+                ->filter(fn ($buildingId) => filled($buildingId))
+                ->values();
+            $hasSelectedBuildings = $selectedBuildings->isNotEmpty();
 
             if (!$hasReusableBillingGroup && !$hasSelectedBuildings) {
                 return response()->json([

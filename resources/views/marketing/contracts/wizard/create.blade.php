@@ -2950,7 +2950,7 @@ function updateBillingAddressData() {
                     // Get all selected building IDs
                     // Using jQuery to get Select2 values if available, otherwise native
                     if ($(addressSelect).hasClass('select2-hidden-accessible')) {
-                        selectedBuildings = $(addressSelect).val() || [];
+                        selectedBuildings = ($(addressSelect).val() || []).filter(val => val !== '');
                     } else {
                          selectedBuildings = Array.from(addressSelect.selectedOptions)
                             .map(option => option.value)
