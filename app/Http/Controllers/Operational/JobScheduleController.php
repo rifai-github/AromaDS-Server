@@ -8755,6 +8755,10 @@ class JobScheduleController extends Controller
     {
         return str_contains($haystack, 'hand sanitizer')
             || str_contains($haystack, 'sanitizer')
+            || str_contains($haystack, 'hs-gel')
+            || str_contains($haystack, 'hs gel')
+            || str_contains($haystack, 'hs-liquid')
+            || str_contains($haystack, 'hs liquid')
             || preg_match('/\bhs\s*refill\b/', $haystack) === 1
             || preg_match('/\bhsr[-\s]/', $haystack) === 1
             || preg_match('/\bhsd[-\s]/', $haystack) === 1;
@@ -8767,6 +8771,23 @@ class JobScheduleController extends Controller
     protected function isUnitProductByCategory($product): bool
     {
         if (!$product) {
+            return false;
+        }
+
+        $haystack = $this->buildMaterialClassificationText([
+            $product->productCategory->name ?? null,
+            $product->productType->name ?? null,
+            $product->name ?? null,
+            $product->sku ?? null,
+            $product->brand_line ?? null,
+            $product->variant_name ?? null,
+        ]);
+
+        if (
+            $this->containsHandSanitizerMaterialKeywords($haystack)
+            || str_contains($haystack, 'refill')
+            || str_contains($haystack, 'cleaner')
+        ) {
             return false;
         }
 
