@@ -9,6 +9,7 @@ use App\Models\JobAssignSchedule;
 use App\Models\JobScheduleRoom;
 use App\Models\JobScheduleRoomAssignment;
 use App\Models\MaterialIssue;
+use App\Models\MaterialIssueItem;
 use App\Models\SerialNumber;
 use App\Models\WarehouseProduct;
 use Illuminate\Support\Collection;
@@ -490,7 +491,17 @@ class InventoryIssuingService
             $inventoryIssuings = InventoryIssuing::whereIn('reference_no', $issueNumbers->all())->get();
         }
 
-        $hasActiveAssignment = JobAssignSchedule::whereIn('job_schedule_id', $jobIds)
+        $assignmentIds = JobAssignSchedule::whereIn('job_schedule_id', $jobIds)
+            ->where('status', '!=', 'cancelled')
+            ->pluck('id');
+
+        $hasPreparedMaterialItems = $materialIssues->isNotEmpty()
+            && $assignmentIds->isNotEmpty()
+            && MaterialIssueItem::whereIn('material_issue_id', $materialIssues->pluck('id')->all())
+                ->whereIn('job_assign_schedule_id', $assignmentIds->all())
+                ->exists();
+
+        $hasTeamAssignment = JobAssignSchedule::whereIn('id', $assignmentIds)
             ->where('status', '!=', 'cancelled')
             ->whereNotNull('team_id')
             ->exists();
@@ -505,9 +516,11 @@ class InventoryIssuingService
             $targetStatus = 'barang_siap_diambil';
         } elseif ($inventoryIssuings->contains(fn ($issuing) => $issuing->status === 'pending')) {
             $targetStatus = 'barang_dipersiapkan';
+        } elseif ($hasPreparedMaterialItems) {
+            $targetStatus = 'barang_dipersiapkan';
         } elseif ($materialIssues->isNotEmpty()) {
             $targetStatus = 'assign_material';
-        } elseif ($hasActiveAssignment) {
+        } elseif ($hasTeamAssignment) {
             $targetStatus = 'assign_team';
         } else {
             $targetStatus = 'new_job';

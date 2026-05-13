@@ -1049,6 +1049,19 @@ class JobScheduleController extends Controller
                 return 'barang_diambil';
             }
 
+            $assignmentIds = \App\Models\JobAssignSchedule::where('job_schedule_id', $jobSchedule->id)
+                ->where('status', '!=', 'cancelled')
+                ->pluck('id');
+
+            $hasPreparedMaterialItems = $assignmentIds->isNotEmpty()
+                && \App\Models\MaterialIssueItem::whereIn('material_issue_id', $materialIssues->pluck('id')->all())
+                    ->whereIn('job_assign_schedule_id', $assignmentIds->all())
+                    ->exists();
+
+            if ($hasPreparedMaterialItems) {
+                return 'barang_dipersiapkan';
+            }
+
             if ($materialIssues->contains(fn ($issue) => in_array($issue->status, ['approved', 'pending', 'draft', 'out_of_stock'], true))) {
                 return 'assign_material';
             }
