@@ -3340,6 +3340,18 @@
                             }
                         });
                         if (columnType === 'date') {
+                            input.style.cursor = 'pointer';
+                            input.addEventListener('click', function() {
+                                if (typeof input.showPicker === 'function') {
+                                    try {
+                                        input.showPicker();
+                                    } catch (error) {
+                                        input.focus();
+                                    }
+                                } else {
+                                    input.focus();
+                                }
+                            });
                             input.addEventListener('change', function() {
                                 applyFilter(table, input);
                             });
