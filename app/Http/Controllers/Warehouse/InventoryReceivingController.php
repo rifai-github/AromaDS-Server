@@ -882,6 +882,9 @@ class InventoryReceivingController extends Controller
                 ->where('status', 'pending')
                 ->update([
                     'status' => 'ready',
+                    'location_type' => 'warehouse',
+                    'location_id' => $warehouse->id,
+                    'warehouse_id' => $warehouse->id,
                     'updated_by' => Auth::id(),
                     'updated_at' => now(),
                 ]);

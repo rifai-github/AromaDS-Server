@@ -6358,81 +6358,29 @@ class JobScheduleController extends Controller
                         'updated_by' => \App\Models\User::first()?->id ?? null
                     ]);
                     
-                    // FIX: Update Serial Number status back to 'ready' so it can be reused for new Install jobs
-                    if ($unit->serial_number_id) {
-                        $sn = \App\Models\SerialNumber::find($unit->serial_number_id);
-                        if ($sn) {
-                            $sn->update([
-                                'status' => 'ready',
-                                'location_type' => 'warehouse', // Return to warehouse
-                                'location_id' => $sn->warehouse_id, // Requirement 4
-                                'updated_by' => \Auth::id() ?? \App\Models\User::first()?->id ?? null
-                            ]);
+                    $sn = $unit->serial_number_id
+                        ? \App\Models\SerialNumber::find($unit->serial_number_id)
+                        : null;
 
-                            // STOCK UPDATE: Increment warehouse stock when unit is removed
-                            if ($sn->master_product_id && $sn->warehouse_id) {
-                                // Find or create warehouse product record
-                                $warehouseProduct = \App\Models\WarehouseProduct::firstOrCreate(
-                                    [
-                                        'warehouse_id' => $sn->warehouse_id,
-                                        'master_product_id' => $sn->master_product_id,
-                                    ],
-                                    [
-                                        'quantity' => 0,
-                                        'minimum_stock' => 0,
-                                        'maximum_stock' => 0,
-                                        'created_by' => \Auth::id() ?? \App\Models\User::first()?->id ?? null,
-                                        'updated_by' => \Auth::id() ?? \App\Models\User::first()?->id ?? null,
-                                    ]
-                                );
+                    $this->queueRemovedUnitReceiving($removeJob, $unit, $sn);
 
-                                // Increment quantity
-                                $warehouseProduct->increment('quantity', 1);
-
-                                // Create inventory movement record
-                                $movementData = [
-                                    'warehouse_id' => $sn->warehouse_id,
-                                    'master_product_id' => $sn->master_product_id,
-                                    'movement_type' => 'in',
-                                    'quantity' => 1,
-                                    'notes' => "Unit returned to warehouse after Remove Job {$removeJob->job_number} completed. SN: {$sn->serial_number}",
-                                    'created_by' => \Auth::id() ?? \App\Models\User::first()?->id ?? null,
-                                    'updated_by' => \Auth::id() ?? \App\Models\User::first()?->id ?? null,
-                                ];
-
-                                // Simplified column mapping for InventoryMovement
-                                $movementData['reference_no'] = $removeJob->job_number;
-                                $movementData['reference_type'] = 'unit_removal';
-                                $movementData['movement_no'] = 'RET-' . ($removeJob->job_number ?? now()->format('YmdHis'));
-                                $movementData['movement_date'] = now()->toDateString();
-
-                                try {
-                                    \App\Models\InventoryMovement::create($movementData);
-                                } catch (\Exception $e) {
-                                    \Log::warning("Could not record Inventory Movement: " . $e->getMessage());
-                                }
-
-                                // 4. Create History
-                                try {
-                                    \App\Models\UnitOnWallHistory::create([
-                                        'unit_on_wall_id' => $unit->id,
-                                        'action' => 'remove',
-                                        'customer_id' => $unit->customer_id,
-                                        'customer_name' => $unit->company_name ?? ($unit->customer?->name),
-                                        'location' => $unit->room_name,
-                                        'action_date' => now(),
-                                        'technician_id' => $removeJob->assigned_technician_id,
-                                        'technician_name' => $removeJob->assignedTechnician?->name,
-                                        'job_schedule_id' => $removeJob->id,
-                                        'job_schedule_number' => $removeJob->job_number,
-                                        'notes' => "Unit removed and returned to warehouse. Stock incremented. [SYSTEM AUTO-REMOVED]",
-                                        'created_by' => \Auth::id() ?? \App\Models\User::first()?->id ?? null
-                                    ]);
-                                } catch (\Exception $e) {
-                                    \Log::warning("Could not record Unit On Wall History: " . $e->getMessage());
-                                }
-                            }
-                        }
+                    try {
+                        \App\Models\UnitOnWallHistory::create([
+                            'unit_on_wall_id' => $unit->id,
+                            'action' => 'remove',
+                            'customer_id' => $unit->customer_id,
+                            'customer_name' => $unit->company_name ?? ($unit->customer?->name),
+                            'location' => $unit->room_name,
+                            'action_date' => now(),
+                            'technician_id' => $removeJob->assigned_technician_id,
+                            'technician_name' => $removeJob->assignedTechnician?->name,
+                            'job_schedule_id' => $removeJob->id,
+                            'job_schedule_number' => $removeJob->job_number,
+                            'notes' => "Unit removed and queued to Inventory Receiving. Warehouse must finalize RR before stock/SN is available. [SYSTEM AUTO-REMOVED]",
+                            'created_by' => \Auth::id() ?? \App\Models\User::first()?->id ?? null
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::warning("Could not record Unit On Wall History: " . $e->getMessage());
                     }
                     
                     $unitsRemoved++;
@@ -6448,6 +6396,125 @@ class JobScheduleController extends Controller
             \Log::error("Failed to auto-remove Unit On Wall for Remove Job {$removeJob->job_number}: " . $e->getMessage());
             // Don't throw - non-critical error
         }
+    }
+
+    private function queueRemovedUnitReceiving(JobSchedule $removeJob, \App\Models\UnitOnWall $unit, ?\App\Models\SerialNumber $serialNumber): void
+    {
+        $productId = $serialNumber?->master_product_id ?: $unit->product_id;
+        if (!$productId) {
+            \Log::warning("Remove Job {$removeJob->job_number}: cannot create RR item for Unit On Wall {$unit->id} because product is missing.");
+            return;
+        }
+
+        $warehouse = $this->resolveRemoveUnitReceivingWarehouse($removeJob, $serialNumber);
+        if (!$warehouse || !$warehouse->branch_id) {
+            \Log::warning("Remove Job {$removeJob->job_number}: cannot create RR because warehouse/branch cannot be resolved.", [
+                'unit_on_wall_id' => $unit->id,
+                'serial_number_id' => $serialNumber?->id,
+            ]);
+            return;
+        }
+
+        $receivingNotePrefix = "Auto-return dari Remove Job {$removeJob->job_number}";
+        $receiving = \App\Models\InventoryReceiving::where('reference_no', $removeJob->job_number)
+            ->where('notes', 'like', $receivingNotePrefix . '%')
+            ->where('status', 'pending')
+            ->latest('id')
+            ->first();
+
+        if (!$receiving) {
+            $receivingNumber = app(\App\Services\DocumentNumberService::class)
+                ->generate('inventory_receiving', warehouseId: $warehouse->id);
+
+            $receiving = \App\Models\InventoryReceiving::create([
+                'receiving_number' => $receivingNumber,
+                'reference_no' => $removeJob->job_number,
+                'branch_id' => $warehouse->branch_id,
+                'received_from' => \Auth::id(),
+                'received_by_old' => null,
+                'schedule_date' => now()->toDateString(),
+                'status' => 'pending',
+                'notes' => $receivingNotePrefix . ' (Unit remove menunggu penerimaan gudang).',
+                'created_by' => \Auth::id(),
+                'updated_by' => \Auth::id(),
+            ]);
+        }
+
+        if ($serialNumber) {
+            $serialNumber->update([
+                'status' => 'pending',
+                'location_type' => 'technician',
+                'location_id' => \Auth::id(),
+                'warehouse_id' => $warehouse->id,
+                'inventory_receiving_id' => $receiving->id,
+                'notes' => ($serialNumber->notes ? $serialNumber->notes . "\n" : '')
+                    . "Queued to RR {$receiving->receiving_number} from Remove Job {$removeJob->job_number}.",
+                'updated_by' => \Auth::id(),
+            ]);
+        }
+
+        $itemNotes = "Auto-return dari Remove Job {$removeJob->job_number} (Product {$productId})";
+        $item = \App\Models\InventoryReceivingItem::firstOrCreate(
+            [
+                'inventory_receiving_id' => $receiving->id,
+                'master_product_id' => $productId,
+                'notes' => $itemNotes,
+            ],
+            [
+                'quantity' => 0,
+                'quantity_received' => 0,
+            ]
+        );
+
+        $queuedQty = $serialNumber
+            ? \App\Models\SerialNumber::where('inventory_receiving_id', $receiving->id)
+                ->where('master_product_id', $productId)
+                ->count()
+            : ((int) $item->quantity + 1);
+
+        if ((int) $item->quantity !== (int) $queuedQty) {
+            $item->update([
+                'quantity' => max(1, (int) $queuedQty),
+                'quantity_received' => 0,
+            ]);
+        }
+    }
+
+    private function resolveRemoveUnitReceivingWarehouse(JobSchedule $removeJob, ?\App\Models\SerialNumber $serialNumber): ?\App\Models\Warehouse
+    {
+        if ($serialNumber?->warehouse_id) {
+            $warehouse = \App\Models\Warehouse::where('id', $serialNumber->warehouse_id)
+                ->where('is_active', true)
+                ->first();
+
+            if ($warehouse) {
+                return $warehouse;
+            }
+        }
+
+        $branchId = $removeJob->building?->branch_id ?? $removeJob->branch_id;
+        if ($branchId) {
+            $warehouse = \App\Models\Warehouse::where('branch_id', $branchId)
+                ->where('is_active', true)
+                ->orderByDesc('is_center')
+                ->orderBy('id')
+                ->first();
+
+            if ($warehouse) {
+                return $warehouse;
+            }
+        }
+
+        $teamBranchId = $removeJob->jobAssignSchedules()->with('team')->first()?->team?->branch_office;
+        if ($teamBranchId) {
+            return \App\Models\Warehouse::where('branch_id', $teamBranchId)
+                ->where('is_active', true)
+                ->orderByDesc('is_center')
+                ->orderBy('id')
+                ->first();
+        }
+
+        return null;
     }
 
     /**
