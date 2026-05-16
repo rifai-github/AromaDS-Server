@@ -455,6 +455,15 @@ class JobAdviceController extends Controller
             return back()->withErrors(['contract_id' => 'Either Contract or Quotation must be selected.'])->withInput();
         }
 
+        if ($dateValidationResponse = $this->validateJobAdviceSourceDate(
+            $request,
+            $request->contract_id ? (int) $request->contract_id : null,
+            $request->quotation_id ? (int) $request->quotation_id : null,
+            $request->expected_date
+        )) {
+            return $dateValidationResponse;
+        }
+
         $lock = Cache::lock('job-advice:create:' . $this->buildJobAdviceCreateLockKey($request), 30);
         if (! $lock->get()) {
             return $this->jobAdviceCreateInProgressResponse($request);
@@ -897,6 +906,15 @@ class JobAdviceController extends Controller
             'remove_date.after' => 'Remove date harus lebih tinggi dari expected date.',
         ]);
 
+        if ($dateValidationResponse = $this->validateJobAdviceSourceDate(
+            $request,
+            $jobAdvice->contract_id ? (int) $jobAdvice->contract_id : null,
+            $jobAdvice->quotation_id ? (int) $jobAdvice->quotation_id : null,
+            $request->expected_date
+        )) {
+            return $dateValidationResponse;
+        }
+
         try {
             DB::beginTransaction();
 
@@ -1084,6 +1102,15 @@ class JobAdviceController extends Controller
                 return back()->with('error', 'Hanya Job Advice dengan status Draft yang bisa di-finalize.');
             }
 
+            if ($dateValidationResponse = $this->validateJobAdviceSourceDate(
+                $request,
+                $jobAdvice->contract_id ? (int) $jobAdvice->contract_id : null,
+                $jobAdvice->quotation_id ? (int) $jobAdvice->quotation_id : null,
+                $jobAdvice->expected_date
+            )) {
+                return $dateValidationResponse;
+            }
+
             $jobAdvice->update([
                 'status' => 'waiting_for_approval',
                 'submitted_by' => $request->submitted_by ?? Auth::id(),
@@ -1142,6 +1169,15 @@ class JobAdviceController extends Controller
                     ], 403);
                 }
                 return back()->with('error', 'Anda tidak memiliki izin untuk menyetujui Job Advice.');
+            }
+
+            if ($dateValidationResponse = $this->validateJobAdviceSourceDate(
+                $request,
+                $jobAdvice->contract_id ? (int) $jobAdvice->contract_id : null,
+                $jobAdvice->quotation_id ? (int) $jobAdvice->quotation_id : null,
+                $jobAdvice->expected_date
+            )) {
+                return $dateValidationResponse;
             }
 
             DB::transaction(function () use ($jobAdvice) {
@@ -4144,5 +4180,53 @@ class JobAdviceController extends Controller
                 }
             })
             ->exists();
+    }
+
+    private function validateJobAdviceSourceDate(Request $request, ?int $contractId, ?int $quotationId, $expectedDate)
+    {
+        $sourceDate = null;
+        $sourceLabel = null;
+
+        if ($contractId) {
+            $contract = Contract::find($contractId);
+            $sourceDate = $contract?->contract_date;
+            $sourceLabel = 'Contract';
+        } elseif ($quotationId) {
+            $quotation = \App\Models\Quotation::find($quotationId);
+            $sourceDate = $quotation?->quotation_date;
+            $sourceLabel = 'SQ';
+        }
+
+        if (!$sourceDate || !$expectedDate) {
+            return null;
+        }
+
+        $expected = \Carbon\Carbon::parse($expectedDate)->startOfDay();
+        $minimum = \Carbon\Carbon::parse($sourceDate)->startOfDay();
+
+        if ($expected->greaterThanOrEqualTo($minimum)) {
+            return null;
+        }
+
+        $message = sprintf(
+            'Tanggal Job Advice tidak boleh lebih kecil dari tanggal %s (%s).',
+            $sourceLabel,
+            $minimum->format('d/m/Y')
+        );
+
+        if ($request->expectsJson() || $request->ajax() || $request->header('Accept') === 'application/json') {
+            return response()->json([
+                'status' => 'error',
+                'message' => $message,
+                'errors' => [
+                    'expected_date' => [$message],
+                ],
+            ], 422);
+        }
+
+        return back()
+            ->withInput()
+            ->withErrors(['expected_date' => $message])
+            ->with('error', $message);
     }
 }
