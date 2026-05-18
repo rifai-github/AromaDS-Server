@@ -156,8 +156,9 @@ class JobScheduleController extends Controller
             ]);
 
             // Fix Duplication in Job View:
-            // Show only one representative Job Schedule per Building + Type (for auto-generated JA jobs).
-            // Manual jobs (job_advice_id IS NULL) are displayed individually.
+            // Show one representative per generated visit. Once Material Assign has created
+            // a job_number, keep each job_number separated so old/new material batches do
+            // not share rooms or status badges in the dashboard.
             $query->where(function ($q) {
                 $table = (new \App\Models\JobSchedule)->getTable();
                 $q->whereIn('id', function ($sub) use ($table) {
@@ -165,7 +166,7 @@ class JobScheduleController extends Controller
                         ->from($table)
                         ->whereNotNull('job_advice_id')
                         ->whereNull('deleted_at')
-                        ->groupBy('job_advice_id', 'building_id', 'type', 'period');
+                        ->groupBy('job_advice_id', 'building_id', 'type', 'period', 'job_number');
                 })
                 ->orWhereNull('job_advice_id');
             });
@@ -683,11 +684,14 @@ class JobScheduleController extends Controller
 
     private function buildJobGroupingKey(JobSchedule $job): string
     {
+        $jobNumber = trim((string) ($job->job_number ?? ''));
+
         return implode('|', [
             $job->job_advice_id ?? 'no-ja',
             $job->building_id ?? 'no-building',
             $job->type ?? 'no-type',
             $job->period ?? 'no-period',
+            $jobNumber !== '' ? "job:{$jobNumber}" : 'job:unassigned',
         ]);
     }
 
@@ -9139,6 +9143,13 @@ class JobScheduleController extends Controller
                                     $query->whereNull('period');
                                 } else {
                                     $query->where('period', $selectedJob->period);
+                                }
+                            })
+                            ->where(function ($query) use ($selectedJob) {
+                                if ($selectedJob->job_number) {
+                                    $query->where('job_number', $selectedJob->job_number);
+                                } else {
+                                    $query->whereNull('job_number');
                                 }
                             });
                     } else {
