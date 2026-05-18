@@ -356,44 +356,7 @@ class JobScheduleRoom extends Model
         $job = $this->jobSchedule;
         if (!$job) return ucfirst($this->status ?? 'pending');
 
-        $status = $job->status;
-        
-        // Granular Status Logic (MOM): 
-        // If the main job is in material-related status, check if THIS specific room has material.
-        if (in_array($status, ['assign_material', 'barang_dipersiapkan', 'barang_siap_diambil', 'barang_diambil', 'material_issue'])) {
-            $thisRoomHasMaterial = false;
-            
-            // Check assignments on the main job
-            foreach ($job->jobAssignSchedules as $jas) {
-                foreach ($jas->jobAssignMaterialIssues as $jami) {
-                    if ($jami->materialIssue && $jami->materialIssue->items->where('room_name', $this->room_name)->count() > 0) {
-                        $thisRoomHasMaterial = true;
-                        break 2;
-                    }
-                }
-            }
-
-            if (!$thisRoomHasMaterial) {
-                // Check if ANY sibling room in this group has material
-                $anyRoomHasMaterialInGroup = false;
-                foreach ($job->jobScheduleRooms as $siblingRoom) {
-                    foreach ($job->jobAssignSchedules as $jas) {
-                        foreach ($jas->jobAssignMaterialIssues as $jami) {
-                            if ($jami->materialIssue && $jami->materialIssue->items->where('room_name', $siblingRoom->room_name)->count() > 0) {
-                                $anyRoomHasMaterialInGroup = true;
-                                break 3;
-                            }
-                        }
-                    }
-                }
-
-                // If some rooms in this job have material but this one doesn't, 
-                // revert this room's display status to 'scheduled' (New Job)
-                if ($anyRoomHasMaterialInGroup) {
-                    $status = 'scheduled';
-                }
-            }
-        }
+        $status = $this->resolveStatusLogicKey();
 
         $statusMap = [
             'scheduled' => 'New Job',
@@ -424,9 +387,7 @@ class JobScheduleRoom extends Model
 
     public function getStatusBadgeClassAttribute()
     {
-        // Simple badge class mapping, we can refine this later if needed
-        // For now, let's use the status from status_text logic
-        return 'status-' . str_replace('_', '-', $this->status_logic_key ?? $this->jobSchedule->status ?? 'pending');
+        return 'status-' . str_replace('_', '-', $this->resolveStatusLogicKey());
     }
 
     /**
@@ -435,19 +396,58 @@ class JobScheduleRoom extends Model
      */
     public function getStatusLogicKeyAttribute()
     {
+        return $this->resolveStatusLogicKey();
+    }
+
+    private function resolveStatusLogicKey(): string
+    {
         $job = $this->jobSchedule;
         if (!$job) return $this->status ?? 'pending';
 
         $status = $job->status;
         if (in_array($status, ['assign_material', 'barang_dipersiapkan', 'barang_siap_diambil', 'barang_diambil', 'material_issue'])) {
             $thisRoomHasMaterial = false;
+            $roomMaterialIssues = collect();
+
             foreach ($job->jobAssignSchedules as $jas) {
                 foreach ($jas->jobAssignMaterialIssues as $jami) {
                     if ($jami->materialIssue && $jami->materialIssue->items->where('room_name', $this->room_name)->count() > 0) {
                         $thisRoomHasMaterial = true;
-                        break 2;
+                        $roomMaterialIssues->push($jami->materialIssue);
                     }
                 }
+            }
+
+            if ($thisRoomHasMaterial) {
+                $issueNumbers = $roomMaterialIssues
+                    ->pluck('issue_number')
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                if ($issueNumbers->isNotEmpty()) {
+                    $inventoryIssuingStatuses = \App\Models\InventoryIssuing::whereIn('reference_no', $issueNumbers->all())
+                        ->whereNull('deleted_at')
+                        ->pluck('status');
+
+                    if ($inventoryIssuingStatuses->contains(fn ($status) => in_array($status, ['sent', 'received'], true))) {
+                        return 'barang_diambil';
+                    }
+
+                    if ($inventoryIssuingStatuses->contains('processed')) {
+                        return 'barang_siap_diambil';
+                    }
+
+                    if ($inventoryIssuingStatuses->contains('pending')) {
+                        return 'barang_dipersiapkan';
+                    }
+                }
+
+                if ($roomMaterialIssues->contains(fn ($issue) => $issue->status === 'issued')) {
+                    return 'barang_dipersiapkan';
+                }
+
+                return 'assign_material';
             }
 
             if (!$thisRoomHasMaterial) {

@@ -8778,9 +8778,9 @@ class JobScheduleController extends Controller
             'dpf',
         ];
 
-        if ($hasMaterialItemsForAssignment && !in_array($jobSchedule->status, $lockedStatuses, true)) {
+        if ($hasMaterialItemsForAssignment && in_array($jobSchedule->status, ['new_job', 'scheduled', 'assign_team'], true) && !in_array($jobSchedule->status, $lockedStatuses, true)) {
             $jobSchedule->update([
-                'status' => 'barang_dipersiapkan',
+                'status' => 'assign_material',
                 'updated_by' => $actorId,
             ]);
         }

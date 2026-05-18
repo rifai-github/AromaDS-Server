@@ -66,6 +66,7 @@ class JobScheduleGroupingTest extends TestCase
         Schema::create('material_issues', function (Blueprint $table) {
             $table->id();
             $table->string('issue_number')->nullable();
+            $table->string('status')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -78,11 +79,20 @@ class JobScheduleGroupingTest extends TestCase
             $table->timestamps();
             $table->softDeletes();
         });
+
+        Schema::create('inventory_issuings', function (Blueprint $table) {
+            $table->id();
+            $table->string('reference_no')->nullable();
+            $table->string('status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
     }
 
     protected function tearDown(): void
     {
         foreach ([
+            'inventory_issuings',
             'material_issue_items',
             'material_issues',
             'job_assign_material_issues',
@@ -164,5 +174,87 @@ class JobScheduleGroupingTest extends TestCase
 
         $this->assertSame([10], $jobs[0]->allGroupedRooms->pluck('id')->all());
         $this->assertSame([20, 21], $jobs[1]->allGroupedRooms->pluck('id')->all());
+    }
+
+    public function test_pending_material_issue_still_displays_as_material_assign_until_inventory_issuing_exists(): void
+    {
+        DB::table('job_schedules')->insert([
+            'id' => 1,
+            'job_number' => 'BDG-CSR/26-05/0006',
+            'job_advice_id' => 99,
+            'building_id' => 5,
+            'type' => 'service',
+            'period' => 1,
+            'status' => 'barang_dipersiapkan',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 10,
+            'job_schedule_id' => 1,
+            'room_name' => 'Ruang VIP',
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 20,
+            'job_schedule_id' => 1,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('material_issues')->insert([
+            'id' => 30,
+            'issue_number' => 'BDG-MI/26-05/0001',
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_material_issues')->insert([
+            'id' => 40,
+            'job_assign_schedule_id' => 20,
+            'material_issue_id' => 30,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('material_issue_items')->insert([
+            'id' => 50,
+            'material_issue_id' => 30,
+            'job_assign_schedule_id' => 20,
+            'room_name' => 'Ruang VIP',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $room = \App\Models\JobScheduleRoom::with([
+            'jobSchedule.jobAssignSchedules.jobAssignMaterialIssues.materialIssue.items',
+            'jobSchedule.jobScheduleRooms',
+        ])->findOrFail(10);
+
+        $this->assertSame('Material Assign', $room->status_text);
+        $this->assertSame('status-assign-material', $room->status_badge_class);
+
+        DB::table('inventory_issuings')->insert([
+            'id' => 60,
+            'reference_no' => 'BDG-MI/26-05/0001',
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $room->unsetRelation('jobSchedule');
+        $room->load([
+            'jobSchedule.jobAssignSchedules.jobAssignMaterialIssues.materialIssue.items',
+            'jobSchedule.jobScheduleRooms',
+        ]);
+
+        $this->assertSame('Material in Prep', $room->status_text);
+        $this->assertSame('status-barang-dipersiapkan', $room->status_badge_class);
     }
 }
