@@ -1003,7 +1003,7 @@ function submitScanSN() {
     successDiv.classList.add('d-none');
     
     // Validate form
-    const productInput = document.getElementById('scanSNProduct') || form.querySelector('input[name="master_product_id"]');
+    const productInput = form.querySelector('input[name="master_product_id"]') || document.getElementById('scanSNProduct');
     const productId = productInput ? productInput.value : '';
     const serialNumber = document.getElementById('scanSNSerial').value.trim().toUpperCase();
     
