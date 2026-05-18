@@ -25,6 +25,19 @@ class InventoryReceivingController extends Controller
             ?? false);
     }
 
+    private function productIsUnit($product): bool
+    {
+        if ($product?->productCategory && $product->productCategory->is_unit !== null) {
+            return (bool) $product->productCategory->is_unit;
+        }
+
+        if ($product?->productType && $product->productType->is_unit !== null) {
+            return (bool) $product->productType->is_unit;
+        }
+
+        return false;
+    }
+
     private function syncReceivedQuantitiesForProduct(InventoryReceiving $inventoryReceiving, int $productId): void
     {
         $items = $inventoryReceiving->items()
@@ -43,6 +56,78 @@ class InventoryReceivingController extends Controller
             ]);
             $remainingScanned -= $allocated;
         }
+    }
+
+    private function resolveReceivingTargetWarehouse(InventoryReceiving $inventoryReceiving): ?Warehouse
+    {
+        $issuingWarehouseId = $inventoryReceiving->issuing?->warehouse_id;
+        if ($issuingWarehouseId) {
+            $warehouse = Warehouse::where('id', $issuingWarehouseId)
+                ->where('is_active', true)
+                ->first();
+
+            if ($warehouse) {
+                return $warehouse;
+            }
+        }
+
+        $serialWarehouseId = \App\Models\SerialNumber::where('inventory_receiving_id', $inventoryReceiving->id)
+            ->whereNotNull('warehouse_id')
+            ->select('warehouse_id', DB::raw('COUNT(*) as total'))
+            ->groupBy('warehouse_id')
+            ->orderByDesc('total')
+            ->orderBy('warehouse_id')
+            ->value('warehouse_id');
+
+        if ($serialWarehouseId) {
+            $warehouse = Warehouse::where('id', $serialWarehouseId)
+                ->where('is_active', true)
+                ->first();
+
+            if ($warehouse) {
+                return $warehouse;
+            }
+        }
+
+        $materialReturnWarehouseId = $inventoryReceiving->reference_no
+            ? \App\Models\MaterialReturn::whereHas('jobSchedule', function ($query) use ($inventoryReceiving) {
+                $query->where('job_number', $inventoryReceiving->reference_no);
+            })
+                ->whereNotNull('warehouse_id')
+                ->whereNotIn('status', [
+                    \App\Models\MaterialReturn::STATUS_CANCELLED,
+                    \App\Models\MaterialReturn::STATUS_REJECTED,
+                ])
+                ->latest('id')
+                ->value('warehouse_id')
+            : null;
+
+        if ($materialReturnWarehouseId) {
+            $warehouse = Warehouse::where('id', $materialReturnWarehouseId)
+                ->where('is_active', true)
+                ->first();
+
+            if ($warehouse) {
+                return $warehouse;
+            }
+        }
+
+        $branchWarehouses = Warehouse::where('branch_id', $inventoryReceiving->branch_id)
+            ->where('is_active', true)
+            ->orderByDesc('is_center')
+            ->orderBy('id')
+            ->get();
+
+        if ($branchWarehouses->count() > 1) {
+            \Log::warning('Inventory receiving finalized with branch warehouse fallback because no explicit target warehouse was found', [
+                'inventory_receiving_id' => $inventoryReceiving->id,
+                'receiving_number' => $inventoryReceiving->receiving_number,
+                'branch_id' => $inventoryReceiving->branch_id,
+                'warehouse_ids' => $branchWarehouses->pluck('id')->all(),
+            ]);
+        }
+
+        return $branchWarehouses->first();
     }
 
     private function validateNoDuplicateReceivingProducts(array $items): void
@@ -735,7 +820,7 @@ class InventoryReceivingController extends Controller
             DB::beginTransaction();
 
             // Load items and get warehouse_id
-            $inventoryReceiving->load(['items.product', 'branch']);
+            $inventoryReceiving->load(['items.product', 'branch', 'issuing']);
 
             // Validate Serial Numbers for products that require them
             $serialNumbers = \App\Models\SerialNumber::where('inventory_receiving_id', $inventoryReceiving->id)
@@ -764,12 +849,9 @@ class InventoryReceivingController extends Controller
                 $this->syncReceivedQuantitiesForProduct($inventoryReceiving, (int) $productId);
             }
 
-            $inventoryReceiving->load(['items.product', 'branch']);
+            $inventoryReceiving->load(['items.product', 'branch', 'issuing']);
 
-            // Get warehouse_id from branch (first active warehouse in that branch)
-            $warehouse = \App\Models\Warehouse::where('branch_id', $inventoryReceiving->branch_id)
-                ->where('is_active', true)
-                ->first();
+            $warehouse = $this->resolveReceivingTargetWarehouse($inventoryReceiving);
 
             if (! $warehouse) {
                 DB::rollback();
@@ -1002,22 +1084,55 @@ class InventoryReceivingController extends Controller
                 ], 422);
             }
 
-            // Validasi: Cek apakah SN sudah ada di serial_numbers table (termasuk yang soft deleted)
-            // Gunakan withTrashed() untuk mengecek juga SN yang sudah dihapus
-            $existingSN = \App\Models\SerialNumber::withTrashed()
-                ->where('serial_number', $serialNumber)
-                ->first();
+            $selectedProduct = \App\Models\MasterProduct::with(['productCategory', 'productType'])
+                ->find($request->master_product_id);
+            $selectedProductIsUnit = $this->productIsUnit($selectedProduct);
 
-            $selectedProduct = \App\Models\MasterProduct::find($request->master_product_id);
+            // Unit SN remains unique. Non-unit batch SN may repeat for the same product.
+            $existingSerialNumbers = \App\Models\SerialNumber::withTrashed()
+                ->with(['masterProduct.productCategory', 'masterProduct.productType', 'warehouse'])
+                ->where('serial_number', $serialNumber)
+                ->orderBy('id')
+                ->get();
+
+            $existingUnitSN = $existingSerialNumbers->first(function ($sn) {
+                return $this->productIsUnit($sn->masterProduct);
+            });
+
             $isReceivingFromIssuing = (bool) $inventoryReceiving->issuing_id
                 || (! empty($inventoryReceiving->reference_no)
                     && \App\Models\InventoryIssuing::where('issuing_number', $inventoryReceiving->reference_no)->exists());
 
-            if ($existingSN) {
-                if ((int) $existingSN->master_product_id !== (int) $request->master_product_id) {
+            $newSerialNumber = null;
+
+            if ($existingSerialNumbers->isNotEmpty()) {
+                if ($selectedProductIsUnit) {
+                    $existingSN = $existingSerialNumbers->first();
+                } else {
+                    if ($existingUnitSN) {
+                        DB::rollBack();
+
+                        $unitProductName = $existingUnitSN->masterProduct->name ?? 'Unknown Product';
+
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => "Serial Number <strong>{$serialNumber}</strong> sudah dipakai sebagai SN Unit untuk produk <strong>{$unitProductName}</strong>. SN Unit tidak boleh sama.",
+                        ], 422);
+                    }
+
+                    $existingSN = $existingSerialNumbers
+                        ->where('master_product_id', (int) $request->master_product_id)
+                        ->first();
+                }
+
+                $differentProductSN = $existingSerialNumbers->first(function ($sn) use ($request) {
+                    return (int) $sn->master_product_id !== (int) $request->master_product_id;
+                });
+
+                if (! $selectedProductIsUnit && ! $isReceivingFromIssuing && ! $existingSN && $differentProductSN) {
                     DB::rollBack();
 
-                    $existingProductName = $existingSN->masterProduct->name ?? 'Unknown Product';
+                    $existingProductName = $differentProductSN->masterProduct->name ?? 'Unknown Product';
                     $selectedProductName = $selectedProduct->name ?? 'produk yang dipilih';
 
                     return response()->json([
@@ -1026,10 +1141,10 @@ class InventoryReceivingController extends Controller
                     ], 422);
                 }
 
-                // MOM16: Allow existing SN if status is on_hand or on_hand_remove (returning from technician)
+                // Return receivings must reuse an existing technician-held SN.
                 $allowedReturnStatuses = ['on_hand', 'on_hand_remove'];
 
-                if (in_array($existingSN->status, $allowedReturnStatuses)) {
+                if ($existingSN && in_array($existingSN->status, $allowedReturnStatuses)) {
                     // Update existing SN to point to this receiving
                     $existingSN->update([
                         'inventory_receiving_id' => $inventoryReceiving->id,
@@ -1041,24 +1156,37 @@ class InventoryReceivingController extends Controller
 
                     $newSerialNumber = $existingSN;
                     \Log::info("Serial Number {$serialNumber} (ID: {$existingSN->id}) is being RETURNED via Receiving {$inventoryReceiving->receiving_number}");
+                } elseif (! $selectedProductIsUnit && ! $isReceivingFromIssuing && $existingSN && (int) $existingSN->master_product_id === (int) $request->master_product_id) {
+                    // New supplier receiving for refill/cleaner/spare part may use the same batch SN.
+                    $newSerialNumber = \App\Models\SerialNumber::create([
+                        'serial_number' => $serialNumber,
+                        'master_product_id' => $request->master_product_id,
+                        'warehouse_id' => $warehouse->id,
+                        'inventory_receiving_id' => $inventoryReceiving->id,
+                        'status' => 'pending',
+                        'notes' => $request->notes,
+                        'created_by' => Auth::id(),
+                        'updated_by' => Auth::id(),
+                    ]);
                 } else {
                     DB::rollBack();
 
                     // Buat pesan error yang lebih informatif
-                    $errorMessage = "Serial Number <strong>{$serialNumber}</strong> sudah terdaftar di sistem dengan status <strong>{$existingSN->status_text}</strong>. ";
+                    $statusText = $existingSN?->status_text ?? 'Unknown';
+                    $errorMessage = "Serial Number <strong>{$serialNumber}</strong> sudah terdaftar di sistem dengan status <strong>{$statusText}</strong>. ";
 
-                    if ($existingSN->trashed()) {
+                    if ($existingSN?->trashed()) {
                         $errorMessage .= 'SN ini pernah terdaftar namun sudah dihapus.';
                     } else {
-                        $productName = $existingSN->masterProduct->name ?? 'Unknown Product';
-                        $warehouseName = $existingSN->warehouse->name ?? 'Unknown Warehouse';
+                        $productName = $existingSN?->masterProduct->name ?? 'Unknown Product';
+                        $warehouseName = $existingSN?->warehouse->name ?? 'Unknown Warehouse';
 
-                        if ($existingSN->inventory_receiving_id) {
+                        if ($existingSN?->inventory_receiving_id) {
                             $receiving = \App\Models\InventoryReceiving::find($existingSN->inventory_receiving_id);
                             $receivingNumber = $receiving ? $receiving->receiving_number : 'Unknown';
-                            $errorMessage .= "SN ini sudah terdaftar untuk produk <strong>{$productName}</strong> di warehouse <strong>{$warehouseName}</strong> pada Receiving <strong>{$receivingNumber}</strong>. Hanya bisa mengembalikan SN yang berstatus On Hand Teknisi.";
+                            $errorMessage .= "SN ini sudah terdaftar untuk produk <strong>{$productName}</strong> di warehouse <strong>{$warehouseName}</strong> pada Receiving <strong>{$receivingNumber}</strong>. Hanya SN Unit yang wajib unik; untuk receiving dari issuing/return, SN harus berstatus On Hand Teknisi.";
                         } else {
-                            $errorMessage .= "SN ini sudah terdaftar untuk produk <strong>{$productName}</strong> di warehouse <strong>{$warehouseName}</strong>. Hanya bisa mengembalikan SN yang berstatus On Hand Teknisi.";
+                            $errorMessage .= "SN ini sudah terdaftar untuk produk <strong>{$productName}</strong> di warehouse <strong>{$warehouseName}</strong>. Hanya SN Unit yang wajib unik; untuk receiving dari issuing/return, SN harus berstatus On Hand Teknisi.";
                         }
                     }
 

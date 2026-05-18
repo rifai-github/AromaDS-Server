@@ -3012,6 +3012,25 @@ class JobController extends Controller
                     'quantity_received' => 0,
                 ]
             );
+
+            if ($issuedItem?->serial_number_id) {
+                $sn = \App\Models\SerialNumber::find($issuedItem->serial_number_id);
+
+                if ($sn) {
+                    $existingNotes = trim((string) ($sn->notes ?? ''));
+                    $returnNote = "Queued to RR {$inventoryReceiving->receiving_number} from incomplete Job {$job->job_number}.";
+
+                    $sn->update([
+                        'inventory_receiving_id' => $inventoryReceiving->id,
+                        'warehouse_id' => $warehouse->id,
+                        'status' => 'pending',
+                        'location_type' => 'technician',
+                        'location_id' => auth()->id(),
+                        'notes' => $existingNotes === '' ? $returnNote : $existingNotes."\n".$returnNote,
+                        'updated_by' => auth()->id(),
+                    ]);
+                }
+            }
         }
     }
     
