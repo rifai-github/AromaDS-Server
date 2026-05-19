@@ -5,8 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class ContractSwitching extends Model
 {
@@ -274,15 +276,17 @@ class ContractSwitching extends Model
             // Generate new contract number
             $newContractData['contract_number'] = $this->generateNewContractNumber();
             
-            // Apply continue settings
-            if (!$this->continue_period) {
-                // Reset period if not continuing
-                $newContractData['start_date'] = now();
-                $newContractData['end_date'] = now()->addMonths($oldContract->contract_duration ?? 12);
-            } else if ($this->reset_dates) {
-                // Reset dates but keep duration
-                $newContractData['start_date'] = now();
-                $newContractData['end_date'] = now()->addMonths($oldContract->contract_duration ?? 12);
+            $effectiveDate = $this->getEffectiveDate();
+            $isResetAll = !$this->continue_period || $this->reset_dates;
+
+            if ($isResetAll) {
+                $newContractData['start_date'] = $effectiveDate->toDateString();
+                $newContractData['end_date'] = $this->calculateResetEndDate($oldContract, $effectiveDate);
+            } else {
+                $newContractData['start_date'] = $effectiveDate->toDateString();
+                $newContractData['end_date'] = $oldContract->end_date
+                    ? Carbon::parse($oldContract->end_date)->toDateString()
+                    : $this->calculateResetEndDate($oldContract, $effectiveDate);
             }
 
             // Apply Continue TOP Logic
@@ -309,9 +313,17 @@ class ContractSwitching extends Model
             $billingGroupIdMap = $this->copyBillingGroups($oldContract, $newContract, $executedBy);
 
             // Copy contract rooms/rentals
-            $this->copyContractRooms($oldContract, $newContract, $executedBy, $billingGroupIdMap);
-            $this->copyContractRentals($oldContract, $newContract, $executedBy);
+            $contractRoomIdMap = $this->copyContractRooms($oldContract, $newContract, $executedBy, $billingGroupIdMap);
+            $contractRentalIdMap = $this->copyContractRentals($oldContract, $newContract, $executedBy);
             $this->copyContractSurveys($oldContract, $newContract, $executedBy);
+            $transferSummary = $this->transferFutureOperationalData(
+                $oldContract,
+                $newContract,
+                $effectiveDate,
+                $executedBy,
+                $contractRoomIdMap,
+                $contractRentalIdMap
+            );
             
             // Update switching record
             $this->update([
@@ -340,7 +352,13 @@ class ContractSwitching extends Model
                 'old_contract' => $oldContract->contract_number,
                 'new_contract' => $newContract->contract_number,
                 'old_customer' => $this->oldCustomer->name,
-                'new_customer' => $this->newCustomer->name
+                'new_customer' => $this->newCustomer->name,
+                'mode' => $isResetAll ? 'reset_all' : 'continue_remaining',
+                'effective_date' => $effectiveDate->toDateString(),
+                'future_jobs_transferred' => $transferSummary['future_jobs_transferred'],
+                'job_advices_cloned' => $transferSummary['job_advices_cloned'],
+                'active_units_reassigned' => $transferSummary['active_units_reassigned'],
+                'existing_invoices_preserved' => $transferSummary['existing_invoices_preserved'],
             ]);
 
             return $newContract;
@@ -450,15 +468,16 @@ class ContractSwitching extends Model
     /**
      * Copy contract rooms from old contract to new contract
      */
-    protected function copyContractRooms($oldContract, $newContract, ?int $performedBy = null, array $billingGroupIdMap = [])
+    protected function copyContractRooms($oldContract, $newContract, ?int $performedBy = null, array $billingGroupIdMap = []): array
     {
         $oldContract->loadMissing('contractRooms');
 
         if ($oldContract->contractRooms->count() === 0) {
-            return;
+            return [];
         }
 
         $performedBy = $this->resolvePerformedBy($performedBy);
+        $contractRoomIdMap = [];
 
         foreach ($oldContract->contractRooms as $room) {
             $newRoom = $room->replicate([
@@ -480,7 +499,11 @@ class ContractSwitching extends Model
             $newRoom->created_by = $performedBy;
             $newRoom->updated_by = $performedBy;
             $newRoom->save();
+
+            $contractRoomIdMap[$room->id] = $newRoom->id;
         }
+
+        return $contractRoomIdMap;
     }
 
     /**
@@ -539,15 +562,16 @@ class ContractSwitching extends Model
     /**
      * Copy contract rentals from old contract to new contract
      */
-    protected function copyContractRentals($oldContract, $newContract, ?int $performedBy = null): void
+    protected function copyContractRentals($oldContract, $newContract, ?int $performedBy = null): array
     {
         $oldContract->loadMissing('contractRentals');
 
         if ($oldContract->contractRentals->count() === 0) {
-            return;
+            return [];
         }
 
         $performedBy = $this->resolvePerformedBy($performedBy);
+        $contractRentalIdMap = [];
 
         foreach ($oldContract->contractRentals as $rental) {
             $newRental = $rental->replicate([
@@ -561,7 +585,11 @@ class ContractSwitching extends Model
             $newRental->created_by = $performedBy;
             $newRental->updated_by = $performedBy;
             $newRental->save();
+
+            $contractRentalIdMap[$rental->id] = $newRental->id;
         }
+
+        return $contractRentalIdMap;
     }
 
     /**
@@ -601,6 +629,314 @@ class ContractSwitching extends Model
 
             $existingSurveyIds[] = $contractSurvey->survey_id;
         }
+    }
+
+    protected function getEffectiveDate(): Carbon
+    {
+        return $this->executed_at
+            ? Carbon::parse($this->executed_at)->startOfDay()
+            : now()->startOfDay();
+    }
+
+    protected function calculateResetEndDate(Contract $oldContract, Carbon $effectiveDate): string
+    {
+        $start = $oldContract->start_date ? Carbon::parse($oldContract->start_date) : null;
+        $end = $oldContract->end_date ? Carbon::parse($oldContract->end_date) : null;
+
+        if ($start && $end && $end->gte($start)) {
+            return $effectiveDate->copy()
+                ->addDays($start->diffInDays($end))
+                ->toDateString();
+        }
+
+        $rentalPeriod = $oldContract->quotation->rental_period ?? null;
+        if ($rentalPeriod && preg_match('/(\d+)\s*(hari|day|days|bulan|month|months|tahun|year|years)/i', strtolower($rentalPeriod), $matches)) {
+            $amount = (int) $matches[1];
+            $unit = strtolower($matches[2]);
+
+            return match (true) {
+                in_array($unit, ['hari', 'day', 'days'], true) => $effectiveDate->copy()->addDays($amount)->subDay()->toDateString(),
+                in_array($unit, ['tahun', 'year', 'years'], true) => $effectiveDate->copy()->addYears($amount)->subDay()->toDateString(),
+                default => $effectiveDate->copy()->addMonths($amount)->subDay()->toDateString(),
+            };
+        }
+
+        return $effectiveDate->copy()->addMonths(12)->subDay()->toDateString();
+    }
+
+    protected function transferFutureOperationalData(
+        Contract $oldContract,
+        Contract $newContract,
+        Carbon $effectiveDate,
+        ?int $performedBy,
+        array $contractRoomIdMap,
+        array $contractRentalIdMap
+    ): array {
+        $performedBy = $this->resolvePerformedBy($performedBy);
+        $transferableStatuses = ['scheduled', 'new_job', 'new job'];
+
+        $futureJobs = JobSchedule::with(['jobAdvice.rooms', 'jobScheduleRooms'])
+            ->whereDate('schedule_date', '>=', $effectiveDate->toDateString())
+            ->whereIn(DB::raw('LOWER(TRIM(status))'), $transferableStatuses)
+            ->where(function ($query) use ($oldContract) {
+                $query->whereHas('jobAdvice', function ($jobAdviceQuery) use ($oldContract) {
+                    $jobAdviceQuery->where('contract_id', $oldContract->id);
+                });
+
+                if ($oldContract->contract_number) {
+                    $query->orWhere('contract_number', $oldContract->contract_number);
+                }
+            })
+            ->get();
+
+        $jobAdvicesCloned = 0;
+        $jobAdviceMap = [];
+
+        foreach ($futureJobs->groupBy('job_advice_id') as $jobAdviceId => $jobsForAdvice) {
+            $jobAdvice = $jobsForAdvice->first()->jobAdvice;
+            if (!$jobAdvice) {
+                $this->updateFutureJobsContractFields($jobsForAdvice, $newContract, $performedBy);
+                continue;
+            }
+
+            $allJobIdsForAdvice = $jobAdvice->jobSchedules()->pluck('id');
+            $futureJobIds = $jobsForAdvice->pluck('id');
+            $targetJobAdvice = $jobAdvice;
+
+            if ($allJobIdsForAdvice->diff($futureJobIds)->isNotEmpty()) {
+                $targetJobAdvice = $this->cloneJobAdviceForNewContract(
+                    $jobAdvice,
+                    $newContract,
+                    $performedBy,
+                    $contractRoomIdMap,
+                    $contractRentalIdMap
+                );
+                $jobAdvicesCloned++;
+            } else {
+                $targetJobAdvice->update([
+                    'contract_id' => $newContract->id,
+                    'customer_id' => $newContract->customer_id,
+                    'company_name' => $newContract->customer->name ?? $targetJobAdvice->company_name,
+                    'updated_by' => $performedBy,
+                ]);
+                $this->remapExistingJobAdviceRoomSources($targetJobAdvice, $contractRoomIdMap, $contractRentalIdMap, $performedBy);
+            }
+
+            $jobAdviceMap[$jobAdviceId] = $targetJobAdvice->id;
+            $this->updateFutureJobsContractFields($jobsForAdvice, $newContract, $performedBy, $targetJobAdvice->id);
+            $this->remapFutureJobRooms($jobsForAdvice, $jobAdvice, $targetJobAdvice);
+        }
+
+        $activeUnitsReassigned = $this->reassignActiveUnitsOnWall($oldContract, $newContract, $performedBy);
+        $existingInvoicesPreserved = $this->countPreservedInvoices($oldContract);
+
+        return [
+            'future_jobs_transferred' => $futureJobs->count(),
+            'job_advices_cloned' => $jobAdvicesCloned,
+            'job_advices_relinked' => count($jobAdviceMap) - $jobAdvicesCloned,
+            'active_units_reassigned' => $activeUnitsReassigned,
+            'existing_invoices_preserved' => $existingInvoicesPreserved,
+        ];
+    }
+
+    protected function cloneJobAdviceForNewContract(
+        JobAdvice $jobAdvice,
+        Contract $newContract,
+        int $performedBy,
+        array $contractRoomIdMap,
+        array $contractRentalIdMap
+    ): JobAdvice {
+        $newJobAdvice = $jobAdvice->replicate([
+            'id',
+            'contract_id',
+            'customer_id',
+            'company_name',
+            'created_at',
+            'updated_at',
+            'deleted_at',
+        ]);
+
+        $newJobAdvice->contract_id = $newContract->id;
+        $newJobAdvice->customer_id = $newContract->customer_id;
+        $newJobAdvice->company_name = $newContract->customer->name ?? $jobAdvice->company_name;
+        $newJobAdvice->notes = trim(($jobAdvice->notes ?? '') . "\nSwitched from contract {$this->oldContract->contract_number} via {$this->switching_number}.");
+        $newJobAdvice->created_by = $performedBy;
+        $newJobAdvice->updated_by = $performedBy;
+        $newJobAdvice->save();
+
+        $jobAdvice->loadMissing('rooms');
+        foreach ($jobAdvice->rooms as $room) {
+            $newRoom = $room->replicate([
+                'id',
+                'job_advice_id',
+                'contract_room_id',
+                'contract_rental_id',
+                'install_job_schedule_id',
+                'service_job_schedule_id',
+                'remove_job_schedule_id',
+                'created_at',
+                'updated_at',
+                'deleted_at',
+            ]);
+
+            $newRoom->job_advice_id = $newJobAdvice->id;
+            $newRoom->contract_room_id = $room->contract_room_id
+                ? ($contractRoomIdMap[$room->contract_room_id] ?? $room->contract_room_id)
+                : null;
+            $newRoom->contract_rental_id = $room->contract_rental_id
+                ? ($contractRentalIdMap[$room->contract_rental_id] ?? $room->contract_rental_id)
+                : null;
+            $newRoom->install_job_schedule_id = null;
+            $newRoom->service_job_schedule_id = null;
+            $newRoom->remove_job_schedule_id = null;
+            $newRoom->created_by = $performedBy;
+            $newRoom->updated_by = $performedBy;
+            $newRoom->save();
+        }
+
+        return $newJobAdvice->load('rooms');
+    }
+
+    protected function updateFutureJobsContractFields($jobs, Contract $newContract, int $performedBy, ?int $jobAdviceId = null): void
+    {
+        foreach ($jobs as $job) {
+            $updates = [
+                'contract_number' => $newContract->contract_number,
+                'company_name' => $newContract->customer->name ?? $job->company_name,
+                'updated_by' => $performedBy,
+            ];
+
+            if ($jobAdviceId) {
+                $updates['job_advice_id'] = $jobAdviceId;
+            }
+
+            if (Schema::hasColumn('job_schedules', 'contract_id')) {
+                $updates['contract_id'] = $newContract->id;
+            }
+
+            if (Schema::hasColumn('job_schedules', 'customer_id')) {
+                $updates['customer_id'] = $newContract->customer_id;
+            }
+
+            $job->forceFill($updates)->save();
+        }
+    }
+
+    protected function remapExistingJobAdviceRoomSources(
+        JobAdvice $jobAdvice,
+        array $contractRoomIdMap,
+        array $contractRentalIdMap,
+        int $performedBy
+    ): void {
+        $jobAdvice->loadMissing('rooms');
+
+        foreach ($jobAdvice->rooms as $room) {
+            $updates = ['updated_by' => $performedBy];
+            $hasUpdates = false;
+
+            if ($room->contract_room_id && isset($contractRoomIdMap[$room->contract_room_id])) {
+                $updates['contract_room_id'] = $contractRoomIdMap[$room->contract_room_id];
+                $hasUpdates = true;
+            }
+
+            if ($room->contract_rental_id && isset($contractRentalIdMap[$room->contract_rental_id])) {
+                $updates['contract_rental_id'] = $contractRentalIdMap[$room->contract_rental_id];
+                $hasUpdates = true;
+            }
+
+            if ($hasUpdates) {
+                $room->update($updates);
+            }
+        }
+    }
+
+    protected function remapFutureJobRooms($jobs, JobAdvice $oldJobAdvice, JobAdvice $newJobAdvice): void
+    {
+        if ($oldJobAdvice->id === $newJobAdvice->id) {
+            return;
+        }
+
+        $oldRooms = $oldJobAdvice->rooms->values();
+        $newRooms = $newJobAdvice->rooms->values();
+
+        foreach ($oldRooms as $index => $oldRoom) {
+            $newRoom = $newRooms->get($index);
+            if (!$newRoom) {
+                continue;
+            }
+
+            $jobScheduleRoomIds = JobScheduleRoom::whereIn('job_schedule_id', $jobs->pluck('id'))
+                ->where('job_advice_room_id', $oldRoom->id)
+                ->pluck('id');
+
+            if ($jobScheduleRoomIds->isEmpty()) {
+                continue;
+            }
+
+            JobScheduleRoom::whereIn('id', $jobScheduleRoomIds)->update([
+                'job_advice_room_id' => $newRoom->id,
+                'updated_at' => now(),
+            ]);
+
+            if (Schema::hasTable('job_schedule_room_rentals')) {
+                DB::table('job_schedule_room_rentals')
+                    ->whereIn('job_schedule_room_id', $jobScheduleRoomIds)
+                    ->where('job_advice_room_id', $oldRoom->id)
+                    ->update([
+                        'job_advice_room_id' => $newRoom->id,
+                        'updated_at' => now(),
+                    ]);
+            }
+        }
+    }
+
+    protected function reassignActiveUnitsOnWall(Contract $oldContract, Contract $newContract, int $performedBy): int
+    {
+        $oldContract->loadMissing('contractRooms');
+        $roomIds = $oldContract->contractRooms->pluck('room_id')->filter()->unique()->values();
+
+        if ($roomIds->isEmpty()) {
+            return 0;
+        }
+
+        $query = UnitOnWall::where('customer_id', $oldContract->customer_id)
+            ->whereIn('room_id', $roomIds)
+            ->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall']);
+
+        $count = (clone $query)->count();
+
+        if ($count === 0) {
+            return 0;
+        }
+
+        $query->update([
+            'customer_id' => $newContract->customer_id,
+            'company_name' => $newContract->customer->name ?? null,
+            'updated_by' => $performedBy,
+            'updated_at' => now(),
+        ]);
+
+        return $count;
+    }
+
+    protected function countPreservedInvoices(Contract $oldContract): int
+    {
+        if (!Schema::hasTable('invoices')) {
+            return 0;
+        }
+
+        return DB::table('invoices')
+            ->where(function ($query) use ($oldContract) {
+                if (Schema::hasColumn('invoices', 'contract_id')) {
+                    $query->where('contract_id', $oldContract->id);
+                }
+
+                if ($oldContract->contract_number && Schema::hasColumn('invoices', 'contract_number')) {
+                    $method = Schema::hasColumn('invoices', 'contract_id') ? 'orWhere' : 'where';
+                    $query->{$method}('contract_number', $oldContract->contract_number);
+                }
+            })
+            ->count();
     }
 
     /**

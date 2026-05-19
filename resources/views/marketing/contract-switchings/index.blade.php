@@ -751,19 +751,25 @@
                 </div>
 
                 <div class="form-group" style="margin-bottom: 16px;">
-                    <label class="form-label">Continue Settings</label>
+                    <label class="form-label">Switching Mode</label>
                     <div style="background: #f8fafc; padding: 12px; border-radius: 6px;">
-                        <div style="margin-bottom: 8px;">
-                            <input type="checkbox" name="continue_period" id="continuePeriod" checked>
-                            <label for="continuePeriod" style="margin-left: 8px;">Continue same period (tanggal tetap sama)</label>
+                        <div style="margin-bottom: 10px;">
+                            <input type="radio" name="switch_mode" id="switchModeContinue" value="continue_remaining" checked>
+                            <label for="switchModeContinue" style="margin-left: 8px;">
+                                <strong>Continue sisa periode</strong><br>
+                                <small class="text-muted" style="margin-left: 24px;">Contract baru mulai saat execute sampai end date contract lama. Job future pindah ke customer baru.</small>
+                            </label>
                         </div>
-                        <div style="margin-bottom: 8px;">
-                            <input type="checkbox" name="continue_top" id="continueTop" checked>
-                            <label for="continueTop" style="margin-left: 8px;">Continue TOP (Terms of Payment tetap sama)</label>
+                        <div style="margin-bottom: 12px;">
+                            <input type="radio" name="switch_mode" id="switchModeReset" value="reset_all">
+                            <label for="switchModeReset" style="margin-left: 8px;">
+                                <strong>Reset semua</strong><br>
+                                <small class="text-muted" style="margin-left: 24px;">Contract baru mulai saat execute dengan durasi penuh seperti contract lama.</small>
+                            </label>
                         </div>
                         <div>
-                            <input type="checkbox" name="reset_dates" id="resetDates">
-                            <label for="resetDates" style="margin-left: 8px;">Reset contract dates (mulai dari sekarang)</label>
+                            <input type="checkbox" name="continue_top" id="continueTop" checked>
+                            <label for="continueTop" style="margin-left: 8px;">Continue TOP (Terms of Payment tetap sama)</label>
                         </div>
                     </div>
                 </div>
@@ -1027,15 +1033,16 @@ function submitCreateForm() {
         }
     }
     
+    const switchMode = $('[name="switch_mode"]:checked').val() || 'continue_remaining';
     const formData = {
         old_contract_id: $('[name="old_contract_id"]').val(),
         new_customer_id: $('[name="new_customer_id"]').val(),
         switching_reason: reason,
         switching_description: $('[name="switching_description"]').val(),
         switching_notes: $('[name="switching_notes"]').val(),
-        continue_period: $('[name="continue_period"]').is(':checked') ? 1 : 0,
+        continue_period: switchMode === 'continue_remaining' ? 1 : 0,
         continue_top: $('[name="continue_top"]').is(':checked') ? 1 : 0,
-        reset_dates: $('[name="reset_dates"]').is(':checked') ? 1 : 0,
+        reset_dates: switchMode === 'reset_all' ? 1 : 0,
         _token: '{{ csrf_token() }}'
     };
 
@@ -1078,6 +1085,8 @@ function viewSwitching(id) {
         method: 'GET',
         success: function(response) {
             const data = response.data;
+            const isResetAll = !data.continue_period || data.reset_dates;
+            const modeLabel = isResetAll ? 'Reset semua' : 'Continue sisa periode';
             $('#viewTransferContent').html(`
                 <table class="data-table">
                     <tr>
@@ -1093,6 +1102,10 @@ function viewSwitching(id) {
                         <td>${data.old_contract?.contract_number || '-'}</td>
                     </tr>
                     <tr>
+                        <th>Old Contract Period</th>
+                        <td>${formatDate(data.old_contract?.start_date)} - ${formatDate(data.old_contract?.end_date)}</td>
+                    </tr>
+                    <tr>
                         <th>Old Customer</th>
                         <td><i class="fas fa-building text-danger"></i> ${data.old_customer?.name || '-'}</td>
                     </tr>
@@ -1103,6 +1116,18 @@ function viewSwitching(id) {
                     <tr>
                         <th>New Contract</th>
                         <td>${data.new_contract?.contract_number || '<span class="text-muted">Belum dibuat</span>'}</td>
+                    </tr>
+                    <tr>
+                        <th>New Contract Period</th>
+                        <td>${data.new_contract ? `${formatDate(data.new_contract.start_date)} - ${formatDate(data.new_contract.end_date)}` : '<span class="text-muted">Belum dibuat</span>'}</td>
+                    </tr>
+                    <tr>
+                        <th>Switching Mode</th>
+                        <td>${modeLabel}</td>
+                    </tr>
+                    <tr>
+                        <th>TOP</th>
+                        <td>${data.continue_top ? 'Ikut contract lama' : 'Reset ke 1 Bulan'}</td>
                     </tr>
                     <tr>
                         <th>Switching Reason</th>
