@@ -72,6 +72,28 @@ class MaterialAromaClassificationTest extends TestCase
         $this->assertTrue($method->invoke($controller, $product));
     }
 
+    public function test_job_assign_material_issue_allows_copy_for_refill_package_conversion(): void
+    {
+        $controller = new JobAssignMaterialIssueController();
+        $method = (new ReflectionClass($controller))->getMethod('isPackageConversionMaterial');
+        $method->setAccessible(true);
+
+        $product = $this->product('Ginger Blossom 500ml', 'GB-500', 'Aroma Refill', null);
+
+        $this->assertTrue($method->invoke($controller, $product));
+    }
+
+    public function test_job_assign_material_issue_does_not_allow_copy_for_sparepart(): void
+    {
+        $controller = new JobAssignMaterialIssueController();
+        $method = (new ReflectionClass($controller))->getMethod('isPackageConversionMaterial');
+        $method->setAccessible(true);
+
+        $product = $this->product('Battery R20 ABC Alkaline', 'BAT-R20', 'Spare Part', 'Spare Part');
+
+        $this->assertFalse($method->invoke($controller, $product));
+    }
+
     public function test_job_schedule_uses_selected_material_list_product_when_detail_has_no_default_product(): void
     {
         $controller = new JobScheduleController();

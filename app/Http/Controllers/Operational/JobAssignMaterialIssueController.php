@@ -4551,11 +4551,29 @@ class JobAssignMaterialIssueController extends Controller
                 'item_id' => 'required|exists:material_issue_items,id'
             ]);
             
-            $originalItem = \App\Models\MaterialIssueItem::with('product')->findOrFail($request->item_id);
+            $originalItem = \App\Models\MaterialIssueItem::with([
+                'product.productType',
+                'product.productCategory',
+                'product.packagingSize',
+            ])->findOrFail($request->item_id);
             $materialIssue = $originalItem->materialIssue;
             
             if (!$materialIssue) {
                 return response()->json(['status' => 'error', 'message' => 'Material issue not found'], 404);
+            }
+
+            if (in_array($materialIssue->status, ['issued', 'received', 'sent'], true)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Cannot copy material for items that are already Issued or Received.'
+                ], 403);
+            }
+
+            if (!$this->isPackageConversionMaterial($originalItem->product)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Copy Material hanya tersedia untuk material refill/aroma yang bisa dipecah kemasan.'
+                ], 422);
             }
 
             // 1. Extract RentalDetailID or match by Name/Type (Fallback)
@@ -4738,6 +4756,45 @@ class JobAssignMaterialIssueController extends Controller
         }
 
         return 0; // Default if nothing found
+    }
+
+    private function isPackageConversionMaterial(?MasterProduct $product): bool
+    {
+        if (!$product) {
+            return false;
+        }
+
+        $haystack = $this->buildMaterialClassificationText([
+            $product->productType?->name ?? null,
+            $product->productCategory?->name ?? null,
+            $product->name ?? null,
+            $product->sku ?? null,
+            $product->variant_name ?? null,
+            $product->brand_line ?? null,
+        ]);
+
+        if ($this->containsHandSanitizerMaterialKeywords($haystack)) {
+            return false;
+        }
+
+        foreach ([
+            'aroma',
+            'refill',
+            'variant',
+            'fragrance',
+            'scent',
+            'squash',
+            'essence',
+            'signature',
+            'artisan',
+            'luxo',
+        ] as $needle) {
+            if (str_contains($haystack, $needle)) {
+                return true;
+            }
+        }
+
+        return preg_match('/\boil\b/', $haystack) === 1;
     }
 
     /**

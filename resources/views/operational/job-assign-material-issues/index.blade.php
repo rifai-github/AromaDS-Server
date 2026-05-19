@@ -1145,6 +1145,38 @@
                                 });
                             }
                             $targetMet = $rentalDetailId && ($groupTotalVolume >= $bomRentalQty) && ($bomRentalQty > 0);
+
+                            $copyMaterialHaystack = strtolower(implode(' ', array_filter([
+                                $item->product?->productType?->name ?? null,
+                                $item->product?->productCategory?->name ?? null,
+                                $item->product?->name ?? null,
+                                $item->product?->sku ?? null,
+                                $item->product?->variant_name ?? null,
+                                $item->product?->brand_line ?? null,
+                            ])));
+                            $isHandSanitizerCopyMaterial = str_contains($copyMaterialHaystack, 'hand sanitizer')
+                                || str_contains($copyMaterialHaystack, 'sanitizer')
+                                || preg_match('/\bhs\s*refill\b/', $copyMaterialHaystack)
+                                || preg_match('/\bhsr[-\s]/', $copyMaterialHaystack)
+                                || preg_match('/\bhsd[-\s]/', $copyMaterialHaystack);
+                            $isCopyablePackageMaterial = $item->product
+                                && !$isHandSanitizerCopyMaterial
+                                && (
+                                    str_contains($copyMaterialHaystack, 'aroma')
+                                    || str_contains($copyMaterialHaystack, 'refill')
+                                    || str_contains($copyMaterialHaystack, 'variant')
+                                    || str_contains($copyMaterialHaystack, 'fragrance')
+                                    || str_contains($copyMaterialHaystack, 'scent')
+                                    || str_contains($copyMaterialHaystack, 'squash')
+                                    || str_contains($copyMaterialHaystack, 'essence')
+                                    || preg_match('/\boil\b/', $copyMaterialHaystack)
+                                    || str_contains($copyMaterialHaystack, 'signature')
+                                    || str_contains($copyMaterialHaystack, 'artisan')
+                                    || str_contains($copyMaterialHaystack, 'luxo')
+                                );
+                            $canCopyMaterialItem = $materialIssue
+                                && !in_array($materialIssue->status, ['issued', 'received', 'sent'], true)
+                                && $isCopyablePackageMaterial;
                         @endphp
                         <tr class="job-group" 
                             data-group="{{ $groupKey }}" 
@@ -1470,7 +1502,7 @@
                             
                             <!-- 21. Action -->
                             <td class="text-center">
-                                @if(!$targetMet)
+                                @if($canCopyMaterialItem)
                                 <button class="btn-copy px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs" 
                                         onclick="copyMaterial({{ $item->id }})" 
                                         title="Copy Material for Package Conversion">
