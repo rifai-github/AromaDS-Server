@@ -840,28 +840,29 @@
                         <th data-column="contract_number">Contract Number</th>
                         <th data-no-filter style="display: none;">Old Contract</th>
                         <th data-no-filter style="display: none;">Current Contract</th>
-                        <th data-column="contract_date" data-type="date">Contract Date</th>
-                        <th data-column="customer.name">Company Name</th>
-                        <th data-column="quotation.pic_name">PIC Name</th>
-                        <th data-column="customer.email">Email</th>
-                        <th data-column="quotation.quotation_number" data-relation="quotation">Quotation Number</th>
-                        <th data-column="quotation.survey.surveyor.name" class="contract-surveyor-column">Surveyor</th>
-                        <th data-column="marketing.name" data-relation="marketing">Marketing Name</th>
-                        <th data-column="approver.name" data-relation="approver">Approver</th>
-                        <th data-column="contract_value" data-type="numeric">Contract Value</th>
                         <th data-column="status">Status</th>
-                        <th data-column="start_date" data-type="date">Start Date</th>
-                        <th data-column="end_date" data-type="date">End Date</th>
+                        <th data-column="contract_date" data-type="date">Contract Date</th>
+                        <th data-column="quotation.quotation_number" data-relation="quotation">Sales Quotation No</th>
                         <th data-column="quotation.quotation_type" data-relation="quotation">Contract Type</th>
+                        <th data-no-filter>Contract Period</th>
+                        <th data-column="marketing.name" data-relation="marketing">Sales Name</th>
+                        <th data-column="customer.name">Customer Name</th>
+                        <th data-column="quotation.pic_name" style="display: none;">PIC Name</th>
+                        <th data-column="customer.email" style="display: none;">Email</th>
+                        <th data-column="quotation.survey.surveyor.name" class="contract-surveyor-column" style="display: none;">Surveyor</th>
+                        <th data-column="approver.name" data-relation="approver" style="display: none;">Approver</th>
+                        <th data-column="contract_value" data-type="numeric" style="display: none;">Contract Value</th>
+                        <th data-column="start_date" data-type="date" style="display: none;">Start Date</th>
+                        <th data-column="end_date" data-type="date" style="display: none;">End Date</th>
                         <!-- <th data-column="contract_terms">Contract Terms</th> -->
-                        <th data-column="notes">Internal Notes</th>
-                        <th data-column="notes_operation">Notes Operation</th>
-                        <th data-column="notes_finance">Notes Finance</th>
-                        <th data-column="notes_sales">Notes Sales</th>
-                        <th data-column="creator.name" data-relation="creator">Created By</th>
-                        <th data-column="created_at" data-type="date">Created At</th>
-                        <th data-column="updater.name" data-relation="updater">Last Updated By</th>
-                        <th data-column="updated_at" data-type="date">Last Updated At</th>
+                        <th data-column="notes" style="display: none;">Internal Notes</th>
+                        <th data-column="notes_operation" style="display: none;">Notes Operation</th>
+                        <th data-column="notes_finance" style="display: none;">Notes Finance</th>
+                        <th data-column="notes_sales" style="display: none;">Notes Sales</th>
+                        <th data-column="creator.name" data-relation="creator" style="display: none;">Created By</th>
+                        <th data-column="created_at" data-type="date" style="display: none;">Created At</th>
+                        <th data-column="updater.name" data-relation="updater" style="display: none;">Last Updated By</th>
+                        <th data-column="updated_at" data-type="date" style="display: none;">Last Updated At</th>
                         <th data-no-filter>Actions</th>
                     </tr>
                 </thead>
@@ -926,33 +927,6 @@
                                 <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $currentContractNumber }}</p>
                             @endif
                         </td>
-                        <td class="w-[120px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->contract_date ? \Carbon\Carbon::parse($contract->contract_date)->format('d F Y') : 'N/A' }}</p>
-                        </td>
-                        <td class="w-[200px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->customer->name ?? $contract->quotation->prospect->company_name ?? 'N/A' }}</p>
-                        </td>
-                        <td class="w-[150px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->pic_name ?? 'N/A' }}</p>
-                        </td>
-                        <td class="w-[180px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->customer->email ?? $contract->quotation->prospect->email ?? 'N/A' }}</p>
-                        </td>
-                        <td class="w-[120px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->quotation_number ?? 'N/A' }}</p>
-                        </td>
-                        <td class="w-[150px] p-2 contract-surveyor-column">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->survey->surveyor->name ?? 'N/A' }}</p>
-                        </td>
-                        <td class="w-[150px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->marketing->name ?? $contract->marketing->name ?? 'N/A' }}</p>
-                        </td>
-                        <td class="w-[150px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->approver->name ?? 'N/A' }}</p>
-                        </td>
-                        <td class="w-[120px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->formatted_contract_value ?? 'N/A' }}</p>
-                        </td>
                         <td class="w-[100px] p-2">
                             @php
                                 $statusColors = [
@@ -972,41 +946,103 @@
                             </span>
                         </td>
                         <td class="w-[120px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->actual_start_date ? \Carbon\Carbon::parse($contract->actual_start_date)->format('d F Y') : '-' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->contract_date ? \Carbon\Carbon::parse($contract->contract_date)->format('d F Y') : 'N/A' }}</p>
                         </td>
+                        <!-- Sales Quotation No -->
                         <td class="w-[120px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->actual_end_date ? \Carbon\Carbon::parse($contract->actual_end_date)->format('d F Y') : '-' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->quotation_number ?? 'N/A' }}</p>
                         </td>
+                        <!-- Contract Type -->
                         <td class="w-[120px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ ucfirst($contract->quotation->quotation_type ?? 'N/A') }}</p>
+                        </td>
+                        <!-- Contract Period -->
+                        <td class="w-[100px] p-2">
+                            @php
+                                // Contract Period: prefer quotation.rental_period (e.g. "12 bulan"),
+                                // fall back to computing months from start_date/end_date.
+                                $periodDisplay = '-';
+                                if (!empty($contract->quotation?->rental_period)) {
+                                    $periodDisplay = $contract->quotation->rental_period;
+                                } elseif ($contract->start_date && $contract->end_date) {
+                                    $months = \Carbon\Carbon::parse($contract->start_date)
+                                        ->diffInMonths(\Carbon\Carbon::parse($contract->end_date));
+                                    $periodDisplay = $months > 0 ? ($months . ' bulan') : '-';
+                                }
+                            @endphp
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $periodDisplay }}</p>
+                        </td>
+                        <!-- Sales Name (marketing) -->
+                        <td class="w-[150px] p-2">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->marketing->name ?? $contract->marketing->name ?? 'N/A' }}</p>
+                        </td>
+                        <!-- Customer Name -->
+                        <td class="w-[200px] p-2">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->customer->name ?? $contract->quotation->prospect->company_name ?? 'N/A' }}</p>
+                        </td>
+                        <!-- Hidden: PIC Name -->
+                        <td class="w-[150px] p-2" style="display: none;">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->pic_name ?? 'N/A' }}</p>
+                        </td>
+                        <!-- Hidden: Email -->
+                        <td class="w-[180px] p-2" style="display: none;">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->customer->email ?? $contract->quotation->prospect->email ?? 'N/A' }}</p>
+                        </td>
+                        <!-- Hidden: Surveyor -->
+                        <td class="w-[150px] p-2 contract-surveyor-column" style="display: none;">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->survey->surveyor->name ?? 'N/A' }}</p>
+                        </td>
+                        <!-- Hidden: Approver -->
+                        <td class="w-[150px] p-2" style="display: none;">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->approver->name ?? 'N/A' }}</p>
+                        </td>
+                        <!-- Hidden: Contract Value -->
+                        <td class="w-[120px] p-2" style="display: none;">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->formatted_contract_value ?? 'N/A' }}</p>
+                        </td>
+                        <!-- Hidden: Start Date -->
+                        <td class="w-[120px] p-2" style="display: none;">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->actual_start_date ? \Carbon\Carbon::parse($contract->actual_start_date)->format('d F Y') : '-' }}</p>
+                        </td>
+                        <!-- Hidden: End Date -->
+                        <td class="w-[120px] p-2" style="display: none;">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->actual_end_date ? \Carbon\Carbon::parse($contract->actual_end_date)->format('d F Y') : '-' }}</p>
                         </td>
                         <!-- <td class="w-[200px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->contract_terms ?? 'N/A' }}</p>
                         </td> -->
-                        <td class="w-[200px] p-2">
+                        <!-- Hidden: Internal Notes -->
+                        <td class="w-[200px] p-2" style="display: none;">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">{{ $contract->notes ?: $contract->internal_remark ?: 'N/A' }}</p>
                         </td>
-                        <td class="w-[200px] p-2">
+                        <!-- Hidden: Notes Operation -->
+                        <td class="w-[200px] p-2" style="display: none;">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#888888] break-words italic" title="{{ $contract->notes_operation ?? 'No notes' }}">{{ $contract->notes_operation ? \Illuminate\Support\Str::limit($contract->notes_operation, 50) : '-' }}</p>
                         </td>
-                        <td class="w-[200px] p-2">
+                        <!-- Hidden: Notes Finance -->
+                        <td class="w-[200px] p-2" style="display: none;">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#888888] break-words italic" title="{{ $contract->notes_finance ?? 'No notes' }}">{{ $contract->notes_finance ? \Illuminate\Support\Str::limit($contract->notes_finance, 50) : '-' }}</p>
                         </td>
-                        <td class="w-[200px] p-2">
+                        <!-- Hidden: Notes Sales -->
+                        <td class="w-[200px] p-2" style="display: none;">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#888888] break-words italic" title="{{ $contract->notes_sales ?? 'No notes' }}">{{ $contract->notes_sales ? \Illuminate\Support\Str::limit($contract->notes_sales, 50) : '-' }}</p>
                         </td>
-                        <td class="w-[120px] p-2">
+                        <!-- Hidden: Created By -->
+                        <td class="w-[120px] p-2" style="display: none;">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->creator->name ?? 'N/A' }}</p>
                         </td>
-                        <td class="w-[150px] p-2">
+                        <!-- Hidden: Created At -->
+                        <td class="w-[150px] p-2" style="display: none;">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">
                                 {!! $contract->created_at ? \Carbon\Carbon::parse($contract->created_at)->format('d F Y') . '<br />at ' . \Carbon\Carbon::parse($contract->created_at)->format('H.i') . ' WIB' : 'N/A' !!}
                             </p>
                         </td>
-                        <td class="w-[120px] p-2">
+                        <!-- Hidden: Last Updated By -->
+                        <td class="w-[120px] p-2" style="display: none;">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->updater->name ?? 'N/A' }}</p>
                         </td>
-                        <td class="w-[150px] p-2">
+                        <!-- Hidden: Last Updated At -->
+                        <td class="w-[150px] p-2" style="display: none;">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">
                                 {!! $contract->updated_at ? \Carbon\Carbon::parse($contract->updated_at)->format('d F Y') . '<br />at ' . \Carbon\Carbon::parse($contract->updated_at)->format('H.i') . ' WIB' : 'N/A' !!}
                             </p>
@@ -1050,7 +1086,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="23" class="p-8 text-center">
+                        <td colspan="24" class="p-8 text-center">
                             <p class="text-[14px] md:text-[16px] lg:text-[18px] font-inter font-normal text-center text-[#666]">No contracts found</p>
                         </td>
                     </tr>
