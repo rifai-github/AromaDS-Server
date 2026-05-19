@@ -22,6 +22,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Carbon\Carbon;
 
 class InvoiceController extends Controller
@@ -341,8 +342,8 @@ class InvoiceController extends Controller
                         continue;
                     }
 
-                    $existingInvoice = $result['existing_invoice'] ?? null;
-                    if ($existingInvoice instanceof Invoice) {
+                    $existingInvoice = $this->resolveExistingInvoiceFromRegeneration($result['existing_invoice'] ?? null);
+                    if ($existingInvoice) {
                         $summary['existing']++;
                     }
 
@@ -350,12 +351,12 @@ class InvoiceController extends Controller
                         'contract_number' => $contract->contract_number,
                         'period' => $periodName,
                         'status' => 'skipped',
-                        'message' => $existingInvoice instanceof Invoice
+                        'message' => $existingInvoice
                             ? $this->formatExistingInvoiceRegenerationMessage($existingInvoice)
                             : ($result['message'] ?? 'Invoice tidak dibuat.'),
                     ];
 
-                    if ($existingInvoice instanceof Invoice) {
+                    if ($existingInvoice) {
                         $detail['existing_invoice'] = $this->buildExistingInvoiceRegenerationPayload($existingInvoice);
                     }
 
@@ -386,6 +387,23 @@ class InvoiceController extends Controller
             'summary' => $summary,
             'details' => $details,
         ]);
+    }
+
+    private function resolveExistingInvoiceFromRegeneration(mixed $existingInvoice): ?Invoice
+    {
+        if ($existingInvoice instanceof Invoice) {
+            return $existingInvoice;
+        }
+
+        if ($existingInvoice instanceof EloquentModel && $existingInvoice->getTable() === 'invoices') {
+            return Invoice::find($existingInvoice->getKey());
+        }
+
+        if (is_array($existingInvoice) && isset($existingInvoice['id'])) {
+            return Invoice::find($existingInvoice['id']);
+        }
+
+        return null;
     }
 
     private function formatExistingInvoiceRegenerationMessage(Invoice $invoice): string
