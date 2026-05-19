@@ -1582,7 +1582,7 @@
 
             <!-- System - Check by permission -->
             @if(auth()->user()->canAccessModule('system'))
-            <div class="menu-item has-submenu {{ request()->routeIs('system.*', 'audit-trails.*', 'access-control.*') ? 'active' : '' }}" onclick="toggleSubmenu(this)">
+            <div class="menu-item has-submenu {{ request()->routeIs('system.*', 'audit-trails.*', 'access-control.*', 'settings.system.*') ? 'active' : '' }}" onclick="toggleSubmenu(this)">
                 <div class="left">
                     <i class="fas fa-gear"></i>
                     <span>System</span>
@@ -1590,7 +1590,7 @@
                 <i class="fas fa-chevron-down arrow"></i>
                 <div class="tooltip">System</div>
             </div>
-            <ul class="submenu {{ request()->routeIs('system.*', 'audit-trails.*', 'access-control.*', 'emergency-contacts.*') ? 'show' : '' }}">
+            <ul class="submenu {{ request()->routeIs('system.*', 'audit-trails.*', 'access-control.*', 'emergency-contacts.*', 'settings.system.*') ? 'show' : '' }}">
                 @if(auth()->user()->canAccessMenuItem('system.departments'))
                 <li data-tooltip="Master Department" class="{{ request()->routeIs('system.departments.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.departments.index') }}')">Master Department</li>
                 @endif
@@ -1615,6 +1615,7 @@
                 @if(auth()->user()->canAccessMenuItem('system.backup-restore'))
                 <li data-tooltip="Backup (Import/Export)" class="{{ request()->routeIs('system.backup-restore.*') || request()->routeIs('system.catalyst-import.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.backup-restore.index') }}')">Backup (Import/Export)</li>
                 @endif
+                <li data-tooltip="System Settings" class="{{ request()->routeIs('settings.system.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('settings.system.index') }}')">System Settings</li>
             </ul>
             @endif
 

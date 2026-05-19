@@ -520,6 +520,44 @@
     </div>
 </div>
 
+<!-- View Modal -->
+<div class="modal-overlay" id="viewModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>System Setting Detail</h3>
+            <button onclick="closeViewModal()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">Setting Key</label>
+                <div class="form-control" id="viewSettingKey" style="background: #f8f9fa; min-height: 38px;"></div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Setting Type</label>
+                <div class="form-control" id="viewSettingType" style="background: #f8f9fa; min-height: 38px;"></div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Setting Value</label>
+                <pre class="form-control" id="viewSettingValue" style="background: #f8f9fa; min-height: 80px; white-space: pre-wrap;"></pre>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <div class="form-control" id="viewDescription" style="background: #f8f9fa; min-height: 60px; white-space: pre-wrap;"></div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <div class="form-control" id="viewStatus" style="background: #f8f9fa; min-height: 38px;"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeViewModal()">Close</button>
+            <button type="button" class="btn btn-primary" id="viewEditButton">Edit</button>
+        </div>
+    </div>
+</div>
+
 <!-- Delete Confirmation Modal -->
 <div class="modal-overlay" id="deleteModal">
     <div class="modal-content" style="max-width: 400px;">
@@ -574,6 +612,43 @@ function editSetting(id) {
 
 function closeModal() {
     document.getElementById('settingModal').classList.remove('show');
+}
+
+function viewSetting(id) {
+    fetch(`/settings/system/${id}`, {
+        headers: {
+            'Accept': 'application/json',
+        },
+    })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to load setting detail');
+            }
+
+            return response.json();
+        })
+        .then(data => {
+            document.getElementById('viewSettingKey').textContent = data.setting_key || '-';
+            document.getElementById('viewSettingType').textContent = data.setting_type || '-';
+            document.getElementById('viewSettingValue').textContent = typeof data.setting_value === 'object'
+                ? JSON.stringify(data.setting_value, null, 2)
+                : (data.setting_value ?? '-');
+            document.getElementById('viewDescription').textContent = data.description || '-';
+            document.getElementById('viewStatus').textContent = data.is_active ? 'Active' : 'Inactive';
+            document.getElementById('viewEditButton').onclick = function () {
+                closeViewModal();
+                editSetting(id);
+            };
+            document.getElementById('viewModal').classList.add('show');
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('Error loading setting detail', 'error');
+        });
+}
+
+function closeViewModal() {
+    document.getElementById('viewModal').classList.remove('show');
 }
 
 function closeDeleteModal() {
