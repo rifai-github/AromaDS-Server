@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 
 class SystemSetting extends Model
 {
@@ -21,8 +22,57 @@ class SystemSetting extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
-        'setting_value' => 'array'
     ];
+
+    public static function keyColumn(): string
+    {
+        return Schema::hasColumn('system_settings', 'setting_key') ? 'setting_key' : 'key';
+    }
+
+    public static function valueColumn(): string
+    {
+        return Schema::hasColumn('system_settings', 'setting_value') ? 'setting_value' : 'value';
+    }
+
+    public static function typeColumn(): string
+    {
+        return Schema::hasColumn('system_settings', 'setting_type') ? 'setting_type' : 'type';
+    }
+
+    public function getSettingKeyAttribute($value)
+    {
+        return $value ?? ($this->attributes['key'] ?? null);
+    }
+
+    public function setSettingKeyAttribute($value): void
+    {
+        $this->attributes[self::keyColumn()] = $value;
+    }
+
+    public function getSettingValueAttribute($value)
+    {
+        return $value ?? ($this->attributes['value'] ?? null);
+    }
+
+    public function setSettingValueAttribute($value): void
+    {
+        $this->attributes[self::valueColumn()] = $value;
+    }
+
+    public function getSettingTypeAttribute($value)
+    {
+        return $value ?? ($this->attributes['type'] ?? null);
+    }
+
+    public function setSettingTypeAttribute($value): void
+    {
+        $this->attributes[self::typeColumn()] = $value;
+    }
+
+    public function rawSettingValue()
+    {
+        return $this->getRawOriginal(self::valueColumn());
+    }
 
     // Relationships
     public function creator()
@@ -43,12 +93,12 @@ class SystemSetting extends Model
 
     public function scopeByKey($query, $key)
     {
-        return $query->where('setting_key', $key);
+        return $query->where(self::keyColumn(), $key);
     }
 
     public function scopeByType($query, $type)
     {
-        return $query->where('setting_type', $type);
+        return $query->where(self::typeColumn(), $type);
     }
 
     // Accessors

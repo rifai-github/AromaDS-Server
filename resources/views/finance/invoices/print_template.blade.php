@@ -48,12 +48,19 @@
             : null;
 
         $invoiceSignatoryValue = function (string $key, ?string $default = null): ?string {
-            if (!\Illuminate\Support\Facades\Schema::hasColumn('system_settings', 'setting_key')) {
+            $keyColumn = \Illuminate\Support\Facades\Schema::hasColumn('system_settings', 'setting_key')
+                ? 'setting_key'
+                : (\Illuminate\Support\Facades\Schema::hasColumn('system_settings', 'key') ? 'key' : null);
+            $valueColumn = \Illuminate\Support\Facades\Schema::hasColumn('system_settings', 'setting_value')
+                ? 'setting_value'
+                : (\Illuminate\Support\Facades\Schema::hasColumn('system_settings', 'value') ? 'value' : null);
+
+            if (!$keyColumn || !$valueColumn) {
                 return $default;
             }
 
-            $setting = \App\Models\SystemSetting::active()->byKey($key)->first();
-            $value = $setting?->getRawOriginal('setting_value');
+            $setting = \App\Models\SystemSetting::active()->where($keyColumn, $key)->first();
+            $value = $setting?->getRawOriginal($valueColumn);
 
             return filled($value) ? trim((string) $value) : $default;
         };

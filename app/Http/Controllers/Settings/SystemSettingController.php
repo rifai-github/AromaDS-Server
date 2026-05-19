@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
 class SystemSettingController extends Controller
@@ -16,19 +17,21 @@ class SystemSettingController extends Controller
     public function index(Request $request)
     {
         $query = SystemSetting::query();
+        $keyColumn = SystemSetting::keyColumn();
+        $typeColumn = SystemSetting::typeColumn();
 
         // Search functionality
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('setting_key', 'like', "%{$search}%")
+            $query->where(function ($q) use ($search, $keyColumn) {
+                $q->where($keyColumn, 'like', "%{$search}%")
                   ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
         // Filter by type
         if ($request->filled('type')) {
-            $query->where('setting_type', $request->type);
+            $query->where($typeColumn, $request->type);
         }
 
         // Filter by status
@@ -37,7 +40,7 @@ class SystemSettingController extends Controller
         }
 
         $settings = $query->with(['creator', 'updater'])
-            ->orderBy('setting_key')
+            ->orderBy($keyColumn)
             ->paginate(15);
 
         return view('settings.system.index', compact('settings'));
@@ -56,8 +59,9 @@ class SystemSettingController extends Controller
      */
     public function store(Request $request)
     {
+        $keyColumn = SystemSetting::keyColumn();
         $validator = Validator::make($request->all(), [
-            'setting_key' => 'required|string|max:255|unique:system_settings,setting_key',
+            'setting_key' => 'required|string|max:255|unique:system_settings,'.$keyColumn,
             'setting_value' => 'required',
             'setting_type' => 'required|in:string,integer,boolean,json,array',
             'description' => 'nullable|string|max:1000',
@@ -73,15 +77,23 @@ class SystemSettingController extends Controller
         }
 
         try {
-            $setting = SystemSetting::create([
+            $data = [
                 'setting_key' => $request->setting_key,
                 'setting_value' => $request->setting_value,
                 'setting_type' => $request->setting_type,
                 'description' => $request->description,
                 'is_active' => $request->boolean('is_active', true),
-                'created_by' => Auth::id(),
-                'updated_by' => Auth::id()
-            ]);
+            ];
+
+            if (Schema::hasColumn('system_settings', 'created_by')) {
+                $data['created_by'] = Auth::id();
+            }
+
+            if (Schema::hasColumn('system_settings', 'updated_by')) {
+                $data['updated_by'] = Auth::id();
+            }
+
+            $setting = SystemSetting::create($data);
 
             return response()->json([
                 'status' => 'success',
@@ -100,9 +112,21 @@ class SystemSettingController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(SystemSetting $systemSetting)
+    public function show(Request $request, SystemSetting $systemSetting)
     {
         $systemSetting->load(['creator', 'updater']);
+
+        if ($request->expectsJson() || $request->ajax() || $request->header('Accept') === '*/*') {
+            return response()->json([
+                'id' => $systemSetting->id,
+                'setting_key' => $systemSetting->setting_key,
+                'setting_value' => $systemSetting->setting_value,
+                'setting_type' => $systemSetting->setting_type,
+                'description' => $systemSetting->description,
+                'is_active' => $systemSetting->is_active,
+            ]);
+        }
+
         return view('settings.system.show', compact('systemSetting'));
     }
 
@@ -119,8 +143,9 @@ class SystemSettingController extends Controller
      */
     public function update(Request $request, SystemSetting $systemSetting)
     {
+        $keyColumn = SystemSetting::keyColumn();
         $validator = Validator::make($request->all(), [
-            'setting_key' => 'required|string|max:255|unique:system_settings,setting_key,' . $systemSetting->id,
+            'setting_key' => 'required|string|max:255|unique:system_settings,'.$keyColumn.',' . $systemSetting->id,
             'setting_value' => 'required',
             'setting_type' => 'required|in:string,integer,boolean,json,array',
             'description' => 'nullable|string|max:1000',
@@ -136,14 +161,19 @@ class SystemSettingController extends Controller
         }
 
         try {
-            $systemSetting->update([
+            $data = [
                 'setting_key' => $request->setting_key,
                 'setting_value' => $request->setting_value,
                 'setting_type' => $request->setting_type,
                 'description' => $request->description,
                 'is_active' => $request->boolean('is_active', true),
-                'updated_by' => Auth::id()
-            ]);
+            ];
+
+            if (Schema::hasColumn('system_settings', 'updated_by')) {
+                $data['updated_by'] = Auth::id();
+            }
+
+            $systemSetting->update($data);
 
             return response()->json([
                 'status' => 'success',
@@ -262,16 +292,18 @@ class SystemSettingController extends Controller
     public function export(Request $request)
     {
         $query = SystemSetting::query();
+        $keyColumn = SystemSetting::keyColumn();
+        $typeColumn = SystemSetting::typeColumn();
 
         if ($request->filled('type')) {
-            $query->where('setting_type', $request->type);
+            $query->where($typeColumn, $request->type);
         }
 
         if ($request->filled('status')) {
             $query->where('is_active', $request->status === 'active');
         }
 
-        $settings = $query->orderBy('setting_key')->get();
+        $settings = $query->orderBy($keyColumn)->get();
 
         $filename = 'system_settings_' . date('Y-m-d_H-i-s') . '.csv';
         
