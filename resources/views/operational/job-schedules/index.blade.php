@@ -4032,7 +4032,8 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                             : data.data;
 
                         roomsToDisplay.forEach(item => {
-                            const canUnassign = item.job_status === 'assign_material';
+                            const jobStatus = (item.job_status || '').toLowerCase();
+                            const canUnassign = ['assign_material', 'barang_dipersiapkan', 'material_prepare'].includes(jobStatus);
                             const isSelectedInTable = selectedRoomIdsFromTable.length === 0 || selectedRoomIdsFromTable.includes(item.id.toString());
                             detailsHtml += `
                                 <tr class="hover:bg-gray-50 ${!canUnassign ? 'opacity-50' : ''}">
@@ -4047,7 +4048,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                                     </td>
                                     <td class="px-3 py-2">
                                         <span class="text-xs px-2 py-0.5 rounded ${canUnassign ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}">
-                                            ${item.job_status === 'scheduled' ? 'NEW JOB' : item.job_status.replace('_', ' ').toUpperCase()}
+                                            ${jobStatus === 'scheduled' ? 'NEW JOB' : (item.job_status || '-').replace(/_/g, ' ').toUpperCase()}
                                         </span>
                                     </td>
                                 </tr>
@@ -4056,7 +4057,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
 
                         detailsHtml += `</tbody></table></div>
                         <div class="text-xs text-gray-500 mt-2 text-left">
-                            * Hanya room dengan status <strong>MATERIAL ASSIGN</strong> yang dapat dibatalkan.
+                            * Hanya room dengan status <strong>MATERIAL ASSIGN</strong> atau <strong>MATERIAL PREPARE</strong> yang dapat dibatalkan.
                         </div>`;
 
                         Swal.fire({
