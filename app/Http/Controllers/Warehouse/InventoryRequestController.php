@@ -89,6 +89,36 @@ class InventoryRequestController extends Controller
         return null;
     }
 
+    private function ensureCanApproveInventoryRequest()
+    {
+        if ($this->userCanApproveInventoryRequest()) {
+            return null;
+        }
+
+        return back()->with('error', 'Anda tidak memiliki akses untuk approve Inventory Request.');
+    }
+
+    private function userCanApproveInventoryRequest(): bool
+    {
+        $user = Auth::user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->canApprove('inventory-requests')) {
+            return true;
+        }
+
+        $roleIds = $user->roles()->pluck('roles.id');
+
+        return DB::table('role_permissions')
+            ->join('permissions', 'permissions.id', '=', 'role_permissions.permission_id')
+            ->whereIn('role_permissions.role_id', $roleIds)
+            ->where('permissions.name', 'warehouse.inventory-requests.approve')
+            ->exists();
+    }
+
     private function mergeDuplicateRequestItems(InventoryRequest $inventoryRequest): void
     {
         $inventoryRequest->loadMissing('items');
@@ -339,6 +369,7 @@ class InventoryRequestController extends Controller
     public function show(InventoryRequest $inventoryRequest)
     {
         $inventoryRequest->load(['warehouse', 'branch', 'requestedBy', 'approvedBy', 'items.product', 'items.createdBy', 'items.updatedBy']);
+        $canApproveInventoryRequest = $this->userCanApproveInventoryRequest();
 
         if (request()->expectsJson() || request()->is('api/*')) {
             return response()->json([
@@ -374,7 +405,10 @@ class InventoryRequestController extends Controller
             ]);
         }
 
-        return view('warehouse.inventory-requests.show', ['requestData' => $inventoryRequest]);
+        return view('warehouse.inventory-requests.show', [
+            'requestData' => $inventoryRequest,
+            'canApproveInventoryRequest' => $canApproveInventoryRequest,
+        ]);
     }
 
     /**
@@ -751,6 +785,10 @@ class InventoryRequestController extends Controller
             return back()->with('error', 'Can only approve pending requests.');
         }
 
+        if ($denied = $this->ensureCanApproveInventoryRequest()) {
+            return $denied;
+        }
+
         try {
             DB::beginTransaction();
 
@@ -795,6 +833,10 @@ class InventoryRequestController extends Controller
     {
         if ($inventoryRequest->status !== 'pending') {
             return back()->with('error', 'Can only reject pending requests.');
+        }
+
+        if ($denied = $this->ensureCanApproveInventoryRequest()) {
+            return $denied;
         }
 
         $request->validate([

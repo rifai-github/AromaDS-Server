@@ -147,7 +147,7 @@
                             </form>
                             @endif
                             
-                            @if($requestData->status === 'pending')
+                            @if($requestData->status === 'pending' && ($canApproveInventoryRequest ?? false))
                             <div style="display: inline-flex; gap: 10px;">
                                 <button type="button" class="btn btn-success btn-sm"
                                     onclick="confirmActionWithAutoFill('{{ route('warehouse.inventory-requests.approve', $requestData->id) }}', 'Approve Request', 'Apakah Anda ingin mengisi otomatis semua Approved Qty yang kosong sesuai Qty Request?')">
