@@ -766,17 +766,16 @@ class JobAssignMaterialIssueController extends Controller
             // MOM11: Save material issue items dari job advice rooms (dengan quotation aroma support)
             $this->saveMaterialIssueItems($materialIssue, $jobAssignMaterialIssue);
             
-            // MOM9: Auto-update job schedule status to "material_issue" when material is assigned
+            // Keep Job Schedule at Material Assign while the material issue is still editable.
+            // It moves to Material in Prep only after Submit Issue creates Inventory Issuing.
             $jobAssignSchedule = JobAssignSchedule::with('jobSchedule')->find($request->job_assign_schedule_id);
             
             if ($jobAssignSchedule && $jobAssignSchedule->jobSchedule) {
                 $jobSchedule = $jobAssignSchedule->jobSchedule;
                 
-                // Check if status allows update to 'material_issue'
-                // Expanded checking to be safe
                 if (in_array($jobSchedule->status, ['assign_material', 'assign_team', 'scheduled', 'new_job'], true)) {
                     $jobSchedule->update([
-                        'status' => 'barang_dipersiapkan', // Changed from material_issue (invalid enum)
+                        'status' => 'assign_material',
                         'updated_by' => Auth::id()
                     ]);
                 }

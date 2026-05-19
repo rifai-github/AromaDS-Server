@@ -1627,7 +1627,7 @@ class JobAssignScheduleController extends Controller
 
                 if ($hasMaterialItemsForAssignment && in_array($jobSchedule->status, ['assign_material', 'assign_team', 'scheduled', 'new_job'], true)) {
                     $jobSchedule->update([
-                        'status' => 'barang_dipersiapkan',
+                        'status' => 'assign_material',
                         'updated_by' => Auth::id(),
                     ]);
                 }

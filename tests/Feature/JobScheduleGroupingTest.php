@@ -25,6 +25,9 @@ class JobScheduleGroupingTest extends TestCase
             $table->string('type')->nullable();
             $table->integer('period')->nullable();
             $table->string('status')->nullable();
+            $table->boolean('material_checked')->default(false);
+            $table->timestamp('material_checked_at')->nullable();
+            $table->foreignId('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -256,5 +259,60 @@ class JobScheduleGroupingTest extends TestCase
 
         $this->assertSame('Material in Prep', $room->status_text);
         $this->assertSame('status-barang-dipersiapkan', $room->status_badge_class);
+    }
+
+    public function test_repair_keeps_pending_material_issue_job_at_material_assign_until_submit_issue(): void
+    {
+        DB::table('job_schedules')->insert([
+            'id' => 1,
+            'job_number' => 'BDG-CSR/26-05/0005',
+            'job_advice_id' => 99,
+            'building_id' => 5,
+            'type' => 'service',
+            'period' => 1,
+            'status' => 'barang_dipersiapkan',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 20,
+            'job_schedule_id' => 1,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('material_issues')->insert([
+            'id' => 30,
+            'issue_number' => 'BDG-MI/26-05/0005',
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_material_issues')->insert([
+            'id' => 40,
+            'job_assign_schedule_id' => 20,
+            'material_issue_id' => 30,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('material_issue_items')->insert([
+            'id' => 50,
+            'material_issue_id' => 30,
+            'job_assign_schedule_id' => 20,
+            'room_name' => 'Ruang VIP',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->artisan('jobs:repair-grouped-material-statuses', [
+            '--job-number' => ['BDG-CSR/26-05/0005'],
+            '--apply' => true,
+        ])->assertExitCode(0);
+
+        $this->assertSame('assign_material', DB::table('job_schedules')->where('id', 1)->value('status'));
     }
 }

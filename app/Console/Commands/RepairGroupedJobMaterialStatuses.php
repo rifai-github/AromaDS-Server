@@ -222,14 +222,7 @@ class RepairGroupedJobMaterialStatuses extends Command
             return 'barang_dipersiapkan';
         }
 
-        $hasPreparedMaterialItems = $jobAssignMaterialIssues->contains(function ($assignMaterialIssue) {
-            return $assignMaterialIssue->materialIssue
-                && $assignMaterialIssue->materialIssue->items
-                    ->where('job_assign_schedule_id', $assignMaterialIssue->job_assign_schedule_id)
-                    ->isNotEmpty();
-        });
-
-        if ($hasPreparedMaterialItems) {
+        if ($jobAssignMaterialIssues->contains(fn ($assignMaterialIssue) => $assignMaterialIssue->materialIssue?->status === 'issued')) {
             return 'barang_dipersiapkan';
         }
 
