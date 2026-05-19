@@ -70,8 +70,8 @@
     }
     
     .responsive-table {
-        min-width: 1400px; /* Reduced after hiding 17 columns to match visible columns total (~1300px) */
-        width: 100%;
+        min-width: 2100px; /* Sized to match 17 visible columns (~2050px content + padding) */
+        width: auto; /* Don't stretch to 100% — keeps visible columns packed left, no gap from hidden-column slack */
         border-collapse: collapse;
         table-layout: auto;
         margin: 0;
@@ -834,7 +834,7 @@
                 <!-- Table Header -->
                 <thead>
                     <tr>
-                        <th data-no-filter>
+                        <th data-no-filter style="width: 50px;">
                             <input type="checkbox" id="headerSelectAll" class="w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer">
                         </th>
                         <th data-column="contract_number" style="width: 140px;">Contract Number</th>
@@ -845,8 +845,15 @@
                         <th data-column="quotation.quotation_number" data-relation="quotation" style="width: 140px;">Sales Quotation No</th>
                         <th data-column="quotation.quotation_type" data-relation="quotation" style="width: 110px;">Contract Type</th>
                         <th data-no-filter style="width: 100px;">Contract Period</th>
+                        <th data-column="quotation.branch.code" data-relation="quotation" style="width: 80px;">Branch</th>
+                        <th data-column="quotation.branch.name" data-relation="quotation" style="width: 110px;">Branch Name</th>
+                        <th data-column="po_number" style="width: 120px;">Cust PO No</th>
+                        <th data-column="quotation.marketing.nik" data-relation="quotation" style="width: 90px;">Sales Code</th>
                         <th data-column="marketing.name" data-relation="marketing" style="width: 140px;">Sales Name</th>
+                        <th data-column="customer.customer_code" style="width: 100px;">Customer Code</th>
                         <th data-column="customer.name" style="width: 240px;">Customer Name</th>
+                        <th data-no-filter style="width: 110px;">Bank Payment Code</th>
+                        <th data-no-filter style="width: 160px;">Bank Payment</th>
                         <th data-column="quotation.pic_name" style="display: none;">PIC Name</th>
                         <th data-column="customer.email" style="display: none;">Email</th>
                         <th data-column="quotation.survey.surveyor.name" class="contract-surveyor-column" style="display: none;">Surveyor</th>
@@ -972,13 +979,41 @@
                             @endphp
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $periodDisplay }}</p>
                         </td>
+                        <!-- Branch (code) -->
+                        <td class="w-[80px] p-2">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->branch->code ?? '-' }}</p>
+                        </td>
+                        <!-- Branch Name -->
+                        <td class="w-[110px] p-2">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->branch->name ?? '-' }}</p>
+                        </td>
+                        <!-- Cust PO No -->
+                        <td class="w-[120px] p-2">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->po_number ?? '-' }}</p>
+                        </td>
+                        <!-- Sales Code (NIK marketing) -->
+                        <td class="w-[90px] p-2">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->marketing->nik ?? $contract->marketing->nik ?? '-' }}</p>
+                        </td>
                         <!-- Sales Name (marketing) -->
                         <td class="w-[140px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->marketing->name ?? $contract->marketing->name ?? 'N/A' }}</p>
                         </td>
+                        <!-- Customer Code -->
+                        <td class="w-[100px] p-2">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->customer->customer_code ?? '-' }}</p>
+                        </td>
                         <!-- Customer Name -->
                         <td class="w-[240px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->customer->name ?? $contract->quotation->prospect->company_name ?? 'N/A' }}</p>
+                        </td>
+                        <!-- Bank Payment Code -->
+                        <td class="w-[110px] p-2">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->customer->defaultBankPayment->bank->bank_code ?? '-' }}</p>
+                        </td>
+                        <!-- Bank Payment (account) -->
+                        <td class="w-[160px] p-2">
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->customer->defaultBankPayment->account_number ?? '-' }}</p>
                         </td>
                         <!-- Hidden: PIC Name -->
                         <td class="w-[150px] p-2" style="display: none;">
@@ -1086,7 +1121,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="24" class="p-8 text-center">
+                        <td colspan="31" class="p-8 text-center">
                             <p class="text-[14px] md:text-[16px] lg:text-[18px] font-inter font-normal text-center text-[#666]">No contracts found</p>
                         </td>
                     </tr>
