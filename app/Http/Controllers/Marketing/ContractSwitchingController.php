@@ -398,13 +398,26 @@ class ContractSwitchingController extends Controller
      */
     public function getActiveContracts(Request $request)
     {
-        $columns = collect(['id', 'contract_number', 'customer_id', 'start_date', 'end_date'])
+        $columns = collect(['id', 'contract_number', 'customer_id', 'start_date', 'end_date', 'status', 'contract_status'])
             ->filter(fn ($column) => Schema::hasColumn('contracts', $column))
             ->values()
             ->all();
+        $activeStatuses = ['active', 'approved', 'aktif', 'Active', 'Approved', 'Aktif'];
+        $terminalStatuses = ['terminated', 'cancelled', 'completed', 'expired'];
 
         $contracts = Contract::withoutGlobalScope('autoFilter')
-            ->where('status', 'active')
+            ->where(function ($query) use ($activeStatuses) {
+                $query->whereIn('contract_status', $activeStatuses)
+                    ->orWhereIn('status', $activeStatuses);
+            })
+            ->where(function ($query) use ($terminalStatuses) {
+                $query->whereNull('contract_status')
+                    ->orWhereNotIn('contract_status', $terminalStatuses);
+            })
+            ->where(function ($query) use ($terminalStatuses) {
+                $query->whereNull('status')
+                    ->orWhereNotIn('status', $terminalStatuses);
+            })
             ->with('customer')
             ->orderBy('contract_number')
             ->get($columns);
