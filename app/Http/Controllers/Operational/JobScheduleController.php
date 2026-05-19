@@ -1484,8 +1484,9 @@ class JobScheduleController extends Controller
             DB::beginTransaction();
 
             $successCount = 0;
+            $actuallyUnassignedCount = 0; // Only counts jobs that actually had an active team to cancel
             $errors = [];
-            
+
             // IMPORTANT: room_ids are JobScheduleRoom IDs, NOT Job IDs
             // We need to convert them to Job IDs first
             $targetIds = collect();
@@ -1616,7 +1617,13 @@ class JobScheduleController extends Controller
                     $activeAssignments = \App\Models\JobAssignSchedule::where('job_schedule_id', $jobSchedule->id)
                         ->where('status', '!=', 'cancelled')
                         ->get();
-                        
+
+                    // Track jobs that actually had a team to unassign, for accurate success messaging.
+                    // Jobs with no active assignments (e.g. NEW JOB siblings) still pass through the
+                    // rest of the loop to keep existing reset behavior, but are not counted as
+                    // "unassigned" since there was nothing to unassign.
+                    $hadActiveTeam = $activeAssignments->isNotEmpty();
+
                     foreach ($activeAssignments as $assignment) {
                         $assignment->update([
                             'status' => 'cancelled',
@@ -1652,6 +1659,9 @@ class JobScheduleController extends Controller
                     ]);
 
                     $successCount++;
+                    if ($hadActiveTeam) {
+                        $actuallyUnassignedCount++;
+                    }
 
                 } catch (\Exception $e) {
                     $errors[] = "Job {$jobId}: " . $e->getMessage();
@@ -1668,9 +1678,11 @@ class JobScheduleController extends Controller
 
             DB::commit();
 
+            // Report only jobs that actually had a team to unassign. Sibling NEW JOB rows
+            // pulled in by the group-expansion logic are not "unassigned" — they had no team.
             return response()->json([
                 'status' => 'success',
-                'message' => "Successfully unassigned {$successCount} jobs."
+                'message' => "Successfully unassigned {$actuallyUnassignedCount} jobs."
             ]);
 
         } catch (\Exception $e) {
