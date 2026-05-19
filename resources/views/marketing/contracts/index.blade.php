@@ -838,8 +838,8 @@
                             <input type="checkbox" id="headerSelectAll" class="w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer">
                         </th>
                         <th data-column="contract_number">Contract Number</th>
-                        <th data-no-filter>Old Contract</th>
-                        <th data-no-filter>Current Contract</th>
+                        <th data-no-filter style="display: none;">Old Contract</th>
+                        <th data-no-filter style="display: none;">Current Contract</th>
                         <th data-column="contract_date" data-type="date">Contract Date</th>
                         <th data-column="customer.name">Company Name</th>
                         <th data-column="quotation.pic_name">PIC Name</th>
@@ -876,7 +876,7 @@
                         <td class="w-[150px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->contract_number ?? 'N/A' }}</p>
                         </td>
-                        <td class="w-[150px] p-2">
+                        <td class="w-[150px] p-2" style="display: none;">
                             @php
                                 // Old Contract: jika contract ini dibuat dari renewal, tampilkan contract lama
                                 $oldContractNumber = $contract->contract_number;
@@ -896,7 +896,7 @@
                                 <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $oldContractNumber }}</p>
                             @endif
                         </td>
-                        <td class="w-[150px] p-2">
+                        <td class="w-[150px] p-2" style="display: none;">
                             @php
                                 // Current Contract: cek apakah ada contract lain yang merupakan renewal dari contract ini
                                 $currentContractNumber = $contract->contract_number;
