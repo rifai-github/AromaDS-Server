@@ -502,11 +502,47 @@ class JobSchedule extends Model
         ];
         
         $type = strtolower($this->type ?? '');
-        if (in_array($type, ['service', 'service_first', 'service_routine'], true) && $this->material_checked) {
+        if (in_array($type, ['service', 'service_first', 'service_routine'], true)
+            && $this->material_checked
+            && $this->hasOnlyUnitRentalFlow()
+        ) {
             return 'Check (CHK)';
         }
         
         return $typeLabels[$type] ?? ucfirst(str_replace('_', ' ', $this->type ?? '-'));
+    }
+
+    private function hasOnlyUnitRentalFlow(): bool
+    {
+        $rooms = $this->relationLoaded('jobScheduleRooms')
+            ? $this->jobScheduleRooms
+            : $this->jobScheduleRooms()
+                ->with(['rentals.jobAdviceRoom.rentalProduct', 'jobAdviceRoom.rentalProduct'])
+                ->get();
+
+        $rentalTypes = collect();
+
+        foreach ($rooms as $room) {
+            $rentals = $room->relationLoaded('rentals') ? $room->rentals : collect();
+
+            if ($rentals->isNotEmpty()) {
+                foreach ($rentals as $rentalLink) {
+                    $rentalTypes->push($rentalLink->jobAdviceRoom?->rentalProduct?->rental_type);
+                }
+
+                continue;
+            }
+
+            $rentalTypes->push($room->jobAdviceRoom?->rentalProduct?->rental_type);
+        }
+
+        $rentalTypes = $rentalTypes
+            ->filter()
+            ->map(fn ($type) => strtolower(trim((string) $type)))
+            ->values();
+
+        return $rentalTypes->isNotEmpty()
+            && $rentalTypes->every(fn ($type) => $type === 'unit_only');
     }
 
     // Methods
