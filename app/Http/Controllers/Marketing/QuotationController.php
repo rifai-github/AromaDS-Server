@@ -2615,7 +2615,7 @@ class QuotationController extends Controller
             'status' => 'success',
             'data' => [
                 'can_create_contract' => $canCreate,
-                'reason' => $canCreate ? 'Quotation is approved and ready for contract' : 'Quotation must be approved and no active free trials'
+                'reason' => $canCreate ? 'Quotation is approved and ready for contract' : 'Quotation must be approved, without existing contract, and no active free trials'
             ]
         ]);
     }

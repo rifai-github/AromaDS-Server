@@ -124,6 +124,7 @@
                             @elseif($quotation->status === 'approved')
                                 @php
                                     $canDownloadPdf = auth()->user()->hasPermission('quotations.download');
+                                    $canCreateContract = $quotation->canCreateContract();
                                 @endphp
                                 
                                 @if($canDownloadPdf)
@@ -132,9 +133,11 @@
                                     </a>
                                 @endif
                                 
-                                <a href="{{ route('marketing.contracts.wizard.create', ['quotation_id' => $quotation->id]) }}" class="btn btn-success btn-sm me-2">
-                                    <i class="fas fa-file-contract"></i> CREATE CONTRACT
-                                </a>
+                                @if($canCreateContract)
+                                    <a href="{{ route('marketing.contracts.wizard.create', ['quotation_id' => $quotation->id]) }}" class="btn btn-success btn-sm me-2">
+                                        <i class="fas fa-file-contract"></i> CREATE CONTRACT
+                                    </a>
+                                @endif
                                 
                                 {{-- MOM9: Create Job Advice (Install Free) from Quotation --}}
                                 <button type="button" onclick="openJobAdviceModalFromQuotation({{ $quotation->id }})" class="btn btn-info btn-sm me-2">

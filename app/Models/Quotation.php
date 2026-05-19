@@ -409,7 +409,9 @@ class Quotation extends Model
 
     public function canCreateContract()
     {
-        return $this->status === 'approved' && !$this->hasActiveFreeTrials();
+        return $this->status === 'approved'
+            && !$this->contracts()->exists()
+            && !$this->hasActiveFreeTrials();
     }
 
     /**

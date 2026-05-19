@@ -92,7 +92,8 @@ class ContractWizardController extends Controller
         // Otherwise, show only quotations for current user (marketing)
         $quotationsQuery = Quotation::with(['customer.customerTaxSettings', 'marketing'])
             ->usable()
-            ->where('status', 'approved');
+            ->where('status', 'approved')
+            ->whereDoesntHave('contracts');
         
         if (!$isAdminOrManagement) {
             // Regular user: only see their own quotations
@@ -239,6 +240,24 @@ class ContractWizardController extends Controller
                 'quotationRooms.room',
                 'quotationSurveys.survey' // Load all surveys for logging
             ])->find($request->quotation_id);
+
+            if (!$quotation) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Quotation tidak ditemukan.',
+                ], 404);
+            }
+
+            if (!$quotation->canCreateContract()) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Quotation ini sudah memiliki contract atau belum memenuhi syarat untuk dibuatkan contract.',
+                ], 422);
+            }
 
             if ($quotation && $quotation->quotation_type === 'renewal' && $quotation->existing_contract_id) {
                 $oldContract = Contract::find($quotation->existing_contract_id);
@@ -901,6 +920,12 @@ class ContractWizardController extends Controller
             ]);
         }
 
+        if (!$quotation->canCreateContract()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Quotation ini sudah memiliki contract atau belum memenuhi syarat untuk dibuatkan contract.'
+            ], 422);
+        }
 
         return response()->json($this->buildQuotationWizardPayload($quotation));
     }
