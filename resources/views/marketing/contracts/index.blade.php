@@ -70,7 +70,7 @@
     }
     
     .responsive-table {
-        min-width: 3000px; /* Increased from 2400px for 3 new notes columns */
+        min-width: 1400px; /* Reduced after hiding 17 columns to match visible columns total (~1300px) */
         width: 100%;
         border-collapse: collapse;
         table-layout: auto;
