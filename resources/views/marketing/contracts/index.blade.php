@@ -837,16 +837,16 @@
                         <th data-no-filter>
                             <input type="checkbox" id="headerSelectAll" class="w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer">
                         </th>
-                        <th data-column="contract_number">Contract Number</th>
+                        <th data-column="contract_number" style="width: 140px;">Contract Number</th>
                         <th data-no-filter style="display: none;">Old Contract</th>
                         <th data-no-filter style="display: none;">Current Contract</th>
-                        <th data-column="status">Status</th>
-                        <th data-column="contract_date" data-type="date">Contract Date</th>
-                        <th data-column="quotation.quotation_number" data-relation="quotation">Sales Quotation No</th>
-                        <th data-column="quotation.quotation_type" data-relation="quotation">Contract Type</th>
-                        <th data-no-filter>Contract Period</th>
-                        <th data-column="marketing.name" data-relation="marketing">Sales Name</th>
-                        <th data-column="customer.name">Customer Name</th>
+                        <th data-column="status" style="width: 130px;">Status</th>
+                        <th data-column="contract_date" data-type="date" style="width: 110px;">Contract Date</th>
+                        <th data-column="quotation.quotation_number" data-relation="quotation" style="width: 140px;">Sales Quotation No</th>
+                        <th data-column="quotation.quotation_type" data-relation="quotation" style="width: 110px;">Contract Type</th>
+                        <th data-no-filter style="width: 100px;">Contract Period</th>
+                        <th data-column="marketing.name" data-relation="marketing" style="width: 140px;">Sales Name</th>
+                        <th data-column="customer.name" style="width: 240px;">Customer Name</th>
                         <th data-column="quotation.pic_name" style="display: none;">PIC Name</th>
                         <th data-column="customer.email" style="display: none;">Email</th>
                         <th data-column="quotation.survey.surveyor.name" class="contract-surveyor-column" style="display: none;">Surveyor</th>
@@ -863,7 +863,7 @@
                         <th data-column="created_at" data-type="date" style="display: none;">Created At</th>
                         <th data-column="updater.name" data-relation="updater" style="display: none;">Last Updated By</th>
                         <th data-column="updated_at" data-type="date" style="display: none;">Last Updated At</th>
-                        <th data-no-filter>Actions</th>
+                        <th data-no-filter style="width: 140px;">Actions</th>
                     </tr>
                 </thead>
                 
@@ -874,7 +874,7 @@
                         <td class="w-[50px] p-2 text-center">
                             <input type="checkbox" class="row-checkbox w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px] cursor-pointer" value="{{ $contract->id }}" onclick="event.stopPropagation()">
                         </td>
-                        <td class="w-[150px] p-2">
+                        <td class="w-[140px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->contract_number ?? 'N/A' }}</p>
                         </td>
                         <td class="w-[150px] p-2" style="display: none;">
@@ -927,7 +927,7 @@
                                 <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $currentContractNumber }}</p>
                             @endif
                         </td>
-                        <td class="w-[100px] p-2">
+                        <td class="w-[130px] p-2">
                             @php
                                 $statusColors = [
                                     'active' => 'background-color: #dcfce7; color: #166534;',
@@ -945,15 +945,15 @@
                                 {{ $contract->status_text ?? ucfirst($contract->contract_status ?? 'N/A') }}
                             </span>
                         </td>
-                        <td class="w-[120px] p-2">
+                        <td class="w-[110px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->contract_date ? \Carbon\Carbon::parse($contract->contract_date)->format('d F Y') : 'N/A' }}</p>
                         </td>
                         <!-- Sales Quotation No -->
-                        <td class="w-[120px] p-2">
+                        <td class="w-[140px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->quotation_number ?? 'N/A' }}</p>
                         </td>
                         <!-- Contract Type -->
-                        <td class="w-[120px] p-2">
+                        <td class="w-[110px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ ucfirst($contract->quotation->quotation_type ?? 'N/A') }}</p>
                         </td>
                         <!-- Contract Period -->
@@ -973,11 +973,11 @@
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $periodDisplay }}</p>
                         </td>
                         <!-- Sales Name (marketing) -->
-                        <td class="w-[150px] p-2">
+                        <td class="w-[140px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->marketing->name ?? $contract->marketing->name ?? 'N/A' }}</p>
                         </td>
                         <!-- Customer Name -->
-                        <td class="w-[200px] p-2">
+                        <td class="w-[240px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->customer->name ?? $contract->quotation->prospect->company_name ?? 'N/A' }}</p>
                         </td>
                         <!-- Hidden: PIC Name -->
@@ -1047,7 +1047,7 @@
                                 {!! $contract->updated_at ? \Carbon\Carbon::parse($contract->updated_at)->format('d F Y') . '<br />at ' . \Carbon\Carbon::parse($contract->updated_at)->format('H.i') . ' WIB' : 'N/A' !!}
                             </p>
                         </td>
-                        <td class="w-[150px] p-2">
+                        <td class="w-[140px] p-2">
                             <div class="flex flex-row gap-1">
                                 @if(auth()->user()->hasPermission('contracts.download'))
                                 <a href="{{ route('marketing.contracts.download', $contract->id) }}" 
