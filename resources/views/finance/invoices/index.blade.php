@@ -1126,7 +1126,11 @@ function renderRegenerateResult(data) {
         const contract = escapeRegenerateHtml(item.contract_number || (item.contract_id ? `Contract #${item.contract_id}` : '-'));
         const period = item.period ? ` / ${escapeRegenerateHtml(item.period)}` : '';
         const message = escapeRegenerateHtml(item.message || '-');
-        return `<li><strong>${contract}${period}</strong>: ${status} - ${message}</li>`;
+        const existingInvoice = item.existing_invoice || null;
+        const invoiceLink = existingInvoice?.url && existingInvoice?.invoice_number
+            ? ` <a href="${escapeRegenerateHtml(existingInvoice.url)}" style="color: #1d4ed8; font-weight: 700; text-decoration: underline;">${escapeRegenerateHtml(existingInvoice.invoice_number)}</a>`
+            : '';
+        return `<li><strong>${contract}${period}</strong>: ${status} - ${message}${invoiceLink}</li>`;
     }).join('');
 
     result.innerHTML = `
@@ -1136,10 +1140,12 @@ function renderRegenerateResult(data) {
             Generated: ${summary.generated || 0},
             Skipped: ${summary.skipped || 0},
             Failed: ${summary.failed || 0},
-            Blocked: ${summary.blocked || 0}
+            Blocked: ${summary.blocked || 0},
+            Existing: ${summary.existing || 0}
         </div>
         ${detailRows ? `<ul style="margin-top: 8px; padding-left: 18px;">${detailRows}</ul>` : ''}
         ${summary.generated > 0 ? '<div style="margin-top: 8px;">Refresh halaman untuk melihat invoice baru di list.</div>' : ''}
+        ${summary.existing > 0 ? '<div style="margin-top: 8px;">Invoice existing bisa tersembunyi jika filter tanggal atau Status Print tidak sesuai.</div>' : ''}
     `;
     result.classList.add('show');
 }

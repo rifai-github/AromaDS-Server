@@ -291,6 +291,7 @@ class InvoiceController extends Controller
             'skipped' => 0,
             'failed' => 0,
             'blocked' => $blockedIds->count(),
+            'existing' => 0,
         ];
         $details = [];
 
@@ -340,13 +341,26 @@ class InvoiceController extends Controller
                         continue;
                     }
 
-                    $summary['skipped']++;
-                    $details[] = [
+                    $existingInvoice = $result['existing_invoice'] ?? null;
+                    if ($existingInvoice instanceof Invoice) {
+                        $summary['existing']++;
+                    }
+
+                    $detail = [
                         'contract_number' => $contract->contract_number,
                         'period' => $periodName,
                         'status' => 'skipped',
-                        'message' => $result['message'] ?? 'Invoice tidak dibuat.',
+                        'message' => $existingInvoice instanceof Invoice
+                            ? $this->formatExistingInvoiceRegenerationMessage($existingInvoice)
+                            : ($result['message'] ?? 'Invoice tidak dibuat.'),
                     ];
+
+                    if ($existingInvoice instanceof Invoice) {
+                        $detail['existing_invoice'] = $this->buildExistingInvoiceRegenerationPayload($existingInvoice);
+                    }
+
+                    $summary['skipped']++;
+                    $details[] = $detail;
                 }
             } catch (\Throwable $e) {
                 $summary['failed']++;
@@ -372,6 +386,28 @@ class InvoiceController extends Controller
             'summary' => $summary,
             'details' => $details,
         ]);
+    }
+
+    private function formatExistingInvoiceRegenerationMessage(Invoice $invoice): string
+    {
+        $invoiceDate = $invoice->invoice_date
+            ? $invoice->invoice_date->format('d M Y')
+            : '-';
+        $printStatus = $invoice->is_printed ? 'Sudah print' : 'Belum print';
+
+        return "Invoice sudah ada: {$invoice->invoice_number} ({$invoiceDate}, {$printStatus}). Jika tidak muncul di list, cek filter tanggal dan Status Print.";
+    }
+
+    private function buildExistingInvoiceRegenerationPayload(Invoice $invoice): array
+    {
+        return [
+            'id' => $invoice->id,
+            'invoice_number' => $invoice->invoice_number,
+            'invoice_date' => $invoice->invoice_date?->toDateString(),
+            'is_printed' => (bool) $invoice->is_printed,
+            'print_status_label' => $invoice->is_printed ? 'Sudah print' : 'Belum print',
+            'url' => route('finance.invoices.show', $invoice),
+        ];
     }
 
     public function store(Request $request)
