@@ -1356,7 +1356,8 @@ class InvoiceController extends Controller
                 'invoiceRentalDetails.masterRental', 
                 'invoiceRentalDetails.jobSchedule.room',
                 'customer', 
-                'contract.billingGroup', 
+                'contract.billingGroup',
+                'contract.branch.invoiceAuthorizedByUser',
                 'bankReceipts',
                 'taxSetting'
             ]);

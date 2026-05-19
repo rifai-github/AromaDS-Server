@@ -65,8 +65,14 @@
             return filled($value) ? trim((string) $value) : $default;
         };
 
-        $authorizedName = $invoiceSignatoryValue('invoice_authorized_by_name');
-        $authorizedPosition = $invoiceSignatoryValue('invoice_authorized_by_position', 'Finance Manager');
+        $invoiceBranch = $invoice->contract?->branch;
+        $branchAuthorizedUser = $invoiceBranch?->invoiceAuthorizedByUser;
+        $authorizedName = filled($branchAuthorizedUser?->name)
+            ? trim((string) $branchAuthorizedUser->name)
+            : $invoiceSignatoryValue('invoice_authorized_by_name', 'Manager Finance');
+        $authorizedPosition = filled($branchAuthorizedUser?->position_name)
+            ? trim((string) $branchAuthorizedUser->position_name)
+            : $invoiceSignatoryValue('invoice_authorized_by_position');
     @endphp
 
     <!-- Header -->

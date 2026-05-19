@@ -29,6 +29,7 @@ class Branch extends Model
         'subdistrict_id',
         'has_warehouse',
         'is_taxable',
+        'invoice_authorized_by_user_id',
         'is_active',
         'created_by',
         'updated_by'
@@ -84,6 +85,11 @@ class Branch extends Model
     public function users()
     {
         return $this->hasMany(User::class);
+    }
+
+    public function invoiceAuthorizedByUser()
+    {
+        return $this->belongsTo(User::class, 'invoice_authorized_by_user_id');
     }
 
     public function bankPayments()

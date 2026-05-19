@@ -14,16 +14,18 @@ use App\Models\Province;
 use App\Models\City;
 use App\Models\District;
 use App\Models\Subdistrict;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class BranchController extends Controller
 {
     use ColumnFilterTrait;
     public function index(Request $request)
     {
-        $query = Branch::with(['company', 'province', 'city', 'district', 'subdistrict', 'createdBy', 'updatedBy'])
+        $query = Branch::with(['company', 'province', 'city', 'district', 'subdistrict', 'createdBy', 'updatedBy', 'invoiceAuthorizedByUser'])
             ->withCount('users');
 
         // Apply AutoFilterable
@@ -43,8 +45,11 @@ class BranchController extends Controller
         $branches = $query->paginate(15);
         $companies = Company::where('is_active', true)->orderBy('name')->get();
         $provinces = Province::orderBy('province_name')->get();
+        $invoiceSignatoryUsers = User::where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'position_name']);
 
-        return view('company.branches.index', compact('branches', 'companies', 'provinces'));
+        return view('company.branches.index', compact('branches', 'companies', 'provinces', 'invoiceSignatoryUsers'));
     }
 
     public function create()
@@ -105,6 +110,7 @@ class BranchController extends Controller
             'postal_code' => 'nullable|string|max:10',
             'has_warehouse' => 'nullable',
             'is_taxable' => 'nullable',
+            'invoice_authorized_by_user_id' => 'nullable|exists:users,id',
             'is_active' => 'nullable'
         ]);
 
@@ -121,7 +127,7 @@ class BranchController extends Controller
         try {
             DB::beginTransaction();
 
-            $branch = Branch::create([
+            $branchData = [
                 'company_id' => $request->company_id,
                 'name' => $request->name,
                 'code' => strtoupper($request->code),
@@ -140,7 +146,13 @@ class BranchController extends Controller
                 'is_taxable' => $isTaxable,
                 'is_active' => $isActive,
                 'created_by' => Auth::id()
-            ]);
+            ];
+
+            if (Schema::hasColumn('branches', 'invoice_authorized_by_user_id')) {
+                $branchData['invoice_authorized_by_user_id'] = $request->invoice_authorized_by_user_id;
+            }
+
+            $branch = Branch::create($branchData);
 
             DB::commit();
 
@@ -168,6 +180,7 @@ class BranchController extends Controller
             'subdistrict',
             'createdBy',
             'updatedBy',
+            'invoiceAuthorizedByUser',
             'branchWarehouses',
             'teams',
             'pics.user',
@@ -191,7 +204,8 @@ class BranchController extends Controller
             'district',
             'subdistrict',
             'createdBy',
-            'updatedBy'
+            'updatedBy',
+            'invoiceAuthorizedByUser'
         ]);
         
         return response()->json([
@@ -250,6 +264,7 @@ class BranchController extends Controller
             'postal_code' => 'nullable|string|max:10',
             'has_warehouse' => 'nullable',
             'is_taxable' => 'nullable',
+            'invoice_authorized_by_user_id' => 'nullable|exists:users,id',
             'is_active' => 'nullable'
         ]);
 
@@ -268,7 +283,7 @@ class BranchController extends Controller
         try {
             DB::beginTransaction();
 
-            $branch->update([
+            $branchData = [
                 'company_id' => $request->company_id,
                 'name' => $request->name,
                 'code' => strtoupper($request->code),
@@ -287,14 +302,20 @@ class BranchController extends Controller
                 'is_taxable' => $isTaxable,
                 'is_active' => $isActive,
                 'updated_by' => Auth::id()
-            ]);
+            ];
+
+            if (Schema::hasColumn('branches', 'invoice_authorized_by_user_id')) {
+                $branchData['invoice_authorized_by_user_id'] = $request->invoice_authorized_by_user_id;
+            }
+
+            $branch->update($branchData);
 
             DB::commit();
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Branch updated successfully',
-                'data' => $branch->load(['company', 'province', 'city', 'district', 'subdistrict', 'createdBy', 'updatedBy'])
+                'data' => $branch->load(['company', 'province', 'city', 'district', 'subdistrict', 'createdBy', 'updatedBy', 'invoiceAuthorizedByUser'])
             ]);
         } catch (\Exception $e) {
             DB::rollback();

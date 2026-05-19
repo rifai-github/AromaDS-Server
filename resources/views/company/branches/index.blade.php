@@ -895,6 +895,7 @@
                         <th data-no-filter>Employee Count</th>
                         <th data-column="has_warehouse">Has Warehouse</th>
                         <th data-column="is_taxable">Wajib Pungut</th>
+                        <th data-no-filter>Penanda Tangan Invoice</th>
                         <th data-column="is_active">Status</th>
                         <th data-column="createdBy__name">Created By</th>
                         <th data-column="created_at" data-type="date">Created At</th>
@@ -941,6 +942,7 @@
                                 {{ $branch->is_taxable ? 'Yes' : 'No' }}
                             </span>
                         </td>
+                        <td>{{ $branch->invoiceAuthorizedByUser->name ?? 'Default: Manager Finance' }}</td>
                         <td>
                             <span class="px-2 py-1 text-xs rounded-full {{ $branch->is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
                                 {{ $branch->is_active ? 'Active' : 'Inactive' }}
@@ -986,7 +988,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="15" class="p-8 text-center">
+                        <td colspan="16" class="p-8 text-center">
                             <p class="text-lg text-gray-600">No branches found</p>
                         </td>
                     </tr>
@@ -1125,6 +1127,31 @@
 </div>
 
 <script>
+const invoiceSignatoryUsers = @json($invoiceSignatoryUsers ?? []);
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function renderInvoiceAuthorizedByOptions(selectedId = null) {
+    const normalizedSelectedId = selectedId ? String(selectedId) : '';
+    let options = '<option value="">Default: Manager Finance</option>';
+
+    invoiceSignatoryUsers.forEach(user => {
+        const selected = String(user.id) === normalizedSelectedId ? 'selected' : '';
+        const position = user.position_name ? ` - ${user.position_name}` : '';
+        const email = user.email ? ` (${user.email})` : '';
+        options += `<option value="${user.id}" ${selected}>${escapeHtml(user.name)}${escapeHtml(position)}${escapeHtml(email)}</option>`;
+    });
+
+    return options;
+}
+
 // Select All functionality
 document.getElementById('selectAll').addEventListener('change', function() {
     const checkboxes = document.querySelectorAll('.row-checkbox');
@@ -1218,6 +1245,13 @@ function openCreateModal() {
                                 <option value="warehouse">Warehouse</option>
                                 <option value="both">Both</option>
                             </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Penanda Tangan Invoice</label>
+                            <select name="invoice_authorized_by_user_id" class="form-input">
+                                ${renderInvoiceAuthorizedByOptions()}
+                            </select>
+                            <p class="text-xs text-gray-500 mt-1">Kosongkan untuk memakai default: Manager Finance.</p>
                         </div>
                     </div>
                 </div>
@@ -1407,6 +1441,10 @@ function openViewModal(id) {
                                 <div class="detail-item">
                                     <label class="form-label">Is Taxable</label>
                                     <div class="detail-value">${branch.is_taxable ? 'Yes' : 'No'}</div>
+                                </div>
+                                <div class="detail-item">
+                                    <label class="form-label">Penanda Tangan Invoice</label>
+                                    <div class="detail-value">${branch.invoice_authorized_by_user?.name || 'Default: Manager Finance'}</div>
                                 </div>
                                 <div class="detail-item">
                                     <label class="form-label">Is Active</label>
@@ -1606,6 +1644,13 @@ function openEditModal(id) {
                                             <option value="warehouse" ${branch.address_type === 'warehouse' ? 'selected' : ''}>Warehouse</option>
                                             <option value="both" ${branch.address_type === 'both' ? 'selected' : ''}>Both</option>
                                         </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Penanda Tangan Invoice</label>
+                                        <select name="invoice_authorized_by_user_id" class="form-input">
+                                            ${renderInvoiceAuthorizedByOptions(branch.invoice_authorized_by_user_id)}
+                                        </select>
+                                        <p class="text-xs text-gray-500 mt-1">Kosongkan untuk memakai default: Manager Finance.</p>
                                     </div>
                                 </div>
                             </div>
