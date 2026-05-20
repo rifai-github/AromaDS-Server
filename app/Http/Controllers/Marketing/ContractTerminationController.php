@@ -23,6 +23,17 @@ class ContractTerminationController extends Controller
         $this->documentNumberService = $documentNumberService;
     }
 
+    private function shouldCreateRemoveJobForContractRoom(\App\Models\ContractRoom $contractRoom): bool
+    {
+        $rentalType = strtolower(trim((string) ($contractRoom->rental_product?->rental_type ?? '')));
+
+        if ($rentalType === 'refill_only') {
+            return false;
+        }
+
+        return true;
+    }
+
     /**
      * Find the first removal job that still blocks rollback of a contract termination.
      * Unpost is only allowed when all generated remove jobs are back to a fresh state.
@@ -444,9 +455,10 @@ class ContractTerminationController extends Controller
             
             $terminatedJobCount += $directTerminatedCount;
 
-            // Auto-generate Job Schedule type 'remove' for each room in contract
+            // Auto-generate Job Schedule type 'remove' only for rooms that have a physical unit.
             $contractRooms = \App\Models\ContractRoom::where('contract_id', $contract->id)->get();
             $removeJobsCreated = 0;
+            $refillOnlyRoomsSkipped = 0;
             
             // Get building ID from contract
             $buildingId = $contract->building_id;
@@ -455,6 +467,17 @@ class ContractTerminationController extends Controller
             }
             
             foreach ($contractRooms as $contractRoom) {
+                if (! $this->shouldCreateRemoveJobForContractRoom($contractRoom)) {
+                    $refillOnlyRoomsSkipped++;
+                    Log::info("Skipping remove job for refill-only contract room during termination", [
+                        'termination_number' => $contractTermination->termination_number,
+                        'contract_id' => $contract->id,
+                        'contract_room_id' => $contractRoom->id,
+                        'room_id' => $contractRoom->room_id,
+                    ]);
+                    continue;
+                }
+
                 // Generate job number for remove
                 $jobNumber = $this->documentNumberService->generate(
                     'remove',
@@ -487,11 +510,11 @@ class ContractTerminationController extends Controller
 
             DB::commit();
 
-            Log::info("Contract termination approved: {$contractTermination->termination_number} by user {$user->name}. Terminated {$terminatedJobCount} jobs, created {$removeJobsCreated} remove jobs.");
+            Log::info("Contract termination approved: {$contractTermination->termination_number} by user {$user->name}. Terminated {$terminatedJobCount} jobs, created {$removeJobsCreated} remove jobs, skipped {$refillOnlyRoomsSkipped} refill-only rooms.");
 
             return response()->json([
                 'status' => 'success',
-                'message' => "Contract termination approved successfully. {$terminatedJobCount} job(s) terminated, {$removeJobsCreated} remove job(s) created."
+                'message' => "Contract termination approved successfully. {$terminatedJobCount} job(s) terminated, {$removeJobsCreated} remove job(s) created." . ($refillOnlyRoomsSkipped > 0 ? " {$refillOnlyRoomsSkipped} refill-only room(s) skipped for remove job." : "")
             ]);
 
         } catch (\Exception $e) {
