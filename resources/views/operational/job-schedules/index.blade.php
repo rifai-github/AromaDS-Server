@@ -4031,9 +4031,22 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                             ? data.data.filter(item => selectedRoomIdsFromTable.includes(item.id.toString()))
                             : data.data;
 
+                        const normalizeMaterialUnassignStatus = (status) => (status || '')
+                            .toString()
+                            .trim()
+                            .toLowerCase()
+                            .replace(/[\s-]+/g, '_');
+                        const materialUnassignableStatuses = [
+                            'assign_material',
+                            'material_assign',
+                            'barang_dipersiapkan',
+                            'material_prepare',
+                            'material_in_prep'
+                        ];
+
                         roomsToDisplay.forEach(item => {
-                            const jobStatus = (item.job_status || '').toLowerCase();
-                            const canUnassign = ['assign_material', 'barang_dipersiapkan', 'material_prepare'].includes(jobStatus);
+                            const jobStatus = normalizeMaterialUnassignStatus(item.job_status);
+                            const canUnassign = materialUnassignableStatuses.includes(jobStatus);
                             const isSelectedInTable = selectedRoomIdsFromTable.length === 0 || selectedRoomIdsFromTable.includes(item.id.toString());
                             detailsHtml += `
                                 <tr class="hover:bg-gray-50 ${!canUnassign ? 'opacity-50' : ''}">
@@ -4057,7 +4070,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
 
                         detailsHtml += `</tbody></table></div>
                         <div class="text-xs text-gray-500 mt-2 text-left">
-                            * Hanya room dengan status <strong>MATERIAL ASSIGN</strong> atau <strong>MATERIAL PREPARE</strong> yang dapat dibatalkan.
+                            * Hanya room dengan status <strong>MATERIAL ASSIGN</strong> atau <strong>BARANG DIPERSIAPKAN</strong> yang dapat dibatalkan.
                         </div>`;
 
                         Swal.fire({
