@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ContractRenewal;
 use App\Models\Contract;
 use App\Models\Customer;
+use App\Models\Survey;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -442,10 +443,29 @@ class ContractRenewalController extends Controller
                             })->first();
                     }
 
+                    $surveyDetail = null;
+                    if ($contract->quotation->survey && $room->room_id) {
+                        $surveyDetail = $contract->quotation->survey->surveyDetails
+                            ->where('room_id', $room->room_id)
+                            ->first();
+                    }
+
+                    if (!$surveyDetail && $contract->quotation->survey && $room->room) {
+                        $roomName = strtolower(trim((string) $room->room->room_name));
+                        $surveyDetail = $contract->quotation->survey->surveyDetails
+                            ->filter(function ($detail) use ($roomName) {
+                                return strtolower(trim((string) $detail->room_name)) === $roomName;
+                            })
+                            ->first();
+                    }
+
                     return [
-                        'room_id' => $room->room_id, // MasterRoom ID
+                        'room_id' => $surveyDetail->id ?? $room->room_id,
+                        'survey_detail_id' => $surveyDetail->id,
+                        'master_room_id' => $room->room_id,
                         'contract_room_id' => $room->id,
                         'room_name' => $room->room->room_name ?? '',
+                        'room_type' => $surveyDetail->room_type ?? $room->room->room_type ?? null,
                         'billing_group_id' => $room->billing_group_id,
                         'aroma_product_id' => $quotRoom->aroma_product_id ?? null,
                         'aroma_variant' => $quotRoom->aroma_variant ?? null,
@@ -502,9 +522,19 @@ class ContractRenewalController extends Controller
                         }
                     }
 
+                    $resolvedSurveyDetailId = null;
+                    if ($resolvedSurveyId && $resolvedRoomId) {
+                        $surveyForRental = Survey::with('surveyDetails')->find($resolvedSurveyId);
+                        $resolvedSurveyDetailId = $surveyForRental?->surveyDetails
+                            ->where('room_id', $resolvedRoomId)
+                            ->first()?->id;
+                    }
+
                     return [
                         'rental_id' => $rental->master_rental_id,
-                        'room_id' => $resolvedRoomId,
+                        'room_id' => $resolvedSurveyDetailId ?? $resolvedRoomId,
+                        'survey_detail_id' => $resolvedSurveyDetailId,
+                        'master_room_id' => $resolvedRoomId,
                         'room_name' => $resolvedRoomName,
                         'room_type' => $resolvedRoomType,
                         'survey_id' => $resolvedSurveyId, // Add resolved survey ID

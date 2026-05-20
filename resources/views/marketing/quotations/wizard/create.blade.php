@@ -1553,7 +1553,7 @@
                     // 1. Match by Detail ID
                     if (rs.room_id == roomId) return true;
                     // 2. Match by MasterRoom ID (Critical for Renewal)
-                    if (masterRoomId && rs.room_id == masterRoomId) return true;
+                    if (masterRoomId && (rs.room_id == masterRoomId || rs.master_room_id == masterRoomId)) return true;
                     // 3. Match by Name (Exact)
                     const storedName = rs.room_name ? rs.room_name.trim().toLowerCase() : '';
                     const currentName = roomName ? roomName.trim().toLowerCase() : '';
@@ -2739,11 +2739,15 @@ $(document).ready(function() {
             
             console.log('Strategy 4: Found in window.renewalContractData (Renewal Fallback)');
             selectionsToRestore = window.renewalContractData.rooms.map(room => ({
-                room_id: room.room_id,
+                room_id: room.survey_detail_id || room.room_id,
+                survey_detail_id: room.survey_detail_id || null,
+                master_room_id: room.master_room_id || room.room_id || null,
+                contract_room_id: room.contract_room_id || null,
                 room_name: room.room_name,
                 survey_id: window.renewalContractData.survey_id,
                 aroma_product_id: room.aroma_product_id || null,
-                aroma_variant: room.aroma_variant || null
+                aroma_variant: room.aroma_variant || null,
+                room_type: room.room_type || null
             }));
             // Update global to sync
             window.globalRoomSelections = selectionsToRestore;
@@ -2765,6 +2769,7 @@ $(document).ready(function() {
 
                 selectionsToRestore.forEach(function(room) {
                     const roomId = room.room_id || room; // Handle both object and simple ID
+                    const masterRoomId = typeof room === 'object' ? room.master_room_id : null;
                     const roomName = room.room_name || (typeof room === 'object' ? room.room_name : null);
                     const roomType = room.room_type || (typeof room === 'object' ? room.room_type : null);
 
@@ -2773,9 +2778,9 @@ $(document).ready(function() {
                     
                     // STRATEGY 2: Match by Master Room ID (Critical for Renewal)
                     if (checkbox.length === 0) {
-                         checkbox = $(`.room-checkbox[data-master-room-id="${roomId}"]`);
+                         checkbox = $(`.room-checkbox[data-master-room-id="${masterRoomId || roomId}"]`);
                          if (checkbox.length > 0) {
-                             console.log(`MasterRoom ID match found! Mapping Room ${roomId} -> Checkbox Value ${checkbox.val()}`);
+                             console.log(`MasterRoom ID match found! Mapping Room ${masterRoomId || roomId} -> Checkbox Value ${checkbox.val()}`);
                          }
                     }
                     
@@ -2831,6 +2836,9 @@ $(document).ready(function() {
                         const newCustomRoom = {
                             id: customId,
                             survey_id: (typeof room === 'object' ? room.survey_id : 'custom') || 'custom',
+                            survey_detail_id: (typeof room === 'object' ? room.survey_detail_id : null) || null,
+                            master_room_id: (typeof room === 'object' ? room.master_room_id : null) || null,
+                            contract_room_id: (typeof room === 'object' ? room.contract_room_id : null) || null,
                             room_name: roomName,
                             room_type: roomType || 'Custom Room',
                             room_area: 0,
@@ -2877,6 +2885,9 @@ $(document).ready(function() {
                         if (room.aroma_product_id) {
                             window.persistentAromaMap[roomId] = {
                                 resolvedRoomId: actualId,
+                                master_room_id: room.master_room_id || null,
+                                contract_room_id: room.contract_room_id || null,
+                                room_name: room.room_name || null,
                                 aroma_product_id: room.aroma_product_id,
                                 aroma_variant: room.aroma_variant
                             };
@@ -2924,8 +2935,8 @@ $(document).ready(function() {
                             const resolvedRoomId = resolvedIdMap[room.room_id] || room.room_id;
                             let aromaSelect;
                             
-                            if (room.survey_id === 'custom') {
-                                aromaSelect = $(`.custom-aroma-select[data-room-id="${room.room_id}"]`);
+                            if (room.survey_id === 'custom' || String(resolvedRoomId).startsWith('custom_')) {
+                                aromaSelect = $(`.custom-aroma-select[data-room-id="${resolvedRoomId}"]`);
                             } else {
                                 // Use resolvedRoomId to find the dropdown
                                 aromaSelect = $(`.aroma-select[data-survey="${room.survey_id}"][data-room="${resolvedRoomId}"]`);
@@ -3087,7 +3098,7 @@ $(document).ready(function() {
             const specs = typeof room.specifications === 'string' ? JSON.parse(room.specifications) : room.specifications;
             rows += `
                 <tr>
-                    <td><input type="checkbox" class="room-checkbox custom-room-checkbox" value="${room.id}" data-survey="custom" data-room="${room.id}" data-is-custom="true"></td>
+                    <td><input type="checkbox" class="room-checkbox custom-room-checkbox" value="${room.id}" data-survey="${room.survey_id || 'custom'}" data-room="${room.id}" data-master-room-id="${room.master_room_id || ''}" data-contract-room-id="${room.contract_room_id || ''}" data-is-custom="true"></td>
                     <td>${index + 1}</td>
                     <td><strong>${room.room_name}</strong><br><small class="text-muted">${room.room_type}</small></td>
                     <td>
@@ -3171,6 +3182,19 @@ $(document).ready(function() {
                 </div>
             `;
             aromaContainer.append(aromaHtml);
+
+            const existingSelection = window.globalRoomSelections
+                ? window.globalRoomSelections.find(rs => {
+                    if (!rs || typeof rs !== 'object') return false;
+                    return String(rs.room_id) === String(room.id)
+                        || (room.master_room_id && String(rs.master_room_id || rs.room_id) === String(room.master_room_id))
+                        || (rs.room_name && room.room_name && rs.room_name.trim().toLowerCase() === room.room_name.trim().toLowerCase());
+                })
+                : null;
+
+            if (existingSelection && existingSelection.aroma_product_id && window.hasAromaProductOption(existingSelection.aroma_product_id)) {
+                aromaContainer.find(`.custom-aroma-select[data-room-id="${room.id}"]`).val(existingSelection.aroma_product_id);
+            }
         });
     };
 
@@ -3512,7 +3536,11 @@ $(document).ready(function() {
                     globalRoomSelections.push({
                         survey_id: surveyId,
                         room_id: roomId,
+                        survey_detail_id: !isCustom ? roomId : null,
+                        master_room_id: checkbox.data('master-room-id') || null,
+                        contract_room_id: checkbox.data('contract-room-id') || null,
                         room_name: roomName,
+                        room_type: checkbox.closest('tr').find('td:eq(2) small').text().trim() || null,
                         aroma_product_id: aromaProductId || null,
                         aroma_variant: aromaVariant || null,
                         aroma_display_name: aromaDisplayName || 'Belum dipilih'
@@ -4129,6 +4157,75 @@ $(document).ready(function() {
             }
         });
 
+        const selectedCustomRooms = $('#custom-rooms-container .custom-room-checkbox:checked');
+        if (selectedCustomRooms.length > 0) {
+            let customRoomListHtml = '';
+            selectedCustomRooms.each(function(index) {
+                const checkbox = $(this);
+                const roomRow = checkbox.closest('tr');
+                const roomName = roomRow.find('td:eq(2) strong').text();
+                const roomType = roomRow.find('td:eq(2) small').text();
+                const roomSpecs = roomRow.find('td:eq(3)').html();
+                const roomId = checkbox.val();
+                const surveyId = checkbox.data('survey') || 'custom';
+                const masterRoomId = checkbox.data('master-room-id') || '';
+
+                customRoomListHtml += `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>
+                            <strong>${roomName}</strong><br>
+                            <small class="text-muted">${roomType}</small>
+                        </td>
+                        <td>
+                            <div class="room-specs-display">
+                                ${roomSpecs}
+                            </div>
+                        </td>
+                    </tr>
+                    <tr class="rental-button-row" data-room-id="${roomId}" data-master-room-id="${masterRoomId}">
+                        <td colspan="3" class="text-center py-3" style="background-color: #f8f9fa;">
+                            <button type="button" class="btn btn-primary btn-sm add-rental-btn" data-survey-id="${surveyId}" data-room-id="${roomId}" data-master-room-id="${masterRoomId}">
+                                <i class="fas fa-plus me-2"></i>TAMBAH RENTAL
+                            </button>
+                        </td>
+                    </tr>
+                    <tr class="rental-config-row" data-room-id="${roomId}" data-master-room-id="${masterRoomId}" style="display: none;">
+                        <td colspan="3" class="rental-config-container" data-room-id="${roomId}" data-master-room-id="${masterRoomId}"></td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                <div class="survey-unit-section mb-4" data-survey-id="custom">
+                    <div class="card">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="mb-2" style="color: white !important; font-size: 20px !important; font-weight: bold !important;">
+                                <i class="fas fa-plus-square me-2"></i>
+                                Ruangan Tambahan (Custom)
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th width="10%">No</th>
+                                            <th width="40%">Nama Ruangan</th>
+                                            <th width="50%">Spesifikasi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${customRoomListHtml}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         if (html === '') {
             html = `
                 <div class="text-center text-muted py-5">
@@ -4199,7 +4296,8 @@ $(document).ready(function() {
             const transformed = window.renewalContractData.rentals.map(rental => ({
                 uniqueId: `renewal-${rental.contract_rental_id || Date.now()}-${Math.random()}`,
                 surveyId: rental.survey_id || window.renewalContractData.survey_id,
-                roomId: rental.room_id,
+                roomId: rental.survey_detail_id || rental.room_id,
+                masterRoomId: rental.master_room_id || rental.room_id || null,
                 roomName: rental.room_name || ('Room ' + rental.room_id),
                 roomType: rental.room_type || '', // Capture room type
                 formData: {
@@ -4235,6 +4333,7 @@ $(document).ready(function() {
                 
                 let surveyId = config.surveyId;
                 const roomId = config.roomId;
+                const masterRoomId = config.masterRoomId || null;
                 const roomName = config.roomName;
                 const roomType = config.roomType; // Get room type
                 
@@ -4244,9 +4343,9 @@ $(document).ready(function() {
                 
                 // STRATEGY 2: Match by Master Room ID (Critical for Renewal)
                 if (addButton.length === 0) {
-                    addButton = $(`.add-rental-btn[data-survey-id="${surveyId}"][data-master-room-id="${roomId}"]`);
+                    addButton = $(`.add-rental-btn[data-survey-id="${surveyId}"][data-master-room-id="${masterRoomId || roomId}"]`);
                     if (addButton.length > 0) {
-                        console.log(`Step 4: MasterRoom ID match found! Room ${roomId} -> actual id ${addButton.data('room-id')}`);
+                        console.log(`Step 4: MasterRoom ID match found! Room ${masterRoomId || roomId} -> actual id ${addButton.data('room-id')}`);
                         actualRoomId = addButton.data('room-id');
                     }
                 }
@@ -5335,7 +5434,10 @@ $(document).ready(function() {
                         console.log('Pre-filling Room Selections:', data.rooms.length);
                         
                         let roomSelections = data.rooms.map(room => ({
-                            room_id: room.room_id,
+                            room_id: room.survey_detail_id || room.room_id,
+                            survey_detail_id: room.survey_detail_id || null,
+                            master_room_id: room.master_room_id || room.room_id || null,
+                            contract_room_id: room.contract_room_id || null,
                             room_name: room.room_name,
                             survey_id: data.survey_id,
                             aroma_product_id: room.aroma_product_id, // Map from backend
@@ -5353,6 +5455,9 @@ $(document).ready(function() {
                                     seenRooms.add(rental.room_id);
                                     roomSelections.push({
                                         room_id: rental.room_id,
+                                        survey_detail_id: rental.survey_detail_id || null,
+                                        master_room_id: rental.master_room_id || rental.room_id || null,
+                                        contract_room_id: rental.contract_room_id || null,
                                         room_name: rental.room_name,
                                         survey_id: data.survey_id,
                                         room_type: rental.room_type
@@ -5381,7 +5486,8 @@ $(document).ready(function() {
                             return {
                                 uniqueId: `renewal-${rental.contract_rental_id || Date.now()}-${Math.random()}`,
                                 surveyId: data.survey_id,
-                                roomId: rental.room_id,
+                                roomId: rental.survey_detail_id || rental.room_id,
+                                masterRoomId: rental.master_room_id || rental.room_id || null,
                                 roomName: rental.room_name || ('Room ' + rental.room_id),
                                 roomType: rental.room_type || '', // Added for fuzzy matching
                                 formData: {
@@ -5905,6 +6011,11 @@ $(document).ready(function() {
             globalRoomSelections.forEach((room, index) => {
                 formData.append(`room_selections_data[${index}][survey_id]`, room.survey_id);
                 formData.append(`room_selections_data[${index}][room_id]`, room.room_id);
+                formData.append(`room_selections_data[${index}][survey_detail_id]`, room.survey_detail_id || '');
+                formData.append(`room_selections_data[${index}][master_room_id]`, room.master_room_id || '');
+                formData.append(`room_selections_data[${index}][contract_room_id]`, room.contract_room_id || '');
+                formData.append(`room_selections_data[${index}][room_name]`, room.room_name || '');
+                formData.append(`room_selections_data[${index}][room_type]`, room.room_type || '');
                 formData.append(`room_selections_data[${index}][aroma_product_id]`, room.aroma_product_id || '');
                 formData.append(`room_selections_data[${index}][aroma_variant]`, room.aroma_variant || '');
             });

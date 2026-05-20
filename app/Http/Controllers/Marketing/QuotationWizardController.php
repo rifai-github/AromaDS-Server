@@ -112,6 +112,81 @@ class QuotationWizardController extends Controller
             ->first()?->id;
     }
 
+    private function resolveQuotationRoomSelection(array $roomData): array
+    {
+        $roomName = trim((string) ($roomData['room_name'] ?? ''));
+        $masterRoomId = !empty($roomData['master_room_id']) ? (int) $roomData['master_room_id'] : null;
+        $surveyId = $roomData['survey_id'] ?? null;
+        $roomId = $roomData['survey_detail_id'] ?? $roomData['room_id'] ?? null;
+
+        if ($surveyId && $roomId) {
+            $surveyForRoom = Survey::find($surveyId);
+            if ($surveyForRoom) {
+                $roomDetail = $surveyForRoom->surveyDetails()->where('id', $roomId)->first();
+                if ($roomDetail) {
+                    $roomName = $roomDetail->room_name;
+
+                    if ($surveyForRoom->building_id) {
+                        $masterRoom = \App\Models\MasterRoom::where('building_id', $surveyForRoom->building_id)
+                            ->where('room_name', $roomDetail->room_name)
+                            ->first();
+
+                        if (!$masterRoom) {
+                            $masterRoom = \App\Models\MasterRoom::create([
+                                'room_name' => $roomDetail->room_name,
+                                'room_code' => strtoupper(substr($roomDetail->room_name, 0, 3)) . '-' . $roomDetail->id,
+                                'building_id' => $surveyForRoom->building_id,
+                                'room_type' => $roomDetail->room_type,
+                                'room_area' => $roomDetail->room_area,
+                                'created_by' => auth()->id(),
+                                'updated_by' => auth()->id(),
+                            ]);
+                        }
+
+                        return [$masterRoom->id, $roomName];
+                    }
+
+                    \Log::error('Cannot create/find MasterRoom: Survey has no building_id', [
+                        'survey_id' => $surveyForRoom->id,
+                        'survey_detail_id' => $roomDetail->id,
+                        'room_name' => $roomDetail->room_name,
+                    ]);
+                }
+            }
+        }
+
+        if ($masterRoomId) {
+            $masterRoom = \App\Models\MasterRoom::find($masterRoomId);
+            if ($masterRoom) {
+                return [$masterRoom->id, $roomName !== '' ? $roomName : $masterRoom->room_name];
+            }
+        }
+
+        if ($surveyId && $roomName !== '') {
+            $surveyForRoom = Survey::find($surveyId);
+            if ($surveyForRoom?->building_id) {
+                $masterRoom = \App\Models\MasterRoom::where('building_id', $surveyForRoom->building_id)
+                    ->where('room_name', $roomName)
+                    ->first();
+
+                if (!$masterRoom) {
+                    $masterRoom = \App\Models\MasterRoom::create([
+                        'room_name' => $roomName,
+                        'room_code' => strtoupper(substr($roomName, 0, 3)) . '-' . uniqid(),
+                        'building_id' => $surveyForRoom->building_id,
+                        'room_type' => $roomData['room_type'] ?? null,
+                        'created_by' => auth()->id(),
+                        'updated_by' => auth()->id(),
+                    ]);
+                }
+
+                return [$masterRoom->id, $roomName];
+            }
+        }
+
+        return [null, $roomName !== '' ? $roomName : 'Unknown Room'];
+    }
+
     /**
      * Store quotation data
      */
@@ -581,56 +656,7 @@ class QuotationWizardController extends Controller
             if ($request->has('room_selections_data')) {
                 
                 foreach ($request->room_selections_data as $roomData) {
-                    // Get room details from survey detail
-                    $roomName = 'Unknown Room';
-                    $masterRoomId = null;
-                    
-                    if (!empty($roomData['survey_id']) && !empty($roomData['room_id'])) {
-                        $surveyForRoom = Survey::find($roomData['survey_id']);
-                        if ($surveyForRoom) {
-                            // room_id in roomData is survey_detail_id
-                            $roomDetail = $surveyForRoom->surveyDetails()->where('id', $roomData['room_id'])->first();
-                            if ($roomDetail) {
-                                $roomName = $roomDetail->room_name;
-                                
-                                // MOM11: Find or Create MasterRoom by room_name + building_id
-                                // JANGAN assume survey_detail.id == master_room.id!
-                                $masterRoom = null;
-                                
-                                if ($surveyForRoom->building_id) {
-                                    // Try to find existing master_room by name + building_id
-                                    $masterRoom = \App\Models\MasterRoom::where('building_id', $surveyForRoom->building_id)
-                                        ->where('room_name', $roomDetail->room_name)
-                                        ->first();
-                                    
-                                    // If not found, auto-create master_room
-                                    if (!$masterRoom) {
-                                        $masterRoom = \App\Models\MasterRoom::create([
-                                            'room_name' => $roomDetail->room_name,
-                                            'room_code' => strtoupper(substr($roomDetail->room_name, 0, 3)) . '-' . $roomDetail->id,
-                                            'building_id' => $surveyForRoom->building_id,
-                                            'room_type' => $roomDetail->room_type,
-                                            'room_area' => $roomDetail->room_area,
-                                            'created_by' => auth()->id(),
-                                            'updated_by' => auth()->id()
-                                        ]);
-                                        
-                                    } else {
-                                    }
-                                } else {
-                                    \Log::error("Cannot create/find MasterRoom: Survey has no building_id", [
-                                        'survey_id' => $surveyForRoom->id,
-                                        'survey_detail_id' => $roomDetail->id,
-                                        'room_name' => $roomDetail->room_name
-                                    ]);
-                                }
-                                
-                                if ($masterRoom) {
-                                    $masterRoomId = $masterRoom->id;
-                                }
-                            }
-                        }
-                    }
+                    [$masterRoomId, $roomName] = $this->resolveQuotationRoomSelection($roomData);
                     
                     // Only create QuotationRoom if we have a valid MasterRoom ID
                     if ($masterRoomId) {
@@ -879,36 +905,7 @@ class QuotationWizardController extends Controller
 
                 if ($request->has('room_selections_data')) {
                     foreach ($request->room_selections_data as $roomData) {
-                        $roomName = 'Unknown Room';
-                        $masterRoomId = null;
-
-                        if (!empty($roomData['survey_id']) && !empty($roomData['room_id'])) {
-                            $surveyForRoom = Survey::find($roomData['survey_id']);
-                            if ($surveyForRoom) {
-                                $roomDetail = $surveyForRoom->surveyDetails()->where('id', $roomData['room_id'])->first();
-                                if ($roomDetail) {
-                                    $roomName = $roomDetail->room_name;
-                                    // Find/Create MasterRoom logic ...
-                                    if ($surveyForRoom->building_id) {
-                                        $masterRoom = \App\Models\MasterRoom::where('building_id', $surveyForRoom->building_id)
-                                            ->where('room_name', $roomDetail->room_name)
-                                            ->first();
-                                        if (!$masterRoom) {
-                                            $masterRoom = \App\Models\MasterRoom::create([
-                                                'room_name' => $roomDetail->room_name,
-                                                'room_code' => strtoupper(substr($roomDetail->room_name, 0, 3)) . '-' . $roomDetail->id,
-                                                'building_id' => $surveyForRoom->building_id,
-                                                'room_type' => $roomDetail->room_type,
-                                                'room_area' => $roomDetail->room_area,
-                                                'created_by' => auth()->id(),
-                                                'updated_by' => auth()->id()
-                                            ]);
-                                        }
-                                        $masterRoomId = $masterRoom->id;
-                                    }
-                                }
-                            }
-                        }
+                        [$masterRoomId, $roomName] = $this->resolveQuotationRoomSelection($roomData);
 
                         if ($masterRoomId) {
                             $canonicalAromaProductId = $this->resolveCanonicalAromaProductId($roomData['aroma_product_id'] ?? null);
@@ -1410,56 +1407,7 @@ class QuotationWizardController extends Controller
             if ($request->has('room_selections_data')) {
                 
                 foreach ($request->room_selections_data as $roomData) {
-                    // Get MasterRoom ID from survey_detail_id
-                    $masterRoomId = null;
-                    $roomName = 'Unknown Room';
-                    
-                    if (!empty($roomData['survey_id']) && !empty($roomData['room_id'])) {
-                        $surveyForRoom = Survey::find($roomData['survey_id']);
-                        if ($surveyForRoom) {
-                            // room_id is survey_detail_id
-                            $roomDetail = $surveyForRoom->surveyDetails()->where('id', $roomData['room_id'])->first();
-                            if ($roomDetail) {
-                                $roomName = $roomDetail->room_name;
-                                
-                                // MOM11: Find or Create MasterRoom by room_name + building_id
-                                // JANGAN assume survey_detail.id == master_room.id!
-                                $masterRoom = null;
-                                
-                                if ($surveyForRoom->building_id) {
-                                    // Try to find existing master_room by name + building_id
-                                    $masterRoom = \App\Models\MasterRoom::where('building_id', $surveyForRoom->building_id)
-                                        ->where('room_name', $roomDetail->room_name)
-                                        ->first();
-                                    
-                                    // If not found, auto-create master_room
-                                    if (!$masterRoom) {
-                                        $masterRoom = \App\Models\MasterRoom::create([
-                                            'room_name' => $roomDetail->room_name,
-                                            'room_code' => strtoupper(substr($roomDetail->room_name, 0, 3)) . '-' . $roomDetail->id,
-                                            'building_id' => $surveyForRoom->building_id,
-                                            'room_type' => $roomDetail->room_type,
-                                            'room_area' => $roomDetail->room_area,
-                                            'created_by' => auth()->id(),
-                                            'updated_by' => auth()->id()
-                                        ]);
-                                        
-                                    } else {
-                                    }
-                                } else {
-                                    \Log::error("Cannot create/find MasterRoom: Survey has no building_id", [
-                                        'survey_id' => $surveyForRoom->id,
-                                        'survey_detail_id' => $roomDetail->id,
-                                        'room_name' => $roomDetail->room_name
-                                    ]);
-                                }
-                                
-                                if ($masterRoom) {
-                                    $masterRoomId = $masterRoom->id;
-                                }
-                            }
-                        }
-                    }
+                    [$masterRoomId, $roomName] = $this->resolveQuotationRoomSelection($roomData);
                     
                     // Only create QuotationRoom if we have a valid MasterRoom ID
                     if ($masterRoomId) {
