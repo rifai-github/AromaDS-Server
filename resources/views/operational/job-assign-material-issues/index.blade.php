@@ -2779,8 +2779,7 @@ function executeSubmitIssue(materialIssueIds, forceContinue) {
             const componentKey = [
                 rentalDetailId,
                 targetBomQty,
-                productType.toLowerCase(),
-                materialName.toLowerCase()
+                productType.toLowerCase()
             ].join('|');
             const groupKey = `${jobNumber}_${roomName}_${componentKey}`;
             
