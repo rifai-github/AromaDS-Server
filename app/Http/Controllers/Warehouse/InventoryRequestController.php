@@ -256,10 +256,10 @@ class InventoryRequestController extends Controller
      */
     public function create()
     {
-        $warehouses = Warehouse::where('is_active', true)->orderBy('name')->get();
+        $warehouses = $this->getInventoryRequestFormWarehouses();
         [$branches, $userBranchId] = $this->getAvailableBranchesForUser(Auth::user());
-        $products = \App\Models\MasterProduct::with('packagingSize')->where('is_active', true)->orderBy('name')->get();
-        $users = User::orderBy('name')->get();
+        $products = $this->getInventoryRequestFormProducts();
+        $users = $this->getInventoryRequestFormUsers();
 
         return response()->json([
             'status' => 'success',
@@ -424,10 +424,10 @@ class InventoryRequestController extends Controller
         }
 
         $inventoryRequest->load(['warehouse', 'branch', 'requestedBy', 'items.product']);
-        $warehouses = Warehouse::where('is_active', true)->orderBy('name')->get();
+        $warehouses = $this->getInventoryRequestFormWarehouses();
         [$branches, $userBranchId] = $this->getAvailableBranchesForUser(Auth::user());
-        $products = \App\Models\MasterProduct::with('packagingSize')->where('is_active', true)->orderBy('name')->get();
-        $users = User::orderBy('name')->get();
+        $products = $this->getInventoryRequestFormProducts();
+        $users = $this->getInventoryRequestFormUsers();
 
         return response()->json([
             'status' => 'success',
@@ -1265,6 +1265,31 @@ class InventoryRequestController extends Controller
         return response()->json(['status' => 'success', 'data' => $products]);
     }
 
+    private function getInventoryRequestFormWarehouses()
+    {
+        return Warehouse::select('id', 'name')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+    }
+
+    private function getInventoryRequestFormProducts()
+    {
+        return MasterProduct::query()
+            ->select('id', 'name', 'sku', 'packaging_size_id', 'packaging_size')
+            ->with(['packagingSize:id,name'])
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+    }
+
+    private function getInventoryRequestFormUsers()
+    {
+        return User::select('id', 'name')
+            ->orderBy('name')
+            ->get();
+    }
+
     private function getAvailableBranchesForUser(?User $user): array
     {
         if (!$user) {
@@ -1272,16 +1297,19 @@ class InventoryRequestController extends Controller
         }
 
         $branches = $user->assignedBranches()
-            ->where('is_active', true)
+            ->select('branches.id', 'branches.name', 'branches.code', 'branches.is_active')
+            ->where('branches.is_active', true)
             ->orderBy('name')
             ->get();
 
         if ($branches->isEmpty() && $user->branch_id) {
             $branches = Branch::where('id', $user->branch_id)
+                ->select('id', 'name', 'code', 'is_active')
                 ->where('is_active', true)
                 ->get();
         } elseif ($user->branch_id && !$branches->contains('id', $user->branch_id)) {
             $primaryBranch = Branch::where('id', $user->branch_id)
+                ->select('id', 'name', 'code', 'is_active')
                 ->where('is_active', true)
                 ->first();
 
