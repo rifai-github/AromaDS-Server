@@ -577,6 +577,15 @@ class JobAssignMaterialIssueController extends Controller
                 ->get();
         });
 
+        $buildings = Cache::remember('job-assign-material-issues:index:buildings', now()->addMinutes(10), function () {
+            return Building::query()
+                ->select('id', 'nama_gedung')
+                ->whereNotNull('nama_gedung')
+                ->where('nama_gedung', '!=', '')
+                ->orderBy('nama_gedung')
+                ->get();
+        });
+
         $products = Cache::remember('job-assign-material-issues:index:products', now()->addMinutes(10), function () {
             return MasterProduct::query()
                 ->select('id', 'name', 'sku', 'product_type_id', 'product_category_id', 'packaging_size_id', 'bom_quantity', 'variant_name', 'brand_line', 'last_unit_price')
@@ -613,6 +622,7 @@ class JobAssignMaterialIssueController extends Controller
         return view('operational.job-assign-material-issues.index', array_merge($indexLookups, compact(
             'materialIssues',
             'teams',
+            'buildings',
             'products',
             'requestReasons',
             'priorities',

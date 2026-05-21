@@ -889,13 +889,13 @@
                            placeholder="Select date..." readonly>
                 </div>
                 
-                <!-- Filter Team Name -->
+                <!-- Filter Building Name -->
                 <div class="flex flex-col gap-1">
-                    <label class="text-sm font-medium text-gray-700">Filter Team Name:</label>
-                    <select id="filterTeamCode" name="team_name" class="px-3 py-1.5 border border-gray-300 rounded text-sm w-full" onchange="applyFilters()">
-                        <option value="">Semua Team</option>
-                        @foreach($teams ?? [] as $team)
-                        <option value="{{ $team->team_name }}" {{ request('team_name') == $team->team_name ? 'selected' : '' }}>{{ $team->team_name }}</option>
+                    <label class="text-sm font-medium text-gray-700">Filter Nama Gedung:</label>
+                    <select id="filterBuildingName" name="building_name" class="px-3 py-1.5 border border-gray-300 rounded text-sm w-full" onchange="applyFilters()">
+                        <option value="">Semua Gedung</option>
+                        @foreach($buildings ?? [] as $building)
+                        <option value="{{ $building->nama_gedung }}" {{ request('building_name') == $building->nama_gedung ? 'selected' : '' }}>{{ $building->nama_gedung }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -2609,14 +2609,14 @@ function retryDelete() {
 function applyFilters() {
     const dateFrom = document.getElementById('filterDateFrom').value;
     const dateTo = document.getElementById('filterDateTo').value;
-    const teamName = document.getElementById('filterTeamCode').value;
+    const buildingName = document.getElementById('filterBuildingName').value;
     const issueDate = document.getElementById('filterIssuedDate').value;
     const perPage = document.getElementById('perPage')?.value;
     
     const params = new URLSearchParams(window.location.search);
     dateFrom ? params.set('date_from', dateFrom) : params.delete('date_from');
     dateTo ? params.set('date_to', dateTo) : params.delete('date_to');
-    teamName ? params.set('team_name', teamName) : params.delete('team_name');
+    buildingName ? params.set('building_name', buildingName) : params.delete('building_name');
     issueDate ? params.set('issue_date', issueDate) : params.delete('issue_date');
     perPage ? params.set('per_page', perPage) : params.delete('per_page');
     params.set('page', '1');
