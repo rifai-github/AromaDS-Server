@@ -74,6 +74,13 @@ class MobilePartialCompletionReturnTest extends TestCase
             $table->string('contract_number')->nullable();
             $table->string('quotation_number')->nullable();
             $table->foreignId('branch_id')->nullable();
+            $table->integer('period')->nullable();
+            $table->integer('service_frequency')->nullable();
+            $table->string('service_period_type')->nullable();
+            $table->integer('service_interval_days')->nullable();
+            $table->date('next_service_date')->nullable();
+            $table->string('reference_number')->nullable();
+            $table->string('job_reference_number')->nullable();
             $table->date('schedule_date')->nullable();
             $table->date('expected_date')->nullable();
             $table->date('ba_date')->nullable();
@@ -256,6 +263,7 @@ class MobilePartialCompletionReturnTest extends TestCase
             $table->foreignId('master_product_id')->nullable();
             $table->foreignId('inventory_receiving_id')->nullable();
             $table->foreignId('updated_by')->nullable();
+            $table->text('notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -412,10 +420,10 @@ class MobilePartialCompletionReturnTest extends TestCase
 
         $this->assertDatabaseHas('serial_numbers', [
             'id' => 200,
-            'status' => 'on_hand',
+            'status' => 'pending',
             'location_type' => 'technician',
             'location_id' => 1,
-            'inventory_receiving_id' => null,
+            'inventory_receiving_id' => 1,
         ]);
 
         $this->assertDatabaseHas('inventory_issuing_items', [
@@ -445,6 +453,14 @@ class MobilePartialCompletionReturnTest extends TestCase
         DB::table('job_schedules')->where('id', 10)->update([
             'job_advice_id' => 70,
             'status' => 'in_progress',
+            'type' => 'service',
+            'period' => 3,
+            'service_frequency' => 1,
+            'service_period_type' => '1 Bulan 1x',
+            'service_interval_days' => 30,
+            'next_service_date' => '2026-09-03',
+            'reference_number' => 'BDG-JA/26-05/0002',
+            'job_reference_number' => 'BDG-JA/26-05/0002',
         ]);
 
         DB::table('job_schedule_rooms')->insert([
@@ -496,6 +512,12 @@ class MobilePartialCompletionReturnTest extends TestCase
 
         $this->assertNotNull($followUpJob);
         $this->assertSame('new_job', $followUpJob->status);
+        $this->assertSame(3, (int) $followUpJob->period);
+        $this->assertSame(3, (int) JobSchedule::findOrFail($followUpJob->id)->invoice_period);
+        $this->assertSame(1, (int) $followUpJob->service_frequency);
+        $this->assertSame('1 Bulan 1x', $followUpJob->service_period_type);
+        $this->assertSame(30, (int) $followUpJob->service_interval_days);
+        $this->assertSame('BDG-JA/26-05/0002', $followUpJob->reference_number);
 
         $this->assertDatabaseHas('job_schedule_rooms', [
             'job_schedule_id' => $followUpJob->id,

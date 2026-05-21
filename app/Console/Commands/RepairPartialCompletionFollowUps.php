@@ -36,7 +36,8 @@ class RepairPartialCompletionFollowUps extends Command
         DB::transaction(function () use ($sourceJobs, $jobNumber, $apply) {
             foreach ($sourceJobs as $sourceJob) {
                 $rooms = $sourceJob->jobScheduleRooms
-                    ->filter(fn ($room) => $room->status !== JobScheduleRoom::STATUS_CANCELLED)
+                    ->filter(fn ($room) => $room->status !== JobScheduleRoom::STATUS_CANCELLED
+                        || str_contains((string) $room->notes, 'Pekerjaan tidak selesai'))
                     ->values();
 
                 foreach ($rooms as $room) {
@@ -58,6 +59,8 @@ class RepairPartialCompletionFollowUps extends Command
 
                     if (!$newJob) {
                         $newJob = $this->createFollowUpJob($sourceJob, $room);
+                    } else {
+                        $this->syncFollowUpScheduleContext($sourceJob, $newJob);
                     }
 
                     $newRoom = JobScheduleRoom::firstOrCreate(
@@ -141,9 +144,35 @@ class RepairPartialCompletionFollowUps extends Command
         $newJob->internal_notes = "Lanjutan dari Job {$sourceJob->job_number} (Pekerjaan tidak selesai). Room: {$room->room_name}.";
         $newJob->created_by = $this->actorId($sourceJob);
         $newJob->updated_by = $this->actorId($sourceJob);
+        $this->syncFollowUpScheduleContext($sourceJob, $newJob, false);
         $newJob->save();
 
         return $newJob;
+    }
+
+    private function syncFollowUpScheduleContext(JobSchedule $sourceJob, JobSchedule $followUpJob, bool $save = true): void
+    {
+        foreach ([
+            'period',
+            'service_frequency',
+            'service_period_type',
+            'service_interval_days',
+            'next_service_date',
+            'reference_number',
+            'job_reference_number',
+            'day',
+            'material_checked',
+            'material_checked_at',
+        ] as $column) {
+            if (Schema::hasColumn('job_schedules', $column)) {
+                $followUpJob->{$column} = $sourceJob->{$column};
+            }
+        }
+
+        if ($save && $followUpJob->isDirty()) {
+            $followUpJob->updated_by = $this->actorId($sourceJob);
+            $followUpJob->save();
+        }
     }
 
     private function syncRentals(JobScheduleRoom $sourceRoom, JobScheduleRoom $targetRoom): void

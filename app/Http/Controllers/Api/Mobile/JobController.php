@@ -2840,6 +2840,8 @@ class JobController extends Controller
             ->first();
 
         if ($existingJob) {
+            $this->syncPartialCompletionFollowUpScheduleContext($sourceJob, $existingJob);
+
             return $existingJob;
         }
 
@@ -2861,9 +2863,37 @@ class JobController extends Controller
         $newJob->internal_notes = "Lanjutan dari Job {$sourceJob->job_number} (Pekerjaan tidak selesai). Room: {$room->room_name}.";
         $newJob->created_by = auth()->id();
         $newJob->updated_by = auth()->id();
+        $this->syncPartialCompletionFollowUpScheduleContext($sourceJob, $newJob, false);
         $newJob->save();
 
         return $newJob;
+    }
+
+    private function syncPartialCompletionFollowUpScheduleContext(JobSchedule $sourceJob, JobSchedule $followUpJob, bool $save = true): void
+    {
+        $columnsToCopy = [
+            'period',
+            'service_frequency',
+            'service_period_type',
+            'service_interval_days',
+            'next_service_date',
+            'reference_number',
+            'job_reference_number',
+            'day',
+            'material_checked',
+            'material_checked_at',
+        ];
+
+        foreach ($columnsToCopy as $column) {
+            if (\Illuminate\Support\Facades\Schema::hasColumn('job_schedules', $column)) {
+                $followUpJob->{$column} = $sourceJob->{$column};
+            }
+        }
+
+        if ($save && $followUpJob->isDirty()) {
+            $followUpJob->updated_by = auth()->id();
+            $followUpJob->save();
+        }
     }
 
     private function findOrCreatePartialCompletionFollowUpRoom(JobSchedule $sourceJob, JobSchedule $newJob, $room)
