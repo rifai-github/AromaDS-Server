@@ -2744,7 +2744,7 @@ $(document).ready(function() {
                 master_room_id: room.master_room_id || room.room_id || null,
                 contract_room_id: room.contract_room_id || null,
                 room_name: room.room_name,
-                survey_id: window.renewalContractData.survey_id,
+                survey_id: room.survey_id || window.renewalContractData.survey_id || 'custom',
                 aroma_product_id: room.aroma_product_id || null,
                 aroma_variant: room.aroma_variant || null,
                 room_type: room.room_type || null
@@ -4295,7 +4295,7 @@ $(document).ready(function() {
             console.log('Using Renewal Data fallback for Step 4');
             const transformed = window.renewalContractData.rentals.map(rental => ({
                 uniqueId: `renewal-${rental.contract_rental_id || Date.now()}-${Math.random()}`,
-                surveyId: rental.survey_id || window.renewalContractData.survey_id,
+                surveyId: rental.survey_id || window.renewalContractData.survey_id || 'custom',
                 roomId: rental.survey_detail_id || rental.room_id,
                 masterRoomId: rental.master_room_id || rental.room_id || null,
                 roomName: rental.room_name || ('Room ' + rental.room_id),
@@ -4973,7 +4973,11 @@ $(document).ready(function() {
                 break;
             case 2:
                 const selectedSurveys = $('#survey_tags').val() || [];
-                if (selectedSurveys.length === 0) {
+                const isRenewalWithExistingRooms = $('#quotation_type').val() === 'renewal'
+                    && window.renewalContractData
+                    && Array.isArray(window.renewalContractData.rooms)
+                    && window.renewalContractData.rooms.length > 0;
+                if (selectedSurveys.length === 0 && !isRenewalWithExistingRooms) {
                     missingFields.push('Survey');
                     isValid = false;
                 }
@@ -5439,7 +5443,7 @@ $(document).ready(function() {
                             master_room_id: room.master_room_id || room.room_id || null,
                             contract_room_id: room.contract_room_id || null,
                             room_name: room.room_name,
-                            survey_id: data.survey_id,
+                            survey_id: room.survey_id || data.survey_id || 'custom',
                             aroma_product_id: room.aroma_product_id, // Map from backend
                             aroma_variant: room.aroma_variant, // Map from backend
                             room_type: room.room_type // Map from backend
@@ -5459,7 +5463,7 @@ $(document).ready(function() {
                                         master_room_id: rental.master_room_id || rental.room_id || null,
                                         contract_room_id: rental.contract_room_id || null,
                                         room_name: rental.room_name,
-                                        survey_id: data.survey_id,
+                                        survey_id: rental.survey_id || data.survey_id || 'custom',
                                         room_type: rental.room_type
                                     });
                                 }
@@ -5485,7 +5489,7 @@ $(document).ready(function() {
                         const step4Data = data.rentals.map(rental => {
                             return {
                                 uniqueId: `renewal-${rental.contract_rental_id || Date.now()}-${Math.random()}`,
-                                surveyId: data.survey_id,
+                                surveyId: rental.survey_id || data.survey_id || 'custom',
                                 roomId: rental.survey_detail_id || rental.room_id,
                                 masterRoomId: rental.master_room_id || rental.room_id || null,
                                 roomName: rental.room_name || ('Room ' + rental.room_id),
@@ -5791,13 +5795,36 @@ $(document).ready(function() {
         console.log('=== FINALIZE BUTTON CLICKED ===');
         
         // Get selected survey ID for operational area validation
-        const surveyId = $('#survey_tags').val()?.[0];
-        if (!surveyId) {
+        const selectedSurveyIds = $('#survey_tags').val() || [];
+        const surveyId = selectedSurveyIds[0];
+        const isRenewalWithExistingRooms = $('#quotation_type').val() === 'renewal'
+            && window.renewalContractData
+            && Array.isArray(window.renewalContractData.rooms)
+            && window.renewalContractData.rooms.length > 0;
+        if (!surveyId && !isRenewalWithExistingRooms) {
             Swal.fire({
                 title: 'Error',
                 text: 'Pilih survey terlebih dahulu',
                 icon: 'error',
                 confirmButtonText: 'OK'
+            });
+            return;
+        }
+
+        if (!surveyId && isRenewalWithExistingRooms) {
+            Swal.fire({
+                title: 'Finalize Quotation?',
+                text: 'This will submit the quotation for approval. You will not be able to edit it after submission.',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#3085d6',
+                cancelButtonColor: '#d33',
+                confirmButtonText: 'Yes, Finalize!',
+                cancelButtonText: 'Cancel'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    submitQuotation('finalize');
+                }
             });
             return;
         }

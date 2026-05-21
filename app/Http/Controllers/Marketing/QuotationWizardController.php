@@ -430,12 +430,13 @@ class QuotationWizardController extends Controller
             // Debug: Log all request data
             
             // Validate the request
+            $surveyTagsRule = $this->surveyTagsValidationRule($request);
             $validator = Validator::make($request->all(), [
                 'marketing_id' => 'required|exists:users,id',
                 'branch_id' => 'nullable|exists:branches,id',
                 'quotation_date' => 'required|date',
                 'quotation_type' => 'required|in:new,renewal',
-                'survey_tags' => 'required|array',
+                'survey_tags' => $surveyTagsRule,
                 'survey_tags.*' => 'exists:surveys,id',
                 'rental_period' => 'required|numeric|min:1',
                 'rental_unit' => 'required|in:hari,bulan',
@@ -486,6 +487,8 @@ class QuotationWizardController extends Controller
             // Get survey data for the first survey (for customer info)
             $survey = null;
             $prospectId = null;
+            $renewalCustomerId = null;
+            $renewalCompanyName = null;
             
             if ($firstSurveyId) {
                 $survey = Survey::with(['customer'])->find($firstSurveyId);
@@ -528,17 +531,22 @@ class QuotationWizardController extends Controller
                 if (!$prospectId) {
                     throw new \Exception('Unable to create quotation: Survey must be associated with a valid prospect. Please ensure the survey has prospect information.');
                 }
+            } elseif ($request->get('quotation_type') === 'renewal') {
+                [$renewalCustomerId, $prospectId, $renewalCompanyName] = $this->resolveRenewalCustomerContext(
+                    Contract::with('customer')->find($request->get('existing_contract_id')),
+                    $request->get('marketing_id')
+                );
             }
             
             // Create quotation
             $quotation = Quotation::create([
                 'quotation_number' => $quotationNumber,
                 'prospect_id' => $prospectId,
-                'customer_id' => $survey ? $survey->customer_id : null,
+                'customer_id' => $survey ? $survey->customer_id : $renewalCustomerId,
                 'survey_id' => $firstSurveyId,
                 'quotation_date' => $quotationDate,
                 'valid_until' => \Carbon\Carbon::parse($quotationDate)->addDays(30)->toDateString(), // 30 days validity
-                'company_name' => $survey && $survey->customer ? $survey->customer->name : ($survey && $survey->prospect ? $survey->prospect->company_name : 'Unknown Company'),
+                'company_name' => $survey && $survey->customer ? $survey->customer->name : ($survey && $survey->prospect ? $survey->prospect->company_name : ($renewalCompanyName ?? 'Unknown Company')),
                 'pic_name' => $request->get('pic_quotation') ?? 'Unknown PIC',
                 'billing_methods' => $request->get('payment_method'),
                 'payment_method' => $request->get('payment_method'),
@@ -732,12 +740,13 @@ class QuotationWizardController extends Controller
             $quotation = Quotation::findOrFail($id);
 
             // Validate the request
+            $surveyTagsRule = $this->surveyTagsValidationRule($request);
             $validator = Validator::make($request->all(), [
                 'marketing_id' => 'required|exists:users,id',
                 'branch_id' => 'nullable|exists:branches,id',
                 'quotation_date' => 'required|date',
                 'quotation_type' => 'required|in:new,renewal',
-                'survey_tags' => 'required|array',
+                'survey_tags' => $surveyTagsRule,
                 'survey_tags.*' => 'exists:surveys,id',
                 'rental_period' => 'required|numeric|min:1',
                 'rental_unit' => 'required|in:hari,bulan',
@@ -769,6 +778,8 @@ class QuotationWizardController extends Controller
                 $firstSurveyId = $request->get('survey_tags')[0] ?? null;
                 $survey = null;
                 $prospectId = null;
+                $renewalCustomerId = null;
+                $renewalCompanyName = null;
                 
                 if ($firstSurveyId) {
                     $survey = Survey::with(['customer'])->find($firstSurveyId);
@@ -799,16 +810,21 @@ class QuotationWizardController extends Controller
                             }
                         }
                     }
+                } elseif ($request->get('quotation_type') === 'renewal') {
+                    [$renewalCustomerId, $prospectId, $renewalCompanyName] = $this->resolveRenewalCustomerContext(
+                        Contract::with('customer')->find($request->get('existing_contract_id')),
+                        $request->get('marketing_id')
+                    );
                 }
                 
                 // Update Quotation
                 $quotation->update([
                     'prospect_id' => $prospectId,
-                    'customer_id' => $survey ? $survey->customer_id : null,
+                    'customer_id' => $survey ? $survey->customer_id : $renewalCustomerId,
                     'survey_id' => $firstSurveyId, // Primary survey
                     'quotation_date' => $quotationDate,
                     'valid_until' => \Carbon\Carbon::parse($quotationDate)->addDays(30)->toDateString(),
-                    'company_name' => $survey && $survey->customer ? $survey->customer->name : ($survey && $survey->prospect ? $survey->prospect->company_name : 'Unknown Company'),
+                    'company_name' => $survey && $survey->customer ? $survey->customer->name : ($survey && $survey->prospect ? $survey->prospect->company_name : ($renewalCompanyName ?? 'Unknown Company')),
                     'pic_name' => $request->get('pic_quotation') ?? 'Unknown PIC',
                     'billing_methods' => $request->get('payment_method'),
                     'payment_method' => $request->get('payment_method'),
@@ -847,11 +863,14 @@ class QuotationWizardController extends Controller
 
                 $rentalItems = $request->get('rental_items', []);
                 foreach ($rentalItems as $uniqueId => $item) {
-                     $surveyId = $item['survey_id'] ?? null;
+                     [$surveyId, $surveyDetailId] = $this->resolveQuotationDetailSurveyAndRoom(
+                         $item,
+                         $request->get('survey_tags', [])
+                     );
                      $surveyForDetail = $surveyId ? Survey::with('surveyDetails')->find($surveyId) : null;
                      $roomName = $item['room_name'] ?? 'Unknown Room';
                      $specifications = $item['specifications'] ?? '';
-                     $roomId = $item['room_id'] ?? null; // SurveyDetail ID
+                     $roomId = $surveyDetailId;
 
                      // Resolve Room Name & Specs
                      if ($surveyForDetail && $roomId) {
@@ -1048,6 +1067,50 @@ class QuotationWizardController extends Controller
                 'existing_contract_id' => $blockReason,
             ]);
         }
+    }
+
+    private function surveyTagsValidationRule(Request $request): string
+    {
+        if ($this->allowsRenewalWithoutSurvey($request)) {
+            return 'nullable|array';
+        }
+
+        return 'required|array|min:1';
+    }
+
+    private function allowsRenewalWithoutSurvey(Request $request): bool
+    {
+        if ($request->get('quotation_type') !== 'renewal' || !$request->filled('existing_contract_id')) {
+            return false;
+        }
+
+        return count($request->get('room_selections_data', [])) > 0
+            || count($request->get('rental_items', [])) > 0;
+    }
+
+    private function resolveRenewalCustomerContext(?Contract $contract, $marketingId): array
+    {
+        if (!$contract || !$contract->customer) {
+            return [null, null, null];
+        }
+
+        $customer = $contract->customer;
+        $prospect = \App\Models\Prospect::where('customer_id', $customer->id)->first();
+
+        if (!$prospect) {
+            $prospect = \App\Models\Prospect::create([
+                'company_name' => $customer->name,
+                'contact_person' => $customer->name,
+                'contact_email' => $customer->email,
+                'contact_phone' => $customer->phone,
+                'company_address' => $customer->address,
+                'customer_id' => $customer->id,
+                'status' => 'qualified',
+                'assigned_to' => $marketingId,
+            ]);
+        }
+
+        return [$customer->id, $prospect->id, $customer->name];
     }
 
     private function resolveQuotationDetailSurveyAndRoom(array $item, array $surveyIds = []): array

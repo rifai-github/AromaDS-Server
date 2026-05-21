@@ -7,6 +7,7 @@ use App\Models\ContractRenewal;
 use App\Models\Contract;
 use App\Models\Customer;
 use App\Models\Survey;
+use App\Models\UnitOnWall;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -369,6 +370,7 @@ class ContractRenewalController extends Controller
                 'contractRentals.masterRental',
                 'contractRentals.room',
                 'quotation.survey.surveyDetails',
+                'quotation.quotationSurveys.survey.surveyDetails',
                 'quotation.quotationRooms',
                 'quotation.primaryPic',
                 'quotation.primaryPic.customerContact',
@@ -406,6 +408,8 @@ class ContractRenewalController extends Controller
                 'days_until_expiry' => $daysUntilExpiry !== null ? (int) $daysUntilExpiry : null,
                 'renewal_window_days' => $renewalWindowDays,
             ];
+
+            $activeUnitOnWalls = $this->getActiveUnitOnWallsForRenewal($contract);
             
             // Prepare data for quotation wizard
             // Use actual_start_date and actual_end_date (BA date based)
@@ -431,7 +435,8 @@ class ContractRenewalController extends Controller
                 'notes_operation' => $contract->notes_operation,
                 'notes_finance' => $contract->notes_finance,
                 'notes_sales' => $contract->notes_sales, // Will trigger pop-up in renewal wizard
-                'rooms' => $contract->contractRooms->map(function ($room) use ($contract) {
+                'rooms' => $contract->contractRooms->map(function ($room) use ($contract, $activeUnitOnWalls) {
+                    $unitOnWall = $this->findUnitOnWallForRoom($activeUnitOnWalls, $room);
                     $quotRoom = $contract->quotation->quotationRooms->where('room_id', $room->room_id)->first();
                     
                     // Fallback to name match if room_id match fails
@@ -462,16 +467,21 @@ class ContractRenewalController extends Controller
                     return [
                         'room_id' => $surveyDetail->id ?? $room->room_id,
                         'survey_detail_id' => $surveyDetail->id,
+                        'survey_id' => $surveyDetail->survey_id ?? null,
                         'master_room_id' => $room->room_id,
                         'contract_room_id' => $room->id,
-                        'room_name' => $room->room->room_name ?? '',
-                        'room_type' => $surveyDetail->room_type ?? $room->room->room_type ?? null,
+                        'unit_on_wall_id' => $unitOnWall?->id,
+                        'unit_on_wall_status' => $unitOnWall?->status,
+                        'source' => $unitOnWall ? 'unit_on_wall' : 'contract',
+                        'serial_number' => $unitOnWall?->serial_number,
+                        'room_name' => $this->unitOnWallRoomName($unitOnWall) ?: ($room->room->room_name ?? ''),
+                        'room_type' => $surveyDetail->room_type ?? $unitOnWall?->room?->room_type ?? $room->room->room_type ?? null,
                         'billing_group_id' => $room->billing_group_id,
-                        'aroma_product_id' => $quotRoom->aroma_product_id ?? null,
-                        'aroma_variant' => $quotRoom->aroma_variant ?? null,
+                        'aroma_product_id' => $quotRoom->aroma_product_id ?? $unitOnWall?->product_id ?? null,
+                        'aroma_variant' => $quotRoom->aroma_variant ?? $unitOnWall?->product?->variant ?? null,
                     ];
                 }),
-                'rentals' => $contract->contractRentals->map(function ($rental) use ($contract) {
+                'rentals' => $contract->contractRentals->map(function ($rental) use ($contract, $activeUnitOnWalls) {
                     
                     // Fallback search for Room info
                     $resolvedRoomId = $rental->room_id;
@@ -530,8 +540,26 @@ class ContractRenewalController extends Controller
                             ->first()?->id;
                     }
 
+                    if (!$resolvedSurveyDetailId) {
+                        $resolvedSurveyId = null;
+                    }
+
+                    $unitOnWall = $this->findUnitOnWallForRental(
+                        $activeUnitOnWalls,
+                        $rental,
+                        $resolvedRoomId,
+                        $resolvedRoomName
+                    );
+
+                    $resolvedRentalId = $unitOnWall?->rental_id ?: $rental->master_rental_id;
+                    $resolvedRentalName = $this->unitOnWallRentalName($unitOnWall)
+                        ?: ($rental->masterRental->rental_name ?? '');
+                    $resolvedRoomId = $unitOnWall?->room_id ?: $resolvedRoomId;
+                    $resolvedRoomName = $this->unitOnWallRoomName($unitOnWall) ?: $resolvedRoomName;
+                    $resolvedRoomType = $unitOnWall?->room?->room_type ?: $resolvedRoomType;
+
                     return [
-                        'rental_id' => $rental->master_rental_id,
+                        'rental_id' => $resolvedRentalId,
                         'room_id' => $resolvedSurveyDetailId ?? $resolvedRoomId,
                         'survey_detail_id' => $resolvedSurveyDetailId,
                         'master_room_id' => $resolvedRoomId,
@@ -539,8 +567,12 @@ class ContractRenewalController extends Controller
                         'room_type' => $resolvedRoomType,
                         'survey_id' => $resolvedSurveyId, // Add resolved survey ID
                         'contract_rental_id' => $rental->id,
+                        'unit_on_wall_id' => $unitOnWall?->id,
+                        'unit_on_wall_status' => $unitOnWall?->status,
+                        'source' => $unitOnWall ? 'unit_on_wall' : 'contract',
+                        'serial_number' => $unitOnWall?->serial_number,
                         'rental_code' => $rental->masterRental->rental_code ?? '',
-                        'rental_name' => $rental->masterRental->rental_name ?? '',
+                        'rental_name' => $resolvedRentalName,
                         'rental_price' => $rental->unit_price ?? $rental->masterRental->rental_price ?? 0,
                         'quantity' => $rental->quantity ?? 1,
                         'unit' => $rental->masterRental->unit ?? 'unit',
@@ -569,6 +601,111 @@ class ContractRenewalController extends Controller
             Log::error("Error fetching contract for renewal: " . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => 'Failed to fetch contract details: ' . $e->getMessage()], 500);
         }
+    }
+
+    private function getActiveUnitOnWallsForRenewal(Contract $contract)
+    {
+        $contractRoomIds = $contract->contractRooms->pluck('room_id')->filter()->unique()->values();
+        $contractRentalIds = $contract->contractRentals->pluck('master_rental_id')->filter()->unique()->values();
+        $contractRoomNames = $contract->contractRooms
+            ->map(fn ($room) => $this->normalizeRenewalText($room->room->room_name ?? null))
+            ->filter()
+            ->unique()
+            ->values();
+        $contractRentalNames = $contract->contractRentals
+            ->map(fn ($rental) => $this->normalizeRenewalText($rental->masterRental->rental_name ?? null))
+            ->filter()
+            ->unique()
+            ->values();
+
+        return UnitOnWall::with(['room', 'rental', 'product'])
+            ->where('customer_id', $contract->customer_id)
+            ->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall'])
+            ->where(function ($query) use ($contractRoomIds, $contractRentalIds, $contractRoomNames, $contractRentalNames) {
+                $hasCondition = false;
+
+                if ($contractRoomIds->isNotEmpty()) {
+                    $query->whereIn('room_id', $contractRoomIds->all());
+                    $hasCondition = true;
+                }
+
+                if ($contractRentalIds->isNotEmpty()) {
+                    $hasCondition
+                        ? $query->orWhereIn('rental_id', $contractRentalIds->all())
+                        : $query->whereIn('rental_id', $contractRentalIds->all());
+                    $hasCondition = true;
+                }
+
+                if ($contractRoomNames->isNotEmpty()) {
+                    $hasCondition
+                        ? $query->orWhereIn(DB::raw('LOWER(TRIM(room_name))'), $contractRoomNames->all())
+                        : $query->whereIn(DB::raw('LOWER(TRIM(room_name))'), $contractRoomNames->all());
+                    $hasCondition = true;
+                }
+
+                if ($contractRentalNames->isNotEmpty()) {
+                    $hasCondition
+                        ? $query->orWhereIn(DB::raw('LOWER(TRIM(rental_name))'), $contractRentalNames->all())
+                        : $query->whereIn(DB::raw('LOWER(TRIM(rental_name))'), $contractRentalNames->all());
+                    $hasCondition = true;
+                }
+
+                if (!$hasCondition) {
+                    $query->whereRaw('1 = 0');
+                }
+            })
+            ->get();
+    }
+
+    private function findUnitOnWallForRoom($unitOnWalls, $contractRoom)
+    {
+        $roomId = $contractRoom->room_id;
+        $roomName = $this->normalizeRenewalText($contractRoom->room->room_name ?? null);
+
+        return $unitOnWalls->first(fn ($unit) => $roomId && (int) $unit->room_id === (int) $roomId)
+            ?? $unitOnWalls->first(fn ($unit) => $roomName && $this->normalizeRenewalText($this->unitOnWallRoomName($unit)) === $roomName);
+    }
+
+    private function findUnitOnWallForRental($unitOnWalls, $contractRental, $roomId = null, $roomName = null)
+    {
+        $rentalId = $contractRental->master_rental_id;
+        $normalizedRoomName = $this->normalizeRenewalText($roomName);
+        $rentalName = $this->normalizeRenewalText($contractRental->masterRental->rental_name ?? null);
+
+        return $unitOnWalls->first(fn ($unit) => $roomId && $rentalId
+            && (int) $unit->room_id === (int) $roomId
+            && (int) $unit->rental_id === (int) $rentalId)
+            ?? $unitOnWalls->first(fn ($unit) => $roomId && (int) $unit->room_id === (int) $roomId)
+            ?? $unitOnWalls->first(fn ($unit) => $rentalId && (int) $unit->rental_id === (int) $rentalId)
+            ?? $unitOnWalls->first(fn ($unit) => $normalizedRoomName
+                && $this->normalizeRenewalText($this->unitOnWallRoomName($unit)) === $normalizedRoomName)
+            ?? $unitOnWalls->first(fn ($unit) => $rentalName
+                && $this->normalizeRenewalText($this->unitOnWallRentalName($unit)) === $rentalName);
+    }
+
+    private function unitOnWallRoomName($unitOnWall): ?string
+    {
+        if (!$unitOnWall) {
+            return null;
+        }
+
+        return $unitOnWall->getRawOriginal('room_name') ?: ($unitOnWall->room->room_name ?? null);
+    }
+
+    private function unitOnWallRentalName($unitOnWall): ?string
+    {
+        if (!$unitOnWall) {
+            return null;
+        }
+
+        return $unitOnWall->getRawOriginal('rental_name') ?: ($unitOnWall->rental->rental_name ?? null);
+    }
+
+    private function normalizeRenewalText(?string $value): ?string
+    {
+        $normalized = strtolower(trim((string) $value));
+
+        return $normalized !== '' ? $normalized : null;
     }
 }
 
