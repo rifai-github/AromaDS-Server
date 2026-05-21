@@ -3,33 +3,91 @@
 <head>
     <title>Customer Service Report</title>
     <style>
-        body { font-family: sans-serif; font-size: 11px; color: #333; }
+        @page { margin: 28px 34px 74px 34px; }
+        body { font-family: sans-serif; font-size: 10px; color: #111; }
         .page-break { page-break-after: always; }
-        
-        .header-table { width: 100%; margin-bottom: 20px; border-bottom: 2px solid #214589; padding-bottom: 10px; }
+
+        .letterhead-table { width: 100%; margin-bottom: 46px; border-collapse: collapse; }
+        .letterhead-table td { vertical-align: top; }
+        .logo { width: 78px; }
+        .company-name { font-size: 19px; font-weight: bold; text-align: right; }
+        .document-title { font-size: 24px; font-weight: bold; text-align: center; margin: 8px 0 38px; letter-spacing: 0; }
+
+        .info-wrap { width: 100%; border-collapse: collapse; margin-bottom: 28px; }
+        .info-wrap td { vertical-align: top; }
+        .left-info { width: 52%; padding-right: 24px; }
+        .right-info { width: 48%; padding-left: 20px; }
+        .section-label { font-size: 13px; margin-bottom: 8px; }
+        .customer-name { font-size: 14px; font-weight: bold; margin-bottom: 6px; text-transform: uppercase; }
+        .address-block { line-height: 1.25; margin-bottom: 24px; }
+        .building-title { font-size: 13px; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; }
+
+        .meta-table { width: 100%; border-collapse: collapse; }
+        .meta-table td { padding: 3px 0; vertical-align: top; font-size: 12px; }
+        .meta-label { width: 122px; }
+        .meta-separator { width: 12px; text-align: center; }
+
+        .rooms-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 11px; }
+        .rooms-table th {
+            border: 1px solid #333;
+            padding: 5px 6px;
+            font-size: 13px;
+            font-weight: bold;
+            text-align: left;
+            background: #fff;
+            color: #111;
+        }
+        .rooms-table td { padding: 5px 6px; vertical-align: top; }
+        .rooms-table .building-row td { padding-top: 8px; font-weight: bold; text-transform: uppercase; }
+        .rooms-table .item-row td { border: 0; }
+
+        .center { text-align: center; }
+        .right { text-align: right; }
+
+        .signature-table { width: 100%; margin-top: 195px; text-align: center; border-collapse: collapse; }
+        .signature-table td { width: 50%; vertical-align: bottom; }
+        .signature-line { width: 56%; border-top: 1px solid #555; margin: 54px auto 6px; }
+
+        .footer-note {
+            position: fixed;
+            left: 34px;
+            right: 34px;
+            bottom: 78px;
+            border-top: 2px solid #777;
+            padding-top: 9px;
+            text-align: center;
+            color: #777;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .company-footer {
+            position: fixed;
+            left: 34px;
+            right: 34px;
+            bottom: 22px;
+            border-top: 2px solid #777;
+            padding-top: 8px;
+            text-align: center;
+            color: #777;
+            font-size: 9px;
+            line-height: 1.25;
+        }
+        .company-footer strong { color: #555; }
+
+        .header-table { width: 100%; margin-bottom: 20px; border-bottom: 2px solid #214589; padding-bottom: 10px; display: none; }
         .header-table td { vertical-align: top; }
-        
-        .logo { width: 150px; }
-        
         .title { font-size: 20px; font-weight: bold; color: #214589; text-align: right; }
         .job-number { font-size: 14px; font-weight: bold; text-align: right; margin-top: 5px; }
-        
-        .info-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; }
+        .info-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; display: none; }
         .info-table td { padding: 5px; }
         .label { font-weight: bold; width: 120px; color: #555; }
-        
-        .rooms-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        .rooms-table th { background-color: #214589; color: white; padding: 8px; text-align: left; }
-        .rooms-table td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
-        
-        .center { text-align: center; }
-        
-        .footer { position: fixed; bottom: 30px; left: 0; right: 0; text-align: center; font-size: 10px; color: #888; border-top: 1px solid #eee; padding-top: 10px; }
+        .footer { display: none; }
     </style>
 </head>
 <body>
     @foreach($groupedJobs as $jobNumber => $schedules)
         @php
+            $company = \App\Models\Company::first();
             $mainJob = $schedules->first();
             $customerName = $mainJob->jobAdvice->customer->name ?? $mainJob->company_name ?? '-';
             $contractNo = $mainJob->jobAdvice->contract->contract_number ?? '-';
@@ -75,6 +133,11 @@
             $address = $buildingAddressParts->isNotEmpty()
                 ? $buildingAddressParts->implode(', ')
                 : ($mainJob->building_name ?? '-');
+            $companyName = $company->name ?? 'PT. PINK SERVICES INDONESIA';
+            $companyAddress = trim((string) ($company->address ?? 'Komplek Kedoya Center Blok C 8-9 Jl. Raya Pejuangan No. 1 Kebon Jeruk. Jakarta 11530, Indonesia.'));
+            $companyPhone = trim((string) ($company->phone ?? '+62 811-9350-083'));
+            $companyWebsite = trim((string) ($company->website ?? 'www.adsscent.com'));
+            $companyFooterLine = trim(collect([$companyAddress, $companyPhone ? 'Whatsapp: ' . $companyPhone : null, $companyWebsite])->filter()->implode('  '));
             
             // Use completed_at as the official report date, fallback to schedule_date
             $reportDate = $schedules->max('completed_at') ?? $mainJob->schedule_date;
@@ -121,6 +184,7 @@
                             ?? '-';
 
                         $rooms->push([
+                            'reference' => $sch->job_number ?? $jobNumber,
                             'item' => $itemName,
                             'qty' => $jobAdviceRoom?->quantity ?? 1,
                             'name' => $roomPivot->room->room_name ?? 'Unknown Room',
@@ -130,6 +194,7 @@
                     }
                 } elseif ($sch->room) {
                     $rooms->push([
+                         'reference' => $sch->job_number ?? $jobNumber,
                          'item' => $sch->room->room_type ?? 'General Service',
                          'qty' => 1,
                          'name' => $sch->room->room_name,
@@ -138,6 +203,7 @@
                     ]);
                 } else {
                      $rooms->push([
+                        'reference' => $sch->job_number ?? $jobNumber,
                         'item' => 'General Service',
                         'qty' => 1,
                         'name' => 'General Area',
@@ -165,61 +231,88 @@
                 $reportTitle = strtoupper($mainJob->type) . ' REPORT';
             }
         @endphp
-        <!-- Header -->
-        <table class="header-table">
+        @php
+            $logoPath = public_path('images/logo.png');
+            $logoSrc = $logoPath;
+            if (file_exists($logoPath)) {
+                $logoType = pathinfo($logoPath, PATHINFO_EXTENSION);
+                $logoSrc = 'data:image/' . $logoType . ';base64,' . base64_encode(file_get_contents($logoPath));
+            }
+        @endphp
+
+        <table class="letterhead-table">
             <tr>
-                <td style="width: 50%;">
-                    <img src="{{ public_path('images/logo.png') }}" class="logo" alt="Logo">
+                <td style="width: 34%;">
+                    <img src="{{ $logoSrc }}" class="logo" alt="Logo">
                 </td>
-                <td style="width: 50%; text-align: right;">
-                    <div class="title">{{ $reportTitle }}</div>
-                    <div class="job-number">{{ $jobNumber }}</div>
+                <td style="width: 66%;">
+                    <div class="company-name">{{ strtoupper($companyName) }}</div>
                 </td>
             </tr>
         </table>
 
-        <!-- Info -->
-        <table class="info-table">
+        <div class="document-title">{{ $reportTitle }}</div>
+
+        <table class="info-wrap">
             <tr>
-                <td class="label">Customer:</td>
-                <td>{{ $customerName }}</td>
-                <td class="label">Contract No:</td>
-                <td>{{ $contractNo }}</td>
-            </tr>
-            <tr>
-                <td class="label">Building:</td>
-                <td>{{ $buildingName }}</td>
-                <td class="label">Technician:</td>
-                <td>{{ $techName }}</td>
-            </tr>
-            <tr>
-                <td class="label">Address:</td>
-                <td>{{ $address }}</td>
-                <td class="label">Date:</td>
-                <td>{{ $dateFormatted }}</td>
+                <td class="left-info">
+                    <div class="section-label">Customer :</div>
+                    <div class="customer-name">{{ $customerName }}</div>
+                    <div class="address-block">{{ $mainJob->jobAdvice->customer->address ?? '-' }}</div>
+
+                    <div class="section-label">Building :</div>
+                    <div class="building-title">{{ $buildingName }}</div>
+                    <div class="address-block">{{ $address }}</div>
+                </td>
+                <td class="right-info">
+                    <table class="meta-table">
+                        <tr>
+                            <td class="meta-label">Job No</td>
+                            <td class="meta-separator">:</td>
+                            <td>{{ $jobNumber }}</td>
+                        </tr>
+                        <tr>
+                            <td class="meta-label">Contract No</td>
+                            <td class="meta-separator">:</td>
+                            <td>{{ $contractNo }}</td>
+                        </tr>
+                        <tr>
+                            <td class="meta-label">Schedule Date</td>
+                            <td class="meta-separator">:</td>
+                            <td>{{ $dateFormatted }}</td>
+                        </tr>
+                        <tr>
+                            <td class="meta-label">Technician</td>
+                            <td class="meta-separator">:</td>
+                            <td>{{ $techName }}</td>
+                        </tr>
+                    </table>
+                </td>
             </tr>
         </table>
 
-        <!-- Rooms List -->
-        <h3>Job Details</h3>
         <table class="rooms-table">
             <thead>
                 <tr>
-                    <th style="width: 5%;" class="center">No</th>
-                    <th style="width: 32%;">Item</th>
-                    <th style="width: 10%;" class="center">Qty</th>
-                    <th style="width: 23%;">Room</th>
-                    <th style="width: 18%;" class="center">Type</th>
-                    <th style="width: 12%;" class="center">Period</th>
+                    <th style="width: 18%;">Reference</th>
+                    <th style="width: 27%;">Item</th>
+                    <th style="width: 31%;">Room</th>
+                    <th style="width: 8%;" class="center">Qty</th>
+                    <th style="width: 8%;" class="center">Type</th>
+                    <th style="width: 8%;" class="center">Period</th>
                 </tr>
             </thead>
             <tbody>
+                <tr class="building-row">
+                    <td></td>
+                    <td colspan="5">{{ $buildingName }}</td>
+                </tr>
                 @foreach($rooms as $index => $room)
-                <tr>
-                    <td class="center">{{ $index + 1 }}</td>
+                <tr class="item-row">
+                    <td>{{ $room['reference'] }}</td>
                     <td>{{ $room['item'] }}</td>
-                    <td class="center">{{ $room['qty'] }}</td>
                     <td>{{ $room['name'] }}</td>
+                    <td class="center">{{ $room['qty'] }}</td>
                     <td class="center">{{ $room['type'] }}</td>
                     <td class="center">{{ $room['period'] }}</td>
                 </tr>
@@ -227,27 +320,29 @@
             </tbody>
         </table>
 
-        <!-- Signatures -->
-        <table style="width: 100%; margin-top: 50px; text-align: center;">
+        <table class="signature-table">
             <tr>
-                <td style="width: 33%;">
+                <td>
                     <p>Customer Signature</p>
-                    <br><br><br>
-                    <hr style="width: 80%; border-top: 1px solid #ccc;">
+                    <div class="signature-line"></div>
                     <p>{{ $customerName }}</p>
                 </td>
-                <td style="width: 33%;"></td>
-                <td style="width: 33%;">
+                <td>
                     <p>Technician Signature</p>
-                    <br><br><br>
-                    <hr style="width: 80%; border-top: 1px solid #ccc;">
+                    <div class="signature-line"></div>
                     <p>{{ $techName }}</p>
                 </td>
             </tr>
         </table>
 
-        <div class="footer">
-            Printed on {{ date('d M Y H:i') }} | Page 1 of 1
+        <div class="footer-note">
+            This Job Report was generated on {{ date('d M Y - H:i:s') }} and is valid without the signature and seal.
+        </div>
+
+        <div class="company-footer">
+            <strong>An ISO 14001:2015 Certified Company | IAS Accredited</strong><br>
+            {{ $companyFooterLine }}<br>
+            Bali . Bandung . Batam . Balikpapan . Banjarmasin . Jakarta . Lampung . Makassar . Manado . Medan . Palembang . Pekanbaru . Samarinda . Semarang . Surabaya
         </div>
 
         @if(!$loop->last)
