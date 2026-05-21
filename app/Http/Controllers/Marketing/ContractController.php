@@ -35,13 +35,15 @@ class ContractController extends Controller
     public function index(Request $request)
     {
         $query = Contract::with([
-            'customer', 
-            'quotation.prospect', 
-            'quotation.survey.surveyor', 
-            'quotation.marketing', 
+            'customer',
+            'customer.defaultBankPayment.bank',
+            'quotation.prospect',
+            'quotation.survey.surveyor',
+            'quotation.marketing',
             'quotation.approver',
             'quotation.existingContract',
-            'creator', 
+            'quotation.branch',
+            'creator',
             'updater',
             'marketing',
             'renewals.newContract',
