@@ -9881,7 +9881,10 @@ class JobScheduleController extends Controller
         $jobs = JobSchedule::with([
             'jobAdvice.customer', 
             'jobAdvice.contract',
-            'building', 
+            'building.city',
+            'building.province',
+            'building.district',
+            'building.subdistrict',
             'assignedTechnician', 
             'jobAssignSchedules.team',
             'jobScheduleRooms.room',
@@ -9913,5 +9916,4 @@ class JobScheduleController extends Controller
         return $pdf->stream('CSR_Report_' . date('Ymd_His') . '.pdf');
     }
 }
-
 

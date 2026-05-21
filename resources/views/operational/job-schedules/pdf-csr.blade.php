@@ -56,8 +56,25 @@
             }
             $techName = $technicians->merge($teamNames)->unique()->filter()->implode(', ') ?: '-';
 
-            // Use the building address or building name
-            $address = $mainJob->building->address ?? $mainJob->building_name ?? $mainJob->building->building_name ?? '-';
+            $building = $mainJob->building;
+            $buildingName = $building?->nama_gedung
+                ?? $building?->name
+                ?? $building?->building_name
+                ?? $mainJob->building_name
+                ?? '-';
+
+            $buildingAddressParts = collect([
+                $building?->alamat_1 ?? $building?->address,
+                $building?->alamat_2,
+                $building?->subdistrict?->name,
+                $building?->district?->name,
+                $building?->city?->name,
+                $building?->province?->name,
+                $building?->kode_pos ?? $building?->postal_code,
+            ])->filter(fn ($part) => filled($part))->unique()->values();
+            $address = $buildingAddressParts->isNotEmpty()
+                ? $buildingAddressParts->implode(', ')
+                : ($mainJob->building_name ?? '-');
             
             // Use completed_at as the official report date, fallback to schedule_date
             $reportDate = $schedules->max('completed_at') ?? $mainJob->schedule_date;
@@ -170,14 +187,16 @@
                 <td>{{ $contractNo }}</td>
             </tr>
             <tr>
-                <td class="label">Address:</td>
-                <td>{{ $address }}</td>
+                <td class="label">Building:</td>
+                <td>{{ $buildingName }}</td>
                 <td class="label">Technician:</td>
                 <td>{{ $techName }}</td>
             </tr>
             <tr>
+                <td class="label">Address:</td>
+                <td>{{ $address }}</td>
                 <td class="label">Date:</td>
-                <td colspan="3">{{ $dateFormatted }}</td>
+                <td>{{ $dateFormatted }}</td>
             </tr>
         </table>
 
