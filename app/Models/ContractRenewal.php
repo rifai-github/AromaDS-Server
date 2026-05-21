@@ -400,7 +400,14 @@ class ContractRenewal extends Model
         foreach ($activeContracts as $contract) {
             $eligibility = self::isEligibleForRenewal($contract->id);
 
-            if ($eligibility['eligible'] && ($eligibility['days_until_expiry'] ?? 0) > 0) {
+            $daysUntilExpiry = $eligibility['days_until_expiry'] ?? null;
+            $renewalWindowDays = $eligibility['renewal_window_days'] ?? null;
+            $isInsideAutoRenewalWindow = $daysUntilExpiry !== null
+                && $renewalWindowDays !== null
+                && $daysUntilExpiry >= 0
+                && $daysUntilExpiry <= $renewalWindowDays;
+
+            if ($eligibility['eligible'] && $isInsideAutoRenewalWindow) {
                 $currentEndDate = $contract->actual_end_date ?? $contract->end_date;
                 $renewal = self::create([
                     'renewal_number' => self::generateRenewalNumber(),
@@ -414,12 +421,12 @@ class ContractRenewal extends Model
                     'previous_total_value' => $contract->total_value,
                     'status' => self::STATUS_DRAFT,
                     'auto_renewal' => true,
-                    'days_before_expiry' => $eligibility['days_until_expiry'],
+                    'days_before_expiry' => $daysUntilExpiry,
                     'created_by' => 1 // System user
                 ]);
                 $created[] = $renewal;
                 
-                \Log::info("Auto-created renewal for Contract {$contract->contract_number}, expires in {$eligibility['days_until_expiry']} days, window: {$eligibility['renewal_window_days']} days");
+                \Log::info("Auto-created renewal for Contract {$contract->contract_number}, expires in {$daysUntilExpiry} days, window: {$renewalWindowDays} days");
             }
         }
 
@@ -471,7 +478,9 @@ class ContractRenewal extends Model
             ];
         }
 
-        // Check if within renewal window - use actual dates
+        // Manual renewal is allowed as soon as the old contract's operational jobs
+        // are final and have BA dates. Keep the window data for display and
+        // scheduled auto-renewal, but do not block manual renewal by date.
         $renewalWindowDays = self::calculateRenewalWindowDays($actualStartDate, $actualEndDate);
     
         // Use date-only comparison (startOfDay) to avoid timezone issues
@@ -479,18 +488,6 @@ class ContractRenewal extends Model
         $today = now()->startOfDay();
         $endDate = \Carbon\Carbon::parse($actualEndDate)->startOfDay();
         $daysUntilExpiry = $today->diffInDays($endDate, false);
-
-        if ($daysUntilExpiry > $renewalWindowDays) {
-            return [
-                'eligible' => false, 
-                'reason' => "Too early. Renewal available {$renewalWindowDays} days before expiry. Days until expiry: {$daysUntilExpiry}"
-            ];
-        }
-
-        // Contract is expired if end_date is before today (not including today)
-        if ($daysUntilExpiry < 0) {
-            return ['eligible' => false, 'reason' => 'Contract already expired'];
-        }
 
         return [
             'eligible' => true, 

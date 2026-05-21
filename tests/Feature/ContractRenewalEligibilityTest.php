@@ -73,6 +73,7 @@ class ContractRenewalEligibilityTest extends TestCase
             $table->string('contract_number')->nullable();
             $table->string('type')->nullable();
             $table->string('status')->nullable();
+            $table->date('schedule_date')->nullable();
             $table->date('ba_date')->nullable();
             $table->timestamps();
             $table->softDeletes();
@@ -148,6 +149,22 @@ class ContractRenewalEligibilityTest extends TestCase
         $this->assertTrue($eligibility['eligible']);
     }
 
+    public function test_contract_with_final_jobs_and_ba_date_can_be_renewed_before_renewal_window(): void
+    {
+        $contract = $this->createContract('JKT-CA/26-03/0006', [
+            'start_date' => '2026-05-01',
+            'end_date' => '2027-05-01',
+        ]);
+        $this->createJob($contract, 'JKT-IR/26-05/0001', 'install', 'done_job', '2026-05-02');
+        $this->createJob($contract, 'JKT-CSR/26-05/0001', 'service', 'done_job', '2026-05-03');
+
+        $eligibility = ContractRenewal::isEligibleForRenewal($contract->id);
+
+        $this->assertTrue($contract->fresh()->canBeRenewedSafely());
+        $this->assertTrue($eligibility['eligible']);
+        $this->assertGreaterThan($eligibility['renewal_window_days'], $eligibility['days_until_expiry']);
+    }
+
     public function test_dropdown_includes_eligible_contract_with_past_original_end_date_and_different_marketing(): void
     {
         DB::table('customers')->insert([
@@ -201,6 +218,7 @@ class ContractRenewalEligibilityTest extends TestCase
             'contract_number' => $contract->contract_number,
             'type' => $type,
             'status' => $status,
+            'schedule_date' => $baDate,
             'ba_date' => $baDate,
             'created_at' => now(),
             'updated_at' => now(),
