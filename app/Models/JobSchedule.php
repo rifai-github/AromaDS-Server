@@ -503,8 +503,10 @@ class JobSchedule extends Model
         
         $type = strtolower($this->type ?? '');
         if (in_array($type, ['service', 'service_first', 'service_routine'], true)
-            && $this->material_checked
-            && $this->hasOnlyUnitRentalFlow()
+            && (
+                ($this->material_checked && $this->hasOnlyRentalFlow(['unit_only']))
+                || $this->hasOnlyRentalFlow(['refill_only'])
+            )
         ) {
             return 'Check (CHK)';
         }
@@ -512,7 +514,7 @@ class JobSchedule extends Model
         return $typeLabels[$type] ?? ucfirst(str_replace('_', ' ', $this->type ?? '-'));
     }
 
-    private function hasOnlyUnitRentalFlow(): bool
+    private function hasOnlyRentalFlow(array $allowedRentalTypes): bool
     {
         $rooms = $this->relationLoaded('jobScheduleRooms')
             ? $this->jobScheduleRooms
@@ -542,7 +544,7 @@ class JobSchedule extends Model
             ->values();
 
         return $rentalTypes->isNotEmpty()
-            && $rentalTypes->every(fn ($type) => $type === 'unit_only');
+            && $rentalTypes->every(fn ($type) => in_array($type, $allowedRentalTypes, true));
     }
 
     // Methods

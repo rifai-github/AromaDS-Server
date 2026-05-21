@@ -3298,6 +3298,10 @@ class JobScheduleController extends Controller
                         if (in_array($completedSchedule->type, $installTypes) && $completedSchedule->areAllRoomsCompleted()) {
                             $unitOnWallCreated = $this->autoCreateUnitOnWall($completedSchedule, $jobAdvice);
                         }
+
+                        if ($jobAdvice && in_array(strtolower((string) $completedSchedule->type), ['install'], true)) {
+                            $this->generateUnitOnlyCheckSchedulesAfterInstall($completedSchedule, $jobAdvice);
+                        }
                         
                         // AUTO-CREATE REMOVE JOB only if Unit On Wall was successfully created
                         if (in_array($completedSchedule->type, $installTypes) && $jobAdvice && $jobAdvice->remove_date && $unitOnWallCreated) {
@@ -3647,6 +3651,10 @@ class JobScheduleController extends Controller
                 $installTypes = ['install', 'Install', 'Install Free', 'install_free'];
                 if (in_array($jobSchedule->type, $installTypes) && $jobSchedule->areAllRoomsCompleted()) {
                     $unitOnWallCreated = $this->autoCreateUnitOnWall($jobSchedule, $jobAdvice);
+                }
+
+                if ($jobAdvice && in_array(strtolower((string) $jobSchedule->type), ['install'], true)) {
+                    $this->generateUnitOnlyCheckSchedulesAfterInstall($jobSchedule, $jobAdvice);
                 }
                 
                 // MOM8: AUTO-CREATE REMOVE JOB only if Unit On Wall was successfully created
@@ -5934,6 +5942,12 @@ class JobScheduleController extends Controller
                     continue;
                 }
 
+                $rentalType = strtolower(trim((string) ($rental->rental_type ?? '')));
+                if ($rentalType === 'refill_only') {
+                    \Log::info("JA Room {$jaRoom->id}: Rental {$rental->rental_name} is refill-only. Skipping Unit On Wall creation.");
+                    continue;
+                }
+
                 $productId = null;
                 $serialNumberId = null;
                 $serialNumberString = null;
@@ -7211,6 +7225,176 @@ class JobScheduleController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to generate remaining services: " . $e->getMessage());
         }
+    }
+
+    private function generateUnitOnlyCheckSchedulesAfterInstall(JobSchedule $completedInstallJob, $jobAdvice): array
+    {
+        $createdChecks = [];
+
+        try {
+            $completedInstallJob->loadMissing('jobScheduleRooms');
+            $completedRoomIds = $completedInstallJob->jobScheduleRooms
+                ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
+                ->pluck('room_id')
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+
+            if (empty($completedRoomIds)) {
+                return $createdChecks;
+            }
+
+            $jobAdvice->loadMissing([
+                'rooms.rentalProduct.serviceFrequency',
+                'rooms.contractRoom.room',
+                'rooms.quotationRoom.room',
+                'contract',
+            ]);
+
+            $unitOnlyRooms = $jobAdvice->rooms
+                ->filter(function ($jaRoom) use ($completedRoomIds) {
+                    $rentalType = strtolower(trim((string) ($jaRoom->rentalProduct?->rental_type ?? '')));
+                    $physicalRoomId = $this->getJobAdviceRoomPhysicalRoomId($jaRoom);
+
+                    return $rentalType === 'unit_only'
+                        && $physicalRoomId
+                        && in_array((int) $physicalRoomId, $completedRoomIds, true);
+                })
+                ->groupBy(fn ($jaRoom) => (int) $this->getJobAdviceRoomPhysicalRoomId($jaRoom));
+
+            foreach ($unitOnlyRooms as $physicalRoomId => $roomsInGroup) {
+                $jaRoomIds = $roomsInGroup->pluck('id')->all();
+                $alreadyHasCheck = JobSchedule::where('job_advice_id', $jobAdvice->id)
+                    ->whereIn('type', ['service', 'service_first', 'service_routine'])
+                    ->whereNotIn('status', ['cancelled', 'undone'])
+                    ->whereHas('jobScheduleRooms.rentals', function ($query) use ($jaRoomIds) {
+                        $query->whereIn('job_advice_room_id', $jaRoomIds);
+                    })
+                    ->exists();
+
+                if ($alreadyHasCheck) {
+                    continue;
+                }
+
+                $firstJaRoom = $roomsInGroup->first();
+                $rental = $firstJaRoom->rentalProduct;
+                $frequency = $rental?->serviceFrequency;
+                $totalChecks = $this->calculateTotalServicePeriodsForRental($jobAdvice, $rental);
+
+                if ($totalChecks <= 0) {
+                    continue;
+                }
+
+                for ($period = 1; $period <= $totalChecks; $period++) {
+                    $scheduleDate = $this->calculateScheduleDateForPeriod(
+                        $completedInstallJob->ba_date ?? $completedInstallJob->schedule_date ?? $jobAdvice->expected_date,
+                        $period,
+                        $frequency
+                    );
+
+                    $checkSchedule = JobSchedule::create([
+                        'job_number' => null,
+                        'type' => $period === 1 ? 'service_first' : 'service_routine',
+                        'status' => 'scheduled',
+                        'job_advice_id' => $jobAdvice->id,
+                        'building_id' => $completedInstallJob->building_id,
+                        'building_name' => $completedInstallJob->building_name,
+                        'room_id' => (int) $physicalRoomId,
+                        'room_name' => $firstJaRoom->room_name,
+                        'company_name' => $completedInstallJob->company_name,
+                        'contract_number' => $completedInstallJob->contract_number,
+                        'quotation_number' => $completedInstallJob->quotation_number,
+                        'schedule_date' => $scheduleDate->format('Y-m-d'),
+                        'expected_date' => $scheduleDate->format('Y-m-d'),
+                        'period' => $period,
+                        'service_frequency' => $frequency?->frequency_times_per_month ?? $frequency?->frequency_months ?? null,
+                        'service_period_type' => $frequency?->name ?? 'monthly',
+                        'internal_notes' => "Auto-generated Check period {$period}/{$totalChecks} after install job {$completedInstallJob->job_number}",
+                        'reference_number' => $jobAdvice->job_advice_number,
+                        'material_checked' => true,
+                        'material_checked_at' => now(),
+                        'created_by' => Auth::id() ?? \App\Models\User::first()?->id,
+                        'updated_by' => Auth::id() ?? \App\Models\User::first()?->id,
+                    ]);
+
+                    $checkRoom = \App\Models\JobScheduleRoom::create([
+                        'job_schedule_id' => $checkSchedule->id,
+                        'job_advice_room_id' => $firstJaRoom->id,
+                        'room_name' => $firstJaRoom->room_name,
+                        'room_id' => (int) $physicalRoomId,
+                        'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
+                        'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
+                        'notes' => "Unit-only check generated after install completion",
+                        'created_by' => Auth::id() ?? \App\Models\User::first()?->id,
+                        'updated_by' => Auth::id() ?? \App\Models\User::first()?->id,
+                    ]);
+
+                    $isPrimary = true;
+                    foreach ($roomsInGroup as $roomToLink) {
+                        \App\Models\JobScheduleRoomRental::create([
+                            'job_schedule_room_id' => $checkRoom->id,
+                            'job_advice_room_id' => $roomToLink->id,
+                            'is_primary' => $isPrimary,
+                        ]);
+                        $isPrimary = false;
+
+                        if ($period === 1) {
+                            $roomToLink->update([
+                                'service_job_schedule_id' => $checkSchedule->id,
+                                'rental_has_service' => false,
+                                'unit_already_installed' => true,
+                                'updated_by' => Auth::id(),
+                            ]);
+                        }
+                    }
+
+                    $createdChecks[] = $checkSchedule;
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::error("Failed to generate unit-only check schedules after install {$completedInstallJob->id}: " . $e->getMessage());
+        }
+
+        return $createdChecks;
+    }
+
+    private function calculateTotalServicePeriodsForRental($jobAdvice, $rental): int
+    {
+        if (!$rental || !$rental->serviceFrequency || !$jobAdvice->contract?->start_date || !$jobAdvice->contract?->end_date) {
+            return 0;
+        }
+
+        $frequencyTimesPerMonth = (int) ($rental->serviceFrequency->frequency_times_per_month ?? 1);
+        $frequencyTimesPerMonth = max(1, $frequencyTimesPerMonth);
+        $startDate = \Carbon\Carbon::parse($jobAdvice->contract->start_date);
+        $endDate = \Carbon\Carbon::parse($jobAdvice->contract->end_date);
+        $rentalPeriodMonths = $startDate->diffInMonths($endDate) + 1;
+
+        return $frequencyTimesPerMonth * $rentalPeriodMonths;
+    }
+
+    private function calculateScheduleDateForPeriod($baseDate, int $period, $serviceFrequency): \Carbon\Carbon
+    {
+        $baseDate = \Carbon\Carbon::parse($baseDate ?: now());
+
+        if ($serviceFrequency?->frequency_times_per_month && $serviceFrequency->frequency_times_per_month > 0) {
+            $frequencyTimes = (int) $serviceFrequency->frequency_times_per_month;
+            $monthsToAdd = intdiv($period - 1, $frequencyTimes);
+            $serviceIndexInMonth = ($period - 1) % $frequencyTimes;
+            $targetMonth = $baseDate->copy()->addMonths($monthsToAdd);
+
+            if ($frequencyTimes > 1 && $serviceIndexInMonth > 0) {
+                $daysPerService = floor($targetMonth->daysInMonth / $frequencyTimes);
+                return $targetMonth->addDays($serviceIndexInMonth * $daysPerService);
+            }
+
+            return $targetMonth;
+        }
+
+        $frequencyMonths = (int) ($serviceFrequency?->frequency_months ?? 1);
+        return $baseDate->copy()->addMonths(($period - 1) * max(1, $frequencyMonths));
     }
     
     /**
@@ -9916,4 +10100,3 @@ class JobScheduleController extends Controller
         return $pdf->stream('CSR_Report_' . date('Ymd_His') . '.pdf');
     }
 }
-

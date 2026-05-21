@@ -1854,7 +1854,7 @@ class JobAdviceController extends Controller
             return [
                 'needs_install' => true,
                 'needs_service' => false,
-                'needs_check' => true,
+                'needs_check' => false,
             ];
         }
 
@@ -2607,7 +2607,16 @@ class JobAdviceController extends Controller
 
         foreach ($roomsByUniqueRoom as $roomsInGroup) {
             $jaRoom = $roomsInGroup->first();
-            $jaRoomIds = $roomsInGroup->pluck('id')->all();
+            $serviceRoomsInGroup = $roomsInGroup->filter(function ($roomItem) {
+                $rentalType = strtolower((string) ($roomItem->rentalProduct?->rental_type ?? 'unit_refill'));
+                return $rentalType !== 'unit_only';
+            });
+
+            if ($serviceRoomsInGroup->isEmpty()) {
+                continue;
+            }
+
+            $jaRoomIds = $serviceRoomsInGroup->pluck('id')->all();
 
             if ($this->activeServiceScheduleExistsForJobAdviceRooms($jobAdvice->id, $jaRoomIds)) {
                 continue;
@@ -2625,20 +2634,15 @@ class JobAdviceController extends Controller
                 continue;
             }
 
-            $hasServiceMaterials = $roomsInGroup->contains(function ($roomItem) {
-                $rentalType = strtolower((string) ($roomItem->rentalProduct?->rental_type ?? 'unit_refill'));
-                return $rentalType !== 'unit_only';
-            });
-
-            $roomNote = "\n[Room: {$jaRoom->room_name}] (Rentals: {$roomsInGroup->count()})";
+            $roomNote = "\n[Room: {$jaRoom->room_name}] (Service rentals: {$serviceRoomsInGroup->count()})";
             $serviceJobs = $this->createJobSchedulesPerRoom(
                 $jobAdvice,
-                $roomsInGroup,
+                $serviceRoomsInGroup,
                 'service_first',
                 $building,
                 $roomNote,
                 1,
-                !$hasServiceMaterials
+                false
             );
 
             if ($serviceJobs->isEmpty()) {
@@ -2646,7 +2650,7 @@ class JobAdviceController extends Controller
             }
 
             $serviceJob = $serviceJobs->first();
-            foreach ($roomsInGroup as $roomToLink) {
+            foreach ($serviceRoomsInGroup as $roomToLink) {
                 $roomToLink->update([
                     'service_job_schedule_id' => $serviceJob->id,
                     'rental_has_service' => true,

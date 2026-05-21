@@ -34,9 +34,21 @@ class JobAdviceRentalFlowTest extends TestCase
         $this->assertTrue($result['service']->contains($refillOnlyRoom));
         $this->assertFalse($result['service']->contains($unitOnlyRoom));
 
-        $this->assertCount(1, $result['check']);
-        $this->assertTrue($result['check']->contains($unitOnlyRoom));
+        $this->assertCount(0, $result['check']);
         $this->assertFalse($result['check']->contains($refillOnlyRoom));
+    }
+
+    public function test_unit_only_check_is_not_created_when_install_job_advice_is_posted(): void
+    {
+        $controller = new JobAdviceController();
+        $method = (new ReflectionClass($controller))->getMethod('determineRentalJobFlow');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($controller, $this->makeRoomWithRentalType('unit_only'));
+
+        $this->assertTrue($result['needs_install']);
+        $this->assertFalse($result['needs_service']);
+        $this->assertFalse($result['needs_check']);
     }
 
     private function makeRoomWithRentalType(string $rentalType): JobAdviceRoom
