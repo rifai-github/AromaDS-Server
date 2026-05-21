@@ -4412,6 +4412,27 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         Swal.fire('Selesai', `Berhasil memperbarui ${success} item.`, 'success').then(() => location.reload());
     }
 
+    function normalizeScheduleDateStatus(status) {
+        return (status || '')
+            .toString()
+            .trim()
+            .toLowerCase()
+            .replace(/[\s-]+/g, '_');
+    }
+
+    function canChangeScheduleDateForStatus(status) {
+        return ['scheduled', 'new_job'].includes(normalizeScheduleDateStatus(status));
+    }
+
+    function hasLockedTeamForScheduleDate(checkboxes) {
+        return Array.from(checkboxes).some(cb => {
+            const team = (cb.getAttribute('data-current-team') || '').trim().toLowerCase();
+            const hasAssignedTeam = team !== '' && team !== 'unassign' && team !== '-';
+
+            return hasAssignedTeam && !canChangeScheduleDateForStatus(cb.getAttribute('data-status'));
+        });
+    }
+
     function applyAdjustmentDay() {
         const checkboxes = document.querySelectorAll('.row-checkbox:checked');
         
@@ -4424,10 +4445,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         // Read from checkbox's data-current-team attribute (robust against column reorder).
         // Unassigned rows have data-current-team="unassign"; assigned rows have the team name.
         const selectedIds = Array.from(checkboxes).map(cb => cb.value);
-        const hasAssignedTeam = Array.from(checkboxes).some(cb => {
-            const team = (cb.getAttribute('data-current-team') || '').trim().toLowerCase();
-            return team !== '' && team !== 'unassign' && team !== '-';
-        });
+        const hasAssignedTeam = hasLockedTeamForScheduleDate(checkboxes);
 
         if (hasAssignedTeam) {
             showWarningDialog('Maaf, schedule date sudah tidak dapat diubah.');
@@ -4495,7 +4513,9 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
             .then(data => {
                 if (data.status === 'success' && data.data) {
                     // MOM8: Check if team is already assigned
-                    const hasAssignedTeam = data.data.job_assign_schedules && data.data.job_assign_schedules.length > 0;
+                    const hasAssignedTeam = data.data.job_assign_schedules
+                        && data.data.job_assign_schedules.length > 0
+                        && !canChangeScheduleDateForStatus(data.data.status);
                     if (hasAssignedTeam) {
                         throw new Error('Maaf sudah tidak dapat merubah schedule date nya');
                     }
@@ -4599,10 +4619,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         // MOM8: Check if any selected job schedule has assigned team
         // Read from checkbox's data-current-team attribute (robust against column reorder).
         // Unassigned rows have data-current-team="unassign"; assigned rows have the team name.
-        const hasAssignedTeam = Array.from(checkboxes).some(cb => {
-            const team = (cb.getAttribute('data-current-team') || '').trim().toLowerCase();
-            return team !== '' && team !== 'unassign' && team !== '-';
-        });
+        const hasAssignedTeam = hasLockedTeamForScheduleDate(checkboxes);
 
         if (hasAssignedTeam) {
             showWarningDialog('Maaf, schedule date sudah tidak dapat diubah.');
