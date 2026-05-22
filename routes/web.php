@@ -1176,6 +1176,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('stock-opnames/{stockOpname}/complete', [StockOpnameController::class, 'complete'])->name('stock-opnames.complete')->middleware('permission:warehouse.stock-opnames.update');
         Route::post('stock-opnames/{stockOpname}/submit', [StockOpnameController::class, 'submit'])->name('stock-opnames.submit')->middleware('permission:warehouse.stock-opnames.update');
         Route::post('stock-opnames/{stockOpname}/approve', [StockOpnameController::class, 'approve'])->name('stock-opnames.approve')->middleware('permission:warehouse.stock-opnames.update');
+        Route::post('stock-opnames/{stockOpname}/unpost', [StockOpnameController::class, 'unpost'])->name('stock-opnames.unpost')->middleware('permission:warehouse.stock-opnames.approve');
         Route::post('stock-opnames/{stockOpname}/import-stock', [StockOpnameController::class, 'importStock'])->name('stock-opnames.import-stock')->middleware('permission:warehouse.stock-opnames.update');
         Route::get('stock-opnames/{stockOpname}/export-stock', [StockOpnameController::class, 'exportStock'])->name('stock-opnames.export-stock')->middleware('permission:warehouse.stock-opnames.view');
         Route::post('stock-opnames/{stockOpname}/create-adjustment', [StockOpnameController::class, 'createAdjustment'])->name('stock-opnames.create-adjustment')->middleware('permission:warehouse.stock-opnames.update');

@@ -230,6 +230,14 @@ class StockOpname extends Model
         return $this->status === 'waiting for approval';
     }
 
+    public function unpost()
+    {
+        $this->update([
+            'status' => 'draft',
+            'updated_by' => auth()->id()
+        ]);
+    }
+
     public function getTotalItems()
     {
         return $this->stockOpnameDetails()->count();

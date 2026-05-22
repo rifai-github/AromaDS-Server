@@ -6,6 +6,8 @@
 @section('content')
 @php
     $canDeleteStockOpname = auth()->user()->hasPermission('warehouse.stock-opnames.delete');
+    $canApprove = auth()->user()->hasPermission('warehouse.stock-opnames.approve');
+    $canUpdate = auth()->user()->hasPermission('warehouse.stock-opnames.update');
 @endphp
 <style>
     /* Global overflow control */
@@ -766,6 +768,7 @@
                         <th data-column="createdBy.name">Created By</th>
                         <th data-column="updated_at" data-type="date">Updated At</th>
                         <th data-column="updatedBy.name">Updated By</th>
+                        <th data-no-filter>Actions</th>
                     </tr>
                 </thead>
                 <!-- Table Body -->
@@ -791,10 +794,44 @@
                         <td>{{ $opname->createdBy->name ?? '-' }}</td>
                         <td>{{ $opname->updated_at ? \Carbon\Carbon::parse($opname->updated_at)->format('d/m/Y H:i') : '-' }}</td>
                         <td>{{ $opname->updatedBy->name ?? '-' }}</td>
+                        <td onclick="event.stopPropagation()" class="text-center" style="white-space:nowrap;">
+                            @if($canUpdate && in_array($opname->status, ['draft', 'in-progress', 'completed']))
+                            <button type="button"
+                                class="btn btn-primary btn-sm"
+                                style="font-size:11px;padding:3px 8px;margin:1px;"
+                                onclick="event.stopPropagation(); submitForApproval({{ $opname->id }})">
+                                Get Approved
+                            </button>
+                            @endif
+                            @if($canApprove && $opname->status === 'waiting for approval')
+                            <button type="button"
+                                class="btn btn-success btn-sm"
+                                style="font-size:11px;padding:3px 8px;margin:1px;"
+                                onclick="event.stopPropagation(); postOpname({{ $opname->id }})">
+                                Post
+                            </button>
+                            @endif
+                            @if($canApprove && $opname->status === 'approved')
+                            <button type="button"
+                                class="btn btn-warning btn-sm"
+                                style="font-size:11px;padding:3px 8px;margin:1px;"
+                                onclick="event.stopPropagation(); unpostOpname({{ $opname->id }})">
+                                Unpost
+                            </button>
+                            @endif
+                            @if($canDeleteStockOpname)
+                            <button type="button"
+                                class="btn btn-danger btn-sm"
+                                style="font-size:11px;padding:3px 8px;margin:1px;"
+                                onclick="event.stopPropagation(); openDeleteModal({{ $opname->id }})">
+                                Delete
+                            </button>
+                            @endif
+                        </td>
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="{{ $canDeleteStockOpname ? 12 : 11 }}" class="p-8 text-center">
+                        <td colspan="{{ $canDeleteStockOpname ? 13 : 12 }}" class="p-8 text-center">
                             <div class="text-gray-600">
                                 <i class="fas fa-inbox text-4xl mb-3"></i>
                                 <p class="text-lg">No stock opnames found</p>
@@ -1499,6 +1536,58 @@ function submitForApproval(id) {
         if (!confirmed) return;
 
         fetch(`/warehouse/stock-opnames/${id}/submit`, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            }
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.status === 'success') {
+                location.reload();
+            } else {
+                showErrorDialog('Gagal', result.message);
+            }
+        });
+    });
+}
+
+function postOpname(id) {
+    showConfirmDialog(
+        'Post Stock Opname?',
+        'Stock opname akan diposting dan distok akan difinalkan.',
+        'Ya, Post',
+        'Batal'
+    ).then((confirmed) => {
+        if (!confirmed) return;
+
+        fetch(`/warehouse/stock-opnames/${id}/approve`, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            }
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.status === 'success') {
+                location.reload();
+            } else {
+                showErrorDialog('Gagal', result.message);
+            }
+        });
+    });
+}
+
+function unpostOpname(id) {
+    showConfirmDialog(
+        'Unpost Stock Opname?',
+        'Status opname akan dikembalikan ke Draft.',
+        'Ya, Unpost',
+        'Batal'
+    ).then((confirmed) => {
+        if (!confirmed) return;
+
+        fetch(`/warehouse/stock-opnames/${id}/unpost`, {
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')

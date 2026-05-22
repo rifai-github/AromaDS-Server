@@ -471,10 +471,10 @@ class StockOpnameController extends Controller
 
     public function submit(Request $request, StockOpname $stockOpname)
     {
-        if ($stockOpname->status !== 'completed' && $stockOpname->status !== 'in-progress') {
+        if (!in_array($stockOpname->status, ['draft', 'in-progress', 'completed'])) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Only completed or in-progress opnames can be submitted for approval.'
+                'message' => 'Only draft, in-progress, or completed opnames can be submitted for approval.'
             ], 400);
         }
 
@@ -493,6 +493,34 @@ class StockOpnameController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to submit stock opname: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function unpost(Request $request, StockOpname $stockOpname)
+    {
+        if ($stockOpname->status !== 'approved') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Only approved opnames can be unposted.'
+            ], 400);
+        }
+
+        try {
+            DB::beginTransaction();
+            $stockOpname->unpost();
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Stock opname unposted successfully',
+                'data' => $stockOpname->load(['branch', 'warehouse', 'personResponsible', 'createdBy', 'updatedBy'])
+            ]);
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to unpost stock opname: ' . $e->getMessage()
             ], 500);
         }
     }
