@@ -7,6 +7,7 @@ use App\Models\Building;
 use App\Models\Contract;
 use App\Models\Quotation;
 use App\Models\JobAdvice;
+use App\Models\OperationalArea;
 use App\Models\Survey;
 use App\Models\MaterialIssue;
 use App\Models\Customer;
@@ -180,6 +181,19 @@ class DocumentNumberService
         // Get type code
         $typeCode = self::TYPE_CODES[$documentType] ?? strtoupper(substr($documentType, 0, 2));
         
+        // For Job Advice the prefix must follow the Operational Area (service area)
+        // assignment, NOT the building's administrative city. A city like Cileungsi
+        // (kab. Bogor) can be set as service area for the Jakarta branch, in which
+        // case the JA must carry the JKT prefix so the Jakarta team can see it.
+        if (!$branchCode && $documentType === 'job_advice') {
+            $branchCode = $this->getBranchCodeFromOperationalArea(
+                $buildingId,
+                $contractId,
+                $quotationId,
+                $surveyId
+            );
+        }
+
         // Get branch code if not provided
         if (!$branchCode) {
             $branchCode = $this->getBranchCodeFromContext(
@@ -298,6 +312,87 @@ class DocumentNumberService
             }
         }
         
+        return null;
+    }
+
+    /**
+     * Resolve branch code for Job Advice via OperationalArea (service area)
+     * assignment. The building's location is matched against operational areas
+     * from most specific (subdistrict) to least specific (province), and the
+     * first active matching area's branch is returned.
+     */
+    public function getBranchCodeFromOperationalArea(
+        ?int $buildingId = null,
+        ?int $contractId = null,
+        ?int $quotationId = null,
+        ?int $surveyId = null
+    ): ?string {
+        $building = $this->resolveBuilding($buildingId, $contractId, $quotationId, $surveyId);
+
+        if (!$building) {
+            return null;
+        }
+
+        $locationFields = [
+            'subdistrict_id' => $building->subdistrict_id,
+            'district_id'    => $building->district_id,
+            'city_id'        => $building->city_id,
+            'province_id'    => $building->province_id,
+        ];
+
+        foreach ($locationFields as $column => $value) {
+            if (!$value) {
+                continue;
+            }
+
+            $area = OperationalArea::with('branch')
+                ->where($column, $value)
+                ->where('is_active', true)
+                ->whereHas('branch', fn ($q) => $q->where('is_active', true))
+                ->first();
+
+            if ($area && $area->branch) {
+                return $area->branch->code;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a Building from one of the available source documents.
+     */
+    private function resolveBuilding(
+        ?int $buildingId = null,
+        ?int $contractId = null,
+        ?int $quotationId = null,
+        ?int $surveyId = null
+    ): ?Building {
+        if ($buildingId) {
+            return Building::find($buildingId);
+        }
+
+        if ($contractId) {
+            $contract = Contract::with('quotation.survey.building')->find($contractId);
+            $building = $contract?->quotation?->survey?->building ?? null;
+            if ($building) {
+                return $building;
+            }
+        }
+
+        if ($quotationId) {
+            $quotation = Quotation::with('survey.building')->find($quotationId);
+            $building = $quotation?->survey?->building ?? null;
+            if ($building) {
+                return $building;
+            }
+        }
+
+        if ($surveyId) {
+            $survey = Survey::with('building')->find($surveyId);
+            return $survey?->building ?? null;
+        }
+
         return null;
     }
 
