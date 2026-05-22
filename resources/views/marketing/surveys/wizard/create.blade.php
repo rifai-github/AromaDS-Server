@@ -3599,12 +3599,17 @@ $(document).on('click', '.delete-room', function() {
     }
     
     // Submit survey
+    let _surveySubmitting = false;
+
     function submitSurvey(formData) {
+        if (_surveySubmitting) return;
+        _surveySubmitting = true;
+
         console.log('Submitting survey:', formData);
-        
-        // Show loading
+
+        // Disable buttons for the whole lifecycle — re-enabled only on error
         $('#save-draft-btn, #finalize-btn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-2"></i> Processing...');
-        
+
         // Submit via AJAX
         $.ajax({
             url: '{{ route("marketing.surveys.wizard.save") }}',
@@ -3615,23 +3620,25 @@ $(document).on('click', '.delete-room', function() {
             },
             success: function(response) {
                 console.log('Survey saved successfully:', response);
-                alert('Survey berhasil disimpan!');
-                if (response.redirect_url) {
-                    window.location.href = response.redirect_url;
-                } else if (response.survey_id) {
-                    window.location.href = '{{ route("marketing.surveys.show", ":id") }}'.replace(':id', response.survey_id);
-                } else {
-                    window.location.href = '{{ route("marketing.surveys.index") }}';
-                }
+                // Keep buttons disabled — page is navigating away
+                $('#save-draft-btn, #finalize-btn')
+                    .prop('disabled', true)
+                    .html('<i class="fas fa-check mr-2"></i> Tersimpan, mengalihkan...');
+                const target = response.redirect_url
+                    || ('{{ route("marketing.surveys.show", ":id") }}'.replace(':id', response.survey_id))
+                    || '{{ route("marketing.surveys.index") }}';
+                window.location.href = target;
             },
             error: function(xhr, status, error) {
                 console.error('Error saving survey:', xhr.responseText);
-                alert('Terjadi kesalahan saat menyimpan survey. Silakan coba lagi.');
-            },
-            complete: function() {
-                $('#save-draft-btn, #finalize-btn').prop('disabled', false);
-                $('#save-draft-btn').html('<i class="fas fa-save mr-2"></i> SAVE DRAFT');
-                $('#finalize-btn').html('<i class="fas fa-check mr-2"></i> FINALIZE & EMAIL');
+                _surveySubmitting = false;
+                // Only re-enable on error so user can retry
+                $('#save-draft-btn').prop('disabled', false).html('<i class="fas fa-save mr-2"></i> SAVE DRAFT');
+                $('#finalize-btn').prop('disabled', false).html('<i class="fas fa-check mr-2"></i> FINALIZE & EMAIL');
+                const msg = (xhr.responseJSON && xhr.responseJSON.message)
+                    ? xhr.responseJSON.message
+                    : 'Terjadi kesalahan saat menyimpan survey. Silakan coba lagi.';
+                alert(msg);
             }
         });
     }
