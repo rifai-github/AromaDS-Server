@@ -2263,6 +2263,8 @@ class JobAdviceController extends Controller
                                         \Log::info("Room {$jaRoom->room_name} already has active Unit On Wall. Skipping Install and creating first service/check instead.");
                                     }
 
+                                    $checkRoomsDeferredUntilInstallDone = collect();
+
                                     if ($installRooms->isNotEmpty()) {
                                         // Determine JS Type: 'install' or 'install_free'
                                         $installType = $isInstallFree ? 'install_free' : 'install';
@@ -2288,7 +2290,23 @@ class JobAdviceController extends Controller
                                             \Log::info("âœ… Created Install JobSchedule for room '{$jaRoom->room_name}' with {$roomsInGroup->count()} rental(s)");
                                         }
                                     }
-    
+
+                                    if ($installRooms->isNotEmpty()) {
+                                        // Rental/unit-only checks must be generated only after the IR is done BA.
+                                        // If created here, end users see IR and CHK together while installation is not complete yet.
+                                        $checkRoomsDeferredUntilInstallDone = $checkRooms->filter(function ($checkRoom) use ($installRooms) {
+                                            return $installRooms->contains('id', $checkRoom->id);
+                                        });
+
+                                        if ($checkRoomsDeferredUntilInstallDone->isNotEmpty()) {
+                                            $checkRooms = $checkRooms->reject(function ($checkRoom) use ($checkRoomsDeferredUntilInstallDone) {
+                                                return $checkRoomsDeferredUntilInstallDone->contains('id', $checkRoom->id);
+                                            })->values();
+
+                                            \Log::info("Deferred {$checkRoomsDeferredUntilInstallDone->count()} Check JobSchedule(s) for room '{$jaRoom->room_name}' until install completion.");
+                                        }
+                                    }
+
                                     // Logic 1.b: Service/Check Logic
                                     // Unit-only rentals continue as Check jobs, while refill-only
                                     // rentals continue as Service/Refill jobs.

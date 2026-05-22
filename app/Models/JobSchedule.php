@@ -529,13 +529,13 @@ class JobSchedule extends Model
 
             if ($rentals->isNotEmpty()) {
                 foreach ($rentals as $rentalLink) {
-                    $rentalTypes->push($rentalLink->jobAdviceRoom?->rentalProduct?->rental_type);
+                    $rentalTypes->push($this->resolveRentalFlowType($rentalLink->jobAdviceRoom));
                 }
 
                 continue;
             }
 
-            $rentalTypes->push($room->jobAdviceRoom?->rentalProduct?->rental_type);
+            $rentalTypes->push($this->resolveRentalFlowType($room->jobAdviceRoom));
         }
 
         $rentalTypes = $rentalTypes
@@ -545,6 +545,102 @@ class JobSchedule extends Model
 
         return $rentalTypes->isNotEmpty()
             && $rentalTypes->every(fn ($type) => in_array($type, $allowedRentalTypes, true));
+    }
+
+    private function resolveRentalFlowType($jobAdviceRoom): ?string
+    {
+        $rental = $jobAdviceRoom?->rentalProduct;
+        $rentalType = strtolower(trim((string) ($rental?->rental_type ?? '')));
+
+        if (in_array($rentalType, ['unit_only', 'refill_only'], true)) {
+            return $rentalType;
+        }
+
+        $composition = $this->detectRentalMaterialComposition($rental);
+
+        if ($composition['has_unit'] && !$composition['has_non_unit']) {
+            return 'unit_only';
+        }
+
+        if (!$composition['has_unit'] && $composition['has_non_unit']) {
+            return 'refill_only';
+        }
+
+        return $rentalType ?: null;
+    }
+
+    private function detectRentalMaterialComposition($rental): array
+    {
+        $hasUnit = false;
+        $hasNonUnit = false;
+
+        if (!$rental) {
+            return ['has_unit' => false, 'has_non_unit' => false];
+        }
+
+        try {
+            $rental->loadMissing([
+                'rentalDetails.productCategory',
+                'rentalDetails.productType',
+                'rentalDetails.masterProduct.productCategory',
+                'rentalDetails.masterProduct.productType',
+                'rentalDetails.allowedProducts.productCategory',
+                'rentalDetails.allowedProducts.productType',
+            ]);
+        } catch (\Throwable $e) {
+            return ['has_unit' => false, 'has_non_unit' => false];
+        }
+
+        foreach ($rental->rentalDetails as $detail) {
+            $isUnit = $this->rentalDetailIsUnit($detail);
+
+            if ($isUnit === true) {
+                $hasUnit = true;
+            } elseif ($isUnit === false) {
+                $hasNonUnit = true;
+            }
+
+            if ($hasUnit && $hasNonUnit) {
+                break;
+            }
+        }
+
+        return ['has_unit' => $hasUnit, 'has_non_unit' => $hasNonUnit];
+    }
+
+    private function rentalDetailIsUnit($detail): ?bool
+    {
+        if ($detail->productCategory && $detail->productCategory->is_unit !== null) {
+            return (bool) $detail->productCategory->is_unit;
+        }
+
+        if ($detail->productType && $detail->productType->is_unit !== null) {
+            return (bool) $detail->productType->is_unit;
+        }
+
+        $product = $detail->masterProduct;
+        if ($product) {
+            if ($product->productCategory && $product->productCategory->is_unit !== null) {
+                return (bool) $product->productCategory->is_unit;
+            }
+
+            if ($product->productType && $product->productType->is_unit !== null) {
+                return (bool) $product->productType->is_unit;
+            }
+        }
+
+        $allowedProduct = $detail->allowedProducts->first();
+        if ($allowedProduct) {
+            if ($allowedProduct->productCategory && $allowedProduct->productCategory->is_unit !== null) {
+                return (bool) $allowedProduct->productCategory->is_unit;
+            }
+
+            if ($allowedProduct->productType && $allowedProduct->productType->is_unit !== null) {
+                return (bool) $allowedProduct->productType->is_unit;
+            }
+        }
+
+        return null;
     }
 
     // Methods

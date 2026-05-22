@@ -7248,6 +7248,12 @@ class JobScheduleController extends Controller
 
             $jobAdvice->loadMissing([
                 'rooms.rentalProduct.serviceFrequency',
+                'rooms.rentalProduct.rentalDetails.productCategory',
+                'rooms.rentalProduct.rentalDetails.productType',
+                'rooms.rentalProduct.rentalDetails.masterProduct.productCategory',
+                'rooms.rentalProduct.rentalDetails.masterProduct.productType',
+                'rooms.rentalProduct.rentalDetails.allowedProducts.productCategory',
+                'rooms.rentalProduct.rentalDetails.allowedProducts.productType',
                 'rooms.contractRoom.room',
                 'rooms.quotationRoom.room',
                 'contract',
@@ -7255,10 +7261,9 @@ class JobScheduleController extends Controller
 
             $unitOnlyRooms = $jobAdvice->rooms
                 ->filter(function ($jaRoom) use ($completedRoomIds) {
-                    $rentalType = strtolower(trim((string) ($jaRoom->rentalProduct?->rental_type ?? '')));
                     $physicalRoomId = $this->getJobAdviceRoomPhysicalRoomId($jaRoom);
 
-                    return $rentalType === 'unit_only'
+                    return $this->jobAdviceRoomShouldGenerateUnitOnlyCheck($jaRoom)
                         && $physicalRoomId
                         && in_array((int) $physicalRoomId, $completedRoomIds, true);
                 })
@@ -7358,6 +7363,94 @@ class JobScheduleController extends Controller
         }
 
         return $createdChecks;
+    }
+
+    private function jobAdviceRoomShouldGenerateUnitOnlyCheck($jaRoom): bool
+    {
+        $rental = $jaRoom->rentalProduct;
+        $rentalType = strtolower(trim((string) ($rental?->rental_type ?? '')));
+
+        if ($rentalType === 'unit_only') {
+            return true;
+        }
+
+        if ($rentalType === 'refill_only') {
+            return false;
+        }
+
+        $composition = $this->detectRentalMaterialCompositionForCheck($rental);
+
+        return $composition['has_unit'] && !$composition['has_non_unit'];
+    }
+
+    private function detectRentalMaterialCompositionForCheck($rental): array
+    {
+        $hasUnit = false;
+        $hasNonUnit = false;
+
+        if (!$rental) {
+            return ['has_unit' => false, 'has_non_unit' => false];
+        }
+
+        $rental->loadMissing([
+            'rentalDetails.productCategory',
+            'rentalDetails.productType',
+            'rentalDetails.masterProduct.productCategory',
+            'rentalDetails.masterProduct.productType',
+            'rentalDetails.allowedProducts.productCategory',
+            'rentalDetails.allowedProducts.productType',
+        ]);
+
+        foreach ($rental->rentalDetails as $detail) {
+            $isUnit = $this->rentalDetailIsUnitForCheck($detail);
+
+            if ($isUnit === true) {
+                $hasUnit = true;
+            } elseif ($isUnit === false) {
+                $hasNonUnit = true;
+            }
+
+            if ($hasUnit && $hasNonUnit) {
+                break;
+            }
+        }
+
+        return ['has_unit' => $hasUnit, 'has_non_unit' => $hasNonUnit];
+    }
+
+    private function rentalDetailIsUnitForCheck($detail): ?bool
+    {
+        if ($detail->productCategory && $detail->productCategory->is_unit !== null) {
+            return (bool) $detail->productCategory->is_unit;
+        }
+
+        if ($detail->productType && $detail->productType->is_unit !== null) {
+            return (bool) $detail->productType->is_unit;
+        }
+
+        $product = $detail->masterProduct;
+        if ($product) {
+            if ($product->productCategory && $product->productCategory->is_unit !== null) {
+                return (bool) $product->productCategory->is_unit;
+            }
+
+            if ($product->productType && $product->productType->is_unit !== null) {
+                return (bool) $product->productType->is_unit;
+            }
+        }
+
+        $allowedProduct = $detail->allowedProducts->first();
+        if ($allowedProduct) {
+            if ($allowedProduct->productCategory && $allowedProduct->productCategory->is_unit !== null) {
+                return (bool) $allowedProduct->productCategory->is_unit;
+            }
+
+            if ($allowedProduct->productType && $allowedProduct->productType->is_unit !== null) {
+                return (bool) $allowedProduct->productType->is_unit;
+            }
+        }
+
+        return null;
     }
 
     private function calculateTotalServicePeriodsForRental($jobAdvice, $rental): int
