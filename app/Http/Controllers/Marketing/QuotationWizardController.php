@@ -1516,7 +1516,10 @@ class QuotationWizardController extends Controller
     public function getSurveysByCustomer(Request $request)
     {
         $marketingId = $request->get('marketing_id');
-        $canViewAll = auth()->user()->canViewAllData();
+        $user = auth()->user();
+        $canViewAll = $user->canViewAllData()
+            || $user->hasRoleStartingWith('Management')
+            || $user->hasRole('Admin');
 
         if (!$marketingId && !$canViewAll) {
             return response()->json([]);
