@@ -3499,6 +3499,9 @@ class JobAssignMaterialIssueController extends Controller
             }
 
             $siblingJobs = $this->resolveSubmitIssueSiblingJobs($seedJob);
+            $requiredSiblingJobs = $siblingJobs->filter(function ($job) {
+                return $this->jobRequiresSubmitIssue($job);
+            })->values();
             $selectedJobIds = $groupRows->pluck('job_schedule_id')->unique()->values();
 
             $jobsWithMaterialIssue = JobAssignMaterialIssue::whereHas('jobAssignSchedule', function ($query) use ($siblingJobs) {
@@ -3511,7 +3514,7 @@ class JobAssignMaterialIssueController extends Controller
                 ->pluck('job_schedule_id')
                 ->unique();
 
-            $missingJobs = $siblingJobs->filter(function ($job) use ($jobScheduleIdsWithMaterialIssue) {
+            $missingJobs = $requiredSiblingJobs->filter(function ($job) use ($jobScheduleIdsWithMaterialIssue) {
                 return !$jobScheduleIdsWithMaterialIssue->contains($job->id);
             });
 
@@ -3524,7 +3527,7 @@ class JobAssignMaterialIssueController extends Controller
                 continue;
             }
 
-            $unselectedJobs = $siblingJobs->filter(function ($job) use ($selectedJobIds) {
+            $unselectedJobs = $requiredSiblingJobs->filter(function ($job) use ($selectedJobIds) {
                 return !$selectedJobIds->contains($job->id);
             });
 
@@ -3538,6 +3541,27 @@ class JobAssignMaterialIssueController extends Controller
         }
 
         return array_values(array_unique($errors));
+    }
+
+    private function jobRequiresSubmitIssue(JobSchedule $jobSchedule): bool
+    {
+        $hasMaterialIssue = JobAssignMaterialIssue::whereHas('jobAssignSchedule', function ($query) use ($jobSchedule) {
+            $query->where('job_schedule_id', $jobSchedule->id);
+        })->exists();
+
+        if ($hasMaterialIssue) {
+            return true;
+        }
+
+        $jobType = strtolower(trim((string) $jobSchedule->type));
+        if (in_array($jobType, ['remove', 'remove_free', 'remove free'], true)) {
+            return false;
+        }
+
+        // Unit-only Check jobs are marked material_checked at creation because they
+        // do not need a warehouse material issue. They must not block sibling
+        // refill/check jobs that do have material to submit.
+        return !$jobSchedule->material_checked;
     }
 
     private function resolveSubmitIssueSiblingJobs(JobSchedule $jobSchedule)
