@@ -1516,15 +1516,21 @@ class QuotationWizardController extends Controller
     public function getSurveysByCustomer(Request $request)
     {
         $marketingId = $request->get('marketing_id');
-        
-        if (!$marketingId) {
+        $canViewAll = auth()->user()->canViewAllData();
+
+        if (!$marketingId && !$canViewAll) {
             return response()->json([]);
         }
 
-        $surveys = Survey::with(['customer', 'building', 'surveyDetails'])
-            ->where('marketing_id', $marketingId)
-            ->where('status', 'approved')
-            ->latest('created_at')
+        $query = Survey::with(['customer', 'building', 'surveyDetails'])
+            ->where('status', 'approved');
+
+        // Regular marketing staff only see their own surveys; admin/management see all
+        if (!$canViewAll && $marketingId) {
+            $query->where('marketing_id', $marketingId);
+        }
+
+        $surveys = $query->latest('created_at')
             ->get()
             ->unique(fn (Survey $survey) => $this->surveySelectionDuplicateKey($survey))
             ->values();
