@@ -38,7 +38,6 @@ class Invoice extends Model
         'email',
         'umur_invoice',
         'outstanding',
-        'total_invoice',
         'subtotal',
         'tax_amount',
         'total_amount',
@@ -77,7 +76,6 @@ class Invoice extends Model
         'paid_amount' => 'decimal:2',
         'balance_amount' => 'decimal:2',
         'outstanding' => 'decimal:2',
-        'total_invoice' => 'decimal:2',
         'dikirim_pada' => 'datetime',
         'pada' => 'datetime',
         'ba_date' => 'date',
@@ -240,6 +238,17 @@ class Invoice extends Model
     public function getFormattedTotalInvoiceAttribute()
     {
         return number_format($this->total_invoice, 0, ',', '.');
+    }
+
+    public function getTotalInvoiceAttribute($value)
+    {
+        return $value ?? $this->grand_total ?? $this->total_amount ?? 0;
+    }
+
+    public function setTotalInvoiceAttribute($value): void
+    {
+        $this->attributes['total_amount'] = $value;
+        $this->attributes['grand_total'] = $value;
     }
 
     public function getFormattedOutstandingAttribute()

@@ -560,7 +560,6 @@ class BillingGroupService
             'tax_amount' => $taxAmount,
             'total_amount' => $grandTotal,
             'grand_total' => $grandTotal,
-            'total_invoice' => $grandTotal,
             'outstanding' => max($grandTotal - $totalPaid, 0),
         ]);
     }
