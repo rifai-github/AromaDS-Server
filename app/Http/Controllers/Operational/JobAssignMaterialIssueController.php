@@ -219,6 +219,10 @@ class JobAssignMaterialIssueController extends Controller
             ? $detail->allowedProducts->where('pivot.is_selected', true)->values()
             : collect();
 
+        if ($this->isAromaMaterialProduct($quotationProduct)) {
+            return $quotationProduct;
+        }
+
         $fallbackCandidates = function () use ($variantName, $brandLine) {
             return MasterProduct::with(['productType', 'productCategory', 'packagingSize'])
                 ->where('is_active', true)
