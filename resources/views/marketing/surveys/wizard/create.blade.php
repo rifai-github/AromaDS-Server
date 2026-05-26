@@ -2278,10 +2278,11 @@ $(document).ready(function() {
             .done(function(response) {
                 if (response.success || response.status === 'success') {
                     alert('Survey berhasil disimpan!');
+                    const surveyId = response.survey_id || response.data?.survey_id;
                     if (response.redirect_url) {
                         window.location.href = response.redirect_url;
-                    } else if (response.survey_id) {
-                        window.location.href = '{{ route("marketing.surveys.show", ":id") }}'.replace(':id', response.survey_id);
+                    } else if (surveyId) {
+                        window.location.href = '{{ route("marketing.surveys.show", ":id") }}'.replace(':id', surveyId);
                     } else {
                         window.location.href = '{{ route("marketing.surveys.index") }}';
                     }
@@ -3624,8 +3625,9 @@ $(document).on('click', '.delete-room', function() {
                 $('#save-draft-btn, #finalize-btn')
                     .prop('disabled', true)
                     .html('<i class="fas fa-check mr-2"></i> Tersimpan, mengalihkan...');
+                const surveyId = response.survey_id || response.data?.survey_id;
                 const target = response.redirect_url
-                    || ('{{ route("marketing.surveys.show", ":id") }}'.replace(':id', response.survey_id))
+                    || (surveyId ? '{{ route("marketing.surveys.show", ":id") }}'.replace(':id', surveyId) : null)
                     || '{{ route("marketing.surveys.index") }}';
                 window.location.href = target;
             },

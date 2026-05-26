@@ -82,7 +82,7 @@ class SurveyWizardController extends Controller
             'message' => 'Survey sudah tersimpan dari request yang sama.',
             'survey_id' => $surveyId,
             'duplicate_prevented' => true,
-            'redirect_url' => route('surveys.show', $surveyId),
+            'redirect_url' => route('marketing.surveys.show', $surveyId),
         ]);
     }
 
@@ -745,7 +745,7 @@ class SurveyWizardController extends Controller
                 'status' => 'success',
                 'message' => $request->action === 'finalize_email' ? 'Survey finalized and approved' : 'Survey saved as draft',
                 'survey_id' => $survey->id,
-                'redirect_url' => route('surveys.show', $survey->id)
+                'redirect_url' => route('marketing.surveys.show', $survey->id)
             ]);
 
         } catch (\Exception $e) {
@@ -1851,6 +1851,8 @@ class SurveyWizardController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Survey saved successfully',
+                'survey_id' => $survey->id,
+                'redirect_url' => route('marketing.surveys.show', $survey->id),
                 'data' => [
                     'survey_id' => $survey->id,
                     'survey_number' => $survey->survey_number,
