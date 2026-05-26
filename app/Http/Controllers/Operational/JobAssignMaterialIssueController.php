@@ -197,7 +197,7 @@ class JobAssignMaterialIssueController extends Controller
 
     private function containsAromaMaterialKeywords(string $haystack): bool
     {
-        foreach (['aroma', 'scent', 'fragrance', 'luxo', 'artisan', 'signature'] as $needle) {
+        foreach (['aroma', 'scent', 'fragrance', 'refill', 'squash', 'essence', 'variant', 'luxo', 'artisan', 'signature'] as $needle) {
             if (str_contains($haystack, $needle)) {
                 return true;
             }
@@ -219,18 +219,18 @@ class JobAssignMaterialIssueController extends Controller
             ? $detail->allowedProducts->where('pivot.is_selected', true)->values()
             : collect();
 
-        $candidates = $allowedProducts->isNotEmpty()
-            ? $allowedProducts
-            : MasterProduct::with(['productType', 'productCategory', 'packagingSize'])
+        $fallbackCandidates = function () use ($variantName, $brandLine) {
+            return MasterProduct::with(['productType', 'productCategory', 'packagingSize'])
                 ->where('is_active', true)
                 ->when($variantName !== '', fn ($query) => $query->where('variant_name', $variantName))
                 ->when($brandLine, fn ($query) => $query->whereRaw('LOWER(TRIM(brand_line)) = ?', [$brandLine]))
                 ->get();
+        };
 
         $targetPackagingId = $fallbackProduct?->packaging_size_id ?? $detail->masterProduct?->packaging_size_id;
 
-        return $candidates
-            ->filter(function ($candidate) use ($variantName, $brandLine) {
+        $matchingCandidate = function ($candidates) use ($variantName, $brandLine, $targetPackagingId, $quotationProduct) {
+            return $candidates->filter(function ($candidate) use ($variantName, $brandLine) {
                 if (!$this->isAromaMaterialProduct($candidate)) {
                     return false;
                 }
@@ -250,14 +250,21 @@ class JobAssignMaterialIssueController extends Controller
                 $productName = strtolower($candidate->name ?? '');
 
                 return [
+                    (int) $candidate->id === (int) $quotationProduct->id ? 0 : 1,
                     $targetPackagingId && (int) $candidate->packaging_size_id === (int) $targetPackagingId ? 0 : 1,
                     str_contains($categoryName, 'refill') ? 0 : 1,
                     str_contains($productName, 'test') ? 1 : 0,
-                    (int) $candidate->id === (int) $quotationProduct->id ? 0 : 1,
                     $candidate->id,
                 ];
             })
             ->first();
+        };
+
+        $product = $allowedProducts->isNotEmpty()
+            ? $matchingCandidate($allowedProducts)
+            : null;
+
+        return $product ?: $matchingCandidate($fallbackCandidates());
     }
 
     private function getAssignedJobAdviceRooms($jobAdvice, $jobSchedule)

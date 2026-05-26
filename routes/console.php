@@ -1355,6 +1355,10 @@ Artisan::command('operational:repair-aroma-switching-data
                 || str_contains($haystack, 'aroma')
                 || str_contains($haystack, 'fragrance')
                 || str_contains($haystack, 'scent')
+                || str_contains($haystack, 'squash')
+                || str_contains($haystack, 'essence')
+                || str_contains($haystack, 'variant')
+                || preg_match('/\boil\b/', $haystack) === 1
                 || str_contains($haystack, 'luxo')
                 || str_contains($haystack, 'artisan')
                 || str_contains($haystack, 'signature'));

@@ -1289,13 +1289,6 @@
                                         // Filter products list to the checked Material List for this rental detail.
                                         // Aroma/refill variants are expanded by variant name so all packaging sizes appear.
                                         $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $item, $allowedProductIds, $rentalDetailId) {
-                                            if ($hasStrictAllowedProductList) {
-                                                return in_array((int) $p->id, $allowedProductIds, true);
-                                            }
-
-                                            // Keep current saved product only when no exact rental material list exists.
-                                            if ($p->id == $item->product_id) return true;
-                                            
                                             $productBrandLine = $p->brand_line
                                                 ? strtolower(trim(preg_replace('/\s+/', ' ', $p->brand_line)))
                                                 : null;
@@ -1307,6 +1300,25 @@
                                                 $productVariant === $normalizedCurrentVariant
                                                 || str_contains($productName, $normalizedCurrentVariant)
                                             );
+
+                                            if ($hasStrictAllowedProductList) {
+                                                if (in_array((int) $p->id, $allowedProductIds, true) || (int) $p->id === (int) $item->product_id) {
+                                                    return true;
+                                                }
+
+                                                if ($isAromaType && $sameVariant) {
+                                                    if ($normalizedCurrentBrandLine && $productBrandLine && $normalizedCurrentBrandLine !== $productBrandLine) {
+                                                        return false;
+                                                    }
+
+                                                    return true;
+                                                }
+
+                                                return false;
+                                            }
+
+                                            // Keep current saved product only when no exact rental material list exists.
+                                            if ($p->id == $item->product_id) return true;
                                             $hasGenericVariant = empty($productVariant);
                                             $isTestProduct = str_contains($productName, 'test');
 
