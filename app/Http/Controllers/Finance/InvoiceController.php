@@ -1164,8 +1164,8 @@ class InvoiceController extends Controller
         $overdue_invoices = Invoice::where('invoice_status', 'overdue')->count();
         $cancelled_invoices = Invoice::where('invoice_status', 'cancelled')->count();
 
-        $total_revenue = Invoice::where('invoice_status', 'paid')->sum('total_invoice');
-        $outstanding_amount = Invoice::whereIn('invoice_status', ['sent', 'overdue'])->sum('total_invoice');
+        $total_revenue = Invoice::where('invoice_status', 'paid')->sum('grand_total');
+        $outstanding_amount = Invoice::whereIn('invoice_status', ['sent', 'overdue'])->sum('grand_total');
 
         $recent_invoices = Invoice::with(['contract'])
             ->orderBy('created_at', 'desc')

@@ -44,7 +44,6 @@ class Invoice extends Model
         'subtotal_after_discount',
         'tax_amount',
         'grand_total',
-        'total_invoice',
         'total_amount',
         'total_paid',
         'outstanding',
@@ -90,7 +89,6 @@ class Invoice extends Model
         'subtotal_after_discount' => 'decimal:2',
         'tax_amount' => 'decimal:2',
         'grand_total' => 'decimal:2',
-        'total_invoice' => 'decimal:2',
         'total_amount' => 'decimal:2',
         'total_paid' => 'decimal:2',
         'outstanding' => 'decimal:2',
@@ -231,6 +229,17 @@ class Invoice extends Model
     public function getFormattedTotalAmountAttribute()
     {
         return 'Rp ' . number_format($this->total_amount, 0, ',', '.');
+    }
+
+    public function getTotalInvoiceAttribute($value)
+    {
+        return $value ?? $this->grand_total ?? $this->total_amount ?? 0;
+    }
+
+    public function setTotalInvoiceAttribute($value): void
+    {
+        $this->attributes['total_amount'] = $value;
+        $this->attributes['grand_total'] = $value;
     }
 
     public function getStatusBadgeAttribute()

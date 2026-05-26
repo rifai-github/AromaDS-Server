@@ -161,7 +161,6 @@ class ImportCatalystInvoicesFromExport extends Command
                 'total_amount' => (float) ($header['totalforex'] ?? 0),
                 'grand_total' => (float) ($header['totalforex'] ?? 0),
                 'outstanding' => (float) ($header['totalforex'] ?? 0),
-                'total_invoice' => (float) ($header['totalforex'] ?? 0),
                 'additional_notes' => $this->cleanString($header['remark'] ?? null),
                 'payment_method' => !blank($header['virtualaccount'] ?? null) ? 'virtual_account' : 'bank_transfer',
                 'virtual_account_number' => $this->cleanString($header['virtualaccount'] ?? null) ?: $this->cleanString($billingGroup->virtual_account_number ?? null),
