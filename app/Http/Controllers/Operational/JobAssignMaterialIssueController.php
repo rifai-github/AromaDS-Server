@@ -167,7 +167,16 @@ class JobAssignMaterialIssueController extends Controller
         ]);
 
         if ($this->containsHandSanitizerMaterialKeywords($haystack)) {
-            return false;
+            $productSignal = $this->buildMaterialClassificationText([
+                $product->name ?? null,
+                $product->sku ?? null,
+                $product->variant_name ?? null,
+                $product->brand_line ?? null,
+                $product->productType?->name ?? null,
+            ]);
+
+            return !$this->containsHandSanitizerMaterialKeywords($productSignal)
+                && $this->containsAromaMaterialKeywords($productSignal);
         }
 
         return $this->containsAromaMaterialKeywords($haystack);

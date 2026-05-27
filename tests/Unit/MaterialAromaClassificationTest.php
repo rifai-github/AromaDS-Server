@@ -61,6 +61,18 @@ class MaterialAromaClassificationTest extends TestCase
         $this->assertFalse($method->invoke($controller, $detail, $product, 'HS Refill'));
     }
 
+    public function test_job_assign_material_issue_treats_ads_301_aroma_placeholder_as_quotation_aroma_slot(): void
+    {
+        $controller = new JobAssignMaterialIssueController();
+        $method = (new ReflectionClass($controller))->getMethod('isQuotationAromaMaterialSlot');
+        $method->setAccessible(true);
+
+        $detail = $this->rentalDetail('Hand Sanitizer', null);
+        $product = $this->product('Aroma Diffuser Premium', 'AD001', 'Hand Sanitizer', null);
+
+        $this->assertTrue($method->invoke($controller, $detail, $product, 'Hand Sanitizer'));
+    }
+
     public function test_job_assign_material_issue_still_filters_aroma_products_by_quotation_variant(): void
     {
         $controller = new JobAssignMaterialIssueController();
