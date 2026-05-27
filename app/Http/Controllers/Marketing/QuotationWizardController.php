@@ -27,17 +27,9 @@ class QuotationWizardController extends Controller
 {
     private function surveySelectionDuplicateKey(Survey $survey): string
     {
-        $customerName = strtolower(trim((string) ($survey->customer?->name ?? $survey->customer_id)));
-        $buildingName = strtolower(trim((string) (
-            $survey->building?->name
-            ?? $survey->building?->nama_gedung
-            ?? $survey->building_id
-        )));
+        $surveyNumber = strtolower(trim((string) $survey->survey_number));
 
-        return implode('|', [
-            $customerName,
-            $buildingName,
-        ]);
+        return $surveyNumber !== '' ? $surveyNumber : 'survey-id:' . $survey->id;
     }
 
     private function isSelectableAromaProduct(?MasterProduct $product): bool

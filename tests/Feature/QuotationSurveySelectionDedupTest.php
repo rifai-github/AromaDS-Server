@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Marketing\QuotationWizardController;
+use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -14,6 +15,16 @@ class QuotationSurveySelectionDedupTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->string('email')->nullable();
+            $table->string('password')->nullable();
+            $table->string('data_restriction')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
 
         Schema::create('customers', function (Blueprint $table) {
             $table->id();
@@ -66,21 +77,32 @@ class QuotationSurveySelectionDedupTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        DB::table('users')->insert([
+            'id' => 7,
+            'name' => 'Marketing User',
+            'email' => 'marketing@example.test',
+            'password' => 'password',
+            'data_restriction' => 'none',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     protected function tearDown(): void
     {
-        foreach (['survey_details', 'surveys', 'buildings', 'customers'] as $table) {
+        foreach (['survey_details', 'surveys', 'buildings', 'customers', 'users'] as $table) {
             Schema::dropIfExists($table);
         }
 
         parent::tearDown();
     }
 
-    public function test_survey_selection_hides_identical_duplicate_surveys(): void
+    public function test_survey_selection_hides_duplicate_survey_numbers(): void
     {
-        $this->insertSurvey(10, 'JKT-SR/26-05/0005', now()->subMinute());
+        $this->insertSurvey(10, 'JKT-SR/26-05/0006', now()->subMinute());
         $this->insertSurvey(11, 'JKT-SR/26-05/0006', now());
+        $this->actingAs(User::findOrFail(7));
 
         $controller = app(QuotationWizardController::class);
         $response = $controller->getSurveysByCustomer(Request::create(
@@ -96,7 +118,7 @@ class QuotationSurveySelectionDedupTest extends TestCase
         $this->assertSame('JKT-SR/26-05/0006', $payload[0]['survey_number']);
     }
 
-    public function test_survey_selection_hides_duplicate_display_rows_even_when_customer_ids_differ(): void
+    public function test_survey_selection_keeps_distinct_survey_numbers_for_same_customer_and_building(): void
     {
         DB::table('customers')->insert([
             'id' => 2,
@@ -108,6 +130,7 @@ class QuotationSurveySelectionDedupTest extends TestCase
         $this->insertSurvey(10, 'JKT-SR/26-05/0005', now()->subMinutes(2), customerId: 1, roomName: 'Lobby');
         $this->insertSurvey(11, 'JKT-SR/26-05/0006', now()->subMinute(), customerId: 2, roomName: 'Lantai 2');
         $this->insertSurvey(12, 'JKT-SR/26-05/0008', now(), customerId: 1, roomName: 'Lantai 1 Lobby');
+        $this->actingAs(User::findOrFail(7));
 
         $controller = app(QuotationWizardController::class);
         $response = $controller->getSurveysByCustomer(Request::create(
@@ -118,9 +141,12 @@ class QuotationSurveySelectionDedupTest extends TestCase
 
         $payload = $response->getData(true);
 
-        $this->assertCount(1, $payload);
-        $this->assertSame(12, $payload[0]['id']);
-        $this->assertSame('JKT-SR/26-05/0008', $payload[0]['survey_number']);
+        $this->assertCount(3, $payload);
+        $this->assertSame([
+            'JKT-SR/26-05/0008',
+            'JKT-SR/26-05/0006',
+            'JKT-SR/26-05/0005',
+        ], array_column($payload, 'survey_number'));
     }
 
     private function insertSurvey(
