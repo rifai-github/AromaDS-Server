@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\Mobile\JobController;
 use App\Models\JobSchedule;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -319,12 +321,23 @@ class MobilePartialCompletionReturnTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('job_schedule_units', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_id')->nullable();
+            $table->string('mac')->nullable();
+            $table->json('device_snapshot')->nullable();
+            $table->timestamp('scanned_at')->nullable();
+            $table->timestamps();
+        });
+
         Schema::create('job_photos', function (Blueprint $table) {
             $table->id();
             $table->foreignId('job_schedule_id')->nullable();
             $table->foreignId('job_schedule_room_id')->nullable();
             $table->string('photo_path')->nullable();
             $table->string('photo_type')->nullable();
+            $table->text('description')->nullable();
+            $table->foreignId('uploaded_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -359,6 +372,7 @@ class MobilePartialCompletionReturnTest extends TestCase
             'material_issues',
             'job_assign_schedules',
             'job_photos',
+            'job_schedule_units',
             'job_reports',
             'job_schedule_room_rentals',
             'job_schedule_rooms',
@@ -534,6 +548,86 @@ class MobilePartialCompletionReturnTest extends TestCase
         $this->assertDatabaseHas('inventory_receivings', [
             'reference_no' => 'BDG-IR/26-05/0002',
             'status' => 'pending',
+        ]);
+    }
+
+    public function test_partial_completion_verification_saves_pic_photo_signature_and_pic_name(): void
+    {
+        $this->seedPartialCompletionScenario();
+
+        DB::table('job_advices')->insert([
+            'id' => 70,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            ['id' => 80, 'job_advice_id' => 70, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 81, 'job_advice_id' => 70, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_schedules')->where('id', 10)->update([
+            'job_advice_id' => 70,
+            'status' => 'in_progress',
+            'type' => 'service',
+            'ba_date' => now()->toDateString(),
+            'ba_number' => 'BA-TEST-001',
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            [
+                'id' => 90,
+                'job_schedule_id' => 10,
+                'job_advice_room_id' => 80,
+                'room_name' => 'OFFICE ROOM',
+                'room_id' => 800,
+                'status' => 'completed',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 91,
+                'job_schedule_id' => 10,
+                'job_advice_room_id' => 81,
+                'room_name' => 'VIP ROOM',
+                'room_id' => 900,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $request = Request::create('/api/v1/mobile/jobs/10/verify', 'POST', [
+            'pic_name' => 'Bapak Client',
+            'signature' => 'data:image/png;base64,'.base64_encode('test-signature'),
+            'notes' => 'Tidak semua ruangan selesai.',
+            'cannot_complete_all_rooms' => '1',
+        ], [], [
+            'pic_photo' => UploadedFile::fake()->image('pic.jpg'),
+        ]);
+
+        $response = app(JobController::class)->verifyJob($request, 10);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $payload['status']);
+        $this->assertSame('meninggalkan_lokasi', $payload['data']['job_status']);
+
+        $report = DB::table('job_reports')->where('job_schedule_id', 10)->first();
+        $this->assertNotNull($report);
+        $this->assertSame('Bapak Client', $report->pic_name);
+        $this->assertNotEmpty($report->photo_pic);
+        $this->assertNotEmpty($report->signature_file);
+
+        $this->assertDatabaseHas('job_photos', [
+            'job_schedule_id' => 10,
+            'photo_type' => 'PIC Photo',
+            'photo_path' => $report->photo_pic,
+        ]);
+        $this->assertDatabaseHas('job_photos', [
+            'job_schedule_id' => 10,
+            'photo_type' => 'Digital Signature',
+            'photo_path' => $report->signature_file,
         ]);
     }
 

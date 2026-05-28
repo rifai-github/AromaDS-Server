@@ -3681,7 +3681,7 @@ class JobController extends Controller
             'pic_photo' => 'nullable|image|max:5120', // PIC photo
             'notes' => 'nullable|string',
             'signature' => 'nullable|string', // Base64 signature
-            'pic_name' => $cannotCompleteAllRooms ? 'nullable|string' : 'required|string',
+            'pic_name' => 'required|string',
             'cannot_complete_all_rooms' => 'nullable|boolean', // Checkbox: Tidak dapat menyelesaikan semua ruangan
         ]);
         
@@ -3718,23 +3718,17 @@ class JobController extends Controller
 
             $this->syncInstallRoomsFromActiveUnitOnWall($job);
 
-            if ($cannotCompleteAllRooms) {
-                $this->handleCannotCompleteAllRooms($job, now());
-                $job->save();
-                $job->refresh();
+            $existingJobReportForValidation = \App\Models\JobReport::where('job_schedule_id', $jobScheduleId)->first();
+            $hasPicPhoto = $request->hasFile('pic_photo') || !empty($existingJobReportForValidation?->photo_pic);
+            $hasSignature = $request->filled('signature') || !empty($existingJobReportForValidation?->signature_file) || !empty($existingJobReportForValidation?->signature_data);
 
-                \DB::commit();
+            if (!$hasPicPhoto || !$hasSignature) {
+                \DB::rollBack();
 
                 return response()->json([
-                    'status' => 'success',
-                    'message' => 'Room yang belum selesai berhasil dipindahkan menjadi job outstanding. Verifikasi final bisa dilakukan setelah admin set Suspend atau DPF.',
-                    'data' => [
-                        'job_schedule_id' => $job->id,
-                        'job_report_id' => null,
-                        'job_status' => $job->status,
-                        'cannot_complete_all_rooms' => true,
-                    ]
-                ]);
+                    'status' => 'error',
+                    'message' => 'Foto PIC dan tanda tangan wajib diisi sebelum verifikasi pekerjaan bisa disimpan.',
+                ], 422);
             }
 
             if (!$cannotCompleteAllRooms) {
@@ -3745,19 +3739,6 @@ class JobController extends Controller
                     return response()->json([
                         'status' => 'error',
                         'message' => $readiness['message'],
-                    ], 422);
-                }
-
-                $existingJobReportForValidation = \App\Models\JobReport::where('job_schedule_id', $jobScheduleId)->first();
-                $hasPicPhoto = $request->hasFile('pic_photo') || !empty($existingJobReportForValidation?->photo_pic);
-                $hasSignature = $request->filled('signature') || !empty($existingJobReportForValidation?->signature_file) || !empty($existingJobReportForValidation?->signature_data);
-
-                if (!$hasPicPhoto || !$hasSignature) {
-                    \DB::rollBack();
-
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Foto PIC dan tanda tangan wajib diisi sebelum job bisa diselesaikan.',
                     ], 422);
                 }
             }
