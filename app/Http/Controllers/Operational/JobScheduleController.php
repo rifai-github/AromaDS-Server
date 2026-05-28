@@ -4610,11 +4610,13 @@ class JobScheduleController extends Controller
         try {
             DB::beginTransaction();
 
-            $materialReturn = \App\Models\MaterialReturn::where('job_schedule_id', $jobSchedule->id)
+            $materialReturn = \App\Models\MaterialReturn::whereIn('job_schedule_id', $this->getMaterialReturnJobScheduleIds($jobSchedule))
                 ->where('id', $returnId)
                 ->firstOrFail();
 
             if ($materialReturn->status !== \App\Models\MaterialReturn::STATUS_PENDING) {
+                DB::rollBack();
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Material return can only be approved when status is pending.'
@@ -4633,6 +4635,13 @@ class JobScheduleController extends Controller
                 'data' => $materialReturn->load(['items.product', 'warehouse', 'team', 'approvedBy'])
             ]);
 
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Material return tidak ditemukan untuk job schedule ini.'
+            ], 404);
         } catch (\Exception $e) {
             DB::rollback();
             \Log::error("❌ STUDY CASE B1: Failed to approve material return: " . $e->getMessage());
@@ -4652,12 +4661,14 @@ class JobScheduleController extends Controller
         try {
             DB::beginTransaction();
 
-            $materialReturn = \App\Models\MaterialReturn::where('job_schedule_id', $jobSchedule->id)
+            $materialReturn = \App\Models\MaterialReturn::whereIn('job_schedule_id', $this->getMaterialReturnJobScheduleIds($jobSchedule))
                 ->where('id', $returnId)
                 ->with(['items.product', 'warehouse'])
                 ->firstOrFail();
 
             if ($materialReturn->status !== \App\Models\MaterialReturn::STATUS_APPROVED) {
+                DB::rollBack();
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Material return must be approved before it can be completed.'
@@ -4777,6 +4788,13 @@ class JobScheduleController extends Controller
                 'data' => $materialReturn->load(['items.product', 'warehouse', 'team', 'returnedBy'])
             ]);
 
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Material return tidak ditemukan untuk job schedule ini.'
+            ], 404);
         } catch (\Exception $e) {
             DB::rollback();
             \Log::error("❌ STUDY CASE B1: Failed to complete material return: " . $e->getMessage());
@@ -4793,17 +4811,7 @@ class JobScheduleController extends Controller
      */
     public function getMaterialReturns(JobSchedule $jobSchedule)
     {
-        // MOM: Determine sibling job IDs (same JA + Building + Type)
-        $siblingJobIds = [$jobSchedule->id];
-        if ($jobSchedule->job_advice_id) {
-            $siblingJobIds = \App\Models\JobSchedule::where('job_advice_id', $jobSchedule->job_advice_id)
-                ->where('building_id', $jobSchedule->building_id)
-                ->where('type', $jobSchedule->type)
-                ->pluck('id')
-                ->toArray();
-        }
-
-        $materialReturns = \App\Models\MaterialReturn::whereIn('job_schedule_id', $siblingJobIds)
+        $materialReturns = \App\Models\MaterialReturn::whereIn('job_schedule_id', $this->getMaterialReturnJobScheduleIds($jobSchedule))
             ->with([
                 'items.product',
                 'warehouse',
@@ -4820,6 +4828,21 @@ class JobScheduleController extends Controller
             'status' => 'success',
             'data' => $materialReturns
         ]);
+    }
+
+    private function getMaterialReturnJobScheduleIds(JobSchedule $jobSchedule): array
+    {
+        if (!$jobSchedule->job_advice_id) {
+            return [$jobSchedule->id];
+        }
+
+        $siblingJobIds = \App\Models\JobSchedule::where('job_advice_id', $jobSchedule->job_advice_id)
+            ->where('building_id', $jobSchedule->building_id)
+            ->where('type', $jobSchedule->type)
+            ->pluck('id')
+            ->toArray();
+
+        return $siblingJobIds ?: [$jobSchedule->id];
     }
 
     /**
