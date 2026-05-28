@@ -244,8 +244,9 @@ class BillingGroupService
                 // the billing period passes the completed-job/BA readiness check.
                 $this->copyInvoiceDetailsFromSource($invoice, $sourceCancelledInvoice);
             } else {
-                // Create rental details for the invoice
-                $this->createDetailsForInvoice($invoice, $billingGroup, true, $targetInvoiceDate);
+                // Once billing readiness passes, bill every eligible contract room in the group.
+                // Some valid rentals (for example unit-only rooms) may not have their own recurring job.
+                $this->createDetailsForInvoice($invoice, $billingGroup, false, $targetInvoiceDate);
             }
 
             if (

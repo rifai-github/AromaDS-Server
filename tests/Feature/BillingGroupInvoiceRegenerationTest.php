@@ -79,9 +79,62 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('buildings', function (Blueprint $table) {
+            $table->id();
+            $table->string('building_name')->nullable();
+            $table->string('name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('master_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('building_id')->nullable();
+            $table->string('room_name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('contract_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('contract_id')->nullable();
+            $table->foreignId('room_id')->nullable();
+            $table->foreignId('billing_group_id')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('master_rentals', function (Blueprint $table) {
+            $table->id();
+            $table->string('rental_name')->nullable();
+            $table->string('rental_type')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('contract_rentals', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('contract_id')->nullable();
+            $table->foreignId('master_rental_id')->nullable();
+            $table->foreignId('room_id')->nullable();
+            $table->decimal('quantity', 12, 2)->default(1);
+            $table->decimal('unit_price', 12, 2)->default(0);
+            $table->decimal('total_price', 12, 2)->default(0);
+            $table->timestamps();
+        });
+
         Schema::create('job_advices', function (Blueprint $table) {
             $table->id();
             $table->foreignId('contract_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('job_advice_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_advice_id')->nullable();
+            $table->foreignId('contract_room_id')->nullable();
+            $table->foreignId('service_job_schedule_id')->nullable();
+            $table->boolean('is_trial')->default(false);
             $table->timestamps();
             $table->softDeletes();
         });
@@ -162,7 +215,13 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'invoice_details',
             'invoices',
             'job_schedules',
+            'job_advice_rooms',
             'job_advices',
+            'contract_rentals',
+            'master_rentals',
+            'contract_rooms',
+            'master_rooms',
+            'buildings',
             'billing_groups',
             'contracts',
             'customers',
@@ -207,10 +266,10 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
         JobSchedule::create([
             'job_number' => 'BDG-CSR/26-05/0001',
             'type' => 'service',
-            'status' => 'undone',
+            'status' => 'done_job',
             'job_advice_id' => $jobAdviceId,
             'schedule_date' => '2026-05-04',
-            'ba_date' => null,
+            'ba_date' => '2026-05-04',
         ]);
 
         $cancelledInvoice = Invoice::create([
@@ -268,6 +327,136 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'job_no' => 'BDG-CSR/26-05/0001',
             'rental_name' => 'C100 100 ml',
             'total_price' => 120000,
+        ]);
+    }
+
+    public function test_auto_invoice_includes_unit_only_room_even_without_own_service_job(): void
+    {
+        DB::table('users')->insert([
+            'name' => 'Admin',
+            'email' => 'admin@aroma.com',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $customer = Customer::create(['name' => 'Test110526']);
+        $contract = Contract::create([
+            'contract_number' => 'BDG-CA/26-05/0005',
+            'customer_id' => $customer->id,
+            'payment_terms' => 30,
+        ]);
+        $billingGroup = BillingGroup::create([
+            'billing_group_name' => 'Main Billing',
+            'customer_id' => $customer->id,
+            'contract_id' => $contract->id,
+            'billing_frequency' => 'monthly',
+            'billing_start_date' => '2026-05-01',
+            'billing_end_date' => '2026-05-31',
+            'billing_amount' => 1700000,
+            'is_active' => true,
+        ]);
+
+        DB::table('buildings')->insert([
+            'id' => 10,
+            'building_name' => 'Gedung Cabang B 110526',
+            'name' => 'Gedung Cabang B 110526',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rooms')->insert([
+            ['id' => 101, 'building_id' => 10, 'room_name' => 'Ruang Melati', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 102, 'building_id' => 10, 'room_name' => 'Ruang Anggrek', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rooms')->insert([
+            ['id' => 201, 'contract_id' => $contract->id, 'room_id' => 101, 'billing_group_id' => $billingGroup->id, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 202, 'contract_id' => $contract->id, 'room_id' => 102, 'billing_group_id' => $billingGroup->id, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('master_rentals')->insert([
+            ['id' => 301, 'rental_name' => 'Rental-5', 'rental_type' => 'rental_only', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 302, 'rental_name' => 'Unit Only', 'rental_type' => 'unit_only', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rentals')->insert([
+            [
+                'contract_id' => $contract->id,
+                'master_rental_id' => 301,
+                'room_id' => 101,
+                'quantity' => 1,
+                'unit_price' => 1200000,
+                'total_price' => 1200000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'contract_id' => $contract->id,
+                'master_rental_id' => 302,
+                'room_id' => 102,
+                'quantity' => 1,
+                'unit_price' => 500000,
+                'total_price' => 500000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $jobAdviceId = DB::table('job_advices')->insertGetId([
+            'contract_id' => $contract->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $jobSchedule = JobSchedule::create([
+            'job_number' => 'BDG-CSR/26-05/0010',
+            'type' => 'service',
+            'status' => 'done_job',
+            'job_advice_id' => $jobAdviceId,
+            'schedule_date' => '2026-05-28',
+            'ba_date' => '2026-05-28',
+        ]);
+        DB::table('job_advice_rooms')->insert([
+            'job_advice_id' => $jobAdviceId,
+            'contract_room_id' => 201,
+            'service_job_schedule_id' => $jobSchedule->id,
+            'is_trial' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new BillingGroupService(new class extends DocumentNumberService {
+            public function generate(
+                string $documentType,
+                ?string $branchCode = null,
+                ?int $buildingId = null,
+                ?int $contractId = null,
+                ?int $quotationId = null,
+                ?int $surveyId = null,
+                ?int $warehouseId = null,
+                ?int $branchId = null,
+                \DateTimeInterface|string|null $documentDate = null
+            ): string {
+                return 'BDG-INV/26-05/0007';
+            }
+        });
+
+        $result = $service->autoGenerateInvoiceWhenJobsCompleted(
+            $billingGroup->id,
+            Carbon::parse('2026-05-28')
+        );
+
+        $this->assertTrue($result['success'], $result['message'] ?? 'No message');
+        $this->assertDatabaseHas('invoice_rental_details', [
+            'invoice_id' => $result['invoice']->id,
+            'room_name' => 'Ruang Melati',
+            'rental_name' => 'Rental-5',
+            'total_price' => 1200000,
+        ]);
+        $this->assertDatabaseHas('invoice_rental_details', [
+            'invoice_id' => $result['invoice']->id,
+            'room_name' => 'Ruang Anggrek',
+            'rental_name' => 'Unit Only',
+            'total_price' => 500000,
+        ]);
+        $this->assertDatabaseHas('invoices', [
+            'id' => $result['invoice']->id,
+            'subtotal' => 1700000,
+            'grand_total' => 1700000,
         ]);
     }
 }
