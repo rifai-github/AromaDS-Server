@@ -188,6 +188,14 @@ class MasterProduct extends Model
         );
     }
 
+    public function requiresUniqueSerialNumber(): bool
+    {
+        return $this->requiresSerialNumber() && (bool) (
+            optional($this->productCategory)->is_unit
+            || optional($this->productType)->is_unit
+        );
+    }
+
     public function getRequiresSerialNumberAttribute(): bool
     {
         return $this->requiresSerialNumber();

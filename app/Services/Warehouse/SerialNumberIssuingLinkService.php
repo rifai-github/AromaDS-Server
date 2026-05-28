@@ -22,6 +22,11 @@ class SerialNumberIssuingLinkService
             ->exists();
     }
 
+    public function requiresExclusiveLink(SerialNumber $serialNumber): bool
+    {
+        return (bool) ($serialNumber->masterProduct?->requiresUniqueSerialNumber() ?? true);
+    }
+
     public function releaseStaleLinks(SerialNumber $serialNumber, ?int $exceptItemId = null, ?int $actorId = null): int
     {
         if (! $this->isReadyInWarehouse($serialNumber)) {

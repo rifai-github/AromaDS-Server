@@ -218,17 +218,19 @@ class MaterialVerificationController extends Controller
                                 ], 400);
                             }
 
-                            $serialLinkService->releaseStaleLinks($serialNumber, $sItem->id, auth()->id());
+                            if ($serialLinkService->requiresExclusiveLink($serialNumber)) {
+                                $serialLinkService->releaseStaleLinks($serialNumber, $sItem->id, auth()->id());
 
-                            $preparedLink = $serialLinkService->findPreparedLink($serialNumber->id, $sItem->id);
-                            if ($preparedLink) {
-                                DB::rollBack();
+                                $preparedLink = $serialLinkService->findPreparedLink($serialNumber->id, $sItem->id);
+                                if ($preparedLink) {
+                                    DB::rollBack();
 
-                                return response()->json([
-                                    'status' => 'error',
-                                    'message' => "Serial Number {$serialNumber->serial_number} masih dipakai di Inventory Issuing {$preparedLink->inventoryIssuing?->issuing_number}. Tidak bisa dipakai di dua WI yang masih disiapkan.",
-                                    'code' => 'SERIAL_NUMBER_RESERVED',
-                                ], 400);
+                                    return response()->json([
+                                        'status' => 'error',
+                                        'message' => "Serial Number {$serialNumber->serial_number} masih dipakai di Inventory Issuing {$preparedLink->inventoryIssuing?->issuing_number}. Tidak bisa dipakai di dua WI yang masih disiapkan.",
+                                        'code' => 'SERIAL_NUMBER_RESERVED',
+                                    ], 400);
+                                }
                             }
 
                             // Link SN to issuing item

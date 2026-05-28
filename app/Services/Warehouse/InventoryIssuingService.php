@@ -161,7 +161,10 @@ class InventoryIssuingService
     protected function updateSerialNumberLifecycle(InventoryIssuing $issuing)
     {
         $serialNumberIds = $issuing->items()
+            ->with(['product.productCategory', 'product.productType'])
             ->whereNotNull('serial_number_id')
+            ->get()
+            ->filter(fn ($item) => $item->product?->requiresUniqueSerialNumber() ?? true)
             ->pluck('serial_number_id')
             ->toArray();
         
