@@ -1714,7 +1714,7 @@ class JobController extends Controller
             
             $isServiceJob = $this->isServiceLikeJob($job);
             
-            if ($isServiceJob && $masterRoom) {
+            if ($isServiceJob && $masterRoom && $this->shouldBlockServiceByPendingInstall($job)) {
                 // Find if there is an Install job for this room in the same JA that is NOT completed
                 $irJobExists = \App\Models\JobSchedule::where('job_advice_id', $job->job_advice_id)
                     ->where('room_id', $masterRoom->id)
@@ -1788,8 +1788,9 @@ class JobController extends Controller
      */
     private function checkJobDependency($job)
     {
-        // Only apply to service type jobs (Service First, Service Routine, CSR, dll)
-        if (!$this->isServiceLikeJob($job)) {
+        // Only apply to first service jobs. Routine services after period 1 should
+        // not be locked by an old/stale IR because the unit was installed once.
+        if (!$this->isServiceLikeJob($job) || !$this->shouldBlockServiceByPendingInstall($job)) {
             return ['is_blocked' => false, 'message' => ''];
         }
 
@@ -1815,6 +1816,25 @@ class JobController extends Controller
         }
 
         return ['is_blocked' => false, 'message' => ''];
+    }
+
+    private function shouldBlockServiceByPendingInstall($job): bool
+    {
+        if (!$this->isServiceLikeJob($job)) {
+            return false;
+        }
+
+        $period = $job->period ?? null;
+        if (is_numeric($period) && (int) $period > 1) {
+            return false;
+        }
+
+        $type = strtolower(trim(str_replace('-', '_', (string) ($job->type ?? ''))));
+        if (in_array($type, ['service_routine', 'service routine'], true)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
