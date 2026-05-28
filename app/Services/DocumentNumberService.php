@@ -154,6 +154,21 @@ class DocumentNumberService
         'invoice' => 'invoice_number',
     ];
 
+    private const OPERATIONAL_AREA_DOCUMENT_TYPES = [
+        'job_advice',
+        'installation_report',
+        'installation_free',
+        'customer_service_report',
+        'job_schedule',
+        'job_schedule_extra',
+        'job_schedule_complain',
+        'job_schedule_suspend',
+        'job_schedule_dpf',
+        'remove',
+        'remove_report',
+        'remove_free',
+    ];
+
     /**
      * Generate document number
      * 
@@ -181,11 +196,10 @@ class DocumentNumberService
         // Get type code
         $typeCode = self::TYPE_CODES[$documentType] ?? strtoupper(substr($documentType, 0, 2));
         
-        // For Job Advice the prefix must follow the Operational Area (service area)
-        // assignment, NOT the building's administrative city. A city like Cileungsi
-        // (kab. Bogor) can be set as service area for the Jakarta branch, in which
-        // case the JA must carry the JKT prefix so the Jakarta team can see it.
-        if (!$branchCode && $documentType === 'job_advice') {
+        // Operational documents must follow the service branch assignment,
+        // not only the building's administrative city. A Bogor building can be
+        // served by Jakarta, so JA and JS numbers must both carry JKT.
+        if (!$branchCode && in_array($documentType, self::OPERATIONAL_AREA_DOCUMENT_TYPES, true)) {
             $branchCode = $this->getBranchCodeFromOperationalArea(
                 $buildingId,
                 $contractId,
