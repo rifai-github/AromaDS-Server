@@ -1854,7 +1854,7 @@ class JobAdviceController extends Controller
             return [
                 'needs_install' => true,
                 'needs_service' => false,
-                'needs_check' => false,
+                'needs_check' => true,
             ];
         }
 
