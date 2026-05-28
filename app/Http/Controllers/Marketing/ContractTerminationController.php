@@ -34,6 +34,46 @@ class ContractTerminationController extends Controller
         return true;
     }
 
+    private function findBlockingUnfinishedJobForTermination(Contract $contract): ?JobSchedule
+    {
+        return JobSchedule::where('contract_number', $contract->contract_number)
+            ->whereNotIn('status', ['completed', 'done_job', 'cancelled', 'terminated', 'suspend', 'dpf'])
+            ->get()
+            ->first(fn (JobSchedule $job) => $this->jobBlocksContractTermination($job));
+    }
+
+    private function jobBlocksContractTermination(JobSchedule $job): bool
+    {
+        $type = strtolower(trim(str_replace('-', '_', (string) $job->type)));
+        $status = strtolower(trim((string) $job->status));
+
+        $stoppableServiceTypes = [
+            'service',
+            'service_first',
+            'service first',
+            'service_routine',
+            'service routine',
+            'csr',
+            'customer_service_report',
+            'customer service report',
+            'check',
+        ];
+
+        $notStartedStatuses = [
+            'new_job',
+            'scheduled',
+            'assign_team',
+            'assign_material',
+            'barang_dipersiapkan',
+            'barang_siap_diambil',
+        ];
+
+        return ! (
+            in_array($type, $stoppableServiceTypes, true)
+            && in_array($status, $notStartedStatuses, true)
+        );
+    }
+
     /**
      * Find the first removal job that still blocks rollback of a contract termination.
      * Unpost is only allowed when all generated remove jobs are back to a fresh state.
@@ -199,10 +239,9 @@ class ContractTerminationController extends Controller
 
             $contract = Contract::findOrFail($request->contract_id);
 
-            // MOM14: Validation for unfinished jobs before creating Contract Termination
-            $unfinishedJob = JobSchedule::where('contract_number', $contract->contract_number)
-                ->whereNotIn('status', ['completed', 'done_job', 'cancelled', 'terminated', 'suspend', 'dpf'])
-                ->first();
+            // MOM14: Validation for unfinished jobs before creating Contract Termination.
+            // Future service/check schedules may be intentionally stopped by this termination.
+            $unfinishedJob = $this->findBlockingUnfinishedJobForTermination($contract);
 
             if ($unfinishedJob) {
                 $errorMsg = "maaf job advice untuk referensi no {$contract->contract_number} tidak dapat di buat karena masih ada pekerjaan bernomor {$unfinishedJob->job_number} yang belum selesai";
