@@ -551,6 +551,96 @@ class MobilePartialCompletionReturnTest extends TestCase
         ]);
     }
 
+    public function test_partial_completion_does_not_mark_completed_sibling_job_as_left_location(): void
+    {
+        $this->seedPartialCompletionScenario();
+
+        DB::table('job_advices')->insert([
+            'id' => 70,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            ['id' => 80, 'job_advice_id' => 70, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 81, 'job_advice_id' => 70, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_schedules')->where('id', 10)->update([
+            'job_advice_id' => 70,
+            'status' => 'in_progress',
+            'type' => 'Install (IR)',
+            'building_name' => 'Gedung Cabang B 110526',
+            'reference_number' => 'BDG-JA/26-05/0012',
+            'job_reference_number' => 'BDG-JA/26-05/0012',
+        ]);
+
+        DB::table('job_schedules')->insert([
+            'id' => 11,
+            'job_number' => 'BDG-IR/26-05/0002',
+            'type' => 'Install (IR)',
+            'status' => 'teknisi_selesai_pengerjaan',
+            'job_advice_id' => 70,
+            'building_id' => 10,
+            'building_name' => 'Gedung Cabang B 110526',
+            'branch_id' => 1,
+            'reference_number' => 'BDG-JA/26-05/0012',
+            'job_reference_number' => 'BDG-JA/26-05/0012',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            [
+                'id' => 90,
+                'job_schedule_id' => 10,
+                'job_advice_room_id' => 80,
+                'room_name' => 'Ruang Mawar',
+                'room_id' => 800,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 91,
+                'job_schedule_id' => 11,
+                'job_advice_room_id' => 81,
+                'room_name' => 'Ruang Melati',
+                'room_id' => 900,
+                'status' => 'completed',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $controller = app(JobController::class);
+
+        $method = new ReflectionMethod($controller, 'handleCannotCompleteAllRooms');
+        $method->setAccessible(true);
+        $method->invoke($controller, JobSchedule::findOrFail(10), now());
+
+        $this->assertDatabaseHas('job_schedules', [
+            'id' => 10,
+            'status' => 'meninggalkan_lokasi',
+        ]);
+        $this->assertDatabaseHas('job_schedule_rooms', [
+            'id' => 90,
+            'status' => 'cancelled',
+        ]);
+
+        $this->assertDatabaseHas('job_schedules', [
+            'id' => 11,
+            'status' => 'teknisi_selesai_pengerjaan',
+        ]);
+        $this->assertDatabaseHas('job_schedule_rooms', [
+            'id' => 91,
+            'status' => 'completed',
+        ]);
+        $this->assertDatabaseMissing('material_returns', [
+            'job_schedule_id' => 11,
+        ]);
+    }
+
     public function test_partial_completion_verification_saves_pic_photo_signature_and_pic_name(): void
     {
         $this->seedPartialCompletionScenario();

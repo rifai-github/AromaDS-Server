@@ -2654,31 +2654,33 @@ class JobController extends Controller
                 ], true))
                 ->values();
 
-            if ($roomsToMove->isNotEmpty()) {
-                $processedAnyRoom = true;
-                $returnContext = $this->preparePartialCompletionReturnContext($sourceJob, $roomsToMove, $now);
-                $jobAssignScheduleIds = $sourceJob->jobAssignSchedules()->pluck('id');
+            if ($roomsToMove->isEmpty()) {
+                continue;
+            }
 
-                foreach ($roomsToMove as $room) {
-                    $newJob = $this->findOrCreatePartialCompletionFollowUpJob($sourceJob, $room, $now);
-                    $newRoom = $this->findOrCreatePartialCompletionFollowUpRoom($sourceJob, $newJob, $room);
-                    $this->syncPartialCompletionRoomRentals($room, $newRoom);
-                    $this->processPartialCompletionMaterialReturnItems($sourceJob, $room, $jobAssignScheduleIds, $returnContext, $now);
+            $processedAnyRoom = true;
+            $returnContext = $this->preparePartialCompletionReturnContext($sourceJob, $roomsToMove, $now);
+            $jobAssignScheduleIds = $sourceJob->jobAssignSchedules()->pluck('id');
 
-                    $room->update([
-                        'status' => \App\Models\JobScheduleRoom::STATUS_CANCELLED,
-                        'material_return_status' => $returnContext['material_return']
-                            ? ($returnContext['material_return']->status === \App\Models\MaterialReturn::STATUS_RETURNED
-                                ? \App\Models\JobScheduleRoom::MATERIAL_RETURN_RETURNED
-                                : \App\Models\JobScheduleRoom::MATERIAL_RETURN_PENDING)
-                            : \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
-                        'material_return_id' => $returnContext['material_return']?->id,
-                        'material_return_at' => $returnContext['material_return']?->returned_at,
-                        'material_return_by' => $returnContext['material_return']?->returned_by,
-                        'notes' => 'Pekerjaan tidak selesai, dipindahkan ke Job baru.',
-                        'updated_by' => auth()->id(),
-                    ]);
-                }
+            foreach ($roomsToMove as $room) {
+                $newJob = $this->findOrCreatePartialCompletionFollowUpJob($sourceJob, $room, $now);
+                $newRoom = $this->findOrCreatePartialCompletionFollowUpRoom($sourceJob, $newJob, $room);
+                $this->syncPartialCompletionRoomRentals($room, $newRoom);
+                $this->processPartialCompletionMaterialReturnItems($sourceJob, $room, $jobAssignScheduleIds, $returnContext, $now);
+
+                $room->update([
+                    'status' => \App\Models\JobScheduleRoom::STATUS_CANCELLED,
+                    'material_return_status' => $returnContext['material_return']
+                        ? ($returnContext['material_return']->status === \App\Models\MaterialReturn::STATUS_RETURNED
+                            ? \App\Models\JobScheduleRoom::MATERIAL_RETURN_RETURNED
+                            : \App\Models\JobScheduleRoom::MATERIAL_RETURN_PENDING)
+                        : \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
+                    'material_return_id' => $returnContext['material_return']?->id,
+                    'material_return_at' => $returnContext['material_return']?->returned_at,
+                    'material_return_by' => $returnContext['material_return']?->returned_by,
+                    'notes' => 'Pekerjaan tidak selesai, dipindahkan ke Job baru.',
+                    'updated_by' => auth()->id(),
+                ]);
             }
 
             $sourceJob->status = 'meninggalkan_lokasi';

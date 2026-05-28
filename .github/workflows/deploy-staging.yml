@@ -95,4 +95,6 @@ jobs:
           git pull --ff-only origin develop
 
           php artisan migrate --force
+          php artisan view:clear
+          php artisan cache:clear
           EOF
