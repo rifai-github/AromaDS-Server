@@ -149,6 +149,37 @@ class InventoryReceivingController extends Controller
         ]);
     }
 
+    private function releaseReceivedSerialNumbersToWarehouse(InventoryReceiving $inventoryReceiving, Warehouse $warehouse): int
+    {
+        $activeUnitStatuses = ['active', 'installed', 'on_wall', 'on wall', 'onwall'];
+
+        $updatedCount = \App\Models\SerialNumber::where('inventory_receiving_id', $inventoryReceiving->id)
+            ->whereIn('status', ['pending', 'on_hand', 'on_hand_remove', 'in_use'])
+            ->whereDoesntHave('unitOnWalls', function ($query) use ($activeUnitStatuses) {
+                $query->whereIn('status', $activeUnitStatuses);
+            })
+            ->update([
+                'status' => 'ready',
+                'location_type' => 'warehouse',
+                'location_id' => $warehouse->id,
+                'warehouse_id' => $warehouse->id,
+                'updated_by' => Auth::id(),
+                'updated_at' => now(),
+            ]);
+
+        $skippedActiveCount = \App\Models\SerialNumber::where('inventory_receiving_id', $inventoryReceiving->id)
+            ->whereHas('unitOnWalls', function ($query) use ($activeUnitStatuses) {
+                $query->whereIn('status', $activeUnitStatuses);
+            })
+            ->count();
+
+        if ($skippedActiveCount > 0) {
+            \Log::warning("Skipped {$skippedActiveCount} active Unit On Wall serial number(s) while finalizing Receiving {$inventoryReceiving->receiving_number}");
+        }
+
+        return $updatedCount;
+    }
+
     private function buildReceivingItemsFromIssuing(?\App\Models\InventoryIssuing $issuing): array
     {
         if (! $issuing) {
@@ -959,17 +990,8 @@ class InventoryReceivingController extends Controller
                 }
             }
 
-            // Update all Serial Numbers linked to this receiving to 'ready'
-            $updatedSNCount = \App\Models\SerialNumber::where('inventory_receiving_id', $inventoryReceiving->id)
-                ->where('status', 'pending')
-                ->update([
-                    'status' => 'ready',
-                    'location_type' => 'warehouse',
-                    'location_id' => $warehouse->id,
-                    'warehouse_id' => $warehouse->id,
-                    'updated_by' => Auth::id(),
-                    'updated_at' => now(),
-                ]);
+            // Release all returned/scanned Serial Numbers linked to this receiving back to warehouse.
+            $updatedSNCount = $this->releaseReceivedSerialNumbersToWarehouse($inventoryReceiving, $warehouse);
 
             if ($updatedSNCount > 0) {
                 \Log::info("Updated {$updatedSNCount} Serial Numbers to 'ready' status for Receiving {$inventoryReceiving->receiving_number}");
