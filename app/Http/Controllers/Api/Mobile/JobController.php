@@ -61,14 +61,12 @@ class JobController extends Controller
             'building.province',
             'room',
             'jobScheduleRooms',
+            'jobScheduleRooms.roomAssignment.team',
             'jobAssignSchedules.team'
         ])
-        ->whereHas('jobAssignSchedules', function($q) use ($userTeamIds) {
-            // Only include active assignments (not cancelled)
-            $q->whereIn('team_id', $userTeamIds)
-              ->where('status', '!=', 'cancelled')
-              ->whereNull('deleted_at'); // Exclude soft-deleted assignments
-        }, '>=', 1) // Ensure at least one assignment exists
+        ->where(function ($query) use ($userTeamIds) {
+            $this->applyMobileTeamAssignmentVisibility($query, $userTeamIds);
+        })
         // Safety belt: invalid jobs without official Job No must never appear in technician app
         ->whereNotNull('job_number')
         // Only show non-completed jobs (completed jobs go to "Done Job" page)
@@ -789,13 +787,11 @@ class JobController extends Controller
             'building.city',
             'building.province',
             'room',
+            'jobScheduleRooms.roomAssignment.team',
             'jobAssignSchedules.team'
         ])
-        ->whereHas('jobAssignSchedules', function($q) use ($userTeamIds) {
-            // Only include active assignments (not cancelled, not soft-deleted)
-            $q->whereIn('team_id', $userTeamIds)
-              ->where('status', '!=', 'cancelled')
-              ->whereNull('deleted_at');
+        ->where(function ($query) use ($userTeamIds) {
+            $this->applyMobileTeamAssignmentVisibility($query, $userTeamIds);
         })
         // Safety belt: completed jobs without Job No are data-invalid and must be hidden from mobile
         ->whereNotNull('job_number')
@@ -909,10 +905,11 @@ class JobController extends Controller
             'building.city',
             'building.province',
             'room',
+            'jobScheduleRooms.roomAssignment.team',
             'jobAssignSchedules.team'
         ])
-        ->whereHas('jobAssignSchedules', function($q) use ($userTeamIds) {
-            $q->whereIn('team_id', $userTeamIds);
+        ->where(function ($query) use ($userTeamIds) {
+            $this->applyMobileTeamAssignmentVisibility($query, $userTeamIds);
         })
         // Safety belt: invalid jobs without Job No must not leak into mobile special lists
         ->whereNotNull('job_number')
@@ -4288,6 +4285,23 @@ class JobController extends Controller
                 ->unique()
                 ->values()
                 ->toArray();
+        });
+    }
+
+    private function applyMobileTeamAssignmentVisibility($query, array $userTeamIds): void
+    {
+        $query->where(function ($assignmentQuery) use ($userTeamIds) {
+            $assignmentQuery
+                ->whereHas('jobAssignSchedules', function ($jobAssignQuery) use ($userTeamIds) {
+                    $jobAssignQuery->whereIn('team_id', $userTeamIds)
+                        ->where('status', '!=', 'cancelled')
+                        ->whereNull('deleted_at');
+                })
+                ->orWhereHas('jobScheduleRooms.roomAssignment', function ($roomAssignQuery) use ($userTeamIds) {
+                    $roomAssignQuery->whereIn('team_id', $userTeamIds)
+                        ->where('status', '!=', 'cancelled')
+                        ->whereNull('deleted_at');
+                });
         });
     }
 
