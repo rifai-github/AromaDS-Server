@@ -91,7 +91,7 @@ class ContractSwitchingExecutionTest extends TestCase
 
         Schema::create('job_advices', function (Blueprint $table) {
             $table->id();
-            $table->string('job_advice_number')->nullable();
+            $table->string('job_advice_number')->nullable()->unique();
             $table->string('type')->nullable();
             $table->string('company_name')->nullable();
             $table->foreignId('contract_id')->nullable();
@@ -273,6 +273,7 @@ class ContractSwitchingExecutionTest extends TestCase
             'contract_id' => $newContract->id,
             'customer_id' => 2,
         ]);
+        $this->assertNotSame('JA-OLD-001', DB::table('job_advices')->where('id', $newJobAdviceId)->value('job_advice_number'));
         $this->assertDatabaseHas('job_schedules', [
             'id' => 2,
             'contract_id' => $newContract->id,

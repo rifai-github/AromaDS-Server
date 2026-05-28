@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\DocumentNumberService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -748,6 +749,7 @@ class ContractSwitching extends Model
     ): JobAdvice {
         $newJobAdvice = $jobAdvice->replicate([
             'id',
+            'job_advice_number',
             'contract_id',
             'customer_id',
             'company_name',
@@ -759,6 +761,17 @@ class ContractSwitching extends Model
         $newJobAdvice->contract_id = $newContract->id;
         $newJobAdvice->customer_id = $newContract->customer_id;
         $newJobAdvice->company_name = $newContract->customer->name ?? $jobAdvice->company_name;
+        $newJobAdvice->job_advice_number = app(DocumentNumberService::class)->generate(
+            'job_advice',
+            null,
+            null,
+            $newContract->id,
+            $jobAdvice->quotation_id ?? null,
+            null,
+            null,
+            null,
+            $jobAdvice->expected_date ?? null
+        );
         $newJobAdvice->notes = trim(($jobAdvice->notes ?? '') . "\nSwitched from contract {$this->oldContract->contract_number} via {$this->switching_number}.");
         $newJobAdvice->created_by = $performedBy;
         $newJobAdvice->updated_by = $performedBy;
