@@ -6,6 +6,7 @@ use App\Models\Contract;
 use App\Models\Invoice;
 use App\Models\JobReport;
 use App\Models\JobSchedule;
+use App\Models\JobScheduleRoom;
 use App\Models\Customer;
 use App\Models\Building;
 use App\Models\RoomRentalUnit;
@@ -21,6 +22,7 @@ class InvoiceGenerationService
 {
     private const BILLABLE_COMPLETED_STATUSES = ['completed', 'done_job', 'dpf'];
     private const NON_BILLABLE_JOB_STATUSES = ['cancelled', 'suspend', 'meninggalkan_lokasi', 'undone'];
+    private const NON_BILLABLE_ROOM_STATUSES = ['cancelled', 'suspend', 'undone'];
     private const NON_BILLABLE_JOB_TYPES = ['install_free', 'install free', 'remove_free', 'remove free'];
 
     protected $documentNumberService;
@@ -441,6 +443,15 @@ class InvoiceGenerationService
             : $contract->contractRooms()->with(['room'])->get();
         
         foreach ($contractRooms as $contractRoom) {
+            if ($this->isContractRoomNonBillableForJob($jobSchedule, $contractRoom)) {
+                Log::debug("Skipping non-billable suspended/cancelled room for invoice rental detail", [
+                    'job_no' => $jobSchedule->job_number,
+                    'contract_room_id' => $contractRoom->id,
+                    'room_id' => $contractRoom->room_id,
+                ]);
+                continue;
+            }
+
             // Use accessor from ContractRoom model to get associated rental unit
             $masterRental = $contractRoom->rental_product;
             
@@ -467,6 +478,57 @@ class InvoiceGenerationService
         }
 
         return $rentalDetails;
+    }
+
+    private function isContractRoomNonBillableForJob(JobSchedule $jobSchedule, $contractRoom): bool
+    {
+        $matchingJobAdviceRooms = $jobSchedule->jobAdvice?->rooms
+            ?->filter(function ($jobAdviceRoom) use ($jobSchedule, $contractRoom) {
+                if ((int) $jobAdviceRoom->contract_room_id !== (int) $contractRoom->id) {
+                    return false;
+                }
+
+                return in_array((int) $jobSchedule->id, [
+                    (int) $jobAdviceRoom->install_job_schedule_id,
+                    (int) $jobAdviceRoom->service_job_schedule_id,
+                    (int) $jobAdviceRoom->remove_job_schedule_id,
+                ], true);
+            }) ?? collect();
+
+        if ($matchingJobAdviceRooms->contains(function ($jobAdviceRoom) {
+            return in_array(strtolower((string) $jobAdviceRoom->status), self::NON_BILLABLE_ROOM_STATUSES, true);
+        })) {
+            return true;
+        }
+
+        $matchingJobAdviceRoomIds = $matchingJobAdviceRooms->pluck('id')->filter()->values();
+
+        $roomQuery = JobScheduleRoom::query()
+            ->where('job_schedule_id', $jobSchedule->id)
+            ->where(function ($query) use ($contractRoom, $matchingJobAdviceRoomIds) {
+                if ($contractRoom->room_id) {
+                    $query->orWhere('room_id', $contractRoom->room_id);
+                }
+
+                if ($matchingJobAdviceRoomIds->isNotEmpty()) {
+                    $query->orWhereIn('job_advice_room_id', $matchingJobAdviceRoomIds->all());
+                }
+
+                $roomName = $contractRoom->room?->room_name;
+                if ($roomName) {
+                    $query->orWhere('room_name', $roomName);
+                }
+            });
+
+        return $roomQuery
+            ->get()
+            ->contains(function (JobScheduleRoom $room) {
+                $status = strtolower((string) $room->status);
+                $notes = strtolower((string) $room->notes);
+
+                return in_array($status, self::NON_BILLABLE_ROOM_STATUSES, true)
+                    || str_contains($notes, '[suspend]');
+            });
     }
 
     /**

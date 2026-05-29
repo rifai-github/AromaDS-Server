@@ -6,8 +6,10 @@ use App\Models\Finance\BillingGroup;
 use App\Models\Contract;
 use App\Models\Finance\Invoice;
 use App\Models\JobSchedule;
+use App\Models\JobScheduleRoom;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 use App\Services\DocumentNumberService;
 
@@ -15,6 +17,7 @@ class BillingGroupService
 {
     private const BILLABLE_COMPLETED_STATUSES = ['completed', 'done_job', 'dpf'];
     private const NON_BILLABLE_JOB_STATUSES = ['cancelled', 'suspend', 'meninggalkan_lokasi', 'undone'];
+    private const NON_BILLABLE_ROOM_STATUSES = ['cancelled', 'suspend', 'undone'];
     private const NON_BILLABLE_JOB_TYPES = ['install_free', 'install free', 'remove_free', 'remove free'];
 
     protected $documentNumberService;
@@ -87,7 +90,7 @@ class BillingGroupService
 
             while ($currentDate->lte($endDate)) {
                 $invoice = $this->createInvoiceForBillingGroup($billingGroup, $currentDate);
-                $this->createDetailsForInvoice($invoice, $billingGroup);
+                $this->createDetailsForInvoice($invoice, $billingGroup, false, $currentDate);
                 $this->syncInvoiceTotalsFromDetails($invoice);
                 $invoices[] = $invoice;
                 
@@ -386,6 +389,15 @@ class BillingGroupService
         if ($contractRooms->isEmpty() && !$onlyCompletedRooms) {
             $contractRooms = $this->getEligibleContractRoomsForBillingGroup($billingGroup, $contract, true);
         }
+
+        if (!$onlyCompletedRooms) {
+            $contractRooms = $this->excludeNonBillableRoomsForBillingPeriod(
+                $contractRooms,
+                $billingGroup,
+                $contract,
+                $billingDate ?? ($invoice->invoice_date ? Carbon::parse($invoice->invoice_date) : Carbon::now())
+            );
+        }
         
         $hasDetails = false;
         $createdKeys = [];
@@ -469,6 +481,81 @@ class BillingGroupService
         }
 
         return $query->get();
+    }
+
+    private function excludeNonBillableRoomsForBillingPeriod(
+        \Illuminate\Support\Collection $contractRooms,
+        BillingGroup $billingGroup,
+        Contract $contract,
+        Carbon $billingDate
+    ): \Illuminate\Support\Collection {
+        if ($contractRooms->isEmpty()) {
+            return $contractRooms;
+        }
+
+        [$billingStartDate, $billingEndDate] = $this->getBillingDateRange($billingGroup, $billingDate);
+
+        return $contractRooms
+            ->reject(function ($contractRoom) use ($contract, $billingStartDate, $billingEndDate) {
+                return $this->isContractRoomNonBillableForBillingPeriod(
+                    $contract,
+                    $contractRoom,
+                    $billingStartDate,
+                    $billingEndDate
+                );
+            })
+            ->values();
+    }
+
+    private function isContractRoomNonBillableForBillingPeriod(
+        Contract $contract,
+        $contractRoom,
+        Carbon $billingStartDate,
+        Carbon $billingEndDate
+    ): bool {
+        $matchingJobAdviceRoomIds = DB::table('job_advice_rooms')
+            ->join('job_advices', 'job_advice_rooms.job_advice_id', '=', 'job_advices.id')
+            ->leftJoin('job_schedules as install_jobs', 'job_advice_rooms.install_job_schedule_id', '=', 'install_jobs.id')
+            ->leftJoin('job_schedules as service_jobs', 'job_advice_rooms.service_job_schedule_id', '=', 'service_jobs.id')
+            ->leftJoin('job_schedules as remove_jobs', 'job_advice_rooms.remove_job_schedule_id', '=', 'remove_jobs.id')
+            ->where('job_advices.contract_id', $contract->id)
+            ->where('job_advice_rooms.contract_room_id', $contractRoom->id)
+            ->where(function ($query) use ($billingStartDate, $billingEndDate) {
+                $query->whereBetween('install_jobs.schedule_date', [$billingStartDate, $billingEndDate])
+                    ->orWhereBetween('service_jobs.schedule_date', [$billingStartDate, $billingEndDate])
+                    ->orWhereBetween('remove_jobs.schedule_date', [$billingStartDate, $billingEndDate]);
+            })
+            ->when(Schema::hasColumn('job_advice_rooms', 'deleted_at'), function ($query) {
+                $query->whereNull('job_advice_rooms.deleted_at');
+            })
+            ->pluck('job_advice_rooms.id');
+
+        if ($matchingJobAdviceRoomIds->isEmpty()) {
+            return false;
+        }
+
+        $hasNonBillableAdviceRoom = DB::table('job_advice_rooms')
+            ->whereIn('id', $matchingJobAdviceRoomIds->all())
+            ->whereRaw(
+                'LOWER(COALESCE(status, "")) IN (' . implode(',', array_fill(0, count(self::NON_BILLABLE_ROOM_STATUSES), '?')) . ')',
+                self::NON_BILLABLE_ROOM_STATUSES
+            )
+            ->exists();
+
+        if ($hasNonBillableAdviceRoom) {
+            return true;
+        }
+
+        return JobScheduleRoom::query()
+            ->whereIn('job_advice_room_id', $matchingJobAdviceRoomIds->all())
+            ->get()
+            ->contains(function (JobScheduleRoom $room) {
+                $status = strtolower((string) $room->status);
+                $notes = strtolower((string) $room->notes);
+
+                return in_array($status, self::NON_BILLABLE_ROOM_STATUSES, true)
+                    || str_contains($notes, '[suspend]');
+            });
     }
 
     /**
