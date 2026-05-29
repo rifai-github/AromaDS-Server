@@ -294,11 +294,17 @@ class ContractRenewalController extends Controller
                 $query->where('customer_id', $request->customer_id);
             }
 
+            if ($request->filled('marketing_id')) {
+                $query->where('marketing_id', $request->integer('marketing_id'));
+            }
+
+            if ($request->filled('branch_id')) {
+                $branchId = $request->integer('branch_id');
+                $query->whereHas('quotation', fn ($quotationQuery) => $quotationQuery->where('branch_id', $branchId));
+            }
+
             // Include specific contract ID if provided (for edit mode)
             $includeId = $request->input('include_id');
-            if ($includeId) {
-                $query->orWhere('id', $includeId);
-            }
 
             $contracts = $query->get()
                 ->filter(function ($contract) use ($includeId) {

@@ -2043,6 +2043,13 @@ $(document).ready(function() {
             loadEligibleContracts();
         }
     });
+
+    $('#branch_id, #branch_id_hidden').on('change', function() {
+        if ($('#quotation_type').val() === 'renewal' && $('#contract-field').hasClass('show')) {
+            $('#existing_contract_id').val('');
+            loadEligibleContracts();
+        }
+    });
     
     // Load branches on page load if marketing is pre-selected
     // REMOVED: This is now handled by restoreStep1Data() inside showStep(1) 
@@ -5224,7 +5231,10 @@ $(document).ready(function() {
         console.log('Loading eligible contracts. Including ID:', includeId);
         
         // Prepare data object
-        const requestData = {};
+        const requestData = {
+            marketing_id: $('#marketing_id').val(),
+            branch_id: $('#branch_id').val() || $('#branch_id_hidden').val()
+        };
         if (includeId) {
             requestData.include_id = includeId;
         }

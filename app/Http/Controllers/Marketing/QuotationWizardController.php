@@ -448,6 +448,7 @@ class QuotationWizardController extends Controller
                 $request->get('quotation_type'),
                 $request->get('existing_contract_id')
             );
+            $this->ensureRenewalSourceMatchesSelection($request);
 
             // Get action parameter
             $action = $request->get('action', 'draft');
@@ -758,6 +759,7 @@ class QuotationWizardController extends Controller
                 $request->get('quotation_type'),
                 $request->get('existing_contract_id')
             );
+            $this->ensureRenewalSourceMatchesSelection($request);
 
             // Get action parameter
             $action = $request->get('action', 'draft');
@@ -1057,6 +1059,34 @@ class QuotationWizardController extends Controller
         if ($blockReason) {
             throw ValidationException::withMessages([
                 'existing_contract_id' => $blockReason,
+            ]);
+        }
+    }
+
+    private function ensureRenewalSourceMatchesSelection(Request $request): void
+    {
+        if ($request->get('quotation_type') !== 'renewal' || !$request->filled('existing_contract_id')) {
+            return;
+        }
+
+        $contract = Contract::with('quotation')->find($request->get('existing_contract_id'));
+        if (!$contract) {
+            return;
+        }
+
+        if ($request->filled('marketing_id') && (int) $contract->marketing_id !== (int) $request->get('marketing_id')) {
+            throw ValidationException::withMessages([
+                'existing_contract_id' => 'Contract lama tidak sesuai dengan marketing yang dipilih.',
+            ]);
+        }
+
+        if (
+            $request->filled('branch_id')
+            && $contract->quotation
+            && (int) $contract->quotation->branch_id !== (int) $request->get('branch_id')
+        ) {
+            throw ValidationException::withMessages([
+                'existing_contract_id' => 'Contract lama tidak sesuai dengan cabang yang dipilih.',
             ]);
         }
     }
