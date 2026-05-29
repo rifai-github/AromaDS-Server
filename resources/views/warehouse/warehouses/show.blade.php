@@ -751,10 +751,12 @@
 <!-- DataTables -->
 <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap4.min.css">
 <link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.2.9/css/responsive.bootstrap4.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap4.min.js"></script>
 <script src="https://cdn.datatables.net/responsive/2.2.9/js/dataTables.responsive.min.js"></script>
 <script src="https://cdn.datatables.net/responsive/2.2.9/js/responsive.bootstrap4.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
 <script>
 function switchTab(event, tabName) {
@@ -858,8 +860,41 @@ $(document).ready(function() {
                     $(api.column(colIdx).header()).index()
                 );
                 var title = $(cell).text().trim();
+
+                if (colIdx === 0) {
+                    $(cell).html('<input type="text" class="movement-date-filter" placeholder="Select date..." readonly />');
+                    var dateInput = $('input', cell)[0];
+
+                    if (typeof flatpickr !== 'undefined') {
+                        flatpickr(dateInput, {
+                            dateFormat: 'd M Y',
+                            allowInput: false,
+                            onChange: function(selectedDates, dateStr) {
+                                api.column(colIdx).search(dateStr).draw();
+                            },
+                            onReady: function(selectedDates, dateStr, instance) {
+                                instance._input.addEventListener('keydown', function(event) {
+                                    if (event.key === 'Backspace' || event.key === 'Delete') {
+                                        instance.clear();
+                                        api.column(colIdx).search('').draw();
+                                    }
+                                });
+                            }
+                        });
+                    } else {
+                        $(dateInput)
+                            .off('keyup change')
+                            .on('keyup change', function (e) {
+                                e.stopPropagation();
+                                api.column(colIdx).search(this.value).draw();
+                            });
+                    }
+
+                    return;
+                }
+
                 $(cell).html('<input type="text" placeholder="Search" />');
-                $('input', $('#movementsTable .filters th').eq($(api.column(colIdx).header()).index()))
+                $('input', cell)
                     .off('keyup change')
                     .on('keyup change', function (e) {
                         e.stopPropagation();
