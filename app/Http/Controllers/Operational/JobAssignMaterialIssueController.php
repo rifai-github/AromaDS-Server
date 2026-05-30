@@ -587,7 +587,32 @@ class JobAssignMaterialIssueController extends Controller
             $perPage = 10;
         }
 
-        $materialIssues = $query->orderBy('created_at', 'desc')->paginate($perPage)->withQueryString();
+        $sort = $request->get('sort', 'issue_date');
+        $direction = $request->get('direction') === 'asc' ? 'asc' : 'desc';
+
+        if ($sort === 'status') {
+            $query->orderBy(
+                MaterialIssue::select('status')
+                    ->whereColumn('material_issues.id', 'job_assign_material_issues.material_issue_id')
+                    ->limit(1),
+                $direction
+            );
+        } elseif ($sort === 'created_at') {
+            $query->orderBy('created_at', $direction);
+        } else {
+            $query->orderBy(
+                MaterialIssue::select('issue_date')
+                    ->whereColumn('material_issues.id', 'job_assign_material_issues.material_issue_id')
+                    ->limit(1),
+                $direction
+            );
+        }
+
+        $materialIssues = $query
+            ->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc')
+            ->paginate($perPage)
+            ->withQueryString();
 
         $teams = Cache::remember('job-assign-material-issues:index:teams', now()->addMinutes(10), function () {
             return Team::query()
