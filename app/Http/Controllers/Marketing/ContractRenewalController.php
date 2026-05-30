@@ -437,52 +437,7 @@ class ContractRenewalController extends Controller
                 'notes_operation' => $contract->notes_operation,
                 'notes_finance' => $contract->notes_finance,
                 'notes_sales' => $contract->notes_sales, // Will trigger pop-up in renewal wizard
-                'rooms' => $contract->contractRooms->map(function ($room) use ($contract, $activeUnitOnWalls) {
-                    $unitOnWall = $this->findUnitOnWallForRoom($activeUnitOnWalls, $room);
-                    $quotRoom = $contract->quotation->quotationRooms->where('room_id', $room->room_id)->first();
-                    
-                    // Fallback to name match if room_id match fails
-                    if (!$quotRoom && $room->room) {
-                        $roomName = $room->room->room_name;
-                        $quotRoom = $contract->quotation->quotationRooms
-                            ->filter(function($qr) use ($roomName) {
-                                return strtolower(trim($qr->room_name)) === strtolower(trim($roomName));
-                            })->first();
-                    }
-
-                    $surveyDetail = null;
-                    if ($contract->quotation->survey && $room->room_id) {
-                        $surveyDetail = $contract->quotation->survey->surveyDetails
-                            ->where('room_id', $room->room_id)
-                            ->first();
-                    }
-
-                    if (!$surveyDetail && $contract->quotation->survey && $room->room) {
-                        $roomName = strtolower(trim((string) $room->room->room_name));
-                        $surveyDetail = $contract->quotation->survey->surveyDetails
-                            ->filter(function ($detail) use ($roomName) {
-                                return strtolower(trim((string) $detail->room_name)) === $roomName;
-                            })
-                            ->first();
-                    }
-
-                    return [
-                        'room_id' => $surveyDetail->id ?? $room->room_id,
-                        'survey_detail_id' => $surveyDetail->id,
-                        'survey_id' => $surveyDetail->survey_id ?? null,
-                        'master_room_id' => $room->room_id,
-                        'contract_room_id' => $room->id,
-                        'unit_on_wall_id' => $unitOnWall?->id,
-                        'unit_on_wall_status' => $unitOnWall?->status,
-                        'source' => $unitOnWall ? 'unit_on_wall' : 'contract',
-                        'serial_number' => $unitOnWall?->serial_number,
-                        'room_name' => $this->unitOnWallRoomName($unitOnWall) ?: ($room->room->room_name ?? ''),
-                        'room_type' => $surveyDetail->room_type ?? $unitOnWall?->room?->room_type ?? $room->room->room_type ?? null,
-                        'billing_group_id' => $room->billing_group_id,
-                        'aroma_product_id' => $quotRoom->aroma_product_id ?? $unitOnWall?->product_id ?? null,
-                        'aroma_variant' => $quotRoom->aroma_variant ?? $unitOnWall?->product?->variant ?? null,
-                    ];
-                }),
+                'rooms' => $this->buildRenewalRooms($contract, $activeUnitOnWalls),
                 'rentals' => $contract->contractRentals->map(function ($rental) use ($contract, $activeUnitOnWalls) {
                     
                     // Fallback search for Room info
@@ -603,6 +558,133 @@ class ContractRenewalController extends Controller
             Log::error("Error fetching contract for renewal: " . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => 'Failed to fetch contract details: ' . $e->getMessage()], 500);
         }
+    }
+
+    private function buildRenewalRooms(Contract $contract, $activeUnitOnWalls)
+    {
+        $rooms = $contract->contractRooms->map(function ($room) use ($contract, $activeUnitOnWalls) {
+                    $unitOnWall = $this->findUnitOnWallForRoom($activeUnitOnWalls, $room);
+                    $quotRoom = $contract->quotation->quotationRooms->where('room_id', $room->room_id)->first();
+                    
+                    // Fallback to name match if room_id match fails
+                    if (!$quotRoom && $room->room) {
+                        $roomName = $room->room->room_name;
+                        $quotRoom = $contract->quotation->quotationRooms
+                            ->filter(function($qr) use ($roomName) {
+                                return strtolower(trim($qr->room_name)) === strtolower(trim($roomName));
+                            })->first();
+                    }
+
+                    $surveyDetail = null;
+                    if ($contract->quotation->survey && $room->room_id) {
+                        $surveyDetail = $contract->quotation->survey->surveyDetails
+                            ->where('room_id', $room->room_id)
+                            ->first();
+                    }
+
+                    if (!$surveyDetail && $contract->quotation->survey && $room->room) {
+                        $roomName = strtolower(trim((string) $room->room->room_name));
+                        $surveyDetail = $contract->quotation->survey->surveyDetails
+                            ->filter(function ($detail) use ($roomName) {
+                                return strtolower(trim((string) $detail->room_name)) === $roomName;
+                            })
+                            ->first();
+                    }
+
+                    return [
+                        'room_id' => $surveyDetail->id ?? $room->room_id,
+                        'survey_detail_id' => $surveyDetail->id,
+                        'survey_id' => $surveyDetail->survey_id ?? null,
+                        'master_room_id' => $room->room_id,
+                        'contract_room_id' => $room->id,
+                        'unit_on_wall_id' => $unitOnWall?->id,
+                        'unit_on_wall_status' => $unitOnWall?->status,
+                        'source' => $unitOnWall ? 'unit_on_wall' : 'contract',
+                        'serial_number' => $unitOnWall?->serial_number,
+                        'room_name' => $this->unitOnWallRoomName($unitOnWall) ?: ($room->room->room_name ?? ''),
+                        'room_type' => $surveyDetail->room_type ?? $unitOnWall?->room?->room_type ?? $room->room->room_type ?? null,
+                        'billing_group_id' => $room->billing_group_id,
+                        'aroma_product_id' => $quotRoom->aroma_product_id ?? $unitOnWall?->product_id ?? null,
+                        'aroma_variant' => $quotRoom->aroma_variant ?? $unitOnWall?->product?->variant ?? null,
+                    ];
+                });
+
+        if ($rooms->isNotEmpty()) {
+            return $rooms->values();
+        }
+
+        return $contract->contractRentals
+            ->map(function ($rental) use ($contract, $activeUnitOnWalls) {
+                $resolvedRoomId = $rental->room_id;
+                $resolvedRoomName = $rental->room->room_name ?? '';
+                $resolvedRoomType = $rental->room->room_type ?? '';
+
+                if (!$resolvedRoomId) {
+                    $quotDetail = $contract->quotation->quotationDetails
+                        ->where('master_rental_id', $rental->master_rental_id)
+                        ->first();
+
+                    if ($quotDetail) {
+                        $resolvedRoomId = $quotDetail->room_id;
+                        $resolvedRoomName = $quotDetail->room_name ?: $resolvedRoomName;
+                        $resolvedRoomType = $quotDetail->masterRoom->room_type ?? $resolvedRoomType;
+                    }
+                }
+
+                $unitOnWall = $this->findUnitOnWallForRental(
+                    $activeUnitOnWalls,
+                    $rental,
+                    $resolvedRoomId,
+                    $resolvedRoomName
+                );
+
+                $resolvedRoomId = $unitOnWall?->room_id ?: $resolvedRoomId;
+                $resolvedRoomName = $this->unitOnWallRoomName($unitOnWall) ?: $resolvedRoomName;
+                $resolvedRoomType = $unitOnWall?->room?->room_type ?: $resolvedRoomType;
+
+                if (!$resolvedRoomId && trim((string) $resolvedRoomName) === '') {
+                    return null;
+                }
+
+                $surveyDetail = null;
+                if ($contract->quotation->survey && $resolvedRoomId) {
+                    $surveyDetail = $contract->quotation->survey->surveyDetails
+                        ->where('room_id', $resolvedRoomId)
+                        ->first();
+                }
+
+                $quotRoom = null;
+                if ($resolvedRoomId) {
+                    $quotRoom = $contract->quotation->quotationRooms->where('room_id', $resolvedRoomId)->first();
+                }
+
+                if (!$quotRoom && trim((string) $resolvedRoomName) !== '') {
+                    $roomName = strtolower(trim((string) $resolvedRoomName));
+                    $quotRoom = $contract->quotation->quotationRooms
+                        ->filter(fn ($qr) => strtolower(trim((string) $qr->room_name)) === $roomName)
+                        ->first();
+                }
+
+                return [
+                    'room_id' => $surveyDetail->id ?? $resolvedRoomId,
+                    'survey_detail_id' => $surveyDetail?->id,
+                    'survey_id' => $surveyDetail?->survey_id,
+                    'master_room_id' => $resolvedRoomId,
+                    'contract_room_id' => null,
+                    'unit_on_wall_id' => $unitOnWall?->id,
+                    'unit_on_wall_status' => $unitOnWall?->status,
+                    'source' => $unitOnWall ? 'unit_on_wall' : 'contract_rental',
+                    'serial_number' => $unitOnWall?->serial_number,
+                    'room_name' => $resolvedRoomName,
+                    'room_type' => $surveyDetail?->room_type ?? $resolvedRoomType,
+                    'billing_group_id' => null,
+                    'aroma_product_id' => $quotRoom?->aroma_product_id ?? $unitOnWall?->product_id ?? null,
+                    'aroma_variant' => $quotRoom?->aroma_variant ?? $unitOnWall?->product?->variant ?? null,
+                ];
+            })
+            ->filter()
+            ->unique(fn ($room) => ($room['master_room_id'] ?: 'name') . '|' . strtolower(trim((string) $room['room_name'])))
+            ->values();
     }
 
     private function getActiveUnitOnWallsForRenewal(Contract $contract)

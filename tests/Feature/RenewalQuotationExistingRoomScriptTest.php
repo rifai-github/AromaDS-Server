@@ -18,6 +18,9 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('getActiveUnitOnWallsForRenewal', $controller);
         $this->assertStringContainsString("'unit_on_wall_id' => \$unitOnWall?->id", $controller);
         $this->assertStringContainsString("'source' => \$unitOnWall ? 'unit_on_wall' : 'contract'", $controller);
+        $this->assertStringContainsString('buildRenewalRooms', $controller);
+        $this->assertStringContainsString("'source' => \$unitOnWall ? 'unit_on_wall' : 'contract_rental'", $controller);
+        $this->assertStringContainsString('$contract->contractRentals', $controller);
     }
 
     public function test_wizard_preserves_existing_renewal_room_metadata_until_submit(): void
@@ -35,6 +38,9 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('room_selections_data[${index}][room_name]', $view);
         $this->assertStringContainsString("$('#custom-rooms-container .custom-room-checkbox:checked')", $view);
         $this->assertStringContainsString('String(resolvedRoomId).startsWith', $view);
+        $this->assertStringContainsString('const renewalRooms = Array.isArray(data.rooms) ? data.rooms : []', $view);
+        $this->assertStringContainsString('if (roomSelections.length === 0 && data.rentals && data.rentals.length > 0)', $view);
+        $this->assertStringContainsString('const roomKey = rental.master_room_id || rental.room_id || rental.room_name', $view);
     }
 
     public function test_backend_keeps_quotation_room_when_survey_detail_lookup_fails(): void

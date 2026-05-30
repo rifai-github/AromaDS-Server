@@ -5444,10 +5444,8 @@ $(document).ready(function() {
                     }
 
                     // 2. Pre-fill Room Selections (Step 3)
-                    if (data.rooms && data.rooms.length > 0) {
-                        console.log('Pre-filling Room Selections:', data.rooms.length);
-                        
-                        let roomSelections = data.rooms.map(room => ({
+                    const renewalRooms = Array.isArray(data.rooms) ? data.rooms : [];
+                    let roomSelections = renewalRooms.map(room => ({
                             room_id: room.survey_detail_id || room.room_id,
                             survey_detail_id: room.survey_detail_id || null,
                             master_room_id: room.master_room_id || room.room_id || null,
@@ -5459,27 +5457,30 @@ $(document).ready(function() {
                             room_type: room.room_type // Map from backend
                         }));
 
-                        // Fallback: If no contract rooms found, try to extract unique rooms from rentals
-                        if (roomSelections.length === 0 && data.rentals && data.rentals.length > 0) {
-                            console.log('DEBUG: No contract rooms found. Falling back to unique rooms from rentals. Rentals count:', data.rentals.length);
-                            const seenRooms = new Set();
-                            data.rentals.forEach(rental => {
-                                console.log(`DEBUG: Checking rental for room fallback. ID: ${rental.room_id}, Type: ${rental.room_type}, Name: ${rental.room_name}`);
-                                if (rental.room_id && !seenRooms.has(rental.room_id)) {
-                                    seenRooms.add(rental.room_id);
-                                    roomSelections.push({
-                                        room_id: rental.room_id,
-                                        survey_detail_id: rental.survey_detail_id || null,
-                                        master_room_id: rental.master_room_id || rental.room_id || null,
-                                        contract_room_id: rental.contract_room_id || null,
-                                        room_name: rental.room_name,
-                                        survey_id: rental.survey_id || data.survey_id || 'custom',
-                                        room_type: rental.room_type
-                                    });
-                                }
-                            });
-                        }
-                        
+                    // Fallback: If no contract rooms found, try to extract unique rooms from rentals
+                    if (roomSelections.length === 0 && data.rentals && data.rentals.length > 0) {
+                        console.log('DEBUG: No contract rooms found. Falling back to unique rooms from rentals. Rentals count:', data.rentals.length);
+                        const seenRooms = new Set();
+                        data.rentals.forEach(rental => {
+                            console.log(`DEBUG: Checking rental for room fallback. ID: ${rental.room_id}, Type: ${rental.room_type}, Name: ${rental.room_name}`);
+                            const roomKey = rental.master_room_id || rental.room_id || rental.room_name;
+                            if (roomKey && !seenRooms.has(roomKey)) {
+                                seenRooms.add(roomKey);
+                                roomSelections.push({
+                                    room_id: rental.survey_detail_id || rental.room_id,
+                                    survey_detail_id: rental.survey_detail_id || null,
+                                    master_room_id: rental.master_room_id || rental.room_id || null,
+                                    contract_room_id: rental.contract_room_id || null,
+                                    room_name: rental.room_name,
+                                    survey_id: rental.survey_id || data.survey_id || 'custom',
+                                    room_type: rental.room_type
+                                });
+                            }
+                        });
+                    }
+
+                    if (roomSelections.length > 0) {
+                        console.log('Pre-filling Room Selections:', roomSelections.length);
                         console.log('DEBUG: Final roomSelections computed:', roomSelections);
 
                         // Set globals for Step 3 to pick up
