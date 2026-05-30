@@ -1104,10 +1104,10 @@ function openViewModal(id) {
         .then(data => {
             const items = data.data.stock_opname_details || [];
             const isAdmin = {{ auth()->user()->canViewAllData() ? 'true' : 'false' }};
-            const isApprover = {{ auth()->user()->hasPermission('warehouse.stock-opnames.approve') ? 'true' : 'false' }};
+            const canViewSystemStockPermission = {{ auth()->user()->hasPermission('warehouse.stock-opnames.view-system-stock') ? 'true' : 'false' }};
             const status = data.data.status;
             const canEdit = status === 'draft' || status === 'in-progress';
-            const canViewSystemStock = isApprover && !['draft', 'in-progress'].includes(status);
+            const canViewSystemStock = canViewSystemStockPermission && !['draft', 'in-progress'].includes(status);
 
             let itemsHtml = `
                 <div class="modal-section mt-6">

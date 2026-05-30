@@ -143,11 +143,20 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
         ]);
 
         DB::table('permissions')->insert([
-            'id' => 7,
-            'name' => 'warehouse.stock-opnames.approve',
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
+            [
+                'id' => 7,
+                'name' => 'warehouse.stock-opnames.approve',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 8,
+                'name' => 'warehouse.stock-opnames.view-system-stock',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
         DB::table('user_roles')->insert([
@@ -222,8 +231,26 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/>\s*42\s*<\/td>/', $html);
     }
 
-    public function test_approver_can_see_system_stock_after_opname_is_ready_for_approval(): void
+    public function test_approver_cannot_see_system_stock_after_opname_is_ready_for_approval_without_explicit_permission(): void
     {
+        Auth::login(User::findOrFail(10));
+
+        $html = $this->renderStockOpname('waiting for approval');
+
+        $this->assertStringNotContainsString('System Stock', $html);
+        $this->assertStringNotContainsString('Variance', $html);
+        $this->assertDoesNotMatchRegularExpression('/>\s*42\s*<\/td>/', $html);
+    }
+
+    public function test_user_with_system_stock_permission_can_see_system_stock_after_opname_is_ready_for_approval(): void
+    {
+        DB::table('role_permissions')->insert([
+            'role_id' => 5,
+            'permission_id' => 8,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         Auth::login(User::findOrFail(10));
 
         $html = $this->renderStockOpname('waiting for approval');
