@@ -1074,12 +1074,6 @@ class QuotationWizardController extends Controller
             return;
         }
 
-        if ($request->filled('marketing_id') && (int) $contract->marketing_id !== (int) $request->get('marketing_id')) {
-            throw ValidationException::withMessages([
-                'existing_contract_id' => 'Contract lama tidak sesuai dengan marketing yang dipilih.',
-            ]);
-        }
-
         if (
             $request->filled('branch_id')
             && $contract->quotation

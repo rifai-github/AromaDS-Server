@@ -57,16 +57,16 @@ class QuotationWizardRenewalContractSelectionTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_renewal_contract_must_match_selected_marketing(): void
+    public function test_renewal_contract_can_use_different_selected_marketing(): void
     {
-        $this->expectException(ValidationException::class);
-
         $this->invokeSelectionValidation(new Request([
             'quotation_type' => 'renewal',
             'existing_contract_id' => 20,
             'marketing_id' => 8,
             'branch_id' => 1,
         ]));
+
+        $this->assertTrue(true);
     }
 
     public function test_renewal_contract_must_match_selected_branch(): void
