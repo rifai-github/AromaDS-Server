@@ -4679,7 +4679,9 @@ class JobScheduleController extends Controller
             $materialReturn->markAsReturned(Auth::id());
 
             // Update warehouse stock (increase stock)
-            $warehouse = $materialReturn->warehouse;
+            $warehouse = $materialReturn->warehouse
+                ? app(\App\Services\Warehouse\WarehousePlacementService::class)->resolveForMaterialReturn($materialReturn, $materialReturn->warehouse)
+                : null;
             if ($warehouse) {
                 foreach ($materialReturn->items as $item) {
                     $product = $item->product;

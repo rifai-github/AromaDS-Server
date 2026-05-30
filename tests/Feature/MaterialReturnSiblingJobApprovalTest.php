@@ -50,6 +50,9 @@ class MaterialReturnSiblingJobApprovalTest extends TestCase
         Schema::create('warehouses', function (Blueprint $table) {
             $table->id();
             $table->string('name')->nullable();
+            $table->foreignId('branch_id')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->boolean('is_center')->default(false);
             $table->timestamps();
             $table->softDeletes();
         });
@@ -99,6 +102,36 @@ class MaterialReturnSiblingJobApprovalTest extends TestCase
             $table->string('return_reason')->nullable();
             $table->timestamps();
             $table->softDeletes();
+        });
+
+        Schema::create('warehouse_products', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('warehouse_id')->nullable();
+            $table->foreignId('master_product_id')->nullable();
+            $table->decimal('quantity', 10, 2)->default(0);
+            $table->decimal('minimum_stock', 10, 2)->default(0);
+            $table->decimal('maximum_stock', 10, 2)->default(0);
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('inventory_movements', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('warehouse_id')->nullable();
+            $table->foreignId('master_product_id')->nullable();
+            $table->string('movement_type')->nullable();
+            $table->decimal('quantity', 10, 2)->default(0);
+            $table->date('movement_date')->nullable();
+            $table->string('reference_no')->nullable();
+            $table->string('reference_type')->nullable();
+            $table->foreignId('reference_id')->nullable();
+            $table->string('movement_no')->nullable();
+            $table->text('notes')->nullable();
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
         });
     }
 
@@ -177,6 +210,80 @@ class MaterialReturnSiblingJobApprovalTest extends TestCase
             'status' => MaterialReturn::STATUS_APPROVED,
             'approved_by' => $user->id,
             'approval_notes' => 'Approved from sibling job detail',
+        ]);
+    }
+
+    public function test_damaged_material_return_completion_places_stock_in_damaged_warehouse(): void
+    {
+        DB::table('users')->insert([
+            'id' => 1,
+            'name' => 'Warehouse Admin',
+            'email' => 'warehouse@example.test',
+            'password' => 'password',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        Auth::login(User::findOrFail(1));
+
+        DB::table('job_schedules')->insert([
+            'id' => 10,
+            'job_number' => 'JKT-CSR/26-05/0010',
+            'job_advice_id' => 77,
+            'building_id' => 174,
+            'type' => 'service',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('warehouses')->insert([
+            ['id' => 1, 'name' => 'Warehouse Jakarta', 'branch_id' => 1, 'is_active' => true, 'is_center' => true, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 2, 'name' => 'Warehouse Jakarta Bekas', 'branch_id' => 1, 'is_active' => true, 'is_center' => false, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 3, 'name' => 'Warehouse Jakarta Rusak', 'branch_id' => 1, 'is_active' => true, 'is_center' => false, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('master_products')->insert([
+            'id' => 1,
+            'name' => 'Diffuser Premium XL Unit',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $materialReturn = MaterialReturn::create([
+            'return_number' => 'JKT-RTR/26-05/0010',
+            'job_schedule_id' => 10,
+            'warehouse_id' => 1,
+            'status' => MaterialReturn::STATUS_APPROVED,
+            'return_date' => now()->toDateString(),
+            'return_reason' => 'damaged',
+        ]);
+
+        DB::table('material_return_items')->insert([
+            'material_return_id' => $materialReturn->id,
+            'product_id' => 1,
+            'quantity' => 1,
+            'return_reason' => 'damaged',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = (new JobScheduleController())->completeMaterialReturn(
+            Request::create('/operational/job-schedules/10/material-returns/'.$materialReturn->id.'/complete', 'POST'),
+            JobSchedule::findOrFail(10),
+            $materialReturn->id
+        );
+
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $payload['status']);
+        $this->assertDatabaseHas('material_returns', [
+            'id' => $materialReturn->id,
+            'status' => MaterialReturn::STATUS_RETURNED,
+        ]);
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 3,
+            'master_product_id' => 1,
+            'quantity' => 1,
         ]);
     }
 }

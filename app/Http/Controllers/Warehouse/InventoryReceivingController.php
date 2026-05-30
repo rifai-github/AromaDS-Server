@@ -9,6 +9,7 @@ use App\Models\InventoryReceiving;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Warehouse\WarehousePlacementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -60,6 +61,8 @@ class InventoryReceivingController extends Controller
 
     private function resolveReceivingTargetWarehouse(InventoryReceiving $inventoryReceiving): ?Warehouse
     {
+        $placementService = app(WarehousePlacementService::class);
+
         $issuingWarehouseId = $inventoryReceiving->issuing?->warehouse_id;
         if ($issuingWarehouseId) {
             $warehouse = Warehouse::where('id', $issuingWarehouseId)
@@ -67,7 +70,7 @@ class InventoryReceivingController extends Controller
                 ->first();
 
             if ($warehouse) {
-                return $warehouse;
+                return $placementService->resolveForReceiving($inventoryReceiving, $warehouse);
             }
         }
 
@@ -85,7 +88,7 @@ class InventoryReceivingController extends Controller
                 ->first();
 
             if ($warehouse) {
-                return $warehouse;
+                return $placementService->resolveForReceiving($inventoryReceiving, $warehouse);
             }
         }
 
@@ -108,7 +111,7 @@ class InventoryReceivingController extends Controller
                 ->first();
 
             if ($warehouse) {
-                return $warehouse;
+                return $placementService->resolveForReceiving($inventoryReceiving, $warehouse);
             }
         }
 
@@ -127,7 +130,11 @@ class InventoryReceivingController extends Controller
             ]);
         }
 
-        return $branchWarehouses->first();
+        $fallbackWarehouse = $branchWarehouses->first();
+
+        return $fallbackWarehouse
+            ? $placementService->resolveForReceiving($inventoryReceiving, $fallbackWarehouse)
+            : null;
     }
 
     private function validateNoDuplicateReceivingProducts(array $items): void

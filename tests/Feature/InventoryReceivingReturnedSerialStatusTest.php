@@ -131,6 +131,34 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('job_schedules', function (Blueprint $table) {
+            $table->id();
+            $table->string('job_number')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('material_returns', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_id')->nullable();
+            $table->foreignId('warehouse_id')->nullable();
+            $table->string('status')->nullable();
+            $table->string('return_reason')->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('material_return_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('material_return_id')->nullable();
+            $table->foreignId('product_id')->nullable();
+            $table->string('return_reason')->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('serial_numbers', function (Blueprint $table) {
             $table->id();
             $table->string('serial_number')->nullable();
@@ -239,6 +267,9 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
             'warehouse_products',
             'unit_on_walls',
             'serial_numbers',
+            'material_return_items',
+            'material_returns',
+            'job_schedules',
             'inventory_receiving_items',
             'inventory_request_items',
             'inventory_requests',
@@ -300,12 +331,73 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         ]);
     }
 
-    private function seedReceivingWithSerial(string $status): InventoryReceiving
+    public function test_finalize_new_receiving_places_stock_in_new_warehouse_when_available(): void
+    {
+        $this->seedJakartaConditionWarehouses();
+        $receiving = $this->seedReceivingWithSerial(status: 'pending');
+
+        app(InventoryReceivingController::class)->finalize($receiving);
+
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 6,
+            'master_product_id' => 100,
+            'quantity' => 1,
+        ]);
+        $this->assertDatabaseHas('serial_numbers', [
+            'id' => 200,
+            'warehouse_id' => 6,
+            'location_id' => 6,
+            'status' => 'ready',
+        ]);
+    }
+
+    public function test_finalize_return_receiving_places_normal_return_in_used_warehouse(): void
+    {
+        $this->seedJakartaConditionWarehouses();
+        $receiving = $this->seedReceivingWithSerial(status: 'pending', referenceNo: 'JKT-CSR/26-05/0001');
+        $this->seedMaterialReturn('JKT-CSR/26-05/0001', 'returned');
+
+        app(InventoryReceivingController::class)->finalize($receiving);
+
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 7,
+            'master_product_id' => 100,
+            'quantity' => 1,
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'warehouse_id' => 7,
+            'master_product_id' => 100,
+            'reference_no' => 'BDG-IRC/26-05/0015',
+        ]);
+    }
+
+    public function test_finalize_return_receiving_places_damaged_return_in_damaged_warehouse(): void
+    {
+        $this->seedJakartaConditionWarehouses();
+        $receiving = $this->seedReceivingWithSerial(status: 'pending', referenceNo: 'JKT-CSR/26-05/0002');
+        $this->seedMaterialReturn('JKT-CSR/26-05/0002', 'damaged');
+
+        app(InventoryReceivingController::class)->finalize($receiving);
+
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 8,
+            'master_product_id' => 100,
+            'quantity' => 1,
+        ]);
+        $this->assertDatabaseHas('serial_numbers', [
+            'id' => 200,
+            'warehouse_id' => 8,
+            'location_id' => 8,
+            'status' => 'ready',
+        ]);
+    }
+
+    private function seedReceivingWithSerial(string $status, string $referenceNo = 'BDG-CSR/26-05/0011'): InventoryReceiving
     {
         DB::table('inventory_receivings')->insert([
             'id' => 50,
             'receiving_number' => 'BDG-IRC/26-05/0015',
-            'reference_no' => 'BDG-CSR/26-05/0011',
+            'reference_no' => $referenceNo,
             'branch_id' => 1,
             'received_from' => 1,
             'received_by_old' => 1,
@@ -346,5 +438,69 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         ]);
 
         return InventoryReceiving::findOrFail(50);
+    }
+
+    private function seedJakartaConditionWarehouses(): void
+    {
+        DB::table('warehouses')->insert([
+            [
+                'id' => 6,
+                'branch_id' => 1,
+                'name' => 'Warehouse Jakarta Baru',
+                'is_active' => true,
+                'is_center' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 7,
+                'branch_id' => 1,
+                'name' => 'Warehouse Jakarta Bekas',
+                'is_active' => true,
+                'is_center' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 8,
+                'branch_id' => 1,
+                'name' => 'Warehouse Jakarta Rusak',
+                'is_active' => true,
+                'is_center' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+    }
+
+    private function seedMaterialReturn(string $jobNumber, string $returnReason): void
+    {
+        DB::table('job_schedules')->insert([
+            'id' => 90,
+            'job_number' => $jobNumber,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('material_returns')->insert([
+            'id' => 91,
+            'job_schedule_id' => 90,
+            'warehouse_id' => 5,
+            'status' => 'approved',
+            'return_reason' => $returnReason,
+            'notes' => $returnReason,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('material_return_items')->insert([
+            'id' => 92,
+            'material_return_id' => 91,
+            'product_id' => 100,
+            'return_reason' => $returnReason,
+            'notes' => $returnReason,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 }
