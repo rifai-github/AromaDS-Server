@@ -23,6 +23,15 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('$contract->contractRentals', $controller);
     }
 
+    public function test_eligible_contracts_use_same_renewal_block_rule_as_contract_detail_endpoint(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/Marketing/ContractRenewalController.php'));
+
+        $this->assertStringContainsString('$blockReason = $contract->getRenewalBlockReason();', $controller);
+        $this->assertStringContainsString('Contract::query()', $controller);
+        $this->assertStringNotContainsString("Contract::where('contract_status', 'active')", $controller);
+    }
+
     public function test_wizard_preserves_existing_renewal_room_metadata_until_submit(): void
     {
         $view = file_get_contents(resource_path('views/marketing/quotations/wizard/create.blade.php'));

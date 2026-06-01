@@ -285,7 +285,7 @@ class ContractRenewalController extends Controller
     public function getEligibleContracts(Request $request)
     {
         try {
-            $query = Contract::where('contract_status', 'active')
+            $query = Contract::query()
                 ->orderBy('end_date', 'asc') // Sort by expiry date (soonest first)
                 ->with(['customer', 'contractRooms.room', 'contractRooms.billingGroup']);
 
