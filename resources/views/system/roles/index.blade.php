@@ -894,6 +894,11 @@
                         </td>
                         <td class="text-center">
                             <div class="flex items-center justify-center ActionColumn">
+                                <!-- Edit Button -->
+                                <a href="{{ route('system.roles.edit', $role->id) }}" class="p-2 text-[#214589] hover:text-[#1e3a8a] transition-colors" title="Edit Role" style="color: #214589;" onclick="event.stopPropagation()">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+
                                 <!-- Duplicate Button -->
                                 <form action="{{ route('system.roles.duplicate', $role->id) }}" method="POST" class="inline-block" onclick="event.stopPropagation()" onsubmit="return submitDuplicateRole(event, this)">
                                     @csrf
