@@ -127,6 +127,45 @@ class MobileJobListRoomAssignmentTest extends TestCase
         $this->assertContains('BDG-CSR/26-06/0003', collect($payload['data'])->pluck('job_number')->all());
     }
 
+    public function test_mobile_job_list_includes_remove_job_with_assign_team_status(): void
+    {
+        DB::table('job_schedules')->insert([
+            'id' => 41,
+            'job_number' => 'JKT-RV/26-05/0001',
+            'job_advice_id' => 30,
+            'type' => 'remove',
+            'status' => 'assign_team',
+            'room_name' => 'Ruang Wijaya',
+            'schedule_date' => '2026-05-26',
+            'material_checked' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 61,
+            'job_schedule_id' => 41,
+            'team_id' => 10,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/api/v1/mobile/jobs/today', 'GET');
+        $request->setUserResolver(fn () => User::find(1));
+        Cache::flush();
+
+        $response = app(JobController::class)->getTodayJobs($request);
+        $payload = $response->getData(true);
+        $job = collect($payload['data'])->firstWhere('job_number', 'JKT-RV/26-05/0001');
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertNotNull($job);
+        $this->assertSame('remove', $job['type']);
+        $this->assertSame('assign_team', $job['status']);
+        $this->assertTrue($job['material_checked']);
+    }
+
     private function createSchema(): void
     {
         Schema::create('users', function (Blueprint $table) {
