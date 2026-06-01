@@ -1526,6 +1526,10 @@ function updateOpnameDetailNotes(detailId, notes) {
     .then(response => response.json());
 }
 
+function stockOpnameActionUrl(template, id) {
+    return template.replace('__ID__', id);
+}
+
 function submitForApproval(id) {
     confirmStockOpnameAction(
         'Ajukan untuk Persetujuan?',
@@ -1535,7 +1539,7 @@ function submitForApproval(id) {
     ).then((confirmed) => {
         if (!confirmed) return;
 
-        fetch(`/warehouse/stock-opnames/${id}/submit`, {
+        fetch(stockOpnameActionUrl(@json(route('warehouse.stock-opnames.submit', ['stockOpname' => '__ID__'])), id), {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
@@ -1563,7 +1567,7 @@ function postOpname(id) {
     ).then((confirmed) => {
         if (!confirmed) return;
 
-        fetch(`/warehouse/stock-opnames/${id}/approve`, {
+        fetch(stockOpnameActionUrl(@json(route('warehouse.stock-opnames.approve', ['stockOpname' => '__ID__'])), id), {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
@@ -1591,7 +1595,7 @@ function unpostOpname(id) {
     ).then((confirmed) => {
         if (!confirmed) return;
 
-        fetch(`/warehouse/stock-opnames/${id}/unpost`, {
+        fetch(stockOpnameActionUrl(@json(route('warehouse.stock-opnames.unpost', ['stockOpname' => '__ID__'])), id), {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
@@ -1619,7 +1623,7 @@ function approveOpname(id) {
     ).then((confirmed) => {
         if (!confirmed) return;
 
-        fetch(`/warehouse/stock-opnames/${id}/approve`, {
+        fetch(stockOpnameActionUrl(@json(route('warehouse.stock-opnames.approve', ['stockOpname' => '__ID__'])), id), {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
@@ -1647,7 +1651,7 @@ function createStockAdjustment(id) {
     ).then((confirmed) => {
         if (!confirmed) return;
 
-        fetch(`/warehouse/stock-opnames/${id}/create-adjustment`, {
+        fetch(stockOpnameActionUrl(@json(route('warehouse.stock-opnames.create-adjustment', ['stockOpname' => '__ID__'])), id), {
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),

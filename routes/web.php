@@ -1170,7 +1170,6 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::put('master-rentals/{masterRental}/prices/{price}', [MasterRentalController::class, 'pricesUpdate'])->name('master-rentals.prices.update')->middleware('permission:warehouse.master-rentals.update');
         Route::delete('master-rentals/{masterRental}/prices/{price}', [MasterRentalController::class, 'pricesDestroy'])->name('master-rentals.prices.destroy')->middleware('permission:warehouse.master-rentals.delete');
         Route::resource('stocks', StockOpnameController::class)->middleware('permission:warehouse.stock-opnames.view');
-        Route::resource('stock-opnames', StockOpnameController::class)->middleware('permission:warehouse.stock-opnames.view');
         Route::post('stock-opnames/bulk-delete', [StockOpnameController::class, 'bulkDelete'])->name('stock-opnames.bulk-delete')->middleware('permission:warehouse.stock-opnames.delete');
         Route::post('stock-opnames/{stockOpname}/start', [StockOpnameController::class, 'start'])->name('stock-opnames.start')->middleware('permission:warehouse.stock-opnames.update');
         Route::post('stock-opnames/{stockOpname}/complete', [StockOpnameController::class, 'complete'])->name('stock-opnames.complete')->middleware('permission:warehouse.stock-opnames.update');
@@ -1182,6 +1181,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('stock-opnames/{stockOpname}/create-adjustment', [StockOpnameController::class, 'createAdjustment'])->name('stock-opnames.create-adjustment')->middleware('permission:warehouse.stock-opnames.update');
         Route::post('stock-opnames/details/{detail}/update', [StockOpnameController::class, 'updateDetail'])->name('stock-opnames.details.update')->middleware('permission:warehouse.stock-opnames.update');
         Route::get('stock-opnames/dashboard', [StockOpnameController::class, 'dashboard'])->name('stock-opnames.dashboard')->middleware('permission:warehouse.stock-opnames.view');
+        Route::resource('stock-opnames', StockOpnameController::class)->middleware('permission:warehouse.stock-opnames.view');
         Route::resource('stock-adjustments', StockAdjustmentController::class)->middleware('permission:warehouse.stock-adjustments.view');
         Route::post('stock-adjustments/bulk-delete', [StockAdjustmentController::class, 'bulkDelete'])->name('stock-adjustments.bulk-delete')->middleware('permission:warehouse.stock-adjustments.delete');
         Route::post('stock-adjustments/{stock_adjustment}/add-item', [StockAdjustmentController::class, 'addItem'])->name('stock-adjustments.add-item')->middleware('permission:warehouse.stock-adjustments.update');
