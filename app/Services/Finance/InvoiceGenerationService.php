@@ -141,8 +141,8 @@ class InvoiceGenerationService
      */
     private function checkInvoiceTriggerJobsCompletedInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd): bool
     {
-        $totalJobs = $this->getInvoiceTriggerJobsQuery($contract, $periodStart, $periodEnd)->count();
-        $completedJobs = $this->getCompletedInvoiceTriggerJobsQuery($contract, $periodStart, $periodEnd)->count();
+        $totalJobs = $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
+        $completedJobs = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
 
         return $totalJobs > 0 && $totalJobs === $completedJobs;
     }
@@ -152,7 +152,7 @@ class InvoiceGenerationService
      */
     private function getCompletedJobsCount(Contract $contract, Carbon $periodStart, Carbon $periodEnd): int
     {
-        return $this->getCompletedInvoiceTriggerJobsQuery($contract, $periodStart, $periodEnd)->count();
+        return $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
     }
 
     /**
@@ -160,7 +160,7 @@ class InvoiceGenerationService
      */
     private function getTotalJobsCount(Contract $contract, Carbon $periodStart, Carbon $periodEnd): int
     {
-        return $this->getInvoiceTriggerJobsQuery($contract, $periodStart, $periodEnd)->count();
+        return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
     }
 
     /**
@@ -168,7 +168,7 @@ class InvoiceGenerationService
      */
     private function checkAllJobsHaveVerifiedBaFiles(Contract $contract, Carbon $periodStart, Carbon $periodEnd): bool
     {
-        $completedJobs = $this->getCompletedInvoiceTriggerJobsQuery($contract, $periodStart, $periodEnd)->get();
+        $completedJobs = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
 
         foreach ($completedJobs as $job) {
             // Check if job has at least one verified BA file
@@ -226,29 +226,125 @@ class InvoiceGenerationService
         };
     }
 
-    private function getInvoiceTriggerJobsQuery(Contract $contract, Carbon $periodStart, Carbon $periodEnd)
+    private function getCandidateInvoiceJobsQuery(Contract $contract, Carbon $periodStart, Carbon $periodEnd)
     {
-        $query = JobSchedule::whereHas('jobAdvice', function ($query) use ($contract) {
+        return JobSchedule::with([
+                'jobAdvice.rooms.rentalProduct',
+                'jobAdvice.rooms.contractRoom.room',
+                'jobAdvice.contract.contractRentals.masterRental',
+                'jobAdvice.contract.contractRooms.room',
+            ])
+            ->whereHas('jobAdvice', function ($query) use ($contract) {
                 $query->where('contract_id', $contract->id);
             })
             ->whereBetween('schedule_date', [$periodStart, $periodEnd])
             ->whereNotIn('status', self::NON_BILLABLE_JOB_STATUSES)
             ->whereRaw("LOWER(COALESCE(type, '')) NOT IN (?, ?, ?, ?)", self::NON_BILLABLE_JOB_TYPES);
-
-        $triggerTypes = $this->getInvoiceTriggerJobTypes($contract);
-        if ($triggerTypes !== null) {
-            $placeholders = implode(',', array_fill(0, count($triggerTypes), '?'));
-            $query->whereRaw("LOWER(COALESCE(type, '')) IN ({$placeholders})", $triggerTypes);
-        }
-
-        return $query;
     }
 
-    private function getCompletedInvoiceTriggerJobsQuery(Contract $contract, Carbon $periodStart, Carbon $periodEnd)
+    private function getInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd): \Illuminate\Support\Collection
     {
-        return $this->getInvoiceTriggerJobsQuery($contract, $periodStart, $periodEnd)
-            ->whereIn('status', self::BILLABLE_COMPLETED_STATUSES)
-            ->whereNotNull('ba_date');
+        return $this->getCandidateInvoiceJobsQuery($contract, $periodStart, $periodEnd)
+            ->get()
+            ->filter(fn (JobSchedule $jobSchedule) => $this->jobMatchesRentalInvoiceTrigger($contract, $jobSchedule))
+            ->values();
+    }
+
+    private function getCompletedInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd): \Illuminate\Support\Collection
+    {
+        return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)
+            ->filter(function (JobSchedule $jobSchedule) {
+                return in_array($jobSchedule->status, self::BILLABLE_COMPLETED_STATUSES, true)
+                    && !empty($jobSchedule->ba_date);
+            })
+            ->values();
+    }
+
+    private function jobMatchesRentalInvoiceTrigger(Contract $contract, JobSchedule $jobSchedule): bool
+    {
+        $jobType = $this->normalizeJobType($jobSchedule->type);
+        $rentalTypes = $this->getRentalTypesForJob($contract, $jobSchedule);
+
+        if ($rentalTypes->isEmpty()) {
+            $legacyTriggerTypes = $this->getInvoiceTriggerJobTypes($contract);
+            return $legacyTriggerTypes === null || in_array($jobType, $legacyTriggerTypes, true);
+        }
+
+        return $rentalTypes->contains(fn (string $rentalType) => $this->jobTypeCanInvoiceRentalType($jobType, $rentalType, $contract));
+    }
+
+    private function getRentalTypesForJob(Contract $contract, JobSchedule $jobSchedule): \Illuminate\Support\Collection
+    {
+        $jobAdviceRooms = $jobSchedule->jobAdvice?->rooms ?? collect();
+
+        $matchedJobAdviceRooms = $jobAdviceRooms->filter(function ($jobAdviceRoom) use ($jobSchedule) {
+            $jobScheduleId = (int) $jobSchedule->id;
+
+            return in_array($jobScheduleId, [
+                (int) $jobAdviceRoom->install_job_schedule_id,
+                (int) $jobAdviceRoom->service_job_schedule_id,
+                (int) $jobAdviceRoom->remove_job_schedule_id,
+            ], true);
+        });
+
+        $rentalTypes = $matchedJobAdviceRooms
+            ->map(fn ($jobAdviceRoom) => $this->normalizeRentalType($jobAdviceRoom->rentalProduct ?? $jobAdviceRoom->contractRoom?->rental_product))
+            ->filter();
+
+        if ($rentalTypes->isNotEmpty()) {
+            return $rentalTypes->unique()->values();
+        }
+
+        if ($jobSchedule->room_id) {
+            return $contract->contractRooms
+                ->where('room_id', $jobSchedule->room_id)
+                ->map(fn ($contractRoom) => $this->normalizeRentalType($contractRoom->rental_product))
+                ->filter()
+                ->unique()
+                ->values();
+        }
+
+        return $contract->contractRentals
+            ->map(fn ($contractRental) => $this->normalizeRentalType($contractRental->masterRental))
+            ->filter()
+            ->unique()
+            ->values();
+    }
+
+    private function jobTypeCanInvoiceRentalType(string $jobType, string $rentalType, Contract $contract): bool
+    {
+        $installTypes = ['install', 'installation', 'installation_report', 'ir'];
+        $serviceTypes = ['service', 'service_first', 'service_routine', 'servis', 'csr', 'customer_service_report', 'customer service report'];
+
+        if ($rentalType === 'unit_only') {
+            return in_array($jobType, $installTypes, true);
+        }
+
+        if (in_array($rentalType, ['unit_refill', 'refill_only'], true)) {
+            return in_array($jobType, $serviceTypes, true);
+        }
+
+        $legacyTriggerTypes = $this->getInvoiceTriggerJobTypes($contract);
+
+        return $legacyTriggerTypes === null || in_array($jobType, $legacyTriggerTypes, true);
+    }
+
+    private function normalizeJobType(?string $type): string
+    {
+        return strtolower(trim(str_replace('-', '_', (string) $type)));
+    }
+
+    private function normalizeRentalType($rental): string
+    {
+        if (!$rental) {
+            return '';
+        }
+
+        if (is_string($rental)) {
+            return strtolower(trim(str_replace('-', '_', $rental)));
+        }
+
+        return strtolower(trim(str_replace('-', '_', (string) ($rental->rental_type ?? ''))));
     }
 
     /**
@@ -294,9 +390,11 @@ class InvoiceGenerationService
 
 
         // Pull ba_date from the job that triggers invoice generation for this contract timing.
-        $firstJob = $this->getCompletedInvoiceTriggerJobsQuery($contract, $periodStart, $periodEnd)
-            ->orderBy('schedule_date', 'asc')
-            ->orderBy('id', 'asc')
+        $firstJob = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)
+            ->sortBy([
+                ['schedule_date', 'asc'],
+                ['id', 'asc'],
+            ])
             ->first();
 
         // Determine Invoice Date
@@ -363,9 +461,7 @@ class InvoiceGenerationService
      */
     private function createInvoiceDetailsFromJobs(Invoice $invoice, Contract $contract, Carbon $periodStart, Carbon $periodEnd): \Illuminate\Database\Eloquent\Collection
     {
-        $completedJobs = $this->getCompletedInvoiceTriggerJobsQuery($contract, $periodStart, $periodEnd)
-            ->with(['jobAdvice.contract.contractRentals'])
-            ->get();
+        $completedJobs = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
 
         // Track what we have already billed for this period to avoid duplicates (e.g. IR & CSR in same month)
         $billedRentals = [];
@@ -456,6 +552,22 @@ class InvoiceGenerationService
             $masterRental = $contractRoom->rental_product;
             
             if ($masterRental) {
+                if (!$this->jobTypeCanInvoiceRentalType(
+                    $this->normalizeJobType($jobSchedule->type),
+                    $this->normalizeRentalType($masterRental),
+                    $contract
+                )) {
+                    Log::debug("Skipping rental detail because job type is not the invoice trigger for this rental type", [
+                        'job_no' => $jobSchedule->job_number,
+                        'job_type' => $jobSchedule->type,
+                        'contract_room_id' => $contractRoom->id,
+                        'room_id' => $contractRoom->room_id,
+                        'rental' => $masterRental->rental_name ?? null,
+                        'rental_type' => $masterRental->rental_type ?? null,
+                    ]);
+                    continue;
+                }
+
                 // Get pricing from ContractRental (match by rental and room, or null room)
                 $contractRental = $contract->contractRentals()
                     ->where('master_rental_id', $masterRental->id)
