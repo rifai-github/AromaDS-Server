@@ -1961,6 +1961,17 @@ $(document).ready(function() {
     
 
     // ===== BRANCH SELECTION HANDLER =====
+    function getCurrentBranchId() {
+        return $('#branch_id_hidden').val() || $('#branch_id').val() || '';
+    }
+
+    function reloadEligibleContractsIfRenewal() {
+        if ($('#quotation_type').val() === 'renewal' && $('#contract-field').hasClass('show')) {
+            $('#existing_contract_id').val('');
+            loadEligibleContracts();
+        }
+    }
+
     function loadUserBranches(userId, preselectedBranchId = null) {
         const branchSelect = $('#branch_id');
         const branchContainer = $('#branch-field-container');
@@ -1970,11 +1981,13 @@ $(document).ready(function() {
         
         if (!userId) {
             branchSelect.html('<option value="">Pilih marketing terlebih dahulu...</option>').show();
+            hiddenInput.val('').removeAttr('name');
             readonlyDisplay.hide();
             return;
         }
         
         branchSelect.html('<option value="">Memuat cabang...</option>');
+        hiddenInput.val('').removeAttr('name');
         // Ensure dropdown is visible during loading (in case it was hidden by is_single logic)
         branchSelect.show();
         readonlyDisplay.hide();
@@ -2022,6 +2035,7 @@ $(document).ready(function() {
                     }
                     
                     updateNextButtonState();
+                    reloadEligibleContractsIfRenewal();
                 } else {
                     branchSelect.html('<option value="">Error: ' + (response.message || 'Gagal memuat cabang') + '</option>');
                 }
@@ -2037,11 +2051,6 @@ $(document).ready(function() {
     $('#marketing_id').change(function() {
         const userId = $(this).val();
         loadUserBranches(userId);
-        
-        // If renewal type is selected, reload contracts for new marketing user
-        if ($('#quotation_type').val() === 'renewal' && $('#contract-field').hasClass('show')) {
-            loadEligibleContracts();
-        }
     });
 
     $('#branch_id, #branch_id_hidden').on('change', function() {
@@ -2273,7 +2282,7 @@ $(document).ready(function() {
         
         const step1Data = {
             marketing_id: $('#marketing_id').val(),
-            branch_id: $('#branch_id').val() || $('#branch_id_hidden').val(),
+            branch_id: getCurrentBranchId(),
             quotation_date: $('#quotation_date').val(),
             quotation_type: $('#quotation_type').val(),
             existing_contract_id: $('#existing_contract_id').val(),
@@ -2338,7 +2347,7 @@ $(document).ready(function() {
                 // Verify values were set
                 console.log('Verification after restore:');
                 console.log('  marketing_id:', $('#marketing_id').val());
-                console.log('  branch_id:', $('#branch_id').val() || $('#branch_id_hidden').val());
+                console.log('  branch_id:', getCurrentBranchId());
                 console.log('  quotation_date:', $('#quotation_date').val());
                 console.log('  quotation_type:', $('#quotation_type').val());
                 console.log('  rental_period:', $('#rental_period').val());
@@ -5233,7 +5242,7 @@ $(document).ready(function() {
         // Prepare data object
         const requestData = {
             marketing_id: $('#marketing_id').val(),
-            branch_id: $('#branch_id').val() || $('#branch_id_hidden').val()
+            branch_id: getCurrentBranchId()
         };
         if (includeId) {
             requestData.include_id = includeId;
