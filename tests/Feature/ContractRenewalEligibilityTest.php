@@ -165,6 +165,23 @@ class ContractRenewalEligibilityTest extends TestCase
         $this->assertGreaterThan($eligibility['renewal_window_days'], $eligibility['days_until_expiry']);
     }
 
+    public function test_contract_with_done_initial_jobs_can_be_renewed_when_future_service_jobs_exist(): void
+    {
+        $contract = $this->createContract('BDG-CA/26-05/0001', [
+            'start_date' => '2026-05-01',
+            'end_date' => '2027-05-01',
+        ]);
+        $this->createJob($contract, 'BDG-IR/26-05/0001', 'install', 'done_job', '2026-05-03');
+        $this->createJob($contract, 'BDG-CSR/26-05/0001', 'service_first', 'done_job', '2026-05-03');
+        $this->createJob($contract, 'BDG-CSR/26-08/0001', 'service', 'assign_material', null, '2026-08-03');
+        $this->createJob($contract, 'BDG-CSR/26-09/0001', 'service', 'new_job', null, '2026-09-03');
+
+        $eligibility = ContractRenewal::isEligibleForRenewal($contract->id);
+
+        $this->assertTrue($contract->fresh()->canBeRenewedSafely());
+        $this->assertTrue($eligibility['eligible']);
+    }
+
     public function test_dropdown_includes_eligible_contract_with_past_original_end_date_and_different_marketing(): void
     {
         DB::table('customers')->insert([
@@ -204,7 +221,7 @@ class ContractRenewalEligibilityTest extends TestCase
         ], $overrides));
     }
 
-    private function createJob(Contract $contract, string $jobNumber, string $type, string $status, ?string $baDate = null): void
+    private function createJob(Contract $contract, string $jobNumber, string $type, string $status, ?string $baDate = null, ?string $scheduleDate = null): void
     {
         $jobAdviceId = DB::table('job_advices')->insertGetId([
             'contract_id' => $contract->id,
@@ -218,7 +235,7 @@ class ContractRenewalEligibilityTest extends TestCase
             'contract_number' => $contract->contract_number,
             'type' => $type,
             'status' => $status,
-            'schedule_date' => $baDate,
+            'schedule_date' => $scheduleDate ?? $baDate,
             'ba_date' => $baDate,
             'created_at' => now(),
             'updated_at' => now(),
