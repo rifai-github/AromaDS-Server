@@ -183,24 +183,17 @@ class RepairInvoiceRentalJobTriggers extends Command
             ];
         }
 
-        $targetJob = $this->findTargetJob($invoice, $detail, $currentJob, $expectedSlot);
+        [$targetJob, $incompleteTargetJob] = $this->findTargetJob($invoice, $detail, $currentJob, $expectedSlot);
 
         if (! $targetJob) {
             return [
                 'action' => 'skip',
-                'reason' => 'matching target job was not found',
+                'reason' => $incompleteTargetJob
+                    ? 'matching target job exists but is not completed with BA date'
+                    : 'matching target job was not found',
                 'rental_type' => $rentalType,
                 'current_job_no' => $currentJob->job_number,
-            ];
-        }
-
-        if (! in_array((string) $targetJob->status, self::COMPLETED_STATUSES, true) || empty($targetJob->ba_date)) {
-            return [
-                'action' => 'skip',
-                'reason' => 'target job is not completed with BA date',
-                'rental_type' => $rentalType,
-                'current_job_no' => $currentJob->job_number,
-                'target_job_no' => $targetJob->job_number,
+                'target_job_no' => $incompleteTargetJob?->job_number,
             ];
         }
 
@@ -216,17 +209,35 @@ class RepairInvoiceRentalJobTriggers extends Command
         ];
     }
 
-    private function findTargetJob(Invoice $invoice, InvoiceRentalDetail $detail, JobSchedule $currentJob, string $expectedSlot): ?JobSchedule
+    private function findTargetJob(Invoice $invoice, InvoiceRentalDetail $detail, JobSchedule $currentJob, string $expectedSlot): array
     {
-        $linkedJob = $this->findTargetJobFromAdviceRooms($detail, $currentJob, $expectedSlot);
+        $candidates = $this->findTargetJobsFromAdviceRooms($detail, $currentJob, $expectedSlot);
 
-        if ($linkedJob) {
-            return $linkedJob;
+        $fallbackCandidates = $this->findFallbackTargetJobs($invoice, $currentJob, $expectedSlot);
+        if ($fallbackCandidates->isNotEmpty()) {
+            $candidates = $candidates
+                ->merge($fallbackCandidates)
+                ->unique('id')
+                ->values();
         }
 
+        $candidates = $candidates
+            ->filter(fn (JobSchedule $jobSchedule) => $this->jobSlot($jobSchedule) === $expectedSlot)
+            ->sortBy([
+                ['schedule_date', 'asc'],
+                ['id', 'asc'],
+            ])
+            ->values();
+
+        $completedTarget = $candidates->first(fn (JobSchedule $jobSchedule) => $this->isCompletedWithBa($jobSchedule));
+
+        return [$completedTarget, $candidates->first()];
+    }
+
+    private function findFallbackTargetJobs(Invoice $invoice, JobSchedule $currentJob, string $expectedSlot): Collection
+    {
         $query = JobSchedule::query()
-            ->where('contract_number', $invoice->contract_number)
-            ->where('job_advice_id', $currentJob->job_advice_id);
+            ->where('contract_number', $invoice->contract_number);
 
         if ($currentJob->room_id) {
             $query->where('room_id', $currentJob->room_id);
@@ -240,18 +251,19 @@ class RepairInvoiceRentalJobTriggers extends Command
             ->whereIn(DB::raw("LOWER(COALESCE(type, ''))"), $types)
             ->orderBy('schedule_date')
             ->orderBy('id')
-            ->first();
+            ->get();
     }
 
-    private function findTargetJobFromAdviceRooms(InvoiceRentalDetail $detail, JobSchedule $currentJob, string $expectedSlot): ?JobSchedule
+    private function findTargetJobsFromAdviceRooms(InvoiceRentalDetail $detail, JobSchedule $currentJob, string $expectedSlot): Collection
     {
         $rooms = $currentJob->jobAdvice?->rooms;
 
         if (! $rooms instanceof Collection || $rooms->isEmpty()) {
-            return null;
+            return collect();
         }
 
         $currentJobId = (int) $currentJob->id;
+        $jobIds = collect();
 
         foreach ($rooms as $room) {
             $isCurrentRoom = in_array($currentJobId, [
@@ -273,11 +285,22 @@ class RepairInvoiceRentalJobTriggers extends Command
                 : $room->service_job_schedule_id;
 
             if ($targetJobId) {
-                return JobSchedule::find($targetJobId);
+                $jobIds->push((int) $targetJobId);
             }
         }
 
-        return null;
+        if ($jobIds->isEmpty()) {
+            return collect();
+        }
+
+        return JobSchedule::whereIn('id', $jobIds->unique()->values()->all())->get();
+    }
+
+    private function isCompletedWithBa(JobSchedule $jobSchedule): bool
+    {
+        return in_array((string) $jobSchedule->status, self::COMPLETED_STATUSES, true)
+            && ! empty($jobSchedule->ba_date)
+            && ! empty($jobSchedule->job_number);
     }
 
     private function jobSlot(JobSchedule $jobSchedule): string
