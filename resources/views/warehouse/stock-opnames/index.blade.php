@@ -8,6 +8,10 @@
     $canDeleteStockOpname = auth()->user()->hasPermission('warehouse.stock-opnames.delete');
     $canApprove = auth()->user()->hasPermission('warehouse.stock-opnames.approve');
     $canUpdate = auth()->user()->hasPermission('warehouse.stock-opnames.update');
+    $canViewSystemStock = auth()->user()->hasPermission('warehouse.stock-opnames.view-system-stock')
+        || auth()->user()->hasRole('Admin')
+        || auth()->user()->hasRole('super_admin')
+        || auth()->user()->hasRoleStartingWith('Management');
 @endphp
 <style>
     /* Global overflow control */
@@ -1104,7 +1108,7 @@ function openViewModal(id) {
         .then(data => {
             const items = data.data.stock_opname_details || [];
             const isAdmin = {{ auth()->user()->canViewAllData() ? 'true' : 'false' }};
-            const canViewSystemStockPermission = {{ auth()->user()->hasPermission('warehouse.stock-opnames.view-system-stock') ? 'true' : 'false' }};
+            const canViewSystemStockPermission = {{ $canViewSystemStock ? 'true' : 'false' }};
             const status = data.data.status;
             const canEdit = status === 'draft' || status === 'in-progress';
             const canViewSystemStock = canViewSystemStockPermission;

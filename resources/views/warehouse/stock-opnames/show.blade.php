@@ -5,7 +5,11 @@
 @section('content')
 
 @php
-    $canViewSystemStock = auth()->user()->hasPermission('warehouse.stock-opnames.view-system-stock');
+    $user = auth()->user();
+    $canViewSystemStock = $user->hasPermission('warehouse.stock-opnames.view-system-stock')
+        || $user->hasRole('Admin')
+        || $user->hasRole('super_admin')
+        || $user->hasRoleStartingWith('Management');
 @endphp
 
 <style>

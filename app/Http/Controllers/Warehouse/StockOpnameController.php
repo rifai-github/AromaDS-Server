@@ -568,7 +568,11 @@ class StockOpnameController extends Controller
             DB::commit();
 
             $detail->load(['masterProduct', 'stockOpname']);
-            $canViewSystemStock = Auth::user()?->hasPermission('warehouse.stock-opnames.view-system-stock');
+            $user = Auth::user();
+            $canViewSystemStock = $user?->hasPermission('warehouse.stock-opnames.view-system-stock')
+                || $user?->hasRole('Admin')
+                || $user?->hasRole('super_admin')
+                || $user?->hasRoleStartingWith('Management');
 
             $detailData = $detail->toArray();
             if (!$canViewSystemStock) {

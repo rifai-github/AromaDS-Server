@@ -124,22 +124,43 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
         });
 
         DB::table('users')->insert([
-            'id' => 10,
-            'name' => 'Warehouse Admin',
-            'email' => 'warehouse-admin@example.test',
-            'roles' => 'Warehouse Admin',
-            'data_restriction' => 'branch',
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
+            [
+                'id' => 10,
+                'name' => 'Warehouse Admin',
+                'email' => 'warehouse-admin@example.test',
+                'roles' => 'Warehouse Admin',
+                'data_restriction' => 'branch',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 11,
+                'name' => 'Management User',
+                'email' => 'management@example.test',
+                'roles' => 'Management Manager',
+                'data_restriction' => 'all',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
         DB::table('roles')->insert([
-            'id' => 5,
-            'name' => 'Warehouse Admin',
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
+            [
+                'id' => 5,
+                'name' => 'Warehouse Admin',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 6,
+                'name' => 'Management Manager',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
         DB::table('permissions')->insert([
@@ -160,10 +181,18 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
         ]);
 
         DB::table('user_roles')->insert([
-            'user_id' => 10,
-            'role_id' => 5,
-            'created_at' => now(),
-            'updated_at' => now(),
+            [
+                'user_id' => 10,
+                'role_id' => 5,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'user_id' => 11,
+                'role_id' => 6,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
         DB::table('role_permissions')->insert([
@@ -272,6 +301,17 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
         Auth::login(User::findOrFail(10));
 
         $html = $this->renderStockOpname('in-progress');
+
+        $this->assertStringContainsString('System Stock', $html);
+        $this->assertStringContainsString('Variance', $html);
+        $this->assertMatchesRegularExpression('/>\s*42\s*<\/td>/', $html);
+    }
+
+    public function test_management_user_can_see_system_stock_without_explicit_permission(): void
+    {
+        Auth::login(User::findOrFail(11));
+
+        $html = $this->renderStockOpname('approved');
 
         $this->assertStringContainsString('System Stock', $html);
         $this->assertStringContainsString('Variance', $html);
