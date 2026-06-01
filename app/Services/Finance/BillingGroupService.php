@@ -244,8 +244,9 @@ class BillingGroupService
 
             if ($canReuseCancelledSnapshot && $sourceCancelledInvoice) {
                 // Regeneration should reproduce the cancelled invoice snapshot after
-                // the billing period passes the completed-job/BA readiness check.
-                $this->copyInvoiceDetailsFromSource($invoice, $sourceCancelledInvoice);
+                // the billing period passes the completed-job/BA readiness check,
+                // while still respecting current no-invoice room statuses.
+                $this->copyInvoiceDetailsFromSource($invoice, $sourceCancelledInvoice, $billingGroup, $targetInvoiceDate);
             } else {
                 // Once billing readiness passes, bill every eligible contract room in the group.
                 // Some valid rentals (for example unit-only rooms) may not have their own recurring job.
@@ -344,10 +345,17 @@ class BillingGroupService
             || $sourceInvoice->invoiceDetails()->exists();
     }
 
-    private function copyInvoiceDetailsFromSource(Invoice $targetInvoice, Invoice $sourceInvoice): void
+    private function copyInvoiceDetailsFromSource(
+        Invoice $targetInvoice,
+        Invoice $sourceInvoice,
+        BillingGroup $billingGroup,
+        Carbon $billingDate
+    ): void
     {
         $sourceInvoice->loadMissing(['invoiceDetails', 'invoiceRentalDetails']);
         $userId = auth()->id() ?? \App\Models\User::first()->id ?? null;
+        $contract = $billingGroup->contract;
+        [$billingStartDate, $billingEndDate] = $this->getBillingDateRange($billingGroup, $billingDate);
 
         foreach ($sourceInvoice->invoiceDetails as $detail) {
             $targetInvoice->invoiceDetails()->create([
@@ -360,6 +368,20 @@ class BillingGroupService
         }
 
         foreach ($sourceInvoice->invoiceRentalDetails as $detail) {
+            $contractRoom = $this->resolveContractRoomForInvoiceDetail($contract, $billingGroup, $detail);
+            if (
+                $contractRoom
+                && $this->isContractRoomNonBillableForBillingPeriod($contract, $contractRoom, $billingStartDate, $billingEndDate)
+            ) {
+                Log::debug("Skipping non-billable suspended/cancelled room while regenerating invoice snapshot", [
+                    'source_invoice' => $sourceInvoice->invoice_number,
+                    'target_invoice' => $targetInvoice->invoice_number,
+                    'room_name' => $detail->room_name,
+                    'rental_name' => $detail->rental_name,
+                ]);
+                continue;
+            }
+
             $targetInvoice->invoiceRentalDetails()->create([
                 'master_rental_id' => $detail->master_rental_id,
                 'job_no' => $detail->job_no,
@@ -372,6 +394,40 @@ class BillingGroupService
                 'created_by' => $userId,
             ]);
         }
+    }
+
+    private function resolveContractRoomForInvoiceDetail(Contract $contract, BillingGroup $billingGroup, $detail)
+    {
+        $query = $contract->contractRooms()->with(['room']);
+
+        if ($billingGroup->id) {
+            $query->where(function ($roomQuery) use ($billingGroup) {
+                $roomQuery->where('billing_group_id', $billingGroup->id)
+                    ->orWhereNull('billing_group_id');
+            });
+        }
+
+        if ($detail->room_name) {
+            $query->whereHas('room', function ($roomQuery) use ($detail) {
+                $roomQuery->where('room_name', $detail->room_name);
+            });
+        }
+
+        $rooms = $query->get();
+
+        if ($detail->master_rental_id) {
+            $rooms = $rooms->filter(function ($contractRoom) use ($contract, $detail) {
+                return $contract->contractRentals()
+                    ->where('master_rental_id', $detail->master_rental_id)
+                    ->where(function ($rentalQuery) use ($contractRoom) {
+                        $rentalQuery->where('room_id', $contractRoom->room_id)
+                            ->orWhereNull('room_id');
+                    })
+                    ->exists();
+            });
+        }
+
+        return $rooms->first();
     }
 
     /**
