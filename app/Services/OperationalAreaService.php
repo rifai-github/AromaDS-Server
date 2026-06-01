@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\OperationalArea;
 use App\Models\Building;
 use App\Models\Branch;
+use App\Models\BranchWarehouse;
+use App\Models\Warehouse;
 
 /**
  * Service for Operational Area validation
@@ -13,6 +15,7 @@ use App\Models\Branch;
 class OperationalAreaService
 {
     private static array $serviceBranchByCity = [];
+    private static array $warehouseByBranch = [];
 
     /**
      * Check if a city is registered in any operational area
@@ -117,6 +120,50 @@ class OperationalAreaService
         self::$serviceBranchByCity[$cityId] = $branch;
 
         return $branch;
+    }
+
+    /**
+     * Resolve the preferred warehouse for a branch.
+     * Priority: active primary branch-warehouse mapping, active mapped warehouse, then active warehouse owned by branch.
+     */
+    public static function resolveWarehouseForBranch(?Branch $branch): ?Warehouse
+    {
+        if (!$branch) {
+            return null;
+        }
+
+        if (array_key_exists($branch->id, self::$warehouseByBranch)) {
+            return self::$warehouseByBranch[$branch->id];
+        }
+
+        $mappedWarehouses = BranchWarehouse::where('branch_id', $branch->id)
+            ->where('is_active', true)
+            ->with('warehouse')
+            ->orderByDesc('is_primary')
+            ->orderBy('id')
+            ->get();
+
+        $warehouse = $mappedWarehouses
+            ->pluck('warehouse')
+            ->first(function ($warehouse) {
+                return $warehouse && $warehouse->is_active;
+            });
+
+        if (!$warehouse) {
+            $warehouse = Warehouse::where('branch_id', $branch->id)
+                ->where('is_active', true)
+                ->orderBy('id')
+                ->first();
+        }
+
+        self::$warehouseByBranch[$branch->id] = $warehouse;
+
+        return $warehouse;
+    }
+
+    public static function resolveServiceWarehouseForBuilding(?Building $building): ?Warehouse
+    {
+        return self::resolveWarehouseForBranch(self::resolveServiceBranchForBuilding($building));
     }
 
     public static function getServiceBranchLabelForBuilding(?Building $building): string

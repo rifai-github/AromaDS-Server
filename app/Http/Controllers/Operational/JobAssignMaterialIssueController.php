@@ -16,6 +16,7 @@ use App\Models\Warehouse;
 use App\Models\MasterOption;
 use App\Models\OptionDetail;
 use App\Services\DocumentNumberService;
+use App\Services\OperationalAreaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -437,7 +438,7 @@ class JobAssignMaterialIssueController extends Controller
             'jobAssignSchedule.jobSchedule.jobAdvice:id,customer_id,contract_id,quotation_id',
             'jobAssignSchedule.jobSchedule.jobAdvice.customer:id,name',
             'jobAssignSchedule.jobSchedule.jobAdvice.contract:id,quotation_id,notes_operation',
-            'jobAssignSchedule.jobSchedule.building:id,nama_gedung,city_id',
+            'jobAssignSchedule.jobSchedule.building:id,nama_gedung,city_id,branch_id',
             'jobAssignSchedule.jobSchedule.building.city:id,name,province_id',
             'jobAssignSchedule.jobSchedule.building.city.branches:id,name,city_id,province_id',
             'jobAssignSchedule.jobSchedule.building.city.province:id,name',
@@ -2970,35 +2971,32 @@ class JobAssignMaterialIssueController extends Controller
         }
 
         $branchIds = collect();
+        $branchLookup = collect();
         foreach ($issues as $issue) {
             $jobSchedule = optional($issue->jobAssignSchedule)->jobSchedule;
-            $city = optional(optional($jobSchedule)->building)->city;
+            $building = optional($jobSchedule)->building;
             $team = optional($issue->jobAssignSchedule)->team;
 
-            $cityBranch = $city && $city->relationLoaded('branches') ? $city->branches->first() : null;
-            $provinceBranch = $city && $city->province && $city->province->relationLoaded('branches')
-                ? $city->province->branches->first()
+            $serviceBranch = $building
+                ? OperationalAreaService::resolveServiceBranchForBuilding($building)
                 : null;
             $teamBranch = $team && $team->relationLoaded('branch') ? $team->branch : null;
 
-            foreach ([$cityBranch, $provinceBranch, $teamBranch] as $branch) {
+            foreach ([$serviceBranch, $teamBranch] as $branch) {
                 if ($branch) {
                     $branchIds->push($branch->id);
+                    $branchLookup->put($branch->id, $branch);
                 }
             }
         }
 
         $branchWarehouseLookup = [];
         if ($branchIds->isNotEmpty()) {
-            $branchWarehouseLookup = Warehouse::query()
-                ->select('id', 'name', 'branch_id', 'is_active')
-                ->whereIn('branch_id', $branchIds->unique()->values())
-                ->orderByDesc('is_active')
-                ->orderBy('id')
-                ->get()
-                ->groupBy('branch_id')
-                ->map(function ($warehouses) {
-                    return $warehouses->first();
+            $branchWarehouseLookup = $branchIds->unique()->values()
+                ->mapWithKeys(function ($branchId) use ($branchLookup) {
+                    $warehouse = OperationalAreaService::resolveWarehouseForBranch($branchLookup->get($branchId));
+
+                    return $warehouse ? [$branchId => $warehouse] : [];
                 })
                 ->all();
         }
@@ -3014,11 +3012,10 @@ class JobAssignMaterialIssueController extends Controller
             }
 
             $jobSchedule = optional($issue->jobAssignSchedule)->jobSchedule;
-            $city = optional(optional($jobSchedule)->building)->city;
+            $building = optional($jobSchedule)->building;
             $team = optional($issue->jobAssignSchedule)->team;
 
-            $branch = ($city && $city->relationLoaded('branches') ? $city->branches->first() : null)
-                ?: ($city && $city->province && $city->province->relationLoaded('branches') ? $city->province->branches->first() : null)
+            $branch = ($building ? OperationalAreaService::resolveServiceBranchForBuilding($building) : null)
                 ?: ($team && $team->relationLoaded('branch') ? $team->branch : null);
 
             if ($branch && isset($branchWarehouseLookup[$branch->id])) {

@@ -29,6 +29,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use App\Services\OperationalAreaService;
 
 class JobScheduleController extends Controller
 {
@@ -8880,51 +8881,16 @@ class JobScheduleController extends Controller
         $candidateBranchIds = collect();
         
         if ($building) {
-            
-            // Find branch that matches building's city (priority) or province (fallback)
-            $branch = null;
-
-            if (\Schema::hasColumn('buildings', 'branch_id') && !empty($building->branch_id)) {
-                $candidateBranchIds->push((int) $building->branch_id);
-
-                $branch = \App\Models\Branch::where('id', $building->branch_id)
-                    ->where('is_active', true)
-                    ->first();
-            }
-            
-            if (!$branch && $building->city_id) {
-                $branch = \App\Models\Branch::where('city_id', $building->city_id)
-                    ->where('is_active', true)
-                    ->first();
-                    
-                if ($branch) {
-                    $candidateBranchIds->push((int) $branch->id);
-                }
-            }
-            
-            $buildingProvinceId = $building->province_id ?: ($building->city?->province_id ?? null);
-
-            if (!$branch && $buildingProvinceId) {
-                $branch = \App\Models\Branch::where('province_id', $buildingProvinceId)
-                    ->where('is_active', true)
-                    ->first();
-                    
-                if ($branch) {
-                    $candidateBranchIds->push((int) $branch->id);
-                }
-            }
+            $branch = OperationalAreaService::resolveServiceBranchForBuilding($building);
             
             if ($branch) {
-                $warehouse = \App\Models\Warehouse::where('branch_id', $branch->id)
-                    ->where('is_active', true)
-                    ->first();
-                    
-                if ($warehouse) {
-                }
+                $candidateBranchIds->push((int) $branch->id);
+
+                $warehouse = OperationalAreaService::resolveWarehouseForBranch($branch);
             } else {
-                \Log::warning('No branch found for building location, trying team branch', [
+                \Log::warning('No service branch found for building, trying team branch', [
                     'city_id' => $building->city_id,
-                    'province_id' => $buildingProvinceId,
+                    'province_id' => $building->province_id ?: ($building->city?->province_id ?? null),
                     'building_province_id' => $building->province_id,
                     'city_province_id' => $building->city?->province_id,
                 ]);
@@ -8934,9 +8900,10 @@ class JobScheduleController extends Controller
         // PRIORITY FALLBACK: Try Team branch if building branch failed
         if (!$warehouse && $jobAssignSchedule->team && $jobAssignSchedule->team->branch_office) {
             $teamBranchId = $jobAssignSchedule->team->branch_office;
-            $warehouse = \App\Models\Warehouse::where('branch_id', $teamBranchId)
+            $teamBranch = Branch::where('id', $teamBranchId)
                 ->where('is_active', true)
                 ->first();
+            $warehouse = OperationalAreaService::resolveWarehouseForBranch($teamBranch);
             
             if ($warehouse) {
                 $candidateBranchIds->push((int) $teamBranchId);
@@ -8957,11 +8924,18 @@ class JobScheduleController extends Controller
         $candidateBranchIds = $candidateBranchIds->filter()->unique()->values();
 
         if (!$warehouse && $candidateBranchIds->isNotEmpty()) {
-            $warehouse = \App\Models\Warehouse::whereIn('branch_id', $candidateBranchIds)
+            $branchesById = Branch::whereIn('id', $candidateBranchIds)
                 ->where('is_active', true)
-                ->orderByRaw('FIELD(branch_id, ' . $candidateBranchIds->implode(',') . ')')
-                ->orderBy('id')
-                ->first();
+                ->get()
+                ->keyBy('id');
+
+            foreach ($candidateBranchIds as $candidateBranchId) {
+                $warehouse = OperationalAreaService::resolveWarehouseForBranch($branchesById->get($candidateBranchId));
+
+                if ($warehouse) {
+                    break;
+                }
+            }
         }
         
         if (!$warehouse) {

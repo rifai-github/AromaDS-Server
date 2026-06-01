@@ -1089,11 +1089,10 @@
                             $qtyBom = ($item->quantity ?? 0) * $productBomQty;
 
                             // Warehouse Stock Logic moved up
-                            $city = $jobSchedule && $jobSchedule->building ? $jobSchedule->building->city : null;
-                            $branch = $city && $city->relationLoaded('branches') ? $city->branches->first() : null;
-                            if (!$branch && $city && $city->province && $city->province->relationLoaded('branches')) {
-                                $branch = $city->province->branches->first();
-                            }
+                            $building = $jobSchedule ? $jobSchedule->building : null;
+                            $branch = $building
+                                ? \App\Services\OperationalAreaService::resolveServiceBranchForBuilding($building)
+                                : null;
                             if (!$branch && $team && $team->branch) {
                                 $branch = $team->branch;
                             }
