@@ -222,6 +222,7 @@ class CompleteModulePermissionSeeder extends Seeder
             'warehouse.stock-opnames.create' => 'Create Stock Opnames',
             'warehouse.stock-opnames.update' => 'Update Stock Opnames',
             'warehouse.stock-opnames.delete' => 'Delete Stock Opnames',
+            'warehouse.stock-opnames.approve' => 'Approve/Unpost Stock Opnames',
             'warehouse.stock-opnames.view-system-stock' => 'View System Stock in Stock Opnames',
             
             'warehouse.stock-adjustments' => 'Access Stock Adjustments',

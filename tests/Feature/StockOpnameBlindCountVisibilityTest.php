@@ -260,6 +260,24 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
         $this->assertMatchesRegularExpression('/>\s*42\s*<\/td>/', $html);
     }
 
+    public function test_user_with_system_stock_permission_can_see_system_stock_while_opname_is_in_progress(): void
+    {
+        DB::table('role_permissions')->insert([
+            'role_id' => 5,
+            'permission_id' => 8,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Auth::login(User::findOrFail(10));
+
+        $html = $this->renderStockOpname('in-progress');
+
+        $this->assertStringContainsString('System Stock', $html);
+        $this->assertStringContainsString('Variance', $html);
+        $this->assertMatchesRegularExpression('/>\s*42\s*<\/td>/', $html);
+    }
+
     public function test_scanned_serial_numbers_preserve_duplicate_batch_values(): void
     {
         Auth::login(User::findOrFail(10));

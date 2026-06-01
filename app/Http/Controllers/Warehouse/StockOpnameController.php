@@ -568,8 +568,7 @@ class StockOpnameController extends Controller
             DB::commit();
 
             $detail->load(['masterProduct', 'stockOpname']);
-            $canViewSystemStock = Auth::user()?->hasPermission('warehouse.stock-opnames.view-system-stock')
-                && in_array($detail->stockOpname?->status, ['waiting for approval', 'completed', 'approved'], true);
+            $canViewSystemStock = Auth::user()?->hasPermission('warehouse.stock-opnames.view-system-stock');
 
             $detailData = $detail->toArray();
             if (!$canViewSystemStock) {

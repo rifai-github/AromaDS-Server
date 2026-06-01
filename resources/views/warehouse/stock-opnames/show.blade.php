@@ -5,8 +5,7 @@
 @section('content')
 
 @php
-    $canViewSystemStock = auth()->user()->hasPermission('warehouse.stock-opnames.view-system-stock')
-        && in_array($stockOpname->status, ['waiting for approval', 'completed', 'approved'], true);
+    $canViewSystemStock = auth()->user()->hasPermission('warehouse.stock-opnames.view-system-stock');
 @endphp
 
 <style>

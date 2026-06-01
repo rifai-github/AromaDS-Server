@@ -1107,7 +1107,7 @@ function openViewModal(id) {
             const canViewSystemStockPermission = {{ auth()->user()->hasPermission('warehouse.stock-opnames.view-system-stock') ? 'true' : 'false' }};
             const status = data.data.status;
             const canEdit = status === 'draft' || status === 'in-progress';
-            const canViewSystemStock = canViewSystemStockPermission && !['draft', 'in-progress'].includes(status);
+            const canViewSystemStock = canViewSystemStockPermission;
 
             let itemsHtml = `
                 <div class="modal-section mt-6">
@@ -1527,7 +1527,7 @@ function updateOpnameDetailNotes(detailId, notes) {
 }
 
 function submitForApproval(id) {
-    showConfirmDialog(
+    confirmStockOpnameAction(
         'Ajukan untuk Persetujuan?',
         'Setelah diajukan, item opname tidak bisa diedit lagi.',
         'Ya, ajukan',
@@ -1538,6 +1538,8 @@ function submitForApproval(id) {
         fetch(`/warehouse/stock-opnames/${id}/submit`, {
             method: 'POST',
             headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             }
         })
@@ -1553,7 +1555,7 @@ function submitForApproval(id) {
 }
 
 function postOpname(id) {
-    showConfirmDialog(
+    confirmStockOpnameAction(
         'Post Stock Opname?',
         'Stock opname akan diposting dan distok akan difinalkan.',
         'Ya, Post',
@@ -1564,6 +1566,8 @@ function postOpname(id) {
         fetch(`/warehouse/stock-opnames/${id}/approve`, {
             method: 'POST',
             headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             }
         })
@@ -1579,7 +1583,7 @@ function postOpname(id) {
 }
 
 function unpostOpname(id) {
-    showConfirmDialog(
+    confirmStockOpnameAction(
         'Unpost Stock Opname?',
         'Status opname akan dikembalikan ke Draft.',
         'Ya, Unpost',
@@ -1590,6 +1594,8 @@ function unpostOpname(id) {
         fetch(`/warehouse/stock-opnames/${id}/unpost`, {
             method: 'POST',
             headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             }
         })
@@ -1605,7 +1611,7 @@ function unpostOpname(id) {
 }
 
 function approveOpname(id) {
-    showConfirmDialog(
+    confirmStockOpnameAction(
         'Setujui Stock Opname?',
         'Tindakan ini akan memfinalkan stok.',
         'Ya, setujui',
@@ -1616,6 +1622,8 @@ function approveOpname(id) {
         fetch(`/warehouse/stock-opnames/${id}/approve`, {
             method: 'POST',
             headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             }
         })
@@ -1631,7 +1639,7 @@ function approveOpname(id) {
 }
 
 function createStockAdjustment(id) {
-    showConfirmDialog(
+    confirmStockOpnameAction(
         'Buat Stock Adjustment?',
         'Item yang memiliki selisih stok akan ditambahkan otomatis.',
         'Ya, buat',
@@ -1661,6 +1669,15 @@ function createStockAdjustment(id) {
             showErrorDialog('Gagal', 'Terjadi kesalahan saat membuat stock adjustment.');
         });
     });
+}
+
+function confirmStockOpnameAction(title, text, confirmButtonText, cancelButtonText) {
+    return showConfirmDialog({
+        title,
+        text,
+        confirmButtonText,
+        cancelButtonText
+    }).then((result) => result === true || result?.isConfirmed === true);
 }
 
 // Event listeners
