@@ -1473,6 +1473,16 @@ class JobScheduleController extends Controller
 
     public function bulkUnassignTeam(Request $request)
     {
+        if ($request->has('room_ids')) {
+            $request->merge([
+                'room_ids' => collect($request->input('room_ids', []))
+                    ->filter(fn ($roomId) => is_numeric($roomId) && (int) $roomId > 0)
+                    ->map(fn ($roomId) => (int) $roomId)
+                    ->values()
+                    ->all(),
+            ]);
+        }
+
         $request->validate([
             'ids' => 'nullable|array',
             'ids.*' => 'integer|exists:job_schedules,id',

@@ -3969,13 +3969,21 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                             if (result.isConfirmed) {
                                 // Fix: Scope selector to active modal to prevent selecting ghost elements
                                 const container = Swal.getHtmlContainer();
-                                const selectedRoomIds = Array.from(container.querySelectorAll('.room-unassign-checkbox-safe:checked')).map(cb => cb.value);
+                                const selectedRoomCheckboxes = Array.from(container.querySelectorAll('.room-unassign-checkbox-safe:checked'));
+                                const selectedRoomIds = selectedRoomCheckboxes
+                                    .map(cb => cb.value)
+                                    .filter(value => /^\d+$/.test(value));
                                 
-                                if (selectedRoomIds.length === 0) {
+                                if (selectedRoomCheckboxes.length === 0) {
                         Swal.fire('Gagal', 'Pilih setidaknya satu room.', 'error');
                                     return;
                                 }
-                                processBatchActions(ids, 'unassign_team', { room_ids: selectedRoomIds });
+
+                                processBatchActions(
+                                    ids,
+                                    'unassign_team',
+                                    selectedRoomIds.length > 0 ? { room_ids: selectedRoomIds } : {}
+                                );
                             } else {
                                 actionSelect.value = "";
                             }
