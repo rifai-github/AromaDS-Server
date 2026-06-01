@@ -3,9 +3,12 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Warehouse\InventoryReceivingController;
+use App\Http\Controllers\Warehouse\SerialNumberController;
 use App\Models\InventoryReceiving;
+use App\Models\SerialNumber;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -389,6 +392,106 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
             'warehouse_id' => 8,
             'location_id' => 8,
             'status' => 'ready',
+        ]);
+    }
+
+    public function test_updating_serial_status_to_broken_moves_serial_and_stock_to_damaged_warehouse(): void
+    {
+        $this->seedJakartaConditionWarehouses();
+        $this->seedReceivingWithSerial(status: 'ready');
+
+        DB::table('warehouse_products')->insert([
+            'warehouse_id' => 5,
+            'master_product_id' => 100,
+            'quantity' => 1,
+            'created_by' => 1,
+            'updated_by' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/warehouse/serial-numbers/200', 'PUT', [
+            'status' => 'broken',
+            'notes' => 'Rusak',
+        ]);
+        $request->headers->set('Accept', 'application/json');
+
+        $response = app(SerialNumberController::class)->update($request, SerialNumber::findOrFail(200));
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertDatabaseHas('serial_numbers', [
+            'id' => 200,
+            'status' => 'broken',
+            'warehouse_id' => 8,
+            'location_type' => 'warehouse',
+            'location_id' => 8,
+        ]);
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 5,
+            'master_product_id' => 100,
+            'quantity' => 0,
+        ]);
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 8,
+            'master_product_id' => 100,
+            'quantity' => 1,
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'warehouse_id' => 5,
+            'master_product_id' => 100,
+            'reference_no' => 'BDG1001',
+            'reference_type' => 'serial_number_status_update',
+            'quantity' => -1,
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'warehouse_id' => 8,
+            'master_product_id' => 100,
+            'reference_no' => 'BDG1001',
+            'reference_type' => 'serial_number_status_update',
+            'quantity' => 1,
+        ]);
+    }
+
+    public function test_saving_existing_broken_serial_moves_it_to_damaged_warehouse_when_still_in_normal_warehouse(): void
+    {
+        $this->seedJakartaConditionWarehouses();
+        $this->seedReceivingWithSerial(status: 'broken');
+
+        DB::table('warehouse_products')->insert([
+            'warehouse_id' => 5,
+            'master_product_id' => 100,
+            'quantity' => 1,
+            'created_by' => 1,
+            'updated_by' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/warehouse/serial-numbers/200', 'PUT', [
+            'status' => 'broken',
+            'notes' => 'Tetap rusak',
+        ]);
+        $request->headers->set('Accept', 'application/json');
+
+        $response = app(SerialNumberController::class)->update($request, SerialNumber::findOrFail(200));
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertDatabaseHas('serial_numbers', [
+            'id' => 200,
+            'status' => 'broken',
+            'warehouse_id' => 8,
+        ]);
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 5,
+            'master_product_id' => 100,
+            'quantity' => 0,
+        ]);
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 8,
+            'master_product_id' => 100,
+            'quantity' => 1,
         ]);
     }
 

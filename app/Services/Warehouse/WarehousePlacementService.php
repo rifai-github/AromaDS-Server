@@ -19,6 +19,11 @@ class WarehousePlacementService
         return $this->resolveByCondition($fallbackWarehouse, self::CONDITION_NEW);
     }
 
+    public function resolveForDamagedStock(Warehouse $fallbackWarehouse): Warehouse
+    {
+        return $this->resolveByCondition($fallbackWarehouse, self::CONDITION_DAMAGED);
+    }
+
     public function resolveForMaterialReturn(MaterialReturn $materialReturn, Warehouse $fallbackWarehouse): Warehouse
     {
         return $this->resolveByCondition($fallbackWarehouse, $this->classifyMaterialReturn($materialReturn));

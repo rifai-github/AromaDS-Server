@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\SerialNumber;
 use App\Models\Warehouse;
 use App\Models\MasterProduct;
+use App\Models\WarehouseProduct;
+use App\Models\InventoryMovement;
+use App\Services\Warehouse\WarehousePlacementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -394,6 +397,8 @@ class SerialNumberController extends Controller
         try {
             DB::beginTransaction();
 
+            $oldWarehouse = $serialNumber->warehouse;
+
             $updateData = [
                 'updated_by' => Auth::id()
             ];
@@ -430,6 +435,10 @@ class SerialNumberController extends Controller
 
             $serialNumber->update($updateData);
 
+            if ($this->shouldMoveSerialToDamagedWarehouse($serialNumber->status)) {
+                $this->moveSerialToDamagedWarehouse($serialNumber->fresh(), $oldWarehouse);
+            }
+
             DB::commit();
 
             // Return JSON for AJAX requests
@@ -456,6 +465,95 @@ class SerialNumberController extends Controller
             
             return back()->withInput()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
         }
+    }
+
+    private function shouldMoveSerialToDamagedWarehouse(?string $newStatus): bool
+    {
+        return in_array($newStatus, ['broken', 'damaged'], true);
+    }
+
+    private function moveSerialToDamagedWarehouse(SerialNumber $serialNumber, ?Warehouse $sourceWarehouse): void
+    {
+        if (! $sourceWarehouse || ! $serialNumber->master_product_id) {
+            return;
+        }
+
+        $targetWarehouse = app(WarehousePlacementService::class)->resolveForDamagedStock($sourceWarehouse);
+
+        if (! $targetWarehouse || (int) $targetWarehouse->id === (int) $sourceWarehouse->id) {
+            return;
+        }
+
+        $actorId = Auth::id() ?? 1;
+        $productId = (int) $serialNumber->master_product_id;
+
+        $sourceStock = WarehouseProduct::where('warehouse_id', $sourceWarehouse->id)
+            ->where('master_product_id', $productId)
+            ->lockForUpdate()
+            ->first();
+
+        $deductedSourceStock = false;
+        if ($sourceStock && $sourceStock->quantity > 0) {
+            $sourceStock->decrement('quantity', 1, ['updated_by' => $actorId]);
+            $deductedSourceStock = true;
+        }
+
+        $targetStock = WarehouseProduct::firstOrCreate(
+            [
+                'warehouse_id' => $targetWarehouse->id,
+                'master_product_id' => $productId,
+            ],
+            [
+                'quantity' => 0,
+                'minimum_stock' => 0,
+                'maximum_stock' => 0,
+                'created_by' => $actorId,
+                'updated_by' => $actorId,
+            ]
+        );
+
+        $targetStock->increment('quantity', 1, ['updated_by' => $actorId]);
+
+        $serialNumber->update([
+            'warehouse_id' => $targetWarehouse->id,
+            'location_type' => 'warehouse',
+            'location_id' => $targetWarehouse->id,
+            'updated_by' => $actorId,
+        ]);
+
+        $referenceNo = $serialNumber->serial_number;
+        $movementNo = 'SN-DMG-' . $serialNumber->id . '-' . now()->format('YmdHis');
+        $productName = $serialNumber->masterProduct?->name ?? "Product ID: {$productId}";
+
+        if ($deductedSourceStock) {
+            InventoryMovement::create([
+                'warehouse_id' => $sourceWarehouse->id,
+                'master_product_id' => $productId,
+                'movement_type' => 'out',
+                'quantity' => -1,
+                'movement_date' => now()->toDateString(),
+                'reference_no' => $referenceNo,
+                'reference_type' => 'serial_number_status_update',
+                'movement_no' => $movementNo . '-OUT',
+                'notes' => "Serial Number marked broken. Moved {$referenceNo} ({$productName}) to {$targetWarehouse->name}.",
+                'created_by' => $actorId,
+                'updated_by' => $actorId,
+            ]);
+        }
+
+        InventoryMovement::create([
+            'warehouse_id' => $targetWarehouse->id,
+            'master_product_id' => $productId,
+            'movement_type' => 'in',
+            'quantity' => 1,
+            'movement_date' => now()->toDateString(),
+            'reference_no' => $referenceNo,
+            'reference_type' => 'serial_number_status_update',
+            'movement_no' => $movementNo . '-IN',
+            'notes' => "Serial Number marked broken. Received {$referenceNo} ({$productName}) from {$sourceWarehouse->name}.",
+            'created_by' => $actorId,
+            'updated_by' => $actorId,
+        ]);
     }
 
     public function destroy(SerialNumber $serialNumber)
