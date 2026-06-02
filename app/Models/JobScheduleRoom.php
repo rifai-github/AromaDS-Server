@@ -406,17 +406,10 @@ class JobScheduleRoom extends Model
 
         $status = $job->status;
         if (in_array($status, ['assign_material', 'barang_dipersiapkan', 'barang_siap_diambil', 'barang_diambil', 'material_issue'])) {
-            $thisRoomHasMaterial = false;
-            $roomMaterialIssues = collect();
-
-            foreach ($job->jobAssignSchedules as $jas) {
-                foreach ($jas->jobAssignMaterialIssues as $jami) {
-                    if ($jami->materialIssue && $jami->materialIssue->items->where('room_name', $this->room_name)->count() > 0) {
-                        $thisRoomHasMaterial = true;
-                        $roomMaterialIssues->push($jami->materialIssue);
-                    }
-                }
-            }
+            $materialIssuesByRoom = $this->materialIssuesByRoomForStatus($job);
+            $roomKey = $this->normalizeRoomNameForStatus($this->room_name);
+            $roomMaterialIssues = $materialIssuesByRoom->get($roomKey, collect());
+            $thisRoomHasMaterial = $roomMaterialIssues->isNotEmpty();
 
             if ($thisRoomHasMaterial) {
                 $issueNumbers = $roomMaterialIssues
@@ -451,22 +444,51 @@ class JobScheduleRoom extends Model
             }
 
             if (!$thisRoomHasMaterial) {
-                $anyRoomHasMaterialInGroup = false;
-                foreach ($job->jobScheduleRooms as $siblingRoom) {
-                    foreach ($job->jobAssignSchedules as $jas) {
-                        foreach ($jas->jobAssignMaterialIssues as $jami) {
-                            if ($jami->materialIssue && $jami->materialIssue->items->where('room_name', $siblingRoom->room_name)->count() > 0) {
-                                $anyRoomHasMaterialInGroup = true;
-                                break 3;
-                            }
-                        }
-                    }
-                }
-                if ($anyRoomHasMaterialInGroup) {
+                if ($materialIssuesByRoom->isNotEmpty()) {
                     return 'scheduled';
                 }
             }
         }
         return $status;
+    }
+
+    private function materialIssuesByRoomForStatus(JobSchedule $job)
+    {
+        $jobs = collect([$job]);
+
+        if (!empty($job->job_number)) {
+            $jobs = JobSchedule::with([
+                    'jobAssignSchedules.jobAssignMaterialIssues.materialIssue.items',
+                ])
+                ->where('job_number', $job->job_number)
+                ->whereNull('deleted_at')
+                ->where('status', '!=', 'cancelled')
+                ->get();
+        } elseif (!$job->relationLoaded('jobAssignSchedules')) {
+            $job->loadMissing('jobAssignSchedules.jobAssignMaterialIssues.materialIssue.items');
+        }
+
+        return $jobs->flatMap(function ($groupJob) {
+            return $groupJob->jobAssignSchedules
+                ->flatMap(fn ($jas) => $jas->jobAssignMaterialIssues)
+                ->map(fn ($jami) => $jami->materialIssue)
+                ->filter()
+                ->flatMap(function ($materialIssue) {
+                    return $materialIssue->items->map(function ($item) use ($materialIssue) {
+                        return [
+                            'room_key' => $this->normalizeRoomNameForStatus($item->room_name),
+                            'material_issue' => $materialIssue,
+                        ];
+                    });
+                });
+        })
+        ->filter(fn ($row) => $row['room_key'] !== '')
+        ->groupBy('room_key')
+        ->map(fn ($rows) => $rows->pluck('material_issue')->unique('id')->values());
+    }
+
+    private function normalizeRoomNameForStatus(?string $roomName): string
+    {
+        return strtolower(trim((string) $roomName));
     }
 }
