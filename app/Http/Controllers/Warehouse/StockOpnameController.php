@@ -500,6 +500,11 @@ class StockOpnameController extends Controller
     public function unpost(Request $request, StockOpname $stockOpname)
     {
         if ($stockOpname->status !== 'approved') {
+            if (!$request->expectsJson()) {
+                return redirect()->route('warehouse.stock-opnames.show', $stockOpname->id)
+                    ->with('error', 'Only approved opnames can be unposted.');
+            }
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Only approved opnames can be unposted.'
@@ -511,6 +516,11 @@ class StockOpnameController extends Controller
             $stockOpname->unpost();
             DB::commit();
 
+            if (!$request->expectsJson()) {
+                return redirect()->route('warehouse.stock-opnames.show', $stockOpname->id)
+                    ->with('success', 'Stock opname unposted successfully');
+            }
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Stock opname unposted successfully',
@@ -518,6 +528,11 @@ class StockOpnameController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+            if (!$request->expectsJson()) {
+                return redirect()->route('warehouse.stock-opnames.show', $stockOpname->id)
+                    ->with('error', 'Failed to unpost stock opname: ' . $e->getMessage());
+            }
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to unpost stock opname: ' . $e->getMessage()

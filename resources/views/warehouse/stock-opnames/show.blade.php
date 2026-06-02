@@ -6,6 +6,10 @@
 
 @php
     $user = auth()->user();
+    $canApprove = $user->hasPermission('warehouse.stock-opnames.approve')
+        || $user->hasRole('Admin')
+        || $user->hasRole('super_admin')
+        || $user->hasRoleStartingWith('Management');
     $canViewSystemStock = $user->hasPermission('warehouse.stock-opnames.view-system-stock')
         || $user->hasRole('Admin')
         || $user->hasRole('super_admin')
@@ -60,13 +64,18 @@
                             </button>
                             @endif
 
-                            @if($stockOpname->status === 'waiting for approval' && auth()->user()->hasPermission('warehouse.stock-opnames.approve'))
+                            @if($stockOpname->status === 'waiting for approval' && $canApprove)
                             <button type="button" class="btn btn-success btn-sm" onclick="approveOpname()">
                                 <i class="fas fa-check"></i> Approve
                             </button>
                             @endif
 
                             @if($stockOpname->status === 'approved')
+                            @if($canApprove)
+                            <button type="button" class="btn btn-warning btn-sm me-1" onclick="unpostOpname()">
+                                <i class="fas fa-undo"></i> Unpost
+                            </button>
+                            @endif
                             <button type="button" class="btn btn-info btn-sm" onclick="createStockAdjustment()">
                                 <i class="fas fa-exchange-alt"></i> Create Stock Adjustment
                             </button>
@@ -309,6 +318,11 @@
 
 <!-- Approve Opname Form -->
 <form id="approveForm" action="{{ route('warehouse.stock-opnames.approve', $stockOpname->id) }}" method="POST" class="d-none">
+    @csrf
+</form>
+
+<!-- Unpost Opname Form -->
+<form id="unpostForm" action="{{ route('warehouse.stock-opnames.unpost', $stockOpname->id) }}" method="POST" class="d-none">
     @csrf
 </form>
 
@@ -722,8 +736,17 @@
     }
 
     // ==================== APPROVE OPNAME ====================
+    function confirmStockOpnameAction(title, text, confirmButtonText, cancelButtonText) {
+        return showConfirmDialog({
+            title,
+            text,
+            confirmButtonText,
+            cancelButtonText
+        }).then((result) => result === true || result?.isConfirmed === true);
+    }
+
     function approveOpname() {
-        showConfirmDialog(
+        confirmStockOpnameAction(
             'Setujui Stock Opname?',
             'Tindakan ini tidak dapat dibatalkan.',
             'Ya, setujui',
@@ -735,8 +758,21 @@
         });
     }
 
+    function unpostOpname() {
+        confirmStockOpnameAction(
+            'Unpost Stock Opname?',
+            'Status opname akan dikembalikan ke Draft.',
+            'Ya, Unpost',
+            'Batal'
+        ).then((confirmed) => {
+            if (confirmed) {
+                document.getElementById('unpostForm').submit();
+            }
+        });
+    }
+
     function createStockAdjustment() {
-        showConfirmDialog(
+        confirmStockOpnameAction(
             'Buat Stock Adjustment?',
             'Aksi ini akan membuat stock adjustment baru, menyesuaikan stok sistem dengan hasil opname, dan mengubah status stock opname menjadi completed.',
             'Ya, buat',

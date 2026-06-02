@@ -318,6 +318,32 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
         $this->assertMatchesRegularExpression('/>\s*42\s*<\/td>/', $html);
     }
 
+    public function test_approved_opname_detail_shows_unpost_action_for_approver(): void
+    {
+        Auth::login(User::findOrFail(10));
+
+        $html = $this->renderStockOpname('approved');
+
+        $this->assertStringContainsString('Unpost', $html);
+        $this->assertStringContainsString('unpostForm', $html);
+    }
+
+    public function test_unpost_returns_approved_opname_to_draft(): void
+    {
+        Auth::login(User::findOrFail(10));
+
+        $this->renderStockOpname('approved');
+
+        $request = Request::create('/warehouse/stock-opnames/20/unpost', 'POST');
+        $request->headers->set('Accept', 'application/json');
+
+        $response = app(StockOpnameController::class)
+            ->unpost($request, StockOpname::findOrFail(20));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('draft', DB::table('stock_opnames')->where('id', 20)->value('status'));
+    }
+
     public function test_scanned_serial_numbers_preserve_duplicate_batch_values(): void
     {
         Auth::login(User::findOrFail(10));

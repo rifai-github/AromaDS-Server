@@ -1534,6 +1534,27 @@ function stockOpnameActionUrl(template, id) {
     return template.replace('__ID__', id);
 }
 
+async function parseStockOpnameActionResponse(response, fallbackMessage) {
+    const contentType = response.headers.get('content-type') || '';
+    let result = null;
+
+    if (contentType.includes('application/json')) {
+        result = await response.json();
+    } else {
+        const text = await response.text();
+        result = {
+            status: 'error',
+            message: text || fallbackMessage
+        };
+    }
+
+    if (!response.ok || result.status !== 'success') {
+        throw new Error(result.message || fallbackMessage);
+    }
+
+    return result;
+}
+
 function submitForApproval(id) {
     confirmStockOpnameAction(
         'Ajukan untuk Persetujuan?',
@@ -1607,13 +1628,12 @@ function unpostOpname(id) {
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             }
         })
-        .then(response => response.json())
+        .then(response => parseStockOpnameActionResponse(response, 'Stock opname tidak berhasil di-unpost.'))
         .then(result => {
-            if (result.status === 'success') {
-                location.reload();
-            } else {
-                showErrorDialog('Gagal', result.message);
-            }
+            location.reload();
+        })
+        .catch(error => {
+            showErrorDialog(error.message || 'Stock opname tidak berhasil di-unpost.', 'Gagal');
         });
     });
 }
