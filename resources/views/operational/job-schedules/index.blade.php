@@ -3905,18 +3905,28 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                     didOpen: () => Swal.showLoading()
                 });
 
+                const unassignTeamCheckPayload = { job_ids: ids };
+                if (selectedRoomIdsFromTable.length > 0) {
+                    unassignTeamCheckPayload.selected_room_ids = selectedRoomIdsFromTable;
+                    unassignTeamCheckPayload.strict_selection = true;
+                }
+
                 fetch('/operational/job-schedules/check-bulk-assignments', {
                     method: 'POST',
                     headers: {
                         'X-CSRF-TOKEN': '{{ csrf_token() }}',
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ job_ids: ids })
+                    body: JSON.stringify(unassignTeamCheckPayload)
                 })
                 .then(response => response.json())
                 .then(data => {
                     Swal.close();
                     if (data.status === 'success') {
+                        const roomsToDisplay = selectedRoomIdsFromTable.length > 0
+                            ? data.data.filter(item => selectedRoomIdsFromTable.includes(item.id.toString()))
+                            : data.data;
+
                         let detailsHtml = `
                             <div class="text-left text-sm mb-2">Pilih room yang akan dilepas team-nya (Unassign):</div>
                             <div class="max-h-60 overflow-y-auto border border-gray-200 rounded">
@@ -3934,7 +3944,11 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                                     <tbody class="divide-y divide-gray-200">
                         `;
 
-                        data.data.forEach(item => {
+                        if (roomsToDisplay.length === 0) {
+                            detailsHtml += `<tr><td colspan="4" class="px-3 py-2 text-center text-gray-500">No rooms found.</td></tr>`;
+                        }
+
+                        roomsToDisplay.forEach(item => {
                             const isDone = item.job_status === 'done_job' || item.job_status === 'completed';
                             const isSelectedInTable = selectedRoomIdsFromTable.length === 0 || selectedRoomIdsFromTable.includes(item.id.toString());
                             detailsHtml += `
