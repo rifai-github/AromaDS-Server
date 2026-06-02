@@ -23,4 +23,14 @@ class JobScheduleUnassignTeamScriptTest extends TestCase
         $this->assertStringContainsString("is_numeric(\$roomId) && (int) \$roomId > 0", $controller);
         $this->assertStringContainsString("'room_ids.*' => 'integer'", $controller);
     }
+
+    public function test_assign_team_reuses_cancelled_job_team_assignment(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/Operational/JobScheduleController.php'));
+
+        $this->assertStringContainsString('JobAssignSchedule::withTrashed()', $controller);
+        $this->assertStringContainsString("->where('team_id', \$request->team_id)", $controller);
+        $this->assertStringContainsString('$jobAssignSchedule->restore();', $controller);
+        $this->assertStringContainsString('[REASSIGNED] Team assigned again after unassign.', $controller);
+    }
 }

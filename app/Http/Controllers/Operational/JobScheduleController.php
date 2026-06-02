@@ -8111,16 +8111,36 @@ class JobScheduleController extends Controller
                     
                     if (!$jobSchedule) continue;
                     
-                    // Logic mirrored from assignToTeam
-                    $jobAssignSchedule = \App\Models\JobAssignSchedule::create([
-                        'job_schedule_id' => $jobSchedule->id,
-                        'team_id' => $request->team_id,
-                        'assigned_by' => Auth::id(),
-                        'assigned_date' => now(),
-                        'status' => 'assigned',
-                        'created_by' => Auth::id(),
-                        'updated_by' => Auth::id()
-                    ]);
+                    // Logic mirrored from assignToTeam, but reactivate an older cancelled assignment
+                    // instead of inserting a duplicate (job_schedule_id + team_id is unique).
+                    $jobAssignSchedule = \App\Models\JobAssignSchedule::withTrashed()
+                        ->where('job_schedule_id', $jobSchedule->id)
+                        ->where('team_id', $request->team_id)
+                        ->first();
+
+                    if ($jobAssignSchedule) {
+                        if ($jobAssignSchedule->trashed()) {
+                            $jobAssignSchedule->restore();
+                        }
+
+                        $jobAssignSchedule->update([
+                            'assigned_by' => Auth::id(),
+                            'assigned_date' => now()->toDateString(),
+                            'status' => 'assigned',
+                            'notes' => trim(($jobAssignSchedule->notes ? $jobAssignSchedule->notes . "\n" : '') . '[REASSIGNED] Team assigned again after unassign.'),
+                            'updated_by' => Auth::id(),
+                        ]);
+                    } else {
+                        $jobAssignSchedule = \App\Models\JobAssignSchedule::create([
+                            'job_schedule_id' => $jobSchedule->id,
+                            'team_id' => $request->team_id,
+                            'assigned_by' => Auth::id(),
+                            'assigned_date' => now()->toDateString(),
+                            'status' => 'assigned',
+                            'created_by' => Auth::id(),
+                            'updated_by' => Auth::id()
+                        ]);
+                    }
                     
                     if (in_array($jobSchedule->status, ['new_job', 'scheduled', 'assign_material', 'barang_siap_diambil', 'barang_dipersiapkan'])) {
                         $jobSchedule->update([
@@ -8535,16 +8555,36 @@ class JobScheduleController extends Controller
                 return response()->json($validation, 422);
             }
 
-            // 3. Create JobAssignSchedule
-            $jobAssignSchedule = \App\Models\JobAssignSchedule::create([
-                'job_schedule_id' => $jobSchedule->id,
-                'team_id' => $request->team_id,
-                'assigned_by' => Auth::id(),
-                'assigned_date' => now(),
-                'status' => 'assigned',
-                'created_by' => Auth::id(),
-                'updated_by' => Auth::id()
-            ]);
+            // 3. Create or reactivate JobAssignSchedule.
+            // Reassigning the same team after unassign must not violate the unique job/team key.
+            $jobAssignSchedule = \App\Models\JobAssignSchedule::withTrashed()
+                ->where('job_schedule_id', $jobSchedule->id)
+                ->where('team_id', $request->team_id)
+                ->first();
+
+            if ($jobAssignSchedule) {
+                if ($jobAssignSchedule->trashed()) {
+                    $jobAssignSchedule->restore();
+                }
+
+                $jobAssignSchedule->update([
+                    'assigned_by' => Auth::id(),
+                    'assigned_date' => now()->toDateString(),
+                    'status' => 'assigned',
+                    'notes' => trim(($jobAssignSchedule->notes ? $jobAssignSchedule->notes . "\n" : '') . '[REASSIGNED] Team assigned again after unassign.'),
+                    'updated_by' => Auth::id(),
+                ]);
+            } else {
+                $jobAssignSchedule = \App\Models\JobAssignSchedule::create([
+                    'job_schedule_id' => $jobSchedule->id,
+                    'team_id' => $request->team_id,
+                    'assigned_by' => Auth::id(),
+                    'assigned_date' => now()->toDateString(),
+                    'status' => 'assigned',
+                    'created_by' => Auth::id(),
+                    'updated_by' => Auth::id()
+                ]);
+            }
 
             \Log::info('JobAssignSchedule created', [
                 'id' => $jobAssignSchedule->id,
