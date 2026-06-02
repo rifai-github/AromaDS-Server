@@ -3422,7 +3422,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                     .map(id => id.trim())
                     .filter(Boolean);
 
-                return (actionType === 'material_assign' || actionType === 'unassign_team' || actionType.startsWith('assign_team_')) ? roomIds : [];
+                return (actionType === 'material_assign' || actionType.startsWith('assign_team_')) ? roomIds : [];
             }))];
         
         if (viewMode === 'room') {
@@ -3905,10 +3905,12 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                     didOpen: () => Swal.showLoading()
                 });
 
-                const unassignTeamCheckPayload = { job_ids: ids };
+                const unassignTeamCheckPayload = {
+                    job_ids: ids,
+                    strict_selection: true
+                };
                 if (selectedRoomIdsFromTable.length > 0) {
                     unassignTeamCheckPayload.selected_room_ids = selectedRoomIdsFromTable;
-                    unassignTeamCheckPayload.strict_selection = true;
                 }
 
                 fetch('/operational/job-schedules/check-bulk-assignments', {
@@ -3996,7 +3998,10 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                                 processBatchActions(
                                     ids,
                                     'unassign_team',
-                                    selectedRoomIds.length > 0 ? { room_ids: selectedRoomIds } : {}
+                                    {
+                                        strict_selection: true,
+                                        ...(selectedRoomIds.length > 0 ? { room_ids: selectedRoomIds } : {})
+                                    }
                                 );
                             } else {
                                 actionSelect.value = "";
@@ -4196,6 +4201,9 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
 
                 if (actionType === 'unassign_team' && extraData.room_ids) {
                     body.room_ids = extraData.room_ids;
+                    body.strict_selection = true;
+                } else if (actionType === 'unassign_team' && extraData.strict_selection) {
+                    body.strict_selection = true;
                 } else if (actionType === 'assign_team_room') {
                     url = '/operational/job-schedules/bulk-update-room-assignment';
                     body = {

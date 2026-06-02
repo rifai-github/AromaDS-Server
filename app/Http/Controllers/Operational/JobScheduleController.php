@@ -1488,7 +1488,8 @@ class JobScheduleController extends Controller
             'ids' => 'nullable|array',
             'ids.*' => 'integer|exists:job_schedules,id',
             'room_ids' => 'nullable|array',
-            'room_ids.*' => 'integer'
+            'room_ids.*' => 'integer',
+            'strict_selection' => 'nullable|boolean',
         ]);
 
         try {
@@ -1501,6 +1502,7 @@ class JobScheduleController extends Controller
             // IMPORTANT: room_ids are JobScheduleRoom IDs, NOT Job IDs
             // We need to convert them to Job IDs first
             $targetIds = collect();
+            $strictSelection = $request->boolean('strict_selection', false);
 
             if ($request->has('room_ids') && !empty($request->room_ids)) {
                 // room_ids are JobScheduleRoom IDs - convert to Job IDs
@@ -1516,35 +1518,39 @@ class JobScheduleController extends Controller
                 
             } elseif ($request->has('ids') && !empty($request->ids)) {
                 $targetIds = collect($request->ids);
-                
-                // Expand selection to include siblings (same job number/advice)
-                foreach ($request->ids as $requestId) {
-                    $job = JobSchedule::find($requestId);
-                    if ($job && $job->job_advice_id) {
-                         // Primary: Job Number
-                         $q = JobSchedule::where('job_number', $job->job_number)
-                            ->whereNull('deleted_at');
-                         $siblings = $q->pluck('id');
-                         
-                         // Fallback: Advice ID (Always check for split-jobs)
-                         if (true) {
-                             $qFallback = JobSchedule::where('job_advice_id', $job->job_advice_id)
-                                ->where('type', $job->type)
-                                ->whereNull('deleted_at');
-                             
-                             // STRICT BUILDING FILTER
-                             if ($job->building_id) {
-                                 $qFallback->where('building_id', $job->building_id);
-                             }
-                                
-                             $fallback = $qFallback->pluck('id');
-                             
-                             if ($fallback->count() > $siblings->count()) {
-                                 $siblings = $fallback;
-                             }
-                         }
 
-                        $targetIds = $targetIds->merge($siblings);
+                if ($strictSelection) {
+                    $targetIds = $targetIds->unique()->values();
+                } else {
+                    // Expand selection to include siblings (same job number/advice)
+                    foreach ($request->ids as $requestId) {
+                        $job = JobSchedule::find($requestId);
+                        if ($job && $job->job_advice_id) {
+                            // Primary: Job Number
+                            $q = JobSchedule::where('job_number', $job->job_number)
+                                ->whereNull('deleted_at');
+                            $siblings = $q->pluck('id');
+
+                            // Fallback: Advice ID (Always check for split-jobs)
+                            if (true) {
+                                $qFallback = JobSchedule::where('job_advice_id', $job->job_advice_id)
+                                    ->where('type', $job->type)
+                                    ->whereNull('deleted_at');
+
+                                // STRICT BUILDING FILTER
+                                if ($job->building_id) {
+                                    $qFallback->where('building_id', $job->building_id);
+                                }
+
+                                $fallback = $qFallback->pluck('id');
+
+                                if ($fallback->count() > $siblings->count()) {
+                                    $siblings = $fallback;
+                                }
+                            }
+
+                            $targetIds = $targetIds->merge($siblings);
+                        }
                     }
                 }
             } else {

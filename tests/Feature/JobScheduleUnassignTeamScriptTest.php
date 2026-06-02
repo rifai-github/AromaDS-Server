@@ -12,7 +12,9 @@ class JobScheduleUnassignTeamScriptTest extends TestCase
 
         $this->assertStringContainsString('const selectedRoomCheckboxes', $view);
         $this->assertStringContainsString("filter(value => /^\\d+$/.test(value))", $view);
-        $this->assertStringContainsString("selectedRoomIds.length > 0 ? { room_ids: selectedRoomIds } : {}", $view);
+        $this->assertStringContainsString('strict_selection: true', $view);
+        $this->assertStringContainsString('...(selectedRoomIds.length > 0 ? { room_ids: selectedRoomIds } : {})', $view);
+        $this->assertStringNotContainsString("actionType === 'material_assign' || actionType === 'unassign_team'", $view);
     }
 
     public function test_unassign_team_endpoint_sanitizes_non_numeric_room_ids(): void
@@ -22,6 +24,8 @@ class JobScheduleUnassignTeamScriptTest extends TestCase
         $this->assertStringContainsString("if (\$request->has('room_ids'))", $controller);
         $this->assertStringContainsString("is_numeric(\$roomId) && (int) \$roomId > 0", $controller);
         $this->assertStringContainsString("'room_ids.*' => 'integer'", $controller);
+        $this->assertStringContainsString("'strict_selection' => 'nullable|boolean'", $controller);
+        $this->assertStringContainsString('$strictSelection = $request->boolean(\'strict_selection\', false);', $controller);
     }
 
     public function test_assign_team_reuses_cancelled_job_team_assignment(): void
