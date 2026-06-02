@@ -7385,17 +7385,18 @@ class JobScheduleController extends Controller
 
             foreach ($unitOnlyRooms as $physicalRoomId => $roomsInGroup) {
                 $jaRoomIds = $roomsInGroup->pluck('id')->all();
-                $alreadyHasCheck = JobSchedule::where('job_advice_id', $jobAdvice->id)
+                $existingCheckPeriods = JobSchedule::where('job_advice_id', $jobAdvice->id)
                     ->whereIn('type', ['service', 'service_first', 'service_routine'])
                     ->whereNotIn('status', ['cancelled', 'undone'])
                     ->whereHas('jobScheduleRooms.rentals', function ($query) use ($jaRoomIds) {
                         $query->whereIn('job_advice_room_id', $jaRoomIds);
                     })
-                    ->exists();
+                    ->get(['id', 'type', 'period'])
+                    ->mapWithKeys(function ($job) {
+                        $period = (int) ($job->period ?: (strtolower((string) $job->type) === 'service_first' ? 1 : 0));
 
-                if ($alreadyHasCheck) {
-                    continue;
-                }
+                        return $period > 0 ? [$period => true] : [];
+                    });
 
                 $firstJaRoom = $roomsInGroup->first();
                 $rental = $firstJaRoom->rentalProduct;
@@ -7407,6 +7408,10 @@ class JobScheduleController extends Controller
                 }
 
                 for ($period = 1; $period <= $totalChecks; $period++) {
+                    if ($existingCheckPeriods->has($period)) {
+                        continue;
+                    }
+
                     $scheduleDate = $this->calculateScheduleDateForPeriod(
                         $completedInstallJob->ba_date ?? $completedInstallJob->schedule_date ?? $jobAdvice->expected_date,
                         $period,
