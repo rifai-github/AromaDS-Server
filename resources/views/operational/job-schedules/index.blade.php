@@ -3422,7 +3422,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                     .map(id => id.trim())
                     .filter(Boolean);
 
-                return (actionType === 'material_assign' || actionType.startsWith('assign_team_')) ? roomIds : [];
+                return (actionType === 'material_assign' || actionType === 'unassign_team' || actionType.startsWith('assign_team_')) ? roomIds : [];
             }))];
         
         if (viewMode === 'room') {
