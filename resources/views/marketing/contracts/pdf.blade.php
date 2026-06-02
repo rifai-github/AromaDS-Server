@@ -335,7 +335,7 @@
             </div>
             <div class="financial-item">
                 <span class="financial-label">Payment Terms:</span>
-                <span class="financial-value">{{ $contract->term_of_payment ?? ($contract->quotation->terms_of_payment ?? $contract->payment_terms) ?? 'N/A' }}</span>
+                <span class="financial-value">{{ \App\Models\Quotation::formatTermsOfPaymentLabel($contract->term_of_payment ?? ($contract->quotation->terms_of_payment ?? $contract->payment_terms) ?? null) }}</span>
             </div>
             <div class="financial-item">
                 <span class="financial-label">Contract Period:</span>

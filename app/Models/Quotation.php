@@ -120,6 +120,26 @@ class Quotation extends Model
         return $this->hasMany(Contract::class, 'quotation_id');
     }
 
+    public static function formatTermsOfPaymentLabel($value): string
+    {
+        if ($value === null || $value === '') {
+            return '-';
+        }
+
+        $value = trim((string) $value);
+
+        if (strcasecmp($value, 'Tahunan') === 0) {
+            return '1x Advance';
+        }
+
+        return ucwords(str_replace('_', ' ', $value));
+    }
+
+    public function getTermsOfPaymentLabelAttribute(): string
+    {
+        return self::formatTermsOfPaymentLabel($this->terms_of_payment);
+    }
+
     public function existingContract()
     {
         return $this->belongsTo(Contract::class, 'existing_contract_id');

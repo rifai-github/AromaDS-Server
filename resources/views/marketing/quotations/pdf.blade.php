@@ -200,7 +200,7 @@
             </div>
             <div class="info-row">
                 <div class="info-label">Term of Payment:</div>
-                <div class="info-value">{{ $quotation->terms_of_payment ?? '-' }}</div>
+                <div class="info-value">{{ $quotation->terms_of_payment_label }}</div>
             </div>
             <div class="info-row">
                 <div class="info-label">Status:</div>

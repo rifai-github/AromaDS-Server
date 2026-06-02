@@ -1466,7 +1466,7 @@
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->rental_period ? $quotation->rental_period . ' ' . ucfirst($quotation->rental_unit ?? '') : 'N/A' }}</p>
                         </td>
                         <td class="w-[120px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->terms_of_payment ?? 'N/A' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->terms_of_payment_label }}</p>
                         </td>
                         <td class="w-[150px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->marketing->name ?? 'N/A' }}</p>
@@ -1613,6 +1613,10 @@
 // Global variables
 let selectedIdsForRetry = [];
 let successModalTimer = null;
+
+function formatTermsOfPaymentLabel(value) {
+    return value === 'Tahunan' ? '1x Advance' : (value || 'N/A');
+}
 
 // Function to format date with 3-digit month
 function formatDateWithThreeDigitMonth(date) {
@@ -2318,7 +2322,7 @@ function openViewModal(id) {
                             </div>
                             <div class="bg-gray-50 p-4 rounded-lg">
                                 <div class="text-sm font-medium text-gray-600 mb-1">Terms of Payment</div>
-                                <div class="text-gray-900">${data.terms_of_payment || 'N/A'}</div>
+                                <div class="text-gray-900">${formatTermsOfPaymentLabel(data.terms_of_payment)}</div>
                             </div>
                             <div class="bg-gray-50 p-4 rounded-lg">
                                 <div class="text-sm font-medium text-gray-600 mb-1">Marketing Staff</div>

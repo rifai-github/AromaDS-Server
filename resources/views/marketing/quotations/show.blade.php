@@ -286,7 +286,7 @@
                                     </div>
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">Term of Payment</div>
-                                        <div class="quotation-field-value">{{ ucfirst(str_replace('_', ' ', $quotation->terms_of_payment)) }}</div>
+                                        <div class="quotation-field-value">{{ $quotation->terms_of_payment_label }}</div>
                                     </div>
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">Cabang</div>
@@ -386,7 +386,7 @@
                                     </div>
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">Term of Payment</div>
-                                        <div class="quotation-field-value">{{ ucfirst(str_replace('_', ' ', $quotation->terms_of_payment)) }}</div>
+                                        <div class="quotation-field-value">{{ $quotation->terms_of_payment_label }}</div>
                                     </div>
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">Remark External</div>

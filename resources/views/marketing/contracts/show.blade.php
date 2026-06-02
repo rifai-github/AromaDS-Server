@@ -568,7 +568,7 @@
                                     @endif
                                     <div class="contract-field">
                                         <div class="contract-field-label">Term of Payment</div>
-                                        <div class="contract-field-value">{{ ucfirst($contract->quotation->terms_of_payment ?? '-') }}</div>
+                                        <div class="contract-field-value">{{ $contract->quotation?->terms_of_payment_label ?? '-' }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">BA Files Supported</div>

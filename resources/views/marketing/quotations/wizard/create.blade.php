@@ -822,7 +822,7 @@
                                                     <option value="4 bulan 1x">4 bulan 1x</option>
                                                     <option value="5 bulan 1x">5 bulan 1x</option>
                                                     <option value="6 bulan 1x">6 bulan 1x</option>
-                                                    <option value="Tahunan">Tahunan</option>
+                                                    <option value="Tahunan">1x Advance</option>
                                                     <option value="7 bulan 1x">7 bulan 1x</option>
                                                     <option value="8 bulan 1x">8 bulan 1x</option>
                                                     <option value="9 bulan 1x">9 bulan 1x</option>
@@ -3724,7 +3724,7 @@ $(document).ready(function() {
                                 '<p class="mb-2"><strong>Jenis Perusahaan:</strong> ' + customerType + '</p>' +
                                 '<p class="mb-2"><strong>Lama Sewa:</strong> ' + rental_period + ' ' + rental_unit + '</p>' +
                                 '<p class="mb-2"><strong>Payment Method:</strong> ' + payment_method + '</p>' +
-                                '<p class="mb-2"><strong>Term of Payment:</strong> ' + term_of_payment + '</p>' +
+                                '<p class="mb-2"><strong>Term of Payment:</strong> ' + formatTermOfPaymentLabel(term_of_payment) + '</p>' +
                                 '<p class="mb-2"><strong>Remark External:</strong> ' + (remark_external || '-') + '</p>' +
                                 '<p class="mb-2"><strong>PIC Name:</strong> ' + pic_quotation + '</p>' +
                             '</div>' +
@@ -5691,6 +5691,10 @@ $(document).ready(function() {
     });
 
     // Function to check rental period vs TOP compatibility
+    function formatTermOfPaymentLabel(value) {
+        return value === 'Tahunan' ? '1x Advance' : value;
+    }
+
     function checkRentalPeriodCompatibility() {
         if (window.isPopulatingData) {
             console.log('Skipping compatibility check during data population');
@@ -5721,7 +5725,7 @@ $(document).ready(function() {
             if (termOfPayment.includes('bulan')) {
                 topMonths = parseInt(termOfPayment.split(' ')[0]);
             } else if (termOfPayment === 'Tahunan') {
-                console.log('Validation PASSED: Tahunan means 1x payment for the whole contract period');
+                console.log('Validation PASSED: 1x Advance means 1x payment for the whole contract period');
                 return;
             } else if (termOfPayment.includes('tahunan')) {
                 topMonths = parseInt(termOfPayment.split(' ')[0]) * 12;
@@ -5772,19 +5776,19 @@ $(document).ready(function() {
                         html: `
                             <div class="text-start">
                                 <p><strong>Periode Sewa:</strong> ${rentalPeriod} ${rentalUnit} (${rentalMonths} bulan)</p>
-                                <p><strong>Term of Payment:</strong> ${termOfPayment} (${topMonths} bulan)</p>
+                                <p><strong>Term of Payment:</strong> ${formatTermOfPaymentLabel(termOfPayment)} (${topMonths} bulan)</p>
                                 <p class="text-danger"><strong>Masalah:</strong> Periode sewa harus habis dibagi dengan Term of Payment!</p>
                                 <p><strong>Perhitungan:</strong> ${rentalMonths} bulan ÷ ${topMonths} bulan = ${(rentalMonths / topMonths).toFixed(2)} (tidak habis)</p>
                                 <hr>
                                 <p><strong>Pilihan Term of Payment yang Valid:</strong></p>
                                 <ul class="text-start">
-                                    ${validTOPs.map(top => `<li><strong>${top}</strong></li>`).join('')}
+                                    ${validTOPs.map(top => `<li><strong>${formatTermOfPaymentLabel(top)}</strong></li>`).join('')}
                                 </ul>
                             </div>
                         `,
                         icon: 'error',
                         showCancelButton: true,
-                        confirmButtonText: validTOPs.length > 0 ? 'Ubah ke ' + validTOPs[0] : 'OK',
+                        confirmButtonText: validTOPs.length > 0 ? 'Ubah ke ' + formatTermOfPaymentLabel(validTOPs[0]) : 'OK',
                         cancelButtonText: 'Batal',
                         confirmButtonColor: '#d33',
                         cancelButtonColor: '#6c757d',
