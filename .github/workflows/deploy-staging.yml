@@ -2,6 +2,9 @@ name: Deploy Staging
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - develop
 
 concurrency:
   group: staging-deploy
@@ -10,75 +13,11 @@ concurrency:
 jobs:
   deploy:
     name: Pull latest code on staging
-    runs-on: ubuntu-latest
-
-    env:
-      DEPLOY_HOST: ${{ secrets.STAGING_HOST }}
-      DEPLOY_PORT: ${{ secrets.STAGING_PORT || '22' }}
-      DEPLOY_USER: deploy
-      DEPLOY_PATH: /var/www/aroma-staging
-      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+    runs-on: self-hosted
 
     steps:
-      - name: Install SSH key
+      - name: Deploy
         run: |
-          set -euo pipefail
-
-          if [ -z "${DEPLOY_HOST}" ]; then
-            echo "STAGING_HOST secret is empty."
-            exit 1
-          fi
-
-          if [ -z "${SSH_PRIVATE_KEY}" ]; then
-            echo "STAGING_SSH_PRIVATE_KEY secret is empty."
-            exit 1
-          fi
-
-          DEPLOY_HOST="${DEPLOY_HOST#ssh://}"
-          DEPLOY_HOST="${DEPLOY_HOST#http://}"
-          DEPLOY_HOST="${DEPLOY_HOST#https://}"
-          DEPLOY_HOST="${DEPLOY_HOST#*@}"
-          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
-
-          if [[ "$DEPLOY_HOST" == *:* ]]; then
-            HOST_PORT="${DEPLOY_HOST##*:}"
-            DEPLOY_HOST="${DEPLOY_HOST%%:*}"
-
-            if [ "$DEPLOY_PORT" = "22" ] && [ -n "$HOST_PORT" ]; then
-              DEPLOY_PORT="$HOST_PORT"
-              echo "DEPLOY_PORT=${DEPLOY_PORT}" >> "$GITHUB_ENV"
-            fi
-          fi
-
-          case "$DEPLOY_PORT" in
-            ''|*[!0-9]*)
-              echo "STAGING_PORT must be numeric."
-              exit 1
-              ;;
-          esac
-
-          echo "DEPLOY_HOST=${DEPLOY_HOST}" >> "$GITHUB_ENV"
-
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
-
-          for attempt in 1 2 3; do
-            if ssh-keyscan -T 15 -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts; then
-              exit 0
-            fi
-
-            echo "ssh-keyscan failed for $DEPLOY_HOST:$DEPLOY_PORT (attempt $attempt/3)."
-            sleep 5
-          done
-
-          echo "Unable to scan SSH host key for $DEPLOY_HOST:$DEPLOY_PORT."
-          exit 1
-
-      - name: Pull latest develop branch
-        run: |
-          ssh -p "$DEPLOY_PORT" -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "bash -s" <<'EOF'
           set -euo pipefail
 
           cd /var/www/aroma-staging
@@ -95,6 +34,7 @@ jobs:
           git pull --ff-only origin develop
 
           php artisan migrate --force
+          php artisan optimize:clear
+          php artisan route:clear
+          php artisan config:clear
           php artisan view:clear
-          php artisan cache:clear
-          EOF
