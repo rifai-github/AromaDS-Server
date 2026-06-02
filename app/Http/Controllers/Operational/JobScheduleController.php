@@ -2907,11 +2907,13 @@ class JobScheduleController extends Controller
             return $jobSchedule->jobScheduleRooms;
         }
 
-        if (!in_array(strtolower((string) $jobSchedule->type), ['remove', 'remove_free', 'remove free'], true)) {
+        if (!in_array(strtolower((string) $jobSchedule->type), ['remove', 'rv', 'remove_free', 'remove free', 'rf'], true)) {
             return collect();
         }
 
-        if (!$jobSchedule->room_id && !$jobSchedule->room_name) {
+        $jobScheduleRoomName = $jobSchedule->getRawOriginal('room_name') ?: $jobSchedule->room?->room_name;
+
+        if (!$jobSchedule->room_id && !$jobScheduleRoomName) {
             return collect();
         }
 
@@ -2924,8 +2926,8 @@ class JobScheduleController extends Controller
 
         if ($jobSchedule->room_id) {
             $unitQuery->where('room_id', $jobSchedule->room_id);
-        } elseif ($jobSchedule->room_name) {
-            $unitQuery->where('room_name', $jobSchedule->room_name);
+        } elseif ($jobScheduleRoomName) {
+            $unitQuery->where('room_name', $jobScheduleRoomName);
         }
 
         $unitOnWall = $unitQuery
@@ -2936,7 +2938,7 @@ class JobScheduleController extends Controller
         $fallbackRoom = new \App\Models\JobScheduleRoom([
             'job_schedule_id' => $jobSchedule->id,
             'room_id' => $jobSchedule->room_id ?: $unitOnWall?->room_id,
-            'room_name' => $jobSchedule->room_name ?: $unitOnWall?->room_name ?: $jobSchedule->room?->room_name,
+            'room_name' => $jobScheduleRoomName ?: $unitOnWall?->room_name ?: $jobSchedule->room?->room_name,
             'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
             'notes' => 'Fallback display row for remove job without room linkage.',
         ]);

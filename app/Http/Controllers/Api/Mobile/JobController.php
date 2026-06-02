@@ -155,6 +155,9 @@ class JobController extends Controller
                 ->where('status', '!=', 'cancelled')
                 ->whereNull('deleted_at')
                 ->first();
+
+            $this->ensureFallbackJobAdviceRoomForRemoveJob($job);
+            $job->loadMissing('jobAdvice.rooms.contractRoom.room', 'jobAdvice.rooms.quotationRoom.room');
             
             $roomSummary = $this->summarizeAssignedRoomsForJobList($job, $user);
 
@@ -194,7 +197,7 @@ class JobController extends Controller
                             if ($gItem->status == 'completed' || $gItem->status == 'done_job') {
                                 $completedRooms++;
                             }
-                            $roomNames[] = $gItem->room_name ?? $gItem->room?->room_name ?? '-';
+                            $roomNames[] = $gItem->getRawOriginal('room_name') ?: ($gItem->room?->room_name ?? '-');
                         }
                     } else {
                         // If no specific room_id, count all rooms in JA (legacy/catch-all)
@@ -507,6 +510,103 @@ class JobController extends Controller
         }
     }
 
+    private function ensureFallbackJobAdviceRoomForRemoveJob(JobSchedule $jobSchedule): void
+    {
+        if (!$this->isRemoveJobType($jobSchedule->type) || !$jobSchedule->job_advice_id) {
+            return;
+        }
+
+        $jobSchedule->loadMissing([
+            'jobAdvice.rooms',
+            'jobAdvice.customer',
+            'room',
+        ]);
+
+        if ($jobSchedule->jobAdvice?->rooms?->isNotEmpty()) {
+            return;
+        }
+
+        $roomName = $jobSchedule->getRawOriginal('room_name') ?: $jobSchedule->room?->room_name;
+        $roomId = $jobSchedule->room_id;
+
+        $unitQuery = \App\Models\UnitOnWall::with(['rental', 'room'])
+            ->where('building_id', $jobSchedule->building_id);
+
+        if ($jobSchedule->jobAdvice?->customer_id) {
+            $unitQuery->where('customer_id', $jobSchedule->jobAdvice->customer_id);
+        }
+
+        if ($roomId) {
+            $unitQuery->where('room_id', $roomId);
+        } elseif ($roomName) {
+            $unitQuery->where('room_name', $roomName);
+        }
+
+        $unitOnWall = $unitQuery
+            ->whereIn('status', array_merge($this->activeUnitOnWallStatusesForMobile(), ['removed']))
+            ->latest('id')
+            ->first();
+
+        $roomName = $roomName ?: $unitOnWall?->room_name ?: $unitOnWall?->room?->room_name;
+        $roomId = $roomId ?: $unitOnWall?->room_id;
+
+        if (!$roomName && !$roomId) {
+            return;
+        }
+
+        $fallbackRoom = \App\Models\JobAdviceRoom::create([
+            'job_advice_id' => $jobSchedule->job_advice_id,
+            'room_name' => $roomName ?: 'Room',
+            'rental_product_id' => $unitOnWall?->rental_id,
+            'rental_name' => $unitOnWall?->rental?->rental_name ?? $unitOnWall?->rental_name,
+            'quantity' => 1,
+            'status' => \App\Models\JobAdviceRoom::STATUS_SCHEDULED,
+            'remove_job_schedule_id' => $jobSchedule->id,
+            'existing_unit_on_wall_id' => $unitOnWall?->id,
+            'unit_already_installed' => true,
+            'notes' => 'Fallback room created for remove job without job advice room linkage.',
+            'created_by' => auth()->id(),
+            'updated_by' => auth()->id(),
+        ]);
+
+        $jobScheduleRoom = \App\Models\JobScheduleRoom::firstOrCreate(
+            [
+                'job_schedule_id' => $jobSchedule->id,
+                'job_advice_room_id' => $fallbackRoom->id,
+            ],
+            [
+                'room_name' => $fallbackRoom->room_name,
+                'room_id' => $roomId,
+                'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
+                'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
+                'notes' => 'Fallback mobile room for remove job without room linkage.',
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ]
+        );
+
+        \App\Models\JobScheduleRoomRental::firstOrCreate(
+            [
+                'job_schedule_room_id' => $jobScheduleRoom->id,
+                'job_advice_room_id' => $fallbackRoom->id,
+            ],
+            [
+                'is_primary' => true,
+            ]
+        );
+
+        $jobSchedule->unsetRelation('jobAdvice');
+        $jobSchedule->load([
+            'jobAdvice.rooms.contractRoom.room',
+            'jobAdvice.rooms.quotationRoom.room',
+        ]);
+    }
+
+    private function activeUnitOnWallStatusesForMobile(): array
+    {
+        return ['active', 'installed', 'on_wall', 'on wall', 'onwall'];
+    }
+
     private function getJobAdviceRoomRentalDisplayName($jobAdviceRoom): string
     {
         if ($jobAdviceRoom?->contract_rental_id) {
@@ -681,8 +781,8 @@ class JobController extends Controller
         }
         
         // Use specific room if provided, otherwise use job's room
-        $roomName = $room ? ($room->name ?? $room->room_name ?? '-') : ($job->room->name ?? $job->room->room_name ?? '-');
-        $roomId = $room ? $room->id : ($job->room->id ?? null);
+        $roomName = $room ? ($room->name ?? $room->room_name ?? '-') : ($job->room->name ?? $job->room->room_name ?? $job->getRawOriginal('room_name') ?? '-');
+        $roomId = $room ? $room->id : ($job->room->id ?? $job->room_id ?? null);
         $roomStatus = $room ? $room->status : null;
         
         return [
@@ -851,12 +951,12 @@ class JobController extends Controller
                         if ($gItem->status == 'completed' || $gItem->status == 'done_job') {
                             $completedRooms++;
                         }
-                        $roomNames[] = $gItem->room_name ?? $gItem->room?->room_name ?? '-';
+                        $roomNames[] = $gItem->getRawOriginal('room_name') ?: ($gItem->room?->room_name ?? '-');
                     }
                 } else {
                     $totalRooms += $adviceRooms->count();
                     $completedRooms += $adviceRooms->where('status', 'completed')->count();
-                    $roomNames[] = $gItem->room_name ?? $gItem->room?->room_name ?? '-';
+                    $roomNames[] = $gItem->getRawOriginal('room_name') ?: ($gItem->room?->room_name ?? '-');
                 }
             }
 
@@ -964,12 +1064,12 @@ class JobController extends Controller
                         if ($gItem->status == 'completed' || $gItem->status == 'done_job') {
                             $completedRooms++;
                         }
-                        $roomNames[] = $gItem->room_name ?? $gItem->room?->room_name ?? '-';
+                        $roomNames[] = $gItem->getRawOriginal('room_name') ?: ($gItem->room?->room_name ?? '-');
                     }
                 } else {
                     $totalRooms += $adviceRooms->count();
                     $completedRooms += $adviceRooms->where('status', 'completed')->count();
-                    $roomNames[] = $gItem->room_name ?? $gItem->room?->room_name ?? '-';
+                    $roomNames[] = $gItem->getRawOriginal('room_name') ?: ($gItem->room?->room_name ?? '-');
                 }
             }
 
@@ -1258,6 +1358,7 @@ class JobController extends Controller
             }
 
             $this->ensureMobileRentalScheduleRoomsForJob($job);
+            $this->ensureFallbackJobAdviceRoomForRemoveJob($job);
             
             // Get job assign schedule for material issue items lookup
             $jobAssign = $job->jobAssignSchedules->where('status', '!=', 'cancelled')->sortByDesc('id')->first();
@@ -1478,7 +1579,10 @@ class JobController extends Controller
                  $specificJobScheduleId = $job->id;
             }
 
-            $roomName = $room->room_name ?? 'Room ' . $room->id;
+            $roomName = $room->room_name ?? null;
+            if (!$roomName || $roomName === '-') {
+                $roomName = $job->getRawOriginal('room_name') ?: $job->room?->room_name ?: 'Room ' . $room->id;
+            }
             
             // Get products/materials for this room
             $products = [];
@@ -2422,6 +2526,21 @@ class JobController extends Controller
             'customer service report',
             'change_rental',
             'change rental',
+        ], true);
+    }
+
+    private function isRemoveJobType($jobOrType): bool
+    {
+        $type = is_string($jobOrType) ? $jobOrType : ($jobOrType->type ?? '');
+        $normalized = strtolower(trim(str_replace('-', '_', (string) $type)));
+
+        return in_array($normalized, [
+            'remove',
+            'removal',
+            'remove_free',
+            'remove free',
+            'rv',
+            'rf',
         ], true);
     }
 
@@ -5199,6 +5318,7 @@ class JobController extends Controller
         }
         
         $jobAssign = $job->jobAssignSchedules->where('status', '!=', 'cancelled')->sortByDesc('id')->first();
+        $this->ensureFallbackJobAdviceRoomForRemoveJob($job);
         
         // Get all rooms for this job advice
         $allRooms = $job->jobAdvice->rooms ?? collect();

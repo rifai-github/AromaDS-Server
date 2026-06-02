@@ -63,6 +63,8 @@ class MobileJobListRoomAssignmentTest extends TestCase
     {
         foreach ([
             'job_favorites',
+            'unit_on_walls',
+            'job_schedule_room_rentals',
             'job_schedule_room_assignments',
             'job_schedule_rooms',
             'job_assign_schedules',
@@ -166,6 +168,56 @@ class MobileJobListRoomAssignmentTest extends TestCase
         $this->assertTrue($job['material_checked']);
     }
 
+    public function test_mobile_remove_job_without_job_advice_rooms_gets_fallback_room_data(): void
+    {
+        DB::table('job_schedules')->insert([
+            'id' => 42,
+            'job_number' => 'JKT-RV/26-06/0001',
+            'job_advice_id' => 30,
+            'type' => 'remove',
+            'status' => 'assign_team',
+            'room_name' => 'Ruang Wijaya',
+            'schedule_date' => '2026-06-02',
+            'material_checked' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 62,
+            'job_schedule_id' => 42,
+            'team_id' => 10,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/api/v1/mobile/jobs/42/rooms', 'GET');
+        $request->setUserResolver(fn () => User::find(1));
+        $this->actingAs(User::find(1));
+        Cache::flush();
+
+        $roomsResponse = app(JobController::class)->getJobRooms(42);
+        $roomsPayload = $roomsResponse->getData(true);
+
+        $this->assertSame('success', $roomsPayload['status']);
+        $this->assertCount(1, $roomsPayload['data']);
+        $this->assertSame('Ruang Wijaya', $roomsPayload['data'][0]['name']);
+        $this->assertSame(42, $roomsPayload['data'][0]['job_schedule_id']);
+
+        $detailResponse = app(JobController::class)->getJobDetail($request, 42);
+        $detailPayload = $detailResponse->getData(true);
+
+        $this->assertSame('success', $detailPayload['status']);
+        $this->assertSame('Ruang Wijaya', $detailPayload['data']['room_name']);
+        $this->assertSame(1, $detailPayload['data']['total_rooms']);
+        $this->assertDatabaseHas('job_advice_rooms', [
+            'job_advice_id' => 30,
+            'room_name' => 'Ruang Wijaya',
+            'remove_job_schedule_id' => 42,
+        ]);
+    }
+
     private function createSchema(): void
     {
         Schema::create('users', function (Blueprint $table) {
@@ -213,7 +265,17 @@ class MobileJobListRoomAssignmentTest extends TestCase
             $table->foreignId('job_advice_id')->nullable();
             $table->foreignId('contract_room_id')->nullable();
             $table->foreignId('quotation_room_id')->nullable();
+            $table->foreignId('rental_product_id')->nullable();
             $table->string('room_name')->nullable();
+            $table->string('rental_name')->nullable();
+            $table->integer('quantity')->nullable();
+            $table->string('status')->nullable();
+            $table->foreignId('remove_job_schedule_id')->nullable();
+            $table->foreignId('existing_unit_on_wall_id')->nullable();
+            $table->boolean('unit_already_installed')->default(false);
+            $table->text('notes')->nullable();
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -251,6 +313,19 @@ class MobileJobListRoomAssignmentTest extends TestCase
             $table->string('room_name')->nullable();
             $table->foreignId('room_id')->nullable();
             $table->string('status')->nullable();
+            $table->string('material_return_status')->nullable();
+            $table->text('notes')->nullable();
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('job_schedule_room_rentals', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_room_id')->nullable();
+            $table->foreignId('job_advice_room_id')->nullable();
+            $table->boolean('is_primary')->default(false);
             $table->timestamps();
             $table->softDeletes();
         });
@@ -274,6 +349,22 @@ class MobileJobListRoomAssignmentTest extends TestCase
             $table->foreignId('user_id')->nullable();
             $table->foreignId('job_schedule_id')->nullable();
             $table->timestamps();
+        });
+
+        Schema::create('unit_on_walls', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('customer_id')->nullable();
+            $table->foreignId('building_id')->nullable();
+            $table->foreignId('room_id')->nullable();
+            $table->foreignId('rental_id')->nullable();
+            $table->foreignId('product_id')->nullable();
+            $table->foreignId('serial_number_id')->nullable();
+            $table->string('serial_number')->nullable();
+            $table->string('status')->nullable();
+            $table->string('room_name')->nullable();
+            $table->string('rental_name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
         });
     }
 }
