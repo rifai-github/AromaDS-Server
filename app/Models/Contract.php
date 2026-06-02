@@ -422,7 +422,6 @@ class Contract extends Model
     {
         $contractNumber = $this->contract_number;
         $finalStatuses = self::finalJobScheduleStatuses();
-        $today = now()->toDateString();
 
         return \App\Models\JobSchedule::query()
             ->where(function ($query) use ($contractNumber) {
@@ -438,15 +437,11 @@ class Contract extends Model
                 $query->whereNull('status')
                     ->orWhereNotIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(status))'), $finalStatuses);
             })
-            ->where(function ($query) use ($today) {
-                $query->whereNull('schedule_date')
-                    ->orWhereDate('schedule_date', '<=', $today)
-                    ->orWhereIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(type))'), [
-                        'install',
-                        'install_free',
-                        'service_first',
-                    ]);
-            });
+            ->whereIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(type))'), [
+                'install',
+                'install_free',
+                'service_first',
+            ]);
     }
 
     public function hasBlockingOperationalJobsForRenewal(): bool

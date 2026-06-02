@@ -182,6 +182,34 @@ class ContractRenewalEligibilityTest extends TestCase
         $this->assertTrue($eligibility['eligible']);
     }
 
+    public function test_contract_with_ba_date_can_be_renewed_when_current_routine_service_is_active(): void
+    {
+        DB::table('customers')->insert([
+            'id' => 1,
+            'name' => 'Customer Done BA',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $contract = $this->createContract('BDG-CA/26-05/0007', [
+            'customer_id' => 1,
+            'start_date' => '2026-05-01',
+            'end_date' => '2027-05-01',
+        ]);
+        $this->createJob($contract, 'BDG-IR/26-05/0007', 'install', 'done_job', '2026-05-03');
+        $this->createJob($contract, 'BDG-CSR/26-05/0007', 'service_first', 'done_job', '2026-05-04');
+        $this->createJob($contract, 'BDG-CSR/26-06/0007', 'service', 'assign_team', null, '2026-05-04');
+
+        $response = app(ContractRenewalController::class)->getEligibleContracts(
+            Request::create('/marketing/contract-renewals/eligible-contracts', 'GET')
+        );
+        $payload = $response->getData(true);
+
+        $this->assertTrue($contract->fresh()->canBeRenewedSafely());
+        $this->assertSame('success', $payload['status']);
+        $this->assertContains('BDG-CA/26-05/0007', collect($payload['data'])->pluck('contract_number')->all());
+    }
+
     public function test_dropdown_includes_eligible_contract_with_past_original_end_date_and_different_marketing(): void
     {
         DB::table('customers')->insert([
