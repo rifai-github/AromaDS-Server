@@ -115,6 +115,10 @@ class InventoryIssuingController extends Controller
                 $query->where('reference_no', 'like', '%' . $filters['reference_no'] . '%');
             }
 
+            if (!empty($filters['remarks'])) {
+                $query->where('remarks', 'like', '%' . $filters['remarks'] . '%');
+            }
+
             if (!empty($filters['id'])) {
                 $query->where('id', 'like', '%' . $filters['id'] . '%');
             }
