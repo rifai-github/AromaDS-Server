@@ -1018,11 +1018,10 @@
                                         @php
                                             // Get room data from jobAdviceRoom
                                             $jaRoom = $jobScheduleRoom->jobAdviceRoom;
-                                            if (!$jaRoom) {
-                                                // Skip if no jobAdviceRoom (should not happen, but safety check)
-                                                continue;
-                                            }
-                                            $roomData = $jaRoom->contractRoom?->room ?? $jaRoom->quotationRoom?->room ?? null;
+                                            $roomData = $jaRoom?->contractRoom?->room
+                                                ?? $jaRoom?->quotationRoom?->room
+                                                ?? $jobScheduleRoom->room
+                                                ?? null;
                                             
                                             // Get related job schedule (might be different from current one)
                                             $roomJobSchedule = $jobScheduleRoom->jobSchedule;
@@ -1049,6 +1048,10 @@
                                             $isRoomEditable = $roomJobSchedule && $roomJobSchedule->status === 'assign_team';
                                             $roomDoneAllowedStatuses = ['in_progress', 'teknisi_sedang_pengerjaan', 'teknisi_selesai_pengerjaan'];
                                             $canCompleteRoomFromWeb = $roomJobSchedule && in_array($roomJobSchedule->status, $roomDoneAllowedStatuses, true);
+                                            $displayRentalName = $jobScheduleRoom->display_rental_name;
+                                            if (($displayRentalName === '-' || blank($displayRentalName)) && filled($jobScheduleRoom->fallback_rental_name ?? null)) {
+                                                $displayRentalName = $jobScheduleRoom->fallback_rental_name;
+                                            }
                                         @endphp
                                         <tr data-room-id="{{ $jobScheduleRoom->id }}">
                                             <td>
@@ -1206,8 +1209,8 @@
                                                     @endif
                                                 </div>
                                             </td>
-                                            <td>{{ $jobScheduleRoom->display_rental_name ?? '-' }}</td>
-                                            <td>{{ $jaRoom->notes ?? '-' }}</td>
+                                            <td>{{ $displayRentalName ?? '-' }}</td>
+                                            <td>{{ $jaRoom?->notes ?? $jobScheduleRoom->notes ?? '-' }}</td>
                                         </tr>
                                         @empty
                                         <tr>

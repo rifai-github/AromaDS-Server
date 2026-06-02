@@ -2728,11 +2728,18 @@ class JobScheduleController extends Controller
             ]);
         }
         
-        // Fetch all JobScheduleRoom records related to the same JobAdvice and same Type for a Unified View
-        $query = \App\Models\JobScheduleRoom::whereHas('jobSchedule', function($q) use ($jobSchedule) {
-            $q->where('job_advice_id', $jobSchedule->job_advice_id)
-              ->where('type', $jobSchedule->type);
-        });
+        // Fetch all JobScheduleRoom records related to the same JobAdvice and same Type for a Unified View.
+        // Jobs without Job Advice must stay scoped to the current job; otherwise all null-JA RV jobs are mixed.
+        $query = \App\Models\JobScheduleRoom::query();
+
+        if ($jobSchedule->job_advice_id) {
+            $query->whereHas('jobSchedule', function($q) use ($jobSchedule) {
+                $q->where('job_advice_id', $jobSchedule->job_advice_id)
+                  ->where('type', $jobSchedule->type);
+            });
+        } else {
+            $query->where('job_schedule_id', $jobSchedule->id);
+        }
 
         // MOM: Apply filtering based on view mode parameters
         $viewMode = request('view_mode', 'job');
@@ -2762,6 +2769,10 @@ class JobScheduleController extends Controller
             'room'
         ])
         ->get();
+
+        if ($relatedJobScheduleRooms->isEmpty()) {
+            $relatedJobScheduleRooms = $this->buildFallbackRentalTeamRows($jobSchedule);
+        }
 
         // [MOM] Aggregate BA Files for all related sibling jobs to ensure they all show up in Job View
         $baFiles = \App\Models\JobScheduleBaFile::whereIn('job_schedule_id', $siblingJobIds)
@@ -2875,6 +2886,71 @@ class JobScheduleController extends Controller
         $technicians = User::where('is_active', true)->where('roles', 'technician')->orderBy('name')->get();
 
         return view('operational.job-schedules.edit', compact('jobSchedule', 'job_advices', 'buildings', 'rooms', 'technicians'));
+    }
+
+    private function buildFallbackRentalTeamRows(JobSchedule $jobSchedule)
+    {
+        $jobSchedule->loadMissing([
+            'jobScheduleRooms.jobSchedule.jobAssignSchedules.team',
+            'jobScheduleRooms.jobAdviceRoom.rentalProduct',
+            'jobScheduleRooms.rentals.jobAdviceRoom.rentalProduct',
+            'jobScheduleRooms.roomAssignment.team',
+            'jobScheduleRooms.roomAssignment.jobAssignSchedule.team',
+            'jobScheduleRooms.materialReturn',
+            'jobScheduleRooms.room',
+            'jobAssignSchedules.team',
+            'jobAdvice.customer',
+            'room',
+        ]);
+
+        if ($jobSchedule->jobScheduleRooms->isNotEmpty()) {
+            return $jobSchedule->jobScheduleRooms;
+        }
+
+        if (!in_array(strtolower((string) $jobSchedule->type), ['remove', 'remove_free', 'remove free'], true)) {
+            return collect();
+        }
+
+        if (!$jobSchedule->room_id && !$jobSchedule->room_name) {
+            return collect();
+        }
+
+        $unitQuery = UnitOnWall::with(['rental', 'room'])
+            ->where('building_id', $jobSchedule->building_id);
+
+        if ($jobSchedule->jobAdvice?->customer_id) {
+            $unitQuery->where('customer_id', $jobSchedule->jobAdvice->customer_id);
+        }
+
+        if ($jobSchedule->room_id) {
+            $unitQuery->where('room_id', $jobSchedule->room_id);
+        } elseif ($jobSchedule->room_name) {
+            $unitQuery->where('room_name', $jobSchedule->room_name);
+        }
+
+        $unitOnWall = $unitQuery
+            ->whereIn('status', array_merge($this->activeUnitOnWallStatusesForScheduling(), ['removed']))
+            ->latest('id')
+            ->first();
+
+        $fallbackRoom = new \App\Models\JobScheduleRoom([
+            'job_schedule_id' => $jobSchedule->id,
+            'room_id' => $jobSchedule->room_id ?: $unitOnWall?->room_id,
+            'room_name' => $jobSchedule->room_name ?: $unitOnWall?->room_name ?: $jobSchedule->room?->room_name,
+            'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
+            'notes' => 'Fallback display row for remove job without room linkage.',
+        ]);
+
+        $fallbackRoom->exists = false;
+        $fallbackRoom->setAttribute('fallback_rental_name', $unitOnWall?->rental?->rental_name ?? $unitOnWall?->rental_name ?? '-');
+        $fallbackRoom->setRelation('jobSchedule', $jobSchedule);
+        $fallbackRoom->setRelation('jobAdviceRoom', null);
+        $fallbackRoom->setRelation('rentals', collect());
+        $fallbackRoom->setRelation('roomAssignment', null);
+        $fallbackRoom->setRelation('materialReturn', null);
+        $fallbackRoom->setRelation('room', $unitOnWall?->room ?? $jobSchedule->room);
+
+        return collect([$fallbackRoom]);
     }
 
     public function update(Request $request, JobSchedule $jobSchedule)
