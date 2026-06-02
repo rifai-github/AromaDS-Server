@@ -503,10 +503,8 @@ class JobSchedule extends Model
         
         $type = strtolower($this->type ?? '');
         if (in_array($type, ['service', 'service_first', 'service_routine'], true)
-            && (
-                ($this->material_checked && $this->hasOnlyRentalFlow(['unit_only']))
-                || $this->hasOnlyRentalFlow(['refill_only'])
-            )
+            && $this->material_checked
+            && $this->hasOnlyRentalFlow(['unit_only'])
         ) {
             return 'Check (CHK)';
         }

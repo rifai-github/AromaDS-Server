@@ -26,11 +26,11 @@ class JobScheduleDisplayTypeTest extends TestCase
         $this->assertSame('Check (CHK)', $job->display_type);
     }
 
-    public function test_refill_only_service_displays_as_check_without_requiring_unit_install(): void
+    public function test_refill_only_service_still_displays_as_service(): void
     {
-        $job = $this->makeMaterialCheckedService('service_first', ['refill_only'], false);
+        $job = $this->makeMaterialCheckedService('service_first', ['refill_only']);
 
-        $this->assertSame('Check (CHK)', $job->display_type);
+        $this->assertSame('Service Pertama (CSR)', $job->display_type);
     }
 
     public function test_mixed_unit_and_refill_service_still_displays_as_service(): void
