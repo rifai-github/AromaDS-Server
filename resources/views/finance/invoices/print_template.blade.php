@@ -65,7 +65,7 @@
             return filled($value) ? trim((string) $value) : $default;
         };
 
-        $invoiceBranch = $invoice->contract?->branch;
+        $invoiceBranch = $invoice->resolvedInvoiceBranch();
         $branchAuthorizedUser = $invoiceBranch?->invoiceAuthorizedByUser;
         $authorizedName = filled($branchAuthorizedUser?->name)
             ? trim((string) $branchAuthorizedUser->name)

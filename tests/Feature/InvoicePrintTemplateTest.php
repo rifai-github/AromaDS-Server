@@ -46,9 +46,39 @@ class InvoicePrintTemplateTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->string('email')->nullable();
+            $table->string('position_name')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('branches', function (Blueprint $table) {
+            $table->id();
+            $table->string('code')->nullable();
+            $table->string('name')->nullable();
+            $table->foreignId('invoice_authorized_by_user_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('contracts', function (Blueprint $table) {
+            $table->id();
+            $table->string('contract_number')->nullable();
+            $table->foreignId('customer_id')->nullable();
+            $table->foreignId('branch_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('invoices', function (Blueprint $table) {
             $table->id();
             $table->string('invoice_number')->nullable();
+            $table->foreignId('contract_id')->nullable();
+            $table->string('contract_number')->nullable();
             $table->foreignId('customer_id')->nullable();
             $table->text('billing_address')->nullable();
             $table->string('pic_name')->nullable();
@@ -94,6 +124,9 @@ class InvoicePrintTemplateTest extends TestCase
             'invoice_details',
             'invoice_rental_details',
             'invoices',
+            'contracts',
+            'branches',
+            'users',
             'customers',
             'system_settings',
             'companies',
@@ -111,7 +144,7 @@ class InvoicePrintTemplateTest extends TestCase
         $html = View::make('finance.invoices.print_template', compact('invoice'))->render();
 
         $this->assertStringContainsString('Authorized By', $html);
-        $this->assertStringContainsString('Finance Manager', $html);
+        $this->assertStringContainsString('Manager Finance', $html);
         $this->assertStringContainsString('PT Pink Services Indonesia', $html);
     }
 
@@ -144,6 +177,48 @@ class InvoicePrintTemplateTest extends TestCase
         $this->assertStringContainsString('Finance Director', $html);
     }
 
+    public function test_invoice_print_template_uses_branch_signatory_user_from_master_branch(): void
+    {
+        DB::table('users')->insert([
+            'id' => 30,
+            'name' => 'Budi Branch',
+            'email' => 'budi@example.test',
+            'position_name' => 'Branch Manager',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('branches')->insert([
+            'id' => 40,
+            'code' => 'BDG',
+            'name' => 'Bandung Branch',
+            'invoice_authorized_by_user_id' => 30,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('contracts')->insert([
+            'id' => 50,
+            'contract_number' => 'BDG-CA/TEST/001',
+            'customer_id' => 10,
+            'branch_id' => 40,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $invoice = $this->makeInvoice([
+            'contract_id' => 50,
+            'contract_number' => null,
+        ])->load(['contractById.branch.invoiceAuthorizedByUser']);
+
+        $html = View::make('finance.invoices.print_template', compact('invoice'))->render();
+
+        $this->assertStringContainsString('Budi Branch', $html);
+        $this->assertStringContainsString('Branch Manager', $html);
+        $this->assertStringNotContainsString('Manager Finance</p>', $html);
+    }
+
     public function test_invoice_print_template_falls_back_when_system_settings_schema_is_legacy(): void
     {
         Schema::dropIfExists('system_settings');
@@ -161,10 +236,10 @@ class InvoicePrintTemplateTest extends TestCase
         $html = View::make('finance.invoices.print_template', compact('invoice'))->render();
 
         $this->assertStringContainsString('Authorized By', $html);
-        $this->assertStringContainsString('Finance Manager', $html);
+        $this->assertStringContainsString('Manager Finance', $html);
     }
 
-    private function makeInvoice(): Invoice
+    private function makeInvoice(array $overrides = []): Invoice
     {
         DB::table('companies')->insert([
             'id' => 1,
@@ -184,9 +259,11 @@ class InvoicePrintTemplateTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        DB::table('invoices')->insert([
+        DB::table('invoices')->insert(array_merge([
             'id' => 20,
             'invoice_number' => 'INV/TEST/001',
+            'contract_id' => null,
+            'contract_number' => null,
             'customer_id' => 10,
             'invoice_status' => 'tax_approved',
             'invoice_date' => '2026-05-04',
@@ -198,7 +275,7 @@ class InvoicePrintTemplateTest extends TestCase
             'grand_total' => 133200,
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ], $overrides));
 
         DB::table('invoice_rental_details')->insert([
             'invoice_id' => 20,

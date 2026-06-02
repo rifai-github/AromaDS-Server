@@ -108,6 +108,49 @@ class Invoice extends Model
         return $this->belongsTo(Contract::class, 'contract_number', 'contract_number');
     }
 
+    public function contractById()
+    {
+        return $this->belongsTo(Contract::class, 'contract_id');
+    }
+
+    public function resolvedContract(): ?Contract
+    {
+        if ($this->relationLoaded('contractById') && $this->contractById) {
+            return $this->contractById;
+        }
+
+        if ($this->relationLoaded('contract') && $this->contract) {
+            return $this->contract;
+        }
+
+        if ($this->contract_id) {
+            return Contract::with('branch.invoiceAuthorizedByUser')->find($this->contract_id);
+        }
+
+        if ($this->contract_number) {
+            return Contract::with('branch.invoiceAuthorizedByUser')
+                ->where('contract_number', $this->contract_number)
+                ->first();
+        }
+
+        return null;
+    }
+
+    public function resolvedInvoiceBranch(): ?\App\Models\Branch
+    {
+        $contract = $this->resolvedContract();
+
+        if (! $contract) {
+            return null;
+        }
+
+        if ($contract->relationLoaded('branch')) {
+            return $contract->branch;
+        }
+
+        return $contract->branch()->with('invoiceAuthorizedByUser')->first();
+    }
+
     public function customer()
     {
         return $this->belongsTo(Customer::class);

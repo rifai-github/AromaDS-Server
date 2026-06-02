@@ -1412,6 +1412,7 @@ class InvoiceController extends Controller
                 'customer', 
                 'contract.billingGroup',
                 'contract.branch.invoiceAuthorizedByUser',
+                'contractById.branch.invoiceAuthorizedByUser',
                 'bankReceipts',
                 'taxSetting'
             ]);
