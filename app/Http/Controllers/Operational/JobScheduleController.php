@@ -8110,6 +8110,7 @@ class JobScheduleController extends Controller
 
             $successCount = 0;
             $updatedJobs = [];
+            $jobIdsToSync = collect();
             
             // PRE-VALIDATION: Check all jobs BEFORE making any changes
             foreach ($request->room_ids as $mixedId) {
@@ -8217,6 +8218,8 @@ class JobScheduleController extends Controller
                             'updated_by' => Auth::id()
                         ]);
                     }
+
+                    $this->cancelOtherActiveTeamAssignments($jobSchedule, (int) $request->team_id);
                     
                     if (in_array($jobSchedule->status, ['new_job', 'scheduled', 'assign_material', 'barang_siap_diambil', 'barang_dipersiapkan'])) {
                         $jobSchedule->update([
@@ -8240,6 +8243,7 @@ class JobScheduleController extends Controller
                     // $this->autoCreateMaterialIssue($jobAssignSchedule);
                     
                     $successCount++;
+                    $jobIdsToSync->push($jobSchedule->id);
                     continue; 
                 }
 
@@ -8321,6 +8325,11 @@ class JobScheduleController extends Controller
                 if (!empty($jobIds)) {
                     $service = new \App\Services\Warehouse\InventoryIssuingService();
                     $service->syncTeamFromJobSchedule($jobIds, $request->team_id);
+                }
+
+                $legacyJobIds = $jobIdsToSync->unique()->diff($jobIds)->values()->all();
+                foreach ($legacyJobIds as $legacyJobId) {
+                    $this->syncTeamToInventoryIssuing($legacyJobId, $request->team_id);
                 }
             } catch (\Exception $e) {
                 \Log::error("Bidirectional Sync Error (Bulk): " . $e->getMessage());
@@ -8662,6 +8671,8 @@ class JobScheduleController extends Controller
                 ]);
             }
 
+            $this->cancelOtherActiveTeamAssignments($jobSchedule, (int) $request->team_id);
+
             \Log::info('JobAssignSchedule created', [
                 'id' => $jobAssignSchedule->id,
                 'job_schedule_id' => $jobSchedule->id,
@@ -8701,6 +8712,26 @@ class JobScheduleController extends Controller
                 'status' => 'error',
                 'message' => 'Failed to assign team: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    private function cancelOtherActiveTeamAssignments(JobSchedule $jobSchedule, int $activeTeamId): void
+    {
+        $assignments = \App\Models\JobAssignSchedule::where('job_schedule_id', $jobSchedule->id)
+            ->where(function ($query) use ($activeTeamId) {
+                $query->whereNull('team_id')
+                    ->orWhere('team_id', '!=', $activeTeamId);
+            })
+            ->where('status', '!=', 'cancelled')
+            ->whereNull('deleted_at')
+            ->get();
+
+        foreach ($assignments as $assignment) {
+            $assignment->update([
+                'status' => 'cancelled',
+                'notes' => trim(($assignment->notes ? $assignment->notes . "\n" : '') . '[CANCELLED] Replaced by team reassignment.'),
+                'updated_by' => Auth::id(),
+            ]);
         }
     }
 

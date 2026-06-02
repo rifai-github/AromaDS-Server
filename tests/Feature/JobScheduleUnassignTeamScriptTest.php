@@ -32,5 +32,7 @@ class JobScheduleUnassignTeamScriptTest extends TestCase
         $this->assertStringContainsString("->where('team_id', \$request->team_id)", $controller);
         $this->assertStringContainsString('$jobAssignSchedule->restore();', $controller);
         $this->assertStringContainsString('[REASSIGNED] Team assigned again after unassign.', $controller);
+        $this->assertStringContainsString('cancelOtherActiveTeamAssignments($jobSchedule, (int) $request->team_id)', $controller);
+        $this->assertStringContainsString('[CANCELLED] Replaced by team reassignment.', $controller);
     }
 }
