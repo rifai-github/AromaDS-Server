@@ -3069,6 +3069,13 @@ $(document).ready(function() {
             $('#custom-rooms-container').remove();
             return;
         }
+
+        const isRenewalExistingOnly = window.customRooms.every(room => room.is_renewal_existing);
+        const customRoomsTitle = isRenewalExistingOnly ? 'Ruangan Existing Contract' : 'Ruangan Tambahan (Custom)';
+        const customRoomsIcon = isRenewalExistingOnly ? 'fas fa-history' : 'fas fa-plus-square';
+        const aromaSectionTitle = isRenewalExistingOnly
+            ? 'Aroma/Variant Lama dari Contract Existing'
+            : 'Pilih Aroma/Variant untuk Ruangan Custom';
         
         let container = $('#custom-rooms-container');
         if (container.length === 0) {
@@ -3077,7 +3084,7 @@ $(document).ready(function() {
                     <div class="card border-success">
                         <div class="card-header bg-success text-white">
                             <h5 class="mb-0">
-                                <i class="fas fa-plus-square me-2"></i>Ruangan Tambahan (Custom)
+                                <i class="${customRoomsIcon} me-2"></i><span class="custom-rooms-title">${customRoomsTitle}</span>
                             </h5>
                         </div>
                         <div class="card-body">
@@ -3098,7 +3105,7 @@ $(document).ready(function() {
                             <div class="aroma-selection-section mt-4" id="aroma-section-custom" style="display:none;">
                                 <div class="alert alert-info">
                                     <i class="fas fa-spray-can me-2"></i>
-                                    <strong>Pilih Aroma/Variant untuk Ruangan Custom</strong>
+                                    <strong class="custom-aroma-title">${aromaSectionTitle}</strong>
                                 </div>
                                 <div id="aroma-selection-container-custom"></div>
                             </div>
@@ -3108,6 +3115,9 @@ $(document).ready(function() {
             `);
             $('#room-selection-container').append(container);
         }
+
+        container.find('.custom-rooms-title').text(customRoomsTitle);
+        container.find('.custom-aroma-title').text(aromaSectionTitle);
         
         let rows = '';
         window.customRooms.forEach((room, index) => {
@@ -3116,7 +3126,7 @@ $(document).ready(function() {
                 <tr>
                     <td><input type="checkbox" class="room-checkbox custom-room-checkbox" value="${room.id}" data-survey="${room.survey_id || 'custom'}" data-room="${room.id}" data-master-room-id="${room.master_room_id || ''}" data-contract-room-id="${room.contract_room_id || ''}" data-is-custom="true"></td>
                     <td>${index + 1}</td>
-                    <td><strong>${room.room_name}</strong><br><small class="text-muted">${room.room_type}</small></td>
+                    <td><strong>${room.room_name}</strong><br><small class="text-muted">${room.room_type}</small>${room.is_renewal_existing ? `<br><small class="text-success"><strong>Aroma Lama:</strong> ${room.aroma_variant || '-'}</small>` : ''}</td>
                     <td>
                         <div class="row">
                             <div class="col-md-6">
@@ -3210,6 +3220,8 @@ $(document).ready(function() {
 
             if (existingSelection && existingSelection.aroma_product_id && window.hasAromaProductOption(existingSelection.aroma_product_id)) {
                 aromaContainer.find(`.custom-aroma-select[data-room-id="${room.id}"]`).val(existingSelection.aroma_product_id);
+            } else if (room.aroma_product_id && window.hasAromaProductOption(room.aroma_product_id)) {
+                aromaContainer.find(`.custom-aroma-select[data-room-id="${room.id}"]`).val(room.aroma_product_id);
             }
         });
     };
@@ -3219,9 +3231,65 @@ $(document).ready(function() {
     window.aromaProductsList = [];
 
     // ===== ROOM MANAGEMENT =====
+    function hasRenewalExistingRooms() {
+        return $('#quotation_type').val() === 'renewal'
+            && window.renewalContractData
+            && Array.isArray(window.renewalContractData.rooms)
+            && window.renewalContractData.rooms.length > 0;
+    }
+
+    function renderRenewalExistingRoomsWithoutSurvey() {
+        const renewalRooms = window.renewalContractData.rooms;
+
+        window.customRooms = renewalRooms.map((room, index) => {
+            const roomId = room.survey_detail_id || room.room_id || room.master_room_id || room.contract_room_id || index;
+
+            return {
+                id: `custom_renewal_${roomId}_${index}`,
+                survey_id: room.survey_id || 'custom',
+                survey_detail_id: room.survey_detail_id || null,
+                master_room_id: room.master_room_id || room.room_id || null,
+                contract_room_id: room.contract_room_id || null,
+                room_name: room.room_name || 'Existing Room',
+                room_type: room.room_type || 'Existing Room',
+                room_area: 0,
+                quantity_needed: 1,
+                is_custom: true,
+                is_renewal_existing: true,
+                aroma_product_id: room.aroma_product_id || null,
+                aroma_variant: room.aroma_variant || null,
+                specifications: JSON.stringify({
+                    remark: 'Restored from existing contract',
+                    old_aroma: room.aroma_variant || null,
+                    serial_number: room.serial_number || null
+                })
+            };
+        });
+
+        $('#room-selection-container').html('');
+        window.displayCustomRooms();
+        $('.custom-room-checkbox').prop('checked', true);
+
+        if (typeof window.rebuildAromaDropdownsForCustomRooms === 'function') {
+            window.rebuildAromaDropdownsForCustomRooms();
+        }
+
+        restoreRoomSelections();
+        setTimeout(() => {
+            updateRoomSelections();
+            updateNextButtonState();
+        }, 800);
+    }
+
     function loadRooms() {
         const currentSelectedSurveys = $('#survey_tags').val() || [];
         if (currentSelectedSurveys.length === 0) {
+            if (hasRenewalExistingRooms()) {
+                console.log('Renewal has existing rooms and no survey selected. Rendering existing contract rooms.');
+                renderRenewalExistingRoomsWithoutSurvey();
+                return;
+            }
+
             Swal.fire('Error', 'Pilih survey terlebih dahulu', 'error');
             return;
         }

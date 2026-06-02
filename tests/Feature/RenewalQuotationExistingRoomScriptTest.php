@@ -50,6 +50,11 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('const renewalRooms = Array.isArray(data.rooms) ? data.rooms : []', $view);
         $this->assertStringContainsString('if (roomSelections.length === 0 && data.rentals && data.rentals.length > 0)', $view);
         $this->assertStringContainsString('const roomKey = rental.master_room_id || rental.room_id || rental.room_name', $view);
+        $this->assertStringContainsString('function hasRenewalExistingRooms()', $view);
+        $this->assertStringContainsString('renderRenewalExistingRoomsWithoutSurvey', $view);
+        $this->assertStringContainsString('Ruangan Existing Contract', $view);
+        $this->assertStringContainsString('Aroma/Variant Lama dari Contract Existing', $view);
+        $this->assertStringContainsString('room.aroma_product_id && window.hasAromaProductOption(room.aroma_product_id)', $view);
     }
 
     public function test_backend_keeps_quotation_room_when_survey_detail_lookup_fails(): void
