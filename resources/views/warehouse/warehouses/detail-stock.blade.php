@@ -491,6 +491,8 @@
                                         $statusClass = 'badge-danger';
                                     } elseif (in_array($sn['unit_status'], ['on service', 'on_service'])) {
                                         $statusClass = 'badge-warning';
+                                    } elseif ($sn['unit_status'] === 'pending') {
+                                        $statusClass = 'badge-warning';
                                     } elseif (in_array($sn['unit_status'], ['in use', 'in_use'])) {
                                         $statusClass = 'badge-primary'; // Blue badge for in_use status
                                     } elseif ($sn['unit_status'] === 'on hand') {
