@@ -10323,7 +10323,10 @@ class JobScheduleController extends Controller
             'assignedTechnician', 
             'jobAssignSchedules.team',
             'jobScheduleRooms.room',
-            'jobScheduleRooms.jobAdviceRoom.rentalProduct'
+            'jobScheduleRooms.jobAdviceRoom.rentalProduct.rentalDetails.productCategory',
+            'jobScheduleRooms.jobAdviceRoom.rentalProduct.rentalDetails.productType',
+            'jobScheduleRooms.jobAdviceRoom.rentalProduct.rentalDetails.masterProduct.productCategory',
+            'jobScheduleRooms.jobAdviceRoom.rentalProduct.rentalDetails.masterProduct.productType',
         ])
             ->where(function ($query) use ($targetJobIds, $targetJobNumbers) {
                 if ($targetJobIds->isNotEmpty()) {

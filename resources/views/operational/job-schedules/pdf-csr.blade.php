@@ -158,6 +158,30 @@
                     default => $type ? ucwords(str_replace('_', ' ', $type)) : '-',
                 };
             };
+            $resolveRentalCategory = function ($jobAdviceRoom, $fallback = '-'): string {
+                $rental = $jobAdviceRoom?->rentalProduct;
+                $details = $rental?->rentalDetails ?? collect();
+
+                $categories = $details
+                    ->map(function ($detail) {
+                        $category = $detail->masterProduct?->productCategory ?? $detail->productCategory;
+                        $type = $detail->masterProduct?->productType ?? $detail->productType;
+
+                        return [
+                            'name' => $category?->name ?? $type?->name,
+                            'is_unit' => (bool) ($category?->is_unit ?? $type?->is_unit ?? false),
+                        ];
+                    })
+                    ->filter(fn ($category) => filled($category['name']))
+                    ->unique('name')
+                    ->values();
+
+                $unitCategory = $categories->firstWhere('is_unit', true);
+                $firstCategory = $categories->first();
+                $category = $unitCategory['name'] ?? $firstCategory['name'] ?? null;
+
+                return $category ?: ($rental?->category ?: $fallback);
+            };
 
             foreach($schedules as $sch) {
                 // Determine Type Code
@@ -177,11 +201,7 @@
                         }
 
                         $jobAdviceRoom = $roomPivot->jobAdviceRoom;
-                        $itemName = $jobAdviceRoom?->rentalProduct?->rental_name
-                            ?? $jobAdviceRoom?->rentalProduct?->name
-                            ?? $jobAdviceRoom?->rental_name
-                            ?? $roomPivot->display_rental_name
-                            ?? '-';
+                        $itemName = $resolveRentalCategory($jobAdviceRoom);
 
                         $rooms->push([
                             'reference' => $sch->job_number ?? $jobNumber,
@@ -303,10 +323,6 @@
                 </tr>
             </thead>
             <tbody>
-                <tr class="building-row">
-                    <td></td>
-                    <td colspan="5">{{ $buildingName }}</td>
-                </tr>
                 @foreach($rooms as $index => $room)
                 <tr class="item-row">
                     <td>{{ $room['reference'] }}</td>
