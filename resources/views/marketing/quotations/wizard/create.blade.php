@@ -2714,36 +2714,36 @@ $(document).ready(function() {
         console.log('Room selections saved:', globalRoomSelections);
     }
 
+    function sanitizeRenewalRoomName(value) {
+        return String(value || '')
+            .replace(/\s*Aroma\s*Lama\s*:.*$/i, '')
+            .trim();
+    }
+
+    function normalizeRenewalRoomName(value) {
+        return sanitizeRenewalRoomName(value).toLowerCase();
+    }
+
+    function getRoomNameFromSelectionRow(row, cellIndex = 2) {
+        return sanitizeRenewalRoomName(
+            row.find(`td:eq(${cellIndex}) > strong`).first().text()
+                || row.find(`td:eq(${cellIndex}) strong`).first().text()
+                || ''
+        );
+    }
+
+    function getRoomTypeFromSelectionRow(row, cellIndex = 2) {
+        return (row.find(`td:eq(${cellIndex}) > small.text-muted`).first().text()
+            || row.find(`td:eq(${cellIndex}) > small`).first().text()
+            || ''
+        ).trim();
+    }
+
     function restoreRoomSelections() {
         console.log('--- restoreRoomSelections called ---');
         window.isRestoringData = true; // Set guard flag
         
         let selectionsToRestore = null;
-
-        function sanitizeRenewalRoomName(value) {
-            return String(value || '')
-                .replace(/\s*Aroma\s*Lama\s*:.*$/i, '')
-                .trim();
-        }
-
-        function normalizeRenewalRoomName(value) {
-            return sanitizeRenewalRoomName(value).toLowerCase();
-        }
-
-        function getRoomNameFromSelectionRow(row) {
-            return sanitizeRenewalRoomName(
-                row.find('td:eq(2) > strong').first().text()
-                    || row.find('td:eq(2) strong').first().text()
-                    || ''
-            );
-        }
-
-        function getRoomTypeFromSelectionRow(row) {
-            return (row.find('td:eq(2) > small.text-muted').first().text()
-                || row.find('td:eq(2) > small').first().text()
-                || ''
-            ).trim();
-        }
         
         // Strategy 1: Global variable
         if (typeof globalRoomSelections !== 'undefined' && globalRoomSelections && globalRoomSelections.length > 0) {
@@ -2811,11 +2811,20 @@ $(document).ready(function() {
                 selectionsToRestore.forEach(function(room) {
                     const roomId = room.room_id || room; // Handle both object and simple ID
                     const masterRoomId = typeof room === 'object' ? room.master_room_id : null;
+                    const contractRoomId = typeof room === 'object' ? room.contract_room_id : null;
                     const roomName = sanitizeRenewalRoomName(room.room_name || (typeof room === 'object' ? room.room_name : null));
                     const roomType = room.room_type || (typeof room === 'object' ? room.room_type : null);
 
                     // Support both standard and custom rooms
                     let checkbox = $(`.room-checkbox[value="${roomId}"]`);
+
+                    // STRATEGY 1B: Match by Contract Room ID to keep renewal rooms distinct.
+                    if (checkbox.length === 0 && contractRoomId) {
+                         checkbox = $(`.room-checkbox[data-contract-room-id="${contractRoomId}"]`);
+                         if (checkbox.length > 0) {
+                             console.log(`ContractRoom ID match found! Mapping Room ${contractRoomId} -> Checkbox Value ${checkbox.val()}`);
+                         }
+                    }
                     
                     // STRATEGY 2: Match by Master Room ID (Critical for Renewal)
                     if (checkbox.length === 0) {
@@ -3626,27 +3635,6 @@ $(document).ready(function() {
         console.log('DEBUG: updateRoomSelections started');
         globalRoomSelections = [];
 
-        function sanitizeRenewalRoomName(value) {
-            return String(value || '')
-                .replace(/\s*Aroma\s*Lama\s*:.*$/i, '')
-                .trim();
-        }
-
-        function getRoomNameFromSelectionRow(row) {
-            return sanitizeRenewalRoomName(
-                row.find('td:eq(2) > strong').first().text()
-                    || row.find('td:eq(2) strong').first().text()
-                    || ''
-            );
-        }
-
-        function getRoomTypeFromSelectionRow(row) {
-            return (row.find('td:eq(2) > small.text-muted').first().text()
-                || row.find('td:eq(2) > small').first().text()
-                || ''
-            ).trim();
-        }
-        
         try {
             const checkedBoxes = $('.room-checkbox:checked');
             console.log('DEBUG: Found checked boxes:', checkedBoxes.length);
@@ -3661,7 +3649,7 @@ $(document).ready(function() {
                     // Safe name retrieval
                     let roomName = 'Unknown Room';
                     const row = checkbox.closest('tr');
-                    const resolvedRoomName = getRoomNameFromSelectionRow(row);
+                    const resolvedRoomName = getRoomNameFromSelectionRow(row, 2);
                     if (resolvedRoomName) roomName = resolvedRoomName;
                     else console.warn('DEBUG: Could not find room name element for index', index);
 
@@ -3695,7 +3683,7 @@ $(document).ready(function() {
                         master_room_id: checkbox.data('master-room-id') || null,
                         contract_room_id: checkbox.data('contract-room-id') || null,
                         room_name: roomName,
-                        room_type: getRoomTypeFromSelectionRow(row) || null,
+                        room_type: getRoomTypeFromSelectionRow(row, 2) || null,
                         aroma_product_id: aromaProductId || null,
                         aroma_variant: aromaVariant || null,
                         aroma_display_name: aromaDisplayName || 'Belum dipilih'
@@ -4246,11 +4234,12 @@ $(document).ready(function() {
                 let roomListHtml = '';
                 selectedRoomsForSurvey.each(function(index) {
                     const roomRow = $(this).closest('tr');
-                    const roomName = roomRow.find('td:eq(2) strong').text();
-                    const roomType = roomRow.find('td:eq(2) small').text();
+                    const roomName = getRoomNameFromSelectionRow(roomRow, 2);
+                    const roomType = getRoomTypeFromSelectionRow(roomRow, 2);
                     const roomSpecs = roomRow.find('td:eq(3) .room-specs').html();
                     const roomId = $(this).val();
                     const masterRoomId = $(this).data('master-room-id') || '';
+                    const contractRoomId = $(this).data('contract-room-id') || '';
                     
                     roomListHtml += `
                         <tr>
@@ -4265,15 +4254,15 @@ $(document).ready(function() {
                                 </div>
                             </td>
                         </tr>
-                        <tr class="rental-button-row" data-room-id="${roomId}" data-master-room-id="${masterRoomId}">
+                        <tr class="rental-button-row" data-room-id="${roomId}" data-master-room-id="${masterRoomId}" data-contract-room-id="${contractRoomId}">
                             <td colspan="3" class="text-center py-3" style="background-color: #f8f9fa;">
-                                <button type="button" class="btn btn-primary btn-sm add-rental-btn" data-survey-id="${surveyId}" data-room-id="${roomId}" data-master-room-id="${masterRoomId}">
+                                <button type="button" class="btn btn-primary btn-sm add-rental-btn" data-survey-id="${surveyId}" data-room-id="${roomId}" data-master-room-id="${masterRoomId}" data-contract-room-id="${contractRoomId}">
                                     <i class="fas fa-plus me-2"></i>TAMBAH RENTAL
                                 </button>
                             </td>
                         </tr>
-                        <tr class="rental-config-row" data-room-id="${roomId}" data-master-room-id="${masterRoomId}" style="display: none;">
-                            <td colspan="3" class="rental-config-container" data-room-id="${roomId}" data-master-room-id="${masterRoomId}">
+                        <tr class="rental-config-row" data-room-id="${roomId}" data-master-room-id="${masterRoomId}" data-contract-room-id="${contractRoomId}" style="display: none;">
+                            <td colspan="3" class="rental-config-container" data-room-id="${roomId}" data-master-room-id="${masterRoomId}" data-contract-room-id="${contractRoomId}">
                                 <!-- Rental configuration form will be inserted here -->
                             </td>
                         </tr>
@@ -4318,12 +4307,13 @@ $(document).ready(function() {
             selectedCustomRooms.each(function(index) {
                 const checkbox = $(this);
                 const roomRow = checkbox.closest('tr');
-                const roomName = roomRow.find('td:eq(2) strong').text();
-                const roomType = roomRow.find('td:eq(2) small').text();
+                const roomName = getRoomNameFromSelectionRow(roomRow, 2);
+                const roomType = getRoomTypeFromSelectionRow(roomRow, 2);
                 const roomSpecs = roomRow.find('td:eq(3)').html();
                 const roomId = checkbox.val();
                 const surveyId = checkbox.data('survey') || 'custom';
                 const masterRoomId = checkbox.data('master-room-id') || '';
+                const contractRoomId = checkbox.data('contract-room-id') || '';
 
                 customRoomListHtml += `
                     <tr>
@@ -4338,15 +4328,15 @@ $(document).ready(function() {
                             </div>
                         </td>
                     </tr>
-                    <tr class="rental-button-row" data-room-id="${roomId}" data-master-room-id="${masterRoomId}">
+                    <tr class="rental-button-row" data-room-id="${roomId}" data-master-room-id="${masterRoomId}" data-contract-room-id="${contractRoomId}">
                         <td colspan="3" class="text-center py-3" style="background-color: #f8f9fa;">
-                            <button type="button" class="btn btn-primary btn-sm add-rental-btn" data-survey-id="${surveyId}" data-room-id="${roomId}" data-master-room-id="${masterRoomId}">
+                            <button type="button" class="btn btn-primary btn-sm add-rental-btn" data-survey-id="${surveyId}" data-room-id="${roomId}" data-master-room-id="${masterRoomId}" data-contract-room-id="${contractRoomId}">
                                 <i class="fas fa-plus me-2"></i>TAMBAH RENTAL
                             </button>
                         </td>
                     </tr>
-                    <tr class="rental-config-row" data-room-id="${roomId}" data-master-room-id="${masterRoomId}" style="display: none;">
-                        <td colspan="3" class="rental-config-container" data-room-id="${roomId}" data-master-room-id="${masterRoomId}"></td>
+                    <tr class="rental-config-row" data-room-id="${roomId}" data-master-room-id="${masterRoomId}" data-contract-room-id="${contractRoomId}" style="display: none;">
+                        <td colspan="3" class="rental-config-container" data-room-id="${roomId}" data-master-room-id="${masterRoomId}" data-contract-room-id="${contractRoomId}"></td>
                     </tr>
                 `;
             });
@@ -4453,7 +4443,8 @@ $(document).ready(function() {
                 surveyId: rental.survey_id || window.renewalContractData.survey_id || 'custom',
                 roomId: rental.survey_detail_id || rental.room_id,
                 masterRoomId: rental.master_room_id || rental.room_id || null,
-                roomName: rental.room_name || ('Room ' + rental.room_id),
+                contractRoomId: rental.contract_room_id || null,
+                roomName: sanitizeRenewalRoomName(rental.room_name || ('Room ' + rental.room_id)),
                 roomType: rental.room_type || '', // Capture room type
                 formData: {
                     product_id: rental.rental_id,
@@ -4489,12 +4480,23 @@ $(document).ready(function() {
                 let surveyId = config.surveyId;
                 const roomId = config.roomId;
                 const masterRoomId = config.masterRoomId || null;
-                const roomName = config.roomName;
+                const contractRoomId = config.contractRoomId || config.contract_room_id || null;
+                const roomName = sanitizeRenewalRoomName(config.roomName);
                 const roomType = config.roomType; // Get room type
                 
                 // Find the "Tambah Rental" button for this room
                 let addButton = $(`.add-rental-btn[data-survey-id="${surveyId}"][data-room-id="${roomId}"]`);
                 let actualRoomId = roomId;
+
+                // STRATEGY 1B: Match by Contract Room ID for renewal rows.
+                // This keeps each existing contract room tied to its original rental product.
+                if (addButton.length === 0 && contractRoomId) {
+                    addButton = $(`.add-rental-btn[data-survey-id="${surveyId}"][data-contract-room-id="${contractRoomId}"]`);
+                    if (addButton.length > 0) {
+                        console.log(`Step 4: ContractRoom ID match found! Room ${contractRoomId} -> actual id ${addButton.data('room-id')}`);
+                        actualRoomId = addButton.data('room-id');
+                    }
+                }
                 
                 // STRATEGY 2: Match by Master Room ID (Critical for Renewal)
                 if (addButton.length === 0) {
@@ -4504,6 +4506,16 @@ $(document).ready(function() {
                         actualRoomId = addButton.data('room-id');
                     }
                 }
+
+                // STRATEGY 2B: Global contract-room lookup if the current survey id changed during renewal restore.
+                if (addButton.length === 0 && contractRoomId) {
+                    addButton = $(`.add-rental-btn[data-contract-room-id="${contractRoomId}"]`).first();
+                    if (addButton.length > 0) {
+                        console.log(`Step 4: Global ContractRoom ID match found! Room ${contractRoomId} -> actual id ${addButton.data('room-id')}`);
+                        actualRoomId = addButton.data('room-id');
+                        surveyId = addButton.data('survey-id');
+                    }
+                }
                 
                 // FALLBACK: Match by Name if ID matches fail
                 if (addButton.length === 0 && roomName && !roomName.startsWith('Room ')) {
@@ -4511,14 +4523,14 @@ $(document).ready(function() {
                     
                     // Stage 3: Exact Name Match
                     $('.add-rental-btn').each(function() {
-                        const btn = $(this);
-                        if (btn.data('survey-id') == surveyId) {
-                            const row = btn.closest('tr.rental-button-row').prev('tr');
-                            const nameInTable = row.find('td:eq(1) strong').text().trim();
-                            if (nameInTable.toLowerCase() === roomName.trim().toLowerCase()) {
-                                console.log(`Found Step 4 exact name match! Room ${roomId} -> actual id ${btn.data('room-id')}`);
-                                addButton = btn;
-                                actualRoomId = btn.data('room-id');
+                            const btn = $(this);
+                            if (btn.data('survey-id') == surveyId) {
+                                const row = btn.closest('tr.rental-button-row').prev('tr');
+                                const nameInTable = getRoomNameFromSelectionRow(row, 1);
+                                if (nameInTable.toLowerCase() === normalizeRenewalRoomName(roomName)) {
+                                    console.log(`Found Step 4 exact name match! Room ${roomId} -> actual id ${btn.data('room-id')}`);
+                                    addButton = btn;
+                                    actualRoomId = btn.data('room-id');
                                 return false;
                             }
                         }
@@ -4530,9 +4542,9 @@ $(document).ready(function() {
                             const btn = $(this);
                             if (btn.data('survey-id') == surveyId) {
                                 const row = btn.closest('tr.rental-button-row').prev('tr');
-                                const nameInTable = row.find('td:eq(1) strong').text().trim().toLowerCase();
-                                const typeInTable = row.find('td:eq(1) small').text().trim().toLowerCase();
-                                const targetName = roomName.trim().toLowerCase();
+                                const nameInTable = getRoomNameFromSelectionRow(row, 1).toLowerCase();
+                                const typeInTable = getRoomTypeFromSelectionRow(row, 1).toLowerCase();
+                                const targetName = normalizeRenewalRoomName(roomName);
                                 const targetType = roomType ? roomType.trim().toLowerCase() : null;
 
                                 const nameMatch = nameInTable.includes(targetName) || targetName.includes(nameInTable);
@@ -4557,9 +4569,9 @@ $(document).ready(function() {
                             if (btn.data('survey-id') == surveyId) return true;
                             
                             const row = btn.closest('tr.rental-button-row').prev('tr');
-                            const nameInTable = row.find('td:eq(1) strong').text().trim().toLowerCase();
+                            const nameInTable = getRoomNameFromSelectionRow(row, 1).toLowerCase();
                             
-                            if (nameInTable === roomName.trim().toLowerCase()) {
+                            if (nameInTable === normalizeRenewalRoomName(roomName)) {
                                 console.log(`Found Step 4 GLOBAL match! Room "${roomName}" found in Survey ${btn.data('survey-id')}. Updating Survey ID.`);
                                 addButton = btn;
                                 actualRoomId = btn.data('room-id');
@@ -4656,11 +4668,12 @@ $(document).ready(function() {
         const buttonRow = buttonElement.closest('tr.rental-button-row');
         const configRow = buttonRow.next('tr.rental-config-row');
         const configContainer = configRow.find('.rental-config-container');
+        const contractRoomId = buttonElement.data('contract-room-id') || '';
         
         // Create rental configuration form with unique ID
         const uniqueId = restoredUniqueId || `${surveyId}-${roomId}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
         const rentalFormHtml = `
-            <div class="rental-configuration mt-2" id="rental-config-${uniqueId}" data-survey-id="${surveyId}" data-room-id="${roomId}">
+            <div class="rental-configuration mt-2" id="rental-config-${uniqueId}" data-survey-id="${surveyId}" data-room-id="${roomId}" data-contract-room-id="${contractRoomId}">
                 <div class="card shadow-sm mb-3" style="border-left: 4px solid #10b981;">
                     <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
                         <h6 class="mb-0 text-success">
@@ -4777,8 +4790,8 @@ $(document).ready(function() {
                 // Check if next row is rental-button-row with matching room-id
                 const nextRow = row.next('tr.rental-button-row');
                 if (nextRow.length > 0 && nextRow.data('room-id') == roomId) {
-                    roomName = row.find('td:eq(1) strong').text();
-                    roomType = row.find('td:eq(1) small').text();
+                    roomName = getRoomNameFromSelectionRow(row, 1);
+                    roomType = getRoomTypeFromSelectionRow(row, 1);
                     found = true;
                     return false; // break
                 }
@@ -4790,8 +4803,8 @@ $(document).ready(function() {
             const roomCheckbox = $(`.room-checkbox[value="${roomId}"]`);
             if (roomCheckbox.length > 0) {
                 const roomRow = roomCheckbox.closest('tr');
-                roomName = roomRow.find('td:eq(2) strong').text() || roomRow.find('td:nth-child(3) strong').text();
-                roomType = roomRow.find('td:eq(2) small').text() || roomRow.find('td:nth-child(3) small').text();
+                roomName = getRoomNameFromSelectionRow(roomRow, 2);
+                roomType = getRoomTypeFromSelectionRow(roomRow, 2);
                 found = true;
             }
         }
@@ -5651,7 +5664,8 @@ $(document).ready(function() {
                                 surveyId: rental.survey_id || data.survey_id || 'custom',
                                 roomId: rental.survey_detail_id || rental.room_id,
                                 masterRoomId: rental.master_room_id || rental.room_id || null,
-                                roomName: rental.room_name || ('Room ' + rental.room_id),
+                                contractRoomId: rental.contract_room_id || null,
+                                roomName: sanitizeRenewalRoomName(rental.room_name || ('Room ' + rental.room_id)),
                                 roomType: rental.room_type || '', // Added for fuzzy matching
                                 formData: {
                                     product_id: rental.rental_id,
@@ -6123,14 +6137,14 @@ $(document).ready(function() {
             let roomName = '';
             const roomDisplayContainer = $(this).find('.room-display-container');
             if (roomDisplayContainer.length > 0) {
-                roomName = roomDisplayContainer.find('input[type="text"]').val() || roomDisplayContainer.text().trim();
+                roomName = sanitizeRenewalRoomName(roomDisplayContainer.find('input[type="text"]').val() || roomDisplayContainer.text().trim());
             }
             
             // If room name not found, try to get from globalRoomSelections
             if (!roomName && roomId) {
                 const roomSelection = globalRoomSelections.find(r => r.room_id == roomId);
                 if (roomSelection) {
-                    roomName = roomSelection.room_name || '';
+                    roomName = sanitizeRenewalRoomName(roomSelection.room_name || '');
                 }
             }
             

@@ -42,9 +42,12 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString("survey_id: room.survey_id || data.survey_id || 'custom'", $view);
         $this->assertStringContainsString("surveyId: rental.survey_id || data.survey_id || 'custom'", $view);
         $this->assertStringContainsString("surveyId: rental.survey_id || window.renewalContractData.survey_id || 'custom'", $view);
+        $this->assertStringContainsString('contractRoomId: rental.contract_room_id || null', $view);
         $this->assertStringContainsString('isRenewalWithExistingRooms', $view);
         $this->assertStringContainsString('room_selections_data[${index}][master_room_id]', $view);
         $this->assertStringContainsString('room_selections_data[${index}][room_name]', $view);
+        $this->assertStringContainsString('data-contract-room-id="${contractRoomId}"', $view);
+        $this->assertStringContainsString('data-contract-room-id="${room.contract_room_id || \'\'}"', $view);
         $this->assertStringContainsString("$('#custom-rooms-container .custom-room-checkbox:checked')", $view);
         $this->assertStringContainsString('String(resolvedRoomId).startsWith', $view);
         $this->assertStringContainsString('const renewalRooms = Array.isArray(data.rooms) ? data.rooms : []', $view);
@@ -56,8 +59,12 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('Aroma/Variant Lama dari Contract Existing', $view);
         $this->assertStringContainsString('room.aroma_product_id && window.hasAromaProductOption(room.aroma_product_id)', $view);
         $this->assertStringContainsString('sanitizeRenewalRoomName', $view);
-        $this->assertStringContainsString("row.find('td:eq(2) > strong').first().text()", $view);
-        $this->assertStringContainsString("row.find('td:eq(2) > small.text-muted').first().text()", $view);
+        $this->assertStringContainsString('function getRoomNameFromSelectionRow(row, cellIndex = 2)', $view);
+        $this->assertStringContainsString('row.find(`td:eq(${cellIndex}) > strong`).first().text()', $view);
+        $this->assertStringContainsString('row.find(`td:eq(${cellIndex}) > small.text-muted`).first().text()', $view);
+        $this->assertStringContainsString('getRoomNameFromSelectionRow(row, 1)', $view);
+        $this->assertStringContainsString('sanitizeRenewalRoomName(config.roomName)', $view);
+        $this->assertStringContainsString('.add-rental-btn[data-survey-id="${surveyId}"][data-contract-room-id="${contractRoomId}"]', $view);
         $this->assertStringContainsString('seenRenewalRooms', $view);
         $this->assertStringContainsString('normalizeRenewalRoomName(r.room_name)', $view);
     }
