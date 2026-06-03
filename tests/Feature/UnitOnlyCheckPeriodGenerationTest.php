@@ -313,6 +313,62 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             ->all());
     }
 
+    public function test_done_refill_routine_first_service_fans_out_remaining_services(): void
+    {
+        $this->seedRefillOnlyFirstService();
+
+        // A standalone Service Job Advice stores the first refill service as service_routine.
+        DB::table('job_schedules')->where('id', 30)->update(['type' => 'service_routine']);
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'generateFollowUpServiceSchedules');
+        $method->setAccessible(true);
+        $method->invoke(
+            new JobScheduleController(),
+            JobSchedule::findOrFail(30),
+            JobAdvice::findOrFail(2)
+        );
+
+        $this->assertSame(range(1, 12), JobSchedule::where('job_advice_id', 2)
+            ->whereIn('type', ['service', 'service_first', 'service_routine'])
+            ->orderBy('period')
+            ->pluck('period')
+            ->map(fn ($period) => (int) $period)
+            ->values()
+            ->all());
+    }
+
+    public function test_done_unit_only_routine_first_check_fans_out_checks_without_duplicate(): void
+    {
+        $this->seedUnitOnlyInstallWithExistingFirstCheck();
+
+        // A standalone unit-only Service Job Advice has no install job, only the first check,
+        // stored as service_routine (period 1, material already checked).
+        DB::table('job_schedule_room_rentals')->where('job_schedule_room_id', 10)->delete();
+        DB::table('job_schedule_rooms')->where('job_schedule_id', 10)->delete();
+        DB::table('job_schedules')->where('id', 10)->delete();
+        DB::table('job_schedules')->where('id', 20)->update([
+            'type' => 'service_routine',
+            'status' => 'done_job',
+        ]);
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'generateFollowUpServiceSchedules');
+        $method->setAccessible(true);
+        $method->invoke(
+            new JobScheduleController(),
+            JobSchedule::findOrFail(20),
+            JobAdvice::findOrFail(1)
+        );
+
+        // Periods 1..12 exist exactly once each — period 1 (the completed check) is not duplicated.
+        $this->assertSame(range(1, 12), JobSchedule::where('job_advice_id', 1)
+            ->whereIn('type', ['service', 'service_first', 'service_routine'])
+            ->orderBy('period')
+            ->pluck('period')
+            ->map(fn ($period) => (int) $period)
+            ->values()
+            ->all());
+    }
+
     private function seedUnitOnlyInstallWithExistingFirstCheck(): void
     {
         DB::table('contracts')->insert([

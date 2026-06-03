@@ -3456,11 +3456,11 @@ class JobScheduleController extends Controller
                             }
                         }
                         
-                        // MOM13: When FIRST SERVICE completes, generate ALL remaining services at once
-                        if (in_array($completedSchedule->type, ['service', 'service_first'])) {
-                            if ($completedSchedule->period == 1) {
-                                $this->generateAllRemainingServices($completedSchedule, $jobAdvice);
-                            }
+                        // MOM13: When the FIRST service/check completes, generate ALL remaining
+                        // periods at once. Standalone Service JAs create their first job as
+                        // service_routine, so include it alongside service/service_first.
+                        if (in_array(strtolower((string) $completedSchedule->type), ['service', 'service_first', 'service_routine'], true)) {
+                            $this->generateFollowUpServiceSchedules($completedSchedule, $jobAdvice);
                             $this->checkAndCreateRemoveJobAfterAllServicesComplete($completedSchedule, $jobAdvice);
                             $this->autoUpdateUnitOnWallLastServiceDate($completedSchedule, $jobAdvice);
                         }
@@ -3838,16 +3838,16 @@ class JobScheduleController extends Controller
                     }
                 }
                 
-                // MOM13: When FIRST SERVICE completes, generate ALL remaining services at once
-                if (in_array($jobSchedule->type, ['service', 'service_first'])) {
-                    if ($jobSchedule->period == 1) {
-                        // First service completed - generate all remaining services
-                        $this->generateAllRemainingServices($jobSchedule, $jobAdvice);
-                    }
-                    
+                // MOM13: When the FIRST service/check completes, generate ALL remaining periods
+                // at once. Standalone Service JAs create their first job as service_routine, so
+                // include it alongside service/service_first.
+                if (in_array(strtolower((string) $jobSchedule->type), ['service', 'service_first', 'service_routine'], true)) {
+                    // First service/check completed - fan out refill services or unit-only checks
+                    $this->generateFollowUpServiceSchedules($jobSchedule, $jobAdvice);
+
                     // Check if this is the LAST service and create remove job
                     $this->checkAndCreateRemoveJobAfterAllServicesComplete($jobSchedule, $jobAdvice);
-                    
+
                     // Auto-update last_service_date in UnitOnWall when service job is completed
                     $this->autoUpdateUnitOnWallLastServiceDate($jobSchedule, $jobAdvice);
                 }
@@ -7248,14 +7248,86 @@ class JobScheduleController extends Controller
     }
     
     /**
+     * Generate the follow-up service/check periods after the FIRST service/check job completes.
+     *
+     * Refill-only flows fan out into additional service periods, while unit-only flows fan out
+     * into check periods. Standalone Service Job Advices create their first job as service_routine
+     * (and may leave the period unset), so service_routine must be treated as a possible first
+     * period alongside service/service_first.
+     */
+    private function generateFollowUpServiceSchedules(JobSchedule $completedFirstService, $jobAdvice): void
+    {
+        if (!$jobAdvice) {
+            return;
+        }
+
+        $type = strtolower(trim((string) $completedFirstService->type));
+        if (!in_array($type, ['service', 'service_first', 'service_routine'], true)) {
+            return;
+        }
+
+        // Only the first period fans out the remaining periods. Standalone Service JAs may store
+        // the first job with a null/empty period, so treat that as the first period as well.
+        $period = $completedFirstService->period;
+        if ($period !== null && $period !== '' && (int) $period !== 1) {
+            return;
+        }
+
+        if ($this->completedScheduleIsUnitOnlyFlow($completedFirstService, $jobAdvice)) {
+            $this->generateUnitOnlyCheckSchedulesAfterInstall($completedFirstService, $jobAdvice);
+        } else {
+            $this->generateAllRemainingServices($completedFirstService, $jobAdvice);
+        }
+    }
+
+    /**
+     * Determine whether a completed service/check schedule belongs to a unit-only rental flow,
+     * so its follow-up periods should be generated as checks rather than refill services.
+     */
+    private function completedScheduleIsUnitOnlyFlow(JobSchedule $schedule, $jobAdvice): bool
+    {
+        $schedule->loadMissing('jobScheduleRooms.rentals');
+
+        $jaRoomIds = $schedule->jobScheduleRooms
+            ->flatMap(fn ($room) => $room->rentals->pluck('job_advice_room_id'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($jaRoomIds)) {
+            $jaRoomIds = $schedule->jobScheduleRooms
+                ->pluck('job_advice_room_id')
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        if (empty($jaRoomIds)) {
+            return false;
+        }
+
+        $jobAdvice->loadMissing('rooms.rentalProduct');
+        $relevantRooms = $jobAdvice->rooms->whereIn('id', $jaRoomIds);
+
+        if ($relevantRooms->isEmpty()) {
+            return false;
+        }
+
+        return $relevantRooms->every(fn ($jaRoom) => $this->jobAdviceRoomShouldGenerateUnitOnlyCheck($jaRoom));
+    }
+
+    /**
      * MOM13: Generate ALL remaining services when first service completes
      * "setelah service pertama selesai dia akan generate sisa 11 service nya"
      */
     private function generateAllRemainingServices(JobSchedule $completedFirstService, $jobAdvice)
     {
         try {
-            // Only run for period 1 (first service)
-            if ($completedFirstService->period != 1) {
+            // Only run for the first service. Standalone Service JAs may leave the first period
+            // unset, so treat a null/empty period as the first period too.
+            if ($completedFirstService->period !== null && $completedFirstService->period !== '' && (int) $completedFirstService->period !== 1) {
                 \Log::info("Not first service (period {$completedFirstService->period}). Skipping bulk service generation.");
                 return;
             }
@@ -7429,6 +7501,14 @@ class JobScheduleController extends Controller
 
                         return $period > 0 ? [$period => true] : [];
                     });
+
+                // When this generator is re-entered from a completed first check (a unit-only
+                // Service JA stores its first job as service_routine, sometimes without a period),
+                // treat that completed schedule as occupying its period so we don't recreate it.
+                $completedType = strtolower(trim((string) $completedInstallJob->type));
+                if (in_array($completedType, ['service', 'service_first', 'service_routine'], true)) {
+                    $existingCheckPeriods->put((int) ($completedInstallJob->period ?: 1), true);
+                }
 
                 $firstJaRoom = $roomsInGroup->first();
                 $rental = $firstJaRoom->rentalProduct;

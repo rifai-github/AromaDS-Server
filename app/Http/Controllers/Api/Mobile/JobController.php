@@ -3317,7 +3317,8 @@ class JobController extends Controller
             $job->load('jobAdvice');
             $jobAdvice = $job->jobAdvice;
             if ($jobAdvice) {
-                $installTypes = ['install', 'ir', 'install_free', 'install free', 'if', 'service', 'service_first', 'csr', 'customer_service_report', 'customer service report', 'change_rental', 'change rental'];
+                $installTypes = ['install', 'ir', 'install_free', 'install free', 'if', 'service', 'service_first', 'service_routine', 'csr', 'customer_service_report', 'customer service report', 'change_rental', 'change rental'];
+                $serviceTypes = ['service', 'service_first', 'service_routine', 'csr', 'customer_service_report', 'customer service report'];
                 $jobTypeLower = strtolower(trim($job->type));
                 if (in_array($jobTypeLower, $installTypes)) {
                     $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
@@ -3331,12 +3332,14 @@ class JobController extends Controller
                         $generateUnitOnlyChecksMethod->setAccessible(true);
                         $generateUnitOnlyChecksMethod->invoke($jobScheduleController, $job, $jobAdvice);
                     }
-                }
 
-                if ($job->period == 1 && in_array($jobTypeLower, ['service', 'service_first', 'csr', 'customer_service_report', 'customer service report'], true)) {
-                    $generateRemainingServicesMethod = $reflection->getMethod('generateAllRemainingServices');
-                    $generateRemainingServicesMethod->setAccessible(true);
-                    $generateRemainingServicesMethod->invoke($jobScheduleController, $job, $jobAdvice);
+                    // Fan out remaining refill services or unit-only checks after the first
+                    // service/check completes (standalone Service JAs store it as service_routine).
+                    if (in_array($jobTypeLower, $serviceTypes, true)) {
+                        $generateFollowUpMethod = $reflection->getMethod('generateFollowUpServiceSchedules');
+                        $generateFollowUpMethod->setAccessible(true);
+                        $generateFollowUpMethod->invoke($jobScheduleController, $job, $jobAdvice);
+                    }
                 }
             }
         } catch (\Exception $e) {
@@ -4224,10 +4227,13 @@ class JobController extends Controller
                         // Call autoUpdateUnitOnWallLastServiceDate
                         $autoUpdateLastServiceDateMethod->invoke($jobScheduleController, $job, $jobAdvice);
                         
-                        // MOM13: Trigger routine services generation if first service is done
-                        if ($job->period == 1 && in_array(strtolower($job->type), ['service', 'service_first', 'csr', 'customer_service_report', 'customer service report'])) {
+                        // MOM13: When the first service/check completes, fan out the remaining
+                        // refill services or unit-only checks. Standalone Service JAs store the
+                        // first job as service_routine, so route through the shared helper which
+                        // handles the service_routine/first-period cases and unit-only flows.
+                        if (in_array(strtolower($job->type), ['service', 'service_first', 'service_routine', 'csr', 'customer_service_report', 'customer service report'])) {
                             try {
-                                $methodGen = $reflection->getMethod('generateAllRemainingServices');
+                                $methodGen = $reflection->getMethod('generateFollowUpServiceSchedules');
                                 $methodGen->setAccessible(true);
                                 $methodGen->invoke($jobScheduleController, $job, $jobAdvice);
                             } catch (\Exception $e) {

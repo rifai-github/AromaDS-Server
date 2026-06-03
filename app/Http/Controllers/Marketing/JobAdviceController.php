@@ -2488,9 +2488,11 @@ class JobAdviceController extends Controller
                                     
                                     // 1. Process unit-only jobs as service_routine without material.
                                     // The DB enum intentionally does not support a separate "check" type.
+                                    // Mark as period 1 so completing this first check fans out the
+                                    // remaining check periods without recreating period 1.
                                     if ($unitOnlyRooms->isNotEmpty()) {
                                         $checkJobs = $this->createJobSchedulesPerRoom(
-                                            $jobAdvice, $unitOnlyRooms, 'service_routine', $groupBuilding, $roomListNote, null, true
+                                            $jobAdvice, $unitOnlyRooms, 'service_routine', $groupBuilding, $roomListNote, 1, true
                                         );
                                         
                                         if ($checkJobs->isNotEmpty()) {
@@ -2506,10 +2508,11 @@ class JobAdviceController extends Controller
                                         }
                                     }
                                     
-                                    // 2. Process Service Routine Jobs
+                                    // 2. Process Service Routine Jobs as period 1 so completing this
+                                    // first service fans out the remaining refill service periods.
                                     if ($otherRooms->isNotEmpty()) {
                                         $srvJobs = $this->createJobSchedulesPerRoom(
-                                            $jobAdvice, $otherRooms, 'service_routine', $groupBuilding, $roomListNote
+                                            $jobAdvice, $otherRooms, 'service_routine', $groupBuilding, $roomListNote, 1
                                         );
                                         
                                         if ($srvJobs->isNotEmpty()) {
