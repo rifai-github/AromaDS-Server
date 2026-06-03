@@ -4078,6 +4078,61 @@ $(document).ready(function() {
         loadSummaryRentalItems();
     }
     
+    function parseRentalCurrencyValue(value) {
+        const normalized = String(value || '')
+            .replace(/[^\d,.-]/g, '')
+            .replace(/\./g, '')
+            .replace(',', '.');
+
+        return parseFloat(normalized) || 0;
+    }
+
+    async function fetchRentalProductForSummary(productId, surveyId, selectedText = '') {
+        if (!productId) return null;
+
+        try {
+            const query = new URLSearchParams({
+                product_id: productId,
+                survey_id: surveyId || '',
+                branch_id: '',
+                q: selectedText || ''
+            });
+            const response = await fetch(`{{ route("marketing.quotations.wizard.get-products") }}?${query.toString()}`);
+            if (!response.ok) return null;
+
+            const products = await response.json();
+            return (products || []).find(product => String(product.id) === String(productId)) || null;
+        } catch (error) {
+            console.warn('Failed to fetch summary rental product price:', productId, error);
+            return null;
+        }
+    }
+
+    async function resolveSummaryRentalPrice(productId, surveyId, selectedText, currentPrice) {
+        const parsedCurrentPrice = parseRentalCurrencyValue(currentPrice);
+        if (parsedCurrentPrice > 0) {
+            return parsedCurrentPrice;
+        }
+
+        const product = await fetchRentalProductForSummary(productId, surveyId, selectedText);
+        if (!product) return 0;
+
+        return parseRentalCurrencyValue(resolveRentalProductPriceFromData(product));
+    }
+
+    function updateSummaryTotalsFromRentalItems(subTotal) {
+        const roundedSubTotal = Math.round(subTotal);
+        const taxRate = parseFloat($('#tax_id option:selected').data('rate')) || 0;
+        const totalPenawaran = Math.round(subTotal + (subTotal * (taxRate / 100)));
+
+        $('#sub_total').val(roundedSubTotal.toLocaleString('id-ID'));
+        $('#total_penawaran').val(totalPenawaran.toLocaleString('id-ID'));
+
+        const totalsTable = $('#summary-rental-items').closest('.card-body').find('table.table-sm tbody');
+        totalsTable.find('tr:eq(0) td:last strong').text(roundedSubTotal.toLocaleString('id-ID'));
+        totalsTable.find('tr:eq(1) td:last strong').text(totalPenawaran.toLocaleString('id-ID'));
+    }
+
     async function loadSummaryRentalItems() {
         console.log('=== LOADING SUMMARY RENTAL ITEMS ===');
         
@@ -4086,6 +4141,7 @@ $(document).ready(function() {
         console.log('Price Basis:', priceBasis);
         
         let rentalItemsHtml = '';
+        let summarySubTotal = 0;
         
         // Get rental configurations from DOM first
         const rentalConfigs = $('.rental-configuration');
@@ -4238,6 +4294,7 @@ $(document).ready(function() {
             
             // Generate HTML for each room
             roomDataArray.forEach(function(roomData) {
+                summarySubTotal += roomData.room.total;
                 rentalItemsHtml += `
                     <tr>
                         <td>
@@ -4256,6 +4313,8 @@ $(document).ready(function() {
             // Track processed items to avoid duplicates
             const processedItems = new Set();
             
+            const rentalItemPromises = [];
+
             // Process DOM elements first
             rentalConfigs.each(function() {
                 const config = $(this);
@@ -4265,11 +4324,9 @@ $(document).ready(function() {
                 const displayName = rentalAlias || productName; // Use rental alias if exists, otherwise rental name
                 const quantity = config.find('input[name*="quantity"]').val() || '1';
                 const price = config.find('input[name*="price"]').val() || '0';
-                const priceNum = parseFloat(price);
-                const qtyNum = parseFloat(quantity);
-                const total = priceNum * qtyNum;
                 const remark = config.find('textarea[name*="remark"]').val() || config.find('input[name*="remark"]').val() || '';
                 const roomId = config.data('room-id') || config.find('input[name*="room_id"]').val() || 'unknown';
+                const surveyId = config.data('survey-id') || '';
                 
                 // Find aroma for this room
                 let aromaText = '';
@@ -4285,19 +4342,29 @@ $(document).ready(function() {
                     const itemKey = uniqueId;
                     if (!processedItems.has(itemKey)) {
                         processedItems.add(itemKey);
-                        rentalItemsHtml += `
-                            <tr>
-                                <td>
-                                    <strong>${displayName}</strong>
-                                    ${rentalAlias ? `<br><small class="text-muted">(${productName})</small>` : ''}
-                                    ${aromaText}
-                                    ${remark ? `<br><small class="text-info">Remark: ${remark}</small>` : ''}
-                                </td>
-                                <td class="text-center">${quantity}</td>
-                                <td class="text-end">Rp ${Math.round(priceNum).toLocaleString('id-ID')}</td>
-                                <td class="text-end">Rp ${Math.round(total).toLocaleString('id-ID')}</td>
-                            </tr>
-                        `;
+                        rentalItemPromises.push((async function() {
+                            const priceNum = await resolveSummaryRentalPrice(productId, surveyId, productName, price);
+                            if (priceNum > 0 && parseRentalCurrencyValue(price) === 0) {
+                                config.find('input[name*="price"]').val(priceNum).trigger('change');
+                            }
+                            const qtyNum = parseRentalCurrencyValue(quantity) || 1;
+                            const total = priceNum * qtyNum;
+                            summarySubTotal += total;
+
+                            return `
+                                <tr>
+                                    <td>
+                                        <strong>${displayName}</strong>
+                                        ${rentalAlias ? `<br><small class="text-muted">(${productName})</small>` : ''}
+                                        ${aromaText}
+                                        ${remark ? `<br><small class="text-info">Remark: ${remark}</small>` : ''}
+                                    </td>
+                                    <td class="text-center">${quantity}</td>
+                                    <td class="text-end">Rp ${Math.round(priceNum).toLocaleString('id-ID')}</td>
+                                    <td class="text-end">Rp ${Math.round(total).toLocaleString('id-ID')}</td>
+                                </tr>
+                            `;
+                        })());
                     }
                 }
             });
@@ -4311,11 +4378,9 @@ $(document).ready(function() {
                     const displayName = rentalAlias || productName;
                     const quantity = config.quantity || '1';
                     const price = config.price || '0';
-                    const priceNum = parseFloat(price);
-                    const qtyNum = parseFloat(quantity);
-                    const total = priceNum * qtyNum;
                     const remark = config.remark || '';
                     const roomId = config.roomId || '';
+                    const surveyId = config.surveyId || '';
                     
                     // Find aroma for this room
                     let aromaText = '';
@@ -4331,23 +4396,32 @@ $(document).ready(function() {
                         const itemKey = uniqueId;
                         if (!processedItems.has(itemKey)) {
                             processedItems.add(itemKey);
-                            rentalItemsHtml += `
-                                <tr>
-                                    <td>
-                                        <strong>${displayName}</strong>
-                                        ${rentalAlias ? `<br><small class="text-muted">(${productName})</small>` : ''}
-                                        ${aromaText}
-                                        ${remark ? `<br><small class="text-info">Remark: ${remark}</small>` : ''}
-                                    </td>
-                                    <td class="text-center">${quantity}</td>
-                                    <td class="text-end">Rp ${Math.round(priceNum).toLocaleString('id-ID')}</td>
-                                    <td class="text-end">Rp ${Math.round(total).toLocaleString('id-ID')}</td>
-                                </tr>
-                            `;
+                            rentalItemPromises.push((async function() {
+                                const priceNum = await resolveSummaryRentalPrice(productId, surveyId, productName, price);
+                                const qtyNum = parseRentalCurrencyValue(quantity) || 1;
+                                const total = priceNum * qtyNum;
+                                summarySubTotal += total;
+
+                                return `
+                                    <tr>
+                                        <td>
+                                            <strong>${displayName}</strong>
+                                            ${rentalAlias ? `<br><small class="text-muted">(${productName})</small>` : ''}
+                                            ${aromaText}
+                                            ${remark ? `<br><small class="text-info">Remark: ${remark}</small>` : ''}
+                                        </td>
+                                        <td class="text-center">${quantity}</td>
+                                        <td class="text-end">Rp ${Math.round(priceNum).toLocaleString('id-ID')}</td>
+                                        <td class="text-end">Rp ${Math.round(total).toLocaleString('id-ID')}</td>
+                                    </tr>
+                                `;
+                            })());
                         }
                     }
                 });
             }
+
+            rentalItemsHtml += (await Promise.all(rentalItemPromises)).join('');
         }
         
         if (rentalItemsHtml === '') {
@@ -4355,6 +4429,7 @@ $(document).ready(function() {
         }
         
         $('#summary-rental-items').html(rentalItemsHtml);
+        updateSummaryTotalsFromRentalItems(summarySubTotal);
     }
 
     // ===== RENTAL CONFIGURATION =====

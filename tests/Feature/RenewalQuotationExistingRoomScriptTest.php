@@ -80,6 +80,9 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('function fetchAndApplyRentalProductPrice', $view);
         $this->assertStringContainsString('if (productSelect.val() && !priceInput.val())', $view);
         $this->assertStringContainsString('product_id: productId', $view);
+        $this->assertStringContainsString('async function resolveSummaryRentalPrice', $view);
+        $this->assertStringContainsString('fetchRentalProductForSummary(productId, surveyId, selectedText)', $view);
+        $this->assertStringContainsString('updateSummaryTotalsFromRentalItems(summarySubTotal)', $view);
         $this->assertStringContainsString('room.contract_room_id && selection.contract_room_id', $view);
         $this->assertStringContainsString('clearRenewalContractScopedWizardData', $view);
         $this->assertStringContainsString('window.buildRenewalRentalUniqueId', $view);
