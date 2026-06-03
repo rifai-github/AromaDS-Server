@@ -773,9 +773,9 @@
                         <td>{{ $unit->formatted_install_date }}</td>
                         <td>{{ $unit->formatted_last_service_date }}</td>
                         <td>{{ $unit->temperature ? $unit->temperature . '°C' : '-' }}</td>
-                        <td>{{ $unit->created_at ? $unit->created_at->format('d M Y H:i') : '-' }}</td>
+                        <td>{{ $unit->created_at ? $unit->created_at->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $unit->createdBy->name ?? '-' }}</td>
-                        <td>{{ $unit->updated_at ? $unit->updated_at->format('d M Y H:i') : '-' }}</td>
+                        <td>{{ $unit->updated_at ? $unit->updated_at->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $unit->updatedBy->name ?? '-' }}</td>
                     </tr>
                     @empty

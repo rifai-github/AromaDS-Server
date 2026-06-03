@@ -1012,7 +1012,7 @@
                         <td>{{ $prospect->assignedTo->name ?? 'N/A' }}</td>
                         <td>
                             @if($prospect->follow_up_date)
-                                {{ \Carbon\Carbon::parse($prospect->follow_up_date)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($prospect->follow_up_date)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($prospect->follow_up_date)->format('H.i') }} WIB
                             @else
                                 N/A
@@ -1026,7 +1026,7 @@
                         <td>{{ $prospect->activity_notes ?? 'N/A' }}</td>
                         <td>
                             @if($prospect->updated_at)
-                                {{ \Carbon\Carbon::parse($prospect->updated_at)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($prospect->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($prospect->updated_at)->format('H.i') }} WIB
                             @else
                                 N/A

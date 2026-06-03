@@ -64,7 +64,7 @@
                         </td>
                         <td>{{ $followUp->invoice->invoice_number ?? 'N/A' }}</td>
                         <td>{{ $followUp->invoice->customer->name ?? 'N/A' }}</td>
-                        <td>{{ $followUp->follow_up_date ? \Carbon\Carbon::parse($followUp->follow_up_date)->format('d M Y') : 'N/A' }}</td>
+                        <td>{{ $followUp->follow_up_date ? \Carbon\Carbon::parse($followUp->follow_up_date)->format('d/M/Y') : 'N/A' }}</td>
                         <td>{{ ucfirst($followUp->follow_up_type ?? 'N/A') }}</td>
                         <td>
                             @if($followUp->status == 'pending')
@@ -80,7 +80,7 @@
                         <td>{{ $followUp->creator->name ?? 'N/A' }}</td>
                         <td>
                             @if($followUp->created_at)
-                                {{ $followUp->created_at->format('d M Y') }}<br>
+                                {{ $followUp->created_at->format('d/M/Y') }}<br>
                                 at {{ $followUp->created_at->format('H.i') }} WIB
                             @else
                                 N/A
@@ -89,7 +89,7 @@
                         <td>{{ $followUp->updater->name ?? 'N/A' }}</td>
                         <td>
                             @if($followUp->updated_at)
-                                {{ $followUp->updated_at->format('d M Y') }}<br>
+                                {{ $followUp->updated_at->format('d/M/Y') }}<br>
                                 at {{ $followUp->updated_at->format('H.i') }} WIB
                             @else
                                 N/A

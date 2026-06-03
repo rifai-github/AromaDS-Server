@@ -41,7 +41,7 @@
                 <!-- Follow Up Information -->
                 <div class="form-group">
                     <label class="form-label">Follow Up Date</label>
-                    <div class="form-control-static">{{ $followUp->follow_up_date ? \Carbon\Carbon::parse($followUp->follow_up_date)->format('d/m/Y') : 'N/A' }}</div>
+                    <div class="form-control-static">{{ $followUp->follow_up_date ? \Carbon\Carbon::parse($followUp->follow_up_date)->format('d/M/Y') : 'N/A' }}</div>
                 </div>
 
                 <div class="form-group">
@@ -71,7 +71,7 @@
 
                 <div class="form-group">
                     <label class="form-label">Created At</label>
-                    <div class="form-control-static">{{ $followUp->created_at->format('d/m/Y H:i') }}</div>
+                    <div class="form-control-static">{{ $followUp->created_at->format('d/M/Y H:i') }}</div>
                 </div>
 
                 @if($followUp->updater)
@@ -82,7 +82,7 @@
 
                 <div class="form-group">
                     <label class="form-label">Updated At</label>
-                    <div class="form-control-static">{{ $followUp->updated_at->format('d/m/Y H:i') }}</div>
+                    <div class="form-control-static">{{ $followUp->updated_at->format('d/M/Y H:i') }}</div>
                 </div>
                 @endif
             </div>

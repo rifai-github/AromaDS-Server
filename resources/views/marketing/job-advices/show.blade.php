@@ -279,11 +279,11 @@
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Expected Date</div>
-                                        <div class="info-field-value">{{ $jobAdvice->expected_date ? $jobAdvice->expected_date->format('d/m/Y') : 'N/A' }}</div>
+                                        <div class="info-field-value">{{ $jobAdvice->expected_date ? $jobAdvice->expected_date->format('d/M/Y') : 'N/A' }}</div>
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Remove Date</div>
-                                        <div class="info-field-value">{{ $jobAdvice->remove_date ? $jobAdvice->remove_date->format('d/m/Y') : 'N/A' }}</div>
+                                        <div class="info-field-value">{{ $jobAdvice->remove_date ? $jobAdvice->remove_date->format('d/M/Y') : 'N/A' }}</div>
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Catatan Tambahan</div>
@@ -497,7 +497,7 @@
                                             <td class="text-right">{{ ($room && $room->room_width) ? $room->room_width . ' m' : (isset($roomSpecs['width']) || isset($roomSpecs['room_width']) ? ($roomSpecs['width'] ?? $roomSpecs['room_width']) . ' m' : '-') }}</td>
                                             <td class="text-right">{{ ($room && $room->room_length) ? $room->room_length . ' m' : (isset($roomSpecs['length']) || isset($roomSpecs['room_length']) ? ($roomSpecs['length'] ?? $roomSpecs['room_length']) . ' m' : '-') }}</td>
                                             <td>{{ $room?->room_remark ?? $roomSpecs['remark'] ?? $roomSpecs['room_remark'] ?? '-' }}</td>
-                                            <td class="text-center">{{ $jaRoom->updated_at ? $jaRoom->updated_at->format('d/m/Y H:i') : 'N/A' }}</td>
+                                            <td class="text-center">{{ $jaRoom->updated_at ? $jaRoom->updated_at->format('d/M/Y H:i') : 'N/A' }}</td>
                                             <td>{{ $jaRoom->updater?->name ?? 'N/A' }}</td>
                                             @if($jobAdvice->status === 'draft')
                                                 <td class="text-center">
@@ -784,7 +784,7 @@
                                             <td>{{ $room?->room_installation_type ?? $roomSpecs['installation_type'] ?? $roomSpecs['room_installation_type'] ?? '-' }}</td>
                                             <td class="text-center">{{ $room?->room_qty ?? '-' }}</td>
                                             <td>{{ $room?->room_remark ?? '-' }}</td>
-                                            <td class="text-center">{{ $jaRoom->updated_at ? $jaRoom->updated_at->format('d/m/Y H:i') : 'N/A' }}</td>
+                                            <td class="text-center">{{ $jaRoom->updated_at ? $jaRoom->updated_at->format('d/M/Y H:i') : 'N/A' }}</td>
                                             <td>{{ $jaRoom->updater?->name ?? 'N/A' }}</td>
                                         </tr>
                                         @empty

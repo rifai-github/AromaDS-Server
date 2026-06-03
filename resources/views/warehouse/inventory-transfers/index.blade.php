@@ -746,7 +746,7 @@
                         <td>{{ $transfer->createdBy->name ?? '-' }}</td>
                         <td>
                             @if($transfer->created_at)
-                                {{ \Carbon\Carbon::parse($transfer->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($transfer->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($transfer->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -755,7 +755,7 @@
                         <td>{{ $transfer->updatedBy->name ?? '-' }}</td>
                         <td>
                             @if($transfer->updated_at)
-                                {{ \Carbon\Carbon::parse($transfer->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($transfer->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($transfer->updated_at)->format('H.i') }} WIB
                             @else
                                 -

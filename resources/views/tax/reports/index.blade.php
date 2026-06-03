@@ -454,8 +454,8 @@
                         </td>
                         <td>{{ $report->report_number ?? '-' }}</td>
                         <td>{{ ucfirst($report->report_type) ?? '-' }}</td>
-                        <td>{{ $report->tax_period_start ? \Carbon\Carbon::parse($report->tax_period_start)->format('d/m/Y') : '-' }}</td>
-                        <td>{{ $report->tax_period_end ? \Carbon\Carbon::parse($report->tax_period_end)->format('d/m/Y') : '-' }}</td>
+                        <td>{{ $report->tax_period_start ? \Carbon\Carbon::parse($report->tax_period_start)->format('d/M/Y') : '-' }}</td>
+                        <td>{{ $report->tax_period_end ? \Carbon\Carbon::parse($report->tax_period_end)->format('d/M/Y') : '-' }}</td>
                         <td class="text-right">{{ $report->total_taxable_income ? number_format($report->total_taxable_income, 0, ',', '.') : '-' }}</td>
                         <td class="text-right">{{ $report->total_tax_due ? number_format($report->total_tax_due, 0, ',', '.') : '-' }}</td>
                         <td class="text-right">{{ $report->total_tax_paid ? number_format($report->total_tax_paid, 0, ',', '.') : '-' }}</td>
@@ -466,7 +466,7 @@
                         </td>
                         <td>
                             @if($report->created_at)
-                                {{ \Carbon\Carbon::parse($report->created_at)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($report->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($report->created_at)->format('H.i') }} WIB
                             @else
                                 -

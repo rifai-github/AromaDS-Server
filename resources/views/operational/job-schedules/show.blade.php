@@ -787,7 +787,7 @@
                                             @if($canEditScheduleDate)
                                                 <div class="inline-edit-wrapper" id="scheduleDateWrapper">
                                                     <span id="scheduleDateDisplay" class="cursor-pointer text-primary" onclick="editScheduleDate()" style="text-decoration: underline;">
-                                                        {{ $jobSchedule->schedule_date?->format('d M Y') ?? '-' }}
+                                                        {{ $jobSchedule->schedule_date?->format('d/M/Y') ?? '-' }}
                                                         <i class="fas fa-edit ms-1" style="font-size: 0.8rem;"></i>
                                                     </span>
                                                     <input type="text" id="scheduleDateInput" class="form-control form-control-sm" 
@@ -797,14 +797,14 @@
                                                 </div>
                                             @else
                                                 <span class="text-muted">
-                                                    {{ $jobSchedule->schedule_date?->format('d M Y') ?? '-' }}
+                                                    {{ $jobSchedule->schedule_date?->format('d/M/Y') ?? '-' }}
                                                 </span>
                                             @endif
                                         </div>
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Expected Date</div>
-                                        <div class="info-field-value">{{ $jobSchedule->expected_date?->format('d M Y') ?? '-' }}</div>
+                                        <div class="info-field-value">{{ $jobSchedule->expected_date?->format('d/M/Y') ?? '-' }}</div>
                                     </div>
                                     {{-- MOM15: BA Date field with inline edit capability --}}
                                     {{-- MOM: BA Date ditampilkan saat done_job, completed, MAUPUN undone (setelah Unpost BA, field tetap ada meski kosong) --}}
@@ -824,7 +824,7 @@
                                             @if($canEditBaDate)
                                                 <div class="inline-edit-wrapper" id="baDateWrapper">
                                                     <span id="baDateDisplay" class="cursor-pointer text-primary" onclick="editBaDate()" style="text-decoration: underline;">
-                                                        {{ $jobSchedule->ba_date?->format('d M Y') ?? 'Set BA Date' }}
+                                                        {{ $jobSchedule->ba_date?->format('d/M/Y') ?? 'Set BA Date' }}
                                                         <i class="fas fa-edit ms-1" style="font-size: 0.8rem;"></i>
                                                     </span>
                                                     <input type="text" id="baDateInput" class="form-control form-control-sm" 
@@ -839,7 +839,7 @@
                                                 @endif
                                             @else
                                                 <span class="text-muted">
-                                                    {{ $jobSchedule->ba_date?->format('d M Y') ?? '-' }}
+                                                    {{ $jobSchedule->ba_date?->format('d/M/Y') ?? '-' }}
                                                 </span>
                                                 @if($hasActiveInvoice ?? false)
                                                 <small class="text-muted d-block mt-1">
@@ -961,7 +961,7 @@
                                             
                                             @if($jobReport->completed_at)
                                             <div style="margin-top: 0.5rem; font-size: 0.875rem; color: #6c757d;">
-                                                <i class="fas fa-clock me-1"></i>Diverifikasi pada: {{ $jobReport->completed_at->format('d M Y H:i') }}
+                                                <i class="fas fa-clock me-1"></i>Diverifikasi pada: {{ $jobReport->completed_at->format('d/M/Y H:i') }}
                                             </div>
                                             @endif
                                         </div>
@@ -1095,7 +1095,7 @@
                                                 @if($jobScheduleRoom->status === 'completed' && $jobScheduleRoom->completedBy)
                                                     <div>{{ $jobScheduleRoom->completedBy->name ?? '-' }}</div>
                                                     <div style="font-size: 0.85rem; color: #6c757d;">
-                                                        {{ $jobScheduleRoom->completed_at?->format('d M Y H:i') }}
+                                                        {{ $jobScheduleRoom->completed_at?->format('d/M/Y H:i') }}
                                                     </div>
                                                 @else
                                                     <span class="text-muted">-</span>
@@ -1123,7 +1123,7 @@
                                                     }
                                                 @endphp
                                                 @if($startAt)
-                                                    <div style="font-size: 0.85rem;">{{ $startAt->format('d M Y H:i') }}</div>
+                                                    <div style="font-size: 0.85rem;">{{ $startAt->format('d/M/Y H:i') }}</div>
                                                     @if($startLat && $startLng)
                                                         <a href="https://www.google.com/maps?q={{ $startLat }},{{ $startLng }}" target="_blank" class="badge badge-info mt-1" style="text-decoration: none;">
                                                             <i class="fas fa-map-marker-alt"></i> View Map
@@ -1165,7 +1165,7 @@
                                                     }
                                                 @endphp
                                                 @if($finishTime)
-                                                    <div style="font-size: 0.85rem;">{{ $finishTime->format('d M Y H:i') }}</div>
+                                                    <div style="font-size: 0.85rem;">{{ $finishTime->format('d/M/Y H:i') }}</div>
                                                     @if($finishLat && $finishLng)
                                                         <a href="https://www.google.com/maps?q={{ $finishLat }},{{ $finishLng }}" target="_blank" class="badge badge-success mt-1" style="text-decoration: none;">
                                                             <i class="fas fa-map-marker-alt"></i> View Map
@@ -1266,14 +1266,14 @@
                                                     {{ ucfirst(str_replace('_', ' ', $effectiveStatus)) }}
                                                 </span>
                                             </td>
-                                            <td>{{ $item->materialIssue->issue_date?->format('d/m/Y') ?? '-' }}</td>
+                                            <td>{{ $item->materialIssue->issue_date?->format('d/M/Y') ?? '-' }}</td>
                                             <td>{{ $item->product?->productCategory?->name ?? '-' }}</td>
                                             <td>{{ $item->product?->name ?? '-' }}</td>
                                             <td>{{ $item->product?->packagingSize?->name ?? $item->product?->packaging_size ?? '-' }}</td>
                                             <td>{{ $item->quantity ?? 0 }}</td>
                                             <td>{{ $item->materialIssue->warehouse?->name ?? '-' }}</td>
                                             <td>{{ $item->materialIssue->team?->team_code ?? '-' }}</td>
-                                            <td>{{ $item->updated_at?->format('d/m/Y H:i') ?? '-' }}</td>
+                                            <td>{{ $item->updated_at?->format('d/M/Y H:i') ?? '-' }}</td>
                                         </tr>
                                         @empty
                                         <tr>
@@ -1381,7 +1381,7 @@
                                     <tbody>
                                         @forelse($teamLocations ?? [] as $location)
                                         <tr>
-                                            <td>{{ $location->recorded_at->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') }} WIB</td>
+                                            <td>{{ $location->recorded_at->setTimezone('Asia/Jakarta')->format('d/M/Y H:i:s') }} WIB</td>
                                             <td>{{ $location->user->name ?? '-' }}</td>
                                             <td>
                                                 <span class="badge {{ $location->action_badge_class }}">
@@ -1546,7 +1546,7 @@
                                                     }
                                                 @endphp
                                                 @if($createdAt)
-                                                    {{ $createdAt->setTimezone('Asia/Jakarta')->format('d/m/Y H:i:s') }} WIB
+                                                    {{ $createdAt->setTimezone('Asia/Jakarta')->format('d/M/Y H:i:s') }} WIB
                                                 @else
                                                     -
                                                 @endif
@@ -1688,7 +1688,7 @@
                                                         @endif
                                                     </td>
                                                     <td>
-                                                        {{ $file->uploaded_at ? $file->uploaded_at->format('d/m/Y H:i') : '-' }}<br>
+                                                        {{ $file->uploaded_at ? $file->uploaded_at->format('d/M/Y H:i') : '-' }}<br>
                                                         <small class="text-muted">{{ $file->uploader->name ?? '-' }}</small>
                                                     </td>
                                                     <td>
@@ -1826,7 +1826,7 @@
                                                 @endif
                                             </td>
                                             <td>
-                                                {{ $detail->scanned_at ? \Carbon\Carbon::parse($detail->scanned_at)->format('d M Y H:i') : '-' }}
+                                                {{ $detail->scanned_at ? \Carbon\Carbon::parse($detail->scanned_at)->format('d/M/Y H:i') : '-' }}
                                             </td>
                                             <td>
                                                 @if($detail->notes)
@@ -2200,7 +2200,7 @@ document.addEventListener('DOMContentLoaded', function() {
     fpScheduleDate = flatpickr("#scheduleDateInput", {
         dateFormat: "Y-m-d",
         altInput: true,
-        altFormat: "d M Y",
+        altFormat: "d/M/Y",
         allowInput: true,
         onReady: function(selectedDates, dateStr, instance) {
             // Hide the altInput initially since we use the display span
@@ -2501,7 +2501,7 @@ document.addEventListener('DOMContentLoaded', function() {
         fpBaDate = flatpickr("#baDateInput", {
             dateFormat: "Y-m-d",
             altInput: true,
-            altFormat: "d M Y",
+            altFormat: "d/M/Y",
             allowInput: true,
             onReady: function(selectedDates, dateStr, instance) {
                 // Hide the altInput initially since we use the display span

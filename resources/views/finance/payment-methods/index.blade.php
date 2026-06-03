@@ -429,7 +429,7 @@
                         <td>{{ $paymentMethod->createdBy->name ?? '-' }}</td>
                         <td>
                             @if($paymentMethod->created_at)
-                                {{ $paymentMethod->created_at->format('d M Y') }}<br>
+                                {{ $paymentMethod->created_at->format('d/M/Y') }}<br>
                                 at {{ $paymentMethod->created_at->format('H.i') }} WIB
                             @else
                                 -
@@ -438,7 +438,7 @@
                         <td>{{ $paymentMethod->updatedBy->name ?? '-' }}</td>
                         <td>
                             @if($paymentMethod->updated_at)
-                                {{ $paymentMethod->updated_at->format('d M Y') }}<br>
+                                {{ $paymentMethod->updated_at->format('d/M/Y') }}<br>
                                 at {{ $paymentMethod->updated_at->format('H.i') }} WIB
                             @else
                                 -

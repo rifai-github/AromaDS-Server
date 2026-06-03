@@ -954,7 +954,7 @@
                                 @php
                                     $createdDate = \Carbon\Carbon::parse($branch->created_at);
                                 @endphp
-                                {{ $createdDate->format('d M Y') }}<br>
+                                {{ $createdDate->format('d/M/Y') }}<br>
                                 at {{ $createdDate->format('H.i') }} WIB
                             @else
                                 -
@@ -966,7 +966,7 @@
                                 @php
                                     $date = \Carbon\Carbon::parse($branch->updated_at);
                                 @endphp
-                                {{ $date->format('d M Y') }}<br>
+                                {{ $date->format('d/M/Y') }}<br>
                                 at {{ $date->format('H.i') }} WIB
                             @else
                                 -

@@ -803,11 +803,11 @@
                             </span>
                         </td>
                         <td>
-                            {{ $serialNumber->created_at ? \Carbon\Carbon::parse($serialNumber->created_at)->format('d/m/Y H:i') : '-' }}
+                            {{ $serialNumber->created_at ? \Carbon\Carbon::parse($serialNumber->created_at)->format('d/M/Y H:i') : '-' }}
                         </td>
                         <td>{{ $serialNumber->createdBy->name ?? '-' }}</td>
                         <td>
-                            {{ $serialNumber->updated_at ? \Carbon\Carbon::parse($serialNumber->updated_at)->format('d/m/Y H:i') : '-' }}
+                            {{ $serialNumber->updated_at ? \Carbon\Carbon::parse($serialNumber->updated_at)->format('d/M/Y H:i') : '-' }}
                         </td>
                         <td>{{ $serialNumber->updatedBy->name ?? '-' }}</td>
                     </tr>

@@ -41,11 +41,11 @@
                                 </tr>
                                 <tr>
                                     <td><strong>Invoice Date:</strong></td>
-                                    <td>{{ $taxInvoice->invoice_date->format('d/m/Y') }}</td>
+                                    <td>{{ $taxInvoice->invoice_date->format('d/M/Y') }}</td>
                                 </tr>
                                 <tr>
                                     <td><strong>Due Date:</strong></td>
-                                    <td>{{ $taxInvoice->due_date->format('d/m/Y') }}</td>
+                                    <td>{{ $taxInvoice->due_date->format('d/M/Y') }}</td>
                                 </tr>
                             </table>
                         </div>
@@ -142,7 +142,7 @@
                                 </tr>
                                 <tr>
                                     <td><strong>Created At:</strong></td>
-                                    <td>{{ $taxInvoice->created_at->format('d/m/Y H:i:s') }}</td>
+                                    <td>{{ $taxInvoice->created_at->format('d/M/Y H:i:s') }}</td>
                                 </tr>
                                 @if($taxInvoice->updatedBy)
                                 <tr>
@@ -151,7 +151,7 @@
                                 </tr>
                                 <tr>
                                     <td><strong>Updated At:</strong></td>
-                                    <td>{{ $taxInvoice->updated_at->format('d/m/Y H:i:s') }}</td>
+                                    <td>{{ $taxInvoice->updated_at->format('d/M/Y H:i:s') }}</td>
                                 </tr>
                                 @endif
                             </table>

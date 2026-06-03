@@ -316,7 +316,7 @@
                                     {{ $opname->qty_selisih ?? 0 }}
                                 </td>
                                 <td>{{ $opname->createdBy->name ?? 'N/A' }}</td>
-                                <td>{{ $opname->created_at ? $opname->created_at->format('d M Y H:i') : 'N/A' }}</td>
+                                <td>{{ $opname->created_at ? $opname->created_at->format('d/M/Y H:i') : 'N/A' }}</td>
                             </tr>
                             @endforeach
                         </tbody>

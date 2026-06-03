@@ -414,7 +414,7 @@
                             </span>
                         </td>
                         <td>{{ $systemHealth->message }}</td>
-                        <td>{{ $systemHealth->created_at->format('d M Y H:i') }}</td>
+                        <td>{{ $systemHealth->created_at->format('d/M/Y H:i') }}</td>
                     </tr>
                     @empty
                     <tr>

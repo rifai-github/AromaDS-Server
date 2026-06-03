@@ -931,7 +931,7 @@
                         <td>{{ $issuing->issuing_number ?? 'N/A' }}</td>
                         <td>{{ $issuing->id }}</td>
                         <td>{{ $issuing->branch_name }}</td>
-                        <td>{{ $issuing->issue_date ? $issuing->issue_date->format('d/m/Y') : 'N/A' }}</td>
+                        <td>{{ $issuing->issue_date ? $issuing->issue_date->format('d/M/Y') : 'N/A' }}</td>
                         <td>
                             <span class="px-2 py-1 text-xs rounded-full {{ $issuing->status === 'pending' ? 'bg-yellow-100 text-yellow-800' : ($issuing->status === 'processed' ? 'bg-blue-100 text-blue-800' : ($issuing->status === 'sent' ? 'bg-purple-100 text-purple-800' : ($issuing->status === 'received' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'))) }}">
                                 {{ $issuing->status_text }}
@@ -945,7 +945,7 @@
                         <td>{{ $issuing->createdBy?->name ?? '-' }}</td>
                         <td>
                             @if($issuing->created_at)
-                                {{ \Carbon\Carbon::parse($issuing->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($issuing->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($issuing->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -954,7 +954,7 @@
                         <td>{{ $issuing->updatedBy?->name ?? '-' }}</td>
                         <td>
                             @if($issuing->updated_at)
-                                {{ \Carbon\Carbon::parse($issuing->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($issuing->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($issuing->updated_at)->format('H.i') }} WIB
                             @else
                                 -

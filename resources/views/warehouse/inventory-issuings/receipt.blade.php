@@ -237,7 +237,7 @@
             </div>
             <div class="info-row">
                 <div class="info-label">Issue Date:</div>
-                <div class="info-value">{{ \Carbon\Carbon::parse($issuing->issue_date)->format('d M Y') }}</div>
+                <div class="info-value">{{ \Carbon\Carbon::parse($issuing->issue_date)->format('d/M/Y') }}</div>
             </div>
             <div class="info-row">
                 <div class="info-label">Reference No:</div>

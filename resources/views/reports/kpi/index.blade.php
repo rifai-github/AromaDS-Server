@@ -295,8 +295,8 @@
                             </span>
                         </td>
                         <td>{{ $kpi->creator->name ?? 'N/A' }}</td>
-                        <td>{{ $kpi->created_at->format('d M Y H:i') }}</td>
-                        <td>{{ $kpi->updated_at->format('d M Y H:i') }}</td>
+                        <td>{{ $kpi->created_at->format('d/M/Y H:i') }}</td>
+                        <td>{{ $kpi->updated_at->format('d/M/Y H:i') }}</td>
                     </tr>
                     @empty
                     <tr>

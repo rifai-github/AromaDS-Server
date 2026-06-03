@@ -953,7 +953,7 @@
                             </span>
                         </td>
                         <td class="w-[110px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->contract_date ? \Carbon\Carbon::parse($contract->contract_date)->format('d F Y') : 'N/A' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->contract_date ? \Carbon\Carbon::parse($contract->contract_date)->format('d/M/Y') : 'N/A' }}</p>
                         </td>
                         <!-- Sales Quotation No -->
                         <td class="w-[140px] p-2">
@@ -1037,11 +1037,11 @@
                         </td>
                         <!-- Hidden: Start Date -->
                         <td class="w-[120px] p-2" style="display: none;">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->actual_start_date ? \Carbon\Carbon::parse($contract->actual_start_date)->format('d F Y') : '-' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->actual_start_date ? \Carbon\Carbon::parse($contract->actual_start_date)->format('d/M/Y') : '-' }}</p>
                         </td>
                         <!-- Hidden: End Date -->
                         <td class="w-[120px] p-2" style="display: none;">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->actual_end_date ? \Carbon\Carbon::parse($contract->actual_end_date)->format('d F Y') : '-' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->actual_end_date ? \Carbon\Carbon::parse($contract->actual_end_date)->format('d/M/Y') : '-' }}</p>
                         </td>
                         <!-- <td class="w-[200px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->contract_terms ?? 'N/A' }}</p>
@@ -1069,7 +1069,7 @@
                         <!-- Hidden: Created At -->
                         <td class="w-[150px] p-2" style="display: none;">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">
-                                {!! $contract->created_at ? \Carbon\Carbon::parse($contract->created_at)->format('d F Y') . '<br />at ' . \Carbon\Carbon::parse($contract->created_at)->format('H.i') . ' WIB' : 'N/A' !!}
+                                {!! $contract->created_at ? \Carbon\Carbon::parse($contract->created_at)->format('d/M/Y') . '<br />at ' . \Carbon\Carbon::parse($contract->created_at)->format('H.i') . ' WIB' : 'N/A' !!}
                             </p>
                         </td>
                         <!-- Hidden: Last Updated By -->
@@ -1079,7 +1079,7 @@
                         <!-- Hidden: Last Updated At -->
                         <td class="w-[150px] p-2" style="display: none;">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">
-                                {!! $contract->updated_at ? \Carbon\Carbon::parse($contract->updated_at)->format('d F Y') . '<br />at ' . \Carbon\Carbon::parse($contract->updated_at)->format('H.i') . ' WIB' : 'N/A' !!}
+                                {!! $contract->updated_at ? \Carbon\Carbon::parse($contract->updated_at)->format('d/M/Y') . '<br />at ' . \Carbon\Carbon::parse($contract->updated_at)->format('H.i') . ' WIB' : 'N/A' !!}
                             </p>
                         </td>
                         <td class="w-[140px] p-2">

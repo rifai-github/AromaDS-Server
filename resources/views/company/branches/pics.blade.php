@@ -510,9 +510,9 @@
                                     </td>
                                     <td>
                                         <div class="text-sm">
-                                            <div>From: {{ \Carbon\Carbon::parse($pic->assigned_date)->format('d/m/Y') }}</div>
+                                            <div>From: {{ \Carbon\Carbon::parse($pic->assigned_date)->format('d/M/Y') }}</div>
                                             @if($pic->end_date)
-                                                <div>To: {{ \Carbon\Carbon::parse($pic->end_date)->format('d/m/Y') }}</div>
+                                                <div>To: {{ \Carbon\Carbon::parse($pic->end_date)->format('d/M/Y') }}</div>
                                             @else
                                                 <div class="text-muted">Ongoing</div>
                                             @endif

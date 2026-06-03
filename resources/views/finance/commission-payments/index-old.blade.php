@@ -33,7 +33,7 @@
                                     <td>{{ $payment->user->name ?? 'N/A' }}</td>
                                     <td>{{ $payment->formatted_amount }}</td>
                                     <td>{{ $payment->payment_method_label }}</td>
-                                    <td>{{ $payment->payment_date->format('d M Y') }}</td>
+                                    <td>{{ $payment->payment_date->format('d/M/Y') }}</td>
                                     <td>
                                         <span class="badge {{ $payment->status_badge }}">
                                             {{ $payment->status_label }}

@@ -291,8 +291,8 @@
                             </span>
                         </td>
                         <td>{{ $favorite->user->name ?? 'N/A' }}</td>
-                        <td>{{ $favorite->created_at->format('d M Y H:i') }}</td>
-                        <td>{{ $favorite->updated_at->format('d M Y H:i') }}</td>
+                        <td>{{ $favorite->created_at->format('d/M/Y H:i') }}</td>
+                        <td>{{ $favorite->updated_at->format('d/M/Y H:i') }}</td>
                     </tr>
                     @empty
                     <tr>

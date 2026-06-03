@@ -834,7 +834,7 @@
                         <!-- Created At -->
                         <td>
                             @if($building->created_at)
-                                {{ \Carbon\Carbon::parse($building->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($building->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($building->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -845,7 +845,7 @@
                         <!-- Last Updated At -->
                         <td>
                             @if($building->updated_at)
-                                {{ \Carbon\Carbon::parse($building->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($building->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($building->updated_at)->format('H.i') }} WIB
                             @else
                                 -

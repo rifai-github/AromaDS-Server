@@ -457,9 +457,9 @@
                             </span>
                         </td>
                         <td>{{ $apiToken->last_used_formatted }}</td>
-                        <td>{{ $apiToken->expires_at ? $apiToken->expires_at->format('d M Y') : 'Never' }}</td>
-                        <td>{{ $apiToken->created_at->format('d M Y') }}</td>
-                        <td>{{ $apiToken->updated_at ? $apiToken->updated_at->format('d M Y') : '-' }}</td>
+                        <td>{{ $apiToken->expires_at ? $apiToken->expires_at->format('d/M/Y') : 'Never' }}</td>
+                        <td>{{ $apiToken->created_at->format('d/M/Y') }}</td>
+                        <td>{{ $apiToken->updated_at ? $apiToken->updated_at->format('d/M/Y') : '-' }}</td>
                     </tr>
                     @empty
                     <tr>

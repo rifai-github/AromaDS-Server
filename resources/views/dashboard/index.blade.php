@@ -408,7 +408,7 @@
                 <i class="fas fa-tachometer-alt me-2"></i>Dashboard Overview
             </h1>
             <p class="dashboard-date mb-0">
-                {{ now()->locale('id')->translatedFormat('l, d F Y') }}
+                {{ now()->locale('id')->translatedFormat('l, d/M/Y') }}
             </p>
         </div>
         <button class="refresh-btn" onclick="location.reload()">
@@ -478,7 +478,7 @@
                             <tr>
                                 <td><strong>{{ $job->job_number ?? '-' }}</strong></td>
                                 <td>{{ $job->building->nama_gedung ?? $job->building_name ?? '-' }}</td>
-                                <td>{{ $job->schedule_date ? \Carbon\Carbon::parse($job->schedule_date)->format('d M Y') : '-' }}</td>
+                                <td>{{ $job->schedule_date ? \Carbon\Carbon::parse($job->schedule_date)->format('d/M/Y') : '-' }}</td>
                                 <td><span class="status-badge {{ $job->status }}">{{ str_replace('_', ' ', $job->status) }}</span></td>
                             </tr>
                             @endforeach
@@ -554,7 +554,7 @@
                             <tr>
                                 <td><strong>{{ $job->job_number ?? '-' }}</strong></td>
                                 <td>{{ $job->building->nama_gedung ?? $job->building_name ?? '-' }}</td>
-                                <td>{{ $job->schedule_date ? \Carbon\Carbon::parse($job->schedule_date)->format('d M Y (D)') : '-' }}</td>
+                                <td>{{ $job->schedule_date ? \Carbon\Carbon::parse($job->schedule_date)->format('d/M/Y (D)') : '-' }}</td>
                                 <td><span class="status-badge {{ $job->status }}">{{ str_replace('_', ' ', $job->status) }}</span></td>
                             </tr>
                             @endforeach
@@ -587,7 +587,7 @@
                         <div class="list-content">
                             <div class="list-title">{{ $survey->customer->customer_name ?? 'N/A' }}</div>
                             <div class="list-subtitle">
-                                {{ $survey->survey_date ? \Carbon\Carbon::parse($survey->survey_date)->format('d M Y') : 'Not scheduled' }}
+                                {{ $survey->survey_date ? \Carbon\Carbon::parse($survey->survey_date)->format('d/M/Y') : 'Not scheduled' }}
                                 · <span class="status-badge {{ $survey->status }}">{{ $survey->status }}</span>
                             </div>
                         </div>
@@ -699,7 +699,7 @@
                         <div class="list-content">
                             <div class="list-title">{{ $pipeline->company_name ?? 'N/A' }}</div>
                             <div class="list-subtitle">
-                                <strong>{{ $pipeline->follow_up_date ? $pipeline->follow_up_date->format('d M Y') : '-' }}</strong>
+                                <strong>{{ $pipeline->follow_up_date ? $pipeline->follow_up_date->format('d/M/Y') : '-' }}</strong>
                                 · <span class="status-badge {{ $pipeline->status }}">{{ $pipeline->status }}</span>
                             </div>
                         </div>
@@ -720,7 +720,7 @@
                         <div class="list-content">
                             <div class="list-title">{{ $pipeline->company_name ?? 'N/A' }}</div>
                             <div class="list-subtitle">
-                                {{ $pipeline->visit_date ? $pipeline->visit_date->format('d M Y') : '-' }}
+                                {{ $pipeline->visit_date ? $pipeline->visit_date->format('d/M/Y') : '-' }}
                                 · <span class="status-badge {{ $pipeline->status }}">{{ $pipeline->status }}</span>
                             </div>
                         </div>
@@ -776,7 +776,7 @@
                             <div class="list-title">{{ $invoice->invoice_number ?? 'N/A' }}</div>
                             <div class="list-subtitle">
                                 {{ $invoice->customer->customer_name ?? 'N/A' }}
-                                · {{ $invoice->created_at->format('d M Y') }}
+                                · {{ $invoice->created_at->format('d/M/Y') }}
                             </div>
                         </div>
                     </div>

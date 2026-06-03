@@ -357,16 +357,16 @@
                                         <td>{{ $rental->room_name }}</td>
                                         <td>{{ $rental->rental_name }}</td>
                                         <td>{{ $rental->reference_number }}</td>
-                                        <td>{{ $rental->expected_install_date ? \Carbon\Carbon::parse($rental->expected_install_date)->format('d M Y') : '-' }}</td>
-                                        <td>{{ $rental->install_date ? \Carbon\Carbon::parse($rental->install_date)->format('d M Y') : '-' }}</td>
-                                        <td>{{ $rental->remove_date ? \Carbon\Carbon::parse($rental->remove_date)->format('d M Y') : '-' }}</td>
-                                        <td>{{ $rental->last_service_date ? \Carbon\Carbon::parse($rental->last_service_date)->format('d M Y') : '-' }}</td>
+                                        <td>{{ $rental->expected_install_date ? \Carbon\Carbon::parse($rental->expected_install_date)->format('d/M/Y') : '-' }}</td>
+                                        <td>{{ $rental->install_date ? \Carbon\Carbon::parse($rental->install_date)->format('d/M/Y') : '-' }}</td>
+                                        <td>{{ $rental->remove_date ? \Carbon\Carbon::parse($rental->remove_date)->format('d/M/Y') : '-' }}</td>
+                                        <td>{{ $rental->last_service_date ? \Carbon\Carbon::parse($rental->last_service_date)->format('d/M/Y') : '-' }}</td>
                                         <td>
                                             <span title="{{ $rental->remarks ?? '' }}">
                                                 {{ Str::limit($rental->remarks ?: '-', 20) }}
                                             </span>
                                         </td>
-                                        <td>{{ $rental->updated_at ? \Carbon\Carbon::parse($rental->updated_at)->format('d M Y - H:i') : '-' }}</td>
+                                        <td>{{ $rental->updated_at ? \Carbon\Carbon::parse($rental->updated_at)->format('d/M/Y - H:i') : '-' }}</td>
                                         <td>{{ $rental->updater_name }}</td>
                                     </tr>
                                     @empty

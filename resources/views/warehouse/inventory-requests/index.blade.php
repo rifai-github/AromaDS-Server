@@ -1005,19 +1005,19 @@
                                 {{ ucfirst($request->status ?? 'N/A') }}
                             </span>
                         </td>
-                        <td>{{ $request->required_date ? $request->required_date->format('j M Y') : '-' }}</td>
+                        <td>{{ $request->required_date ? $request->required_date->format('d/M/Y') : '-' }}</td>
                         <td>{{ $request->requestedBy?->name ?? 'N/A' }}</td>
-                        <td>{{ $request->approved_at ? $request->approved_at->format('j M Y H:i') : '-' }}</td>
+                        <td>{{ $request->approved_at ? $request->approved_at->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $request->approvedBy?->name ?? '-' }}</td>
-                        <td>{{ $request->processed_date ? $request->processed_date->format('j M Y H:i') : '-' }}</td>
+                        <td>{{ $request->processed_date ? $request->processed_date->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $request->processed_date ? ($request->updatedBy?->name ?? 'System') : '-' }}</td>
-                        <td>{{ $request->shipped_at ? $request->shipped_at->format('j M Y H:i') : '-' }}</td>
+                        <td>{{ $request->shipped_at ? $request->shipped_at->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $request->shipping_tracking_number ?? '-' }}</td>
                         <td>
                             @if($request->inventoryReceivings && $request->inventoryReceivings->isNotEmpty())
-                                {{ $request->inventoryReceivings->first()->receive_date ? $request->inventoryReceivings->first()->receive_date->format('j M Y H:i') : '-' }}
+                                {{ $request->inventoryReceivings->first()->receive_date ? $request->inventoryReceivings->first()->receive_date->format('d/M/Y H:i') : '-' }}
                             @elseif($request->inventoryIssuing && $request->inventoryIssuing->received_at)
-                                {{ $request->inventoryIssuing->received_at->format('j M Y H:i') }}
+                                {{ $request->inventoryIssuing->received_at->format('d/M/Y H:i') }}
                             @else
                                 -
                             @endif
@@ -1035,7 +1035,7 @@
                         <td>{{ $request->createdBy?->name ?? '-' }}</td>
                         <td>
                             @if($request->created_at)
-                                {{ \Carbon\Carbon::parse($request->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($request->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($request->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -1044,7 +1044,7 @@
                         <td>{{ $request->updatedBy?->name ?? '-' }}</td>
                         <td>
                             @if($request->updated_at)
-                                {{ \Carbon\Carbon::parse($request->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($request->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($request->updated_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -2021,7 +2021,7 @@ document.addEventListener('DOMContentLoaded', function() {
         flatpickr(filterFromEl, {
             dateFormat: 'Y-m-d',
             altInput: true,
-            altFormat: 'j M Y',
+            altFormat: 'd/M/Y',
             defaultDate: filterFromEl.getAttribute('data-date'),
             onChange: function(selectedDates, dateStr) {
                 filterFromEl.setAttribute('data-date', dateStr);
@@ -2035,7 +2035,7 @@ document.addEventListener('DOMContentLoaded', function() {
         flatpickr(filterToEl, {
             dateFormat: 'Y-m-d',
             altInput: true,
-            altFormat: 'j M Y',
+            altFormat: 'd/M/Y',
             defaultDate: filterToEl.getAttribute('data-date'),
             onChange: function(selectedDates, dateStr) {
                 filterToEl.setAttribute('data-date', dateStr);
@@ -2052,7 +2052,7 @@ function initModalDatePicker() {
             flatpickr(dateInput, {
                 dateFormat: 'Y-m-d',
                 altInput: true,
-                altFormat: 'j M Y',
+                altFormat: 'd/M/Y',
                 allowInput: false
             });
         }

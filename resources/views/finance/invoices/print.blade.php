@@ -37,8 +37,8 @@
             </td>
             <td width="50%" align="right">
                 <strong>Invoice Number:</strong> {{ $invoice->invoice_number }}<br>
-                <strong>Date:</strong> {{ $invoice->invoice_date->format('d M Y') }}<br>
-                <strong>Due Date:</strong> {{ $invoice->due_date->format('d M Y') }}<br>
+                <strong>Date:</strong> {{ $invoice->invoice_date->format('d/M/Y') }}<br>
+                <strong>Due Date:</strong> {{ $invoice->due_date->format('d/M/Y') }}<br>
                 <strong>Contract:</strong> {{ $invoice->contract_number }}
             </td>
         </tr>

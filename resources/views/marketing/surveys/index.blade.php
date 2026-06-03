@@ -1492,7 +1492,7 @@
                         <td>{{ $survey->survey_number ?? 'N/A' }}</td>
                         <td>
                             @if($survey->survey_date)
-                                {{ $survey->survey_date->format('d F Y') }}
+                                {{ $survey->survey_date->format('d/M/Y') }}
                             @else
                                 N/A
                             @endif
@@ -1537,7 +1537,7 @@
                         <td>{{ $survey->creator->name ?? 'N/A' }}</td>
                         <td>
                             @if($survey->created_at)
-                                {{ $survey->created_at->format('d F Y') }}<br>
+                                {{ $survey->created_at->format('d/M/Y') }}<br>
                                 <small class="text-gray-500">at {{ $survey->created_at->format('H.i') }} WIB</small>
                             @else
                                 N/A
@@ -1546,7 +1546,7 @@
                         <td>{{ $survey->updater->name ?? 'N/A' }}</td>
                         <td>
                             @if($survey->updated_at)
-                                {{ $survey->updated_at->format('d F Y') }}<br>
+                                {{ $survey->updated_at->format('d/M/Y') }}<br>
                                 <small class="text-gray-500">at {{ $survey->updated_at->format('H.i') }} WIB</small>
                             @else
                                 N/A

@@ -621,7 +621,7 @@
                                     {{ ucfirst(str_replace('_', ' ', $payment->payment_method)) }}
                                 </span>
                             </td>
-                            <td>{{ $payment->payment_date->format('d M Y') }}</td>
+                            <td>{{ $payment->payment_date->format('d/M/Y') }}</td>
                             <td>
                                 @if($payment->status == 'completed')
                                     <span class="badge badge-success">Completed</span>

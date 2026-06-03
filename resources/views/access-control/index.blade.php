@@ -351,9 +351,9 @@
                                     @endforelse
                                 </div>
                             </td>
-                            <td>{{ $user->created_at ? $user->created_at->format('d M Y H:i') : '-' }}</td>
+                            <td>{{ $user->created_at ? $user->created_at->format('d/M/Y H:i') : '-' }}</td>
                             <td>{{ $user->createdBy->name ?? '-' }}</td>
-                            <td>{{ $user->updated_at ? $user->updated_at->format('d M Y H:i') : '-' }}</td>
+                            <td>{{ $user->updated_at ? $user->updated_at->format('d/M/Y H:i') : '-' }}</td>
                             <td>{{ $user->updatedBy->name ?? '-' }}</td>
                             <td>
                                 <div style="display: flex; flex-wrap: wrap; gap: 6px;">

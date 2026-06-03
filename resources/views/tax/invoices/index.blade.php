@@ -456,8 +456,8 @@
                         </td>
                         <td>{{ $invoice->invoice_number ?? '-' }}</td>
                         <td>{{ $invoice->customer->name ?? '-' }}</td>
-                        <td>{{ $invoice->invoice_date ? \Carbon\Carbon::parse($invoice->invoice_date)->format('d/m/Y') : '-' }}</td>
-                        <td>{{ $invoice->due_date ? \Carbon\Carbon::parse($invoice->due_date)->format('d/m/Y') : '-' }}</td>
+                        <td>{{ $invoice->invoice_date ? \Carbon\Carbon::parse($invoice->invoice_date)->format('d/M/Y') : '-' }}</td>
+                        <td>{{ $invoice->due_date ? \Carbon\Carbon::parse($invoice->due_date)->format('d/M/Y') : '-' }}</td>
                         <td class="text-right">{{ $invoice->subtotal ? number_format($invoice->subtotal, 0, ',', '.') : '-' }}</td>
                         <td class="text-right">{{ $invoice->tax_amount ? number_format($invoice->tax_amount, 0, ',', '.') : '-' }}</td>
                         <td class="text-right">{{ $invoice->total_amount ? number_format($invoice->total_amount, 0, ',', '.') : '-' }}</td>
@@ -484,7 +484,7 @@
                         </td>
                         <td>
                             @if($invoice->created_at)
-                                {{ \Carbon\Carbon::parse($invoice->created_at)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($invoice->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($invoice->created_at)->format('H.i') }} WIB
                             @else
                                 -

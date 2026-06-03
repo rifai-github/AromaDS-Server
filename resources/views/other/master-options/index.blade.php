@@ -361,7 +361,7 @@
                                 <span class="status-badge bg-red-100 text-red-700 border border-red-200 text-xs">Inactive</span>
                             @endif
                         </td>
-                        <td>{{ $option->created_at ? $option->created_at->format('d M Y') : '-' }}</td>
+                        <td>{{ $option->created_at ? $option->created_at->format('d/M/Y') : '-' }}</td>
                         <td>{{ $option->createdBy->name ?? '-' }}</td>
                     </tr>
                     @empty

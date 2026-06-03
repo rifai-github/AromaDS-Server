@@ -195,9 +195,9 @@
                                     </span>
                                 </td>
                                 <td class="text-gray-500 text-sm">{{ $form->creator->name ?? '-' }}</td>
-                                <td class="text-gray-500 text-sm">{!! $form->created_at ? $form->created_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                                <td class="text-gray-500 text-sm">{!! $form->created_at ? $form->created_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                                 <td class="text-gray-500 text-sm">{{ $form->updater->name ?? '-' }}</td>
-                                <td class="text-gray-500 text-sm">{!! $form->updated_at ? $form->updated_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                                <td class="text-gray-500 text-sm">{!! $form->updated_at ? $form->updated_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                             </tr>
                         @empty
                             <tr>

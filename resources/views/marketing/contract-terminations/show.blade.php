@@ -245,7 +245,7 @@
             </div>
             <div class="detail-item">
                 <div class="detail-label">Requested At</div>
-                <div class="detail-value">{{ $contractTermination->requested_at ? $contractTermination->requested_at->format('d M Y H:i') : '-' }}</div>
+                <div class="detail-value">{{ $contractTermination->requested_at ? $contractTermination->requested_at->format('d/M/Y H:i') : '-' }}</div>
             </div>
         </div>
     </div>
@@ -320,7 +320,7 @@
             </div>
             <div class="detail-item">
                 <div class="detail-label">Approved At</div>
-                <div class="detail-value">{{ $contractTermination->approved_at ? $contractTermination->approved_at->format('d M Y H:i') : '-' }}</div>
+                <div class="detail-value">{{ $contractTermination->approved_at ? $contractTermination->approved_at->format('d/M/Y H:i') : '-' }}</div>
             </div>
             @endif
         </div>

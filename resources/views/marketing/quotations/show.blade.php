@@ -948,7 +948,7 @@ document.addEventListener('DOMContentLoaded', function() {
         flatpickr(quotationDateInput, {
             dateFormat: 'Y-m-d',
             altInput: true,
-            altFormat: 'd M Y',
+            altFormat: 'd/M/Y',
             allowInput: false,
             clickOpens: true,
             defaultDate: quotationDateInput.value || null,

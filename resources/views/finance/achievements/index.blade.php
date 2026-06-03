@@ -891,10 +891,10 @@
                                 @endif
                             </td>
                             <td class="text-sm text-gray-500">{{ $achievement->createdBy->name ?? '-' }}</td>
-                            <td class="text-sm text-gray-500">{!! $achievement->created_at ? $achievement->created_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                            <td class="text-sm text-gray-500">{!! $achievement->created_at ? $achievement->created_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                             <td class="text-sm text-gray-500">{{ $achievement->updatedBy->name ?? '-' }}</td>
-                            <td class="text-sm text-gray-500">{!! $achievement->updated_at ? $achievement->updated_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
-                            <td>{{ $achievement->achievement_date ? $achievement->achievement_date->format('d M Y') : '-' }}</td>
+                            <td class="text-sm text-gray-500">{!! $achievement->updated_at ? $achievement->updated_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                            <td>{{ $achievement->achievement_date ? $achievement->achievement_date->format('d/M/Y') : '-' }}</td>
                             <td>
                                 <div class="btn-group" role="group">
                                     <button onclick="openViewModal({{ $achievement->id }})" class="btn btn-sm btn-info" title="View">

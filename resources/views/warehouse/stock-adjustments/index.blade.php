@@ -795,7 +795,7 @@
                             <input type="checkbox" class="row-checkbox w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer" value="{{ $adjustment->id }}" onclick="event.stopPropagation()">
                         </td>
                         <td>{{ $adjustment->adjustment_no ?? '-' }}</td>
-                        <td>{{ $adjustment->adjustment_date ? \Carbon\Carbon::parse($adjustment->adjustment_date)->format('d M Y') : '-' }}</td>
+                        <td>{{ $adjustment->adjustment_date ? \Carbon\Carbon::parse($adjustment->adjustment_date)->format('d/M/Y') : '-' }}</td>
                         <td>{{ $adjustment->warehouse->name ?? '-' }}</td>
                         <td>{{ $adjustment->items()->count() }} Items</td>
                         <td>
@@ -818,9 +818,9 @@
                             </span>
                         </td>
                         <td>{{ $adjustment->createdBy->name ?? '-' }}</td>
-                        <td>{{ $adjustment->created_at ? $adjustment->created_at->format('d M Y H:i') : '-' }}</td>
+                        <td>{{ $adjustment->created_at ? $adjustment->created_at->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $adjustment->updatedBy->name ?? '-' }}</td>
-                        <td>{{ $adjustment->updated_at ? $adjustment->updated_at->format('d M Y H:i') : '-' }}</td>
+                        <td>{{ $adjustment->updated_at ? $adjustment->updated_at->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $adjustment->reason ?? '-' }}</td>
                     </tr>
                     @empty
@@ -1646,7 +1646,7 @@ function initModalDatePicker() {
         flatpickr('#adjustmentDateInput', {
             dateFormat: 'Y-m-d',
             altInput: true,
-            altFormat: 'j M Y',
+            altFormat: 'd/M/Y',
             defaultDate: new Date(),
             allowInput: false
         });
@@ -1657,7 +1657,7 @@ function initModalDatePicker() {
             flatpickr(editDateInput, {
                 dateFormat: 'Y-m-d',
                 altInput: true,
-                altFormat: 'j M Y',
+                altFormat: 'd/M/Y',
                 allowInput: false
             });
         }

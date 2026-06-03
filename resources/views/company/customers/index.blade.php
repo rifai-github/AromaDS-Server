@@ -934,7 +934,7 @@
                         </td>
                         <td>
                             @if($customer->created_at)
-                                {{ \Carbon\Carbon::parse($customer->created_at)->format('d/m/Y') }}<br>
+                                {{ \Carbon\Carbon::parse($customer->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($customer->created_at)->format('H.i') }} WIB
                             @else
                                 -

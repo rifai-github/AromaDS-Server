@@ -134,7 +134,7 @@
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Adjustment Date</div>
                             <div style="font-size: 1rem; color: #212529;">
-                                {{ $adjustment->adjustment_date ? \Carbon\Carbon::parse($adjustment->adjustment_date)->format('d M Y') : '-' }}
+                                {{ $adjustment->adjustment_date ? \Carbon\Carbon::parse($adjustment->adjustment_date)->format('d/M/Y') : '-' }}
                             </div>
                         </div>
                         <div>
@@ -279,7 +279,7 @@
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.25rem;">Created At</div>
-                            <div style="font-size: 0.9rem; color: #212529;">{{ $adjustment->created_at ? $adjustment->created_at->format('j M Y H:i') : '-' }}</div>
+                            <div style="font-size: 0.9rem; color: #212529;">{{ $adjustment->created_at ? $adjustment->created_at->format('d/M/Y H:i') : '-' }}</div>
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.25rem;">Last Updated By</div>
@@ -287,7 +287,7 @@
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.25rem;">Last Updated At</div>
-                            <div style="font-size: 0.9rem; color: #212529;">{{ $adjustment->updated_at ? $adjustment->updated_at->format('j M Y H:i') : '-' }}</div>
+                            <div style="font-size: 0.9rem; color: #212529;">{{ $adjustment->updated_at ? $adjustment->updated_at->format('d/M/Y H:i') : '-' }}</div>
                         </div>
                     </div>
                 </div>

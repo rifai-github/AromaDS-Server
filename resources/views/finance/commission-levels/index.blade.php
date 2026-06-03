@@ -261,9 +261,9 @@
                                 @endif
                             </td>
                             <td class="text-sm text-gray-500">{{ $level->createdBy->name ?? '-' }}</td>
-                            <td class="text-sm text-gray-500">{!! $level->created_at ? $level->created_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                            <td class="text-sm text-gray-500">{!! $level->created_at ? $level->created_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                             <td class="text-sm text-gray-500">{{ $level->updatedBy->name ?? '-' }}</td>
-                            <td class="text-sm text-gray-500">{!! $level->updated_at ? $level->updated_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                            <td class="text-sm text-gray-500">{!! $level->updated_at ? $level->updated_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                             <td>
                                 <div class="action-buttons">
                                     <a href="{{ route('finance.commission-levels.show', $level) }}" class="btn btn-info btn-sm">

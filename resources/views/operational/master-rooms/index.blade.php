@@ -603,7 +603,7 @@
                         <td>{{ $room->creator->name ?? 'N/A' }}</td>
                         <td>
                             @if($room->created_at)
-                                {{ \Carbon\Carbon::parse($room->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($room->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($room->created_at)->format('H.i') }} WIB
                             @else
                                 N/A
@@ -612,7 +612,7 @@
                         <td>{{ $room->updater->name ?? 'N/A' }}</td>
                         <td>
                             @if($room->updated_at)
-                                {{ \Carbon\Carbon::parse($room->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($room->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($room->updated_at)->format('H.i') }} WIB
                             @else
                                 N/A

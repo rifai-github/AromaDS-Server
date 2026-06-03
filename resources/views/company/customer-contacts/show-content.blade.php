@@ -120,7 +120,7 @@
                         </div>
                         <div class="row mb-3">
                             <div class="col-sm-4"><strong>Created At:</strong></div>
-                            <div class="col-sm-8">{{ $customerContact->created_at->format('d M Y H:i') }}</div>
+                            <div class="col-sm-8">{{ $customerContact->created_at->format('d/M/Y H:i') }}</div>
                         </div>
                     </div>
                     <div class="col-md-6">
@@ -133,7 +133,7 @@
                         </div>
                         <div class="row mb-3">
                             <div class="col-sm-4"><strong>Updated At:</strong></div>
-                            <div class="col-sm-8">{{ $customerContact->updated_at->format('d M Y H:i') }}</div>
+                            <div class="col-sm-8">{{ $customerContact->updated_at->format('d/M/Y H:i') }}</div>
                         </div>
                     </div>
                 </div>

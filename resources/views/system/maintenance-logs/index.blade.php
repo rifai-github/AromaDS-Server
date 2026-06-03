@@ -445,8 +445,8 @@
                     <tr onclick="openViewModal({{ $maintenanceLog->id }})" data-id="{{ $maintenanceLog->id }}">
                         <td>{{ $maintenanceLog->type_text }}</td>
                         <td>{{ substr($maintenanceLog->description, 0, 50) }}{{ strlen($maintenanceLog->description) > 50 ? '...' : '' }}</td>
-                        <td>{{ $maintenanceLog->start_time->format('d M Y H:i') }}</td>
-                        <td>{{ $maintenanceLog->end_time ? $maintenanceLog->end_time->format('d M Y H:i') : 'N/A' }}</td>
+                        <td>{{ $maintenanceLog->start_time->format('d/M/Y H:i') }}</td>
+                        <td>{{ $maintenanceLog->end_time ? $maintenanceLog->end_time->format('d/M/Y H:i') : 'N/A' }}</td>
                         <td>{{ $maintenanceLog->formatted_duration }}</td>
                         <td>
                             <span class="status-badge status-{{ $maintenanceLog->status }}">
@@ -454,8 +454,8 @@
                             </span>
                         </td>
                         <td>{{ $maintenanceLog->createdBy->name ?? 'N/A' }}</td>
-                        <td>{{ $maintenanceLog->created_at ? $maintenanceLog->created_at->format('d M Y H:i') : 'N/A' }}</td>
-                        <td>{{ $maintenanceLog->updated_at ? $maintenanceLog->updated_at->format('d M Y H:i') : 'N/A' }}</td>
+                        <td>{{ $maintenanceLog->created_at ? $maintenanceLog->created_at->format('d/M/Y H:i') : 'N/A' }}</td>
+                        <td>{{ $maintenanceLog->updated_at ? $maintenanceLog->updated_at->format('d/M/Y H:i') : 'N/A' }}</td>
                     </tr>
                     @empty
                     <tr>

@@ -634,8 +634,8 @@
                                         {{ ucfirst(str_replace('_', ' ', $prospect->status ?? 'new')) }}
                                     </span>
                                 </td>
-                                <td>{{ $prospect->follow_up_date ? \Carbon\Carbon::parse($prospect->follow_up_date)->format('d/m/Y') : '-' }}</td>
-                                <td>{{ $prospect->updated_at ? \Carbon\Carbon::parse($prospect->updated_at)->format('d/m/Y H:i') : '-' }}</td>
+                                <td>{{ $prospect->follow_up_date ? \Carbon\Carbon::parse($prospect->follow_up_date)->format('d/M/Y') : '-' }}</td>
+                                <td>{{ $prospect->updated_at ? \Carbon\Carbon::parse($prospect->updated_at)->format('d/M/Y H:i') : '-' }}</td>
                             </tr>
                             @endforeach
                         </tbody>
@@ -757,7 +757,7 @@
                                         {{ ucfirst(str_replace('_', ' ', $survey->status ?? 'pending')) }}
                                     </span>
                                 </td>
-                                <td>{{ $survey->survey_date ? \Carbon\Carbon::parse($survey->survey_date)->format('d/m/Y') : '-' }}</td>
+                                <td>{{ $survey->survey_date ? \Carbon\Carbon::parse($survey->survey_date)->format('d/M/Y') : '-' }}</td>
                                 <td>{{ $survey->building_name ?? '-' }}</td>
                             </tr>
                             @endforeach

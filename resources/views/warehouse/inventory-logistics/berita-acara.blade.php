@@ -576,7 +576,7 @@
                                 </span>
                             </td>
                             <td>{{ $beritaAcara->createdBy->name ?? 'N/A' }}</td>
-                            <td>{{ $beritaAcara->created_at->format('d/m/Y H:i') }}</td>
+                            <td>{{ $beritaAcara->created_at->format('d/M/Y H:i') }}</td>
                             <td>
                                 <div style="display: flex; gap: 5px;">
                                     <button class="btn btn-sm btn-info" onclick="viewBeritaAcara({{ $beritaAcara->id }})">

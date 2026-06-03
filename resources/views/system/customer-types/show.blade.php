@@ -70,12 +70,12 @@
                                         
                                         <dt class="col-sm-3">Created At:</dt>
                                         <dd class="col-sm-9">
-                                            {{ $customerType->created_at->format('d M Y H:i:s') }}
+                                            {{ $customerType->created_at->format('d/M/Y H:i:s') }}
                                         </dd>
                                         
                                         <dt class="col-sm-3">Updated At:</dt>
                                         <dd class="col-sm-9">
-                                            {{ $customerType->updated_at->format('d M Y H:i:s') }}
+                                            {{ $customerType->updated_at->format('d/M/Y H:i:s') }}
                                         </dd>
                                     </dl>
                                 </div>

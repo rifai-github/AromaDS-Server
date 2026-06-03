@@ -1009,7 +1009,7 @@
                         <td>{{ $export->createdBy->name ?? '-' }}</td>
                         <td>
                             @if($export->created_at)
-                                {{ \Carbon\Carbon::parse($export->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($export->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($export->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -1018,7 +1018,7 @@
                         <td>{{ $export->updatedBy->name ?? '-' }}</td>
                         <td>
                             @if($export->updated_at)
-                                {{ \Carbon\Carbon::parse($export->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($export->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($export->updated_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -1920,7 +1920,7 @@ document.addEventListener('DOMContentLoaded', function() {
         flatpickr(filterFromEl, {
             dateFormat: 'Y-m-d',
             altInput: true,
-            altFormat: 'j M Y',
+            altFormat: 'd/M/Y',
             defaultDate: filterFromEl.getAttribute('data-date'),
             onChange: function(selectedDates, dateStr) {
                 filterFromEl.setAttribute('data-date', dateStr);
@@ -1934,7 +1934,7 @@ document.addEventListener('DOMContentLoaded', function() {
         flatpickr(filterToEl, {
             dateFormat: 'Y-m-d',
             altInput: true,
-            altFormat: 'j M Y',
+            altFormat: 'd/M/Y',
             defaultDate: filterToEl.getAttribute('data-date'),
             onChange: function(selectedDates, dateStr) {
                 filterToEl.setAttribute('data-date', dateStr);

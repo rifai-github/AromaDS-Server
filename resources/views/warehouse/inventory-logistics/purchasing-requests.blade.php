@@ -564,7 +564,7 @@
                                 </span>
                             </td>
                             <td>{{ $request->requestedBy->name ?? 'N/A' }}</td>
-                            <td>{{ $request->created_at->format('d/m/Y H:i') }}</td>
+                            <td>{{ $request->created_at->format('d/M/Y H:i') }}</td>
                             <td>
                                 <div style="display: flex; gap: 5px;">
                                     <button class="btn btn-sm btn-info" onclick="viewPurchasingRequest({{ $request->id }})">

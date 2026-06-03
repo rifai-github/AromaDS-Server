@@ -776,7 +776,7 @@
                         <td class="text-xs" style="display:none">
                             {{ $invoice->jobSchedules->pluck('job_number')->filter()->implode(', ') ?: '-' }}
                         </td>
-                        <td>{{ $invoice->ba_date ? \Carbon\Carbon::parse($invoice->ba_date)->format('d M Y') : '-' }}</td>
+                        <td>{{ $invoice->ba_date ? \Carbon\Carbon::parse($invoice->ba_date)->format('d/M/Y') : '-' }}</td>
                         <td class="text-center">
                             @php
                                 $kirimMap = [
@@ -791,8 +791,8 @@
                             <span class="badge {{ $badge['class'] }}">{{ $badge['label'] }}</span>
                         </td>
                         <td>{{ $invoice->diterima_oleh ?? '-' }}</td>
-                        <td>{{ $invoice->pada ? \Carbon\Carbon::parse($invoice->pada)->format('d M Y - H:i') : '-' }}</td>
-                        <td>{{ $invoice->invoice_date ? \Carbon\Carbon::parse($invoice->invoice_date)->format('d M Y') : '-' }}</td>
+                        <td>{{ $invoice->pada ? \Carbon\Carbon::parse($invoice->pada)->format('d/M/Y - H:i') : '-' }}</td>
+                        <td>{{ $invoice->invoice_date ? \Carbon\Carbon::parse($invoice->invoice_date)->format('d/M/Y') : '-' }}</td>
                         <td class="text-center">
                             @if($invoice->is_printed)
                                 <span class="badge bg-green text-white">SUDAH</span>
@@ -856,7 +856,7 @@
                         <td>{{ $invoice->city_name ?: ($invoice->customer->city ?? '-') }}</td>
                         <td>{{ $invoice->internal_notes ?: ($invoice->contract->notes_finance ?? $invoice->contract->internal_remark ?? '-') }}</td>
                         <td>{{ $invoice->additional_notes ?: ($invoice->contract->notes ?? '-') }}</td>
-                        <td>{{ $invoice->updated_at ? \Carbon\Carbon::parse($invoice->updated_at)->format('d M Y - H:i') : '-' }}</td>
+                        <td>{{ $invoice->updated_at ? \Carbon\Carbon::parse($invoice->updated_at)->format('d/M/Y - H:i') : '-' }}</td>
                         <td>{{ $invoice->updater->name ?? '-' }}</td>
                     </tr>
                     @empty
@@ -2100,14 +2100,14 @@ function applyPrintStatusFilter() {
 document.addEventListener('DOMContentLoaded', function() {
     flatpickr("#filterDateFrom", {
         altInput: true,
-        altFormat: "d M Y",
+        altFormat: "d/M/Y",
         dateFormat: "Y-m-d",
         defaultDate: "{{ request('date_from', now()->toDateString()) }}"
     });
 
     flatpickr("#filterDateTo", {
         altInput: true,
-        altFormat: "d M Y",
+        altFormat: "d/M/Y",
         dateFormat: "Y-m-d",
         defaultDate: "{{ request('date_to', now()->addDays(14)->toDateString()) }}"
     });

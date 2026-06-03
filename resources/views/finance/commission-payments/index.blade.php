@@ -474,7 +474,7 @@
                         <td>{{ $payment->user->name ?? 'N/A' }}</td>
                         <td>{{ $payment->formatted_amount }}</td>
                         <td>{{ ucfirst(str_replace('_', ' ', $payment->payment_method)) }}</td>
-                        <td>{{ $payment->payment_date->format('d M Y') }}</td>
+                        <td>{{ $payment->payment_date->format('d/M/Y') }}</td>
                         <td>
                             <span class="badge {{ $payment->status_badge }}">
                                 {{ $payment->status_label }}
@@ -482,9 +482,9 @@
                         </td>
                         <td>{{ $payment->payment_reference ?? '-' }}</td>
                         <td>{{ $payment->createdBy->name ?? '-' }}</td>
-                        <td>{{ $payment->created_at->format('d M Y') }}</td>
+                        <td>{{ $payment->created_at->format('d/M/Y') }}</td>
                         <td>{{ $payment->updatedBy->name ?? '-' }}</td>
-                        <td>{{ $payment->updated_at->format('d M Y') }}</td>
+                        <td>{{ $payment->updated_at->format('d/M/Y') }}</td>
                         <td>
                             <div class="btn-group" onclick="event.stopPropagation();">
                                 <button onclick="openViewModal({{ $payment->id }})" class="btn btn-sm btn-info"><i class="fas fa-eye"></i></button>

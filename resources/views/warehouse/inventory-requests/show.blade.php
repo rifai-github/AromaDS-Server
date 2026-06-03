@@ -218,7 +218,7 @@
                                 </button>
                                 @endif
                             </div>
-                            <div style="font-size: 1rem; color: #212529;">{{ $requestData->required_date ? $requestData->required_date->format('j M Y') : '-' }}</div>
+                            <div style="font-size: 1rem; color: #212529;">{{ $requestData->required_date ? $requestData->required_date->format('d/M/Y') : '-' }}</div>
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Cabang</div>
@@ -236,7 +236,7 @@
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Tanggal Diajukan</div>
-                            <div style="font-size: 1rem; color: #212529;">{{ $requestData->request_date ? $requestData->request_date->format('j M Y') : '-' }}</div>
+                            <div style="font-size: 1rem; color: #212529;">{{ $requestData->request_date ? $requestData->request_date->format('d/M/Y') : '-' }}</div>
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
@@ -274,11 +274,11 @@
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Tanggal Pengiriman</div>
-                            <div style="font-size: 1rem; color: #212529;">{{ $requestData->shipping_date ? $requestData->shipping_date->format('j M Y') : '-' }}</div>
+                            <div style="font-size: 1rem; color: #212529;">{{ $requestData->shipping_date ? $requestData->shipping_date->format('d/M/Y') : '-' }}</div>
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Dikirim Pada</div>
-                            <div style="font-size: 1rem; color: #212529;">{{ $requestData->shipped_at ? $requestData->shipped_at->format('j M Y H:i') : '-' }}</div>
+                            <div style="font-size: 1rem; color: #212529;">{{ $requestData->shipped_at ? $requestData->shipped_at->format('d/M/Y H:i') : '-' }}</div>
                         </div>
                     </div>
                 </div>
@@ -301,7 +301,7 @@
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.25rem;">Created At</div>
-                            <div style="font-size: 0.9rem; color: #212529;">{{ $requestData->created_at ? $requestData->created_at->format('j M Y H:i') : '-' }}</div>
+                            <div style="font-size: 0.9rem; color: #212529;">{{ $requestData->created_at ? $requestData->created_at->format('d/M/Y H:i') : '-' }}</div>
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.25rem;">Last Updated By</div>
@@ -309,7 +309,7 @@
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.25rem;">Last Updated At</div>
-                            <div style="font-size: 0.9rem; color: #212529;">{{ $requestData->updated_at ? $requestData->updated_at->format('j M Y H:i') : '-' }}</div>
+                            <div style="font-size: 0.9rem; color: #212529;">{{ $requestData->updated_at ? $requestData->updated_at->format('d/M/Y H:i') : '-' }}</div>
                         </div>
                     </div>
                 </div>
@@ -330,7 +330,7 @@
                                     <div style="font-size: 1.1rem; font-weight: 600; color: #1e293b;">
                                         <span class="{{ $requestData->status === 'draft' ? 'cursor-pointer hover:text-blue-600' : '' }} transition-colors" 
                                             @if($requestData->status === 'draft') onclick="editRequiredDate()" @endif>
-                                            {{ $requestData->required_date ? $requestData->required_date->format('j M Y') : '-' }}
+                                            {{ $requestData->required_date ? $requestData->required_date->format('d/M/Y') : '-' }}
                                         </span>
                                     </div>
                                 </div>
@@ -513,7 +513,7 @@
                                         </div>
                                         @endif
                                     </td>
-                                    <td>{{ $item->updated_at ? $item->updated_at->format('j M Y H:i') : '-' }}</td>
+                                    <td>{{ $item->updated_at ? $item->updated_at->format('d/M/Y H:i') : '-' }}</td>
                                     <td>
                                         {{ $item->updatedBy->name ?? $item->createdBy->name ?? $requestData->requestedBy->name ?? '-' }}
                                     </td>

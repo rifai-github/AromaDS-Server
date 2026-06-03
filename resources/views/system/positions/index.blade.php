@@ -207,7 +207,7 @@
                             </span>
                         </td>
                         <td>{{ $position->createdBy->name ?? '-' }}</td>
-                        <td>{{ $position->created_at ? $position->created_at->format('d M Y') : '-' }}</td>
+                        <td>{{ $position->created_at ? $position->created_at->format('d/M/Y') : '-' }}</td>
                         <td>
                             <div class="flex gap-2">
                                 <a href="{{ route('system.positions.edit', $position->id) }}" class="btn btn-secondary btn-sm" title="Edit">

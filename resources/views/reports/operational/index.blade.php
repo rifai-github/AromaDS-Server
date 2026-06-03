@@ -610,8 +610,8 @@
                                 <td>{{ $job->building->name ?? '-' }}</td>
                                 <td>{{ $job->customer->name ?? '-' }}</td>
                                 <td>{{ $job->team->name ?? '-' }}</td>
-                                <td>{{ $job->schedule_date ? \Carbon\Carbon::parse($job->schedule_date)->format('d/m/Y') : '-' }}</td>
-                                <td>{{ $job->expected_date ? \Carbon\Carbon::parse($job->expected_date)->format('d/m/Y') : '-' }}</td>
+                                <td>{{ $job->schedule_date ? \Carbon\Carbon::parse($job->schedule_date)->format('d/M/Y') : '-' }}</td>
+                                <td>{{ $job->expected_date ? \Carbon\Carbon::parse($job->expected_date)->format('d/M/Y') : '-' }}</td>
                             </tr>
                             @endforeach
                         </tbody>

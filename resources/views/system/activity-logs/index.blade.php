@@ -197,7 +197,7 @@
                         </td>
                         <td class="w-[150px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">
-                                {!! $log->created_at ? \Carbon\Carbon::parse($log->created_at)->format('d F Y') . '<br />at ' . \Carbon\Carbon::parse($log->created_at)->format('H.i') . ' WIB' : 'N/A' !!}
+                                {!! $log->created_at ? \Carbon\Carbon::parse($log->created_at)->format('d/M/Y') . '<br />at ' . \Carbon\Carbon::parse($log->created_at)->format('H.i') . ' WIB' : 'N/A' !!}
                             </p>
                         </td>
                         <td class="w-[100px] p-2">

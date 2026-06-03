@@ -388,7 +388,7 @@
             <div class="info-item">
                 <div class="info-label">Last Updated</div>
                 <div class="info-value">
-                    {{ $warehouseProduct->updated_at ? $warehouseProduct->updated_at->format('d M Y, H:i') : '-' }}
+                    {{ $warehouseProduct->updated_at ? $warehouseProduct->updated_at->format('d/M/Y H:i') : '-' }}
                 </div>
             </div>
             <div class="info-item">
@@ -430,7 +430,7 @@
                     <tbody>
                         @forelse($formattedMovements as $movement)
                         <tr>
-                            <td>{{ $movement['date']->format('d M Y, H:i') }}</td>
+                            <td>{{ $movement['date']->format('d/M/Y H:i') }}</td>
                             <td>
                                 <strong class="{{ $movement['adjustment'] >= 0 ? 'text-success' : 'text-danger' }}">
                                     {{ $movement['adjustment'] >= 0 ? '+' : '' }}{{ number_format($movement['adjustment'], 0, ',', '.') }}
@@ -440,7 +440,7 @@
                             <td>
                                 <span class="badge badge-secondary">{{ $movement['updated_by'] }}</span>
                                 <br>
-                                <small class="text-muted" style="font-size: 11px;">{{ $movement['updated_at']->format('d M Y, H:i') }}</small>
+                                <small class="text-muted" style="font-size: 11px;">{{ $movement['updated_at']->format('d/M/Y H:i') }}</small>
                             </td>
                         </tr>
                         @empty
@@ -516,7 +516,7 @@
                                     {{ ucfirst($sn['transfer_status']) }}
                                 </span>
                             </td>
-                            <td>{{ $sn['created_at']->format('d M Y, H:i') }}</td>
+                            <td>{{ $sn['created_at']->format('d/M/Y H:i') }}</td>
                         </tr>
                         @empty
                         <tr>

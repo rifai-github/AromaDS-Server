@@ -668,7 +668,7 @@
                             <td>{{ $item->createdBy->name ?? '-' }}</td>
                             <td>
                                 <div>
-                                    <strong>{{ $item->created_at ? $item->created_at->format('d M Y') : '-' }}</strong>
+                                    <strong>{{ $item->created_at ? $item->created_at->format('d/M/Y') : '-' }}</strong>
                                     <br>
                                     <small class="text-muted">{{ $item->created_at ? $item->created_at->format('H:i') : '' }}</small>
                                 </div>
@@ -676,7 +676,7 @@
                             <td>{{ $item->updatedBy->name ?? '-' }}</td>
                             <td>
                                 <div>
-                                    <strong>{{ $item->updated_at ? $item->updated_at->format('d M Y') : '-' }}</strong>
+                                    <strong>{{ $item->updated_at ? $item->updated_at->format('d/M/Y') : '-' }}</strong>
                                     <br>
                                     <small class="text-muted">{{ $item->updated_at ? $item->updated_at->format('H:i') : '' }}</small>
                                 </div>

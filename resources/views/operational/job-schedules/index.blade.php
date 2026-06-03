@@ -1322,24 +1322,24 @@
                         @endif
                         
                         <!-- 14. Schedule Date -->
-                        <td>{{ $job->schedule_date ? \Carbon\Carbon::parse($job->schedule_date)->format('d M Y') : '-' }}</td>
+                        <td>{{ $job->schedule_date ? \Carbon\Carbon::parse($job->schedule_date)->format('d/M/Y') : '-' }}</td>
                         
                         <!-- 15. Expected Date -->
-                        <td>{{ $job->expected_date ? \Carbon\Carbon::parse($job->expected_date)->format('d M Y') : '-' }}</td>
+                        <td>{{ $job->expected_date ? \Carbon\Carbon::parse($job->expected_date)->format('d/M/Y') : '-' }}</td>
                         
                         <!-- 16. BA Date -->
-                        <td>{{ $job->ba_date ? \Carbon\Carbon::parse($job->ba_date)->format('d M Y') : '-' }}</td>
+                        <td>{{ $job->ba_date ? \Carbon\Carbon::parse($job->ba_date)->format('d/M/Y') : '-' }}</td>
                         
                         <!-- 17. Assign Date -->
-                        <td>{{ $job->assign_date ? \Carbon\Carbon::parse($job->assign_date)->format('d M Y') : '-' }}</td>
+                        <td>{{ $job->assign_date ? \Carbon\Carbon::parse($job->assign_date)->format('d/M/Y') : '-' }}</td>
                         
                         <!-- 18. Issue Date -->
-                        <td>{{ $job->issue_date ? \Carbon\Carbon::parse($job->issue_date)->format('d M Y') : '-' }}</td>
+                        <td>{{ $job->issue_date ? \Carbon\Carbon::parse($job->issue_date)->format('d/M/Y') : '-' }}</td>
                         
                         <!-- 19. Receive Date (Created At) -->
                         <td>
                             @if($job->created_at)
-                                {{ $job->created_at->format('d M Y') }}<br>
+                                {{ $job->created_at->format('d/M/Y') }}<br>
                                 at {{ $job->created_at->format('H.i') }} WIB
                             @else
                                 -
@@ -1362,7 +1362,7 @@
                         <td>{{ $job->createdBy->name ?? '-' }}</td>
                         <td>
                             @if($job->created_at)
-                                {{ $job->created_at->format('d M Y') }}<br>
+                                {{ $job->created_at->format('d/M/Y') }}<br>
                                 at {{ $job->created_at->format('H.i') }} WIB
                             @else
                                 -
@@ -1371,7 +1371,7 @@
                         <td>{{ $job->updatedBy->name ?? '-' }}</td>
                         <td>
                             @if($job->updated_at)
-                                {{ $job->updated_at->format('d M Y') }}<br>
+                                {{ $job->updated_at->format('d/M/Y') }}<br>
                                 at {{ $job->updated_at->format('H.i') }} WIB
                             @else
                                 -
@@ -4819,7 +4819,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         const flatpickrConfig = {
             dateFormat: "Y-m-d",
             altInput: true,
-            altFormat: "d M Y",
+            altFormat: "d/M/Y",
             allowInput: false,
         };
 

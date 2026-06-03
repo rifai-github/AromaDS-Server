@@ -273,15 +273,15 @@
             </div>
             <div class="info-item">
                 <div class="info-label">Contract Date</div>
-                <div class="info-value">{{ $contract->contract_date ? $contract->contract_date->format('d F Y') : 'N/A' }}</div>
+                <div class="info-value">{{ $contract->contract_date ? $contract->contract_date->format('d/M/Y') : 'N/A' }}</div>
             </div>
             <div class="info-item">
                 <div class="info-label">Start Date</div>
-                <div class="info-value">{{ $contract->actual_start_date ? $contract->actual_start_date->format('d F Y') : 'N/A' }}</div>
+                <div class="info-value">{{ $contract->actual_start_date ? $contract->actual_start_date->format('d/M/Y') : 'N/A' }}</div>
             </div>
             <div class="info-item">
                 <div class="info-label">End Date</div>
-                <div class="info-value">{{ $contract->actual_end_date ? $contract->actual_end_date->format('d F Y') : 'N/A' }}</div>
+                <div class="info-value">{{ $contract->actual_end_date ? $contract->actual_end_date->format('d/M/Y') : 'N/A' }}</div>
             </div>
             <div class="info-item">
                 <div class="info-label">Contract Type</div>
@@ -341,7 +341,7 @@
                 <span class="financial-label">Contract Period:</span>
                 <span class="financial-value">
                     @if($contract->actual_start_date && $contract->actual_end_date)
-                        {{ $contract->actual_start_date->format('d M Y') }} - {{ $contract->actual_end_date->format('d M Y') }}
+                        {{ $contract->actual_start_date->format('d/M/Y') }} - {{ $contract->actual_end_date->format('d/M/Y') }}
                     @else
                         N/A
                     @endif
@@ -412,7 +412,7 @@
             <div class="signature-name">{{ $contract->signatory_name ?? '_________________' }}</div>
             <div style="font-size: 12px; color: #666; margin-top: 5px;">
                 {{ $contract->signatory_position ?? 'Position' }}<br>
-                Date: {{ $contract->customer_signed_at ? $contract->customer_signed_at->format('d M Y') : '_____________' }}
+                Date: {{ $contract->customer_signed_at ? $contract->customer_signed_at->format('d/M/Y') : '_____________' }}
             </div>
         </div>
         <div class="signature-block">
@@ -421,7 +421,7 @@
             <div class="signature-name">{{ $contract->marketing_name ?? 'AROMA Representative' }}</div>
             <div style="font-size: 12px; color: #666; margin-top: 5px;">
                 Marketing Staff<br>
-                Date: {{ $contract->staff_signed_at ? $contract->staff_signed_at->format('d M Y') : '_____________' }}
+                Date: {{ $contract->staff_signed_at ? $contract->staff_signed_at->format('d/M/Y') : '_____________' }}
             </div>
         </div>
     </div>
@@ -429,7 +429,7 @@
     <!-- Footer -->
     <div class="footer">
         <p>This contract is generated electronically and is legally binding.</p>
-        <p>Generated on: {{ now()->format('d F Y H:i:s') }}</p>
+        <p>Generated on: {{ now()->format('d/M/Y H:i:s') }}</p>
         <p>Contract ID: {{ $contract->id }} | Version: 1.0</p>
     </div>
 </body>

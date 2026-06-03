@@ -74,7 +74,7 @@
                                 @if($marketingTarget->is_locked)
                                     <span class="badge badge-warning">Locked</span>
                                     @if($marketingTarget->lock_date)
-                                        <small class="text-muted">(Locked on {{ $marketingTarget->lock_date->format('d M Y') }})</small>
+                                        <small class="text-muted">(Locked on {{ $marketingTarget->lock_date->format('d/M/Y') }})</small>
                                     @endif
                                 @else
                                     <span class="badge badge-success">Active</span>
@@ -89,11 +89,11 @@
                         @endif
                         <tr>
                             <th>Created At</th>
-                            <td>{{ $marketingTarget->created_at->format('d M Y H:i') }}</td>
+                            <td>{{ $marketingTarget->created_at->format('d/M/Y H:i') }}</td>
                         </tr>
                         <tr>
                             <th>Updated At</th>
-                            <td>{{ $marketingTarget->updated_at->format('d M Y H:i') }}</td>
+                            <td>{{ $marketingTarget->updated_at->format('d/M/Y H:i') }}</td>
                         </tr>
                     </table>
                 </div>

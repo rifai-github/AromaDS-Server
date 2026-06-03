@@ -860,11 +860,11 @@
                                     {{ $commission->status_label }}
                                 </span>
                             </td>
-                            <td>{{ $commission->calculation_date ? $commission->calculation_date->format('d M Y') : '-' }}</td>
+                            <td>{{ $commission->calculation_date ? $commission->calculation_date->format('d/M/Y') : '-' }}</td>
                             <td>{{ $commission->createdBy->name ?? '-' }}</td>
                             <td>
                                 @if($commission->created_at)
-                                    {{ $commission->created_at->format('d M Y') }}<br>
+                                    {{ $commission->created_at->format('d/M/Y') }}<br>
                                     <small class="text-muted">{{ $commission->created_at->format('H.i') }} WIB</small>
                                 @else
                                     -
@@ -873,7 +873,7 @@
                             <td>{{ $commission->updatedBy->name ?? '-' }}</td>
                             <td>
                                 @if($commission->updated_at)
-                                    {{ $commission->updated_at->format('d M Y') }}<br>
+                                    {{ $commission->updated_at->format('d/M/Y') }}<br>
                                     <small class="text-muted">{{ $commission->updated_at->format('H.i') }} WIB</small>
                                 @else
                                     -

@@ -522,17 +522,17 @@
                                                        style="right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none;"></i>
                                                 </div>
                                             @else
-                                                {{ $contract->contract_date ? $contract->contract_date->format('d M Y') : '-' }}
+                                                {{ $contract->contract_date ? $contract->contract_date->format('d/M/Y') : '-' }}
                                             @endif
                                         </div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Start Date</div>
-                                        <div class="contract-field-value">{{ $contract->actual_start_date ? \Carbon\Carbon::parse($contract->actual_start_date)->format('d M Y') : '-' }}</div>
+                                        <div class="contract-field-value">{{ $contract->actual_start_date ? \Carbon\Carbon::parse($contract->actual_start_date)->format('d/M/Y') : '-' }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">End Date</div>
-                                        <div class="contract-field-value">{{ $contract->actual_end_date ? \Carbon\Carbon::parse($contract->actual_end_date)->format('d M Y') : '-' }}</div>
+                                        <div class="contract-field-value">{{ $contract->actual_end_date ? \Carbon\Carbon::parse($contract->actual_end_date)->format('d/M/Y') : '-' }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Contract Value</div>
@@ -681,7 +681,7 @@
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Member Since</div>
-                                        <div class="contract-field-value">{{ $contract->customer->member_since ? $contract->customer->member_since->format('d/m/Y') : '-' }}</div>
+                                        <div class="contract-field-value">{{ $contract->customer->member_since ? $contract->customer->member_since->format('d/M/Y') : '-' }}</div>
                                     </div>
                                 </div>
                             </div>
@@ -807,11 +807,11 @@
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Quotation Date</div>
-                                        <div class="contract-field-value">{{ $contract->quotation?->quotation_date ? $contract->quotation->quotation_date->format('d M Y') : '-' }}</div>
+                                        <div class="contract-field-value">{{ $contract->quotation?->quotation_date ? $contract->quotation->quotation_date->format('d/M/Y') : '-' }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Valid Until</div>
-                                        <div class="contract-field-value">{{ $contract->quotation?->valid_until ? $contract->quotation->valid_until->format('d M Y') : '-' }}</div>
+                                        <div class="contract-field-value">{{ $contract->quotation?->valid_until ? $contract->quotation->valid_until->format('d/M/Y') : '-' }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Total Amount</div>
@@ -948,13 +948,13 @@
                                     <div class="col-md-6 mb-3">
                                         <div class="contract-field">
                                             <div class="contract-field-label">Tanggal Install</div>
-                                            <div class="contract-field-value">{{ $contract->install_date ? $contract->install_date->format('d/m/Y') : '-' }}</div>
+                                            <div class="contract-field-value">{{ $contract->install_date ? $contract->install_date->format('d/M/Y') : '-' }}</div>
                                         </div>
                                     </div>
                                     <div class="col-md-6 mb-3">
                                         <div class="contract-field">
                                             <div class="contract-field-label">Tanggal Service Pertama</div>
-                                            <div class="contract-field-value">{{ $contract->first_service_date ? $contract->first_service_date->format('d/m/Y') : '-' }}</div>
+                                            <div class="contract-field-value">{{ $contract->first_service_date ? $contract->first_service_date->format('d/M/Y') : '-' }}</div>
                                         </div>
                                     </div>
                                     <div class="col-md-6 mb-3">
@@ -1467,7 +1467,7 @@
                                                 <td>{{ $kecamatan }}</td>
                                                 <td>{{ $kelurahan }}</td>
                                                 <td>{{ $kodePos }}</td>
-                                                <td>{{ $billingGroup->updated_at ? $billingGroup->updated_at->format('d/m/Y H:i') : '-' }}</td>
+                                                <td>{{ $billingGroup->updated_at ? $billingGroup->updated_at->format('d/M/Y H:i') : '-' }}</td>
                                                 <td>{{ $billingGroup->updater->name ?? ($billingGroup->creator->name ?? '-') }}</td>
                                                 <td>
                                                     <div class="btn-group btn-group-sm">
@@ -1666,7 +1666,7 @@
                                                 {{ $file->file_size ? number_format($file->file_size / 1024, 2) . ' KB' : '-' }}
                                             </td>
                                             <td class="text-center">
-                                                {{ $file->uploaded_at ? $file->uploaded_at->format('d/m/Y H:i') : '-' }}
+                                                {{ $file->uploaded_at ? $file->uploaded_at->format('d/M/Y H:i') : '-' }}
                                             </td>
                                             <td>{{ $file->uploader->name ?? '-' }}</td>
                                             <td class="text-center">
@@ -1686,7 +1686,7 @@
                                             </td>
                                             <td>{{ $file->verifier->name ?? '-' }}</td>
                                             <td class="text-center">
-                                                {{ $file->verified_at ? $file->verified_at->format('d/m/Y H:i') : '-' }}
+                                                {{ $file->verified_at ? $file->verified_at->format('d/M/Y H:i') : '-' }}
                                             </td>
                                             <td>
                                                 <div class="d-flex gap-1 flex-wrap">
@@ -3541,7 +3541,7 @@ document.addEventListener('DOMContentLoaded', function() {
         flatpickr(contractDateInput, {
             dateFormat: 'Y-m-d',
             altInput: true,
-            altFormat: 'd M Y',
+            altFormat: 'd/M/Y',
             allowInput: false,
             clickOpens: true,
             defaultDate: contractDateInput.value || null,

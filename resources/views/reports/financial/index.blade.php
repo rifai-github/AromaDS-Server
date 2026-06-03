@@ -626,7 +626,7 @@
                                         {{ ucfirst($quotation->status ?? 'pending') }}
                                     </span>
                                 </td>
-                                <td>{{ $quotation->quotation_date ? \Carbon\Carbon::parse($quotation->quotation_date)->format('d/m/Y') : '-' }}</td>
+                                <td>{{ $quotation->quotation_date ? \Carbon\Carbon::parse($quotation->quotation_date)->format('d/M/Y') : '-' }}</td>
                                 <td class="amount amount-positive">
                                     Rp {{ number_format($quotation->total_amount ?? 0, 0, ',', '.') }}
                                 </td>
@@ -740,8 +740,8 @@
                                         {{ ucfirst($invoice->status ?? 'draft') }}
                                     </span>
                                 </td>
-                                <td>{{ $invoice->invoice_date ? \Carbon\Carbon::parse($invoice->invoice_date)->format('d/m/Y') : '-' }}</td>
-                                <td>{{ $invoice->due_date ? \Carbon\Carbon::parse($invoice->due_date)->format('d/m/Y') : '-' }}</td>
+                                <td>{{ $invoice->invoice_date ? \Carbon\Carbon::parse($invoice->invoice_date)->format('d/M/Y') : '-' }}</td>
+                                <td>{{ $invoice->due_date ? \Carbon\Carbon::parse($invoice->due_date)->format('d/M/Y') : '-' }}</td>
                                 <td class="amount amount-positive">
                                     Rp {{ number_format($invoice->total_amount ?? 0, 0, ',', '.') }}
                                 </td>

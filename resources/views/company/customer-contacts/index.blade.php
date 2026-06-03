@@ -624,7 +624,7 @@
                                     </td>
                                     <td>
                                         @if($contact->created_at)
-                                            {{ \Carbon\Carbon::parse($contact->created_at)->format('d M Y') }}<br>
+                                            {{ \Carbon\Carbon::parse($contact->created_at)->format('d/M/Y') }}<br>
                                             at {{ \Carbon\Carbon::parse($contact->created_at)->format('H.i') }} WIB
                                         @else
                                             -
@@ -633,7 +633,7 @@
                                     <td>{{ $contact->updatedBy->name ?? '-' }}</td>
                                     <td>
                                         @if($contact->updated_at)
-                                            {{ \Carbon\Carbon::parse($contact->updated_at)->format('d M Y') }}<br>
+                                            {{ \Carbon\Carbon::parse($contact->updated_at)->format('d/M/Y') }}<br>
                                             at {{ \Carbon\Carbon::parse($contact->updated_at)->format('H.i') }} WIB
                                         @else
                                             -

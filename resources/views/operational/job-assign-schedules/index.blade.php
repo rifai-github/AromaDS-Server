@@ -928,8 +928,8 @@
                         <td>{{ $jobSchedule && $jobSchedule->jobAdvice && $jobSchedule->jobAdvice->customer ? $jobSchedule->jobAdvice->customer->name : '-' }}</td>
                         <td>{{ $jobSchedule && $jobSchedule->building ? $jobSchedule->building->nama_gedung : '-' }}</td>
                         <td>{{ $jobSchedule->postal_code ?? ($jobSchedule && $jobSchedule->building ? $jobSchedule->building->postal_code : '-') }}</td>
-                        <td>{{ $jobSchedule && $jobSchedule->schedule_date ? $jobSchedule->schedule_date->format('d F Y') : '-' }}</td>
-                        <td>{{ $schedule->assigned_date ? $schedule->assigned_date->format('d F Y') : '-' }}</td>
+                        <td>{{ $jobSchedule && $jobSchedule->schedule_date ? $jobSchedule->schedule_date->format('d/M/Y') : '-' }}</td>
+                        <td>{{ $schedule->assigned_date ? $schedule->assigned_date->format('d/M/Y') : '-' }}</td>
                         <td>{{ $room ? $room->room_type : '-' }}</td>
                         <td>{{ $room ? $room->room_floor : '-' }}</td>
                         <td>{{ $room ? $room->room_name : ($firstRoom ? $firstRoom->room_name : '-') }}</td>
@@ -959,7 +959,7 @@
                         <td>{{ $schedule->createdBy ? $schedule->createdBy->name : '-' }}</td>
                         <td>
                             @if($schedule->created_at)
-                                {{ $schedule->created_at->format('d M Y') }}<br>
+                                {{ $schedule->created_at->format('d/M/Y') }}<br>
                                 at {{ $schedule->created_at->format('H.i') }} WIB
                             @else
                                 -
@@ -968,7 +968,7 @@
                         <td>{{ $schedule->updatedBy?->name ?? '-' }}</td>
                         <td>
                             @if($schedule->updated_at)
-                                {{ $schedule->updated_at->format('d M Y') }}<br>
+                                {{ $schedule->updated_at->format('d/M/Y') }}<br>
                                 at {{ $schedule->updated_at->format('H.i') }} WIB
                             @else
                                 -

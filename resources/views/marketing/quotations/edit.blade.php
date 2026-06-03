@@ -333,7 +333,7 @@
                                                         <td>{{ $quotationSurvey->survey->survey_number }}</td>
                                                         <td>{{ $quotationSurvey->survey->company_name }}</td>
                                                         <td>{{ $quotationSurvey->survey->building_name }}</td>
-                                                        <td>{{ $quotationSurvey->survey->survey_date ? $quotationSurvey->survey->survey_date->format('d/m/Y') : '-' }}</td>
+                                                        <td>{{ $quotationSurvey->survey->survey_date ? $quotationSurvey->survey->survey_date->format('d/M/Y') : '-' }}</td>
                                                         <td>
                                                             <span class="badge bg-{{ $quotationSurvey->survey->status == 'approved' ? 'success' : 'warning' }}">
                                                                 {{ ucfirst($quotationSurvey->survey->status) }}

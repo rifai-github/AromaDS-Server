@@ -426,7 +426,7 @@
                 <tbody>
                     @forelse($systemLogs as $systemLog)
                     <tr onclick="openViewModal({{ $systemLog->id }})" data-id="{{ $systemLog->id }}">
-                        <td>{{ $systemLog->created_at->format('d M Y H:i:s') }}</td>
+                        <td>{{ $systemLog->created_at->format('d/M/Y H:i:s') }}</td>
                         <td>
                             <span class="level-badge level-{{ $systemLog->level }}">
                                 {{ strtoupper($systemLog->level) }}

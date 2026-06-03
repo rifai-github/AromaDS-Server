@@ -57,7 +57,7 @@
                                         <option value="">Select Period</option>
                                         @foreach($periods as $period)
                                             <option value="{{ $period->id }}" {{ old('achievement_period_id') == $period->id ? 'selected' : '' }}>
-                                                {{ $period->period_name }} ({{ $period->start_date->format('d M Y') }} - {{ $period->end_date->format('d M Y') }})
+                                                {{ $period->period_name }} ({{ $period->start_date->format('d/M/Y') }} - {{ $period->end_date->format('d/M/Y') }})
                                             </option>
                                         @endforeach
                                     </select>

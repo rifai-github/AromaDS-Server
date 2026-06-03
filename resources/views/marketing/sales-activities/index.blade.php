@@ -1378,7 +1378,7 @@
                             </span>
                         </td>
                         <td>
-                                {!! $activity->updated_at ? $activity->updated_at->format('d F Y') . '<br />at ' . $activity->updated_at->format('H.i') . ' WIB' : 'N/A' !!}
+                                {!! $activity->updated_at ? $activity->updated_at->format('d/M/Y') . '<br />at ' . $activity->updated_at->format('H.i') . ' WIB' : 'N/A' !!}
                         </td>
                         <td>{{ $activity->staff->name ?? 'N/A' }}</td>
                     </tr>

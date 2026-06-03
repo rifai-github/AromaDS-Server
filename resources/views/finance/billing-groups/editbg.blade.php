@@ -527,7 +527,7 @@
                                 <small>
                                     <i class="fas fa-asterisk text-danger me-1" style="font-size: 0.5rem;"></i>Required fields
                                     <span class="mx-2">|</span>
-                                    <i class="fas fa-clock me-1"></i>Last updated: {{ $billingGroup->updated_at ? $billingGroup->updated_at->format('d M Y H:i') : '-' }}
+                                    <i class="fas fa-clock me-1"></i>Last updated: {{ $billingGroup->updated_at ? $billingGroup->updated_at->format('d/M/Y H:i') : '-' }}
                                 </small>
                             </div>
                         </div>

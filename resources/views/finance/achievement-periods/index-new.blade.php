@@ -597,8 +597,8 @@
                                     <br><small class="text-muted">{{ Str::limit($period->description, 50) }}</small>
                                 @endif
                             </td>
-                            <td>{{ $period->start_date->format('d M Y') }}</td>
-                            <td>{{ $period->end_date->format('d M Y') }}</td>
+                            <td>{{ $period->start_date->format('d/M/Y') }}</td>
+                            <td>{{ $period->end_date->format('d/M/Y') }}</td>
                             <td>{{ $period->duration }} days</td>
                             <td>
                                 @if($period->status == 'active')

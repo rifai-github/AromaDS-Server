@@ -770,7 +770,7 @@
                         </td>
                         <td>{{ $tax->ppn_code ?? '-' }}</td>
                         <td>{{ $tax->tax_rate ? number_format($tax->tax_rate, 2) . '%' : '-' }}</td>
-                        <td>{{ $tax->effective_date ? $tax->effective_date->format('d/m/Y') : '-' }}</td>
+                        <td>{{ $tax->effective_date ? $tax->effective_date->format('d/M/Y') : '-' }}</td>
                         <td>
                             <span class="px-2 py-1 text-xs rounded-full {{ $tax->status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
                                 {{ ucfirst($tax->status ?? 'Inactive') }}
@@ -779,7 +779,7 @@
                         <td>{{ $tax->createdBy->name ?? '-' }}</td>
                         <td>
                             @if($tax->created_at)
-                                {{ \Carbon\Carbon::parse($tax->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($tax->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($tax->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -788,7 +788,7 @@
                         <td>{{ $tax->updatedBy->name ?? '-' }}</td>
                         <td>
                             @if($tax->updated_at)
-                                {{ \Carbon\Carbon::parse($tax->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($tax->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($tax->updated_at)->format('H.i') }} WIB
                             @else
                                 -

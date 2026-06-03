@@ -108,13 +108,13 @@
             <td class="label">Customer:</td>
             <td>{{ $invoice->customer->name }}</td>
             <td class="label">Invoice Date:</td>
-            <td>{{ $invoice->invoice_date ? $invoice->invoice_date->format('d M Y') : '-' }}</td>
+            <td>{{ $invoice->invoice_date ? $invoice->invoice_date->format('d/M/Y') : '-' }}</td>
         </tr>
         <tr>
             <td class="label">Address:</td>
             <td>{{ $invoice->billing_address ?? $invoice->customer->billing_address ?? '-' }}</td>
             <td class="label">Due Date:</td>
-            <td>{{ $invoice->due_date ? $invoice->due_date->format('d M Y') : '-' }}</td>
+            <td>{{ $invoice->due_date ? $invoice->due_date->format('d/M/Y') : '-' }}</td>
         </tr>
         <tr>
             <td class="label">Attn:</td>
@@ -244,7 +244,7 @@
     </table>
 
     <div class="footer">
-        Printed on {{ date('d M Y H:i') }} | Page 1 of 1
+        Printed on {{ date('d/M/Y H:i') }} | Page 1 of 1
     </div>
 </body>
 </html>

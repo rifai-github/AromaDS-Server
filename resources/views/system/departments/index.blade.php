@@ -792,7 +792,7 @@ use App\Models\User;
                         <td>{{ $department->createdBy->name ?? 'System' }}</td>
                         <td>
                             @if($department->created_at)
-                                {{ \Carbon\Carbon::parse($department->created_at)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($department->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($department->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -801,7 +801,7 @@ use App\Models\User;
                         <td>{{ $department->updatedBy->name ?? 'System' }}</td>
                         <td>
                             @if($department->updated_at)
-                                {{ \Carbon\Carbon::parse($department->updated_at)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($department->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($department->updated_at)->format('H.i') }} WIB
                             @else
                                 -

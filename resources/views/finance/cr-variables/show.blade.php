@@ -67,11 +67,11 @@
                         @endif
                         <tr>
                             <th>Created At</th>
-                            <td>{{ $crVariable->created_at->format('d M Y H:i') }}</td>
+                            <td>{{ $crVariable->created_at->format('d/M/Y H:i') }}</td>
                         </tr>
                         <tr>
                             <th>Updated At</th>
-                            <td>{{ $crVariable->updated_at->format('d M Y H:i') }}</td>
+                            <td>{{ $crVariable->updated_at->format('d/M/Y H:i') }}</td>
                         </tr>
                     </table>
                 </div>

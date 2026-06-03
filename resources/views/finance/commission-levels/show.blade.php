@@ -79,11 +79,11 @@
                         @endif
                         <tr>
                             <th>Created At</th>
-                            <td>{{ $commissionLevel->created_at->format('d M Y H:i') }}</td>
+                            <td>{{ $commissionLevel->created_at->format('d/M/Y H:i') }}</td>
                         </tr>
                         <tr>
                             <th>Updated At</th>
-                            <td>{{ $commissionLevel->updated_at->format('d M Y H:i') }}</td>
+                            <td>{{ $commissionLevel->updated_at->format('d/M/Y H:i') }}</td>
                         </tr>
                     </table>
                 </div>

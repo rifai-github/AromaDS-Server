@@ -424,7 +424,7 @@
                 <tbody>
                     @forelse($auditLogs as $auditLog)
                     <tr onclick="openViewModal({{ $auditLog->id }})" data-id="{{ $auditLog->id }}">
-                        <td>{{ $auditLog->created_at->format('d M Y H:i') }}</td>
+                        <td>{{ $auditLog->created_at->format('d/M/Y H:i') }}</td>
                         <td>{{ $auditLog->user->name ?? 'N/A' }}</td>
                         <td>
                             <span class="action-badge action-{{ $auditLog->action }}">

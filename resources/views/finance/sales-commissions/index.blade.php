@@ -464,9 +464,9 @@
                                 {{ ucfirst($commission->status) }}
                             </span>
                         </td>
-                        <td>{{ $commission->calculated_date->format('d M Y') }}</td>
-                        <td>{!! $commission->created_at ? $commission->created_at->format('d M Y') . '<br>at ' . $commission->created_at->format('H.i') . ' WIB' : '-' !!}</td>
-                        <td>{!! $commission->updated_at ? $commission->updated_at->format('d M Y') . '<br>at ' . $commission->updated_at->format('H.i') . ' WIB' : '-' !!}</td>
+                        <td>{{ $commission->calculated_date->format('d/M/Y') }}</td>
+                        <td>{!! $commission->created_at ? $commission->created_at->format('d/M/Y') . '<br>at ' . $commission->created_at->format('H.i') . ' WIB' : '-' !!}</td>
+                        <td>{!! $commission->updated_at ? $commission->updated_at->format('d/M/Y') . '<br>at ' . $commission->updated_at->format('H.i') . ' WIB' : '-' !!}</td>
                         <td class="text-center">
                             <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); openEditModal({{ $commission->id }})">
                                 <i class="fas fa-edit"></i>

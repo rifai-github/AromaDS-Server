@@ -39,11 +39,11 @@
                                 </tr>
                                 <tr>
                                     <td><strong>Period Start:</strong></td>
-                                    <td>{{ $taxReport->period_start->format('d/m/Y') }}</td>
+                                    <td>{{ $taxReport->period_start->format('d/M/Y') }}</td>
                                 </tr>
                                 <tr>
                                     <td><strong>Period End:</strong></td>
-                                    <td>{{ $taxReport->period_end->format('d/m/Y') }}</td>
+                                    <td>{{ $taxReport->period_end->format('d/M/Y') }}</td>
                                 </tr>
                                 <tr>
                                     <td><strong>Status:</strong></td>
@@ -160,7 +160,7 @@
                                 </tr>
                                 <tr>
                                     <td><strong>Created At:</strong></td>
-                                    <td>{{ $taxReport->created_at->format('d/m/Y H:i:s') }}</td>
+                                    <td>{{ $taxReport->created_at->format('d/M/Y H:i:s') }}</td>
                                 </tr>
                                 @if($taxReport->updatedBy)
                                 <tr>
@@ -169,13 +169,13 @@
                                 </tr>
                                 <tr>
                                     <td><strong>Updated At:</strong></td>
-                                    <td>{{ $taxReport->updated_at->format('d/m/Y H:i:s') }}</td>
+                                    <td>{{ $taxReport->updated_at->format('d/M/Y H:i:s') }}</td>
                                 </tr>
                                 @endif
                                 @if($taxReport->e_spt_submitted_at)
                                 <tr>
                                     <td><strong>e-SPT Submitted At:</strong></td>
-                                    <td>{{ $taxReport->e_spt_submitted_at->format('d/m/Y H:i:s') }}</td>
+                                    <td>{{ $taxReport->e_spt_submitted_at->format('d/M/Y H:i:s') }}</td>
                                 </tr>
                                 @endif
                             </table>

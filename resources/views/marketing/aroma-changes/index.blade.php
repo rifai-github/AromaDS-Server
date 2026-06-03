@@ -672,7 +672,7 @@
                             <td>{{ $item->requestedBy->name ?? '-' }}</td>
                             <td>
                                 <div>
-                                    <strong>{{ $item->created_at ? $item->created_at->format('d M Y') : '-' }}</strong>
+                                    <strong>{{ $item->created_at ? $item->created_at->format('d/M/Y') : '-' }}</strong>
                                     <br>
                                     <small class="text-muted">{{ $item->created_at ? $item->created_at->format('H:i') : '' }}</small>
                                 </div>

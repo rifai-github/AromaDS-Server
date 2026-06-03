@@ -196,12 +196,12 @@
 
                 <div class="detail-row">
                     <div class="detail-label">Created At:</div>
-                    <div class="detail-value">{{ $masterOption->created_at ? \Carbon\Carbon::parse($masterOption->created_at)->format('d/m/Y H:i') : 'N/A' }}</div>
+                    <div class="detail-value">{{ $masterOption->created_at ? \Carbon\Carbon::parse($masterOption->created_at)->format('d/M/Y H:i') : 'N/A' }}</div>
                 </div>
 
                 <div class="detail-row">
                     <div class="detail-label">Latest Update:</div>
-                    <div class="detail-value">{{ $masterOption->updated_at ? \Carbon\Carbon::parse($masterOption->updated_at)->format('d/m/Y H:i') : 'N/A' }}</div>
+                    <div class="detail-value">{{ $masterOption->updated_at ? \Carbon\Carbon::parse($masterOption->updated_at)->format('d/M/Y H:i') : 'N/A' }}</div>
                 </div>
 
                 <div class="detail-row">
@@ -231,7 +231,7 @@
                                     <td>{{ $optionDetail->option_name ?? 'N/A' }}</td>
                                     <td>{{ $optionDetail->label ?? ($optionDetail->option_name ?? 'N/A') }}</td>
                                     <td>{{ $optionDetail->code ?? '-' }}</td>
-                                    <td>{{ $optionDetail->updated_at ? \Carbon\Carbon::parse($optionDetail->updated_at)->format('d/m/Y H:i') : 'N/A' }}</td>
+                                    <td>{{ $optionDetail->updated_at ? \Carbon\Carbon::parse($optionDetail->updated_at)->format('d/M/Y H:i') : 'N/A' }}</td>
                                     <td>
                                         @if($masterOption->updater && $masterOption->updater->name)
                                             {{ $masterOption->updater->name }}

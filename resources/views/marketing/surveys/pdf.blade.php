@@ -144,7 +144,7 @@
             </div>
             <div class="info-row">
                 <div class="info-label">Survey Date</div>
-                <div class="info-value">{{ $survey->survey_date ? \Carbon\Carbon::parse($survey->survey_date)->format('d F Y') : '-' }}</div>
+                <div class="info-value">{{ $survey->survey_date ? \Carbon\Carbon::parse($survey->survey_date)->format('d/M/Y') : '-' }}</div>
             </div>
             <div class="info-row">
                 <div class="info-label">Marketing Staff</div>
@@ -319,7 +319,7 @@
     @endif
 
     <div class="footer">
-        <p>Generated on {{ now()->format('d F Y H:i:s') }}</p>
+        <p>Generated on {{ now()->format('d/M/Y H:i:s') }}</p>
         <p>Survey Report - {{ $survey->survey_number }}</p>
     </div>
 </body>

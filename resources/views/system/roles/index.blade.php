@@ -877,7 +877,7 @@
                         <td>{{ $role->createdBy->name ?? 'N/A' }}</td>
                         <td>
                             @if($role->created_at)
-                                {{ \Carbon\Carbon::parse($role->created_at)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($role->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($role->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -886,7 +886,7 @@
                         <td>{{ $role->updatedBy->name ?? 'N/A' }}</td>
                         <td>
                             @if($role->updated_at)
-                                {{ \Carbon\Carbon::parse($role->updated_at)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($role->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($role->updated_at)->format('H.i') }} WIB
                             @else
                                 -

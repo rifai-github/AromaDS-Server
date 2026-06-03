@@ -758,8 +758,8 @@
                                 {{ $access->regional_table_view ? 'Yes' : 'No' }}
                             </span>
                         </td>
-                        <td>{{ $access->created_at ? \Carbon\Carbon::parse($access->created_at)->format('d/m/Y H:i') : '-' }}</td>
-                        <td>{{ $access->updated_at ? \Carbon\Carbon::parse($access->updated_at)->format('d/m/Y H:i') : '-' }}</td>
+                        <td>{{ $access->created_at ? \Carbon\Carbon::parse($access->created_at)->format('d/M/Y H:i') : '-' }}</td>
+                        <td>{{ $access->updated_at ? \Carbon\Carbon::parse($access->updated_at)->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $access->updater->name ?? '-' }}</td>
                         <td>
                             <div class="flex gap-2">

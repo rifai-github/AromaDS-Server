@@ -967,10 +967,10 @@
                         </td>
                         <td>{{ $report->reporter->name ?? 'N/A' }}</td>
                         <td>
-                            {!! $report->created_at ? \Carbon\Carbon::parse($report->created_at)->format('d M Y') . '<br />' . \Carbon\Carbon::parse($report->created_at)->format('H:i') : 'N/A' !!}
+                            {!! $report->created_at ? \Carbon\Carbon::parse($report->created_at)->format('d/M/Y') . '<br />' . \Carbon\Carbon::parse($report->created_at)->format('H:i') : 'N/A' !!}
                         </td>
                         <td>{{ $report->creator->name ?? '-' }}</td>
-                        <td>{!! $report->updated_at ? \Carbon\Carbon::parse($report->updated_at)->format('d M Y') . '<br />' . \Carbon\Carbon::parse($report->updated_at)->format('H:i') : '-' !!}</td>
+                        <td>{!! $report->updated_at ? \Carbon\Carbon::parse($report->updated_at)->format('d/M/Y') . '<br />' . \Carbon\Carbon::parse($report->updated_at)->format('H:i') : '-' !!}</td>
                         <td>{{ $report->updater->name ?? '-' }}</td>
                        <!-- <td>
                             @php

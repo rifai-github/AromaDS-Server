@@ -309,7 +309,7 @@
                             @endif
                         </td>
                         <td>{{ $bank->createdBy->name ?? '-' }}</td>
-                        <td>{{ $bank->created_at ? $bank->created_at->format('d M Y') : '-' }}</td>
+                        <td>{{ $bank->created_at ? $bank->created_at->format('d/M/Y') : '-' }}</td>
                     </tr>
                     @empty
                     <tr>

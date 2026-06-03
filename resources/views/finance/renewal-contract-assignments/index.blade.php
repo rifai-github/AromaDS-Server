@@ -94,9 +94,9 @@
                                 @endif
                             </td>
                             <td class="text-sm text-gray-500">{{ $assignment->createdBy->name ?? '-' }}</td>
-                            <td class="text-sm text-gray-500">{!! $assignment->created_at ? $assignment->created_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                            <td class="text-sm text-gray-500">{!! $assignment->created_at ? $assignment->created_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                             <td class="text-sm text-gray-500">{{ $assignment->updatedBy->name ?? '-' }}</td>
-                            <td class="text-sm text-gray-500">{!! $assignment->updated_at ? $assignment->updated_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                            <td class="text-sm text-gray-500">{!! $assignment->updated_at ? $assignment->updated_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                             <td>
                                 <div class="action-buttons">
                                     <a href="{{ route('finance.renewal-contract-assignments.show', $assignment) }}" class="btn btn-info btn-sm">

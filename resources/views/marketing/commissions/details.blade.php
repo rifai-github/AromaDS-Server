@@ -70,7 +70,7 @@
                         </tr>
                         <tr>
                             <th>Calculation Date</th>
-                            <td>{{ $calculation->calculation_date ? $calculation->calculation_date->format('d M Y') : '-' }}</td>
+                            <td>{{ $calculation->calculation_date ? $calculation->calculation_date->format('d/M/Y') : '-' }}</td>
                         </tr>
                         @if($calculation->commissionLevel)
                         <tr>
@@ -86,11 +86,11 @@
                         @endif
                         <tr>
                             <th>Created At</th>
-                            <td>{{ $calculation->created_at->format('d M Y H:i') }}</td>
+                            <td>{{ $calculation->created_at->format('d/M/Y H:i') }}</td>
                         </tr>
                         <tr>
                             <th>Updated At</th>
-                            <td>{{ $calculation->updated_at->format('d M Y H:i') }}</td>
+                            <td>{{ $calculation->updated_at->format('d/M/Y H:i') }}</td>
                         </tr>
                     </table>
                 </div>

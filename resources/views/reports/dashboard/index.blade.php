@@ -291,8 +291,8 @@
                             </span>
                         </td>
                         <td>{{ $dashboard->creator->name ?? 'N/A' }}</td>
-                        <td>{{ $dashboard->created_at->format('d M Y H:i') }}</td>
-                        <td>{{ $dashboard->updated_at->format('d M Y H:i') }}</td>
+                        <td>{{ $dashboard->created_at->format('d/M/Y H:i') }}</td>
+                        <td>{{ $dashboard->updated_at->format('d/M/Y H:i') }}</td>
                     </tr>
                     @empty
                     <tr>

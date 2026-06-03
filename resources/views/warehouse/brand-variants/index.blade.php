@@ -293,14 +293,14 @@
                         <td onclick="openViewModal({{ $variant->id }})">{{ $variant->createdBy->name ?? '-' }}</td>
                         <td onclick="openViewModal({{ $variant->id }})">
                             @if($variant->created_at)
-                                {{ $variant->created_at->format('d M Y') }}<br>
+                                {{ $variant->created_at->format('d/M/Y') }}<br>
                                 <small>at {{ $variant->created_at->format('H.i') }} WIB</small>
                             @else - @endif
                         </td>
                         <td onclick="openViewModal({{ $variant->id }})">{{ $variant->updatedBy->name ?? '-' }}</td>
                         <td onclick="openViewModal({{ $variant->id }})">
                             @if($variant->updated_at)
-                                {{ $variant->updated_at->format('d M Y') }}<br>
+                                {{ $variant->updated_at->format('d/M/Y') }}<br>
                                 <small>at {{ $variant->updated_at->format('H.i') }} WIB</small>
                             @else - @endif
                         </td>

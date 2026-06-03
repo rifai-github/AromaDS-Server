@@ -141,7 +141,7 @@
             
             // Use completed_at as the official report date, fallback to schedule_date
             $reportDate = $schedules->max('completed_at') ?? $mainJob->schedule_date;
-            $dateFormatted = $reportDate ? \Carbon\Carbon::parse($reportDate)->format('d M Y') : '-';
+            $dateFormatted = $reportDate ? \Carbon\Carbon::parse($reportDate)->format('d/M/Y') : '-';
             
             // Collect Rooms
             $rooms = collect();
@@ -352,7 +352,7 @@
         </table>
 
         <div class="footer-note">
-            This Job Report was generated on {{ date('d M Y - H:i:s') }} and is valid without the signature and seal.
+            This Job Report was generated on {{ date('d/M/Y - H:i:s') }} and is valid without the signature and seal.
         </div>
 
         <div class="company-footer">

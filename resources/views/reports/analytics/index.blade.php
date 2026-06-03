@@ -293,8 +293,8 @@
                             </span>
                         </td>
                         <td>{{ $analytic->creator->name ?? 'N/A' }}</td>
-                        <td>{{ $analytic->created_at->format('d M Y H:i') }}</td>
-                        <td>{{ $analytic->updated_at->format('d M Y H:i') }}</td>
+                        <td>{{ $analytic->created_at->format('d/M/Y H:i') }}</td>
+                        <td>{{ $analytic->updated_at->format('d/M/Y H:i') }}</td>
                     </tr>
                     @empty
                     <tr>

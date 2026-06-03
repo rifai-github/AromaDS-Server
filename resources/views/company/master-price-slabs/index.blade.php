@@ -774,7 +774,7 @@
                         <td>{{ $slab->max_quantity ?? 'Tanpa Batas' }}</td>
                         <td>{{ $slab->unit_price ? 'Rp ' . number_format($slab->unit_price, 2, ',', '.') : '-' }}</td>
                         <td>{{ $slab->discount_percentage ?? '-' }}%</td>
-                        <td>{{ $slab->effective_date ? $slab->effective_date->format('d/m/Y') : '-' }}</td>
+                        <td>{{ $slab->effective_date ? $slab->effective_date->format('d/M/Y') : '-' }}</td>
                         <td>
                             <span class="px-2 py-1 text-xs rounded-full {{ $slab->status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
                                 {{ $slab->status === 'active' ? 'Aktif' : 'Tidak Aktif' }}
@@ -783,7 +783,7 @@
                         <td>{{ $slab->createdBy->name ?? '-' }}</td>
                         <td>
                             @if($slab->created_at)
-                                {{ \Carbon\Carbon::parse($slab->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($slab->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($slab->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -792,7 +792,7 @@
                         <td>{{ $slab->updatedBy->name ?? '-' }}</td>
                         <td>
                             @if($slab->updated_at)
-                                {{ \Carbon\Carbon::parse($slab->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($slab->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($slab->updated_at)->format('H.i') }} WIB
                             @else
                                 -

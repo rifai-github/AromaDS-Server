@@ -293,8 +293,8 @@
                         </td>
                         <td>{{ $export->record_count ?? 0 }}</td>
                         <td>{{ $export->creator->name ?? 'N/A' }}</td>
-                        <td>{{ $export->created_at->format('d M Y H:i') }}</td>
-                        <td>{{ $export->updated_at->format('d M Y H:i') }}</td>
+                        <td>{{ $export->created_at->format('d/M/Y H:i') }}</td>
+                        <td>{{ $export->updated_at->format('d/M/Y H:i') }}</td>
                     </tr>
                     @empty
                     <tr>

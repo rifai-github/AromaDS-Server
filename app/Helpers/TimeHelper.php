@@ -34,6 +34,56 @@ if (!function_exists('formatIndonesianTime')) {
     }
 }
 
+if (!function_exists('formatAppDate')) {
+    /**
+     * Format tanggal standar tampilan aplikasi: dd/Mon/yyyy.
+     *
+     * @param \Carbon\Carbon|\DateTime|string|null $datetime
+     * @param string $timezone
+     * @param string $fallback
+     * @return string
+     */
+    function formatAppDate($datetime, $timezone = 'Asia/Jakarta', $fallback = '-')
+    {
+        if (!$datetime) {
+            return $fallback;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($datetime)
+                ->setTimezone($timezone)
+                ->format('d/M/Y');
+        } catch (\Exception $e) {
+            return $fallback;
+        }
+    }
+}
+
+if (!function_exists('formatAppDateTime')) {
+    /**
+     * Format tanggal dan waktu standar tampilan aplikasi: dd/Mon/yyyy HH:mm.
+     *
+     * @param \Carbon\Carbon|\DateTime|string|null $datetime
+     * @param string $timezone
+     * @param string $fallback
+     * @return string
+     */
+    function formatAppDateTime($datetime, $timezone = 'Asia/Jakarta', $fallback = '-')
+    {
+        if (!$datetime) {
+            return $fallback;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($datetime)
+                ->setTimezone($timezone)
+                ->format('d/M/Y H:i');
+        } catch (\Exception $e) {
+            return $fallback;
+        }
+    }
+}
+
 if (!function_exists('formatIndonesianDate')) {
     /**
      * Format tanggal ke format Indonesia

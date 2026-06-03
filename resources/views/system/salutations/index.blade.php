@@ -260,9 +260,9 @@
                             <span class="badge badge-danger">Inactive</span>
                         @endif
                     </td>
-                    <td>{{ $salutation->created_at ? $salutation->created_at->setTimezone('Asia/Jakarta')->format('d M Y H:i') : '-' }}</td>
+                    <td>{{ $salutation->created_at ? $salutation->created_at->setTimezone('Asia/Jakarta')->format('d/M/Y H:i') : '-' }}</td>
                     <td>{{ $salutation->createdBy->name ?? '-' }}</td>
-                    <td>{{ $salutation->updated_at ? $salutation->updated_at->setTimezone('Asia/Jakarta')->format('d M Y H:i') : '-' }}</td>
+                    <td>{{ $salutation->updated_at ? $salutation->updated_at->setTimezone('Asia/Jakarta')->format('d/M/Y H:i') : '-' }}</td>
                     <td>{{ $salutation->updatedBy->name ?? '-' }}</td>
                     <td>
                         <div class="action-btn-group" onclick="event.stopPropagation()">

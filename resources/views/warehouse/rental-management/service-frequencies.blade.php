@@ -413,7 +413,7 @@
                                     <td>
                                         <div class="d-flex align-items-center">
                                             <i class="fas fa-calendar-alt mr-2 text-muted"></i>
-                                            <span>{{ $frequency->created_at ? $frequency->created_at->format('d M Y H:i') : '-' }}</span>
+                                            <span>{{ $frequency->created_at ? $frequency->created_at->format('d/M/Y H:i') : '-' }}</span>
                                         </div>
                                     </td>
                                     <td>
@@ -425,7 +425,7 @@
                                     <td>
                                         <div class="d-flex align-items-center">
                                             <i class="fas fa-history mr-2 text-muted"></i>
-                                            <span>{{ $frequency->updated_at ? $frequency->updated_at->format('d M Y H:i') : '-' }}</span>
+                                            <span>{{ $frequency->updated_at ? $frequency->updated_at->format('d/M/Y H:i') : '-' }}</span>
                                         </div>
                                     </td>
                                     <td>

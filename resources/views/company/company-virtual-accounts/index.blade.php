@@ -779,7 +779,7 @@
                         <td>{{ $account->createdBy->name ?? '-' }}</td>
                         <td>
                             @if($account->created_at)
-                                {{ \Carbon\Carbon::parse($account->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($account->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($account->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -788,7 +788,7 @@
                         <td>{{ $account->updatedBy->name ?? '-' }}</td>
                         <td>
                             @if($account->updated_at)
-                                {{ \Carbon\Carbon::parse($account->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($account->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($account->updated_at)->format('H.i') }} WIB
                             @else
                                 -

@@ -631,7 +631,7 @@
                                     <span class="badge badge-secondary">Pending</span>
                                 @endif
                             </td>
-                            <td>{{ $achievement->achievement_date ? $achievement->achievement_date->format('d M Y') : '-' }}</td>
+                            <td>{{ $achievement->achievement_date ? $achievement->achievement_date->format('d/M/Y') : '-' }}</td>
                             <td>
                                 <div class="btn-group" role="group">
                                     <a href="{{ route('finance.achievements.show', $achievement) }}" class="btn btn-sm btn-info" title="View">

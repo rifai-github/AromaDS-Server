@@ -150,11 +150,11 @@
                                         <span class="badge badge-danger">Void</span>
                                     @endif
                                 </td>
-                                <td>{{ $commission->calculation_date ? $commission->calculation_date->format('d M Y') : '-' }}</td>
+                                <td>{{ $commission->calculation_date ? $commission->calculation_date->format('d/M/Y') : '-' }}</td>
                             <td>{{ $commission->createdBy->name ?? '-' }}</td>
                             <td>
                                 <div>
-                                    <strong>{{ $commission->created_at ? $commission->created_at->format('d M Y') : '-' }}</strong>
+                                    <strong>{{ $commission->created_at ? $commission->created_at->format('d/M/Y') : '-' }}</strong>
                                     <br>
                                     <small class="text-muted">{{ $commission->created_at ? $commission->created_at->format('H:i') : '' }}</small>
                                 </div>
@@ -162,7 +162,7 @@
                             <td>{{ $commission->updatedBy->name ?? '-' }}</td>
                             <td>
                                 <div>
-                                    <strong>{{ $commission->updated_at ? $commission->updated_at->format('d M Y') : '-' }}</strong>
+                                    <strong>{{ $commission->updated_at ? $commission->updated_at->format('d/M/Y') : '-' }}</strong>
                                     <br>
                                     <small class="text-muted">{{ $commission->updated_at ? $commission->updated_at->format('H:i') : '' }}</small>
                                 </div>

@@ -112,7 +112,7 @@
                         <td>{{ $import->creator->name ?? 'N/A' }}</td>
                         <td>{{ $import->created_at_formatted ?? 'N/A' }}</td>
                         <td>{{ $import->updater->name ?? 'N/A' }}</td>
-                        <td>{{ $import->updated_at ? \Carbon\Carbon::parse($import->updated_at)->format('d M Y H:i') : 'N/A' }}</td>
+                        <td>{{ $import->updated_at ? \Carbon\Carbon::parse($import->updated_at)->format('d/M/Y H:i') : 'N/A' }}</td>
                         <td class="text-center">
                             <div class="flex gap-1 justify-center">
                                 <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); openEditModal({{ $import->id }})" title="Edit">

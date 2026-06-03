@@ -97,7 +97,7 @@
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Created By</div>
                             <div style="font-size: 1rem; color: #212529;">
                                 {{ $firstItem->createdBy->name ?? '-' }}
-                                <div class="small text-muted">{{ $firstItem->created_at->format('d M Y H:i') }}</div>
+                                <div class="small text-muted">{{ $firstItem->created_at->format('d/M/Y H:i') }}</div>
                             </div>
                         </div>
                         <div>
@@ -199,7 +199,7 @@
                                             {{ $item->approvedBy->name ?? '-' }}
                                         </td>
                                         <td>
-                                            {{ $item->approved_at ? $item->approved_at->format('d M Y H:i') : '-' }}
+                                            {{ $item->approved_at ? $item->approved_at->format('d/M/Y H:i') : '-' }}
                                         </td>
                                         <td>
                                              @if($item->approval_notes)

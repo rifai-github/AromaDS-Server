@@ -262,9 +262,9 @@
                             <span class="badge badge-secondary">Tidak Aktif</span>
                         @endif
                     </td>
-                    <td>{{ $type->created_at->format('d M Y H:i') }}</td>
+                    <td>{{ $type->created_at->format('d/M/Y H:i') }}</td>
                     <td>{{ $type->createdBy->name ?? '-' }}</td>
-                    <td>{{ $type->updated_at->format('d M Y H:i') }}</td>
+                    <td>{{ $type->updated_at->format('d/M/Y H:i') }}</td>
                     <td>{{ $type->updatedBy->name ?? '-' }}</td>
                     <td>
                         <div class="action-btn-group" onclick="event.stopPropagation()">

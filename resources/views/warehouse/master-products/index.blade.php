@@ -809,7 +809,7 @@
                         </td>
                         <td>
                             @if($product->created_at)
-                                {{ \Carbon\Carbon::parse($product->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($product->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($product->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -819,7 +819,7 @@
                         <td>{{ $product->updatedBy->name ?? '-' }}</td>
                         <td>
                             @if($product->updated_at)
-                                {{ \Carbon\Carbon::parse($product->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($product->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($product->updated_at)->format('H.i') }} WIB
                             @else
                                 -

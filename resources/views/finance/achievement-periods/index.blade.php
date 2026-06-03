@@ -669,8 +669,8 @@
                                 <br><small class="text-muted">{{ Str::limit($period->description, 50) }}</small>
                             @endif
                         </td>
-                        <td>{{ $period->start_date->format('d M Y') }}</td>
-                        <td>{{ $period->end_date->format('d M Y') }}</td>
+                        <td>{{ $period->start_date->format('d/M/Y') }}</td>
+                        <td>{{ $period->end_date->format('d/M/Y') }}</td>
                         <td>{{ $period->duration }} days</td>
                         <td>
                             <span class="badge {{ $period->status_badge }}">
@@ -680,7 +680,7 @@
                         <td>{{ $period->createdBy->name ?? 'Unknown' }}</td>
                         <td>
                             @if($period->created_at)
-                                {{ $period->created_at->format('d M Y') }}<br>
+                                {{ $period->created_at->format('d/M/Y') }}<br>
                                 <small class="text-muted">{{ $period->created_at->format('H.i') }} WIB</small>
                             @else
                                 -
@@ -689,7 +689,7 @@
                         <td>{{ $period->updatedBy->name ?? 'Unknown' }}</td>
                         <td>
                             @if($period->updated_at)
-                                {{ $period->updated_at->format('d M Y') }}<br>
+                                {{ $period->updated_at->format('d/M/Y') }}<br>
                                 <small class="text-muted">{{ $period->updated_at->format('H.i') }} WIB</small>
                             @else
                                 -

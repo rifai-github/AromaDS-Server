@@ -792,7 +792,7 @@
                                     <td>{{ $category->createdBy->name ?? '-' }}</td>
                                     <td>
                                         @if($category->created_at)
-                                            {{ \Carbon\Carbon::parse($category->created_at)->format('d M Y') }}<br>
+                                            {{ \Carbon\Carbon::parse($category->created_at)->format('d/M/Y') }}<br>
                                             <small class="text-muted">at {{ \Carbon\Carbon::parse($category->created_at)->format('H.i') }} WIB</small>
                                         @else
                                             -
@@ -801,7 +801,7 @@
                                     <td>{{ $category->updatedBy->name ?? '-' }}</td>
                                     <td>
                                         @if($category->updated_at)
-                                            {{ \Carbon\Carbon::parse($category->updated_at)->format('d M Y') }}<br>
+                                            {{ \Carbon\Carbon::parse($category->updated_at)->format('d/M/Y') }}<br>
                                             <small class="text-muted">at {{ \Carbon\Carbon::parse($category->updated_at)->format('H.i') }} WIB</small>
                                         @else
                                             -

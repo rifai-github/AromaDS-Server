@@ -81,16 +81,16 @@
                         </tr>
                         <tr>
                             <th>Approved At</th>
-                            <td>{{ $commissionTransfer->approved_at ? $commissionTransfer->approved_at->format('d M Y H:i') : '-' }}</td>
+                            <td>{{ $commissionTransfer->approved_at ? $commissionTransfer->approved_at->format('d/M/Y H:i') : '-' }}</td>
                         </tr>
                         @endif
                         <tr>
                             <th>Created At</th>
-                            <td>{{ $commissionTransfer->created_at->format('d M Y H:i') }}</td>
+                            <td>{{ $commissionTransfer->created_at->format('d/M/Y H:i') }}</td>
                         </tr>
                         <tr>
                             <th>Updated At</th>
-                            <td>{{ $commissionTransfer->updated_at->format('d M Y H:i') }}</td>
+                            <td>{{ $commissionTransfer->updated_at->format('d/M/Y H:i') }}</td>
                         </tr>
                     </table>
                 </div>

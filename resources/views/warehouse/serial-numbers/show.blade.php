@@ -179,7 +179,7 @@
                 </div>
                 <div>
                     <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.25rem;">Created At</div>
-                    <div style="font-size: 0.9rem; color: #212529;">{{ $serialNumber->created_at ? $serialNumber->created_at->format('j M Y H:i') : '-' }}</div>
+                    <div style="font-size: 0.9rem; color: #212529;">{{ $serialNumber->created_at ? $serialNumber->created_at->format('d/M/Y H:i') : '-' }}</div>
                 </div>
                 <div>
                     <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.25rem;">Last Updated By</div>
@@ -187,7 +187,7 @@
                 </div>
                 <div>
                     <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.25rem;">Last Updated At</div>
-                    <div style="font-size: 0.9rem; color: #212529;">{{ $serialNumber->updated_at ? $serialNumber->updated_at->format('j M Y H:i') : '-' }}</div>
+                    <div style="font-size: 0.9rem; color: #212529;">{{ $serialNumber->updated_at ? $serialNumber->updated_at->format('d/M/Y H:i') : '-' }}</div>
                 </div>
             </div>
         </div>
@@ -278,7 +278,7 @@
                                 <span class="badge bg-{{ $move->badge }}">{{ strtoupper($move->action) }}</span>
                             </div>
                             <div class="text-muted small mt-1">
-                                <i class="fas fa-calendar-alt me-1"></i> {{ \Carbon\Carbon::parse($move->date)->format('d M Y H:i') }}
+                                <i class="fas fa-calendar-alt me-1"></i> {{ \Carbon\Carbon::parse($move->date)->format('d/M/Y H:i') }}
                                 <i class="fas fa-user ms-3 me-1"></i> {{ $move->user }}
                             </div>
                             <div class="mt-2 text-dark">
@@ -320,7 +320,7 @@
                                 @forelse($installHistories as $history)
                                 <tr>
                                     <td><span class="badge bg-{{ $history->badge }}">{{ strtoupper($history->label) }}</span></td>
-                                    <td>{{ $history->action_date ? \Carbon\Carbon::parse($history->action_date)->format('d M Y') : '-' }}</td>
+                                    <td>{{ $history->action_date ? \Carbon\Carbon::parse($history->action_date)->format('d/M/Y') : '-' }}</td>
                                     <td>
                                         <strong>{{ $history->customer_name }}</strong><br>
                                         <small class="text-muted">{{ $history->location }}</small>
@@ -368,7 +368,7 @@
                             <tbody>
                                 @forelse($serviceHistories as $history)
                                 <tr>
-                                    <td><i class="fas fa-calendar-check me-1"></i> {{ $history->action_date ? \Carbon\Carbon::parse($history->action_date)->format('d M Y') : '-' }}</td>
+                                    <td><i class="fas fa-calendar-check me-1"></i> {{ $history->action_date ? \Carbon\Carbon::parse($history->action_date)->format('d/M/Y') : '-' }}</td>
                                     <td><strong>{{ $history->customer_name }}</strong></td>
                                     <td>{{ $history->technician_name }}</td>
                                     <td>{{ $history->job_schedule_number ?? '-' }}</td>
@@ -406,7 +406,7 @@
                                 @forelse($repairHistories as $repair)
                                 <tr>
                                     <td>{{ $repair->repair_number }}</td>
-                                    <td>{{ $repair->reported_at->format('d M Y') }}</td>
+                                    <td>{{ $repair->reported_at->format('d/M/Y') }}</td>
                                     <td>{{ \Illuminate\Support\Str::limit($repair->problem_description, 50) }}</td>
                                     <td>{{ $repair->repair_work_performed ?? '-' }}</td>
                                     <td>

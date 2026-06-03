@@ -244,13 +244,13 @@
                                 <!-- Row 2 -->
                                 <div>
                                     <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Tanggal Transaksi</div>
-                                    <div style="font-size: 1rem; color: #212529;">{{ $receiving->created_at?->format('j M Y') ?? '-' }}</div>
+                                    <div style="font-size: 1rem; color: #212529;">{{ $receiving->created_at?->format('d/M/Y') ?? '-' }}</div>
                                 </div>
                                 <div>
                                     <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Tanggal Penerimaan</div>
                                     <div style="font-size: 1rem; color: #212529;">
                                         @if($receiving->status === 'received')
-                                            {{ ($receiving->receive_date ?: $receiving->updated_at)?->format('j M Y') ?? '-' }}
+                                            {{ ($receiving->receive_date ?: $receiving->updated_at)?->format('d/M/Y') ?? '-' }}
                                         @else
                                             -
                                         @endif
@@ -287,7 +287,7 @@
                                 </div>
                                 <div>
                                     <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.25rem;">Created At</div>
-                                    <div style="font-size: 0.9rem; color: #212529;">{{ $receiving->created_at ? $receiving->created_at->format('j M Y H:i') : '-' }}</div>
+                                    <div style="font-size: 0.9rem; color: #212529;">{{ $receiving->created_at ? $receiving->created_at->format('d/M/Y H:i') : '-' }}</div>
                                 </div>
                                 <div>
                                     <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.25rem;">Last Updated By</div>
@@ -295,7 +295,7 @@
                                 </div>
                                 <div>
                                     <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.25rem;">Last Updated At</div>
-                                    <div style="font-size: 0.9rem; color: #212529;">{{ $receiving->updated_at ? $receiving->updated_at->format('j M Y H:i') : '-' }}</div>
+                                    <div style="font-size: 0.9rem; color: #212529;">{{ $receiving->updated_at ? $receiving->updated_at->format('d/M/Y H:i') : '-' }}</div>
                                 </div>
                             </div>
                         </div>
@@ -370,7 +370,7 @@
                                                 </span>
                                             </td>
                                             <td>
-                                                {{ $item->updated_at?->format('d/m/Y H:i') ?? '-' }}
+                                                {{ $item->updated_at?->format('d/M/Y H:i') ?? '-' }}
                                                 @if($item->updatedBy || $receiving->updatedBy)
                                                 <br><small class="text-muted">by {{ $item->updatedBy?->name ?? $receiving->updatedBy?->name }}</small>
                                                 @endif

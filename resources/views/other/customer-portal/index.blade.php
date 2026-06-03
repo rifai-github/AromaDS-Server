@@ -759,8 +759,8 @@
                                 {{ $portal->is_active ? 'Active' : 'Inactive' }}
                             </span>
                         </td>
-                        <td>{{ $portal->created_at ? \Carbon\Carbon::parse($portal->created_at)->format('d/m/Y H:i') : '-' }}</td>
-                        <td>{{ $portal->updated_at ? \Carbon\Carbon::parse($portal->updated_at)->format('d/m/Y H:i') : '-' }}</td>
+                        <td>{{ $portal->created_at ? \Carbon\Carbon::parse($portal->created_at)->format('d/M/Y H:i') : '-' }}</td>
+                        <td>{{ $portal->updated_at ? \Carbon\Carbon::parse($portal->updated_at)->format('d/M/Y H:i') : '-' }}</td>
                         <td>
                             <div class="flex gap-2">
                                 <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); openViewModal({{ $portal->id }})">

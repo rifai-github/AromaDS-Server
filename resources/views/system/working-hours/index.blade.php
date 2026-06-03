@@ -415,7 +415,7 @@
                                 {{ $workingHour->is_active ? 'Active' : 'Inactive' }}
                             </span>
                         </td>
-                        <td>{{ $workingHour->created_at->format('d M Y') }}</td>
+                        <td>{{ $workingHour->created_at->format('d/M/Y') }}</td>
                     </tr>
                     @empty
                     <tr>

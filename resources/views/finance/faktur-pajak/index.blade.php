@@ -778,7 +778,7 @@
                             <input type="checkbox" class="row-checkbox w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer" value="{{ $faktur->id }}" onclick="event.stopPropagation()">
                         </td>
                         <td class="font-medium">{{ $faktur->faktur_number ?? '-' }}</td>
-                        <td>{{ $faktur->faktur_date ? \Carbon\Carbon::parse($faktur->faktur_date)->format('d/m/Y') : '-' }}</td>
+                        <td>{{ $faktur->faktur_date ? \Carbon\Carbon::parse($faktur->faktur_date)->format('d/M/Y') : '-' }}</td>
                         <td>{{ $faktur->invoice->customer->name ?? '-' }}</td>
                         <td>{{ $faktur->invoice->invoice_number ?? '-' }}</td>
                         <td>{{ number_format($faktur->invoice->grand_total ?? 0, 2) }}</td>
@@ -798,9 +798,9 @@
                             @endif
                         </td>
                         <td>{{ $faktur->creator->name ?? '-' }}</td>
-                        <td>{{ $faktur->created_at ? \Carbon\Carbon::parse($faktur->created_at)->format('d/m/Y H:i') : '-' }}</td>
+                        <td>{{ $faktur->created_at ? \Carbon\Carbon::parse($faktur->created_at)->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $faktur->updater->name ?? '-' }}</td>
-                        <td>{{ $faktur->updated_at ? \Carbon\Carbon::parse($faktur->updated_at)->format('d/m/Y H:i') : '-' }}</td>
+                        <td>{{ $faktur->updated_at ? \Carbon\Carbon::parse($faktur->updated_at)->format('d/M/Y H:i') : '-' }}</td>
                     </tr>
                     @empty
                     <tr>

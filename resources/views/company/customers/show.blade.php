@@ -465,7 +465,7 @@
                         </div>
                         <div>
                             <div class="info-label">Created At</div>
-                            <div style="font-size: 0.9rem; color: #212529;">{{ $customer->created_at ? $customer->created_at->format('j M Y H:i') : '-' }}</div>
+                            <div style="font-size: 0.9rem; color: #212529;">{{ $customer->created_at ? $customer->created_at->format('d/M/Y H:i') : '-' }}</div>
                         </div>
                         <div>
                             <div class="info-label">Updated By</div>
@@ -473,7 +473,7 @@
                         </div>
                         <div>
                             <div class="info-label">Updated At</div>
-                            <div style="font-size: 0.9rem; color: #212529;">{{ $customer->updated_at ? $customer->updated_at->format('j M Y H:i') : '-' }}</div>
+                            <div style="font-size: 0.9rem; color: #212529;">{{ $customer->updated_at ? $customer->updated_at->format('d/M/Y H:i') : '-' }}</div>
                         </div>
                     </div>
                 </div>

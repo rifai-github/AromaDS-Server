@@ -257,7 +257,7 @@
                                         <span class="badge badge-danger">Void</span>
                                     @endif
                                 </td>
-                                <td>{{ $commission->calculation_date ? $commission->calculation_date->format('d M Y') : '-' }}</td>
+                                <td>{{ $commission->calculation_date ? $commission->calculation_date->format('d/M/Y') : '-' }}</td>
                                 <td>
                                     <a href="{{ route('marketing.commissions.details', $commission->id) }}" class="btn btn-info btn-sm">
                                         <i class="fas fa-eye"></i> View
@@ -296,7 +296,7 @@
                                             <strong>{{ $contract->contract_number }}</strong><br>
                                             <small class="text-muted">{{ $contract->customer->name ?? 'N/A' }}</small>
                                         </div>
-                                        <small class="text-muted">{{ $contract->created_at->format('d M Y') }}</small>
+                                        <small class="text-muted">{{ $contract->created_at->format('d/M/Y') }}</small>
                                     </div>
                                 </li>
                                 @endforeach
@@ -332,7 +332,7 @@
                                             <strong>{{ $quotation->quotation_number }}</strong><br>
                                             <small class="text-muted">{{ $quotation->customer->name ?? 'N/A' }}</small>
                                         </div>
-                                        <small class="text-muted">{{ $quotation->created_at->format('d M Y') }}</small>
+                                        <small class="text-muted">{{ $quotation->created_at->format('d/M/Y') }}</small>
                                     </div>
                                 </li>
                                 @endforeach

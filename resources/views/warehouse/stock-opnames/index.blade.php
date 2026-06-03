@@ -788,15 +788,15 @@
                         <td>{{ $opname->branch->name ?? '-' }}</td>
                         <td>{{ $opname->warehouse->name ?? '-' }}</td>
                         <td>{{ $opname->personResponsible->name ?? '-' }}</td>
-                        <td>{{ $opname->opname_date ? \Carbon\Carbon::parse($opname->opname_date)->format('d/m/Y') : '-' }}</td>
+                        <td>{{ $opname->opname_date ? \Carbon\Carbon::parse($opname->opname_date)->format('d/M/Y') : '-' }}</td>
                         <td>
                             <span class="status-badge status-{{ str_replace(' ', '-', strtolower($opname->status ?? 'draft')) }}">
                                 {{ ucfirst($opname->status ?? 'Draft') }}
                             </span>
                         </td>
-                        <td>{{ $opname->created_at ? \Carbon\Carbon::parse($opname->created_at)->format('d/m/Y H:i') : '-' }}</td>
+                        <td>{{ $opname->created_at ? \Carbon\Carbon::parse($opname->created_at)->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $opname->createdBy->name ?? '-' }}</td>
-                        <td>{{ $opname->updated_at ? \Carbon\Carbon::parse($opname->updated_at)->format('d/m/Y H:i') : '-' }}</td>
+                        <td>{{ $opname->updated_at ? \Carbon\Carbon::parse($opname->updated_at)->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $opname->updatedBy->name ?? '-' }}</td>
                         <td onclick="event.stopPropagation()" class="text-center" style="white-space:nowrap;">
                             @if($canUpdate && in_array($opname->status, ['draft', 'in-progress', 'completed']))

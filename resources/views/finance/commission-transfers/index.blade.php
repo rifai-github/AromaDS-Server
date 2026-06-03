@@ -85,9 +85,9 @@
                                 @endif
                             </td>
                             <td>{{ $transfer->createdBy->name ?? '-' }}</td>
-                            <td>{!! $transfer->created_at ? $transfer->created_at->format('d M Y') . '<br>at ' . $transfer->created_at->format('H.i') . ' WIB' : '-' !!}</td>
+                            <td>{!! $transfer->created_at ? $transfer->created_at->format('d/M/Y') . '<br>at ' . $transfer->created_at->format('H.i') . ' WIB' : '-' !!}</td>
                             <td>{{ $transfer->updatedBy->name ?? '-' }}</td>
-                            <td>{!! $transfer->updated_at ? $transfer->updated_at->format('d M Y') . '<br>at ' . $transfer->updated_at->format('H.i') . ' WIB' : '-' !!}</td>
+                            <td>{!! $transfer->updated_at ? $transfer->updated_at->format('d/M/Y') . '<br>at ' . $transfer->updated_at->format('H.i') . ' WIB' : '-' !!}</td>
                             <td>
                                 <div class="action-buttons">
                                     <a href="{{ route('finance.commission-transfers.show', $transfer) }}" class="btn btn-info btn-sm">

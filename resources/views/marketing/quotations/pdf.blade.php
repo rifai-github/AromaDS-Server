@@ -176,11 +176,11 @@
             </div>
             <div class="info-row">
                 <div class="info-label">Quotation Date:</div>
-                <div class="info-value">{{ $quotation->quotation_date ? \Carbon\Carbon::parse($quotation->quotation_date)->format('d M Y') : '-' }}</div>
+                <div class="info-value">{{ $quotation->quotation_date ? \Carbon\Carbon::parse($quotation->quotation_date)->format('d/M/Y') : '-' }}</div>
             </div>
             <div class="info-row">
                 <div class="info-label">Valid Until:</div>
-                <div class="info-value">{{ $quotation->valid_until ? \Carbon\Carbon::parse($quotation->valid_until)->format('d M Y') : '-' }}</div>
+                <div class="info-value">{{ $quotation->valid_until ? \Carbon\Carbon::parse($quotation->valid_until)->format('d/M/Y') : '-' }}</div>
             </div>
         </div>
 
@@ -269,7 +269,7 @@
     @endif
 
     <div class="footer">
-        <p>This quotation is generated automatically on {{ now()->format('d M Y H:i') }}</p>
+        <p>This quotation is generated automatically on {{ now()->format('d/M/Y H:i') }}</p>
         <p>For any questions, please contact our marketing team.</p>
     </div>
 </body>

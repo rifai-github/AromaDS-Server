@@ -292,7 +292,7 @@
                         </td>
                         <td>{{ $history->record_count ?? 0 }}</td>
                         <td>{{ $history->generator->name ?? 'N/A' }}</td>
-                        <td>{{ $history->generated_at->format('d M Y H:i') }}</td>
+                        <td>{{ $history->generated_at->format('d/M/Y H:i') }}</td>
                         <td>{{ $history->duration ?? 'N/A' }}</td>
                         <td>{{ $history->file_size ?? 'N/A' }}</td>
                     </tr>

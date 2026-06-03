@@ -304,9 +304,9 @@
                     <div class="info-row">
                         <div class="info-label">Contract Period</div>
                         <div class="info-value">
-                            {{ $report->contract->start_date ? $report->contract->start_date->format('d M Y') : '-' }}
+                            {{ $report->contract->start_date ? $report->contract->start_date->format('d/M/Y') : '-' }}
                             - 
-                            {{ $report->contract->end_date ? $report->contract->end_date->format('d M Y') : '-' }}
+                            {{ $report->contract->end_date ? $report->contract->end_date->format('d/M/Y') : '-' }}
                         </div>
                     </div>
                     <div class="info-row">
@@ -522,7 +522,7 @@
                     </div>
                     <div class="info-row">
                         <div class="info-label">Created At</div>
-                        <div class="info-value">{{ $report->created_at ? $report->created_at->format('d M Y H:i') : '-' }}</div>
+                        <div class="info-value">{{ $report->created_at ? $report->created_at->format('d/M/Y H:i') : '-' }}</div>
                     </div>
                     <div class="info-row">
                         <div class="info-label">Reported By</div>
@@ -536,18 +536,18 @@
                     </div>
                     <div class="info-row">
                         <div class="info-label">Last Updated At</div>
-                        <div class="info-value">{{ $report->updated_at ? $report->updated_at->format('d M Y H:i') : '-' }}</div>
+                        <div class="info-value">{{ $report->updated_at ? $report->updated_at->format('d/M/Y H:i') : '-' }}</div>
                     </div>
                     @if($report->finalized_at)
                         <div class="info-row">
                             <div class="info-label">Finalized By</div>
-                            <div class="info-value">{{ $report->finalizer->name ?? '-' }} at {{ $report->finalized_at->format('d M Y H:i') }}</div>
+                            <div class="info-value">{{ $report->finalizer->name ?? '-' }} at {{ $report->finalized_at->format('d/M/Y H:i') }}</div>
                         </div>
                     @endif
                     @if($report->approved_at)
                         <div class="info-row">
                             <div class="info-label">Approved By</div>
-                            <div class="info-value">{{ $report->approver->name ?? '-' }} at {{ $report->approved_at->format('d M Y H:i') }}</div>
+                            <div class="info-value">{{ $report->approver->name ?? '-' }} at {{ $report->approved_at->format('d/M/Y H:i') }}</div>
                         </div>
                     @endif
                 </div>

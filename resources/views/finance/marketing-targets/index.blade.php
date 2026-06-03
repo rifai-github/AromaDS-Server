@@ -100,9 +100,9 @@
                                 @endif
                             </td>
                             <td class="text-sm text-gray-500">{{ $target->createdBy->name ?? '-' }}</td>
-                            <td class="text-sm text-gray-500">{!! $target->created_at ? $target->created_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                            <td class="text-sm text-gray-500">{!! $target->created_at ? $target->created_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                             <td class="text-sm text-gray-500">{{ $target->updatedBy->name ?? '-' }}</td>
-                            <td class="text-sm text-gray-500">{!! $target->updated_at ? $target->updated_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                            <td class="text-sm text-gray-500">{!! $target->updated_at ? $target->updated_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                             <td>
                                 <div class="action-buttons">
                                     <a href="{{ route('finance.marketing-targets.show', $target) }}" class="btn btn-info btn-sm">

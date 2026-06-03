@@ -458,11 +458,11 @@
                                 {{ ucfirst($transaction->status) }}
                             </span>
                         </td>
-                        <td>{{ $transaction->applied_at ? \Carbon\Carbon::parse($transaction->applied_at)->format('d/m/Y H:i') : '-' }}</td>
+                        <td>{{ $transaction->applied_at ? \Carbon\Carbon::parse($transaction->applied_at)->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $transaction->document_path ? basename($transaction->document_path) : '-' }}</td>
                         <td>
                             @if($transaction->created_at)
-                                {{ \Carbon\Carbon::parse($transaction->created_at)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($transaction->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($transaction->created_at)->format('H.i') }} WIB
                             @else
                                 -

@@ -30,8 +30,8 @@
                                 @forelse($achievementPeriods as $period)
                                 <tr>
                                     <td>{{ $period->period_name }}</td>
-                                    <td>{{ $period->start_date->format('d M Y') }}</td>
-                                    <td>{{ $period->end_date->format('d M Y') }}</td>
+                                    <td>{{ $period->start_date->format('d/M/Y') }}</td>
+                                    <td>{{ $period->end_date->format('d/M/Y') }}</td>
                                     <td>
                                         <span class="badge {{ $period->status_badge }}">
                                             {{ $period->status_label }}

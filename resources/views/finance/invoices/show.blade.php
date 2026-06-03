@@ -464,7 +464,7 @@
                                         <div class="invoice-field-label">Email Status</div>
                                         <div class="invoice-field-value">
                                             @if($invoice->is_emailed)
-                                                <span class="badge bg-success rounded-pill px-3" title="Sent at {{ $invoice->emailed_at->format('d M Y H:i') }}">SENT</span>
+                                                <span class="badge bg-success rounded-pill px-3" title="Sent at {{ $invoice->emailed_at->format('d/M/Y H:i') }}">SENT</span>
                                             @else
                                                 <span class="badge bg-warning text-dark rounded-pill px-3">NOT SENT</span>
                                             @endif
@@ -563,7 +563,7 @@
                                     <td class="text-end">Rp {{ number_format($detail->unit_price, 0, ',', '.') }}</td>
                                     <td class="text-center">{{ number_format($detail->quantity, 0) }}</td>
                                     <td class="text-end fw-bold">Rp {{ number_format($detail->total_price, 0, ',', '.') }}</td>
-                                    <td>{{ $detail->updated_at->format('d M Y - H:i') }}</td>
+                                    <td>{{ $detail->updated_at->format('d/M/Y - H:i') }}</td>
                                     <td>{{ $detail->updater->name ?? $invoice->updater->name ?? '-' }}</td>
                                 </tr>
                                 @empty
@@ -652,7 +652,7 @@
                                         @endif
                                     </td>
                                     <td class="text-end rental-total-{{ $rental->id }}">Rp {{ number_format($rental->total_price, 0, ',', '.') }}</td>
-                                    <td>{{ $rental->updated_at->format('d M Y - H:i') }}</td>
+                                    <td>{{ $rental->updated_at->format('d/M/Y - H:i') }}</td>
                                     <td>{{ $invoice->updater->name ?? '-' }}</td>
                                 </tr>
                                 @empty
@@ -715,7 +715,7 @@
                                             </a>
                                         </td>
                                         <td>{{ $file->description ?? '-' }}</td>
-                                        <td>{{ $file->updated_at->format('d M Y - H:i') }}</td>
+                                        <td>{{ $file->updated_at->format('d/M/Y - H:i') }}</td>
                                         <td>{{ $file->uploaded_by_name ?? '-' }}</td>
                                     </tr>
                                     @empty
@@ -763,7 +763,7 @@
                                     <td class="fw-bold">{{ $receipt->receipt_number }}</td>
                                     <td>{{ $receipt->account_number ?? '-' }}</td>
                                     <td>{{ $receipt->account_holder_name ?? '-' }}</td>
-                                    <td>{{ $receipt->payment_date ? $receipt->payment_date->format('d M Y') : '-' }}</td>
+                                    <td>{{ $receipt->payment_date ? $receipt->payment_date->format('d/M/Y') : '-' }}</td>
                                     <td class="text-end">Rp {{ number_format($receipt->amount, 0, ',', '.') }}</td>
                                     <td><span class="badge bg-light text-dark border">{{ ucfirst($receipt->payment_method) }}</span></td>
                                     <td>{{ $receipt->createdBy->name ?? '-' }}</td>
@@ -795,11 +795,11 @@
                                     <div>
                                         <h6 class="fw-bold text-dark mb-1">{{ $followUp->follow_up_type_label }}</h6>
                                         <div class="text-muted small">
-                                            <i class="fas fa-calendar me-1"></i> {{ $followUp->follow_up_date->format('d M Y') }}
+                                            <i class="fas fa-calendar me-1"></i> {{ $followUp->follow_up_date->format('d/M/Y') }}
                                             <span class="mx-2">|</span>
                                             <i class="fas fa-user-circle me-1"></i> {{ $followUp->creator->name ?? 'System' }}
                                             <span class="mx-2">|</span>
-                                            <i class="fas fa-clock me-1"></i> {{ $followUp->created_at->format('d M Y, H:i') }}
+                                            <i class="fas fa-clock me-1"></i> {{ $followUp->created_at->format('d/M/Y H:i') }}
                                         </div>
                                     </div>
                                     @if($followUp->status)
@@ -904,7 +904,7 @@
                                         </div>
                                         <div class="invoice-field">
                                             <div class="invoice-field-label">Created At</div>
-                                            <div class="invoice-field-value">{{ $invoice->created_at->format('d M Y - H:i:s') }}</div>
+                                            <div class="invoice-field-value">{{ $invoice->created_at->format('d/M/Y - H:i:s') }}</div>
                                         </div>
                                         <div class="invoice-field">
                                             <div class="invoice-field-label">Last Updated By</div>
@@ -912,7 +912,7 @@
                                         </div>
                                         <div class="invoice-field">
                                             <div class="invoice-field-label">Last Updated At</div>
-                                            <div class="invoice-field-value">{{ $invoice->updated_at->format('d M Y - H:i:s') }}</div>
+                                            <div class="invoice-field-value">{{ $invoice->updated_at->format('d/M/Y - H:i:s') }}</div>
                                         </div>
                                     </div>
                                 </div>

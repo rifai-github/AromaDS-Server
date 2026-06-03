@@ -1405,13 +1405,13 @@
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->quotation_number ?? 'N/A' }}</p>
                         </td>
                         <td class="w-[120px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->quotation_date ? \Carbon\Carbon::parse($quotation->quotation_date)->format('d F Y') : 'N/A' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->quotation_date ? \Carbon\Carbon::parse($quotation->quotation_date)->format('d/M/Y') : 'N/A' }}</p>
                         </td>
                         <td class="w-[200px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->customer->name ?? 'N/A' }}</p>
                         </td>
                         <td class="w-[120px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->valid_until ? \Carbon\Carbon::parse($quotation->valid_until)->format('d F Y') : 'N/A' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->valid_until ? \Carbon\Carbon::parse($quotation->valid_until)->format('d/M/Y') : 'N/A' }}</p>
                         </td>
                         <td class="w-[120px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->formatted_grand_total ?? 'N/A' }}</p>
@@ -1475,7 +1475,7 @@
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->approver->name ?? 'N/A' }}</p>
                         </td>
                         <td class="w-[120px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->date_approved ? \Carbon\Carbon::parse($quotation->date_approved)->format('d F Y') : 'N/A' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->date_approved ? \Carbon\Carbon::parse($quotation->date_approved)->format('d/M/Y') : 'N/A' }}</p>
                         </td>
                         <td class="w-[200px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->internal_notes ?? 'N/A' }}</p>
@@ -1494,7 +1494,7 @@
                         </td>
                         <td class="w-[150px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">
-                                {!! $quotation->created_at ? \Carbon\Carbon::parse($quotation->created_at)->format('d F Y') . '<br />at ' . \Carbon\Carbon::parse($quotation->created_at)->format('H.i') . ' WIB' : 'N/A' !!}
+                                {!! $quotation->created_at ? \Carbon\Carbon::parse($quotation->created_at)->format('d/M/Y') . '<br />at ' . \Carbon\Carbon::parse($quotation->created_at)->format('H.i') . ' WIB' : 'N/A' !!}
                             </p>
                         </td>
                         <td class="w-[120px] p-2">
@@ -1502,7 +1502,7 @@
                         </td>
                         <td class="w-[150px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">
-                                {!! $quotation->updated_at ? \Carbon\Carbon::parse($quotation->updated_at)->format('d F Y') . '<br />at ' . \Carbon\Carbon::parse($quotation->updated_at)->format('H.i') . ' WIB' : 'N/A' !!}
+                                {!! $quotation->updated_at ? \Carbon\Carbon::parse($quotation->updated_at)->format('d/M/Y') . '<br />at ' . \Carbon\Carbon::parse($quotation->updated_at)->format('H.i') . ' WIB' : 'N/A' !!}
                             </p>
                         </td>
                         <td class="w-[60px] p-2 text-center">

@@ -1081,7 +1081,7 @@
                         </td>
                         <td>
                             @if($report->completed_at)
-                                {{ \Carbon\Carbon::parse($report->completed_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($report->completed_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($report->completed_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -1090,7 +1090,7 @@
                         <td>{{ $report->notes ? Str::limit($report->notes, 50) : '-' }}</td>
                         <td>
                             @if($report->created_at)
-                                {{ \Carbon\Carbon::parse($report->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($report->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($report->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -1098,7 +1098,7 @@
                         </td>
                         <td>
                             @if($report->updated_at)
-                                {{ \Carbon\Carbon::parse($report->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($report->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($report->updated_at)->format('H.i') }} WIB
                             @else
                                 -

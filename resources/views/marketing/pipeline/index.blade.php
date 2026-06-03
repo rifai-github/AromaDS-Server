@@ -1166,7 +1166,7 @@
                         </td>
                         <td>
                             @if($item->follow_up_date)
-                                {{ \Carbon\Carbon::parse($item->follow_up_date)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($item->follow_up_date)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($item->follow_up_date)->format('H.i') }} WIB
                             @else
                                 -
@@ -1192,7 +1192,7 @@
                         <td>{{ $item->createdBy->name ?? 'N/A' }}</td>
                         <td>
                             @if($item->created_at)
-                                {{ \Carbon\Carbon::parse($item->created_at)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($item->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($item->created_at)->format('H.i') }} WIB
                             @else
                                 N/A
@@ -1201,7 +1201,7 @@
                         <td>{{ $item->updatedBy->name ?? 'N/A' }}</td>
                         <td>
                             @if($item->updated_at)
-                                {{ \Carbon\Carbon::parse($item->updated_at)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($item->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($item->updated_at)->format('H.i') }} WIB
                             @else
                                 N/A

@@ -555,7 +555,7 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label">Join Date</label>
-                    <input type="text" class="form-control" value="{{ $user->join_date ? \Carbon\Carbon::parse($user->join_date)->format('d F Y') : 'N/A' }}" disabled>
+                    <input type="text" class="form-control" value="{{ $user->join_date ? \Carbon\Carbon::parse($user->join_date)->format('d/M/Y') : 'N/A' }}" disabled>
                 </div>
             </div>
 

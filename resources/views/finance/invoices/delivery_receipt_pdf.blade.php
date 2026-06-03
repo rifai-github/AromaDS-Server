@@ -60,7 +60,7 @@
             <td class="label">Customer:</td>
             <td>{{ $invoice->customer->name }}</td>
             <td class="label">Invoice Date:</td>
-            <td>{{ $invoice->invoice_date ? $invoice->invoice_date->format('d M Y') : '-' }}</td>
+            <td>{{ $invoice->invoice_date ? $invoice->invoice_date->format('d/M/Y') : '-' }}</td>
         </tr>
         <tr>
             <td class="label">Address:</td>
@@ -120,7 +120,7 @@
                 <br><br><br>
                 <hr style="width: 80%; border-top: 1px solid #ccc;">
                 <p>{{ $invoice->dikirim_oleh }}</p>
-                <p style="font-size: 10px;">{{ $invoice->dikirim_pada ? $invoice->dikirim_pada->format('d M Y H:i') : '' }}</p>
+                <p style="font-size: 10px;">{{ $invoice->dikirim_pada ? $invoice->dikirim_pada->format('d/M/Y H:i') : '' }}</p>
             </td>
             <td style="width: 33%;"></td>
             <td style="width: 33%;">
@@ -128,13 +128,13 @@
                 <br><br><br>
                 <hr style="width: 80%; border-top: 1px solid #ccc;">
                 <p>{{ $invoice->diterima_oleh ?? '( ....................... )' }}</p>
-                <p style="font-size: 10px;">{{ $invoice->pada ? $invoice->pada->format('d M Y H:i') : '' }}</p>
+                <p style="font-size: 10px;">{{ $invoice->pada ? $invoice->pada->format('d/M/Y H:i') : '' }}</p>
             </td>
         </tr>
     </table>
 
     <div class="footer">
-        Dicetak pada: {{ now()->format('d M Y H:i') }} | Dokumen ini digenerate secara otomatis oleh sistem.
+        Dicetak pada: {{ now()->format('d/M/Y H:i') }} | Dokumen ini digenerate secara otomatis oleh sistem.
     </div>
 </body>
 </html>

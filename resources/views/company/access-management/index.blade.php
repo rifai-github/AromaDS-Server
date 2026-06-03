@@ -770,7 +770,7 @@
                         <td>{{ $access->createdBy->name ?? '-' }}</td>
                         <td>
                             @if($access->created_at)
-                                {{ \Carbon\Carbon::parse($access->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($access->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($access->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -779,7 +779,7 @@
                         <td>{{ $access->updatedBy->name ?? '-' }}</td>
                         <td>
                             @if($access->updated_at)
-                                {{ \Carbon\Carbon::parse($access->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($access->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($access->updated_at)->format('H.i') }} WIB
                             @else
                                 -

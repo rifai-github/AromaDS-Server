@@ -853,7 +853,7 @@ input[type="date"]:focus, input[type="text"]:focus, select:focus {
                         </td>
                         <td>
                             @if($warehouse->updated_at)
-                                {{ \Carbon\Carbon::parse($warehouse->updated_at)->format('d F Y') }}<br>
+                                {{ \Carbon\Carbon::parse($warehouse->updated_at)->format('d/M/Y') }}<br>
                                 <small class="text-gray-500">{{ \Carbon\Carbon::parse($warehouse->updated_at)->format('H:i') }} WIB</small>
                             @else
                                 -

@@ -212,18 +212,18 @@
                         </td>
                         <td class="w-[150px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">
-                                {!! $notification->read_at ? \Carbon\Carbon::parse($notification->read_at)->format('d F Y') . '<br />at ' . \Carbon\Carbon::parse($notification->read_at)->format('H.i') . ' WIB' : 'Not read' !!}
+                                {!! $notification->read_at ? \Carbon\Carbon::parse($notification->read_at)->format('d/M/Y') . '<br />at ' . \Carbon\Carbon::parse($notification->read_at)->format('H.i') . ' WIB' : 'Not read' !!}
                             </p>
                         </td>
                         <td class="w-[150px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">
-                                {!! $notification->created_at ? \Carbon\Carbon::parse($notification->created_at)->format('d F Y') . '<br />at ' . \Carbon\Carbon::parse($notification->created_at)->format('H.i') . ' WIB' : 'N/A' !!}
+                                {!! $notification->created_at ? \Carbon\Carbon::parse($notification->created_at)->format('d/M/Y') . '<br />at ' . \Carbon\Carbon::parse($notification->created_at)->format('H.i') . ' WIB' : 'N/A' !!}
                             </p>
                         </td>
 
                         <td class="w-[150px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">
-                                {!! $notification->updated_at ? \Carbon\Carbon::parse($notification->updated_at)->format('d F Y') . '<br />at ' . \Carbon\Carbon::parse($notification->updated_at)->format('H.i') . ' WIB' : 'N/A' !!}
+                                {!! $notification->updated_at ? \Carbon\Carbon::parse($notification->updated_at)->format('d/M/Y') . '<br />at ' . \Carbon\Carbon::parse($notification->updated_at)->format('H.i') . ' WIB' : 'N/A' !!}
                             </p>
                         </td>
                     </tr>

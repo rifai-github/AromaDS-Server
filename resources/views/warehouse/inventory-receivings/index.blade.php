@@ -844,14 +844,14 @@
                         </td>
                         <td>
                             @if($receiving->created_at)
-                                {{ \Carbon\Carbon::parse($receiving->created_at)->format('d F Y') }}
+                                {{ \Carbon\Carbon::parse($receiving->created_at)->format('d/M/Y') }}
                             @else
                                 -
                             @endif
                         </td>
                         <td>
                             @if($receiving->status === 'received')
-                                {{ ($receiving->receive_date ?: $receiving->updated_at)?->format('d F Y') }}
+                                {{ ($receiving->receive_date ?: $receiving->updated_at)?->format('d/M/Y') }}
                             @else
                                 -
                             @endif
@@ -862,7 +862,7 @@
                         <td>{{ $receiving->createdBy?->name ?? '-' }}</td>
                         <td>
                             @if($receiving->created_at)
-                                {{ \Carbon\Carbon::parse($receiving->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($receiving->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($receiving->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -871,7 +871,7 @@
                         <td>{{ $receiving->updatedBy?->name ?? '-' }}</td>
                         <td>
                             @if($receiving->updated_at)
-                                {{ \Carbon\Carbon::parse($receiving->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($receiving->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($receiving->updated_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -1615,7 +1615,7 @@ document.addEventListener('DOMContentLoaded', function() {
         flatpickr(filterFromEl, {
             dateFormat: 'Y-m-d',
             altInput: true,
-            altFormat: 'j M Y',
+            altFormat: 'd/M/Y',
             defaultDate: filterFromEl.getAttribute('data-date'),
             onChange: function(selectedDates, dateStr) {
                 filterFromEl.setAttribute('data-date', dateStr);
@@ -1629,7 +1629,7 @@ document.addEventListener('DOMContentLoaded', function() {
         flatpickr(filterToEl, {
             dateFormat: 'Y-m-d',
             altInput: true,
-            altFormat: 'j M Y',
+            altFormat: 'd/M/Y',
             defaultDate: filterToEl.getAttribute('data-date'),
             onChange: function(selectedDates, dateStr) {
                 filterToEl.setAttribute('data-date', dateStr);

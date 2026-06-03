@@ -457,7 +457,7 @@
                 <div class="info-item">
                     <div class="info-label">Last Updated</div>
                     <div class="info-value">
-                        {{ $masterRental->updated_at ? $masterRental->updated_at->format('d M Y, H:i') : '-' }}
+                        {{ $masterRental->updated_at ? $masterRental->updated_at->format('d/M/Y H:i') : '-' }}
                         <small class="text-gray-500">by {{ $masterRental->updatedBy->name ?? $masterRental->createdBy->name ?? '-' }}</small>
                     </div>
                 </div>
@@ -573,7 +573,7 @@
                                     <td>
                                         {{ number_format($detail->bom_rental_qty ?? 0, 0) }}
                                     </td>
-                                    <td>{{ $detail->updated_at ? $detail->updated_at->format('d M Y, H:i') : '-' }}</td>
+                                    <td>{{ $detail->updated_at ? $detail->updated_at->format('d/M/Y H:i') : '-' }}</td>
                                     <td>{{ $detail->updater->name ?? $detail->creator->name ?? '-' }}</td>
                                     <td onclick="event.stopPropagation()">
                                         <div class="flex gap-4">
@@ -651,7 +651,7 @@
                                            step="0.01"
                                            style="width: 150px;">
                                 </td>
-                                <td>{{ $price && $price->updated_at ? $price->updated_at->format('d M Y, H:i') : '-' }}</td>
+                                <td>{{ $price && $price->updated_at ? $price->updated_at->format('d/M/Y H:i') : '-' }}</td>
                                 <td>{{ $price && $price->updater ? $price->updater->name : ($price && $price->creator ? $price->creator->name : '-') }}</td>
                                 <td>
                                     @if($price)
@@ -708,7 +708,7 @@
                                            step="0.01"
                                            style="width: 200px;">
                                 </td>
-                                <td>{{ $price && $price->updated_at ? $price->updated_at->format('d M Y, H:i') : '-' }}</td>
+                                <td>{{ $price && $price->updated_at ? $price->updated_at->format('d/M/Y H:i') : '-' }}</td>
                                 <td>{{ $price && $price->updater ? $price->updater->name : ($price && $price->creator ? $price->creator->name : '-') }}</td>
                                 <td>
                                     @if($price)

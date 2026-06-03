@@ -49,7 +49,7 @@
                                 </tr>
                                 <tr>
                                     <td><strong>Applied At:</strong></td>
-                                    <td>{{ $eMateraiTransaction->applied_at ? $eMateraiTransaction->applied_at->format('d/m/Y H:i:s') : 'N/A' }}</td>
+                                    <td>{{ $eMateraiTransaction->applied_at ? $eMateraiTransaction->applied_at->format('d/M/Y H:i:s') : 'N/A' }}</td>
                                 </tr>
                             </table>
                         </div>
@@ -103,7 +103,7 @@
                                 </tr>
                                 <tr>
                                     <td><strong>Created At:</strong></td>
-                                    <td>{{ $eMateraiTransaction->created_at->format('d/m/Y H:i:s') }}</td>
+                                    <td>{{ $eMateraiTransaction->created_at->format('d/M/Y H:i:s') }}</td>
                                 </tr>
                                 @if($eMateraiTransaction->updatedBy)
                                 <tr>
@@ -112,7 +112,7 @@
                                 </tr>
                                 <tr>
                                     <td><strong>Updated At:</strong></td>
-                                    <td>{{ $eMateraiTransaction->updated_at->format('d/m/Y H:i:s') }}</td>
+                                    <td>{{ $eMateraiTransaction->updated_at->format('d/M/Y H:i:s') }}</td>
                                 </tr>
                                 @endif
                             </table>

@@ -490,7 +490,7 @@
                 <div class="info-item">
                     <div class="info-label">Last Updated</div>
                     <div class="info-value">
-                        {{ $warehouse->updated_at ? $warehouse->updated_at->format('d M Y, H:i') : '-' }}
+                        {{ $warehouse->updated_at ? $warehouse->updated_at->format('d/M/Y H:i') : '-' }}
                         <small class="text-gray-500">by {{ $warehouse->updatedBy->name ?? $warehouse->createdBy->name ?? '-' }}</small>
                     </div>
                 </div>
@@ -632,7 +632,7 @@
                                     <span class="badge {{ $statusClass }}">{{ $statusText }}</span>
                                 </td>
                                 <td>
-                                    {{ $warehouseProduct->updated_at ? $warehouseProduct->updated_at->format('d M Y, H:i') : '-' }}
+                                    {{ $warehouseProduct->updated_at ? $warehouseProduct->updated_at->format('d/M/Y H:i') : '-' }}
                                     <br>
                                     <small class="text-gray-500">{{ $warehouseProduct->updater->name ?? $warehouseProduct->creator->name ?? '-' }}</small>
                                 </td>
@@ -673,7 +673,7 @@
                         <tbody>
                             @forelse($warehouse->inventoryMovements ?? [] as $movement)
                             <tr>
-                                <td>{{ $movement->created_at ? $movement->created_at->format('d M Y, H:i') : '-' }}</td>
+                                <td>{{ $movement->created_at ? $movement->created_at->format('d/M/Y H:i') : '-' }}</td>
                                 <td>
                                     @php
                                         $typeLabels = [
@@ -867,7 +867,7 @@ $(document).ready(function() {
 
                     if (typeof flatpickr !== 'undefined') {
                         flatpickr(dateInput, {
-                            dateFormat: 'd M Y',
+                            dateFormat: 'd/M/Y',
                             allowInput: false,
                             onChange: function(selectedDates, dateStr) {
                                 api.column(colIdx).search(dateStr).draw();

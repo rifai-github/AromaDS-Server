@@ -1210,7 +1210,7 @@
                             <td>{{ $jobSchedule ? $jobSchedule->job_number : '-' }}</td>
                             
                             <!-- 6. Tanggal Job -->
-                            <td>{{ $materialIssue && $materialIssue->issue_date ? $materialIssue->issue_date->format('d M Y') : ($jobSchedule && $jobSchedule->schedule_date ? $jobSchedule->schedule_date->format('d M Y') : '-') }}</td>
+                            <td>{{ $materialIssue && $materialIssue->issue_date ? $materialIssue->issue_date->format('d/M/Y') : ($jobSchedule && $jobSchedule->schedule_date ? $jobSchedule->schedule_date->format('d/M/Y') : '-') }}</td>
                             
                             <!-- 7. Ruangan -->
                             <td>{{ $item->room_name ?? '-' }}</td>
@@ -1491,7 +1491,7 @@
                             <!-- 18. Created At -->
                             <td class="text-center">
                                 @if($issue->created_at)
-                                    {{ $issue->created_at->format('d M Y') }}<br>
+                                    {{ $issue->created_at->format('d/M/Y') }}<br>
                                     at {{ $issue->created_at->format('H.i') }} WIB
                                 @else
                                     -
@@ -1504,7 +1504,7 @@
                             <!-- 20. Last Updated At -->
                             <td class="text-center">
                                 @if($issue->updated_at)
-                                    {{ $issue->updated_at->format('d M Y') }}<br>
+                                    {{ $issue->updated_at->format('d/M/Y') }}<br>
                                     at {{ $issue->updated_at->format('H.i') }} WIB
                                 @else
                                     -
@@ -4146,7 +4146,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 flatpickr(el, {
                     dateFormat: 'Y-m-d',
                     altInput: true,
-                    altFormat: 'j M Y',
+                    altFormat: 'd/M/Y',
                     allowInput: true,
                     defaultDate: isActive && dateValue ? dateValue : null,
                     onChange: function() {
@@ -4159,7 +4159,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 flatpickr(el, {
                     dateFormat: 'Y-m-d',
                     altInput: true,
-                    altFormat: 'j M Y',
+                    altFormat: 'd/M/Y',
                     allowInput: true
                 });
             });

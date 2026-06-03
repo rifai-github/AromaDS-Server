@@ -348,7 +348,7 @@
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Issue Date</div>
-                                        <div class="info-field-value">{{ $issuing->issue_date?->format('d/m/Y') ?? '-' }}</div>
+                                        <div class="info-field-value">{{ $issuing->issue_date?->format('d/M/Y') ?? '-' }}</div>
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Status</div>
@@ -435,7 +435,7 @@
                                             <td>{{ $item->product?->productCategory?->name ?? '-' }}</td>
                                             <td>{{ ($item->product?->requiresSerialNumber() ?? false) ? 'Yes' : 'No' }}</td>
                                             <td>{{ $item->quantity_requested }}</td>
-                                            <td>{{ $item->updated_at?->format('d/m/Y H:i') ?? '-' }}</td>
+                                            <td>{{ $item->updated_at?->format('d/M/Y H:i') ?? '-' }}</td>
                                             <td>{{ $item->updatedBy->name ?? $item->createdBy->name ?? '-' }}</td>
                                             <td class="text-center">
                                                 @if($issuing->status === 'pending' || $issuing->status === 'draft')

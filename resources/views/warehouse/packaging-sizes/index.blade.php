@@ -474,7 +474,7 @@
                                     <td>{{ $packagingSize->createdBy->name ?? '-' }}</td>
                                     <td>
                                         @if($packagingSize->created_at)
-                                            {{ \Carbon\Carbon::parse($packagingSize->created_at)->format('d M Y') }}<br>
+                                            {{ \Carbon\Carbon::parse($packagingSize->created_at)->format('d/M/Y') }}<br>
                                             at {{ \Carbon\Carbon::parse($packagingSize->created_at)->format('H.i') }} WIB
                                         @else
                                             -
@@ -483,7 +483,7 @@
                                     <td>{{ $packagingSize->updatedBy->name ?? '-' }}</td>
                                     <td>
                                         @if($packagingSize->updated_at)
-                                            {{ \Carbon\Carbon::parse($packagingSize->updated_at)->format('d M Y') }}<br>
+                                            {{ \Carbon\Carbon::parse($packagingSize->updated_at)->format('d/M/Y') }}<br>
                                             at {{ \Carbon\Carbon::parse($packagingSize->updated_at)->format('H.i') }} WIB
                                         @else
                                             -

@@ -91,9 +91,9 @@
                                 @endif
                             </td>
                             <td class="text-sm text-gray-500">{{ $variable->createdBy->name ?? '-' }}</td>
-                            <td class="text-sm text-gray-500">{!! $variable->created_at ? $variable->created_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                            <td class="text-sm text-gray-500">{!! $variable->created_at ? $variable->created_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                             <td class="text-sm text-gray-500">{{ $variable->updatedBy->name ?? '-' }}</td>
-                            <td class="text-sm text-gray-500">{!! $variable->updated_at ? $variable->updated_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                            <td class="text-sm text-gray-500">{!! $variable->updated_at ? $variable->updated_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                             <td>
                                 <div class="action-buttons">
                                     <a href="{{ route('finance.cr-variables.show', $variable) }}" class="btn btn-info btn-sm">

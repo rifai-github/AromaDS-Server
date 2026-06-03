@@ -61,11 +61,11 @@
                         @endif
                         <tr>
                             <th>Created At</th>
-                            <td>{{ $marketingLevel->created_at->format('d M Y H:i') }}</td>
+                            <td>{{ $marketingLevel->created_at->format('d/M/Y H:i') }}</td>
                         </tr>
                         <tr>
                             <th>Updated At</th>
-                            <td>{{ $marketingLevel->updated_at->format('d M Y H:i') }}</td>
+                            <td>{{ $marketingLevel->updated_at->format('d/M/Y H:i') }}</td>
                         </tr>
                     </table>
                 </div>

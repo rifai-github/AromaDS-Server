@@ -3510,7 +3510,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const flatpickrConfig = {
         dateFormat: "Y-m-d",
         altInput: true,
-        altFormat: "d M Y",
+        altFormat: "d/M/Y",
         allowInput: false,
     };
 

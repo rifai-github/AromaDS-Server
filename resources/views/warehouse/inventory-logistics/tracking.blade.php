@@ -712,7 +712,7 @@
                             </td>
                             <td>{{ $tracking->resi_number ?? 'N/A' }}</td>
                             <td>{{ $tracking->courier_name ?? 'N/A' }}</td>
-                            <td>{{ $tracking->requested_at ? $tracking->requested_at->format('d/m/Y H:i') : 'N/A' }}</td>
+                            <td>{{ $tracking->requested_at ? $tracking->requested_at->format('d/M/Y H:i') : 'N/A' }}</td>
                             <td>
                                 <div style="display: flex; gap: 5px;">
                                     <span class="text-muted text-sm">Click row to view details</span>

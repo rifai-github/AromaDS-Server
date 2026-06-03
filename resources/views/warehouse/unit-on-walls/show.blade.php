@@ -334,11 +334,11 @@
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Install Date</div>
-                                        <div class="info-field-value">{{ $unitOnWall->install_date?->format('d M Y') ?? '-' }}</div>
+                                        <div class="info-field-value">{{ $unitOnWall->install_date?->format('d/M/Y') ?? '-' }}</div>
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Last Service Date</div>
-                                        <div class="info-field-value">{{ $unitOnWall->last_service_date?->format('d M Y') ?? '-' }}</div>
+                                        <div class="info-field-value">{{ $unitOnWall->last_service_date?->format('d/M/Y') ?? '-' }}</div>
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Temperature</div>
@@ -371,7 +371,7 @@
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Last Seen At</div>
-                                        <div class="info-field-value">{{ $unitOnWall->last_seen_at?->format('d M Y H:i') ?? '-' }}</div>
+                                        <div class="info-field-value">{{ $unitOnWall->last_seen_at?->format('d/M/Y H:i') ?? '-' }}</div>
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Notes</div>
@@ -426,7 +426,7 @@
                                                     {{ $history->getActionLabel() }}
                                                 </span>
                                             </td>
-                                            <td>{{ $history->action_date ? $history->action_date->format('d M Y') : '-' }}</td>
+                                            <td>{{ $history->action_date ? $history->action_date->format('d/M/Y') : '-' }}</td>
                                             <td>{{ $history->customer_name ?? '-' }}</td>
                                             <td>{{ $history->location ?? '-' }}</td>
                                             <td>{{ $history->technician_name ?? '-' }}</td>
@@ -485,7 +485,7 @@
                                         @foreach($unitOnWall->serviceHistories as $index => $history)
                                         <tr>
                                             <td>{{ $index + 1 }}</td>
-                                            <td>{{ $history->action_date ? $history->action_date->format('d M Y') : '-' }}</td>
+                                            <td>{{ $history->action_date ? $history->action_date->format('d/M/Y') : '-' }}</td>
                                             <td>{{ $history->customer_name ?? '-' }}</td>
                                             <td>{{ $history->location ?? '-' }}</td>
                                             <td>{{ $history->technician_name ?? '-' }}</td>
@@ -548,8 +548,8 @@
                                                 </span>
                                             </td>
                                             <td>{{ $repair->repair_cost ? 'Rp ' . number_format($repair->repair_cost, 0, ',', '.') : '-' }}</td>
-                                            <td>{{ $repair->reported_at?->format('d M Y H:i') ?? '-' }}</td>
-                                            <td>{{ $repair->completed_at?->format('d M Y H:i') ?? '-' }}</td>
+                                            <td>{{ $repair->reported_at?->format('d/M/Y H:i') ?? '-' }}</td>
+                                            <td>{{ $repair->completed_at?->format('d/M/Y H:i') ?? '-' }}</td>
                                         </tr>
                                         @endforeach
                                     </tbody>

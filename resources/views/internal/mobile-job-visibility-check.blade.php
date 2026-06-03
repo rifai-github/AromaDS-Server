@@ -72,11 +72,11 @@
                             </div>
                             <div class="col-md-3">
                                 <div class="text-muted small">Schedule Date</div>
-                                <strong>{{ $job->schedule_date ? \Carbon\Carbon::parse($job->schedule_date)->format('d M Y') : '-' }}</strong>
+                                <strong>{{ $job->schedule_date ? \Carbon\Carbon::parse($job->schedule_date)->format('d/M/Y') : '-' }}</strong>
                             </div>
                             <div class="col-md-3">
                                 <div class="text-muted small">Terakhir Update Job/Assign</div>
-                                <strong>{{ $item['latest_relevant_update'] ? $item['latest_relevant_update']->format('d M Y H:i:s') : '-' }}</strong>
+                                <strong>{{ $item['latest_relevant_update'] ? $item['latest_relevant_update']->format('d/M/Y H:i:s') : '-' }}</strong>
                             </div>
                             <div class="col-md-3">
                                 <div class="text-muted small">Delay ke Poll APK</div>

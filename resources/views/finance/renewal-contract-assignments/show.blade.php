@@ -63,7 +63,7 @@
                                 @if($renewalContractAssignment->is_locked)
                                     <span class="badge badge-warning">Locked</span>
                                     @if($renewalContractAssignment->lock_date)
-                                        <small class="text-muted">(Locked on {{ $renewalContractAssignment->lock_date->format('d M Y') }})</small>
+                                        <small class="text-muted">(Locked on {{ $renewalContractAssignment->lock_date->format('d/M/Y') }})</small>
                                     @endif
                                 @else
                                     <span class="badge badge-success">Active</span>
@@ -78,11 +78,11 @@
                         @endif
                         <tr>
                             <th>Created At</th>
-                            <td>{{ $renewalContractAssignment->created_at->format('d M Y H:i') }}</td>
+                            <td>{{ $renewalContractAssignment->created_at->format('d/M/Y H:i') }}</td>
                         </tr>
                         <tr>
                             <th>Updated At</th>
-                            <td>{{ $renewalContractAssignment->updated_at->format('d M Y H:i') }}</td>
+                            <td>{{ $renewalContractAssignment->updated_at->format('d/M/Y H:i') }}</td>
                         </tr>
                     </table>
                 </div>

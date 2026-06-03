@@ -381,7 +381,7 @@
                         <td>{{ $passwordHistory->user->name ?? 'N/A' }}</td>
                         <td>Yes</td>
                         <td>{{ $passwordHistory->formatted_age }}</td>
-                        <td>{{ $passwordHistory->created_at->format('d M Y H:i') }}</td>
+                        <td>{{ $passwordHistory->created_at->format('d/M/Y H:i') }}</td>
                     </tr>
                     @empty
                     <tr>

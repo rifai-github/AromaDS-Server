@@ -782,11 +782,11 @@
                                 {{ ucfirst($va->status ?? 'inactive') }}
                             </span>
                         </td>
-                        <td>{{ $va->last_transaction_date ? \Carbon\Carbon::parse($va->last_transaction_date)->format('d M Y') : '-' }}</td>
+                        <td>{{ $va->last_transaction_date ? \Carbon\Carbon::parse($va->last_transaction_date)->format('d/M/Y') : '-' }}</td>
                         <td>{{ $va->creator->name ?? '-' }}</td>
                         <td>
                             @if($va->created_at)
-                                {{ \Carbon\Carbon::parse($va->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($va->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($va->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -795,7 +795,7 @@
                         <td>{{ $va->updater->name ?? '-' }}</td>
                         <td>
                             @if($va->updated_at)
-                                {{ \Carbon\Carbon::parse($va->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($va->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($va->updated_at)->format('H.i') }} WIB
                             @else
                                 -

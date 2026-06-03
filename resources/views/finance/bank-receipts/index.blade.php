@@ -449,16 +449,16 @@
                         <td>{{ $receipt->customer->name ?? 'N/A' }}</td>
                         <td>{{ $receipt->bank->bank_name ?? 'N/A' }}</td>
                         <td class="font-semibold">IDR {{ number_format($receipt->amount) }}</td>
-                        <td>{{ $receipt->payment_date ? \Carbon\Carbon::parse($receipt->payment_date)->format('d/m/Y') : 'N/A' }}</td>
+                        <td>{{ $receipt->payment_date ? \Carbon\Carbon::parse($receipt->payment_date)->format('d/M/Y') : 'N/A' }}</td>
                         <td>
                             <span class="badge badge-{{ $receipt->status }}">
                                 {{ ucfirst($receipt->status) }}
                             </span>
                         </td>
                         <td class="text-sm text-gray-500">{{ $receipt->creator->name ?? '-' }}</td>
-                        <td class="text-sm text-gray-500">{!! $receipt->created_at ? $receipt->created_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                        <td class="text-sm text-gray-500">{!! $receipt->created_at ? $receipt->created_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                         <td class="text-sm text-gray-500">{{ $receipt->updater->name ?? '-' }}</td>
-                        <td class="text-sm text-gray-500">{!! $receipt->updated_at ? $receipt->updated_at->format('d M Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                        <td class="text-sm text-gray-500">{!! $receipt->updated_at ? $receipt->updated_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
                     </tr>
                     @empty
                     <tr>

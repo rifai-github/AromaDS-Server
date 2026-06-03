@@ -509,7 +509,7 @@
                         <td>{{ $unit->createdBy ? $unit->createdBy->name : '-' }}</td>
                         <td>
                             @if($unit->created_at)
-                                {{ \Carbon\Carbon::parse($unit->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($unit->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($unit->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -518,7 +518,7 @@
                         <td>{{ $unit->updatedBy ? $unit->updatedBy->name : '-' }}</td>
                         <td>
                             @if($unit->updated_at)
-                                {{ \Carbon\Carbon::parse($unit->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($unit->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($unit->updated_at)->format('H.i') }} WIB
                             @else
                                 -

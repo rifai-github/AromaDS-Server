@@ -103,7 +103,7 @@
                 <p><strong>Nama:</strong> {{ $contact->name }}</p>
                 <p><strong>Email:</strong> {{ $contact->email }}</p>
                 <p><strong>Customer:</strong> {{ $contact->customer?->name ?? '-' }}</p>
-                <p><strong>Diverifikasi pada:</strong> {{ $contact->email_verified_at->format('d M Y, H:i') }} WIB</p>
+                <p><strong>Diverifikasi pada:</strong> {{ $contact->email_verified_at->format('d/M/Y H:i') }} WIB</p>
             </div>
             
             <p class="text-muted small">

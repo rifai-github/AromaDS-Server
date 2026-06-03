@@ -859,7 +859,7 @@ input[type="date"]:focus, input[type="text"]:focus, select:focus {
                         <td>{{ $warehouse->createdBy->name ?? '-' }}</td>
                         <td>
                             @if($warehouse->created_at)
-                                {{ \Carbon\Carbon::parse($warehouse->created_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($warehouse->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($warehouse->created_at)->format('H.i') }} WIB
                             @else
                                 -
@@ -868,7 +868,7 @@ input[type="date"]:focus, input[type="text"]:focus, select:focus {
                         <td>{{ $warehouse->updatedBy->name ?? '-' }}</td>
                         <td>
                             @if($warehouse->updated_at)
-                                {{ \Carbon\Carbon::parse($warehouse->updated_at)->format('d M Y') }}<br>
+                                {{ \Carbon\Carbon::parse($warehouse->updated_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($warehouse->updated_at)->format('H.i') }} WIB
                             @else
                                 -

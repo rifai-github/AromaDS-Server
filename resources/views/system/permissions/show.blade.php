@@ -98,11 +98,11 @@
                                                 </tr>
                                                 <tr>
                                                     <td><strong>Created:</strong></td>
-                                                    <td>{{ $permission->created_at->format('d M Y H:i') }}</td>
+                                                    <td>{{ $permission->created_at->format('d/M/Y H:i') }}</td>
                                                 </tr>
                                                 <tr>
                                                     <td><strong>Updated:</strong></td>
-                                                    <td>{{ $permission->updated_at->format('d M Y H:i') }}</td>
+                                                    <td>{{ $permission->updated_at->format('d/M/Y H:i') }}</td>
                                                 </tr>
                                             </table>
                                         </div>
@@ -161,7 +161,7 @@
                                                             <span class="badge badge-info">{{ $role->users_count ?? 0 }} users</span>
                                                         </td>
                                                         <td>
-                                                            <small class="text-muted">{{ $role->created_at->format('d M Y') }}</small>
+                                                            <small class="text-muted">{{ $role->created_at->format('d/M/Y') }}</small>
                                                         </td>
                                                     </tr>
                                                     @endforeach

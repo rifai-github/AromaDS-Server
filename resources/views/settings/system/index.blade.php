@@ -397,9 +397,9 @@
                                 </span>
                             </td>
                             <td>{{ $setting->creator->name ?? 'System' }}</td>
-                            <td>{{ $setting->created_at ? $setting->created_at->setTimezone('Asia/Jakarta')->format('d M Y H:i') : '-' }}</td>
+                            <td>{{ $setting->created_at ? $setting->created_at->setTimezone('Asia/Jakarta')->format('d/M/Y H:i') : '-' }}</td>
                             <td>{{ $setting->updater->name ?? 'System' }}</td>
-                            <td>{{ $setting->updated_at ? $setting->updated_at->setTimezone('Asia/Jakarta')->format('d M Y H:i') : '-' }}</td>
+                            <td>{{ $setting->updated_at ? $setting->updated_at->setTimezone('Asia/Jakarta')->format('d/M/Y H:i') : '-' }}</td>
                             <td>
                                 <div class="action-buttons">
                                     <button class="btn btn-sm btn-primary" onclick="viewSetting({{ $setting->id }})" title="View">

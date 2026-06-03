@@ -310,7 +310,7 @@
 
                 <div class="text-center">
                     <div class="status-badge status-system">
-                        {{ isset($settings['updated_at']) ? \Carbon\Carbon::parse($settings['updated_at'])->format('d M Y H:i') : 'Never' }}
+                        {{ isset($settings['updated_at']) ? \Carbon\Carbon::parse($settings['updated_at'])->format('d/M/Y H:i') : 'Never' }}
                     </div>
                     <p class="text-sm text-gray-600 mt-2">Last Updated At</p>
                 </div>

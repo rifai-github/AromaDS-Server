@@ -430,8 +430,8 @@
                                 {{ $backupLog->status_text }}
                             </span>
                         </td>
-                        <td>{{ $backupLog->created_at->format('d M Y H:i') }}</td>
-                        <td>{{ $backupLog->updated_at ? $backupLog->updated_at->format('d M Y H:i') : '-' }}</td>
+                        <td>{{ $backupLog->created_at->format('d/M/Y H:i') }}</td>
+                        <td>{{ $backupLog->updated_at ? $backupLog->updated_at->format('d/M/Y H:i') : '-' }}</td>
                     </tr>
                     @empty
                     <tr>
