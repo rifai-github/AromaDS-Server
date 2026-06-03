@@ -1599,9 +1599,13 @@
 
     window.rebuildAromaDropdowns = function(surveyId) {
         console.log('Rebuilding aroma dropdowns (Global) for survey:', surveyId);
-        const checkedRooms = $(`.room-checkbox[data-survey="${surveyId}"]:checked`);
         const aromaSection = $(`#aroma-section-${surveyId}`);
         const aromaContainer = $(`#aroma-selection-container-${surveyId}`);
+        const surveySection = aromaContainer.closest('.survey-room-section');
+        const checkedRooms = surveySection.length > 0
+            ? surveySection.find('.room-checkbox:checked').not('.custom-room-checkbox')
+            : $(`.room-checkbox[data-survey="${surveyId}"]:checked`).not('.custom-room-checkbox');
+
         aromaContainer.empty();
         if (checkedRooms.length === 0) {
             aromaSection.hide();
@@ -1690,6 +1694,21 @@
             }
         });
         window.populateAromaDropdowns();
+    };
+
+    window.rebuildAromaDropdownsForAllCheckedSurveyRooms = function() {
+        const surveyIds = new Set();
+
+        $('.room-checkbox:checked').not('.custom-room-checkbox').each(function() {
+            const surveyId = $(this).data('survey');
+            if (surveyId) {
+                surveyIds.add(String(surveyId));
+            }
+        });
+
+        surveyIds.forEach(function(surveyId) {
+            window.rebuildAromaDropdowns(surveyId);
+        });
     };
 
 // ===== CLEAR QUOTATION WIZARD DATA FUNCTION (Global Scope) =====
@@ -2156,7 +2175,6 @@ $(document).ready(function() {
                         branchSelect.html('<option value="">Tidak ada cabang tersedia</option>').show();
                         readonlyDisplay.hide();
                     }
-                    
                     updateNextButtonState();
                     reloadEligibleContractsIfRenewal();
                 } else {
@@ -3169,6 +3187,10 @@ $(document).ready(function() {
                         }
                     });
                     
+                    if (typeof window.rebuildAromaDropdownsForAllCheckedSurveyRooms === 'function') {
+                        window.rebuildAromaDropdownsForAllCheckedSurveyRooms();
+                    }
+
                     updateNextButtonState();
                     window.isRestoringData = false; // Reset guard flag when done
                     console.log('✓ restoreRoomSelections: All restoration passes complete.');

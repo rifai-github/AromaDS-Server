@@ -67,6 +67,9 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('window.resolveAromaProductOptionId', $view);
         $this->assertStringContainsString('window.applyAromaSelection', $view);
         $this->assertStringContainsString('source.aroma_variant', $view);
+        $this->assertStringContainsString("const surveySection = aromaContainer.closest('.survey-room-section')", $view);
+        $this->assertStringContainsString("surveySection.find('.room-checkbox:checked').not('.custom-room-checkbox')", $view);
+        $this->assertStringContainsString('window.rebuildAromaDropdownsForAllCheckedSurveyRooms', $view);
         $this->assertStringContainsString('const isRenewalExistingSource =', $view);
         $this->assertStringContainsString('is_renewal_existing: isRenewalExistingSource', $view);
         $this->assertStringContainsString('aroma_product_id: sourceRoom.aroma_product_id || null', $view);
