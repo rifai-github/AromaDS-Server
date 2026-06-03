@@ -37,6 +37,10 @@ class WarehousePlacementService
             return $this->resolveForMaterialReturn($materialReturn, $fallbackWarehouse);
         }
 
+        if ($this->isReceivingFromRemoveJob($inventoryReceiving)) {
+            return $this->resolveByCondition($fallbackWarehouse, self::CONDITION_USED);
+        }
+
         if ($this->isReceivingFromIssuing($inventoryReceiving)) {
             return $fallbackWarehouse;
         }
@@ -124,6 +128,21 @@ class WarehousePlacementService
             ])
             ->latest('id')
             ->first();
+    }
+
+    private function isReceivingFromRemoveJob(InventoryReceiving $inventoryReceiving): bool
+    {
+        $text = Str::lower(collect([
+            $inventoryReceiving->reference_no,
+            $inventoryReceiving->notes,
+        ])->filter()->implode(' '));
+
+        return Str::contains($text, [
+            '-rv/',
+            '/rv/',
+            'remove job',
+            'auto-return dari remove',
+        ]);
     }
 
     private function isReceivingFromIssuing(InventoryReceiving $inventoryReceiving): bool

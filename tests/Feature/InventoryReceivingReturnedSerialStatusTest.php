@@ -557,6 +557,40 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         ]);
     }
 
+    public function test_finalize_remove_receiving_places_unit_in_used_warehouse(): void
+    {
+        $this->seedJakartaConditionWarehouses();
+        $receiving = $this->seedReceivingWithSerial(status: 'pending', referenceNo: 'JKT-RV/26-06/0001');
+        $receiving->update([
+            'receiving_number' => 'JKT-IRC/26-06/0004',
+            'notes' => 'Auto-return dari Remove Job JKT-RV/26-06/0001 (Unit remove menunggu penerimaan gudang).',
+        ]);
+        DB::table('serial_numbers')->where('id', 200)->update([
+            'serial_number' => 'DFJKT024',
+            'notes' => 'Queued to RR JKT-IRC/26-06/0004 from Remove Job JKT-RV/26-06/0001.',
+        ]);
+
+        app(InventoryReceivingController::class)->finalize($receiving->fresh());
+
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 7,
+            'master_product_id' => 100,
+            'quantity' => 1,
+        ]);
+        $this->assertDatabaseHas('serial_numbers', [
+            'id' => 200,
+            'serial_number' => 'DFJKT024',
+            'status' => 'ready',
+            'warehouse_id' => 7,
+            'location_id' => 7,
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'warehouse_id' => 7,
+            'master_product_id' => 100,
+            'reference_no' => 'JKT-IRC/26-06/0004',
+        ]);
+    }
+
     public function test_finalize_return_receiving_places_damaged_return_in_damaged_warehouse(): void
     {
         $this->seedJakartaConditionWarehouses();
