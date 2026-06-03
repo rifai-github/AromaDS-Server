@@ -3955,6 +3955,14 @@ $(document).ready(function() {
 
     // Update Next button state when rental product changes
     $(document).on('change select2:select', '.rental-product-select', function() {
+        const productSelect = $(this);
+        const rentalConfig = productSelect.closest('.rental-configuration');
+        const priceInput = rentalConfig.find('input[name*="price"]');
+
+        if (productSelect.val() && !priceInput.val()) {
+            fetchAndApplyRentalProductPrice(productSelect);
+        }
+
         updateNextButtonState();
     });
 
@@ -5074,41 +5082,78 @@ $(document).ready(function() {
             }
             
             const data = e.params.data;
-            const rentalConfig = $(this).closest('.rental-configuration');
-            const priceInput = rentalConfig.find('input[name*="price"]');
-            const priceLabel = priceInput.closest('.form-group').find('label');
-
-            // Handle Master Corporate Pricing
-            if (data.is_corporate_price) {
-                // Set price
-                const price = data.monthly_price; // Always use monthly/agreed price for corporate
-                priceInput.val(price).trigger('change');
-                
-                // Lock the field
-                priceInput.prop('readonly', true).addClass('bg-light');
-                
-                // Add indicator if not present
-                if (priceLabel.find('.corporate-badge').length === 0) {
-                    priceLabel.append('<span class="badge bg-warning text-dark ms-2 corporate-badge"><i class="fas fa-lock me-1"></i>Corporate Price</span>');
-                }
-            } else {
-                // Calculate standard price if not corporate
-                if (!window.isPopulatingData && !window.isRestoringData) {
-                    const rentalUnit = $('#rental_unit').val();
-                    const price = rentalUnit === 'hari' ? data.daily_price : data.monthly_price;
-                    priceInput.val(price).trigger('change');
-                }
-                
-                // Unlock the field
-                priceInput.prop('readonly', false).removeClass('bg-light');
-                priceLabel.find('.corporate-badge').remove();
-            }
+            applyRentalProductPrice($(this), data);
             
             // Trigger validation immediately after selection
             setTimeout(() => {
                 updateNextButtonState();
                 console.log('Button state updated after product selection');
             }, 100);
+        });
+    }
+
+    function resolveRentalProductPriceFromData(data) {
+        const rentalUnit = $('#rental_unit').val();
+        return rentalUnit === 'hari' ? data?.daily_price : data?.monthly_price;
+    }
+
+    function applyRentalProductPrice(productSelect, data) {
+        const rentalConfig = productSelect.closest('.rental-configuration');
+        const priceInput = rentalConfig.find('input[name*="price"]');
+        const priceLabel = priceInput.closest('.form-group').find('label');
+
+        if (data?.is_corporate_price) {
+            const price = data.monthly_price;
+            if (price !== undefined && price !== null && price !== '') {
+                priceInput.val(price).trigger('change');
+            }
+            priceInput.prop('readonly', true).addClass('bg-light');
+
+            if (priceLabel.find('.corporate-badge').length === 0) {
+                priceLabel.append('<span class="badge bg-warning text-dark ms-2 corporate-badge"><i class="fas fa-lock me-1"></i>Corporate Price</span>');
+            }
+        } else {
+            const price = resolveRentalProductPriceFromData(data);
+            if (price !== undefined && price !== null && price !== '') {
+                priceInput.val(price).trigger('change');
+            } else {
+                fetchAndApplyRentalProductPrice(productSelect, data);
+            }
+
+            priceInput.prop('readonly', false).removeClass('bg-light');
+            priceLabel.find('.corporate-badge').remove();
+        }
+    }
+
+    function fetchAndApplyRentalProductPrice(productSelect, selectedData = {}) {
+        const productId = productSelect.val();
+        if (!productId) return;
+
+        const rentalConfig = productSelect.closest('.rental-configuration');
+        const priceInput = rentalConfig.find('input[name*="price"]');
+        const surveyId = rentalConfig.data('survey-id') || productSelect.closest('.rental-config-row').prevAll('.rental-button-row:first').find('.add-rental-btn').data('survey-id');
+        const selectedText = selectedData.name || selectedData.text || productSelect.find('option:selected').text() || '';
+
+        $.ajax({
+            url: '{{ route("marketing.quotations.wizard.get-products") }}',
+            method: 'GET',
+            data: {
+                q: selectedText,
+                survey_id: surveyId,
+                branch_id: null
+            },
+            success: function(products) {
+                const product = (products || []).find(item => String(item.id) === String(productId));
+                if (!product) return;
+
+                const price = resolveRentalProductPriceFromData(product);
+                if (price !== undefined && price !== null && price !== '') {
+                    priceInput.val(price).trigger('change');
+                }
+            },
+            error: function(xhr, status, error) {
+                console.warn('Failed to fetch rental price for selected product:', productId, error);
+            }
         });
     }
 

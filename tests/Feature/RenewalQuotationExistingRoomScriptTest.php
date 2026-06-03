@@ -76,6 +76,9 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('is_renewal_existing: isRenewalExistingSource', $view);
         $this->assertStringContainsString('aroma_product_id: sourceRoom.aroma_product_id || null', $view);
         $this->assertStringContainsString('aroma_variant: sourceRoom.aroma_variant || sourceRoom.aroma_display_name || null', $view);
+        $this->assertStringContainsString('function applyRentalProductPrice', $view);
+        $this->assertStringContainsString('function fetchAndApplyRentalProductPrice', $view);
+        $this->assertStringContainsString('if (productSelect.val() && !priceInput.val())', $view);
         $this->assertStringContainsString('room.contract_room_id && selection.contract_room_id', $view);
         $this->assertStringContainsString('clearRenewalContractScopedWizardData', $view);
         $this->assertStringContainsString('window.buildRenewalRentalUniqueId', $view);
