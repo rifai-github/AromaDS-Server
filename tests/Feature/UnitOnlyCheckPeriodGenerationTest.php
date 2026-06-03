@@ -369,6 +369,50 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             ->all());
     }
 
+    public function test_mixed_unit_only_and_refill_room_generates_csr_services_independently_from_ir_checks(): void
+    {
+        $this->seedMixedUnitOnlyAndRefillRoom();
+
+        $controller = new JobScheduleController();
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'generateAllRemainingServices');
+        $method->setAccessible(true);
+        $method->invoke(
+            $controller,
+            JobSchedule::findOrFail(50),
+            JobAdvice::findOrFail(3)
+        );
+
+        $periodTwoJobs = JobSchedule::where('job_advice_id', 3)
+            ->whereIn('type', ['service', 'service_first', 'service_routine'])
+            ->where('period', 2)
+            ->orderBy('id')
+            ->get();
+
+        $this->assertCount(2, $periodTwoJobs);
+
+        $csrService = $periodTwoJobs->firstWhere('type', 'service');
+        $this->assertNotNull($csrService);
+        $this->assertNull($csrService->job_number);
+        $this->assertSame('scheduled', $csrService->status);
+
+        $linkedJobAdviceRoomIds = DB::table('job_schedule_room_rentals')
+            ->join('job_schedule_rooms', 'job_schedule_rooms.id', '=', 'job_schedule_room_rentals.job_schedule_room_id')
+            ->where('job_schedule_rooms.job_schedule_id', $csrService->id)
+            ->pluck('job_schedule_room_rentals.job_advice_room_id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        $this->assertSame([4], $linkedJobAdviceRoomIds);
+
+        $docTypeMethod = new ReflectionMethod(JobScheduleController::class, 'documentTypeForJobSchedule');
+        $docTypeMethod->setAccessible(true);
+
+        $this->assertSame('installation_report', $docTypeMethod->invoke($controller, JobSchedule::findOrFail(42)));
+        $this->assertSame('customer_service_report', $docTypeMethod->invoke($controller, JobSchedule::findOrFail(50)));
+    }
+
     private function seedUnitOnlyInstallWithExistingFirstCheck(): void
     {
         DB::table('contracts')->insert([
@@ -602,6 +646,186 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             'is_primary' => true,
             'created_at' => now(),
             'updated_at' => now(),
+        ]);
+    }
+
+    private function seedMixedUnitOnlyAndRefillRoom(): void
+    {
+        DB::table('contracts')->insert([
+            'id' => 3,
+            'contract_number' => 'JKT-CA/26-06/0004',
+            'start_date' => '2026-06-01',
+            'end_date' => '2026-07-31',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('buildings')->insert([
+            'id' => 3,
+            'building_name' => 'Gedung Mixed',
+            'name' => 'Gedung Mixed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rooms')->insert([
+            'id' => 3,
+            'building_id' => 3,
+            'room_name' => 'Ruang Delima',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contract_rooms')->insert(['id' => 3, 'contract_id' => 3, 'room_id' => 3, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('rental_service_frequencies')->insert([
+            ['id' => 3, 'name' => 'Monthly', 'frequency_times_per_month' => 1, 'frequency_months' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 4, 'name' => 'Monthly', 'frequency_times_per_month' => 1, 'frequency_months' => 1, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('master_rentals')->insert([
+            ['id' => 3, 'rental_name' => 'Unit Only', 'rental_type' => 'unit_only', 'service_frequency_id' => 3, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 4, 'rental_name' => 'Refill Only', 'rental_type' => 'refill_only', 'service_frequency_id' => 4, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('job_advices')->insert([
+            'id' => 3,
+            'job_advice_number' => 'JKT-JA/26-06/0004',
+            'type' => 'install',
+            'company_name' => 'Test 260218 PT',
+            'contract_id' => 3,
+            'expected_date' => '2026-06-01',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_advice_rooms')->insert([
+            [
+                'id' => 3,
+                'job_advice_id' => 3,
+                'contract_room_id' => 3,
+                'rental_product_id' => 3,
+                'room_name' => 'Ruang Delima',
+                'rental_name' => 'Unit Only',
+                'install_job_schedule_id' => 40,
+                'service_job_schedule_id' => 41,
+                'rental_has_service' => false,
+                'unit_already_installed' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 4,
+                'job_advice_id' => 3,
+                'contract_room_id' => 3,
+                'rental_product_id' => 4,
+                'room_name' => 'Ruang Delima',
+                'rental_name' => 'Refill Only',
+                'install_job_schedule_id' => null,
+                'service_job_schedule_id' => 50,
+                'rental_has_service' => true,
+                'unit_already_installed' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+        DB::table('job_schedules')->insert([
+            [
+                'id' => 40,
+                'job_number' => 'JKT-IR/26-06/0002',
+                'type' => 'install',
+                'status' => 'done_job',
+                'job_advice_id' => 3,
+                'building_id' => 3,
+                'building_name' => 'Gedung Mixed',
+                'room_id' => 3,
+                'room_name' => 'Ruang Delima',
+                'company_name' => 'Test 260218 PT',
+                'contract_number' => 'JKT-CA/26-06/0004',
+                'schedule_date' => '2026-06-01',
+                'expected_date' => '2026-06-01',
+                'ba_date' => '2026-06-02',
+                'period' => null,
+                'service_frequency' => null,
+                'service_period_type' => null,
+                'material_checked' => false,
+                'material_checked_at' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 41,
+                'job_number' => null,
+                'type' => 'service_first',
+                'status' => 'done_job',
+                'job_advice_id' => 3,
+                'building_id' => 3,
+                'building_name' => 'Gedung Mixed',
+                'room_id' => 3,
+                'room_name' => 'Ruang Delima',
+                'company_name' => 'Test 260218 PT',
+                'contract_number' => 'JKT-CA/26-06/0004',
+                'schedule_date' => '2026-06-02',
+                'expected_date' => '2026-06-02',
+                'ba_date' => null,
+                'period' => 1,
+                'service_frequency' => 1,
+                'service_period_type' => 'Monthly',
+                'material_checked' => true,
+                'material_checked_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 42,
+                'job_number' => null,
+                'type' => 'service_routine',
+                'status' => 'scheduled',
+                'job_advice_id' => 3,
+                'building_id' => 3,
+                'building_name' => 'Gedung Mixed',
+                'room_id' => 3,
+                'room_name' => 'Ruang Delima',
+                'company_name' => 'Test 260218 PT',
+                'contract_number' => 'JKT-CA/26-06/0004',
+                'schedule_date' => '2026-07-02',
+                'expected_date' => '2026-07-02',
+                'ba_date' => null,
+                'period' => 2,
+                'service_frequency' => 1,
+                'service_period_type' => 'Monthly',
+                'material_checked' => true,
+                'material_checked_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 50,
+                'job_number' => 'JKT-CSR/26-06/0004',
+                'type' => 'service_first',
+                'status' => 'done_job',
+                'job_advice_id' => 3,
+                'building_id' => 3,
+                'building_name' => 'Gedung Mixed',
+                'room_id' => 3,
+                'room_name' => 'Ruang Delima',
+                'company_name' => 'Test 260218 PT',
+                'contract_number' => 'JKT-CA/26-06/0004',
+                'schedule_date' => '2026-06-03',
+                'expected_date' => '2026-06-03',
+                'ba_date' => '2026-06-03',
+                'period' => 1,
+                'service_frequency' => 1,
+                'service_period_type' => 'Monthly',
+                'material_checked' => false,
+                'material_checked_at' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            ['id' => 40, 'job_schedule_id' => 40, 'job_advice_room_id' => 3, 'room_name' => 'Ruang Delima', 'room_id' => 3, 'status' => 'completed', 'material_return_status' => null, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 41, 'job_schedule_id' => 41, 'job_advice_room_id' => 3, 'room_name' => 'Ruang Delima', 'room_id' => 3, 'status' => 'completed', 'material_return_status' => 'not_required', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 42, 'job_schedule_id' => 42, 'job_advice_room_id' => 3, 'room_name' => 'Ruang Delima', 'room_id' => 3, 'status' => 'pending', 'material_return_status' => 'not_required', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 50, 'job_schedule_id' => 50, 'job_advice_room_id' => 4, 'room_name' => 'Ruang Delima', 'room_id' => 3, 'status' => 'completed', 'material_return_status' => null, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('job_schedule_room_rentals')->insert([
+            ['job_schedule_room_id' => 41, 'job_advice_room_id' => 3, 'is_primary' => true, 'created_at' => now(), 'updated_at' => now()],
+            ['job_schedule_room_id' => 42, 'job_advice_room_id' => 3, 'is_primary' => true, 'created_at' => now(), 'updated_at' => now()],
+            ['job_schedule_room_id' => 50, 'job_advice_room_id' => 4, 'is_primary' => true, 'created_at' => now(), 'updated_at' => now()],
         ]);
     }
 }

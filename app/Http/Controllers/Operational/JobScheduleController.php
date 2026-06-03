@@ -741,17 +741,7 @@ class JobScheduleController extends Controller
             $sharedJobNumber = $jobs->pluck('job_number')->filter()->first() ?? ($batchJobNumbers[$batchKey] ?? null);
 
             if (!$sharedJobNumber) {
-                $type = strtolower($firstJob->type ?? '');
-                $jaType = strtolower($firstJob->jobAdvice->type ?? '');
-                $docType = 'job_schedule';
-
-                if ($type === 'install' || $type === 'install_free') {
-                    $docType = ($jaType === 'install_free' || $type === 'install_free') ? 'installation_free' : 'installation_report';
-                } elseif (str_contains($type, 'service')) {
-                    $docType = 'customer_service_report';
-                } elseif (str_contains($type, 'remove')) {
-                    $docType = ($type === 'remove_free' || $type === 'remove free' || $jaType === 'remove_free') ? 'remove_free' : 'remove';
-                }
+                $docType = $this->documentTypeForJobSchedule($firstJob);
 
                 $sharedJobNumber = $documentNumberService->generate(
                     $docType,
@@ -770,6 +760,10 @@ class JobScheduleController extends Controller
 
             foreach ($jobs as $job) {
                 if (!in_array($job->status, ['new_job', 'scheduled', 'assign_material', 'barang_dipersiapkan'], true)) {
+                    continue;
+                }
+
+                if ($this->jobScheduleRepresentsUnitOnlyCheck($job)) {
                     continue;
                 }
 
@@ -929,7 +923,7 @@ class JobScheduleController extends Controller
             ?? null;
     }
 
-    private function syncJobScheduleRoomsFromJobAdvice(JobSchedule $jobSchedule, $jobAdvice, ?string $linkColumn = null, ?array $onlyPhysicalRoomIds = null): void
+    private function syncJobScheduleRoomsFromJobAdvice(JobSchedule $jobSchedule, $jobAdvice, ?string $linkColumn = null, ?array $onlyPhysicalRoomIds = null, ?array $onlyJobAdviceRoomIds = null): void
     {
         $jobAdvice->loadMissing([
             'rooms.contractRoom.room',
@@ -940,6 +934,9 @@ class JobScheduleController extends Controller
         $allowedRoomIds = $onlyPhysicalRoomIds === null
             ? null
             : array_values(array_unique(array_filter(array_map('intval', $onlyPhysicalRoomIds))));
+        $allowedJobAdviceRoomIds = $onlyJobAdviceRoomIds === null
+            ? null
+            : array_values(array_unique(array_filter(array_map('intval', $onlyJobAdviceRoomIds))));
 
         $sourceRooms = $jobAdvice->rooms;
         if ($allowedRoomIds !== null) {
@@ -949,12 +946,16 @@ class JobScheduleController extends Controller
                 return $physicalRoomId && in_array((int) $physicalRoomId, $allowedRoomIds, true);
             });
         }
+        if ($allowedJobAdviceRoomIds !== null) {
+            $sourceRooms = $sourceRooms->whereIn('id', $allowedJobAdviceRoomIds);
+        }
 
         if ($sourceRooms->isEmpty()) {
             \Log::warning("No eligible Job Advice rooms to sync for job schedule {$jobSchedule->id}", [
                 'job_number' => $jobSchedule->job_number,
                 'job_advice_id' => $jobAdvice->id ?? null,
                 'allowed_room_ids' => $allowedRoomIds,
+                'allowed_job_advice_room_ids' => $allowedJobAdviceRoomIds,
             ]);
 
             return;
@@ -1803,6 +1804,11 @@ class JobScheduleController extends Controller
                     continue;
                 }
 
+                if ($this->jobScheduleRepresentsUnitOnlyCheck($job)) {
+                    $skippedCount++;
+                    continue;
+                }
+
                 // Validation: Only for new_job or scheduled
                 if (!in_array($job->status, ['new_job', 'scheduled', 'assign_material', 'barang_dipersiapkan'])) {
                     $skippedCount++;
@@ -1814,17 +1820,7 @@ class JobScheduleController extends Controller
                 
                 if (!in_array($job->status, ['assign_material', 'barang_dipersiapkan'], true)) {
                     // Determine document type for Job Number generation
-                    $type = strtolower($job->type);
-                    $jaType = strtolower($job->jobAdvice->type ?? '');
-                    
-                    $docType = 'job_schedule';
-                    if ($type === 'install' || $type === 'install_free') {
-                        $docType = ($jaType === 'install_free' || $type === 'install_free') ? 'installation_free' : 'installation_report';
-                    } elseif (str_contains($type, 'service')) {
-                        $docType = 'customer_service_report';
-                    } elseif (str_contains($type, 'remove')) {
-                        $docType = ($type === 'remove_free' || $type === 'remove free' || $jaType === 'remove_free') ? 'remove_free' : 'remove';
-                    }
+                    $docType = $this->documentTypeForJobSchedule($job);
 
                     // Generate NEW Job Number for this batch (or reuse if generated earlier in this loop for same context)
                     // We'll use a local cache for this request to keep batch jobs together
@@ -3101,20 +3097,6 @@ class JobScheduleController extends Controller
                 }
 
                 $documentNumberService = new DocumentNumberService();
-                $documentTypeMap = [
-                    'install' => 'installation_report',
-                    'install_free' => 'installation_free',
-                    'service' => 'customer_service_report',
-                    'service_first' => 'customer_service_report',
-                    'service_routine' => 'customer_service_report',
-                    'remove' => 'remove',
-                    'remove_free' => 'remove_free',
-                    'remove free' => 'remove_free',
-                    'maintenance' => 'job_schedule',
-                    'extra' => 'job_schedule',
-                    'change' => 'job_schedule',
-                    'complain' => 'job_schedule',
-                ];
 
                 // MOM: Shared Job Number Logic
                 // Group jobs by date. Jobs on the same date should share the same Job Number.
@@ -3191,7 +3173,8 @@ class JobScheduleController extends Controller
 
                     // C. If still not found, generate NEW
                     if (!$sharedJobNumber) {
-                        $documentType = $documentTypeMap[$refJob->type] ?? 'job_schedule';
+                        $refJob->loadMissing('jobAdvice', 'jobScheduleRooms.rentals.jobAdviceRoom.rentalProduct');
+                        $documentType = $this->documentTypeForJobSchedule($refJob);
                         $sharedJobNumber = $documentNumberService->generate(
                             $documentType,
                             null,
@@ -7318,6 +7301,83 @@ class JobScheduleController extends Controller
         return $relevantRooms->every(fn ($jaRoom) => $this->jobAdviceRoomShouldGenerateUnitOnlyCheck($jaRoom));
     }
 
+    private function getServiceEligibleJobAdviceRoomsForSchedule(JobSchedule $schedule, $jobAdvice, array $eligibleRoomIds): \Illuminate\Support\Collection
+    {
+        $eligibleRoomIds = array_map('intval', $eligibleRoomIds);
+
+        $schedule->loadMissing('jobScheduleRooms.rentals.jobAdviceRoom');
+        $linkedJaRoomIds = $schedule->jobScheduleRooms
+            ->flatMap(fn ($room) => $room->rentals->pluck('job_advice_room_id'))
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($linkedJaRoomIds->isEmpty()) {
+            $linkedJaRoomIds = $schedule->jobScheduleRooms
+                ->pluck('job_advice_room_id')
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+        }
+
+        $jobAdvice->loadMissing('rooms.rentalProduct.serviceFrequency');
+
+        return $jobAdvice->rooms
+            ->filter(function ($jaRoom) use ($eligibleRoomIds, $linkedJaRoomIds) {
+                $physicalRoomId = $this->getJobAdviceRoomPhysicalRoomId($jaRoom);
+
+                if (!$physicalRoomId || !in_array((int) $physicalRoomId, $eligibleRoomIds, true)) {
+                    return false;
+                }
+
+                if ($linkedJaRoomIds->isNotEmpty() && !$linkedJaRoomIds->contains((int) $jaRoom->id)) {
+                    return false;
+                }
+
+                return !$this->jobAdviceRoomShouldGenerateUnitOnlyCheck($jaRoom);
+            })
+            ->values();
+    }
+
+    private function jobScheduleRepresentsUnitOnlyCheck(JobSchedule $job): bool
+    {
+        $type = strtolower(trim((string) $job->type));
+        if (!in_array($type, ['service', 'service_first', 'service_routine'], true)) {
+            return false;
+        }
+
+        $jobAdvice = $job->jobAdvice;
+        if (!$jobAdvice) {
+            return false;
+        }
+
+        return $this->completedScheduleIsUnitOnlyFlow($job, $jobAdvice);
+    }
+
+    private function documentTypeForJobSchedule(JobSchedule $job): string
+    {
+        $type = strtolower(trim((string) $job->type));
+        $jaType = strtolower(trim((string) ($job->jobAdvice?->type ?? '')));
+
+        if ($type === 'install' || $type === 'install_free') {
+            return ($jaType === 'install_free' || $type === 'install_free') ? 'installation_free' : 'installation_report';
+        }
+
+        if (in_array($type, ['service', 'service_first', 'service_routine'], true)) {
+            return $this->jobScheduleRepresentsUnitOnlyCheck($job)
+                ? 'installation_report'
+                : 'customer_service_report';
+        }
+
+        if (str_contains($type, 'remove')) {
+            return ($type === 'remove_free' || $type === 'remove free' || $jaType === 'remove_free') ? 'remove_free' : 'remove';
+        }
+
+        return 'job_schedule';
+    }
+
     /**
      * MOM13: Generate ALL remaining services when first service completes
      * "setelah service pertama selesai dia akan generate sisa 11 service nya"
@@ -7332,31 +7392,55 @@ class JobScheduleController extends Controller
                 return;
             }
             
-            // Get total expected services
-            $totalServices = $this->getTotalExpectedServices($jobAdvice);
-            
-            if (!$totalServices || $totalServices <= 1) {
-                \Log::info("Total services is {$totalServices}. No remaining services to generate.");
-                return;
-            }
-            
-            // Check how many services already exist
-            $existingServicesCount = JobSchedule::where('job_advice_id', $jobAdvice->id)
-                ->whereIn('type', ['service', 'service_first', 'service_routine'])
-                ->count();
-            
-            if ($existingServicesCount >= $totalServices) {
-                \Log::info("All {$totalServices} services already exist. Skipping.");
-                return;
-            }
-            
-            // Get service frequency info
-            $serviceFrequency = $completedFirstService->service_frequency; // Usually times per month (e.g. 4)
-            $servicePeriodType = $completedFirstService->service_period_type;
             $eligibleRoomIds = $this->getFinalizedRoomIdsForSchedule($completedFirstService);
 
             if (empty($eligibleRoomIds)) {
                 \Log::warning("No completed rooms found for first service {$completedFirstService->job_number}. Skipping remaining service generation.");
+                return;
+            }
+
+            $serviceEligibleRooms = $this->getServiceEligibleJobAdviceRoomsForSchedule($completedFirstService, $jobAdvice, $eligibleRoomIds);
+            if ($serviceEligibleRooms->isEmpty()) {
+                \Log::info("No refill/service rental rows found for first service {$completedFirstService->job_number}. Skipping remaining CSR services.");
+                return;
+            }
+
+            $serviceRental = $serviceEligibleRooms->first()?->rentalProduct;
+            $totalServices = $this->calculateTotalServicePeriodsForRental($jobAdvice, $serviceRental);
+
+            if (!$totalServices || $totalServices <= 1) {
+                \Log::info("Total services is {$totalServices}. No remaining services to generate.");
+                return;
+            }
+
+            // Get service frequency info
+            $serviceFrequencyObj = $serviceRental?->serviceFrequency;
+            $serviceFrequency = $completedFirstService->service_frequency
+                ?? $serviceFrequencyObj?->frequency_times_per_month
+                ?? $serviceFrequencyObj?->frequency_months
+                ?? null;
+            $servicePeriodType = $completedFirstService->service_period_type
+                ?? $serviceFrequencyObj?->name
+                ?? 'monthly';
+
+            $serviceJobAdviceRoomIds = $serviceEligibleRooms->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+            $servicePhysicalRoomIds = $serviceEligibleRooms
+                ->map(fn ($jaRoom) => $this->getJobAdviceRoomPhysicalRoomId($jaRoom))
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+
+            $existingServicesCount = JobSchedule::where('job_advice_id', $jobAdvice->id)
+                ->whereIn('type', ['service', 'service_first', 'service_routine'])
+                ->whereHas('jobScheduleRooms.rentals', function ($query) use ($serviceJobAdviceRoomIds) {
+                    $query->whereIn('job_advice_room_id', $serviceJobAdviceRoomIds);
+                })
+                ->count();
+
+            if ($existingServicesCount >= $totalServices) {
+                \Log::info("All {$totalServices} service periods already exist for service rental rows. Skipping.");
                 return;
             }
             
@@ -7373,8 +7457,7 @@ class JobScheduleController extends Controller
             $baseDate = \Carbon\Carbon::parse($completedFirstService->schedule_date);
             
             // Build room list
-            $roomNames = $jobAdvice->rooms
-                ->filter(fn ($jaRoom) => in_array((int) $this->getJobAdviceRoomPhysicalRoomId($jaRoom), array_map('intval', $eligibleRoomIds), true))
+            $roomNames = $serviceEligibleRooms
                 ->pluck('room_name')
                 ->filter()
                 ->toArray();
@@ -7401,6 +7484,9 @@ class JobScheduleController extends Controller
                 $existing = JobSchedule::where('job_advice_id', $jobAdvice->id)
                     ->whereIn('type', ['service', 'service_first', 'service_routine'])
                     ->where('period', $period)
+                    ->whereHas('jobScheduleRooms.rentals', function ($query) use ($serviceJobAdviceRoomIds) {
+                        $query->whereIn('job_advice_room_id', $serviceJobAdviceRoomIds);
+                    })
                     ->first();
                 
                 if ($existing) {
@@ -7439,7 +7525,7 @@ class JobScheduleController extends Controller
                     'updated_by' => Auth::id() ?? \App\Models\User::first()?->id
                 ]);
                 
-                $this->syncJobScheduleRoomsFromJobAdvice($service, $jobAdvice, 'service_job_schedule_id', $eligibleRoomIds);
+                $this->syncJobScheduleRoomsFromJobAdvice($service, $jobAdvice, 'service_job_schedule_id', $servicePhysicalRoomIds, $serviceJobAdviceRoomIds);
                 
                 $servicesCreated[] = $service;
             }
@@ -8053,6 +8139,7 @@ class JobScheduleController extends Controller
             'install', 'install_free' => ($jobAdviceType === 'install_free' || $typeLower === 'install_free')
                 ? 'installation_free'
                 : 'installation_report',
+            'check' => 'installation_report',
             'service', 'service_first', 'service_routine' => 'customer_service_report',
             'remove', 'removal' => 'remove',
             'remove_free', 'remove free' => 'remove_free',
@@ -8085,20 +8172,6 @@ class JobScheduleController extends Controller
         }
 
         $documentNumberService = new \App\Services\DocumentNumberService();
-        $documentTypeMap = [
-            'install' => 'installation_report',
-            'install_free' => 'installation_free',
-            'service' => 'customer_service_report',
-            'service_first' => 'customer_service_report',
-            'service_routine' => 'customer_service_report',
-            'remove' => 'remove',
-            'remove_free' => 'remove_free',
-            'remove free' => 'remove_free',
-            'maintenance' => 'job_schedule',
-            'extra' => 'job_schedule',
-            'change' => 'job_schedule',
-            'complain' => 'job_schedule',
-        ];
 
         // 1. Ensure JobAssignSchedule exists (Primary Team)
         // This is needed for autoCreateMaterialIssue and mobile visibility
@@ -8156,7 +8229,8 @@ class JobScheduleController extends Controller
             
             // If still no shared number found, generate NEW
             if (!$sharedJobNumber) {
-                $documentType = $documentTypeMap[$job->type] ?? 'job_schedule';
+                $job->loadMissing('jobAdvice', 'jobScheduleRooms.rentals.jobAdviceRoom.rentalProduct');
+                $documentType = $this->documentTypeForJobSchedule($job);
                 $sharedJobNumber = $documentNumberService->generate(
                     $documentType,
                     null,
@@ -8189,20 +8263,6 @@ class JobScheduleController extends Controller
         }
 
         $documentNumberService = new \App\Services\DocumentNumberService();
-        $documentTypeMap = [
-            'install' => 'installation_report',
-            'install_free' => 'installation_free',
-            'service' => 'customer_service_report',
-            'service_first' => 'customer_service_report',
-            'service_routine' => 'customer_service_report',
-            'remove' => 'remove',
-            'remove_free' => 'remove_free',
-            'remove free' => 'remove_free',
-            'maintenance' => 'job_schedule',
-            'extra' => 'job_schedule',
-            'change' => 'job_schedule',
-            'complain' => 'job_schedule',
-        ];
 
         $sharedJobNumber = null;
         $date = $job->schedule_date ? $job->schedule_date->format('Y-m-d') : null;
@@ -8227,7 +8287,8 @@ class JobScheduleController extends Controller
         }
 
         if (!$sharedJobNumber) {
-            $documentType = $documentTypeMap[$job->type] ?? 'job_schedule';
+            $job->loadMissing('jobAdvice', 'jobScheduleRooms.rentals.jobAdviceRoom.rentalProduct');
+            $documentType = $this->documentTypeForJobSchedule($job);
             $sharedJobNumber = $documentNumberService->generate(
                 $documentType,
                 null,
@@ -8930,6 +8991,10 @@ class JobScheduleController extends Controller
         $jobType = strtolower($jobSchedule->type ?? '');
 
         if (in_array($jobType, ['remove', 'remove_free', 'removal'])) {
+            return;
+        }
+
+        if ($this->jobScheduleRepresentsUnitOnlyCheck($jobSchedule)) {
             return;
         }
         
