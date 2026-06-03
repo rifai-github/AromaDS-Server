@@ -64,7 +64,12 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('renderRenewalExistingRoomsWithoutSurvey', $view);
         $this->assertStringContainsString('Ruangan Existing Contract', $view);
         $this->assertStringContainsString('Aroma/Variant Lama dari Contract Existing', $view);
-        $this->assertStringContainsString('room.aroma_product_id && window.hasAromaProductOption(room.aroma_product_id)', $view);
+        $this->assertStringContainsString('window.resolveAromaProductOptionId', $view);
+        $this->assertStringContainsString('window.applyAromaSelection', $view);
+        $this->assertStringContainsString('source.aroma_variant', $view);
+        $this->assertStringContainsString('room.contract_room_id && selection.contract_room_id', $view);
+        $this->assertStringContainsString('clearRenewalContractScopedWizardData', $view);
+        $this->assertStringContainsString('window.buildRenewalRentalUniqueId', $view);
         $this->assertStringContainsString('sanitizeRenewalRoomName', $view);
         $this->assertStringContainsString('function getRoomNameFromSelectionRow(row, cellIndex = 2)', $view);
         $this->assertStringContainsString('row.find(`td:eq(${cellIndex}) > strong`).first().text()', $view);

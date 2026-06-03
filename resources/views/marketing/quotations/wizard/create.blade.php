@@ -1314,6 +1314,100 @@
             return String(product.id) === String(productId);
         });
     };
+
+    window.normalizeAromaText = function(value) {
+        return String(value || '')
+            .replace(/aroma\s*lama\s*:/gi, ' ')
+            .replace(/\s*\([^)]*\)\s*/g, ' ')
+            .replace(/\s*-\s*/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+    };
+
+    window.resolveAromaProductOptionId = function(source) {
+        if (!source || !window.aromaProductsList) return '';
+
+        if (source.aroma_product_id && window.hasAromaProductOption(source.aroma_product_id)) {
+            return source.aroma_product_id;
+        }
+
+        const targets = [
+            source.aroma_variant,
+            source.aroma_display_name,
+            source.aroma_name,
+        ].map(window.normalizeAromaText).filter(Boolean);
+
+        if (targets.length === 0) return '';
+
+        const matched = window.aromaProductsList.find(function(product) {
+            const candidates = [
+                product.variant,
+                product.variant_name,
+                product.display_name,
+                product.name,
+            ].map(window.normalizeAromaText).filter(Boolean);
+
+            return targets.some(function(target) {
+                return candidates.some(function(candidate) {
+                    return candidate === target
+                        || candidate.includes(target)
+                        || target.includes(candidate);
+                });
+            });
+        });
+
+        return matched ? matched.id : '';
+    };
+
+    window.applyAromaSelection = function(selectElement, source) {
+        const select = $(selectElement);
+        if (select.length === 0) return false;
+
+        const aromaProductId = window.resolveAromaProductOptionId(source);
+        if (!aromaProductId) return false;
+
+        select.attr('data-selected-value', aromaProductId);
+        select.data('selected-value', aromaProductId);
+        select.val(aromaProductId).trigger('change');
+
+        return true;
+    };
+
+    window.findRenewalRoomSelection = function(room) {
+        const selections = window.globalRoomSelections || globalRoomSelections || [];
+        const targetName = normalizeRenewalRoomName(room?.room_name || '');
+
+        return selections.find(function(selection) {
+            if (!selection || typeof selection !== 'object') return false;
+
+            if (room.contract_room_id && selection.contract_room_id && String(selection.contract_room_id) === String(room.contract_room_id)) {
+                return true;
+            }
+
+            if (room.id && String(selection.room_id) === String(room.id)) {
+                return true;
+            }
+
+            if (room.master_room_id && (String(selection.master_room_id || '') === String(room.master_room_id) || String(selection.room_id || '') === String(room.master_room_id))) {
+                return true;
+            }
+
+            const selectionName = normalizeRenewalRoomName(selection.room_name || '');
+            return targetName && selectionName && selectionName === targetName;
+        });
+    };
+
+    window.buildRenewalRentalUniqueId = function(rental, index) {
+        const stableKey = rental.contract_rental_id
+            || rental.contract_room_id
+            || rental.master_room_id
+            || rental.survey_detail_id
+            || rental.room_id
+            || index;
+
+        return `renewal-${stableKey}-${index}`;
+    };
     
     window.renderRoomRows = function(rooms, surveyId) {
         if (!rooms || rooms.length === 0) {
@@ -1365,16 +1459,16 @@
             const entry = mapEntries[i];
             const aromaData = entry[1];
             const resolvedRoomId = aromaData.resolvedRoomId;
-            const aromaProductId = aromaData.aroma_product_id;
+            const aromaProductId = window.resolveAromaProductOptionId(aromaData);
             
             if (aromaProductId && window.hasAromaProductOption(aromaProductId)) {
                 const aromaSelect = $(`.aroma-select[data-room="${resolvedRoomId}"]`);
                 if (aromaSelect.length > 0) {
-                    aromaSelect.val(aromaProductId).trigger('change');
+                    window.applyAromaSelection(aromaSelect, aromaData);
                     console.log('FINAL Restored aroma for room ' + resolvedRoomId + ': ' + aromaProductId);
                 }
-            } else if (aromaProductId) {
-                console.warn('Skipped restoring invalid aroma product id:', aromaProductId);
+            } else if (aromaData.aroma_product_id || aromaData.aroma_variant || aromaData.aroma_display_name) {
+                console.warn('Skipped restoring unresolved aroma:', aromaData);
             }
         }
         if (typeof window.updateNextButtonState === 'function') {
@@ -1404,6 +1498,10 @@
                 window.rebuildAromaDropdowns(surveyId);
             }
         });
+
+        if ($('.custom-room-checkbox:checked').length > 0 && typeof window.rebuildAromaDropdownsForCustomRooms === 'function') {
+            window.rebuildAromaDropdownsForCustomRooms();
+        }
 
         if (window.persistentAromaMap && Object.keys(window.persistentAromaMap).length > 0) {
             console.log('Restoring values from persistentAromaMap:', window.persistentAromaMap);
@@ -1514,6 +1612,7 @@
             const checkbox = $(this);
             const roomId = checkbox.data('room');
             const masterRoomId = checkbox.data('master-room-id') || '';
+            const contractRoomId = checkbox.data('contract-room-id') || '';
             const roomRow = checkbox.closest('tr');
             const roomName = roomRow.find('td:eq(2) strong').text();
             const roomType = roomRow.find('td:eq(2) small').text();
@@ -1539,7 +1638,8 @@
                                         name="room_aroma[${surveyId}][${roomId}]" 
                                         data-survey="${surveyId}" 
                                         data-room="${roomId}"
-                                        data-master-room-id="${masterRoomId}">
+                                        data-master-room-id="${masterRoomId}"
+                                        data-contract-room-id="${contractRoomId}">
                                     ${optionsHtml}
                                 </select>
                             </div>
@@ -1548,10 +1648,17 @@
                 </div>
             `;
             aromaContainer.append(dropdownHtml);
-            const existingSelection = window.globalRoomSelections ? 
+            const existingSelection = window.findRenewalRoomSelection({
+                id: roomId,
+                master_room_id: masterRoomId,
+                contract_room_id: contractRoomId,
+                room_name: roomName
+            }) || (window.globalRoomSelections ?
                 window.globalRoomSelections.find(function(rs) { 
                     // 1. Match by Detail ID
                     if (rs.room_id == roomId) return true;
+                    // 1B. Match by Contract Room ID (renewal existing rooms)
+                    if (contractRoomId && rs.contract_room_id && String(rs.contract_room_id) === String(contractRoomId)) return true;
                     // 2. Match by MasterRoom ID (Critical for Renewal)
                     if (masterRoomId && (rs.room_id == masterRoomId || rs.master_room_id == masterRoomId)) return true;
                     // 3. Match by Name (Exact)
@@ -1572,15 +1679,14 @@
                         }
                     }
                     return false;
-                }) : null;
+                }) : null);
 
-            if (existingSelection && existingSelection.aroma_product_id && window.hasAromaProductOption(existingSelection.aroma_product_id)) {
+            if (existingSelection) {
                 const selectElement = aromaContainer.find(`.aroma-select[data-room="${roomId}"]`);
-                selectElement.attr('data-selected-value', existingSelection.aroma_product_id);
-                selectElement.data('selected-value', existingSelection.aroma_product_id); // Ensure jQuery data cache is updated
-                selectElement.val(existingSelection.aroma_product_id);
-            } else if (existingSelection && existingSelection.aroma_product_id) {
-                console.warn('Skipped invalid existing aroma product id:', existingSelection.aroma_product_id);
+                const restored = window.applyAromaSelection(selectElement, existingSelection);
+                if (!restored && existingSelection.aroma_product_id) {
+                    console.warn('Skipped invalid existing aroma product id:', existingSelection.aroma_product_id);
+                }
             }
         });
         window.populateAromaDropdowns();
@@ -1607,6 +1713,23 @@ function clearQuotationWizardData() {
     });
     
     console.log('✓ Cleared all quotation wizard data from localStorage');
+}
+
+function clearRenewalContractScopedWizardData() {
+    [
+        'quotation_step3_data',
+        'quotation_step4_data',
+        'quotation_room_selections',
+        'quotation_rental_configurations'
+    ].forEach(key => localStorage.removeItem(key));
+
+    globalRoomSelections = [];
+    window.globalRoomSelections = [];
+    selectedRooms = [];
+    rentalConfigurations = [];
+    window.persistentAromaMap = {};
+
+    console.log('Cleared renewal room/rental cache before loading contract data');
 }
 
 /**
@@ -2940,7 +3063,7 @@ $(document).ready(function() {
                         
                         // Store aroma mapping persistently (survives updateRoomSelections)
                         if (!window.persistentAromaMap) window.persistentAromaMap = {};
-                        if (room.aroma_product_id) {
+                        if (room.aroma_product_id || room.aroma_variant || room.aroma_display_name) {
                             window.persistentAromaMap[roomId] = {
                                 resolvedRoomId: actualId,
                                 master_room_id: room.master_room_id || null,
@@ -2989,12 +3112,17 @@ $(document).ready(function() {
                         : selectionsToRestore;
 
                     selectionsToIterate.forEach(function(room) {
-                        if (typeof room === 'object' && room.aroma_product_id) {
+                        if (typeof room === 'object' && (room.aroma_product_id || room.aroma_variant || room.aroma_display_name)) {
                             const resolvedRoomId = resolvedIdMap[room.room_id] || room.room_id;
                             let aromaSelect;
                             
                             if (room.survey_id === 'custom' || String(resolvedRoomId).startsWith('custom_')) {
                                 aromaSelect = $(`.custom-aroma-select[data-room-id="${resolvedRoomId}"]`);
+                                if (aromaSelect.length === 0 && room.contract_room_id) {
+                                    aromaSelect = $(`.custom-room-checkbox[data-contract-room-id="${room.contract_room_id}"]`).first();
+                                    const customRoomId = aromaSelect.length > 0 ? aromaSelect.val() : null;
+                                    aromaSelect = customRoomId ? $(`.custom-aroma-select[data-room-id="${customRoomId}"]`) : $();
+                                }
                             } else {
                                 // Use resolvedRoomId to find the dropdown
                                 aromaSelect = $(`.aroma-select[data-survey="${room.survey_id}"][data-room="${resolvedRoomId}"]`);
@@ -3006,8 +3134,12 @@ $(document).ready(function() {
                             }
                             
                             if (aromaSelect.length > 0) {
-                                aromaSelect.val(room.aroma_product_id).trigger('change');
-                                console.log(`Restored aroma for room ${room.room_id} (Resolved: ${resolvedRoomId}): ${room.aroma_product_id}`);
+                                const restored = window.applyAromaSelection(aromaSelect, room);
+                                if (restored) {
+                                    console.log(`Restored aroma for room ${room.room_id} (Resolved: ${resolvedRoomId})`);
+                                } else {
+                                    console.warn(`Aroma product could not be resolved for room ${room.room_id} (Resolved: ${resolvedRoomId})`);
+                                }
                             } else {
                                 console.warn(`Aroma select not found for room ${room.room_id} (Resolved: ${resolvedRoomId})`);
                             }
@@ -3251,19 +3383,21 @@ $(document).ready(function() {
             `;
             aromaContainer.append(aromaHtml);
 
-            const existingSelection = window.globalRoomSelections
+            const existingSelection = window.findRenewalRoomSelection(room)
+                || (window.globalRoomSelections
                 ? window.globalRoomSelections.find(rs => {
                     if (!rs || typeof rs !== 'object') return false;
                     return String(rs.room_id) === String(room.id)
+                        || (room.contract_room_id && rs.contract_room_id && String(rs.contract_room_id) === String(room.contract_room_id))
                         || (room.master_room_id && String(rs.master_room_id || rs.room_id) === String(room.master_room_id))
                         || (rs.room_name && room.room_name && rs.room_name.trim().toLowerCase() === room.room_name.trim().toLowerCase());
                 })
-                : null;
+                : null);
 
-            if (existingSelection && existingSelection.aroma_product_id && window.hasAromaProductOption(existingSelection.aroma_product_id)) {
-                aromaContainer.find(`.custom-aroma-select[data-room-id="${room.id}"]`).val(existingSelection.aroma_product_id);
-            } else if (room.aroma_product_id && window.hasAromaProductOption(room.aroma_product_id)) {
-                aromaContainer.find(`.custom-aroma-select[data-room-id="${room.id}"]`).val(room.aroma_product_id);
+            const selectElement = aromaContainer.find(`.custom-aroma-select[data-room-id="${room.id}"]`);
+            const restored = window.applyAromaSelection(selectElement, existingSelection || room);
+            if (!restored && existingSelection && existingSelection.aroma_product_id) {
+                console.warn('Skipped invalid existing custom aroma product id:', existingSelection.aroma_product_id);
             }
         });
     };
@@ -4439,8 +4573,8 @@ $(document).ready(function() {
         // --- RENEWAL FALLBACK ---
         if (!savedData && window.renewalContractData && window.renewalContractData.rentals) {
             console.log('Using Renewal Data fallback for Step 4');
-            const transformed = window.renewalContractData.rentals.map(rental => ({
-                uniqueId: `renewal-${rental.contract_rental_id || Date.now()}-${Math.random()}`,
+            const transformed = window.renewalContractData.rentals.map((rental, index) => ({
+                uniqueId: window.buildRenewalRentalUniqueId(rental, index),
                 surveyId: rental.survey_id || window.renewalContractData.survey_id || 'custom',
                 roomId: rental.survey_detail_id || rental.room_id,
                 masterRoomId: rental.master_room_id || rental.room_id || null,
@@ -4486,17 +4620,22 @@ $(document).ready(function() {
                 const roomType = config.roomType; // Get room type
                 
                 // Find the "Tambah Rental" button for this room
-                let addButton = $(`.add-rental-btn[data-survey-id="${surveyId}"][data-room-id="${roomId}"]`);
+                let addButton = $();
                 let actualRoomId = roomId;
 
-                // STRATEGY 1B: Match by Contract Room ID for renewal rows.
+                // STRATEGY 1: Match by Contract Room ID for renewal rows.
                 // This keeps each existing contract room tied to its original rental product.
-                if (addButton.length === 0 && contractRoomId) {
+                if (contractRoomId) {
                     addButton = $(`.add-rental-btn[data-survey-id="${surveyId}"][data-contract-room-id="${contractRoomId}"]`);
                     if (addButton.length > 0) {
                         console.log(`Step 4: ContractRoom ID match found! Room ${contractRoomId} -> actual id ${addButton.data('room-id')}`);
                         actualRoomId = addButton.data('room-id');
                     }
+                }
+
+                // STRATEGY 1B: Exact room id only after contract room id lookup.
+                if (addButton.length === 0) {
+                    addButton = $(`.add-rental-btn[data-survey-id="${surveyId}"][data-room-id="${roomId}"]`);
                 }
                 
                 // STRATEGY 2: Match by Master Room ID (Critical for Renewal)
@@ -5476,6 +5615,7 @@ $(document).ready(function() {
     function loadContractDataForRenewal(contractId) {
         console.log('Loading contract data for renewal:', contractId);
         window.currentLoadingContractId = contractId; // Track which contract is being loaded/restored
+        clearRenewalContractScopedWizardData();
         $.ajax({
             url: `/marketing/contract-renewals/${contractId}/for-renewal`,
             method: 'GET',
@@ -5661,9 +5801,9 @@ $(document).ready(function() {
                         console.log('Pre-filling Rental Configurations:', data.rentals.length);
                         
                         // Transform contract rentals to Step 4 format
-                        const step4Data = data.rentals.map(rental => {
+                        const step4Data = data.rentals.map((rental, index) => {
                             return {
-                                uniqueId: `renewal-${rental.contract_rental_id || Date.now()}-${Math.random()}`,
+                                uniqueId: window.buildRenewalRentalUniqueId(rental, index),
                                 surveyId: rental.survey_id || data.survey_id || 'custom',
                                 roomId: rental.survey_detail_id || rental.room_id,
                                 masterRoomId: rental.master_room_id || rental.room_id || null,
