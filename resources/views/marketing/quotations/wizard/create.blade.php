@@ -4079,12 +4079,33 @@ $(document).ready(function() {
     }
     
     function parseRentalCurrencyValue(value) {
-        const normalized = String(value || '')
+        const normalized = String(value || '').trim()
             .replace(/[^\d,.-]/g, '')
-            .replace(/\./g, '')
-            .replace(',', '.');
+            .replace(/(?!^)-/g, '');
 
-        return parseFloat(normalized) || 0;
+        if (!normalized) return 0;
+
+        const commaIndex = normalized.lastIndexOf(',');
+        const dotIndex = normalized.lastIndexOf('.');
+        let parsed = normalized;
+
+        if (commaIndex >= 0 && dotIndex >= 0) {
+            const decimalSeparator = commaIndex > dotIndex ? ',' : '.';
+            const thousandSeparator = decimalSeparator === ',' ? '.' : ',';
+            parsed = normalized
+                .replace(new RegExp('\\' + thousandSeparator, 'g'), '')
+                .replace(decimalSeparator, '.');
+        } else if (commaIndex >= 0) {
+            const parts = normalized.split(',');
+            const decimalLike = parts.length === 2 && parts[1].length <= 2;
+            parsed = decimalLike ? normalized.replace(',', '.') : normalized.replace(/,/g, '');
+        } else if (dotIndex >= 0) {
+            const parts = normalized.split('.');
+            const decimalLike = parts.length === 2 && parts[1].length <= 2;
+            parsed = decimalLike ? normalized : normalized.replace(/\./g, '');
+        }
+
+        return parseFloat(parsed) || 0;
     }
 
     async function fetchRentalProductForSummary(productId, surveyId, selectedText = '') {
