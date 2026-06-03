@@ -3317,7 +3317,7 @@ class JobController extends Controller
             $job->load('jobAdvice');
             $jobAdvice = $job->jobAdvice;
             if ($jobAdvice) {
-                $installTypes = ['install', 'ir', 'install_free', 'install free', 'if', 'service', 'csr', 'customer_service_report', 'customer service report', 'change_rental', 'change rental'];
+                $installTypes = ['install', 'ir', 'install_free', 'install free', 'if', 'service', 'service_first', 'csr', 'customer_service_report', 'customer service report', 'change_rental', 'change rental'];
                 $jobTypeLower = strtolower(trim($job->type));
                 if (in_array($jobTypeLower, $installTypes)) {
                     $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
@@ -3325,6 +3325,18 @@ class JobController extends Controller
                     $autoCreateUnitOnWallMethod = $reflection->getMethod('autoCreateUnitOnWall');
                     $autoCreateUnitOnWallMethod->setAccessible(true);
                     $autoCreateUnitOnWallMethod->invoke($jobScheduleController, $job, $jobAdvice);
+
+                    if (in_array($jobTypeLower, ['install', 'ir'], true)) {
+                        $generateUnitOnlyChecksMethod = $reflection->getMethod('generateUnitOnlyCheckSchedulesAfterInstall');
+                        $generateUnitOnlyChecksMethod->setAccessible(true);
+                        $generateUnitOnlyChecksMethod->invoke($jobScheduleController, $job, $jobAdvice);
+                    }
+                }
+
+                if ($job->period == 1 && in_array($jobTypeLower, ['service', 'service_first', 'csr', 'customer_service_report', 'customer service report'], true)) {
+                    $generateRemainingServicesMethod = $reflection->getMethod('generateAllRemainingServices');
+                    $generateRemainingServicesMethod->setAccessible(true);
+                    $generateRemainingServicesMethod->invoke($jobScheduleController, $job, $jobAdvice);
                 }
             }
         } catch (\Exception $e) {
@@ -4140,6 +4152,8 @@ class JobController extends Controller
                             $autoCreateUnitOnWallMethod->setAccessible(true);
                             $autoCreateRemoveJobMethod = $reflection->getMethod('autoCreateRemoveJob');
                             $autoCreateRemoveJobMethod->setAccessible(true);
+                            $generateUnitOnlyChecksMethod = $reflection->getMethod('generateUnitOnlyCheckSchedulesAfterInstall');
+                            $generateUnitOnlyChecksMethod->setAccessible(true);
                             
                             // [FIX BUG 1 - Mobile API] Run autoCreateUnitOnWall for ALL siblings
                             $schedulesToComplete = \App\Models\JobSchedule::where('job_number', $job->job_number)
@@ -4151,6 +4165,10 @@ class JobController extends Controller
                             foreach ($schedulesToComplete as $completedSchedule) {
                                 $unitCreated = $autoCreateUnitOnWallMethod->invoke($jobScheduleController, $completedSchedule, $jobAdvice);
                                 if ($unitCreated) $anyUnitCreated = true;
+
+                                if (in_array(strtolower(trim((string) $completedSchedule->type)), ['install', 'ir'], true)) {
+                                    $generateUnitOnlyChecksMethod->invoke($jobScheduleController, $completedSchedule, $jobAdvice);
+                                }
                             }
                             
                             // If unit on wall created and remove_date exists, create remove job for install free

@@ -7240,14 +7240,7 @@ class JobScheduleController extends Controller
             // Get service frequency info
             $serviceFrequency = $completedFirstService->service_frequency; // Usually times per month (e.g. 4)
             $servicePeriodType = $completedFirstService->service_period_type;
-            $completedFirstService->loadMissing('jobScheduleRooms');
-            $eligibleRoomIds = $completedFirstService->jobScheduleRooms
-                ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
-                ->pluck('room_id')
-                ->filter()
-                ->unique()
-                ->values()
-                ->all();
+            $eligibleRoomIds = $this->getFinalizedRoomIdsForSchedule($completedFirstService);
 
             if (empty($eligibleRoomIds)) {
                 \Log::warning("No completed rooms found for first service {$completedFirstService->job_number}. Skipping remaining service generation.");
@@ -7352,15 +7345,7 @@ class JobScheduleController extends Controller
         $createdChecks = [];
 
         try {
-            $completedInstallJob->loadMissing('jobScheduleRooms');
-            $completedRoomIds = $completedInstallJob->jobScheduleRooms
-                ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
-                ->pluck('room_id')
-                ->filter()
-                ->map(fn ($id) => (int) $id)
-                ->unique()
-                ->values()
-                ->all();
+            $completedRoomIds = $this->getFinalizedRoomIdsForSchedule($completedInstallJob);
 
             if (empty($completedRoomIds)) {
                 return $createdChecks;
@@ -7488,6 +7473,42 @@ class JobScheduleController extends Controller
         }
 
         return $createdChecks;
+    }
+
+    private function getFinalizedRoomIdsForSchedule(JobSchedule $jobSchedule): array
+    {
+        $jobSchedule->loadMissing('jobScheduleRooms');
+
+        $completedRoomIds = $jobSchedule->jobScheduleRooms
+            ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
+            ->pluck('room_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (!empty($completedRoomIds)) {
+            return $completedRoomIds;
+        }
+
+        if (!in_array(strtolower((string) $jobSchedule->status), ['completed', 'done_job', 'selesai'], true)) {
+            return [];
+        }
+
+        $linkedRoomIds = $jobSchedule->jobScheduleRooms
+            ->pluck('room_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (!empty($linkedRoomIds)) {
+            return $linkedRoomIds;
+        }
+
+        return $jobSchedule->room_id ? [(int) $jobSchedule->room_id] : [];
     }
 
     private function jobAdviceRoomShouldGenerateUnitOnlyCheck($jaRoom): bool

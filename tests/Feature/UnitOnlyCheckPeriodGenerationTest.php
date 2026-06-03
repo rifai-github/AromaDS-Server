@@ -263,6 +263,56 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
         $this->assertDatabaseCount('job_schedule_room_rentals', 12);
     }
 
+    public function test_done_install_without_completed_room_status_still_generates_unit_only_checks(): void
+    {
+        $this->seedUnitOnlyInstallWithExistingFirstCheck();
+
+        DB::table('job_schedule_room_rentals')->where('job_schedule_room_id', 20)->delete();
+        DB::table('job_schedule_rooms')->where('job_schedule_id', 20)->delete();
+        DB::table('job_schedules')->where('id', 20)->delete();
+        DB::table('job_schedule_rooms')->where('job_schedule_id', 10)->update([
+            'status' => 'pending',
+        ]);
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'generateUnitOnlyCheckSchedulesAfterInstall');
+        $method->setAccessible(true);
+        $created = $method->invoke(
+            new JobScheduleController(),
+            JobSchedule::findOrFail(10),
+            JobAdvice::findOrFail(1)
+        );
+
+        $this->assertCount(12, $created);
+        $this->assertSame(range(1, 12), JobSchedule::where('job_advice_id', 1)
+            ->whereIn('type', ['service_first', 'service_routine'])
+            ->orderBy('period')
+            ->pluck('period')
+            ->map(fn ($period) => (int) $period)
+            ->values()
+            ->all());
+    }
+
+    public function test_done_refill_first_service_without_completed_room_status_still_generates_next_services(): void
+    {
+        $this->seedRefillOnlyFirstService();
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'generateAllRemainingServices');
+        $method->setAccessible(true);
+        $method->invoke(
+            new JobScheduleController(),
+            JobSchedule::findOrFail(30),
+            JobAdvice::findOrFail(2)
+        );
+
+        $this->assertSame(range(1, 12), JobSchedule::where('job_advice_id', 2)
+            ->whereIn('type', ['service', 'service_first', 'service_routine'])
+            ->orderBy('period')
+            ->pluck('period')
+            ->map(fn ($period) => (int) $period)
+            ->values()
+            ->all());
+    }
+
     private function seedUnitOnlyInstallWithExistingFirstCheck(): void
     {
         DB::table('contracts')->insert([
@@ -390,6 +440,109 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
         DB::table('job_schedule_room_rentals')->insert([
             'job_schedule_room_id' => 20,
             'job_advice_room_id' => 1,
+            'is_primary' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function seedRefillOnlyFirstService(): void
+    {
+        DB::table('contracts')->insert([
+            'id' => 2,
+            'contract_number' => 'BDG-CA/26-06/0001',
+            'start_date' => '2026-06-01',
+            'end_date' => '2027-05-31',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('buildings')->insert([
+            'id' => 2,
+            'building_name' => 'Gedung Refill',
+            'name' => 'Gedung Refill',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rooms')->insert([
+            'id' => 2,
+            'building_id' => 2,
+            'room_name' => 'Lobby Ground',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contract_rooms')->insert(['id' => 2, 'contract_id' => 2, 'room_id' => 2, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('rental_service_frequencies')->insert([
+            'id' => 2,
+            'name' => 'Monthly',
+            'frequency_times_per_month' => 1,
+            'frequency_months' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rentals')->insert([
+            'id' => 2,
+            'rental_name' => 'Refill Only',
+            'rental_type' => 'refill_only',
+            'service_frequency_id' => 2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_advices')->insert([
+            'id' => 2,
+            'job_advice_number' => 'BDG-JA/26-06/0001',
+            'type' => 'install',
+            'company_name' => 'Refill Customer',
+            'contract_id' => 2,
+            'expected_date' => '2026-06-01',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_advice_rooms')->insert([
+            'id' => 2,
+            'job_advice_id' => 2,
+            'contract_room_id' => 2,
+            'rental_product_id' => 2,
+            'room_name' => 'Lobby Ground',
+            'rental_name' => 'Refill Only',
+            'service_job_schedule_id' => 30,
+            'rental_has_service' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedules')->insert([
+            'id' => 30,
+            'job_number' => 'BDG-CSR/26-06/0006',
+            'type' => 'service_first',
+            'status' => 'done_job',
+            'job_advice_id' => 2,
+            'building_id' => 2,
+            'building_name' => 'Gedung Refill',
+            'room_id' => 2,
+            'room_name' => 'Lobby Ground',
+            'company_name' => 'Refill Customer',
+            'contract_number' => 'BDG-CA/26-06/0001',
+            'schedule_date' => '2026-06-01',
+            'expected_date' => '2026-06-01',
+            'ba_date' => '2026-06-02',
+            'period' => 1,
+            'service_frequency' => 1,
+            'service_period_type' => 'Monthly',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 30,
+            'job_schedule_id' => 30,
+            'job_advice_room_id' => 2,
+            'room_name' => 'Lobby Ground',
+            'room_id' => 2,
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_room_rentals')->insert([
+            'job_schedule_room_id' => 30,
+            'job_advice_room_id' => 2,
             'is_primary' => true,
             'created_at' => now(),
             'updated_at' => now(),
