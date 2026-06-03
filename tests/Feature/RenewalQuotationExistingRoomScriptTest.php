@@ -79,6 +79,7 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('function applyRentalProductPrice', $view);
         $this->assertStringContainsString('function fetchAndApplyRentalProductPrice', $view);
         $this->assertStringContainsString('if (productSelect.val() && !priceInput.val())', $view);
+        $this->assertStringContainsString('product_id: productId', $view);
         $this->assertStringContainsString('room.contract_room_id && selection.contract_room_id', $view);
         $this->assertStringContainsString('clearRenewalContractScopedWizardData', $view);
         $this->assertStringContainsString('window.buildRenewalRentalUniqueId', $view);
@@ -121,6 +122,8 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('allowsRenewalWithoutSurvey', $controller);
         $this->assertStringContainsString('resolveRenewalCustomerContext', $controller);
         $this->assertStringContainsString("\$roomData['survey_detail_id'] ?? \$roomData['room_id']", $controller);
+        $this->assertStringContainsString("\$productId = \$request->get('product_id')", $controller);
+        $this->assertStringContainsString("\$productsQuery->where('id', \$productId)", $controller);
         $this->assertStringContainsString('if ($masterRoomId) {', $controller);
         $this->assertStringContainsString('$masterRoom = \App\Models\MasterRoom::find($masterRoomId);', $controller);
         $this->assertStringContainsString('$masterRoom->room_name ?: $roomName', $controller);

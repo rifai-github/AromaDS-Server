@@ -5139,6 +5139,7 @@ $(document).ready(function() {
             method: 'GET',
             data: {
                 q: selectedText,
+                product_id: productId,
                 survey_id: surveyId,
                 branch_id: null
             },

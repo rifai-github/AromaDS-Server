@@ -238,6 +238,7 @@ class QuotationWizardController extends Controller
     {
         try {
             $query = $request->get('q', '');
+            $productId = $request->get('product_id');
             $branchId = $request->get('branch_id'); // Get branch_id from request
             $surveyId = $request->get('survey_id'); // Get survey_id from request
             
@@ -268,12 +269,17 @@ class QuotationWizardController extends Controller
                 }
             }
 
-            $productsQuery = MasterRental::active()
-                ->where(function($q) use ($query) {
+            $productsQuery = MasterRental::active();
+
+            if ($productId) {
+                $productsQuery->where('id', $productId);
+            } else {
+                $productsQuery->where(function($q) use ($query) {
                     $q->where('rental_name', 'like', "%{$query}%")
                       ->orWhere('rental_code', 'like', "%{$query}%")
                       ->orWhere('alias', 'like', "%{$query}%");
                 });
+            }
 
             // If Corporate Customer, filter by corporate rentals ONLY
             if ($isCorporateCustomer) {
