@@ -4,6 +4,17 @@
 @section('breadcrumb', 'Home / Marketing / Job Advice')
 
 @section('content')
+@php
+    $formatJobAdviceDate = function ($date) {
+        if (!$date) {
+            return 'N/A';
+        }
+
+        return \Carbon\Carbon::parse($date)
+            ->timezone('Asia/Jakarta')
+            ->format('d/M/Y H:i');
+    };
+@endphp
 <!-- Flatpickr CSS -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -1095,36 +1106,13 @@
                             <td>{{ $jobAdvice->company_name ?? ($jobAdvice->contract->customer->name ?? 'N/A') }}</td>
                             <td>{{ $jobAdvice->requestedBy->name ?? ($jobAdvice->submittedBy->name ?? 'N/A') }}</td>
                             <td>
-                                @if($jobAdvice->created_at)
-                                    @php
-                                        $dateWIB = \Carbon\Carbon::parse($jobAdvice->created_at)->timezone('Asia/Jakarta');
-                                        echo $dateWIB->format('d/m/Y H:i');
-                                    @endphp
-                                @else
-                                    N/A
-                                @endif
+                                {{ $formatJobAdviceDate($jobAdvice->created_at) }}
                             </td>
                             <td>
-                                @if($jobAdvice->expected_date)
-                                    @php
-                                        $dateWIB = \Carbon\Carbon::parse($jobAdvice->expected_date)->timezone('Asia/Jakarta');
-                                        $month = str_pad($dateWIB->month, 3, '0', STR_PAD_LEFT);
-                                        echo $dateWIB->format('d') . '/' . $month . '/' . $dateWIB->format('Y H:i');
-                                    @endphp
-                                @else
-                                    N/A
-                                @endif
+                                {{ $formatJobAdviceDate($jobAdvice->expected_date) }}
                             </td>
                             <td>
-                                @if($jobAdvice->remove_date)
-                                    @php
-                                        $dateWIB = \Carbon\Carbon::parse($jobAdvice->remove_date)->timezone('Asia/Jakarta');
-                                        $month = str_pad($dateWIB->month, 3, '0', STR_PAD_LEFT);
-                                        echo $dateWIB->format('d') . '/' . $month . '/' . $dateWIB->format('Y H:i');
-                                    @endphp
-                                @else
-                                    N/A
-                                @endif
+                                {{ $formatJobAdviceDate($jobAdvice->remove_date) }}
                             </td>
                             <td>
                                 @php
@@ -1144,18 +1132,7 @@
                                 </span>
                             </td>
                             <td>
-                                @if($jobAdvice->date_approval)
-                                    @php
-                                        $dateWIB = \Carbon\Carbon::parse($jobAdvice->date_approval)->timezone('Asia/Jakarta');
-                                        $day = $dateWIB->format('d');
-                                        $month = str_pad($dateWIB->month, 3, '0', STR_PAD_LEFT); // 3 digits: 010 for October
-                                        $year = $dateWIB->format('Y');
-                                        $time = $dateWIB->format('H:i');
-                                        echo "{$day}/{$month}/{$year} {$time}";
-                                    @endphp
-                                @else
-                                    N/A
-                                @endif
+                                {{ $formatJobAdviceDate($jobAdvice->date_approval) }}
                             </td>
                             <td>{{ $jobAdvice->approvedBy->name ?? 'N/A' }}</td>
                             <td>
@@ -1170,15 +1147,7 @@
                             </td>
                             <td>{{ Str::limit($jobAdvice->notes ?? '-', 50) }}</td>
                             <td>
-                                @if($jobAdvice->updated_at)
-                                    @php
-                                        $dateWIB = \Carbon\Carbon::parse($jobAdvice->updated_at)->timezone('Asia/Jakarta');
-                                        $month = str_pad($dateWIB->month, 3, '0', STR_PAD_LEFT);
-                                        echo $dateWIB->format('d') . '/' . $month . '/' . $dateWIB->format('Y H:i');
-                                    @endphp
-                                @else
-                                    N/A
-                                @endif
+                                {{ $formatJobAdviceDate($jobAdvice->updated_at) }}
                             </td>
                             <td>{{ $jobAdvice->updater->name ?? 'N/A' }}</td>
                         </tr>
@@ -1486,7 +1455,7 @@
         return usersPromise;
     };
 
-// Function to format date with time (3-digit month as requested: 010 for October)
+// Function to format date with time as dd/Mon/yyyy HH:mm.
 function formatDateWithThreeDigitMonth(dateInput) {
     if (!dateInput) {
         return 'N/A';
@@ -1502,22 +1471,19 @@ function formatDateWithThreeDigitMonth(dateInput) {
     
     // Get date components in WIB timezone (Asia/Jakarta = UTC+7)
     // Use toLocaleString to get WIB time, then parse components
-    const options = {
+    const formatter = new Intl.DateTimeFormat('en-GB', {
         timeZone: 'Asia/Jakarta',
         year: 'numeric',
-        month: '2-digit',
+        month: 'short',
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
         hour12: false
-    };
-    
-    const formatter = new Intl.DateTimeFormat('en-GB', options);
+    });
     const parts = formatter.formatToParts(date);
     
     const day = parts.find(p => p.type === 'day').value;
-    const monthNum = parts.find(p => p.type === 'month').value;
-    const month = monthNum.padStart(3, '0'); // 3 digits: 010 for October
+    const month = parts.find(p => p.type === 'month').value;
     const year = parts.find(p => p.type === 'year').value;
     const hour = parts.find(p => p.type === 'hour').value;
     const minute = parts.find(p => p.type === 'minute').value;
@@ -3550,6 +3516,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const startPicker = flatpickr("#start_date", flatpickrConfig);
     const endPicker = flatpickr("#end_date", flatpickrConfig);
+
+    document.querySelectorAll('.column-filter-date').forEach((input) => {
+        input.setAttribute('placeholder', 'dd/mmm/yyyy');
+    });
 
     // Auto-set dates if not present in URL
     const urlParams = new URLSearchParams(window.location.search);
