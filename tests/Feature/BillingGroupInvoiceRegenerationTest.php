@@ -945,6 +945,53 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
         $this->assertSame([], $detailMethod->invoke($service, $serviceJob->fresh('jobAdvice.rooms.rentalProduct')));
     }
 
+    public function test_rental_period_invoice_includes_refill_only_csr_when_same_room_has_unit_only_ir(): void
+    {
+        [$contract, $installJob, $serviceJob] = $this->makeContractWithUnitOnlyAndRefillOnlyInSameRoom();
+
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+            public function generate(
+                string $documentType,
+                ?string $branchCode = null,
+                ?int $buildingId = null,
+                ?int $contractId = null,
+                ?int $quotationId = null,
+                ?int $surveyId = null,
+                ?int $warehouseId = null,
+                ?int $branchId = null,
+                \DateTimeInterface|string|null $documentDate = null
+            ): string {
+                return 'JKT-INV/26-06/0001';
+            }
+        });
+
+        $triggerMethod = new \ReflectionMethod($service, 'getCompletedInvoiceTriggerJobsInPeriod');
+        $triggerMethod->setAccessible(true);
+        $detailMethod = new \ReflectionMethod($service, 'getRentalDetailsForJob');
+        $detailMethod->setAccessible(true);
+
+        $triggerJobs = $triggerMethod->invoke(
+            $service,
+            $contract->fresh(['contractRentals.masterRental', 'contractRooms.room']),
+            Carbon::parse('2026-06-01'),
+            Carbon::parse('2026-06-30')
+        );
+
+        $this->assertSame(
+            ['JKT-IR/26-06/0002', 'JKT-CSR/26-06/0004'],
+            $triggerJobs->pluck('job_number')->values()->all()
+        );
+
+        $installDetails = $detailMethod->invoke($service, $installJob->fresh('jobAdvice.rooms.rentalProduct'));
+        $serviceDetails = $detailMethod->invoke($service, $serviceJob->fresh('jobAdvice.rooms.rentalProduct'));
+
+        $this->assertSame('ADS XL Unit Only', $installDetails[0]['rental_name']);
+        $this->assertSame('JKT-IR/26-06/0002', $installJob->job_number);
+        $this->assertSame('Refill Only', $serviceDetails[0]['rental_name']);
+        $this->assertSame(500000.0, (float) $serviceDetails[0]['unit_price']);
+        $this->assertSame('Ruang Delima', $serviceDetails[0]['room_name']);
+    }
+
     private function makeContractWithRentalFlow(
         string $rentalType,
         string $rentalName,
@@ -1027,6 +1074,110 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'is_trial' => false,
             'created_at' => now(),
             'updated_at' => now(),
+        ]);
+
+        return [$contract, $installJob, $serviceJob];
+    }
+
+    private function makeContractWithUnitOnlyAndRefillOnlyInSameRoom(): array
+    {
+        $customer = Customer::create(['name' => 'Test 260218 PT']);
+        $contract = Contract::create([
+            'contract_number' => 'JKT-CA/26-06/0004',
+            'customer_id' => $customer->id,
+            'payment_terms' => 30,
+        ]);
+
+        DB::table('buildings')->insert([
+            'id' => 199,
+            'building_name' => 'Gedung Test260218',
+            'name' => 'Gedung Test260218',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rooms')->insert([
+            'id' => 1990,
+            'building_id' => 199,
+            'room_name' => 'Ruang Delima',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contract_rooms')->insert([
+            'id' => 1991,
+            'contract_id' => $contract->id,
+            'room_id' => 1990,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rentals')->insert([
+            ['id' => 1992, 'rental_name' => 'ADS XL Unit Only', 'rental_type' => 'unit_only', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 1993, 'rental_name' => 'Refill Only', 'rental_type' => 'refill_only', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rentals')->insert([
+            [
+                'contract_id' => $contract->id,
+                'master_rental_id' => 1992,
+                'room_id' => 1990,
+                'quantity' => 1,
+                'unit_price' => 1000000,
+                'total_price' => 1000000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'contract_id' => $contract->id,
+                'master_rental_id' => 1993,
+                'room_id' => 1990,
+                'quantity' => 1,
+                'unit_price' => 500000,
+                'total_price' => 500000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $jobAdviceId = DB::table('job_advices')->insertGetId([
+            'contract_id' => $contract->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $installJob = JobSchedule::create([
+            'job_number' => 'JKT-IR/26-06/0002',
+            'type' => 'install',
+            'status' => 'done_job',
+            'job_advice_id' => $jobAdviceId,
+            'schedule_date' => '2026-06-04',
+            'ba_date' => '2026-06-04',
+        ]);
+        $serviceJob = JobSchedule::create([
+            'job_number' => 'JKT-CSR/26-06/0004',
+            'type' => 'service_first',
+            'status' => 'done_job',
+            'job_advice_id' => $jobAdviceId,
+            'schedule_date' => '2026-06-04',
+            'ba_date' => '2026-06-04',
+        ]);
+        DB::table('job_advice_rooms')->insert([
+            [
+                'job_advice_id' => $jobAdviceId,
+                'contract_room_id' => 1991,
+                'rental_product_id' => 1992,
+                'install_job_schedule_id' => $installJob->id,
+                'service_job_schedule_id' => null,
+                'is_trial' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'job_advice_id' => $jobAdviceId,
+                'contract_room_id' => 1991,
+                'rental_product_id' => 1993,
+                'install_job_schedule_id' => null,
+                'service_job_schedule_id' => $serviceJob->id,
+                'is_trial' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
         return [$contract, $installJob, $serviceJob];

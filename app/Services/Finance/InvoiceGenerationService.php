@@ -532,6 +532,63 @@ class InvoiceGenerationService
         $contract = $jobSchedule->jobAdvice->contract ?? null;
         if (!$contract) return [];
 
+        $matchedJobAdviceRooms = $this->getMatchedJobAdviceRoomsForJob($jobSchedule);
+        if ($matchedJobAdviceRooms->isNotEmpty()) {
+            foreach ($matchedJobAdviceRooms as $jobAdviceRoom) {
+                if ($this->isJobAdviceRoomNonBillableForJob($jobSchedule, $jobAdviceRoom)) {
+                    Log::debug("Skipping non-billable suspended/cancelled JA room for invoice rental detail", [
+                        'job_no' => $jobSchedule->job_number,
+                        'job_advice_room_id' => $jobAdviceRoom->id,
+                        'contract_room_id' => $jobAdviceRoom->contract_room_id,
+                    ]);
+                    continue;
+                }
+
+                $masterRental = $jobAdviceRoom->rentalProduct ?? $jobAdviceRoom->contractRoom?->rental_product;
+                if (!$masterRental) {
+                    continue;
+                }
+
+                if (!$this->jobTypeCanInvoiceRentalType(
+                    $this->normalizeJobType($jobSchedule->type),
+                    $this->normalizeRentalType($masterRental),
+                    $contract
+                )) {
+                    Log::debug("Skipping JA room rental detail because job type is not the invoice trigger for this rental type", [
+                        'job_no' => $jobSchedule->job_number,
+                        'job_type' => $jobSchedule->type,
+                        'job_advice_room_id' => $jobAdviceRoom->id,
+                        'rental' => $masterRental->rental_name ?? null,
+                        'rental_type' => $masterRental->rental_type ?? null,
+                    ]);
+                    continue;
+                }
+
+                $roomId = $jobAdviceRoom->contractRoom?->room_id
+                    ?? $jobAdviceRoom->quotationRoom?->room_id
+                    ?? null;
+
+                $contractRental = $this->findContractRentalForRoomAndRental($contract, $masterRental->id, $roomId);
+                if (!$contractRental) {
+                    continue;
+                }
+
+                $rentalDetails[] = [
+                    'master_rental_id' => $masterRental->id,
+                    'rental_name' => $masterRental->rental_name ?? $jobAdviceRoom->rental_name ?? 'Service',
+                    'room_name' => $jobAdviceRoom->contractRoom?->room?->room_name
+                        ?? $jobAdviceRoom->quotationRoom?->room?->room_name
+                        ?? $jobAdviceRoom->room_name
+                        ?? '',
+                    'quantity' => $contractRental->quantity ?? 1,
+                    'unit_price' => $contractRental->unit_price ?? 0,
+                    'total_price' => $contractRental->total_price ?? (($contractRental->quantity ?? 1) * ($contractRental->unit_price ?? 0)),
+                ];
+            }
+
+            return $rentalDetails;
+        }
+
         // Determine which rooms to bill for this job
         // If job has specific room, only use that. Otherwise use all rooms in contract.
         $contractRooms = $jobSchedule->room_id 
@@ -569,12 +626,7 @@ class InvoiceGenerationService
                 }
 
                 // Get pricing from ContractRental (match by rental and room, or null room)
-                $contractRental = $contract->contractRentals()
-                    ->where('master_rental_id', $masterRental->id)
-                    ->where(function($q) use ($contractRoom) {
-                        $q->where('room_id', $contractRoom->room_id)->orWhereNull('room_id');
-                    })
-                    ->first();
+                $contractRental = $this->findContractRentalForRoomAndRental($contract, $masterRental->id, $contractRoom->room_id);
 
                 if ($contractRental) {
                     $rentalDetails[] = [
@@ -590,6 +642,73 @@ class InvoiceGenerationService
         }
 
         return $rentalDetails;
+    }
+
+    private function getMatchedJobAdviceRoomsForJob(JobSchedule $jobSchedule): \Illuminate\Support\Collection
+    {
+        $jobAdviceRooms = $jobSchedule->jobAdvice?->rooms ?? collect();
+        $jobScheduleId = (int) $jobSchedule->id;
+
+        return $jobAdviceRooms
+            ->filter(function ($jobAdviceRoom) use ($jobScheduleId) {
+                return in_array($jobScheduleId, [
+                    (int) $jobAdviceRoom->install_job_schedule_id,
+                    (int) $jobAdviceRoom->service_job_schedule_id,
+                    (int) $jobAdviceRoom->remove_job_schedule_id,
+                ], true);
+            })
+            ->values();
+    }
+
+    private function findContractRentalForRoomAndRental(Contract $contract, int $masterRentalId, ?int $roomId)
+    {
+        return $contract->contractRentals()
+            ->where('master_rental_id', $masterRentalId)
+            ->where(function ($query) use ($roomId) {
+                if ($roomId) {
+                    $query->where('room_id', $roomId);
+                }
+
+                $query->orWhereNull('room_id');
+            })
+            ->orderByRaw($roomId ? 'CASE WHEN room_id = ? THEN 0 ELSE 1 END' : 'CASE WHEN room_id IS NULL THEN 0 ELSE 1 END', $roomId ? [$roomId] : [])
+            ->first();
+    }
+
+    private function isJobAdviceRoomNonBillableForJob(JobSchedule $jobSchedule, $jobAdviceRoom): bool
+    {
+        if (in_array(strtolower((string) $jobAdviceRoom->status), self::NON_BILLABLE_ROOM_STATUSES, true)) {
+            return true;
+        }
+
+        $roomQuery = JobScheduleRoom::query()
+            ->where('job_schedule_id', $jobSchedule->id)
+            ->where(function ($query) use ($jobAdviceRoom) {
+                $query->orWhere('job_advice_room_id', $jobAdviceRoom->id);
+
+                $roomId = $jobAdviceRoom->contractRoom?->room_id ?? $jobAdviceRoom->quotationRoom?->room_id ?? null;
+                if ($roomId) {
+                    $query->orWhere('room_id', $roomId);
+                }
+
+                $roomName = $jobAdviceRoom->contractRoom?->room?->room_name
+                    ?? $jobAdviceRoom->quotationRoom?->room?->room_name
+                    ?? $jobAdviceRoom->room_name
+                    ?? null;
+                if ($roomName) {
+                    $query->orWhere('room_name', $roomName);
+                }
+            });
+
+        return $roomQuery
+            ->get()
+            ->contains(function (JobScheduleRoom $room) {
+                $status = strtolower((string) $room->status);
+                $notes = strtolower((string) $room->notes);
+
+                return in_array($status, self::NON_BILLABLE_ROOM_STATUSES, true)
+                    || str_contains($notes, '[suspend]');
+            });
     }
 
     private function isContractRoomNonBillableForJob(JobSchedule $jobSchedule, $contractRoom): bool
