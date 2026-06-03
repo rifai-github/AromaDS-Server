@@ -105,8 +105,11 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         Schema::create('inventory_requests', function (Blueprint $table) {
             $table->id();
             $table->string('request_number')->nullable();
+            $table->foreignId('warehouse_id')->nullable();
+            $table->foreignId('branch_id')->nullable();
             $table->string('status')->nullable();
             $table->timestamp('completed_at')->nullable();
+            $table->foreignId('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -215,6 +218,22 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('audit_logs', function (Blueprint $table) {
+            $table->id();
+            $table->string('model_type')->nullable();
+            $table->unsignedBigInteger('model_id')->nullable();
+            $table->string('action')->nullable();
+            $table->json('old_values')->nullable();
+            $table->json('new_values')->nullable();
+            $table->json('changed_fields')->nullable();
+            $table->foreignId('user_id')->nullable();
+            $table->string('ip_address')->nullable();
+            $table->text('user_agent')->nullable();
+            $table->string('page_name')->nullable();
+            $table->string('module_name')->nullable();
+            $table->timestamps();
+        });
+
         DB::table('users')->insert([
             'id' => 1,
             'name' => 'Warehouse Admin',
@@ -266,6 +285,7 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
     protected function tearDown(): void
     {
         foreach ([
+            'audit_logs',
             'inventory_movements',
             'warehouse_products',
             'unit_on_walls',
@@ -351,6 +371,65 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
             'warehouse_id' => 6,
             'location_id' => 6,
             'status' => 'ready',
+        ]);
+    }
+
+    public function test_finalize_inventory_request_receiving_uses_requested_warehouse_not_new_stock_warehouse(): void
+    {
+        $this->seedJakartaConditionWarehouses();
+        $receiving = $this->seedReceivingWithSerial(status: 'pending', referenceNo: 'JKT-IRQ/26-06/0002');
+
+        DB::table('inventory_requests')->insert([
+            'id' => 70,
+            'request_number' => 'JKT-IRQ/26-06/0002',
+            'warehouse_id' => 5,
+            'branch_id' => 1,
+            'status' => 'shipped',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_request_items')->insert([
+            'id' => 71,
+            'inventory_request_id' => 70,
+            'master_product_id' => 100,
+            'quantity' => 1,
+            'issued_qty' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        app(InventoryReceivingController::class)->finalize($receiving);
+
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 5,
+            'master_product_id' => 100,
+            'quantity' => 1,
+        ]);
+        $this->assertDatabaseMissing('warehouse_products', [
+            'warehouse_id' => 6,
+            'master_product_id' => 100,
+            'quantity' => 1,
+        ]);
+        $this->assertDatabaseHas('serial_numbers', [
+            'id' => 200,
+            'warehouse_id' => 5,
+            'location_id' => 5,
+            'status' => 'ready',
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'warehouse_id' => 5,
+            'master_product_id' => 100,
+            'reference_no' => 'BDG-IRC/26-05/0015',
+        ]);
+        $this->assertDatabaseHas('inventory_requests', [
+            'id' => 70,
+            'status' => 'completed',
+        ]);
+        $this->assertDatabaseHas('inventory_request_items', [
+            'id' => 71,
+            'received_qty' => 1,
+            'returned_qty' => 0,
         ]);
     }
 

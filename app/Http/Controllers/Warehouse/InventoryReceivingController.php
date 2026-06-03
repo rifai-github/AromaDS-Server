@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Warehouse;
 use App\Http\Controllers\Controller;
 use App\Http\Traits\AccessControlFilterTrait;
 use App\Models\InventoryMovement;
+use App\Models\InventoryRequest;
 use App\Models\InventoryReceiving;
 use App\Models\Product;
 use App\Models\User;
@@ -37,6 +38,23 @@ class InventoryReceivingController extends Controller
         }
 
         return false;
+    }
+
+    private function resolveInventoryRequestWarehouse(InventoryReceiving $inventoryReceiving): ?Warehouse
+    {
+        if (! $inventoryReceiving->reference_no) {
+            return null;
+        }
+
+        $inventoryRequest = InventoryRequest::with('warehouse')
+            ->where('request_number', $inventoryReceiving->reference_no)
+            ->first();
+
+        $warehouse = $inventoryRequest?->warehouse;
+
+        return $warehouse && $warehouse->is_active
+            ? $warehouse
+            : null;
     }
 
     private function syncReceivedQuantitiesForProduct(InventoryReceiving $inventoryReceiving, int $productId): void
@@ -72,6 +90,11 @@ class InventoryReceivingController extends Controller
             if ($warehouse) {
                 return $placementService->resolveForReceiving($inventoryReceiving, $warehouse);
             }
+        }
+
+        $requestWarehouse = $this->resolveInventoryRequestWarehouse($inventoryReceiving);
+        if ($requestWarehouse) {
+            return $requestWarehouse;
         }
 
         $serialWarehouseId = \App\Models\SerialNumber::where('inventory_receiving_id', $inventoryReceiving->id)
@@ -1099,10 +1122,8 @@ class InventoryReceivingController extends Controller
 
             $serialNumber = strtoupper(trim($request->serial_number));
 
-            // Get warehouse from receiving branch
-            $warehouse = \App\Models\Warehouse::where('branch_id', $inventoryReceiving->branch_id)
-                ->where('is_active', true)
-                ->first();
+            $inventoryReceiving->loadMissing(['issuing']);
+            $warehouse = $this->resolveReceivingTargetWarehouse($inventoryReceiving);
 
             if (! $warehouse) {
                 DB::rollBack();
