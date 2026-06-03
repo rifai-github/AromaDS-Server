@@ -2719,6 +2719,31 @@ $(document).ready(function() {
         window.isRestoringData = true; // Set guard flag
         
         let selectionsToRestore = null;
+
+        function sanitizeRenewalRoomName(value) {
+            return String(value || '')
+                .replace(/\s*Aroma\s*Lama\s*:.*$/i, '')
+                .trim();
+        }
+
+        function normalizeRenewalRoomName(value) {
+            return sanitizeRenewalRoomName(value).toLowerCase();
+        }
+
+        function getRoomNameFromSelectionRow(row) {
+            return sanitizeRenewalRoomName(
+                row.find('td:eq(2) > strong').first().text()
+                    || row.find('td:eq(2) strong').first().text()
+                    || ''
+            );
+        }
+
+        function getRoomTypeFromSelectionRow(row) {
+            return (row.find('td:eq(2) > small.text-muted').first().text()
+                || row.find('td:eq(2) > small').first().text()
+                || ''
+            ).trim();
+        }
         
         // Strategy 1: Global variable
         if (typeof globalRoomSelections !== 'undefined' && globalRoomSelections && globalRoomSelections.length > 0) {
@@ -2780,13 +2805,13 @@ $(document).ready(function() {
                 // Debug logs to see what's available in the DOM
                 console.log('Available master-room-ids in DOM:');
                 $('.room-checkbox').each(function() {
-                    console.log(`- Value: ${$(this).val()}, MasterID: ${$(this).data('master-room-id')}, Name: ${$(this).closest('tr').find('td:eq(2) strong').text().trim()}`);
+                    console.log(`- Value: ${$(this).val()}, MasterID: ${$(this).data('master-room-id')}, Name: ${getRoomNameFromSelectionRow($(this).closest('tr'))}`);
                 });
 
                 selectionsToRestore.forEach(function(room) {
                     const roomId = room.room_id || room; // Handle both object and simple ID
                     const masterRoomId = typeof room === 'object' ? room.master_room_id : null;
-                    const roomName = room.room_name || (typeof room === 'object' ? room.room_name : null);
+                    const roomName = sanitizeRenewalRoomName(room.room_name || (typeof room === 'object' ? room.room_name : null));
                     const roomType = room.room_type || (typeof room === 'object' ? room.room_type : null);
 
                     // Support both standard and custom rooms
@@ -2807,7 +2832,7 @@ $(document).ready(function() {
                          // First Pass: Exact Match
                          $('.room-checkbox').each(function() {
                              const row = $(this).closest('tr');
-                             const nameInRow = row.find('td:eq(2) strong').text().trim();
+                             const nameInRow = getRoomNameFromSelectionRow(row);
                              
                              if (nameInRow.toLowerCase() === roomName.trim().toLowerCase()) {
                                  console.log(`Found exact name match! Mapping Room ${roomId} -> Checkbox Value ${$(this).val()}`);
@@ -2820,8 +2845,8 @@ $(document).ready(function() {
                          if (checkbox.length === 0) {
                              $('.room-checkbox').each(function() {
                                  const row = $(this).closest('tr');
-                                 const nameInRow = row.find('td:eq(2) strong').text().trim().toLowerCase();
-                                 const typeInRow = row.find('td:eq(2) small').text().trim().toLowerCase();
+                                 const nameInRow = getRoomNameFromSelectionRow(row).toLowerCase();
+                                 const typeInRow = getRoomTypeFromSelectionRow(row).toLowerCase();
                                  const targetName = roomName.trim().toLowerCase();
                                  const targetType = roomType ? roomType.trim().toLowerCase() : null;
 
@@ -2871,7 +2896,14 @@ $(document).ready(function() {
                         }
                         
                         // Check if already exists by name to avoid duplicates
-                        const exists = window.customRooms.find(r => r.room_name === roomName);
+                        const normalizedRoomName = normalizeRenewalRoomName(roomName);
+                        const exists = window.customRooms.find(r => {
+                            const sameContractRoom = r.contract_room_id && newCustomRoom.contract_room_id && String(r.contract_room_id) === String(newCustomRoom.contract_room_id);
+                            const sameMasterRoom = r.master_room_id && newCustomRoom.master_room_id && String(r.master_room_id) === String(newCustomRoom.master_room_id);
+                            const sameName = normalizeRenewalRoomName(r.room_name) === normalizedRoomName;
+
+                            return sameContractRoom || sameMasterRoom || sameName;
+                        });
                         if (!exists) {
                             window.customRooms.push(newCustomRoom);
                             console.log('Added auto-generated custom room:', newCustomRoom);
@@ -3239,7 +3271,24 @@ $(document).ready(function() {
     }
 
     function renderRenewalExistingRoomsWithoutSurvey() {
-        const renewalRooms = window.renewalContractData.rooms;
+        const sanitizeRenewalRoomName = value => String(value || '')
+            .replace(/\s*Aroma\s*Lama\s*:.*$/i, '')
+            .trim();
+        const seenRenewalRooms = new Set();
+        const renewalRooms = window.renewalContractData.rooms.filter(room => {
+            const key = [
+                room.contract_room_id || '',
+                room.master_room_id || room.room_id || '',
+                sanitizeRenewalRoomName(room.room_name).toLowerCase()
+            ].join('|');
+
+            if (seenRenewalRooms.has(key)) {
+                return false;
+            }
+
+            seenRenewalRooms.add(key);
+            return true;
+        });
 
         window.customRooms = renewalRooms.map((room, index) => {
             const roomId = room.survey_detail_id || room.room_id || room.master_room_id || room.contract_room_id || index;
@@ -3250,7 +3299,7 @@ $(document).ready(function() {
                 survey_detail_id: room.survey_detail_id || null,
                 master_room_id: room.master_room_id || room.room_id || null,
                 contract_room_id: room.contract_room_id || null,
-                room_name: room.room_name || 'Existing Room',
+                room_name: sanitizeRenewalRoomName(room.room_name) || 'Existing Room',
                 room_type: room.room_type || 'Existing Room',
                 room_area: 0,
                 quantity_needed: 1,
@@ -3576,6 +3625,27 @@ $(document).ready(function() {
         }
         console.log('DEBUG: updateRoomSelections started');
         globalRoomSelections = [];
+
+        function sanitizeRenewalRoomName(value) {
+            return String(value || '')
+                .replace(/\s*Aroma\s*Lama\s*:.*$/i, '')
+                .trim();
+        }
+
+        function getRoomNameFromSelectionRow(row) {
+            return sanitizeRenewalRoomName(
+                row.find('td:eq(2) > strong').first().text()
+                    || row.find('td:eq(2) strong').first().text()
+                    || ''
+            );
+        }
+
+        function getRoomTypeFromSelectionRow(row) {
+            return (row.find('td:eq(2) > small.text-muted').first().text()
+                || row.find('td:eq(2) > small').first().text()
+                || ''
+            ).trim();
+        }
         
         try {
             const checkedBoxes = $('.room-checkbox:checked');
@@ -3590,8 +3660,9 @@ $(document).ready(function() {
                     
                     // Safe name retrieval
                     let roomName = 'Unknown Room';
-                    const nameEl = checkbox.closest('tr').find('td:eq(2) strong');
-                    if (nameEl.length > 0) roomName = nameEl.text().trim();
+                    const row = checkbox.closest('tr');
+                    const resolvedRoomName = getRoomNameFromSelectionRow(row);
+                    if (resolvedRoomName) roomName = resolvedRoomName;
                     else console.warn('DEBUG: Could not find room name element for index', index);
 
                     console.log(`DEBUG: Processing box ${index}. Survey: ${surveyId}, Room: ${roomId}, Custom: ${isCustom}, Name: ${roomName}`);
@@ -3624,7 +3695,7 @@ $(document).ready(function() {
                         master_room_id: checkbox.data('master-room-id') || null,
                         contract_room_id: checkbox.data('contract-room-id') || null,
                         room_name: roomName,
-                        room_type: checkbox.closest('tr').find('td:eq(2) small').text().trim() || null,
+                        room_type: getRoomTypeFromSelectionRow(row) || null,
                         aroma_product_id: aromaProductId || null,
                         aroma_variant: aromaVariant || null,
                         aroma_display_name: aromaDisplayName || 'Belum dipilih'

@@ -55,6 +55,11 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('Ruangan Existing Contract', $view);
         $this->assertStringContainsString('Aroma/Variant Lama dari Contract Existing', $view);
         $this->assertStringContainsString('room.aroma_product_id && window.hasAromaProductOption(room.aroma_product_id)', $view);
+        $this->assertStringContainsString('sanitizeRenewalRoomName', $view);
+        $this->assertStringContainsString("row.find('td:eq(2) > strong').first().text()", $view);
+        $this->assertStringContainsString("row.find('td:eq(2) > small.text-muted').first().text()", $view);
+        $this->assertStringContainsString('seenRenewalRooms', $view);
+        $this->assertStringContainsString('normalizeRenewalRoomName(r.room_name)', $view);
     }
 
     public function test_backend_keeps_quotation_room_when_survey_detail_lookup_fails(): void
