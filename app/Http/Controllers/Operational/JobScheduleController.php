@@ -1944,49 +1944,28 @@ class JobScheduleController extends Controller
             $successCount = 0;
             $skippedCount = 0;
 
-            // Determine target Job IDs.
+            // Determine target Job IDs. Unassign Material must stay checkbox-based;
+            // one checked row must not expand to every sibling job in the same JA.
             $targetIds = collect();
-            $roomIds = $request->room_ids ?? [];
+            $roomIds = collect($request->room_ids ?? [])
+                ->filter(fn ($roomId) => is_numeric($roomId))
+                ->map(fn ($roomId) => (int) $roomId)
+                ->filter(fn ($roomId) => $roomId > 0)
+                ->unique()
+                ->values();
+            $roomNamesByJob = collect();
 
-            if ($request->has('room_ids') && !empty($request->room_ids)) {
+            if ($roomIds->isNotEmpty()) {
                 // room_ids are JobScheduleRoom IDs - convert to Job IDs
-                $jobIdsFromRooms = \App\Models\JobScheduleRoom::whereIn('id', $request->room_ids)
-                    ->pluck('job_schedule_id')
-                    ->unique()
-                    ->toArray();
+                $selectedRooms = \App\Models\JobScheduleRoom::whereIn('id', $roomIds->all())
+                    ->get(['id', 'job_schedule_id', 'room_name']);
                 
-                $targetIds = collect($jobIdsFromRooms);
+                $targetIds = $selectedRooms->pluck('job_schedule_id')->unique()->values();
+                $roomNamesByJob = $selectedRooms
+                    ->groupBy('job_schedule_id')
+                    ->map(fn ($rooms) => $rooms->pluck('room_name')->filter()->unique()->values());
             } else {
                 $targetIds = collect($request->ids);
-                
-                // Expand selection to include siblings (same job number/advice)
-                foreach ($request->ids as $requestId) {
-                    $job = JobSchedule::find($requestId);
-                    if ($job && $job->job_advice_id) {
-                         // Primary: Job Number
-                         $q = JobSchedule::where('job_number', $job->job_number)
-                            ->whereNull('deleted_at');
-                         $siblings = $q->pluck('id');
-                         
-                         // Fallback: Advice ID (Always check for split-jobs)
-                         $qFallback = JobSchedule::where('job_advice_id', $job->job_advice_id)
-                            ->where('type', $job->type)
-                            ->whereNull('deleted_at');
-                         
-                         // STRICT BUILDING FILTER
-                         if ($job->building_id) {
-                             $qFallback->where('building_id', $job->building_id);
-                         }
-                            
-                         $fallback = $qFallback->pluck('id');
-                         
-                         if ($fallback->count() > $siblings->count()) {
-                             $siblings = $fallback;
-                         }
-
-                        $targetIds = $targetIds->merge($siblings);
-                    }
-                }
             }
             
             $targetIds = $targetIds->unique();
@@ -2011,6 +1990,28 @@ class JobScheduleController extends Controller
                 $assignSchedules = \App\Models\JobAssignSchedule::where('job_schedule_id', $job->id)
                     ->get();
 
+                $materialIssueIds = \App\Models\JobAssignMaterialIssue::whereIn('job_assign_schedule_id', $assignSchedules->pluck('id'))
+                    ->pluck('material_issue_id')
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                $materialIssueNumbers = \App\Models\MaterialIssue::whereIn('id', $materialIssueIds->all())
+                    ->pluck('issue_number')
+                    ->filter()
+                    ->values();
+
+                $blockedIssuing = \App\Models\InventoryIssuing::whereIn('reference_no', $materialIssueNumbers->all())
+                    ->whereNotIn('status', $this->materialUnassignDeletableIssuingStatuses())
+                    ->first();
+
+                if ($blockedIssuing) {
+                    $skippedCount++;
+                    continue;
+                }
+
+                $selectedRoomNames = $roomNamesByJob->get($job->id, collect());
+
                 foreach ($assignSchedules as $assign) {
                     // Find all material issues linked to this assignment
                     $jobAssignMaterials = \App\Models\JobAssignMaterialIssue::where('job_assign_schedule_id', $assign->id)->get();
@@ -2025,34 +2026,43 @@ class JobScheduleController extends Controller
                         // Find linked InventoryIssuing
                         $invIssuing = \App\Models\InventoryIssuing::where('reference_no', $mi->issue_number)->first();
 
-                        if (!empty($roomIds)) {
-                            // Filter items by room names (because JobAssignMaterialIssue doesn't have room_id)
-                            $roomNames = \App\Models\JobScheduleRoom::whereIn('id', $roomIds)->pluck('room_name')->toArray();
-                            
-                            // Delete specific items matching room names in MaterialIssue
-                            $mi->items()->whereIn('room_name', $roomNames)->delete();
+                        if ($selectedRoomNames->isNotEmpty()) {
+                            $materialRoomNames = $mi->items()
+                                ->pluck('room_name')
+                                ->filter()
+                                ->unique()
+                                ->values();
+                            $isFullMaterialSelection = $materialRoomNames->isEmpty()
+                                || $materialRoomNames->every(fn ($roomName) => $selectedRoomNames->contains($roomName));
 
-                            // Sync change to InventoryIssuing if exists and still pending
-                            if ($invIssuing && $invIssuing->status === 'pending') {
-                                $invIssuing->items()->whereIn('room_name', $roomNames)->delete();
-                                
-                                // Cleanup InventoryIssuing if no items left
-                                if ($invIssuing->items()->count() === 0) {
-                                    $invIssuing->delete();
+                            if ($isFullMaterialSelection) {
+                                $this->deleteInventoryIssuingForMaterialUnassign($invIssuing);
+                                $mi->items()->delete();
+                                $mi->delete();
+                                $jam->delete();
+                            } else {
+                                // Delete specific items matching room names in MaterialIssue
+                                $mi->items()->whereIn('room_name', $selectedRoomNames->all())->delete();
+
+                                // Sync change to InventoryIssuing if exists and still in prepare stage
+                                if ($this->canDeleteInventoryIssuingForMaterialUnassign($invIssuing)) {
+                                    $invIssuing->items()->whereIn('room_name', $selectedRoomNames->all())->delete();
+
+                                    // Cleanup InventoryIssuing if no items left
+                                    if ($invIssuing->items()->count() === 0) {
+                                        $this->deleteInventoryIssuingForMaterialUnassign($invIssuing);
+                                    }
                                 }
-                            }
 
-                            // Cleanup MaterialIssue header if no items left
-                            if ($mi->items()->count() === 0) {
-                                $mi->delete(); // header
-                                $jam->delete(); // link
+                                // Cleanup MaterialIssue header if no items left
+                                if ($mi->items()->count() === 0) {
+                                    $mi->delete(); // header
+                                    $jam->delete(); // link
+                                }
                             }
                         } else {
                             // Full delete if no specific rooms
-                            if ($invIssuing && $invIssuing->status === 'pending') {
-                                $invIssuing->items()->delete();
-                                $invIssuing->delete();
-                            }
+                            $this->deleteInventoryIssuingForMaterialUnassign($invIssuing);
                             
                             $mi->items()->delete();
                             $mi->delete();
@@ -2108,6 +2118,37 @@ class JobScheduleController extends Controller
                 'message' => 'Gagal membatalkan material assign: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function materialUnassignDeletableIssuingStatuses(): array
+    {
+        return ['pending', 'processed', 'draft'];
+    }
+
+    private function canDeleteInventoryIssuingForMaterialUnassign(?\App\Models\InventoryIssuing $inventoryIssuing): bool
+    {
+        return $inventoryIssuing
+            && in_array((string) $inventoryIssuing->status, $this->materialUnassignDeletableIssuingStatuses(), true);
+    }
+
+    private function deleteInventoryIssuingForMaterialUnassign(?\App\Models\InventoryIssuing $inventoryIssuing): void
+    {
+        if (! $this->canDeleteInventoryIssuingForMaterialUnassign($inventoryIssuing)) {
+            return;
+        }
+
+        $service = app(\App\Services\Warehouse\InventoryIssuingService::class);
+
+        // Status processed/Ready has already posted stock out; rollback before deleting.
+        $service->rollbackPostedStock($inventoryIssuing);
+
+        \App\Models\InventoryReceiving::where('issuing_id', $inventoryIssuing->id)->delete();
+        \App\Models\InventoryMovement::where('reference_no', $inventoryIssuing->issuing_number)
+            ->where('reference_type', 'inventory_issuing')
+            ->delete();
+
+        $inventoryIssuing->items()->delete();
+        $inventoryIssuing->delete();
     }
 
 

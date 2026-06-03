@@ -15,6 +15,9 @@ class JobScheduleUnassignMaterialScriptTest extends TestCase
         $this->assertStringContainsString("'barang_dipersiapkan'", $view);
         $this->assertStringContainsString("'material_in_prep'", $view);
         $this->assertStringContainsString('materialUnassignableStatuses.includes(jobStatus)', $view);
+        $this->assertStringContainsString("actionType === 'unassign_material'", $view);
+        $this->assertStringContainsString('strict_selection: true', $view);
+        $this->assertStringContainsString('selected_room_ids: selectedRoomIdsFromTable', $view);
     }
 
     public function test_barang_dipersiapkan_display_variants_are_unassignable(): void

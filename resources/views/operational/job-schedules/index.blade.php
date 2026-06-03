@@ -3422,7 +3422,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                     .map(id => id.trim())
                     .filter(Boolean);
 
-                return (actionType === 'material_assign' || actionType.startsWith('assign_team_')) ? roomIds : [];
+                return (actionType === 'material_assign' || actionType === 'unassign_material' || actionType.startsWith('assign_team_')) ? roomIds : [];
             }))];
         
         if (viewMode === 'room') {
@@ -4032,7 +4032,11 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                         'X-CSRF-TOKEN': '{{ csrf_token() }}',
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ job_ids: ids })
+                    body: JSON.stringify({
+                        job_ids: ids,
+                        strict_selection: true,
+                        ...(selectedRoomIdsFromTable.length > 0 ? { selected_room_ids: selectedRoomIdsFromTable } : {})
+                    })
                 })
                 .then(response => response.json())
                 .then(data => {
@@ -4219,6 +4223,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                     }
                 } else if (actionType === 'unassign_material') {
                     url = '/operational/job-schedules/bulk-unassign-material';
+                    body.strict_selection = true;
                     if (extraData.room_ids) {
                         body.room_ids = extraData.room_ids;
                     }
