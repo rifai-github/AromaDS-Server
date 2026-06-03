@@ -2786,6 +2786,7 @@ $(document).ready(function() {
                 contract_room_id: room.contract_room_id || null,
                 room_name: room.room_name,
                 survey_id: room.survey_id || window.renewalContractData.survey_id || 'custom',
+                specifications: room.specifications || null,
                 aroma_product_id: room.aroma_product_id || null,
                 aroma_variant: room.aroma_variant || null,
                 room_type: room.room_type || null
@@ -2894,7 +2895,7 @@ $(document).ready(function() {
                             room_area: 0,
                             quantity_needed: 1,
                             is_custom: true,
-                            specifications: JSON.stringify({
+                            specifications: (typeof room === 'object' ? room.specifications : null) || JSON.stringify({
                                 remark: 'Restored from Renewal Data'
                             })
                         };
@@ -3316,7 +3317,7 @@ $(document).ready(function() {
                 is_renewal_existing: true,
                 aroma_product_id: room.aroma_product_id || null,
                 aroma_variant: room.aroma_variant || null,
-                specifications: JSON.stringify({
+                specifications: room.specifications || JSON.stringify({
                     remark: 'Restored from existing contract',
                     old_aroma: room.aroma_variant || null,
                     serial_number: room.serial_number || null
@@ -5613,6 +5614,7 @@ $(document).ready(function() {
                             contract_room_id: room.contract_room_id || null,
                             room_name: room.room_name,
                             survey_id: room.survey_id || data.survey_id || 'custom',
+                            specifications: room.specifications || null,
                             aroma_product_id: room.aroma_product_id, // Map from backend
                             aroma_variant: room.aroma_variant, // Map from backend
                             room_type: room.room_type // Map from backend
@@ -5634,6 +5636,7 @@ $(document).ready(function() {
                                     contract_room_id: rental.contract_room_id || null,
                                     room_name: rental.room_name,
                                     survey_id: rental.survey_id || data.survey_id || 'custom',
+                                    specifications: rental.specifications || null,
                                     room_type: rental.room_type
                                 });
                             }
@@ -6128,6 +6131,7 @@ $(document).ready(function() {
         $('.rental-configuration').each(function() {
             const surveyId = $(this).data('survey-id');
             const roomId = $(this).find('select[name*="room_id"]').val() || $(this).find('input[name*="room_id"]').val();
+            const contractRoomId = $(this).data('contract-room-id') || '';
             const productId = $(this).find('select[name*="product_id"]').val();
             const price = $(this).find('input[name*="price"]').val();
             const quantity = $(this).find('input[name*="quantity"]').val();
@@ -6152,7 +6156,10 @@ $(document).ready(function() {
             let specifications = '';
             if (roomId && surveyId) {
                 // Try to get from globalRoomSelections first (if available)
-                const roomSelection = globalRoomSelections.find(r => r.room_id == roomId && r.survey_id == surveyId);
+                const roomSelection = globalRoomSelections.find(r =>
+                    (r.room_id == roomId && r.survey_id == surveyId)
+                    || (contractRoomId && r.contract_room_id && String(r.contract_room_id) === String(contractRoomId))
+                );
                 if (roomSelection && roomSelection.specifications) {
                     specifications = typeof roomSelection.specifications === 'string' 
                         ? roomSelection.specifications 
@@ -6181,6 +6188,7 @@ $(document).ready(function() {
                 rentalItems[uniqueId] = {
                     survey_id: surveyId,
                     room_id: roomId,
+                    contract_room_id: contractRoomId,
                     room_name: roomName,
                     product_id: productId,
                     price: price,
@@ -6197,6 +6205,7 @@ $(document).ready(function() {
             const item = rentalItems[uniqueId];
             formData.append(`rental_items[${uniqueId}][survey_id]`, item.survey_id);
             formData.append(`rental_items[${uniqueId}][room_id]`, item.room_id);
+            formData.append(`rental_items[${uniqueId}][contract_room_id]`, item.contract_room_id || '');
             if (item.room_name) {
                 formData.append(`rental_items[${uniqueId}][room_name]`, item.room_name);
             }
@@ -6220,6 +6229,7 @@ $(document).ready(function() {
                 formData.append(`room_selections_data[${index}][contract_room_id]`, room.contract_room_id || '');
                 formData.append(`room_selections_data[${index}][room_name]`, room.room_name || '');
                 formData.append(`room_selections_data[${index}][room_type]`, room.room_type || '');
+                formData.append(`room_selections_data[${index}][specifications]`, room.specifications || '');
                 formData.append(`room_selections_data[${index}][aroma_product_id]`, room.aroma_product_id || '');
                 formData.append(`room_selections_data[${index}][aroma_variant]`, room.aroma_variant || '');
             });

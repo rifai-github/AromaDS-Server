@@ -21,6 +21,10 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('buildRenewalRooms', $controller);
         $this->assertStringContainsString("'source' => \$unitOnWall ? 'unit_on_wall' : 'contract_rental'", $controller);
         $this->assertStringContainsString('$contract->contractRentals', $controller);
+        $this->assertStringContainsString("'contract_room_id' => \$contractRoom?->id", $controller);
+        $this->assertStringContainsString("'specifications' => \$resolvedSpecifications ?: \$this->masterRoomSpecifications", $controller);
+        $this->assertStringContainsString("'specifications' => \$surveyDetail?->specifications ?: \$this->masterRoomSpecifications", $controller);
+        $this->assertStringContainsString('private function masterRoomSpecifications', $controller);
     }
 
     public function test_eligible_contracts_use_same_renewal_block_rule_as_contract_detail_endpoint(): void
@@ -48,6 +52,9 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('room_selections_data[${index}][room_name]', $view);
         $this->assertStringContainsString('data-contract-room-id="${contractRoomId}"', $view);
         $this->assertStringContainsString('data-contract-room-id="${room.contract_room_id || \'\'}"', $view);
+        $this->assertStringContainsString('formData.append(`rental_items[${uniqueId}][contract_room_id]`', $view);
+        $this->assertStringContainsString('formData.append(`room_selections_data[${index}][specifications]`', $view);
+        $this->assertStringContainsString('specifications: room.specifications || null', $view);
         $this->assertStringContainsString("$('#custom-rooms-container .custom-room-checkbox:checked')", $view);
         $this->assertStringContainsString('String(resolvedRoomId).startsWith', $view);
         $this->assertStringContainsString('const renewalRooms = Array.isArray(data.rooms) ? data.rooms : []', $view);
@@ -69,17 +76,37 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('normalizeRenewalRoomName(r.room_name)', $view);
     }
 
+    public function test_quotation_detail_page_cleans_renewal_room_display_and_falls_back_to_existing_contract(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/Marketing/QuotationController.php'));
+        $view = file_get_contents(resource_path('views/marketing/quotations/show.blade.php'));
+
+        $this->assertStringContainsString("'quotationRooms.room'", $controller);
+        $this->assertStringContainsString("'existingContract.contractRooms.room'", $controller);
+        $this->assertStringContainsString("'existingContract.contractRentals.masterRental'", $controller);
+        $this->assertStringContainsString('$sanitizeRenewalRoomName', $view);
+        $this->assertStringContainsString('$displayRoomName = $sanitizeRenewalRoomName', $view);
+        $this->assertStringContainsString('$resolveContractRoom', $view);
+        $this->assertStringContainsString('$masterRoomSpecs($contractRoom->room)', $view);
+        $this->assertStringContainsString('$contractRoomRental = $contractRental?->masterRental ?: $contractRoom?->rentalProduct', $view);
+        $this->assertStringContainsString('{{ $displayRentalName }}', $view);
+    }
+
     public function test_backend_keeps_quotation_room_when_survey_detail_lookup_fails(): void
     {
         $controller = file_get_contents(app_path('Http/Controllers/Marketing/QuotationWizardController.php'));
 
         $this->assertStringContainsString('resolveQuotationRoomSelection', $controller);
+        $this->assertStringContainsString('sanitizeRenewalRoomName', $controller);
+        $this->assertStringContainsString('resolveContractRoomFromItem', $controller);
+        $this->assertStringContainsString('normalizeSpecifications', $controller);
         $this->assertStringContainsString('surveyTagsValidationRule', $controller);
         $this->assertStringContainsString('allowsRenewalWithoutSurvey', $controller);
         $this->assertStringContainsString('resolveRenewalCustomerContext', $controller);
         $this->assertStringContainsString("\$roomData['survey_detail_id'] ?? \$roomData['room_id']", $controller);
         $this->assertStringContainsString('if ($masterRoomId) {', $controller);
         $this->assertStringContainsString('$masterRoom = \App\Models\MasterRoom::find($masterRoomId);', $controller);
+        $this->assertStringContainsString('$masterRoom->room_name ?: $roomName', $controller);
         $this->assertStringContainsString("'room_code' => strtoupper(substr(\$roomName, 0, 3)) . '-' . uniqid()", $controller);
     }
 }

@@ -104,9 +104,61 @@ class QuotationWizardController extends Controller
             ->first()?->id;
     }
 
+    private function sanitizeRenewalRoomName($value): string
+    {
+        return trim((string) preg_replace('/\s*Aroma\s*Lama\s*:.*$/iu', '', (string) ($value ?? '')));
+    }
+
+    private function masterRoomSpecifications(?\App\Models\MasterRoom $room): string
+    {
+        if (!$room) {
+            return '';
+        }
+
+        return json_encode([
+            'floor' => $room->room_floor,
+            'intensity' => $room->room_intensity,
+            'installation_type' => $room->room_installation_type,
+            'qty' => $room->room_qty,
+            'length' => $room->room_length,
+            'width' => $room->room_width,
+            'height' => $room->room_height,
+            'temperature' => $room->room_temperature,
+            'remark' => $room->room_remark,
+        ]);
+    }
+
+    private function normalizeSpecifications($specifications): string
+    {
+        if (is_array($specifications)) {
+            return json_encode($specifications);
+        }
+
+        if (is_string($specifications) && trim($specifications) !== '') {
+            $decodedSpecs = json_decode($specifications, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decodedSpecs)) {
+                return json_encode($decodedSpecs);
+            }
+        }
+
+        return '';
+    }
+
+    private function resolveContractRoomFromItem(array $item, $contractId = null): ?\App\Models\ContractRoom
+    {
+        $contractRoomId = !empty($item['contract_room_id']) ? (int) $item['contract_room_id'] : null;
+        if ($contractRoomId) {
+            return \App\Models\ContractRoom::with('room')
+                ->when($contractId, fn ($query) => $query->where('contract_id', $contractId))
+                ->find($contractRoomId);
+        }
+
+        return null;
+    }
+
     private function resolveQuotationRoomSelection(array $roomData): array
     {
-        $roomName = trim((string) ($roomData['room_name'] ?? ''));
+        $roomName = $this->sanitizeRenewalRoomName($roomData['room_name'] ?? '');
         $masterRoomId = !empty($roomData['master_room_id']) ? (int) $roomData['master_room_id'] : null;
         $surveyId = $roomData['survey_id'] ?? null;
         $roomId = $roomData['survey_detail_id'] ?? $roomData['room_id'] ?? null;
@@ -150,7 +202,7 @@ class QuotationWizardController extends Controller
         if ($masterRoomId) {
             $masterRoom = \App\Models\MasterRoom::find($masterRoomId);
             if ($masterRoom) {
-                return [$masterRoom->id, $roomName !== '' ? $roomName : $masterRoom->room_name];
+                return [$masterRoom->id, $masterRoom->room_name ?: $roomName];
             }
         }
 
@@ -584,8 +636,9 @@ class QuotationWizardController extends Controller
                 // Get survey info for room details
                 $survey = $surveyId ? Survey::with('surveyDetails')->find($surveyId) : null;
                 $room = null;
-                $roomName = $item['room_name'] ?? 'Unknown Room';
+                $roomName = $this->sanitizeRenewalRoomName($item['room_name'] ?? 'Unknown Room');
                 $specifications = $item['specifications'] ?? '';
+                $contractRoom = $this->resolveContractRoomFromItem($item, $request->get('existing_contract_id'));
                 
                 // Try to get room details from survey if room_id is provided
                 // room_id should be survey_detail.id
@@ -608,20 +661,14 @@ class QuotationWizardController extends Controller
                         }
                     }
                 }
+
+                if (!$room && $contractRoom?->room) {
+                    $roomName = $contractRoom->room->room_name;
+                    $specifications = $specifications ?: $this->masterRoomSpecifications($contractRoom->room);
+                }
                 
                 // If specifications is JSON string from form, ensure it's valid JSON
-                if (is_string($specifications) && !empty($specifications)) {
-                    $decodedSpecs = json_decode($specifications, true);
-                    if (json_last_error() === JSON_ERROR_NONE && is_array($decodedSpecs)) {
-                        // Valid JSON, keep it as is
-                        $specifications = json_encode($decodedSpecs);
-                    } else {
-                        // Invalid JSON, try to parse as is or set to empty
-                        $specifications = '';
-                    }
-                } elseif (empty($specifications)) {
-                    $specifications = '';
-                }
+                $specifications = $this->normalizeSpecifications($specifications);
                 
                 // Enforce Corporate Price Validation
                 if ($survey && $survey->customer_id && !empty($item['product_id'])) {
@@ -862,8 +909,9 @@ class QuotationWizardController extends Controller
                          $request->get('survey_tags', [])
                      );
                      $surveyForDetail = $surveyId ? Survey::with('surveyDetails')->find($surveyId) : null;
-                     $roomName = $item['room_name'] ?? 'Unknown Room';
+                     $roomName = $this->sanitizeRenewalRoomName($item['room_name'] ?? 'Unknown Room');
                      $specifications = $item['specifications'] ?? '';
+                     $contractRoom = $this->resolveContractRoomFromItem($item, $request->get('existing_contract_id'));
                      $roomId = $surveyDetailId;
 
                      // Resolve Room Name & Specs
@@ -875,13 +923,13 @@ class QuotationWizardController extends Controller
                          }
                      }
 
-                     // Decode JSON specs if needed
-                     if (is_string($specifications) && !empty($specifications)) {
-                        $decoded = json_decode($specifications, true);
-                        if (json_last_error() === JSON_ERROR_NONE) {
-                            $specifications = json_encode($decoded);
-                        }
+                     if ((!$surveyForDetail || !$roomId) && $contractRoom?->room) {
+                         $roomName = $contractRoom->room->room_name;
+                         $specifications = $specifications ?: $this->masterRoomSpecifications($contractRoom->room);
                      }
+
+                     // Decode JSON specs if needed
+                     $specifications = $this->normalizeSpecifications($specifications);
 
 
                      // Enforce Corporate Price Validation
@@ -1464,6 +1512,16 @@ class QuotationWizardController extends Controller
             // Assuming rental_items is an array of objects directly from frontend (Object.keys iteration)
             if ($request->has('rental_items')) {
                 foreach ($request->rental_items as $item) {
+                    $contractRoom = $this->resolveContractRoomFromItem($item, $request->get('existing_contract_id'));
+                    $fallbackRoomName = !empty($item['room_id']) ? 'Room ' . $item['room_id'] : 'General';
+                    $roomName = $this->sanitizeRenewalRoomName($item['room_name'] ?? $fallbackRoomName);
+                    $specifications = $this->normalizeSpecifications($item['specifications'] ?? '');
+
+                    if ($contractRoom?->room) {
+                        $roomName = $contractRoom->room->room_name;
+                        $specifications = $specifications ?: $this->masterRoomSpecifications($contractRoom->room);
+                    }
+
                      QuotationDetail::create([
                         'quotation_id' => $quotation->id,
                         'survey_id' => $item['survey_id'],
@@ -1471,11 +1529,11 @@ class QuotationWizardController extends Controller
                         'master_rental_id' => $item['product_id'],
                         'rental_alias' => $item['rental_alias'] ?? null,
                         'remark' => $item['remark'] ?? null,
-                        'room_name' => $item['room_name'] ?? ($item['room_id'] ? 'Room ' . $item['room_id'] : 'General'),
+                        'room_name' => $roomName,
                         'quantity' => $item['quantity'],
                         'unit_price' => $item['price'],
                         'total_price' => $item['price'] * $item['quantity'],
-                        'specifications' => $item['specifications'] ?? null,
+                        'specifications' => $specifications,
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id()
                     ]);

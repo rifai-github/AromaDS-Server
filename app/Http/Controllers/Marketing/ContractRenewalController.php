@@ -514,14 +514,29 @@ class ContractRenewalController extends Controller
                     $resolvedRoomId = $unitOnWall?->room_id ?: $resolvedRoomId;
                     $resolvedRoomName = $this->unitOnWallRoomName($unitOnWall) ?: $resolvedRoomName;
                     $resolvedRoomType = $unitOnWall?->room?->room_type ?: $resolvedRoomType;
+                    $contractRoom = $resolvedRoomId
+                        ? $contract->contractRooms->firstWhere('room_id', $resolvedRoomId)
+                        : null;
+
+                    if (!$contractRoom && trim((string) $resolvedRoomName) !== '') {
+                        $roomName = $this->normalizeRenewalText($resolvedRoomName);
+                        $contractRoom = $contract->contractRooms
+                            ->first(fn ($room) => $this->normalizeRenewalText($room->room?->room_name) === $roomName);
+                    }
+
+                    $resolvedSpecifications = $resolvedSurveyDetailId
+                        ? \App\Models\SurveyDetail::find($resolvedSurveyDetailId)?->specifications
+                        : null;
 
                     return [
                         'rental_id' => $resolvedRentalId,
                         'room_id' => $resolvedSurveyDetailId ?? $resolvedRoomId,
                         'survey_detail_id' => $resolvedSurveyDetailId,
                         'master_room_id' => $resolvedRoomId,
+                        'contract_room_id' => $contractRoom?->id,
                         'room_name' => $resolvedRoomName,
                         'room_type' => $resolvedRoomType,
+                        'specifications' => $resolvedSpecifications ?: $this->masterRoomSpecifications($contractRoom?->room ?: \App\Models\MasterRoom::find($resolvedRoomId)),
                         'survey_id' => $resolvedSurveyId, // Add resolved survey ID
                         'contract_rental_id' => $rental->id,
                         'unit_on_wall_id' => $unitOnWall?->id,
@@ -603,6 +618,7 @@ class ContractRenewalController extends Controller
                         'serial_number' => $unitOnWall?->serial_number,
                         'room_name' => $this->unitOnWallRoomName($unitOnWall) ?: ($room->room->room_name ?? ''),
                         'room_type' => $surveyDetail->room_type ?? $unitOnWall?->room?->room_type ?? $room->room->room_type ?? null,
+                        'specifications' => $surveyDetail?->specifications ?: $this->masterRoomSpecifications($room->room),
                         'billing_group_id' => $room->billing_group_id,
                         'aroma_product_id' => $quotRoom->aroma_product_id ?? $unitOnWall?->product_id ?? null,
                         'aroma_variant' => $quotRoom->aroma_variant ?? $unitOnWall?->product?->variant ?? null,
@@ -677,6 +693,9 @@ class ContractRenewalController extends Controller
                     'serial_number' => $unitOnWall?->serial_number,
                     'room_name' => $resolvedRoomName,
                     'room_type' => $surveyDetail?->room_type ?? $resolvedRoomType,
+                    'specifications' => $surveyDetail?->specifications ?: $this->masterRoomSpecifications(
+                        \App\Models\MasterRoom::find($resolvedRoomId)
+                    ),
                     'billing_group_id' => null,
                     'aroma_product_id' => $quotRoom?->aroma_product_id ?? $unitOnWall?->product_id ?? null,
                     'aroma_variant' => $quotRoom?->aroma_variant ?? $unitOnWall?->product?->variant ?? null,
@@ -685,6 +704,25 @@ class ContractRenewalController extends Controller
             ->filter()
             ->unique(fn ($room) => ($room['master_room_id'] ?: 'name') . '|' . strtolower(trim((string) $room['room_name'])))
             ->values();
+    }
+
+    private function masterRoomSpecifications(?\App\Models\MasterRoom $room): ?string
+    {
+        if (!$room) {
+            return null;
+        }
+
+        return json_encode([
+            'floor' => $room->room_floor,
+            'intensity' => $room->room_intensity,
+            'installation_type' => $room->room_installation_type,
+            'qty' => $room->room_qty,
+            'length' => $room->room_length,
+            'width' => $room->room_width,
+            'height' => $room->room_height,
+            'temperature' => $room->room_temperature,
+            'remark' => $room->room_remark,
+        ]);
     }
 
     private function getActiveUnitOnWallsForRenewal(Contract $contract)

@@ -456,8 +456,132 @@
                                         </tr>
                                     </thead>
                                     <tbody>
+                                        @php
+                                            $sanitizeRenewalRoomName = static function ($value): string {
+                                                return trim((string) preg_replace('/\s*Aroma\s*Lama\s*:.*$/iu', '', (string) ($value ?? '')));
+                                            };
+
+                                            $decodeSpecs = static function ($value): array {
+                                                if (is_array($value)) {
+                                                    return $value;
+                                                }
+
+                                                if (is_string($value) && trim($value) !== '') {
+                                                    $decoded = json_decode($value, true);
+                                                    return is_array($decoded) ? $decoded : [];
+                                                }
+
+                                                return [];
+                                            };
+
+                                            $hasMeaningfulSpecs = static function (array $specs): bool {
+                                                foreach (['floor', 'intensity', 'installation_type', 'length', 'width', 'height', 'remark'] as $key) {
+                                                    $value = trim((string) ($specs[$key] ?? ''));
+                                                    if ($value !== '' && $value !== '-') {
+                                                        return true;
+                                                    }
+                                                }
+
+                                                return false;
+                                            };
+
+                                            $masterRoomSpecs = static function ($room): array {
+                                                if (!$room) {
+                                                    return [];
+                                                }
+
+                                                return [
+                                                    'floor' => $room->room_floor,
+                                                    'intensity' => $room->room_intensity,
+                                                    'installation_type' => $room->room_installation_type,
+                                                    'qty' => $room->room_qty,
+                                                    'length' => $room->room_length,
+                                                    'width' => $room->room_width,
+                                                    'height' => $room->room_height,
+                                                    'temperature' => $room->room_temperature,
+                                                    'remark' => $room->room_remark,
+                                                ];
+                                            };
+
+                                            $resolveQuotationRoom = function ($detail, string $displayRoomName) use ($quotation, $sanitizeRenewalRoomName) {
+                                                $masterRoomId = $detail->room?->room_id;
+
+                                                if ($masterRoomId) {
+                                                    $matched = $quotation->quotationRooms->firstWhere('room_id', $masterRoomId);
+                                                    if ($matched) {
+                                                        return $matched;
+                                                    }
+                                                }
+
+                                                if ($detail->room_id) {
+                                                    $matched = $quotation->quotationRooms->firstWhere('room_id', $detail->room_id);
+                                                    if ($matched) {
+                                                        return $matched;
+                                                    }
+                                                }
+
+                                                if ($displayRoomName !== '') {
+                                                    return $quotation->quotationRooms->first(function ($room) use ($displayRoomName, $sanitizeRenewalRoomName) {
+                                                        return mb_strtolower($sanitizeRenewalRoomName($room->room_name)) === mb_strtolower($displayRoomName);
+                                                    });
+                                                }
+
+                                                return null;
+                                            };
+
+                                            $resolveContractRoom = function ($detail, string $displayRoomName, $quotationRoom) use ($quotation, $sanitizeRenewalRoomName) {
+                                                $contract = $quotation->existingContract;
+                                                if (!$contract) {
+                                                    return null;
+                                                }
+
+                                                $masterRoomId = $quotationRoom?->room_id ?: $detail->room?->room_id;
+                                                if ($masterRoomId) {
+                                                    $matched = $contract->contractRooms->firstWhere('room_id', $masterRoomId);
+                                                    if ($matched) {
+                                                        return $matched;
+                                                    }
+                                                }
+
+                                                if ($displayRoomName !== '') {
+                                                    return $contract->contractRooms->first(function ($contractRoom) use ($displayRoomName, $sanitizeRenewalRoomName) {
+                                                        return mb_strtolower($sanitizeRenewalRoomName($contractRoom->room?->room_name)) === mb_strtolower($displayRoomName);
+                                                    });
+                                                }
+
+                                                return null;
+                                            };
+                                        @endphp
                                         @forelse($quotation->quotationDetails as $index => $detail)
                                         <tr>
+                                            @php
+                                                $displayRoomName = $sanitizeRenewalRoomName($detail->room_name ?? '');
+                                                $quotationRoom = $resolveQuotationRoom($detail, $displayRoomName);
+                                                $contractRoom = $resolveContractRoom($detail, $displayRoomName, $quotationRoom);
+                                                $contractRental = null;
+
+                                                if ($contractRoom && $quotation->existingContract) {
+                                                    $contractRental = $quotation->existingContract->contractRentals
+                                                        ->firstWhere('room_id', $contractRoom->room_id);
+                                                }
+                                                $contractRoomRental = $contractRental?->masterRental ?: $contractRoom?->rentalProduct;
+
+                                                $specs = $decodeSpecs($detail->specifications ?? '{}');
+                                                if (!$hasMeaningfulSpecs($specs) && $detail->room) {
+                                                    $specs = $decodeSpecs($detail->room->specifications ?? '{}');
+                                                }
+                                                if (!$hasMeaningfulSpecs($specs) && $quotationRoom?->room) {
+                                                    $specs = $masterRoomSpecs($quotationRoom->room);
+                                                }
+                                                if (!$hasMeaningfulSpecs($specs) && $contractRoom?->room) {
+                                                    $specs = $masterRoomSpecs($contractRoom->room);
+                                                }
+
+                                                $displayRentalName = $detail->rental_alias
+                                                    ?? ($contractRental?->rental_alias ?: null)
+                                                    ?? ($contractRoomRental?->rental_name ?: null)
+                                                    ?? ($detail->masterRental->rental_name ?? '-');
+                                            @endphp
                                             <td>{{ $index + 1 }}</td>
                                             <td>
                                                 @php
@@ -470,7 +594,7 @@
                                                     } elseif ($detail->room && $detail->room->survey) {
                                                         $surveys->push($detail->room->survey);
                                                     } else {
-                                                        $roomName = trim(mb_strtolower($detail->room_name ?? ''));
+                                                        $roomName = trim(mb_strtolower($displayRoomName));
                                                         $matchedSurveys = collect();
 
                                                         if ($roomName !== '') {
@@ -509,18 +633,7 @@
                                                 @endforelse
                                             </td>
                                             <td>
-                                                {{ $detail->room_name ?? '-' }}
-                                                @php
-                                                    // Find aroma for this room
-                                                    // Match by room_id if available, otherwise by room_name
-                                                    $quotationRoom = null;
-                                                    if ($detail->room_id) {
-                                                        $quotationRoom = $quotation->rooms()->where('room_id', $detail->room_id)->first();
-                                                    }
-                                                    if (!$quotationRoom && $detail->room_name) {
-                                                        $quotationRoom = $quotation->rooms()->where('room_name', $detail->room_name)->first();
-                                                    }
-                                                @endphp
+                                                {{ $displayRoomName !== '' ? $displayRoomName : '-' }}
                                                 @if($quotationRoom && $quotationRoom->aromaProduct)
                                                     <br>
                                                     <small class="text-success">
@@ -533,9 +646,6 @@
                                                 @endif
                                             </td>
                                             <td>
-                                                @php
-                                                    $specs = json_decode($detail->specifications ?? '{}', true);
-                                                @endphp
                                                 <div class="spec-details">
                                                     <div><strong>Lantai:</strong> {{ $specs['floor'] ?? '-' }}</div>
                                                     <div><strong>Wangi:</strong> {{ $specs['intensity'] ?? '-' }}</div>
@@ -556,13 +666,13 @@
                                                     <span class="text-muted">-</span>
                                                 @endif
                                             </td>
-                                            <td>{{ $detail->rental_alias ?? ($detail->masterRental->rental_name ?? '-') }}</td>
+                                            <td>{{ $displayRentalName }}</td>
                                             <td>{{ $detail->quantity ?? '-' }}</td>
                                             <td>Rp {{ number_format($detail->unit_price ?? 0, 0, ',', '.') }}</td>
                                             <td>Rp {{ number_format($detail->total_price ?? 0, 0, ',', '.') }}</td>
                                             @if($quotation->status === 'draft')
                                             <td style="text-align: center;">
-                                                <button class="btn btn-sm btn-danger" onclick="removeRoom({{ $detail->id }}, '{{ $detail->room_name }}')" title="Hapus Room">
+                                                <button class="btn btn-sm btn-danger" onclick="removeRoom({{ $detail->id }}, '{{ $displayRoomName }}')" title="Hapus Room">
                                                     <i class="fas fa-trash"></i>
                                                 </button>
                                             </td>

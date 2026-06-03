@@ -478,7 +478,9 @@ class QuotationController extends Controller
             'quotationDetails.room.survey',
             'quotationDetails.room.room', // Eager load SurveyDetail -> MasterRoom for dynamic names
             'quotationSurveys.survey.surveyDetails',
-            'quotationRooms',
+            'quotationRooms.room',
+            'existingContract.contractRooms.room',
+            'existingContract.contractRentals.masterRental',
             'quotationRentals.masterRental'
         ]);
         return view('marketing.quotations.show', compact('quotation'));
