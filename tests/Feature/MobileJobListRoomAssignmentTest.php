@@ -66,11 +66,15 @@ class MobileJobListRoomAssignmentTest extends TestCase
             'unit_on_walls',
             'job_schedule_room_rentals',
             'job_schedule_room_assignments',
+            'job_assign_material_issues',
             'job_schedule_rooms',
             'job_assign_schedules',
             'job_schedules',
             'job_advice_rooms',
             'job_advices',
+            'master_rentals',
+            'contract_rooms',
+            'master_rooms',
             'team_members',
             'teams',
             'customers',
@@ -218,6 +222,96 @@ class MobileJobListRoomAssignmentTest extends TestCase
         ]);
     }
 
+    public function test_mobile_job_groups_multiple_rentals_in_one_physical_room(): void
+    {
+        DB::table('master_rooms')->insert([
+            'id' => 500,
+            'room_name' => 'Ruang Delima',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('contract_rooms')->insert([
+            'id' => 70,
+            'room_id' => 500,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            [
+                'id' => 90,
+                'job_advice_id' => 30,
+                'contract_room_id' => 70,
+                'room_name' => 'Ruang Delima',
+                'rental_name' => 'ADS XL Unit Only',
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 91,
+                'job_advice_id' => 30,
+                'contract_room_id' => 70,
+                'room_name' => 'Ruang Delima',
+                'rental_name' => 'Rental-5',
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_schedules')->insert([
+            'id' => 43,
+            'job_number' => 'JKT-IR/26-06/0002',
+            'job_advice_id' => 30,
+            'type' => 'install',
+            'status' => 'assign_team',
+            'room_id' => 500,
+            'room_name' => 'Ruang Delima',
+            'schedule_date' => '2026-06-04',
+            'material_checked' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 63,
+            'job_schedule_id' => 43,
+            'team_id' => 10,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/api/v1/mobile/jobs/today', 'GET');
+        $request->setUserResolver(fn () => User::find(1));
+        $this->actingAs(User::find(1));
+        Cache::flush();
+
+        $listResponse = app(JobController::class)->getTodayJobs($request);
+        $listPayload = $listResponse->getData(true);
+        $job = collect($listPayload['data'])->firstWhere('job_number', 'JKT-IR/26-06/0002');
+
+        $this->assertSame('success', $listPayload['status']);
+        $this->assertNotNull($job);
+        $this->assertSame(1, $job['total_rooms']);
+
+        $detailResponse = app(JobController::class)->getJobDetail($request, 43);
+        $detailPayload = $detailResponse->getData(true);
+
+        $this->assertSame('success', $detailPayload['status']);
+        $this->assertSame(1, $detailPayload['data']['total_rooms']);
+
+        $roomsResponse = app(JobController::class)->getJobRooms(43);
+        $roomsPayload = $roomsResponse->getData(true);
+
+        $this->assertSame('success', $roomsPayload['status']);
+        $this->assertCount(1, $roomsPayload['data']);
+        $this->assertSame('Ruang Delima', $roomsPayload['data'][0]['name']);
+        $this->assertSame('ADS XL Unit Only, Rental-5', $roomsPayload['data'][0]['rental_name']);
+    }
+
     private function createSchema(): void
     {
         Schema::create('users', function (Blueprint $table) {
@@ -256,6 +350,39 @@ class MobileJobListRoomAssignmentTest extends TestCase
             $table->foreignId('customer_id')->nullable();
             $table->foreignId('customer_contact_id')->nullable();
             $table->foreignId('contract_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('master_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->string('room_name')->nullable();
+            $table->string('room_floor')->nullable();
+            $table->string('room_type')->nullable();
+            $table->string('room_temperature')->nullable();
+            $table->string('room_intensity')->nullable();
+            $table->string('room_installation_type')->nullable();
+            $table->decimal('room_length', 10, 2)->nullable();
+            $table->decimal('room_width', 10, 2)->nullable();
+            $table->decimal('room_height', 10, 2)->nullable();
+            $table->decimal('area', 10, 2)->nullable();
+            $table->decimal('volume', 10, 2)->nullable();
+            $table->string('room_remark')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('contract_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('contract_id')->nullable();
+            $table->foreignId('room_id')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('master_rentals', function (Blueprint $table) {
+            $table->id();
+            $table->string('rental_name')->nullable();
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->softDeletes();
         });
@@ -302,6 +429,14 @@ class MobileJobListRoomAssignmentTest extends TestCase
             $table->foreignId('job_schedule_id')->nullable();
             $table->foreignId('team_id')->nullable();
             $table->string('status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('job_assign_material_issues', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_assign_schedule_id')->nullable();
+            $table->foreignId('material_issue_id')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });

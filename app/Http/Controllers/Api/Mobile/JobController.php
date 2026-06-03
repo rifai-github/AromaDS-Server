@@ -350,38 +350,17 @@ class JobController extends Controller
             return $roomId && in_array($roomId, $assignedRoomIds);
         });
 
-        $completedRooms = $targetRooms->filter(function ($room) use ($job, $assignedScheduleRooms) {
-            $masterRoomId = $room->contractRoom?->room_id ?? $room->quotationRoom?->room_id ?? null;
-            if (!$masterRoomId) {
-                return false;
-            }
-
-            $assignedRoomCompleted = $assignedScheduleRooms
-                ->where('room_id', $masterRoomId)
-                ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
-                ->isNotEmpty();
-
-            if ($assignedRoomCompleted) {
-                return true;
-            }
-
-            $roomJob = JobSchedule::where('job_number', $job->job_number)
-                ->where('job_advice_id', $job->job_advice_id)
-                ->where('type', $job->type)
-                ->where('room_id', $masterRoomId)
-                ->first();
-
-            if ($roomJob) {
-                return $this->isJobScheduleRoomCompleted($roomJob, $room, $masterRoomId);
-            }
-
-            return false;
+        $targetRoomGroups = $this->groupJobAdviceRoomsByPhysicalRoom($targetRooms);
+        $completedRooms = $targetRoomGroups->filter(function ($roomGroup) use ($job, $assignedScheduleRooms) {
+            return $this->isJobAdviceRoomGroupCompleted($job, $roomGroup, $assignedScheduleRooms);
         })->count();
 
         return [
-            'total_rooms' => $targetRooms->count(),
+            'total_rooms' => $targetRoomGroups->count(),
             'completed_rooms' => $completedRooms,
-            'room_names' => $targetRooms->pluck('room_name')->filter()->values()->all(),
+            'room_names' => $targetRoomGroups->map(function ($roomGroup) {
+                return $roomGroup->first()?->room_name;
+            })->filter()->values()->all(),
         ];
     }
 
@@ -404,6 +383,88 @@ class JobController extends Controller
         }
 
         return [$job->id];
+    }
+
+    private function getJobAdviceRoomPhysicalRoomId($jobAdviceRoom): ?int
+    {
+        return $jobAdviceRoom?->contractRoom?->room_id
+            ?? $jobAdviceRoom?->quotationRoom?->room_id
+            ?? null;
+    }
+
+    private function getJobAdviceRoomPhysicalKey($jobAdviceRoom): string
+    {
+        $roomId = $this->getJobAdviceRoomPhysicalRoomId($jobAdviceRoom);
+        if ($roomId) {
+            return 'room_id_' . $roomId;
+        }
+
+        $roomName = strtolower(trim((string) ($jobAdviceRoom?->room_name ?? '')));
+        if ($roomName !== '') {
+            return 'room_name_' . $roomName;
+        }
+
+        return 'advice_room_' . ($jobAdviceRoom?->id ?? spl_object_id($jobAdviceRoom));
+    }
+
+    private function groupJobAdviceRoomsByPhysicalRoom($rooms)
+    {
+        return collect($rooms)
+            ->groupBy(fn ($room) => $this->getJobAdviceRoomPhysicalKey($room))
+            ->values();
+    }
+
+    private function getRelatedAdviceRoomsForPhysicalRoom($jobAdvice, $jobAdviceRoom)
+    {
+        if (!$jobAdvice || !$jobAdviceRoom) {
+            return collect([$jobAdviceRoom])->filter();
+        }
+
+        $targetKey = $this->getJobAdviceRoomPhysicalKey($jobAdviceRoom);
+
+        return collect($jobAdvice->rooms ?? [])
+            ->filter(fn ($room) => $this->getJobAdviceRoomPhysicalKey($room) === $targetKey)
+            ->values();
+    }
+
+    private function isJobAdviceRoomGroupCompleted(JobSchedule $job, $roomGroup, $assignedScheduleRooms = null): bool
+    {
+        $roomGroup = collect($roomGroup)->filter();
+        if ($roomGroup->isEmpty()) {
+            return false;
+        }
+
+        $masterRoomId = $roomGroup
+            ->map(fn ($room) => $this->getJobAdviceRoomPhysicalRoomId($room))
+            ->filter()
+            ->first();
+
+        if ($assignedScheduleRooms && $masterRoomId) {
+            $assignedRoomCompleted = collect($assignedScheduleRooms)
+                ->where('room_id', $masterRoomId)
+                ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
+                ->isNotEmpty();
+
+            if ($assignedRoomCompleted) {
+                return true;
+            }
+        }
+
+        $completionChecks = $roomGroup->map(function ($room) use ($job, $masterRoomId) {
+            $roomJob = $job;
+
+            if ($job->job_number && $masterRoomId) {
+                $roomJob = JobSchedule::where('job_number', $job->job_number)
+                    ->where('job_advice_id', $job->job_advice_id)
+                    ->where('type', $job->type)
+                    ->where('room_id', $masterRoomId)
+                    ->first() ?? $job;
+            }
+
+            return $this->isJobScheduleRoomCompleted($roomJob, $room, $masterRoomId);
+        });
+
+        return $completionChecks->isNotEmpty() && $completionChecks->every(fn ($completed) => $completed);
     }
 
     private function resolveJobScheduleRoomForAdviceRoom(int $jobScheduleId, $jobAdviceRoom, ?int $roomId = null)
@@ -1538,7 +1599,10 @@ class JobController extends Controller
         }
     
 
-            $rooms = $targetRooms->map(function($room) use ($job, $jobAssign) {
+            $targetRoomGroups = $this->groupJobAdviceRoomsByPhysicalRoom($targetRooms);
+            $rooms = $targetRoomGroups->map(function($roomGroup) use ($job, $jobAssign) {
+            $roomGroup = collect($roomGroup)->values();
+            $room = $roomGroup->first();
             // Get MasterRoom details via ContractRoom
             // Ensure contractRoom relationship is loaded
             if (!$room->relationLoaded('contractRoom')) {
@@ -1756,15 +1820,34 @@ class JobController extends Controller
                     }
                 }
                 
-                // Priority 2: If no products from material issue, get from rental components
-                if (empty($products) && $room->rentalProduct) {
-                    $rental = $room->rentalProduct;
-                    $components = $rental->rentalComponents()->where('is_active', true)->get();
-                    
-                    foreach ($components as $component) {
-                        // Get preferred product from component
-                        $preferredProduct = $component->preferredProducts()->first();
-                        if ($preferredProduct) {
+                // Priority 2: If no products from material issue, get from all rental components
+                // for the same physical room. One room can have multiple rental rows, but the
+                // mobile app should show one room task with all required products.
+                if (empty($products)) {
+                    foreach ($roomGroup as $rentalRoom) {
+                        if (!$rentalRoom->rentalProduct) {
+                            continue;
+                        }
+
+                        $rental = $rentalRoom->rentalProduct;
+                        $components = $rental->rentalComponents()->where('is_active', true)->get();
+
+                        foreach ($components as $component) {
+                            // Get preferred product from component
+                            $preferredProduct = $component->preferredProducts()->first();
+                            if (!$preferredProduct) {
+                                continue;
+                            }
+
+                            $exists = collect($products)->contains(function($p) use ($preferredProduct, $component) {
+                                return $p['product_id'] == $preferredProduct->id
+                                    && ($p['component_name'] ?? null) === ($component->component_name ?? '-');
+                            });
+
+                            if ($exists) {
+                                continue;
+                            }
+
                             $products[] = [
                                 'product_id' => $preferredProduct->id,
                                 'product_name' => $preferredProduct->name ?? '-',
@@ -1835,11 +1918,27 @@ class JobController extends Controller
             $specificJobSchedule = $specificJobScheduleId === $job->id
                 ? $job
                 : JobSchedule::find($specificJobScheduleId);
-            $jobScheduleRoom = $specificJobSchedule
-                ? $this->ensureMobileRentalScheduleRoom($specificJobSchedule, $room, $masterRoom?->id)
-                : $this->resolveJobScheduleRoomForAdviceRoom($specificJobScheduleId, $room, $masterRoom?->id);
-            $roomStatus = $jobScheduleRoom->status ?? 'scheduled';
-            $rentalName = $this->getJobAdviceRoomRentalDisplayName($room);
+            $jobScheduleRooms = $roomGroup->map(function ($adviceRoom) use ($specificJobSchedule, $specificJobScheduleId, $masterRoom) {
+                return $specificJobSchedule
+                    ? $this->ensureMobileRentalScheduleRoom($specificJobSchedule, $adviceRoom, $masterRoom?->id)
+                    : $this->resolveJobScheduleRoomForAdviceRoom($specificJobScheduleId, $adviceRoom, $masterRoom?->id);
+            })->filter()->values();
+
+            $jobScheduleRoom = $jobScheduleRooms
+                ->first(fn ($scheduleRoom) => $scheduleRoom->status !== \App\Models\JobScheduleRoom::STATUS_COMPLETED)
+                ?? $jobScheduleRooms->first();
+            $roomStatus = (
+                $jobScheduleRooms->isNotEmpty()
+                && $jobScheduleRooms->every(fn ($scheduleRoom) => $scheduleRoom->status === \App\Models\JobScheduleRoom::STATUS_COMPLETED)
+            )
+                ? \App\Models\JobScheduleRoom::STATUS_COMPLETED
+                : ($jobScheduleRoom->status ?? 'scheduled');
+            $rentalName = $roomGroup
+                ->map(fn ($adviceRoom) => $this->getJobAdviceRoomRentalDisplayName($adviceRoom))
+                ->filter(fn ($name) => $name && $name !== '-')
+                ->unique()
+                ->implode(', ');
+            $rentalName = $rentalName !== '' ? $rentalName : '-';
             $displayName = $rentalName !== '-' ? "{$roomName} - {$rentalName}" : $roomName;
 
             return [
@@ -2323,6 +2422,38 @@ class JobController extends Controller
                 }
                 
                 $jobScheduleRoom->markAsCompleted(Auth::id(), $completionNote);
+
+                // A physical room can contain multiple rental rows. The mobile app
+                // shows it as one room task, so completing the visible room must also
+                // complete sibling rental rows for the same physical room and job.
+                $relatedAdviceRooms = $this->getRelatedAdviceRoomsForPhysicalRoom($jobAdvice, $room);
+                foreach ($relatedAdviceRooms as $relatedAdviceRoom) {
+                    if ((int) $relatedAdviceRoom->id === (int) $room->id) {
+                        continue;
+                    }
+
+                    $relatedMasterRoomId = $this->getJobAdviceRoomPhysicalRoomId($relatedAdviceRoom);
+                    $relatedScheduleRoom = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
+                        ->where('job_advice_room_id', $relatedAdviceRoom->id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$relatedScheduleRoom) {
+                        $relatedScheduleRoom = $this->ensureMobileRentalScheduleRoom($jobSchedule, $relatedAdviceRoom, $relatedMasterRoomId);
+                        $relatedScheduleRoom = \App\Models\JobScheduleRoom::whereKey($relatedScheduleRoom->id)
+                            ->lockForUpdate()
+                            ->first();
+                    }
+
+                    if ($relatedScheduleRoom && $relatedScheduleRoom->status !== \App\Models\JobScheduleRoom::STATUS_COMPLETED) {
+                        $relatedScheduleRoom->markAsCompleted(Auth::id(), $completionNote);
+                    }
+
+                    if ($relatedAdviceRoom->status !== 'completed') {
+                        $relatedAdviceRoom->status = 'completed';
+                        $relatedAdviceRoom->save();
+                    }
+                }
             } else {
                 \Log::warning("JobScheduleRoom not found for room {$roomId} and job schedule " . ($jobSchedule ? $jobSchedule->id : 'null'));
             }
@@ -5416,21 +5547,13 @@ class JobController extends Controller
             $targetRooms = $job->room_id ? collect([]) : $allRooms;
         }
         
-        // Calculate total and completed rooms for THIS SPECIFIC job
-        $totalRooms = $targetRooms->count();
-        $completedRooms = $targetRooms->filter(function ($room) use ($job) {
-            $masterRoomId = $room->contractRoom?->room_id ?? $room->quotationRoom?->room_id ?? null;
-            $roomJob = $job;
-
-            if ($job->job_number && $masterRoomId) {
-                $roomJob = \App\Models\JobSchedule::where('job_number', $job->job_number)
-                    ->where('job_advice_id', $job->job_advice_id)
-                    ->where('type', $job->type)
-                    ->where('room_id', $masterRoomId)
-                    ->first() ?? $job;
-            }
-
-            return $this->isJobScheduleRoomCompleted($roomJob, $room, $masterRoomId);
+        // Calculate total and completed physical rooms for THIS SPECIFIC job.
+        // One physical room can have multiple rental rows; mobile should not count
+        // those rental rows as separate rooms.
+        $targetRoomGroups = $this->groupJobAdviceRoomsByPhysicalRoom($targetRooms);
+        $totalRooms = $targetRoomGroups->count();
+        $completedRooms = $targetRoomGroups->filter(function ($roomGroup) use ($job) {
+            return $this->isJobAdviceRoomGroupCompleted($job, $roomGroup);
         })->count();
         
         // Use mapJobToArray to get consistent data format (same as job list)
