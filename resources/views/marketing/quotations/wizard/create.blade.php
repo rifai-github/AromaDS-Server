@@ -3007,18 +3007,32 @@ $(document).ready(function() {
                             ? roomId 
                             : 'custom_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
                             
+                        const sourceRoom = typeof room === 'object' ? room : {};
+                        const isRenewalExistingSource = $('#quotation_type').val() === 'renewal'
+                            && (
+                                sourceRoom.is_renewal_existing
+                                || sourceRoom.contract_room_id
+                                || sourceRoom.unit_on_wall_id
+                                || sourceRoom.source === 'unit_on_wall'
+                                || sourceRoom.source === 'contract'
+                                || sourceRoom.source === 'contract_rental'
+                            );
+
                         const newCustomRoom = {
                             id: customId,
-                            survey_id: (typeof room === 'object' ? room.survey_id : 'custom') || 'custom',
-                            survey_detail_id: (typeof room === 'object' ? room.survey_detail_id : null) || null,
-                            master_room_id: (typeof room === 'object' ? room.master_room_id : null) || null,
-                            contract_room_id: (typeof room === 'object' ? room.contract_room_id : null) || null,
+                            survey_id: sourceRoom.survey_id || 'custom',
+                            survey_detail_id: sourceRoom.survey_detail_id || null,
+                            master_room_id: sourceRoom.master_room_id || null,
+                            contract_room_id: sourceRoom.contract_room_id || null,
                             room_name: roomName,
                             room_type: roomType || 'Custom Room',
                             room_area: 0,
                             quantity_needed: 1,
                             is_custom: true,
-                            specifications: (typeof room === 'object' ? room.specifications : null) || JSON.stringify({
+                            is_renewal_existing: isRenewalExistingSource,
+                            aroma_product_id: sourceRoom.aroma_product_id || null,
+                            aroma_variant: sourceRoom.aroma_variant || sourceRoom.aroma_display_name || null,
+                            specifications: sourceRoom.specifications || JSON.stringify({
                                 remark: 'Restored from Renewal Data'
                             })
                         };
@@ -3052,6 +3066,15 @@ $(document).ready(function() {
                                 }
                             }
                         } else {
+                            Object.assign(exists, {
+                                is_renewal_existing: exists.is_renewal_existing || newCustomRoom.is_renewal_existing,
+                                aroma_product_id: exists.aroma_product_id || newCustomRoom.aroma_product_id,
+                                aroma_variant: exists.aroma_variant || newCustomRoom.aroma_variant,
+                                contract_room_id: exists.contract_room_id || newCustomRoom.contract_room_id,
+                                master_room_id: exists.master_room_id || newCustomRoom.master_room_id,
+                                survey_detail_id: exists.survey_detail_id || newCustomRoom.survey_detail_id,
+                                specifications: exists.specifications || newCustomRoom.specifications
+                            });
                             console.log('Custom room already exists, finding checkbox for:', exists.id);
                             checkbox = $(`.custom-room-checkbox[value="${exists.id}"]`);
                         }
