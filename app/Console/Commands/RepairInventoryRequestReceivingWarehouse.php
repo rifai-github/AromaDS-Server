@@ -62,7 +62,7 @@ class RepairInventoryRequestReceivingWarehouse extends Command
                     InventoryMovement::whereIn('id', $plan['movement_ids'])
                         ->update([
                             'warehouse_id' => $plan['target_warehouse']->id,
-                            'updated_by' => Auth::id() ?: 1,
+                            'updated_by' => $this->actorUserId(),
                             'updated_at' => now(),
                         ]);
 
@@ -71,7 +71,7 @@ class RepairInventoryRequestReceivingWarehouse extends Command
                             'warehouse_id' => $plan['target_warehouse']->id,
                             'location_id' => $plan['target_warehouse']->id,
                             'location_type' => 'warehouse',
-                            'updated_by' => Auth::id() ?: 1,
+                            'updated_by' => $this->actorUserId(),
                             'updated_at' => now(),
                         ]);
 
@@ -269,20 +269,25 @@ class RepairInventoryRequestReceivingWarehouse extends Command
                 'quantity' => 0,
                 'minimum_stock' => 0,
                 'maximum_stock' => 0,
-                'created_by' => Auth::id() ?: 1,
-                'updated_by' => Auth::id() ?: 1,
+                'created_by' => $this->actorUserId(),
+                'updated_by' => $this->actorUserId(),
             ]
         );
 
         $sourceStock->update([
             'quantity' => max(0, (float) $sourceStock->quantity - $quantity),
-            'updated_by' => Auth::id() ?: 1,
+            'updated_by' => $this->actorUserId(),
         ]);
 
         $targetStock->update([
             'quantity' => (float) $targetStock->quantity + $quantity,
-            'updated_by' => Auth::id() ?: 1,
+            'updated_by' => $this->actorUserId(),
         ]);
+    }
+
+    private function actorUserId(): ?int
+    {
+        return Auth::id();
     }
 
     private function row(string $status, InventoryReceiving $receiving, array $plan): array
