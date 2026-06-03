@@ -20,6 +20,8 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString("'source' => \$unitOnWall ? 'unit_on_wall' : 'contract'", $controller);
         $this->assertStringContainsString('buildRenewalRooms', $controller);
         $this->assertStringContainsString("'source' => \$unitOnWall ? 'unit_on_wall' : 'contract_rental'", $controller);
+        $this->assertStringContainsString('$resolvedRentalId = $rental->master_rental_id ?: $unitOnWall?->rental_id;', $controller);
+        $this->assertStringContainsString("\$resolvedRentalName = (\$rental->masterRental->rental_name ?? '')", $controller);
         $this->assertStringContainsString('$contract->contractRentals', $controller);
         $this->assertStringContainsString("'contract_room_id' => \$contractRoom?->id", $controller);
         $this->assertStringContainsString("'specifications' => \$resolvedSpecifications ?: \$this->masterRoomSpecifications", $controller);

@@ -508,9 +508,9 @@ class ContractRenewalController extends Controller
                         $resolvedRoomName
                     );
 
-                    $resolvedRentalId = $unitOnWall?->rental_id ?: $rental->master_rental_id;
-                    $resolvedRentalName = $this->unitOnWallRentalName($unitOnWall)
-                        ?: ($rental->masterRental->rental_name ?? '');
+                    $resolvedRentalId = $rental->master_rental_id ?: $unitOnWall?->rental_id;
+                    $resolvedRentalName = ($rental->masterRental->rental_name ?? '')
+                        ?: $this->unitOnWallRentalName($unitOnWall);
                     $resolvedRoomId = $unitOnWall?->room_id ?: $resolvedRoomId;
                     $resolvedRoomName = $this->unitOnWallRoomName($unitOnWall) ?: $resolvedRoomName;
                     $resolvedRoomType = $unitOnWall?->room?->room_type ?: $resolvedRoomType;
