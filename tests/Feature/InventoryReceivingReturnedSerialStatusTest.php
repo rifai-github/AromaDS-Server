@@ -433,6 +433,110 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         ]);
     }
 
+    public function test_repair_inventory_request_receiving_moves_existing_wrong_warehouse_stock_and_serials(): void
+    {
+        $this->seedJakartaConditionWarehouses();
+        $receiving = $this->seedReceivingWithSerial(status: 'ready', referenceNo: 'JKT-IRQ/26-06/0002');
+
+        $receiving->update([
+            'receiving_number' => 'JKT-IRC/26-06/0001',
+            'status' => 'received',
+        ]);
+
+        DB::table('inventory_requests')->insert([
+            'id' => 70,
+            'request_number' => 'JKT-IRQ/26-06/0002',
+            'warehouse_id' => 5,
+            'branch_id' => 1,
+            'status' => 'completed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('serial_numbers')->where('id', 200)->update([
+            'warehouse_id' => 6,
+            'location_type' => 'warehouse',
+            'location_id' => 6,
+            'status' => 'ready',
+        ]);
+
+        DB::table('warehouse_products')->insert([
+            [
+                'warehouse_id' => 6,
+                'master_product_id' => 100,
+                'quantity' => 5,
+                'created_by' => 1,
+                'updated_by' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'warehouse_id' => 5,
+                'master_product_id' => 100,
+                'quantity' => 2,
+                'created_by' => 1,
+                'updated_by' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('inventory_movements')->insert([
+            'id' => 900,
+            'warehouse_id' => 6,
+            'master_product_id' => 100,
+            'movement_type' => 'in',
+            'quantity' => 1,
+            'movement_date' => now()->toDateString(),
+            'reference_no' => 'JKT-IRC/26-06/0001',
+            'reference_type' => 'inventory_receiving',
+            'movement_no' => 'REC-JKT-IRC/26-06/0001',
+            'notes' => 'Inventory received. Receiving Number: JKT-IRC/26-06/0001',
+            'created_by' => 1,
+            'updated_by' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->artisan('warehouse:repair-inventory-request-receiving-warehouse', [
+            '--receiving-number' => ['JKT-IRC/26-06/0001'],
+        ])->assertSuccessful();
+
+        $this->assertDatabaseHas('serial_numbers', [
+            'id' => 200,
+            'warehouse_id' => 6,
+            'location_id' => 6,
+        ]);
+
+        $this->artisan('warehouse:repair-inventory-request-receiving-warehouse', [
+            '--receiving-number' => ['JKT-IRC/26-06/0001'],
+            '--apply' => true,
+        ])->assertSuccessful();
+
+        $this->assertDatabaseHas('serial_numbers', [
+            'id' => 200,
+            'warehouse_id' => 5,
+            'location_type' => 'warehouse',
+            'location_id' => 5,
+        ]);
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 6,
+            'master_product_id' => 100,
+            'quantity' => 4,
+        ]);
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 5,
+            'master_product_id' => 100,
+            'quantity' => 3,
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'id' => 900,
+            'warehouse_id' => 5,
+            'reference_no' => 'JKT-IRC/26-06/0001',
+            'reference_type' => 'inventory_receiving',
+        ]);
+    }
+
     public function test_finalize_return_receiving_places_normal_return_in_used_warehouse(): void
     {
         $this->seedJakartaConditionWarehouses();
