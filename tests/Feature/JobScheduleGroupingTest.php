@@ -179,6 +179,59 @@ class JobScheduleGroupingTest extends TestCase
         $this->assertSame([20, 21], $jobs[1]->allGroupedRooms->pluck('id')->all());
     }
 
+    public function test_detail_rooms_are_scoped_to_the_current_unassigned_period(): void
+    {
+        DB::table('job_schedules')->insert([
+            [
+                'id' => 1,
+                'job_number' => null,
+                'job_advice_id' => 99,
+                'building_id' => 5,
+                'type' => 'service',
+                'period' => 2,
+                'status' => 'scheduled',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 2,
+                'job_number' => null,
+                'job_advice_id' => 99,
+                'building_id' => 5,
+                'type' => 'service',
+                'period' => 3,
+                'status' => 'scheduled',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            [
+                'id' => 10,
+                'job_schedule_id' => 1,
+                'room_name' => 'Ruang Delima',
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 20,
+                'job_schedule_id' => 2,
+                'room_name' => 'Ruang Delima',
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'relatedJobScheduleRoomsQuery');
+        $method->setAccessible(true);
+        $query = $method->invoke(new JobScheduleController(), [1]);
+
+        $this->assertSame([10], $query->pluck('id')->all());
+    }
+
     public function test_pending_material_issue_still_displays_as_material_assign_until_inventory_issuing_exists(): void
     {
         DB::table('job_schedules')->insert([

@@ -60,7 +60,7 @@ class RepairMixedRentalFollowUpSchedules extends Command
             ->get();
 
         $rows = [];
-        $stats = ['scanned' => 0, 'generated' => 0, 'scope' => 0, 'renumbered' => 0, 'status' => 0, 'skipped' => 0];
+        $stats = ['scanned' => 0, 'generated' => 0, 'scope' => 0, 'reference' => 0, 'renumbered' => 0, 'status' => 0, 'skipped' => 0];
 
         foreach ($jobAdvices as $jobAdvice) {
             $stats['scanned']++;
@@ -126,6 +126,7 @@ class RepairMixedRentalFollowUpSchedules extends Command
         $this->line('Scanned Job Advices : '.$stats['scanned']);
         $this->line('Generated schedules : '.($apply ? $stats['generated'] : 'dry-run'));
         $this->line('Repaired scopes     : '.($apply ? $stats['scope'] : 'dry-run'));
+        $this->line('Repaired references : '.($apply ? $stats['reference'] : 'dry-run'));
         $this->line('Renumbered checks   : '.($apply ? $stats['renumbered'] : 'dry-run'));
         $this->line('Repaired statuses   : '.($apply ? $stats['status'] : 'dry-run'));
         $this->line('Skipped             : '.$stats['skipped']);
@@ -191,6 +192,10 @@ class RepairMixedRentalFollowUpSchedules extends Command
     private function previewActiveScheduleRepairs(JobAdvice $jobAdvice, $groups, array &$rows): void
     {
         foreach ($this->activeServiceSchedules($jobAdvice) as $schedule) {
+            if (! $schedule->reference_number) {
+                $rows[] = ['PLAN', $jobAdvice->job_advice_number, $schedule->job_number ?: "#{$schedule->id}", 'Reference', 'restore missing Job Advice reference'];
+            }
+
             if (! $this->scheduleIsUnitOnlyCheck($schedule)) {
                 continue;
             }
@@ -222,6 +227,15 @@ class RepairMixedRentalFollowUpSchedules extends Command
     private function repairActiveScheduleScopes(JobAdvice $jobAdvice, $groups, array &$rows, array &$stats): void
     {
         foreach ($this->activeServiceSchedules($jobAdvice) as $schedule) {
+            if (! $schedule->reference_number) {
+                $schedule->update([
+                    'reference_number' => $jobAdvice->job_advice_number,
+                    'updated_by' => auth()->id(),
+                ]);
+                $stats['reference']++;
+                $rows[] = ['FIXED', $jobAdvice->job_advice_number, $schedule->job_number ?: "#{$schedule->id}", 'Reference', 'missing Job Advice reference restored'];
+            }
+
             $flow = $this->scheduleIsUnitOnlyCheck($schedule)
                 ? 'Check'
                 : (Str::contains(Str::lower((string) $schedule->internal_notes), 'service period') ? 'CSR' : null);

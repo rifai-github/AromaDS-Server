@@ -2771,18 +2771,10 @@ class JobScheduleController extends Controller
             ]);
         }
         
-        // Fetch all JobScheduleRoom records related to the same JobAdvice and same Type for a Unified View.
-        // Jobs without Job Advice must stay scoped to the current job; otherwise all null-JA RV jobs are mixed.
-        $query = \App\Models\JobScheduleRoom::query();
-
-        if ($jobSchedule->job_advice_id) {
-            $query->whereHas('jobSchedule', function($q) use ($jobSchedule) {
-                $q->where('job_advice_id', $jobSchedule->job_advice_id)
-                  ->where('type', $jobSchedule->type);
-            });
-        } else {
-            $query->where('job_schedule_id', $jobSchedule->id);
-        }
+        // Keep detail tabs scoped to the same visit. Before assignment, each period is a
+        // separate visit even though its job number is still null. After assignment, rooms
+        // sharing the same job number remain grouped through $siblingJobIds.
+        $query = $this->relatedJobScheduleRoomsQuery($siblingJobIds);
 
         // MOM: Apply filtering based on view mode parameters
         $viewMode = request('view_mode', 'job');
@@ -2914,6 +2906,12 @@ class JobScheduleController extends Controller
             'allJobReportsPerJS',
             'unitDetails'
         ));
+    }
+
+    private function relatedJobScheduleRoomsQuery(array $siblingJobIds): \Illuminate\Database\Eloquent\Builder
+    {
+        return \App\Models\JobScheduleRoom::query()
+            ->whereIn('job_schedule_id', array_values(array_unique(array_map('intval', $siblingJobIds))));
     }
 
     public function edit(JobSchedule $jobSchedule)
@@ -7529,6 +7527,7 @@ class JobScheduleController extends Controller
                     'period' => $period,
                     'service_frequency' => $serviceFrequency,
                     'service_period_type' => $servicePeriodType,
+                    'reference_number' => $jobAdvice->job_advice_number,
                     'internal_notes' => "Service period {$period}/{$totalServices} (auto-generated after first service){$roomListNote}",
                     'created_by' => Auth::id() ?? \App\Models\User::first()?->id,
                     'updated_by' => Auth::id() ?? \App\Models\User::first()?->id

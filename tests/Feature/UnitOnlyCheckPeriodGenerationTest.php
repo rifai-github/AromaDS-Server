@@ -488,6 +488,15 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             'job_schedule_room_id' => $servicePeriodTwo->jobScheduleRooms()->firstOrFail()->id,
             'job_advice_room_id' => 4,
         ]);
+        $this->assertSame('JKT-JA/26-06/0004', $servicePeriodTwo->reference_number);
+
+        $servicePeriodTwo->update(['reference_number' => null]);
+        $this->artisan('operational:repair-mixed-rental-follow-up-schedules', [
+            '--job-advice' => ['JKT-JA/26-06/0004'],
+            '--apply' => true,
+        ])->assertSuccessful();
+
+        $this->assertSame('JKT-JA/26-06/0004', $servicePeriodTwo->fresh()->reference_number);
     }
 
     public function test_assigning_unit_only_check_does_not_reuse_csr_number_from_same_day_and_team(): void
