@@ -312,6 +312,63 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             ->all());
     }
 
+    public function test_unit_only_generator_counts_existing_check_room_without_rental_pivot(): void
+    {
+        $this->seedUnitOnlyInstallWithExistingFirstCheck();
+
+        DB::table('job_schedules')->insert([
+            'id' => 21,
+            'job_number' => null,
+            'type' => 'service_routine',
+            'status' => 'scheduled',
+            'job_advice_id' => 1,
+            'building_id' => 1,
+            'building_name' => 'Gedung KGI',
+            'room_id' => 1,
+            'room_name' => 'VIP Room',
+            'company_name' => 'KGI',
+            'contract_number' => 'BDG-CA/26-05/0006',
+            'schedule_date' => '2026-06-02',
+            'expected_date' => '2026-06-02',
+            'period' => 2,
+            'service_frequency' => 1,
+            'service_period_type' => 'Monthly',
+            'material_checked' => true,
+            'material_checked_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 21,
+            'job_schedule_id' => 21,
+            'job_advice_room_id' => 1,
+            'room_name' => 'VIP Room',
+            'room_id' => 1,
+            'status' => 'pending',
+            'material_return_status' => 'not_required',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'generateUnitOnlyCheckSchedulesAfterInstall');
+        $method->setAccessible(true);
+        $created = $method->invoke(
+            new JobScheduleController(),
+            JobSchedule::findOrFail(10),
+            JobAdvice::findOrFail(1)
+        );
+
+        $this->assertCount(10, $created);
+        $this->assertSame(range(1, 12), JobSchedule::where('job_advice_id', 1)
+            ->whereIn('type', ['service_first', 'service_routine'])
+            ->orderBy('period')
+            ->pluck('period')
+            ->map(fn ($period) => (int) $period)
+            ->values()
+            ->all());
+        $this->assertSame(1, JobSchedule::where('job_advice_id', 1)->where('period', 2)->count());
+    }
+
     public function test_done_refill_first_service_without_completed_room_status_still_generates_next_services(): void
     {
         $this->seedRefillOnlyFirstService();

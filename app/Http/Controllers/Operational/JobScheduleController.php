@@ -2806,6 +2806,8 @@ class JobScheduleController extends Controller
         ])
         ->get();
 
+        $relatedJobScheduleRooms = $this->deduplicateRelatedJobScheduleRooms($relatedJobScheduleRooms);
+
         if ($relatedJobScheduleRooms->isEmpty()) {
             $relatedJobScheduleRooms = $this->buildFallbackRentalTeamRows($jobSchedule);
         }
@@ -2913,6 +2915,56 @@ class JobScheduleController extends Controller
     {
         return \App\Models\JobScheduleRoom::query()
             ->whereIn('job_schedule_id', array_values(array_unique(array_map('intval', $siblingJobIds))));
+    }
+
+    private function deduplicateRelatedJobScheduleRooms(\Illuminate\Support\Collection $rooms): \Illuminate\Support\Collection
+    {
+        return $rooms
+            ->unique(fn ($room) => $this->buildRelatedJobScheduleRoomKey($room))
+            ->values();
+    }
+
+    private function buildRelatedJobScheduleRoomKey(\App\Models\JobScheduleRoom $room): string
+    {
+        $job = $room->jobSchedule;
+        $physicalRoomId = $room->room_id
+            ?? $room->jobAdviceRoom?->contractRoom?->room_id
+            ?? $room->jobAdviceRoom?->quotationRoom?->room_id;
+
+        $roomKey = $physicalRoomId
+            ? 'room:' . (int) $physicalRoomId
+            : 'name:' . strtolower(trim((string) ($room->room_name ?? $room->jobAdviceRoom?->room_name ?? '-')));
+
+        $rentalProductIds = $room->rentals
+            ->map(fn ($rentalLink) => $rentalLink->jobAdviceRoom?->rental_product_id)
+            ->push($room->jobAdviceRoom?->rental_product_id)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->sort()
+            ->values();
+
+        $jobAdviceRoomIds = $room->rentals
+            ->pluck('job_advice_room_id')
+            ->push($room->job_advice_room_id)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->sort()
+            ->values();
+
+        $rentalKey = $rentalProductIds->isNotEmpty()
+            ? 'products:' . $rentalProductIds->implode(',')
+            : 'ja-rooms:' . $jobAdviceRoomIds->implode(',');
+
+        return implode('|', [
+            $job?->job_advice_id ?? 'no-ja',
+            $job?->building_id ?? 'no-building',
+            strtolower(trim((string) ($job?->type ?? 'no-type'))),
+            $job?->period ?? 'no-period',
+            $roomKey,
+            $rentalKey,
+        ]);
     }
 
     public function edit(JobSchedule $jobSchedule)
@@ -7596,12 +7648,36 @@ class JobScheduleController extends Controller
                 ->groupBy(fn ($jaRoom) => (int) $this->getJobAdviceRoomPhysicalRoomId($jaRoom));
 
             foreach ($unitOnlyRooms as $physicalRoomId => $roomsInGroup) {
-                $jaRoomIds = $roomsInGroup->pluck('id')->all();
+                $jaRoomIds = $roomsInGroup->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+                $rentalProductIds = $roomsInGroup
+                    ->pluck('rental_product_id')
+                    ->filter()
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values()
+                    ->all();
                 $existingCheckPeriods = JobSchedule::where('job_advice_id', $jobAdvice->id)
                     ->whereIn('type', ['service', 'service_first', 'service_routine'])
                     ->whereNotIn('status', ['cancelled', 'undone'])
-                    ->whereHas('jobScheduleRooms.rentals', function ($query) use ($jaRoomIds) {
-                        $query->whereIn('job_advice_room_id', $jaRoomIds);
+                    ->where(function ($query) use ($jaRoomIds, $physicalRoomId, $rentalProductIds) {
+                        $query->whereHas('jobScheduleRooms', function ($roomQuery) use ($jaRoomIds, $physicalRoomId, $rentalProductIds) {
+                            $roomQuery->where('room_id', (int) $physicalRoomId)
+                                ->where(function ($roomScope) use ($jaRoomIds, $rentalProductIds) {
+                                    $roomScope->whereIn('job_advice_room_id', $jaRoomIds);
+
+                                    $roomScope->orWhereHas('rentals', function ($rentalQuery) use ($jaRoomIds) {
+                                        $rentalQuery->whereIn('job_advice_room_id', $jaRoomIds);
+                                    });
+
+                                    if (!empty($rentalProductIds)) {
+                                        $roomScope->orWhereHas('jobAdviceRoom', function ($jaRoomQuery) use ($rentalProductIds) {
+                                            $jaRoomQuery->whereIn('rental_product_id', $rentalProductIds);
+                                        })->orWhereHas('rentals.jobAdviceRoom', function ($jaRoomQuery) use ($rentalProductIds) {
+                                            $jaRoomQuery->whereIn('rental_product_id', $rentalProductIds);
+                                        });
+                                    }
+                                });
+                        });
                     })
                     ->get(['id', 'type', 'period'])
                     ->mapWithKeys(function ($job) {
