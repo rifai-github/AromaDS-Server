@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Operational\JobScheduleController;
 use App\Http\Middleware\CheckFrozenAccount;
 use App\Http\Middleware\CheckLoginRestriction;
 use App\Http\Middleware\CheckMultiLogin;
@@ -9,6 +10,7 @@ use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class OperationalViewOnlyActionPermissionTest extends TestCase
@@ -98,6 +100,31 @@ class OperationalViewOnlyActionPermissionTest extends TestCase
             ])
             ->assertForbidden()
             ->assertJsonPath('error', 'permission_denied');
+    }
+
+    public function test_job_schedule_update_permission_can_use_job_schedule_actions(): void
+    {
+        $user = $this->createViewOnlyUser([
+            'operational.job-schedules.view',
+            'operational.job-schedules.update',
+        ]);
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'canUseJobScheduleActions');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke(new JobScheduleController(), $user));
+    }
+
+    public function test_job_schedule_view_only_permission_cannot_use_job_schedule_actions(): void
+    {
+        $user = $this->createViewOnlyUser([
+            'operational.job-schedules.view',
+        ]);
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'canUseJobScheduleActions');
+        $method->setAccessible(true);
+
+        $this->assertFalse($method->invoke(new JobScheduleController(), $user));
     }
 
     public function test_view_only_material_issue_user_cannot_submit_material_prepare(): void

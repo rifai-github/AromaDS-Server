@@ -429,6 +429,10 @@ class JobSchedule extends Model
             return 1;
         }
 
+        if (!is_numeric($this->period)) {
+            return '-';
+        }
+
         // Get TOP interval from contract
         $contract = $this->jobAdvice?->contract ?? null;
         $topInterval = $contract ? $contract->top_interval_months : 1;
@@ -446,7 +450,7 @@ class JobSchedule extends Model
         if ($divisor < 1) $divisor = 1;
 
         // Formula: ceil(current_period / divisor)
-        return ceil($this->period / $divisor);
+        return ceil((int) $this->period / $divisor);
     }
 
     public function getScheduleDateFormattedAttribute()

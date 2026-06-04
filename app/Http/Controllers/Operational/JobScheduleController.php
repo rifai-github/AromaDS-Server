@@ -600,16 +600,17 @@ class JobScheduleController extends Controller
         ] = $this->getIndexFilterOptions();
 
         // Check permissions for dropdown actions
-        $canSuspend = $user->hasPermission('operational.job-schedules-suspend.update');
-        $canDPF = $user->hasPermission('operational.job-schedules-dpf.update');
-        $canUnpostBA = $user->hasPermission('operational.job-schedules-unpost-ba.update');
-        $canUnpostIssue = $user->hasPermission('operational.job-schedules-unpost-issue.update');
-        $canUnassignTeam = $user->hasPermission('operational.job-schedules-unassign-team.update');
-        $canMaterialAssign = $user->hasPermission('operational.job-schedules-material-assign.update');
-        $canUnassignMaterial = $user->hasPermission('operational.job-schedules-unassign-material.update');
+        $canUseJobScheduleActions = $this->canUseJobScheduleActions($user);
+        $canSuspend = $canUseJobScheduleActions || $user->hasPermission('operational.job-schedules-suspend.update');
+        $canDPF = $canUseJobScheduleActions || $user->hasPermission('operational.job-schedules-dpf.update');
+        $canUnpostBA = $canUseJobScheduleActions || $user->hasPermission('operational.job-schedules-unpost-ba.update');
+        $canUnpostIssue = $canUseJobScheduleActions || $user->hasPermission('operational.job-schedules-unpost-issue.update');
+        $canUnassignTeam = $canUseJobScheduleActions || $user->hasPermission('operational.job-schedules-unassign-team.update');
+        $canMaterialAssign = $canUseJobScheduleActions || $user->hasPermission('operational.job-schedules-material-assign.update');
+        $canUnassignMaterial = $canUseJobScheduleActions || $user->hasPermission('operational.job-schedules-unassign-material.update');
         $canPrint = $user->hasPermission('operational.job-schedules-print.print')
             || $user->hasPermission('operational.job-schedules-print.view');
-        $canAssignTeam = $user->hasPermission('operational.job-schedules-assign-team.update');
+        $canAssignTeam = $canUseJobScheduleActions || $user->hasPermission('operational.job-schedules-assign-team.update');
 
         return view('operational.job-schedules.index', compact(
             'jobSchedules', 'buildings', 'job_advices', 'rooms', 
@@ -2915,6 +2916,48 @@ class JobScheduleController extends Controller
     {
         return \App\Models\JobScheduleRoom::query()
             ->whereIn('job_schedule_id', array_values(array_unique(array_map('intval', $siblingJobIds))));
+    }
+
+    private function canUseJobScheduleActions(?User $user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        if ($user->hasPermission('operational.job-schedules.update')) {
+            return true;
+        }
+
+        if ($user->hasRole('Admin') || $user->hasRole('super_admin') || $user->hasRoleStartingWith('Management')) {
+            return true;
+        }
+
+        $userRole = $user->roles()->first();
+        if ($userRole) {
+            $roleName = strtolower((string) $userRole->name);
+            if (str_contains($roleName, 'admin') || str_contains($roleName, 'super_admin') || str_starts_with($roleName, 'management')) {
+                return true;
+            }
+        }
+
+        $rolesColumn = $user->getAttributes()['roles'] ?? null;
+        if ($rolesColumn && is_string($rolesColumn)) {
+            $roleNameLower = strtolower($rolesColumn);
+            $decoded = json_decode($rolesColumn, true);
+
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $firstRole = $decoded[0]['name'] ?? $decoded['name'] ?? null;
+                if ($firstRole) {
+                    $roleNameLower = strtolower((string) $firstRole);
+                }
+            }
+
+            if (str_contains($roleNameLower, 'admin') || str_contains($roleNameLower, 'super_admin') || str_starts_with($roleNameLower, 'management')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function deduplicateRelatedJobScheduleRooms(\Illuminate\Support\Collection $rooms): \Illuminate\Support\Collection

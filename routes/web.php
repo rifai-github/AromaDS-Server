@@ -669,10 +669,10 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('job-schedules/print-csr', [JobScheduleController::class, 'printCsr'])->name('job-schedules.print-csr');
         Route::resource('job-schedules', JobScheduleController::class);
         Route::post('job-schedules/bulk-delete', [JobScheduleController::class, 'bulkDelete'])->name('job-schedules.bulk-delete');
-        Route::post('job-schedules/bulk-suspend-dpf', [JobScheduleController::class, 'bulkSuspendDpf'])->name('job-schedules.bulk-suspend-dpf')->middleware('permission:operational.job-schedules-suspend.update,operational.job-schedules-dpf.update');
-        Route::post('job-schedules/bulk-material-assign', [JobScheduleController::class, 'bulkMaterialAssign'])->name('job-schedules.bulk-material-assign')->middleware('permission:operational.job-schedules-material-assign.update');
-        Route::post('job-schedules/bulk-unassign-material', [JobScheduleController::class, 'bulkUnassignMaterial'])->name('job-schedules.bulk-unassign-material')->middleware('permission:operational.job-schedules-unassign-material.update');
-        Route::post('job-schedules/bulk-unassign-team', [JobScheduleController::class, 'bulkUnassignTeam'])->name('job-schedules.bulk-unassign-team')->middleware('permission:operational.job-schedules-unassign-team.update');
+        Route::post('job-schedules/bulk-suspend-dpf', [JobScheduleController::class, 'bulkSuspendDpf'])->name('job-schedules.bulk-suspend-dpf')->middleware('permission:operational.job-schedules-suspend.update,operational.job-schedules-dpf.update,operational.job-schedules.update');
+        Route::post('job-schedules/bulk-material-assign', [JobScheduleController::class, 'bulkMaterialAssign'])->name('job-schedules.bulk-material-assign')->middleware('permission:operational.job-schedules-material-assign.update,operational.job-schedules.update');
+        Route::post('job-schedules/bulk-unassign-material', [JobScheduleController::class, 'bulkUnassignMaterial'])->name('job-schedules.bulk-unassign-material')->middleware('permission:operational.job-schedules-unassign-material.update,operational.job-schedules.update');
+        Route::post('job-schedules/bulk-unassign-team', [JobScheduleController::class, 'bulkUnassignTeam'])->name('job-schedules.bulk-unassign-team')->middleware('permission:operational.job-schedules-unassign-team.update,operational.job-schedules.update');
         Route::post('job-schedules/bulk-update-room-assignment', [JobScheduleController::class, 'bulkUpdateRoomAssignment'])->name('job-schedules.bulk-update-room-assignment');
         Route::get('job-schedules/{jobSchedule}/assignments', [JobScheduleController::class, 'showAssignments'])->name('job-schedules.assignments');
         Route::get('job-schedules/{jobSchedule}/materials', [JobScheduleController::class, 'showMaterials'])->name('job-schedules.materials');
@@ -689,14 +689,14 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('job-schedules/{jobSchedule}/rooms/{roomId}/material-issue-items', [JobScheduleController::class, 'getMaterialIssueItemsForRoom'])->name('job-schedules.rooms.material-issue-items');
         Route::post('job-schedules/{id}/resolve-force-majeure', [JobScheduleController::class, 'resolveForceMajeure'])->name('job-schedules.resolve-force-majeure');
         Route::get('job-schedules/force-majeure/stats', [JobScheduleController::class, 'getForceMajeureStats'])->name('job-schedules.force-majeure-stats');
-        Route::post('job-schedules/{jobSchedule}/suspend', [JobScheduleController::class, 'suspend'])->name('job-schedules.suspend')->middleware('permission:operational.job-schedules-suspend.update');
-        Route::post('job-schedules/{jobSchedule}/unsuspend', [JobScheduleController::class, 'unsuspend'])->name('job-schedules.unsuspend')->middleware('permission:operational.job-schedules-suspend.update');
-        Route::post('job-schedules/{jobSchedule}/dpf', [JobScheduleController::class, 'markAsDpf'])->name('job-schedules.dpf')->middleware('permission:operational.job-schedules-dpf.update');
+        Route::post('job-schedules/{jobSchedule}/suspend', [JobScheduleController::class, 'suspend'])->name('job-schedules.suspend')->middleware('permission:operational.job-schedules-suspend.update,operational.job-schedules.update');
+        Route::post('job-schedules/{jobSchedule}/unsuspend', [JobScheduleController::class, 'unsuspend'])->name('job-schedules.unsuspend')->middleware('permission:operational.job-schedules-suspend.update,operational.job-schedules.update');
+        Route::post('job-schedules/{jobSchedule}/dpf', [JobScheduleController::class, 'markAsDpf'])->name('job-schedules.dpf')->middleware('permission:operational.job-schedules-dpf.update,operational.job-schedules.update');
         Route::post('job-schedules/{jobSchedule}/undone', [JobScheduleController::class, 'undoneJob'])->name('job-schedules.undone');
         Route::post('job-schedules/{jobSchedule}/update-ba-date', [JobScheduleController::class, 'updateBaDate'])->name('job-schedules.update-ba-date');
         Route::post('job-schedules/{jobSchedule}/extend-day', [JobScheduleController::class, 'extendDay'])->name('job-schedules.extend-day');
-        Route::post('job-schedules/{jobSchedule}/unassign-team', [JobScheduleController::class, 'unassignTeam'])->name('job-schedules.unassign-team')->middleware('permission:operational.job-schedules-unassign-team.update');
-        Route::post('job-schedules/{jobSchedule}/unpost-issue', [JobScheduleController::class, 'unpostIssue'])->name('job-schedules.unpost-issue')->middleware('permission:operational.job-schedules-unpost-issue.update');
+        Route::post('job-schedules/{jobSchedule}/unassign-team', [JobScheduleController::class, 'unassignTeam'])->name('job-schedules.unassign-team')->middleware('permission:operational.job-schedules-unassign-team.update,operational.job-schedules.update');
+        Route::post('job-schedules/{jobSchedule}/unpost-issue', [JobScheduleController::class, 'unpostIssue'])->name('job-schedules.unpost-issue')->middleware('permission:operational.job-schedules-unpost-issue.update,operational.job-schedules.update');
         Route::post('job-schedules/{id}/suspend-room', [JobScheduleController::class, 'suspendRoom'])->name('job-schedules.suspend-room');
 
         Route::post('job-schedules/{id}/assign-room', [JobScheduleController::class, 'assignRoom'])->name('job-schedules.assign-room');
@@ -704,7 +704,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('job-schedules/check-bulk-assignments', [JobScheduleController::class, 'checkBulkAssignments'])->name('job-schedules.check-bulk-assignments');
         
         // Enhanced Job Management Routes
-        Route::post('job-schedules/{jobSchedule}/assign-team', [JobScheduleController::class, 'assignToTeam'])->name('job-schedules.assign-team')->middleware('permission:operational.job-schedules-assign-team.update');
+        Route::post('job-schedules/{jobSchedule}/assign-team', [JobScheduleController::class, 'assignToTeam'])->name('job-schedules.assign-team')->middleware('permission:operational.job-schedules-assign-team.update,operational.job-schedules.update');
         Route::get('job-schedules/{jobSchedule}/assignments/api', [JobScheduleController::class, 'getAssignments'])->name('job-schedules.assignments.api');
         Route::post('job-assignments/{assignment}/accept', [JobScheduleController::class, 'acceptAssignment'])->name('job-assignments.accept');
         Route::post('job-assignments/{assignment}/start', [JobScheduleController::class, 'startAssignment'])->name('job-assignments.start');
