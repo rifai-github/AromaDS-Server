@@ -142,7 +142,9 @@ class Quotation extends Model
 
     public function existingContract()
     {
-        return $this->belongsTo(Contract::class, 'existing_contract_id');
+        return $this->belongsTo(Contract::class, 'existing_contract_id')
+            ->withTrashed()
+            ->withoutGlobalScopes();
     }
 
     public function quotationDetails()

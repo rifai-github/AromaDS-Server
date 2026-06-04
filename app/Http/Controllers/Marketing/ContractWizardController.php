@@ -260,7 +260,7 @@ class ContractWizardController extends Controller
             }
 
             if ($quotation && $quotation->quotation_type === 'renewal' && $quotation->existing_contract_id) {
-                $oldContract = Contract::find($quotation->existing_contract_id);
+                $oldContract = Contract::withoutGlobalScopes()->find($quotation->existing_contract_id);
                 $blockReason = $oldContract?->getRenewalBlockReason() ?? 'Contract lama untuk renewal tidak ditemukan.';
 
                 if ($blockReason) {

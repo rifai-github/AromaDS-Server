@@ -1840,7 +1840,7 @@ class ContractController extends Controller
             return null;
         }
 
-        $oldContract = Contract::find($quotation->existing_contract_id);
+        $oldContract = Contract::withoutGlobalScopes()->find($quotation->existing_contract_id);
         if (!$oldContract) {
             return 'Contract lama untuk renewal tidak ditemukan.';
         }
@@ -1856,7 +1856,7 @@ class ContractController extends Controller
             return;
         }
 
-        $oldContract = Contract::find($quotation->existing_contract_id);
+        $oldContract = Contract::withoutGlobalScopes()->find($quotation->existing_contract_id);
         if (!$oldContract) {
             return;
         }

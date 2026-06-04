@@ -1559,7 +1559,7 @@ class QuotationController extends Controller
         // cancel semua job schedule yang tersisa dari contract lama
         if ($quotation->quotation_type === 'renewal' && $quotation->existing_contract_id) {
             try {
-                $oldContract = Contract::find($quotation->existing_contract_id);
+                $oldContract = Contract::withoutGlobalScopes()->find($quotation->existing_contract_id);
 
                 if ($oldContract) {
                     // 1. Cancel semua job schedule sisa dari contract lama
@@ -1647,7 +1647,7 @@ class QuotationController extends Controller
             ]);
         }
 
-        $contract = Contract::find($existingContractId);
+        $contract = Contract::withoutGlobalScopes()->find($existingContractId);
         if (!$contract) {
             throw ValidationException::withMessages([
                 'existing_contract_id' => 'Contract lama tidak ditemukan.',
