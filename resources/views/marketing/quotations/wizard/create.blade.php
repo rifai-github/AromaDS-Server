@@ -761,7 +761,7 @@
                                                 <label for="existing_contract_id" class="form-label">
                                                     Existing Contract <span class="required-indicator"></span>
                                                 </label>
-                                                <select class="form-control" id="existing_contract_id" name="existing_contract_id">
+                                                <select class="form-control existing-contract-select" id="existing_contract_id" name="existing_contract_id">
                                                     <option value="">Pilih contract...</option>
                                                     <!-- Will be populated via AJAX -->
                                                 </select>
@@ -2160,6 +2160,27 @@ $(document).ready(function() {
     function getCurrentBranchId() {
         return $('#branch_id_hidden').val() || $('#branch_id').val() || '';
     }
+
+    function initializeExistingContractSearch() {
+        const select = $('#existing_contract_id');
+
+        if (!select.length || typeof $.fn.select2 !== 'function') {
+            return;
+        }
+
+        if (select.hasClass('select2-hidden-accessible')) {
+            select.select2('destroy');
+        }
+
+        select.select2({
+            placeholder: 'Cari nomor contract atau customer...',
+            allowClear: true,
+            width: '100%',
+            dropdownParent: $('body')
+        });
+    }
+
+    initializeExistingContractSearch();
 
     function reloadEligibleContractsIfRenewal() {
         if ($('#quotation_type').val() === 'renewal' && $('#contract-field').hasClass('show')) {
@@ -5844,6 +5865,7 @@ $(document).ready(function() {
             success: function(response) {
                 if (response.status === 'success') {
                     const select = $('#existing_contract_id');
+                    const previousValue = select.val();
                     select.empty().append('<option value="">Pilih contract...</option>');
                     
                     // Use all returned contracts (backend already handles filtering active status)
@@ -5860,6 +5882,12 @@ $(document).ready(function() {
                         
                         select.append(option);
                     });
+
+                    initializeExistingContractSearch();
+
+                    if (previousValue && select.find(`option[value="${previousValue}"]`).length) {
+                        select.val(previousValue).trigger('change.select2');
+                    }
                     
                     console.log('Loaded ' + eligibleContracts.length + ' eligible contracts');
                     

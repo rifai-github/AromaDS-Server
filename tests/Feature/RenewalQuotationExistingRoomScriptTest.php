@@ -42,6 +42,10 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
     {
         $view = file_get_contents(resource_path('views/marketing/quotations/wizard/create.blade.php'));
 
+        $this->assertStringContainsString('existing-contract-select', $view);
+        $this->assertStringContainsString('function initializeExistingContractSearch()', $view);
+        $this->assertStringContainsString("placeholder: 'Cari nomor contract atau customer...'", $view);
+        $this->assertStringContainsString('initializeExistingContractSearch();', $view);
         $this->assertStringContainsString('room_id: room.survey_detail_id || room.room_id', $view);
         $this->assertStringContainsString('master_room_id: room.master_room_id || room.room_id || null', $view);
         $this->assertStringContainsString('contract_room_id: room.contract_room_id || null', $view);
