@@ -27,6 +27,14 @@ class RenewalSourceContractLookupTest extends TestCase
             'Contract::findRenewalSource($quotation->existing_contract_id)',
             $contractWizardController
         );
+        $this->assertStringContainsString(
+            "'Renewal source contract lookup failed during contract draft creation'",
+            $contractWizardController
+        );
+        $this->assertStringNotContainsString(
+            "\$oldContract?->getRenewalBlockReason() ?? 'Contract lama untuk renewal tidak ditemukan.'",
+            $contractWizardController
+        );
 
         $this->assertStringContainsString(
             "Contract::findRenewalSource(\$request->get('existing_contract_id'))?->load('customer')",
