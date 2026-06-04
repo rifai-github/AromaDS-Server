@@ -600,15 +600,16 @@ class JobScheduleController extends Controller
         ] = $this->getIndexFilterOptions();
 
         // Check permissions for dropdown actions
-        $canSuspend = $user->hasPermission('operational.job-schedules-suspend.view');
-        $canDPF = $user->hasPermission('operational.job-schedules-dpf.view');
-        $canUnpostBA = $user->hasPermission('operational.job-schedules-unpost-ba.view');
-        $canUnpostIssue = $user->hasPermission('operational.job-schedules-unpost-issue.view');
-        $canUnassignTeam = $user->hasPermission('operational.job-schedules-unassign-team.view');
-        $canMaterialAssign = $user->hasPermission('operational.job-schedules-material-assign.view');
-        $canUnassignMaterial = $user->hasPermission('operational.job-schedules-unassign-material.view');
-        $canPrint = $user->hasPermission('operational.job-schedules-print.view');
-        $canAssignTeam = $user->hasPermission('operational.job-schedules-assign-team.view');
+        $canSuspend = $user->hasPermission('operational.job-schedules-suspend.update');
+        $canDPF = $user->hasPermission('operational.job-schedules-dpf.update');
+        $canUnpostBA = $user->hasPermission('operational.job-schedules-unpost-ba.update');
+        $canUnpostIssue = $user->hasPermission('operational.job-schedules-unpost-issue.update');
+        $canUnassignTeam = $user->hasPermission('operational.job-schedules-unassign-team.update');
+        $canMaterialAssign = $user->hasPermission('operational.job-schedules-material-assign.update');
+        $canUnassignMaterial = $user->hasPermission('operational.job-schedules-unassign-material.update');
+        $canPrint = $user->hasPermission('operational.job-schedules-print.print')
+            || $user->hasPermission('operational.job-schedules-print.view');
+        $canAssignTeam = $user->hasPermission('operational.job-schedules-assign-team.update');
 
         return view('operational.job-schedules.index', compact(
             'jobSchedules', 'buildings', 'job_advices', 'rooms', 
@@ -5520,6 +5521,19 @@ class JobScheduleController extends Controller
                 'message' => 'Invalid data provided',
                 'errors' => $validator->errors()
             ], 422);
+        }
+
+        $requiredPermission = $request->action === 'suspend'
+            ? 'operational.job-schedules-suspend.update'
+            : 'operational.job-schedules-dpf.update';
+
+        if (!Auth::user()?->hasPermission($requiredPermission)) {
+            return response()->json([
+                'success' => false,
+                'status' => 'error',
+                'message' => 'Unauthorized. You do not have the required permission to access this resource.',
+                'error' => 'permission_denied'
+            ], 403);
         }
 
         try {

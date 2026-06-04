@@ -669,10 +669,10 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('job-schedules/print-csr', [JobScheduleController::class, 'printCsr'])->name('job-schedules.print-csr');
         Route::resource('job-schedules', JobScheduleController::class);
         Route::post('job-schedules/bulk-delete', [JobScheduleController::class, 'bulkDelete'])->name('job-schedules.bulk-delete');
-        Route::post('job-schedules/bulk-suspend-dpf', [JobScheduleController::class, 'bulkSuspendDpf'])->name('job-schedules.bulk-suspend-dpf');
-        Route::post('job-schedules/bulk-material-assign', [JobScheduleController::class, 'bulkMaterialAssign'])->name('job-schedules.bulk-material-assign');
-        Route::post('job-schedules/bulk-unassign-material', [JobScheduleController::class, 'bulkUnassignMaterial'])->name('job-schedules.bulk-unassign-material');
-        Route::post('job-schedules/bulk-unassign-team', [JobScheduleController::class, 'bulkUnassignTeam'])->name('job-schedules.bulk-unassign-team');
+        Route::post('job-schedules/bulk-suspend-dpf', [JobScheduleController::class, 'bulkSuspendDpf'])->name('job-schedules.bulk-suspend-dpf')->middleware('permission:operational.job-schedules-suspend.update,operational.job-schedules-dpf.update');
+        Route::post('job-schedules/bulk-material-assign', [JobScheduleController::class, 'bulkMaterialAssign'])->name('job-schedules.bulk-material-assign')->middleware('permission:operational.job-schedules-material-assign.update');
+        Route::post('job-schedules/bulk-unassign-material', [JobScheduleController::class, 'bulkUnassignMaterial'])->name('job-schedules.bulk-unassign-material')->middleware('permission:operational.job-schedules-unassign-material.update');
+        Route::post('job-schedules/bulk-unassign-team', [JobScheduleController::class, 'bulkUnassignTeam'])->name('job-schedules.bulk-unassign-team')->middleware('permission:operational.job-schedules-unassign-team.update');
         Route::post('job-schedules/bulk-update-room-assignment', [JobScheduleController::class, 'bulkUpdateRoomAssignment'])->name('job-schedules.bulk-update-room-assignment');
         Route::get('job-schedules/{jobSchedule}/assignments', [JobScheduleController::class, 'showAssignments'])->name('job-schedules.assignments');
         Route::get('job-schedules/{jobSchedule}/materials', [JobScheduleController::class, 'showMaterials'])->name('job-schedules.materials');
@@ -689,14 +689,14 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('job-schedules/{jobSchedule}/rooms/{roomId}/material-issue-items', [JobScheduleController::class, 'getMaterialIssueItemsForRoom'])->name('job-schedules.rooms.material-issue-items');
         Route::post('job-schedules/{id}/resolve-force-majeure', [JobScheduleController::class, 'resolveForceMajeure'])->name('job-schedules.resolve-force-majeure');
         Route::get('job-schedules/force-majeure/stats', [JobScheduleController::class, 'getForceMajeureStats'])->name('job-schedules.force-majeure-stats');
-        Route::post('job-schedules/{jobSchedule}/suspend', [JobScheduleController::class, 'suspend'])->name('job-schedules.suspend');
-        Route::post('job-schedules/{jobSchedule}/unsuspend', [JobScheduleController::class, 'unsuspend'])->name('job-schedules.unsuspend');
-        Route::post('job-schedules/{jobSchedule}/dpf', [JobScheduleController::class, 'markAsDpf'])->name('job-schedules.dpf');
+        Route::post('job-schedules/{jobSchedule}/suspend', [JobScheduleController::class, 'suspend'])->name('job-schedules.suspend')->middleware('permission:operational.job-schedules-suspend.update');
+        Route::post('job-schedules/{jobSchedule}/unsuspend', [JobScheduleController::class, 'unsuspend'])->name('job-schedules.unsuspend')->middleware('permission:operational.job-schedules-suspend.update');
+        Route::post('job-schedules/{jobSchedule}/dpf', [JobScheduleController::class, 'markAsDpf'])->name('job-schedules.dpf')->middleware('permission:operational.job-schedules-dpf.update');
         Route::post('job-schedules/{jobSchedule}/undone', [JobScheduleController::class, 'undoneJob'])->name('job-schedules.undone');
         Route::post('job-schedules/{jobSchedule}/update-ba-date', [JobScheduleController::class, 'updateBaDate'])->name('job-schedules.update-ba-date');
         Route::post('job-schedules/{jobSchedule}/extend-day', [JobScheduleController::class, 'extendDay'])->name('job-schedules.extend-day');
-        Route::post('job-schedules/{jobSchedule}/unassign-team', [JobScheduleController::class, 'unassignTeam'])->name('job-schedules.unassign-team');
-        Route::post('job-schedules/{jobSchedule}/unpost-issue', [JobScheduleController::class, 'unpostIssue'])->name('job-schedules.unpost-issue');
+        Route::post('job-schedules/{jobSchedule}/unassign-team', [JobScheduleController::class, 'unassignTeam'])->name('job-schedules.unassign-team')->middleware('permission:operational.job-schedules-unassign-team.update');
+        Route::post('job-schedules/{jobSchedule}/unpost-issue', [JobScheduleController::class, 'unpostIssue'])->name('job-schedules.unpost-issue')->middleware('permission:operational.job-schedules-unpost-issue.update');
         Route::post('job-schedules/{id}/suspend-room', [JobScheduleController::class, 'suspendRoom'])->name('job-schedules.suspend-room');
 
         Route::post('job-schedules/{id}/assign-room', [JobScheduleController::class, 'assignRoom'])->name('job-schedules.assign-room');
@@ -704,7 +704,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('job-schedules/check-bulk-assignments', [JobScheduleController::class, 'checkBulkAssignments'])->name('job-schedules.check-bulk-assignments');
         
         // Enhanced Job Management Routes
-        Route::post('job-schedules/{jobSchedule}/assign-team', [JobScheduleController::class, 'assignToTeam'])->name('job-schedules.assign-team');
+        Route::post('job-schedules/{jobSchedule}/assign-team', [JobScheduleController::class, 'assignToTeam'])->name('job-schedules.assign-team')->middleware('permission:operational.job-schedules-assign-team.update');
         Route::get('job-schedules/{jobSchedule}/assignments/api', [JobScheduleController::class, 'getAssignments'])->name('job-schedules.assignments.api');
         Route::post('job-assignments/{assignment}/accept', [JobScheduleController::class, 'acceptAssignment'])->name('job-assignments.accept');
         Route::post('job-assignments/{assignment}/start', [JobScheduleController::class, 'startAssignment'])->name('job-assignments.start');
@@ -783,20 +783,23 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('job-assign-material-issues/brand-lines-variants', [JobAssignMaterialIssueController::class, 'getBrandLinesAndVariants'])->name('job-assign-material-issues.brand-lines-variants');
         
         // Material Copy & Delete Routes (MUST be BEFORE resource route)
-        Route::post('job-assign-material-issues/copy-material', [JobAssignMaterialIssueController::class, 'copyMaterial'])->name('job-assign-material-issues.copy-material');
-        Route::delete('job-assign-material-issues/delete-copied-material/{itemId}', [JobAssignMaterialIssueController::class, 'deleteCopiedMaterial'])->name('job-assign-material-issues.delete-copied-material');
+        Route::post('job-assign-material-issues/copy-material', [JobAssignMaterialIssueController::class, 'copyMaterial'])->name('job-assign-material-issues.copy-material')->middleware('permission:operational.job-assign-material-issues.update');
+        Route::delete('job-assign-material-issues/delete-copied-material/{itemId}', [JobAssignMaterialIssueController::class, 'deleteCopiedMaterial'])->name('job-assign-material-issues.delete-copied-material')->middleware('permission:operational.job-assign-material-issues.update');
         
         // Qty Issue Autosave & Material Update Routes  
-        Route::put('job-assign-material-issues/update-qty/{itemId}', [JobAssignMaterialIssueController::class, 'updateQtyIssue'])->name('job-assign-material-issues.update-qty');
-        Route::put('job-assign-material-issues/update-material/{itemId}', [JobAssignMaterialIssueController::class, 'updateMaterial'])->name('job-assign-material-issues.update-material');
+        Route::put('job-assign-material-issues/update-qty/{itemId}', [JobAssignMaterialIssueController::class, 'updateQtyIssue'])->name('job-assign-material-issues.update-qty')->middleware('permission:operational.job-assign-material-issues.update');
+        Route::put('job-assign-material-issues/update-material/{itemId}', [JobAssignMaterialIssueController::class, 'updateMaterial'])->name('job-assign-material-issues.update-material')->middleware('permission:operational.job-assign-material-issues.update');
         
-        Route::resource('job-assign-material-issues', JobAssignMaterialIssueController::class);
-        Route::post('job-assign-material-issues/bulk-delete', [JobAssignMaterialIssueController::class, 'bulkDelete'])->name('job-assign-material-issues.bulk-delete');
-        Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/approve', [JobAssignMaterialIssueController::class, 'approve'])->name('job-assign-material-issues.approve');
-        Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/unapprove', [JobAssignMaterialIssueController::class, 'unapprove'])->name('job-assign-material-issues.unapprove');
-        Route::post('job-assign-material-issues/submit-issue', [JobAssignMaterialIssueController::class, 'submitIssue'])->name('job-assign-material-issues.submit-issue');
-        Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/unissue', [JobAssignMaterialIssueController::class, 'unissue'])->name('job-assign-material-issues.unissue');
-        Route::post('job-assign-material-issues/bulk-unissue', [JobAssignMaterialIssueController::class, 'bulkUnissue'])->name('job-assign-material-issues.bulk-unissue');
+        Route::resource('job-assign-material-issues', JobAssignMaterialIssueController::class)->only(['index', 'show'])->middleware('permission:operational.job-assign-material-issues.view');
+        Route::resource('job-assign-material-issues', JobAssignMaterialIssueController::class)->only(['create', 'store'])->middleware('permission:operational.job-assign-material-issues.create');
+        Route::resource('job-assign-material-issues', JobAssignMaterialIssueController::class)->only(['edit', 'update'])->middleware('permission:operational.job-assign-material-issues.update');
+        Route::resource('job-assign-material-issues', JobAssignMaterialIssueController::class)->only(['destroy'])->middleware('permission:operational.job-assign-material-issues.delete');
+        Route::post('job-assign-material-issues/bulk-delete', [JobAssignMaterialIssueController::class, 'bulkDelete'])->name('job-assign-material-issues.bulk-delete')->middleware('permission:operational.job-assign-material-issues.delete');
+        Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/approve', [JobAssignMaterialIssueController::class, 'approve'])->name('job-assign-material-issues.approve')->middleware('permission:operational.job-assign-material-issues.approve,operational.job-assign-material-issues.update');
+        Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/unapprove', [JobAssignMaterialIssueController::class, 'unapprove'])->name('job-assign-material-issues.unapprove')->middleware('permission:operational.job-assign-material-issues.approve,operational.job-assign-material-issues.update');
+        Route::post('job-assign-material-issues/submit-issue', [JobAssignMaterialIssueController::class, 'submitIssue'])->name('job-assign-material-issues.submit-issue')->middleware('permission:operational.job-assign-material-issues.update');
+        Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/unissue', [JobAssignMaterialIssueController::class, 'unissue'])->name('job-assign-material-issues.unissue')->middleware('permission:operational.job-assign-material-issues.update');
+        Route::post('job-assign-material-issues/bulk-unissue', [JobAssignMaterialIssueController::class, 'bulkUnissue'])->name('job-assign-material-issues.bulk-unissue')->middleware('permission:operational.job-assign-material-issues.update');
         Route::get('job-assign-material-issues/job-assign-schedule/{id}/details', [JobAssignMaterialIssueController::class, 'getJobAssignScheduleDetails'])->name('job-assign-material-issues.job-assign-schedule.details');
         Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/request-variant-change', [JobAssignMaterialIssueController::class, 'requestVariantChange'])->name('job-assign-material-issues.request-variant-change');
         Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/approve-variant-change', [JobAssignMaterialIssueController::class, 'approveVariantChange'])->name('job-assign-material-issues.approve-variant-change');

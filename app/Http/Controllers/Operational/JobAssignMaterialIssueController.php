@@ -664,6 +664,9 @@ class JobAssignMaterialIssueController extends Controller
         });
 
         $indexLookups = $this->buildIndexLookups($materialIssues);
+        $user = Auth::user();
+        $canPrepareMaterial = $user?->hasPermission('operational.job-assign-material-issues.update') ?? false;
+        $canDeleteMaterialIssue = $user?->hasPermission('operational.job-assign-material-issues.delete') ?? false;
 
         return view('operational.job-assign-material-issues.index', array_merge($indexLookups, compact(
             'materialIssues',
@@ -673,7 +676,9 @@ class JobAssignMaterialIssueController extends Controller
             'requestReasons',
             'priorities',
             'statuses',
-            'statistics'
+            'statistics',
+            'canPrepareMaterial',
+            'canDeleteMaterialIssue'
         )));
     }
 

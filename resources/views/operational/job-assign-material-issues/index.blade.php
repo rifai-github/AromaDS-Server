@@ -907,19 +907,19 @@
             <div class="flex flex-row justify-start items-center w-full">
                 <!-- Select all moved to table header -->
                 
-                <!-- Submit Issue Button -->
-                
-                <!-- Submit Issue Button -->
-                <button class="btn btn-primary btn-sm ml-4" onclick="submitIssue()" id="btnSubmitIssue" disabled>
-                    <i class="fas fa-paper-plane"></i>
-                    <span>Submit Issue</span>
-                </button>
-                
-                <!-- Delete Button -->
-                <button class="btn btn-secondary btn-sm ml-4" onclick="deleteSelected()">
-                    <i class="fas fa-trash"></i>
-                    <span>Delete</span>
-                </button>
+                @if($canPrepareMaterial)
+                    <button class="btn btn-primary btn-sm ml-4" onclick="submitIssue()" id="btnSubmitIssue" disabled>
+                        <i class="fas fa-paper-plane"></i>
+                        <span>Submit Issue</span>
+                    </button>
+                @endif
+
+                @if($canDeleteMaterialIssue)
+                    <button class="btn btn-secondary btn-sm ml-4" onclick="deleteSelected()">
+                        <i class="fas fa-trash"></i>
+                        <span>Delete</span>
+                    </button>
+                @endif
             </div>
         </div>
         
@@ -1224,7 +1224,7 @@
                                     $isPending = $materialIssue && $materialIssue->status === 'pending';
                                 @endphp
 
-                                @if($item->is_copied || $isPending)
+                                @if($canPrepareMaterial && ($item->is_copied || $isPending))
                                     @php
                                         // STRICT FILTERING LOGIC
                                         $currentProduct = $item->product;
@@ -1406,7 +1406,8 @@
                                        min="0" 
                                        step="1"
                                        onclick="event.stopPropagation()"
-                                       onfocus="event.stopPropagation()">
+                                       onfocus="event.stopPropagation()"
+                                       @if(!$canPrepareMaterial) disabled @endif>
                             </td>
                             
                             <!-- 11. Warehouse -->
@@ -1513,14 +1514,14 @@
                             
                             <!-- 21. Action -->
                             <td class="text-center">
-                                @if($canCopyMaterialItem)
+                                @if($canPrepareMaterial && $canCopyMaterialItem)
                                 <button class="btn-copy px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs" 
                                         onclick="copyMaterial({{ $item->id }})" 
                                         title="Copy Material for Package Conversion">
                                     📋
                                 </button>
                                 @endif
-                                @if($item->is_copied)
+                                @if($canPrepareMaterial && $item->is_copied)
                                 <button class="btn-delete px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-xs ml-1" 
                                         onclick="deleteCopiedMaterial({{ $item->id }})" 
                                         title="Delete Copied Material">
