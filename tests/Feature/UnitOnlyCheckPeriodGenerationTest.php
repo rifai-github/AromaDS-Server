@@ -170,6 +170,7 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             $table->string('quotation_number')->nullable();
             $table->date('schedule_date')->nullable();
             $table->date('expected_date')->nullable();
+            $table->date('assign_date')->nullable();
             $table->date('ba_date')->nullable();
             $table->integer('period')->nullable();
             $table->integer('service_frequency')->nullable();
@@ -208,6 +209,23 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('job_assign_schedules', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_id')->nullable();
+            $table->foreignId('team_id')->nullable();
+            $table->string('status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('job_assign_material_issues', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_assign_schedule_id')->nullable();
+            $table->foreignId('material_issue_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         User::create(['id' => 1, 'name' => 'Admin']);
         Auth::login(User::findOrFail(1));
     }
@@ -215,6 +233,8 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
     protected function tearDown(): void
     {
         foreach ([
+            'job_assign_material_issues',
+            'job_assign_schedules',
             'job_schedule_room_rentals',
             'job_schedule_rooms',
             'job_schedules',
@@ -411,6 +431,110 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
 
         $this->assertSame('installation_report', $docTypeMethod->invoke($controller, JobSchedule::findOrFail(42)));
         $this->assertSame('customer_service_report', $docTypeMethod->invoke($controller, JobSchedule::findOrFail(50)));
+    }
+
+    public function test_repair_mixed_rental_follow_ups_generates_missing_csr_and_repairs_old_check_number(): void
+    {
+        $this->seedMixedUnitOnlyAndRefillRoom();
+
+        DB::table('job_schedules')->where('id', 42)->update([
+            'job_number' => 'JKT-CSR/26-07/0002',
+            'status' => 'assign_material',
+            'internal_notes' => 'Auto-generated Check period 2/2 after install job JKT-IR/26-06/0002',
+        ]);
+        DB::table('job_assign_schedules')->insert([
+            'job_schedule_id' => 42,
+            'team_id' => 4,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->artisan('operational:repair-mixed-rental-follow-up-schedules', [
+            '--job-advice' => ['JKT-JA/26-06/0004'],
+        ])->assertSuccessful();
+
+        $this->assertSame(1, JobSchedule::where('job_advice_id', 3)->where('period', 2)->count());
+        $this->assertDatabaseHas('job_schedules', [
+            'id' => 42,
+            'job_number' => 'JKT-CSR/26-07/0002',
+            'status' => 'assign_material',
+        ]);
+
+        $this->artisan('operational:repair-mixed-rental-follow-up-schedules', [
+            '--job-advice' => ['JKT-JA/26-06/0004'],
+            '--apply' => true,
+        ])->assertSuccessful();
+
+        $this->assertSame(2, JobSchedule::where('job_advice_id', 3)->where('period', 2)->count());
+        $this->assertStringStartsWith('JKT-IR/26-07/', JobSchedule::findOrFail(42)->job_number);
+        $this->assertDatabaseHas('job_schedules', [
+            'id' => 42,
+            'status' => 'assign_team',
+            'material_checked' => true,
+        ]);
+
+        $servicePeriodTwo = JobSchedule::where('job_advice_id', 3)
+            ->where('type', 'service')
+            ->where('period', 2)
+            ->firstOrFail();
+        $this->assertDatabaseHas('job_schedule_room_rentals', [
+            'job_schedule_room_id' => $servicePeriodTwo->jobScheduleRooms()->firstOrFail()->id,
+            'job_advice_room_id' => 4,
+        ]);
+    }
+
+    public function test_assigning_unit_only_check_does_not_reuse_csr_number_from_same_day_and_team(): void
+    {
+        $this->seedMixedUnitOnlyAndRefillRoom();
+
+        DB::table('job_schedules')->where('id', 42)->update(['job_number' => null]);
+        DB::table('job_schedules')->insert([
+            'id' => 51,
+            'job_number' => 'JKT-CSR/26-07/0002',
+            'type' => 'service_routine',
+            'status' => 'assign_team',
+            'job_advice_id' => 3,
+            'building_id' => 3,
+            'building_name' => 'Gedung Mixed',
+            'room_id' => 3,
+            'room_name' => 'Ruang Delima',
+            'company_name' => 'Test 260218 PT',
+            'contract_number' => 'JKT-CA/26-06/0004',
+            'schedule_date' => '2026-07-02',
+            'expected_date' => '2026-07-02',
+            'period' => 2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 51,
+            'job_schedule_id' => 51,
+            'job_advice_room_id' => 4,
+            'room_name' => 'Ruang Delima',
+            'room_id' => 3,
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_room_rentals')->insert([
+            'job_schedule_room_id' => 51,
+            'job_advice_room_id' => 4,
+            'is_primary' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_assign_schedules')->insert([
+            ['job_schedule_id' => 42, 'team_id' => 4, 'status' => 'assigned', 'created_at' => now(), 'updated_at' => now()],
+            ['job_schedule_id' => 51, 'team_id' => 4, 'status' => 'assigned', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'ensureAssignedJobNumber');
+        $method->setAccessible(true);
+        $method->invoke(new JobScheduleController(), JobSchedule::findOrFail(42), 4);
+
+        $this->assertStringStartsWith('JKT-IR/26-07/', JobSchedule::findOrFail(42)->job_number);
+        $this->assertSame('JKT-CSR/26-07/0002', JobSchedule::findOrFail(51)->job_number);
     }
 
     private function seedUnitOnlyInstallWithExistingFirstCheck(): void

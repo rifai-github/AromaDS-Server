@@ -491,6 +491,61 @@ class InvoiceGenerationService
     }
 
     /**
+     * Build the rental rows that should exist on an already generated monthly invoice.
+     * This is intentionally read-only so repair commands can preview before applying.
+     */
+    public function expectedRentalDetailsForInvoice(Invoice $invoice): array
+    {
+        $contract = $invoice->contract()
+            ->with([
+                'contractRentals.masterRental',
+                'contractRooms.room',
+                'customer',
+                'quotation',
+            ])
+            ->first();
+
+        if (! $contract || ! $invoice->invoice_date) {
+            return [];
+        }
+
+        $periodStart = Carbon::parse($invoice->invoice_date)->startOfMonth();
+        $periodEnd = Carbon::parse($invoice->invoice_date)->endOfMonth();
+        $completedJobs = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
+        $expected = [];
+        $billedRentals = [];
+
+        foreach ($completedJobs as $jobSchedule) {
+            foreach ($this->getRentalDetailsForJob($jobSchedule) as $rental) {
+                $billingKey = ($jobSchedule->room_id ?? 'all').'_'.$rental['master_rental_id'];
+
+                if (isset($billedRentals[$billingKey])) {
+                    continue;
+                }
+
+                $expected[] = [
+                    'master_rental_id' => $rental['master_rental_id'],
+                    'job_no' => $jobSchedule->job_number,
+                    'building_name' => $jobSchedule->building?->building_name ?? $jobSchedule->building_name ?? '',
+                    'room_name' => $rental['room_name'] ?: ($jobSchedule->room?->room_name ?? $jobSchedule->room_name ?? ''),
+                    'rental_name' => $rental['rental_name'] ?? 'Service',
+                    'quantity' => $rental['quantity'],
+                    'unit_price' => $rental['unit_price'],
+                    'total_price' => $rental['total_price'],
+                ];
+                $billedRentals[$billingKey] = true;
+            }
+        }
+
+        return $expected;
+    }
+
+    public function refreshInvoiceTotals(Invoice $invoice): void
+    {
+        $this->updateInvoiceTotals($invoice);
+    }
+
+    /**
      * Attach approved BA files from jobs to the invoice
      */
     private function attachApprovedBaFiles(Invoice $invoice, $completedJobs): void
@@ -823,14 +878,14 @@ class InvoiceGenerationService
         $taxAmount = $subtotal * $taxRate;
         $totalAmount = $subtotal + $taxAmount;
 
-        $invoice->update([
+        $invoice->forceFill([
             'subtotal' => $subtotal,
             'tax_amount' => $taxAmount,
             'total_amount' => $totalAmount,
             'grand_total' => $totalAmount,
             'outstanding' => $totalAmount,
             'total_paid' => 0
-        ]);
+        ])->save();
     }
 
     /**

@@ -992,6 +992,64 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
         $this->assertSame('Ruang Delima', $serviceDetails[0]['room_name']);
     }
 
+    public function test_repair_missing_invoice_rental_details_adds_refill_only_csr_row(): void
+    {
+        [$contract, $installJob] = $this->makeContractWithUnitOnlyAndRefillOnlyInSameRoom();
+
+        $invoice = Invoice::create([
+            'invoice_number' => 'JKT-INV/26-06/0001',
+            'contract_id' => $contract->id,
+            'contract_number' => $contract->contract_number,
+            'customer_id' => $contract->customer_id,
+            'invoice_status' => 'draft',
+            'invoice_date' => '2026-06-04',
+            'due_date' => '2026-07-04',
+            'tax_obligation' => false,
+            'subtotal' => 1000000,
+            'tax_amount' => 0,
+            'total_amount' => 1000000,
+            'grand_total' => 1000000,
+            'outstanding' => 1000000,
+        ]);
+        $invoice->invoiceRentalDetails()->create([
+            'master_rental_id' => 1992,
+            'job_no' => $installJob->job_number,
+            'building_name' => 'Gedung Test260218',
+            'room_name' => 'Ruang Delima',
+            'rental_name' => 'ADS XL Unit Only',
+            'quantity' => 1,
+            'unit_price' => 1000000,
+            'total_price' => 1000000,
+        ]);
+
+        $this->artisan('finance:repair-missing-invoice-rental-details', [
+            '--invoice-number' => ['JKT-INV/26-06/0001'],
+        ])->assertSuccessful();
+
+        $this->assertDatabaseCount('invoice_rental_details', 1);
+
+        $this->artisan('finance:repair-missing-invoice-rental-details', [
+            '--invoice-number' => ['JKT-INV/26-06/0001'],
+            '--apply' => true,
+        ])->assertSuccessful();
+
+        $this->assertDatabaseHas('invoice_rental_details', [
+            'invoice_id' => $invoice->id,
+            'master_rental_id' => 1993,
+            'job_no' => 'JKT-CSR/26-06/0004',
+            'room_name' => 'Ruang Delima',
+            'rental_name' => 'Refill Only',
+            'unit_price' => 500000,
+            'total_price' => 500000,
+        ]);
+        $this->assertDatabaseHas('invoices', [
+            'id' => $invoice->id,
+            'subtotal' => 1500000,
+            'total_amount' => 1500000,
+            'grand_total' => 1500000,
+        ]);
+    }
+
     private function makeContractWithRentalFlow(
         string $rentalType,
         string $rentalName,

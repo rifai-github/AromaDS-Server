@@ -7382,7 +7382,7 @@ class JobScheduleController extends Controller
      * MOM13: Generate ALL remaining services when first service completes
      * "setelah service pertama selesai dia akan generate sisa 11 service nya"
      */
-    private function generateAllRemainingServices(JobSchedule $completedFirstService, $jobAdvice)
+    public function generateAllRemainingServices(JobSchedule $completedFirstService, $jobAdvice)
     {
         try {
             // Only run for the first service. Standalone Service JAs may leave the first period
@@ -7539,7 +7539,7 @@ class JobScheduleController extends Controller
         }
     }
 
-    private function generateUnitOnlyCheckSchedulesAfterInstall(JobSchedule $completedInstallJob, $jobAdvice): array
+    public function generateUnitOnlyCheckSchedulesAfterInstall(JobSchedule $completedInstallJob, $jobAdvice): array
     {
         $createdChecks = [];
 
@@ -8208,18 +8208,7 @@ class JobScheduleController extends Controller
             $date = $job->schedule_date ? $job->schedule_date->format('Y-m-d') : null;
             
             if ($date) {
-                // Look for ANY job that matches context and has a job number AND is assigned to this team
-                $existingJob = \App\Models\JobSchedule::where('job_advice_id', $job->job_advice_id)
-                    ->where('building_id', $job->building_id)
-                    ->where('type', $job->type)
-                    ->whereDate('schedule_date', $date)
-                    ->where('id', '!=', $job->id)
-                    ->whereNotNull('job_number')
-                    ->whereHas('jobAssignSchedules', function($q) use ($teamId) {
-                        $q->where('team_id', $teamId)
-                          ->where('status', '!=', 'cancelled');
-                    })
-                    ->first();
+                $existingJob = $this->findReusableAssignedJobNumberSource($job, $teamId);
                     
                 if ($existingJob) {
                     $sharedJobNumber = $existingJob->job_number;
@@ -8268,17 +8257,7 @@ class JobScheduleController extends Controller
         $date = $job->schedule_date ? $job->schedule_date->format('Y-m-d') : null;
 
         if ($date) {
-            $existingJob = \App\Models\JobSchedule::where('job_advice_id', $job->job_advice_id)
-                ->where('building_id', $job->building_id)
-                ->where('type', $job->type)
-                ->whereDate('schedule_date', $date)
-                ->where('id', '!=', $job->id)
-                ->whereNotNull('job_number')
-                ->whereHas('jobAssignSchedules', function($q) use ($teamId) {
-                    $q->where('team_id', $teamId)
-                        ->where('status', '!=', 'cancelled');
-                })
-                ->first();
+            $existingJob = $this->findReusableAssignedJobNumberSource($job, $teamId);
 
             if ($existingJob) {
                 $sharedJobNumber = $existingJob->job_number;
@@ -8307,6 +8286,31 @@ class JobScheduleController extends Controller
             'job_number' => $sharedJobNumber,
             'assign_date' => $job->assign_date ?: now()->toDateString(),
         ]);
+    }
+
+    private function findReusableAssignedJobNumberSource(JobSchedule $job, int $teamId): ?JobSchedule
+    {
+        if (! $job->schedule_date) {
+            return null;
+        }
+
+        $job->loadMissing('jobAdvice', 'jobScheduleRooms.rentals.jobAdviceRoom.rentalProduct');
+        $documentType = $this->documentTypeForJobSchedule($job);
+
+        return JobSchedule::query()
+            ->where('job_advice_id', $job->job_advice_id)
+            ->where('building_id', $job->building_id)
+            ->where('type', $job->type)
+            ->whereDate('schedule_date', $job->schedule_date->format('Y-m-d'))
+            ->where('id', '!=', $job->id)
+            ->whereNotNull('job_number')
+            ->whereHas('jobAssignSchedules', function ($query) use ($teamId) {
+                $query->where('team_id', $teamId)
+                    ->where('status', '!=', 'cancelled');
+            })
+            ->with(['jobAdvice', 'jobScheduleRooms.rentals.jobAdviceRoom.rentalProduct'])
+            ->get()
+            ->first(fn (JobSchedule $candidate) => $this->documentTypeForJobSchedule($candidate) === $documentType);
     }
 
     /**
