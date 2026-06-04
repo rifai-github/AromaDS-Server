@@ -584,7 +584,7 @@ class QuotationWizardController extends Controller
                 }
             } elseif ($request->get('quotation_type') === 'renewal') {
                 [$renewalCustomerId, $prospectId, $renewalCompanyName] = $this->resolveRenewalCustomerContext(
-                    Contract::withoutGlobalScopes()->with('customer')->find($request->get('existing_contract_id')),
+                    Contract::findRenewalSource($request->get('existing_contract_id'))?->load('customer'),
                     $request->get('marketing_id')
                 );
             }
@@ -859,7 +859,7 @@ class QuotationWizardController extends Controller
                     }
                 } elseif ($request->get('quotation_type') === 'renewal') {
                     [$renewalCustomerId, $prospectId, $renewalCompanyName] = $this->resolveRenewalCustomerContext(
-                        Contract::withoutGlobalScopes()->with('customer')->find($request->get('existing_contract_id')),
+                        Contract::findRenewalSource($request->get('existing_contract_id'))?->load('customer'),
                         $request->get('marketing_id')
                     );
                 }
@@ -1102,7 +1102,7 @@ class QuotationWizardController extends Controller
             ]);
         }
 
-        $contract = Contract::withoutGlobalScopes()->find($existingContractId);
+        $contract = Contract::findRenewalSource($existingContractId);
         if (!$contract) {
             throw ValidationException::withMessages([
                 'existing_contract_id' => 'Contract lama tidak ditemukan.',
@@ -1123,7 +1123,7 @@ class QuotationWizardController extends Controller
             return;
         }
 
-        $contract = Contract::withoutGlobalScopes()->with('quotation')->find($request->get('existing_contract_id'));
+        $contract = Contract::findRenewalSource($request->get('existing_contract_id'))?->load('quotation');
         if (!$contract) {
             return;
         }

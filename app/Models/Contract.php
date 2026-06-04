@@ -367,6 +367,27 @@ class Contract extends Model
                (!empty($this->merged_from_ids) && count($this->merged_from_ids) > 0);
     }
 
+    public static function findRenewalSource($contractId): ?self
+    {
+        if (!$contractId) {
+            return null;
+        }
+
+        $contract = static::withoutGlobalScopes()
+            ->whereKey($contractId)
+            ->first();
+
+        if ($contract) {
+            return $contract;
+        }
+
+        $row = \Illuminate\Support\Facades\DB::table((new static)->getTable())
+            ->where('id', $contractId)
+            ->first();
+
+        return $row ? (new static)->newFromBuilder((array) $row) : null;
+    }
+
     /**
      * Get all job schedules through job advices
      */
