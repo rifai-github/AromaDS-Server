@@ -7324,7 +7324,7 @@ class JobScheduleController extends Controller
 
         $jobAdvice->loadMissing('rooms.rentalProduct.serviceFrequency');
 
-        return $jobAdvice->rooms
+        $serviceEligibleRooms = $jobAdvice->rooms
             ->filter(function ($jaRoom) use ($eligibleRoomIds, $linkedJaRoomIds) {
                 $physicalRoomId = $this->getJobAdviceRoomPhysicalRoomId($jaRoom);
 
@@ -7332,13 +7332,22 @@ class JobScheduleController extends Controller
                     return false;
                 }
 
-                if ($linkedJaRoomIds->isNotEmpty() && !$linkedJaRoomIds->contains((int) $jaRoom->id)) {
-                    return false;
-                }
-
                 return !$this->jobAdviceRoomShouldGenerateUnitOnlyCheck($jaRoom);
             })
             ->values();
+
+        if ($linkedJaRoomIds->isEmpty()) {
+            return $serviceEligibleRooms;
+        }
+
+        $linkedServiceRooms = $serviceEligibleRooms
+            ->filter(fn ($jaRoom) => $linkedJaRoomIds->contains((int) $jaRoom->id))
+            ->values();
+
+        // Historical mixed-rental jobs may have their first CSR incorrectly linked only to the
+        // Unit Only rental. Fall back to service-eligible rentals in the same finalized physical
+        // room so missing CSR periods can still be generated without widening a valid CSR scope.
+        return $linkedServiceRooms->isNotEmpty() ? $linkedServiceRooms : $serviceEligibleRooms;
     }
 
     private function jobScheduleRepresentsUnitOnlyCheck(JobSchedule $job): bool

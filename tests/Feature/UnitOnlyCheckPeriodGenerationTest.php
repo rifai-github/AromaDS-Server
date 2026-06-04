@@ -437,6 +437,12 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
     {
         $this->seedMixedUnitOnlyAndRefillRoom();
 
+        DB::table('job_schedule_room_rentals')->where('job_schedule_room_id', 50)->update([
+            'job_advice_room_id' => 3,
+        ]);
+        DB::table('job_schedule_rooms')->where('id', 50)->update([
+            'job_advice_room_id' => 3,
+        ]);
         DB::table('job_schedules')->where('id', 42)->update([
             'job_number' => 'JKT-CSR/26-07/0002',
             'status' => 'assign_material',
