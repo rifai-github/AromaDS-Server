@@ -1232,6 +1232,7 @@
                                 data-current-team="{{ $teamName }}"
                                 data-status="{{ $job->status }}"
                                 data-type="{{ $job->type }}"
+                                data-display-type="{{ $job->display_type ?? ($job->type ? ucfirst($job->type) : '-') }}"
                                 onchange="updateProposeTeamButton()" 
                                 onclick="event.stopPropagation()"
                                 {{ $isDisabled ? 'disabled' : '' }}>
@@ -1974,8 +1975,7 @@ function openViewModal(id) {
             `;
             
             // Add modal footer for view modal with enhanced actions
-            const isRemoveJob = isRemoveJobType(data.data.type);
-            const materialButton = isRemoveJob ? '' : `
+            const materialButton = skipsMaterialAssignment(data.data.type, data.data.display_type) ? '' : `
                 <button type="button" class="btn btn-success" onclick="openMaterialModal(${data.data.id})" title="Materials">
                     <i class="fas fa-boxes"></i> Material Assign
                 </button>
@@ -3284,20 +3284,23 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         const teamCode = document.getElementById('filterTeamCode')?.value;
         const actionSelect = document.getElementById('actionType');
         const materialAssignOption = actionSelect?.querySelector('option[value="material_assign"]');
-        const hasSelectedRemoveJob = Array.from(checkboxes)
-            .some(cb => isRemoveJobType(cb.getAttribute('data-type')));
+        const hasSelectedMateriallessJob = Array.from(checkboxes)
+            .some(cb => skipsMaterialAssignment(
+                cb.getAttribute('data-type'),
+                cb.getAttribute('data-display-type')
+            ));
         
         if (btnProposeTeam) {
             btnProposeTeam.disabled = !(checkboxes.length > 0 && teamCode);
         }
 
         if (materialAssignOption) {
-            materialAssignOption.disabled = hasSelectedRemoveJob;
-            materialAssignOption.title = hasSelectedRemoveJob
-                ? 'Job Remove tidak membutuhkan Material Assign. Gunakan Assign Team.'
+            materialAssignOption.disabled = hasSelectedMateriallessJob;
+            materialAssignOption.title = hasSelectedMateriallessJob
+                ? 'Job Check/Remove tidak membutuhkan Material Assign. Gunakan Assign Team.'
                 : '';
 
-            if (hasSelectedRemoveJob && actionSelect.value === 'material_assign') {
+            if (hasSelectedMateriallessJob && actionSelect.value === 'material_assign') {
                 actionSelect.value = '';
                 updateApplyButton();
             }
@@ -3393,9 +3396,26 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         return ['remove', 'remove_free', 'remove free', 'removal'].includes((type || '').toString().toLowerCase().trim());
     }
 
+    function isCheckJobType(type, displayType = '') {
+        const normalizedType = (type || '').toString().toLowerCase().trim();
+        const normalizedDisplayType = (displayType || '').toString().toLowerCase().trim();
+
+        return normalizedType === 'check'
+            || normalizedDisplayType === 'check'
+            || normalizedDisplayType.includes('check')
+            || normalizedDisplayType.includes('chk');
+    }
+
+    function skipsMaterialAssignment(type, displayType = '') {
+        return isRemoveJobType(type) || isCheckJobType(type, displayType);
+    }
+
     function getSelectedJobTypes() {
         return Array.from(document.querySelectorAll('.row-checkbox:checked'))
-            .map(cb => cb.getAttribute('data-type') || '')
+            .map(cb => ({
+                type: cb.getAttribute('data-type') || '',
+                displayType: cb.getAttribute('data-display-type') || ''
+            }))
             .filter(Boolean);
     }
 
@@ -3449,9 +3469,9 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         }
 
         const selectedJobTypes = getSelectedJobTypes();
-        const hasSelectedRemoveJob = selectedJobTypes.some(isRemoveJobType);
+        const hasSelectedMateriallessJob = selectedJobTypes.some(item => skipsMaterialAssignment(item.type, item.displayType));
 
-        if (['material_assign', 'unpost_issue', 'unassign_material'].includes(actionType) && hasSelectedRemoveJob) {
+        if (['material_assign', 'unpost_issue', 'unassign_material'].includes(actionType) && hasSelectedMateriallessJob) {
             const actionLabels = {
                 material_assign: 'Material Assign',
                 unpost_issue: 'Unpost Issue',
@@ -3460,7 +3480,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
 
             Swal.fire({
                 title: 'Aksi Tidak Sesuai',
-                text: `Job Remove/RF tidak menggunakan alur material, sehingga ${actionLabels[actionType]} tidak dapat dilakukan. Silakan gunakan Assign Team atau Unassign Team sesuai kebutuhan.`,
+                text: `Job Check/Remove tidak menggunakan alur material, sehingga ${actionLabels[actionType]} tidak dapat dilakukan. Silakan gunakan Assign Team atau Unassign Team sesuai kebutuhan.`,
                 icon: 'warning',
                 confirmButtonColor: '#214589'
             });

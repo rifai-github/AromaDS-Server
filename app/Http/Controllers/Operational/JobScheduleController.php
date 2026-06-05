@@ -765,7 +765,7 @@ class JobScheduleController extends Controller
                     continue;
                 }
 
-                if ($this->jobScheduleRepresentsUnitOnlyCheck($job)) {
+                if ($this->jobScheduleSkipsMaterialAssignment($job)) {
                     continue;
                 }
 
@@ -1740,7 +1740,7 @@ class JobScheduleController extends Controller
 
             $successCount = 0;
             $skippedCount = 0;
-            $skippedRemoveCount = 0;
+            $skippedNoMaterialFlowCount = 0;
             $documentNumberService = app(\App\Services\DocumentNumberService::class);
             
             // Determine target Job IDs.
@@ -1799,15 +1799,9 @@ class JobScheduleController extends Controller
                 
                 if (!$job) continue;
 
-                $jobType = strtolower(trim($job->type ?? ''));
-                if (in_array($jobType, ['remove', 'remove_free', 'remove free'], true)) {
+                if ($this->jobScheduleSkipsMaterialAssignment($job)) {
                     $skippedCount++;
-                    $skippedRemoveCount++;
-                    continue;
-                }
-
-                if ($this->jobScheduleRepresentsUnitOnlyCheck($job)) {
-                    $skippedCount++;
+                    $skippedNoMaterialFlowCount++;
                     continue;
                 }
 
@@ -1901,8 +1895,8 @@ class JobScheduleController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => "Berhasil memproses {$successCount} job. "
-                    . ($skippedRemoveCount > 0 ? "({$skippedRemoveCount} job remove dilewati karena tidak perlu material assign) " : "")
-                    . (($skippedCount - $skippedRemoveCount) > 0 ? "(" . ($skippedCount - $skippedRemoveCount) . " job dilewati karena status tidak sesuai)" : ""),
+                    . ($skippedNoMaterialFlowCount > 0 ? "({$skippedNoMaterialFlowCount} job Check/Remove dilewati karena tidak perlu material assign) " : "")
+                    . (($skippedCount - $skippedNoMaterialFlowCount) > 0 ? "(" . ($skippedCount - $skippedNoMaterialFlowCount) . " job dilewati karena status tidak sesuai)" : ""),
                 'success' => true
             ]);
 
@@ -7472,6 +7466,14 @@ class JobScheduleController extends Controller
         return $this->completedScheduleIsUnitOnlyFlow($job, $jobAdvice);
     }
 
+    private function jobScheduleSkipsMaterialAssignment(JobSchedule $job): bool
+    {
+        $type = strtolower(trim((string) $job->type));
+
+        return in_array($type, ['remove', 'remove_free', 'remove free', 'removal', 'check'], true)
+            || $this->jobScheduleRepresentsUnitOnlyCheck($job);
+    }
+
     private function documentTypeForJobSchedule(JobSchedule $job): string
     {
         $type = strtolower(trim((string) $job->type));
@@ -9139,7 +9141,7 @@ class JobScheduleController extends Controller
             return;
         }
 
-        if ($this->jobScheduleRepresentsUnitOnlyCheck($jobSchedule)) {
+        if ($this->jobScheduleSkipsMaterialAssignment($jobSchedule)) {
             return;
         }
         
@@ -10583,10 +10585,8 @@ class JobScheduleController extends Controller
      */
     private function validateMakeAssignTeam(JobSchedule $jobSchedule)
     {
-        // Remove jobs do not require Material Assign; team can be assigned directly
-        // even if a legacy record is currently stuck at assign_material.
-        $removeTypes = ['remove', 'remove_free', 'remove free'];
-        if (in_array(strtolower(trim($jobSchedule->type ?? '')), $removeTypes, true)) {
+        // Jobs without material flow can be assigned directly.
+        if ($this->jobScheduleSkipsMaterialAssignment($jobSchedule)) {
             return true;
         }
 
