@@ -478,6 +478,7 @@ class JobAdviceController extends Controller
             $referenceNumber = $request->reference_number;
             $contractId = $request->contract_id;
             $quotationId = $request->quotation_id;
+            $jaType = strtolower(str_replace(' ', '_', $request->type ?? ''));
 
             if ($quotationId && !$contractId) {
                 $quotation = \App\Models\Quotation::with('customer', 'prospect')->find($quotationId);
@@ -536,6 +537,11 @@ class JobAdviceController extends Controller
                 $customerId = $contract->customer_id;
                 $companyName = $contract->customer->name;
                 
+                // Extra Job Advice is contract-based, so keep the visible reference consistent.
+                if (empty($referenceNumber) && $jaType === 'extra') {
+                    $referenceNumber = $contract->contract_number;
+                }
+
                 // Auto-set reference_number from quotation if not provided
                 if (empty($referenceNumber) && $contract->quotation) {
                     $referenceNumber = $contract->quotation->quotation_number;
@@ -546,7 +552,6 @@ class JobAdviceController extends Controller
                 return back()->withErrors(['customer_id' => 'Customer not found.'])->withInput();
             }
 
-            $jaType = strtolower(str_replace(' ', '_', $request->type ?? ''));
             if ($jaType === 'service') {
                 $errorMsg = 'Job Advice type Service sementara dinonaktifkan untuk input manual. Gunakan flow service otomatis dari contract/job schedule.';
 

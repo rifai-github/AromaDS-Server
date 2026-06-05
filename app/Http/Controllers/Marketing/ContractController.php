@@ -1093,13 +1093,21 @@ class ContractController extends Controller
                 });
             }
             
-            $contracts = $query->get()
-                ->filter(function ($contract) use ($request) {
+            $allContracts = $query->get();
+            $excludedForRenewalCount = 0;
+
+            $contracts = $allContracts
+                ->filter(function ($contract) use ($request, &$excludedForRenewalCount) {
                     if (!$request->boolean('for_job_advice')) {
                         return true;
                     }
 
-                    return !$contract->hasRenewalSuccessor();
+                    if ($contract->hasRenewalSuccessor()) {
+                        $excludedForRenewalCount++;
+                        return false;
+                    }
+
+                    return true;
                 })
                 ->values()
                 ->map(function ($contract) {
@@ -1117,7 +1125,11 @@ class ContractController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $contracts
+                'data' => $contracts,
+                'meta' => [
+                    'total_matching_filters' => $allContracts->count(),
+                    'excluded_for_renewal_count' => $excludedForRenewalCount,
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([

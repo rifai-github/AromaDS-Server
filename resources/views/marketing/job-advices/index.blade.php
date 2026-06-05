@@ -1403,6 +1403,22 @@
                                 <input type="date" class="form-input" id="remove_date" name="remove_date">
                             </div>
                         </div>
+                        <div class="form-row" id="extra_options_group" style="display: none;">
+                            <div class="form-group">
+                                <label class="form-label" for="with_invoicing">With Invoice</label>
+                                <select class="form-select" id="with_invoicing" name="with_invoicing">
+                                    <option value="0" selected>No</option>
+                                    <option value="1">Yes</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="with_materials">With Materials</label>
+                                <select class="form-select" id="with_materials" name="with_materials">
+                                    <option value="0" selected>No</option>
+                                    <option value="1">Yes</option>
+                                </select>
+                            </div>
+                        </div>
                         <div class="form-row full-width">
                             <div class="form-group">
                                 <label class="form-label" for="notes">Catatan Tambahan</label>
@@ -1757,9 +1773,13 @@ window.toggleRemoveDate = function() {
     const removeDateInput = document.getElementById('remove_date');
     const sourceContractRadio = document.getElementById('source_contract');
     const sourceQuotationRadio = document.getElementById('source_quotation');
+    const extraOptionsGroup = document.getElementById('extra_options_group');
+    const withInvoicingSelect = document.getElementById('with_invoicing');
+    const withMaterialsSelect = document.getElementById('with_materials');
     
     if (typeSelect && removeDateGroup) {
         const type = typeSelect.value;
+        const normalizedType = String(type || '').toLowerCase().replace(/\s+/g, '_');
         if (type === 'install_free' || type === 'install free') {
             removeDateGroup.style.display = 'block';
             if (removeDateInput) removeDateInput.setAttribute('required', 'required');
@@ -1780,6 +1800,16 @@ window.toggleRemoveDate = function() {
             if (sourceContractRadio) {
                 sourceContractRadio.checked = true;
                 toggleSourceType(); // Switch to contract view
+            }
+        }
+
+        if (extraOptionsGroup) {
+            const shouldShowExtraOptions = normalizedType === 'extra';
+            extraOptionsGroup.style.display = shouldShowExtraOptions ? 'flex' : 'none';
+
+            if (!shouldShowExtraOptions) {
+                if (withInvoicingSelect) withInvoicingSelect.value = '0';
+                if (withMaterialsSelect) withMaterialsSelect.value = '0';
             }
         }
 
@@ -1868,7 +1898,11 @@ function loadContracts(marketingId = null) {
             });
             console.log(`Loaded ${filteredContracts.length} active contracts for marketing ${marketingId}`);
         } else {
-            contractSelect.innerHTML = '<option value="">No Active Contracts Found</option>';
+            const excludedForRenewal = Number(data.meta?.excluded_for_renewal_count || 0);
+            const emptyMessage = excludedForRenewal > 0
+                ? `No eligible active contracts found (${excludedForRenewal} already renewed/current)`
+                : 'No Active Contracts Found';
+            contractSelect.innerHTML = `<option value="">${emptyMessage}</option>`;
             console.log(`No active contracts found for marketing ${marketingId}`);
         }
 
@@ -2997,8 +3031,8 @@ window.submitForm = function(event, id = null) {
     // Set default values for fields not in create modal
     if (!id) {
         data.status = 'draft'; // Always draft when created
-        data.with_invoicing = false;
-        data.with_materials = false;
+        data.with_invoicing = data.with_invoicing === '1' || data.with_invoicing === true;
+        data.with_materials = data.with_materials === '1' || data.with_materials === true;
     }
     
     // MOM6: Collect rooms data as array

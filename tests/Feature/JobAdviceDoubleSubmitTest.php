@@ -207,15 +207,38 @@ class JobAdviceDoubleSubmitTest extends TestCase
         $this->assertDatabaseCount('job_advices', 1);
     }
 
-    private function createRequest(): Request
+    public function test_extra_job_advice_uses_contract_number_reference_and_flags(): void
     {
-        $request = Request::create('/marketing/job-advices', 'POST', [
+        $controller = app(JobAdviceController::class);
+
+        $response = $controller->store($this->createRequest([
+            'type' => 'Extra',
+            'expected_date' => '2026-06-05',
+            'with_invoicing' => true,
+            'with_materials' => true,
+        ]));
+
+        $payload = $response->getData(true);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertDatabaseHas('job_advices', [
+            'contract_id' => 20,
+            'type' => 'Extra',
+            'reference_number' => 'BDG-CA/26-05/0001',
+            'with_invoicing' => true,
+            'with_materials' => true,
+        ]);
+    }
+
+    private function createRequest(array $overrides = []): Request
+    {
+        $request = Request::create('/marketing/job-advices', 'POST', array_merge([
             'contract_id' => 20,
             'type' => 'Install',
             'request_by' => 1,
             'expected_date' => '2026-06-04',
             'status' => 'draft',
-        ]);
+        ], $overrides));
         $request->headers->set('Accept', 'application/json');
         $request->headers->set('X-Requested-With', 'XMLHttpRequest');
 
