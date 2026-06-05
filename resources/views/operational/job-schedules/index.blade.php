@@ -1975,8 +1975,8 @@ function openViewModal(id) {
             `;
             
             // Add modal footer for view modal with enhanced actions
-            const materialButton = skipsMaterialAssignment(data.data.type, data.data.display_type) ? '' : `
-                <button type="button" class="btn btn-success" onclick="openMaterialModal(${data.data.id})" title="Materials">
+            const materialButton = `
+                <button type="button" class="btn btn-success" onclick='openMaterialAction(${data.data.id}, ${JSON.stringify(data.data.type || '')}, ${JSON.stringify(data.data.display_type || '')})' title="Materials">
                     <i class="fas fa-boxes"></i> Material Assign
                 </button>
             `;
@@ -2547,6 +2547,20 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
     function openMaterialModal(jobScheduleId) {
         // Direct redirect to materials page
         window.location.href = `/operational/job-schedules/${jobScheduleId}/materials`;
+    }
+
+    function openMaterialAction(jobScheduleId, type = '', displayType = '') {
+        if (skipsMaterialAssignment(type, displayType)) {
+            Swal.fire({
+                title: 'Aksi Tidak Sesuai',
+                text: 'Job Check/Remove tidak menggunakan alur material. Silakan gunakan Assign Team atau Unassign Team sesuai kebutuhan.',
+                icon: 'warning',
+                confirmButtonColor: '#214589'
+            });
+            return;
+        }
+
+        openMaterialModal(jobScheduleId);
     }
 
     function openForceMajeureModal(jobScheduleId) {
@@ -3284,26 +3298,14 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         const teamCode = document.getElementById('filterTeamCode')?.value;
         const actionSelect = document.getElementById('actionType');
         const materialAssignOption = actionSelect?.querySelector('option[value="material_assign"]');
-        const hasSelectedMateriallessJob = Array.from(checkboxes)
-            .some(cb => skipsMaterialAssignment(
-                cb.getAttribute('data-type'),
-                cb.getAttribute('data-display-type')
-            ));
         
         if (btnProposeTeam) {
             btnProposeTeam.disabled = !(checkboxes.length > 0 && teamCode);
         }
 
         if (materialAssignOption) {
-            materialAssignOption.disabled = hasSelectedMateriallessJob;
-            materialAssignOption.title = hasSelectedMateriallessJob
-                ? 'Job Check/Remove tidak membutuhkan Material Assign. Gunakan Assign Team.'
-                : '';
-
-            if (hasSelectedMateriallessJob && actionSelect.value === 'material_assign') {
-                actionSelect.value = '';
-                updateApplyButton();
-            }
+            materialAssignOption.disabled = false;
+            materialAssignOption.title = '';
         }
     }
 

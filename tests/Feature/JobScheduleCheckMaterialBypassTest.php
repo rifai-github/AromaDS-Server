@@ -52,13 +52,15 @@ class JobScheduleCheckMaterialBypassTest extends TestCase
         $this->assertTrue($this->validateMakeAssignTeam($job));
     }
 
-    public function test_job_schedule_page_disables_material_assign_for_displayed_check_jobs(): void
+    public function test_job_schedule_page_keeps_material_assign_visible_but_warns_for_displayed_check_jobs(): void
     {
         $view = file_get_contents(resource_path('views/operational/job-schedules/index.blade.php'));
 
         $this->assertStringContainsString('data-display-type="{{ $job->display_type', $view);
         $this->assertStringContainsString('function isCheckJobType(type, displayType = \'\')', $view);
+        $this->assertStringContainsString('function openMaterialAction(jobScheduleId, type = \'\', displayType = \'\')', $view);
         $this->assertStringContainsString('Job Check/Remove tidak menggunakan alur material', $view);
+        $this->assertStringContainsString('materialAssignOption.disabled = false', $view);
     }
 
     private function validateMakeAssignTeam(JobSchedule $job): mixed
