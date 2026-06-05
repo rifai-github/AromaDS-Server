@@ -75,6 +75,7 @@ class DatabaseSeeder extends Seeder
             TestCaseDataSeeder::class,
             BrandLinesAndVariantsSeeder::class,
             ProductUnitOptionsSeeder::class,
+            TermOfPaymentOptionsSeeder::class,
             
             // 6. Stock Distribution (After all products and warehouses are created)
             StockDistributionSeeder::class,

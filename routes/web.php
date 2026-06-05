@@ -1274,6 +1274,11 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
           Route::get('backup-restore/{module}/export', [BackupRestoreController::class, 'export'])->name('backup-restore.export')->middleware('permission:system.backup-restore.export');
           Route::post('backup-restore/{module}/import', [BackupRestoreController::class, 'import'])->name('backup-restore.import')->middleware('permission:system.backup-restore.import');
           Route::delete('backup-restore/{module}', [BackupRestoreController::class, 'destroy'])->name('backup-restore.destroy')->middleware('permission:system.backup-restore.delete');
+        Route::get('master-term-of-payments', [\App\Http\Controllers\System\TermOfPaymentController::class, 'index'])->name('master-term-of-payments.index')->middleware('permission:system.master-term-of-payments');
+        Route::post('master-term-of-payments', [\App\Http\Controllers\System\TermOfPaymentController::class, 'store'])->name('master-term-of-payments.store')->middleware('permission:system.master-term-of-payments.create');
+        Route::put('master-term-of-payments/{masterTermOfPayment}', [\App\Http\Controllers\System\TermOfPaymentController::class, 'update'])->name('master-term-of-payments.update')->middleware('permission:system.master-term-of-payments.update');
+        Route::delete('master-term-of-payments/{masterTermOfPayment}', [\App\Http\Controllers\System\TermOfPaymentController::class, 'destroy'])->name('master-term-of-payments.destroy')->middleware('permission:system.master-term-of-payments.delete');
+        Route::post('master-term-of-payments/{masterTermOfPayment}/toggle-status', [\App\Http\Controllers\System\TermOfPaymentController::class, 'toggleStatus'])->name('master-term-of-payments.toggle-status')->middleware('permission:system.master-term-of-payments.update');
         Route::resource('users', UserController::class);
         Route::post('users/bulk-delete', [UserController::class, 'bulkDelete'])->name('users.bulk-delete');
         Route::resource('departments', DepartmentController::class);

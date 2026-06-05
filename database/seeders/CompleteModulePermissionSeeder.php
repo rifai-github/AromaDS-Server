@@ -269,6 +269,10 @@ class CompleteModulePermissionSeeder extends Seeder
             'system.salutations.create' => 'Create Master Salutation',
             'system.salutations.update' => 'Update Master Salutation',
             'system.salutations.delete' => 'Delete Master Salutation',
+            'system.master-term-of-payments' => 'Access Master Term of Payment',
+            'system.master-term-of-payments.create' => 'Create Master Term of Payment',
+            'system.master-term-of-payments.update' => 'Update Master Term of Payment',
+            'system.master-term-of-payments.delete' => 'Delete Master Term of Payment',
             
             // Company Module Permissions
             'company.branches' => 'Access Master Branch',

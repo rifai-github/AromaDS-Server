@@ -816,31 +816,15 @@
                                                 </label>
                                                 <select class="form-control" id="term_of_payment" name="term_of_payment" required>
                                                     <option value="">Pilih term of payment...</option>
-                                                    <option value="1 bulan 1x">1 bulan 1x</option>
-                                                    <option value="2 bulan 1x">2 bulan 1x</option>
-                                                    <option value="3 bulan 1x">3 bulan 1x</option>
-                                                    <option value="4 bulan 1x">4 bulan 1x</option>
-                                                    <option value="5 bulan 1x">5 bulan 1x</option>
-                                                    <option value="6 bulan 1x">6 bulan 1x</option>
-                                                    <option value="Tahunan">1x Advance</option>
-                                                    <option value="7 bulan 1x">7 bulan 1x</option>
-                                                    <option value="8 bulan 1x">8 bulan 1x</option>
-                                                    <option value="9 bulan 1x">9 bulan 1x</option>
-                                                    <option value="10 bulan 1x">10 bulan 1x</option>
-                                                    <option value="11 bulan 1x">11 bulan 1x</option>
-                                                    <option value="13 bulan 1x">13 bulan 1x</option>
-                                                    <option value="14 bulan 1x">14 bulan 1x</option>
-                                                    <option value="15 bulan 1x">15 bulan 1x</option>
-                                                    <option value="16 bulan 1x">16 bulan 1x</option>
-                                                    <option value="17 bulan 1x">17 bulan 1x</option>
-                                                    <option value="18 bulan 1x">18 bulan 1x</option>
-                                                    <option value="19 bulan 1x">19 bulan 1x</option>
-                                                    <option value="20 bulan 1x">20 bulan 1x</option>
-                                                    <option value="21 bulan 1x">21 bulan 1x</option>
-                                                    <option value="22 bulan 1x">22 bulan 1x</option>
-                                                    <option value="23 bulan 1x">23 bulan 1x</option>
-                                                    <option value="2 tahunan">2 tahunan</option>
-                                                    <option value="3 tahunan">3 tahunan</option>
+                                                    @foreach($termOfPaymentOptions as $termOption)
+                                                        <option
+                                                            value="{{ $termOption['value'] }}"
+                                                            data-months="{{ $termOption['months'] }}"
+                                                            data-advance="{{ $termOption['is_advance'] ? '1' : '0' }}"
+                                                        >
+                                                            {{ $termOption['label'] }}
+                                                        </option>
+                                                    @endforeach
                                                 </select>
                                                 <div class="invalid-feedback"></div>
                                             </div>
@@ -6311,9 +6295,18 @@ $(document).ready(function() {
         updateNextButtonState();
     });
 
+    window.termOfPaymentOptions = @json($termOfPaymentOptions->values());
+
+    function getTermOfPaymentOption(value) {
+        return (window.termOfPaymentOptions || []).find(function(option) {
+            return option.value === value;
+        }) || null;
+    }
+
     // Function to check rental period vs TOP compatibility
     function formatTermOfPaymentLabel(value) {
-        return value === 'Tahunan' ? '1x Advance' : value;
+        const option = getTermOfPaymentOption(value);
+        return option ? option.label : (value === 'Tahunan' ? '1x Advance' : value);
     }
 
     function checkRentalPeriodCompatibility() {
@@ -6341,14 +6334,18 @@ $(document).ready(function() {
                 rentalMonths = rentalPeriod;
             }
             
-            // Extract months from TOP
-            let topMonths = 0;
-            if (termOfPayment.includes('bulan')) {
-                topMonths = parseInt(termOfPayment.split(' ')[0]);
-            } else if (termOfPayment === 'Tahunan') {
+            const selectedTopOption = getTermOfPaymentOption(termOfPayment);
+
+            if (selectedTopOption && selectedTopOption.is_advance) {
                 console.log('Validation PASSED: 1x Advance means 1x payment for the whole contract period');
                 return;
-            } else if (termOfPayment.includes('tahunan')) {
+            }
+
+            // Extract months from dynamic TOP metadata, fallback to legacy parsing.
+            let topMonths = selectedTopOption && selectedTopOption.months ? parseInt(selectedTopOption.months) : 0;
+            if (!topMonths && termOfPayment.includes('bulan')) {
+                topMonths = parseInt(termOfPayment.split(' ')[0]);
+            } else if (!topMonths && termOfPayment.includes('tahunan')) {
                 topMonths = parseInt(termOfPayment.split(' ')[0]) * 12;
             }
 
@@ -6364,26 +6361,14 @@ $(document).ready(function() {
                 // If not divisible (remainder > 0), show error
                 if (remainder !== 0) {
                     // Find valid TOP options that divide evenly
-                    let validTOPs = [];
-                    const possibleTOPs = [1, 2, 3, 4, 6, 12];
-                    
-                    for (let i = 0; i < possibleTOPs.length; i++) {
-                        if (rentalMonths % possibleTOPs[i] === 0 && possibleTOPs[i] <= rentalMonths) {
-                            if (possibleTOPs[i] === 1) {
-                                validTOPs.push('1 bulan 1x');
-                            } else if (possibleTOPs[i] === 2) {
-                                validTOPs.push('2 bulan 1x');
-                            } else if (possibleTOPs[i] === 3) {
-                                validTOPs.push('3 bulan 1x');
-                            } else if (possibleTOPs[i] === 4) {
-                                validTOPs.push('4 bulan 1x');
-                            } else if (possibleTOPs[i] === 6) {
-                                validTOPs.push('6 bulan 1x');
-                            } else if (possibleTOPs[i] === 12) {
-                                validTOPs.push('Tahunan');
-                            }
-                        }
-                    }
+                    let validTOPs = (window.termOfPaymentOptions || [])
+                        .filter(function(option) {
+                            const months = parseInt(option.months || 0);
+                            return !option.is_advance && months > 0 && months <= rentalMonths && rentalMonths % months === 0;
+                        })
+                        .map(function(option) {
+                            return option.value;
+                        });
                     
                     // Also add rental period itself as valid option
                     if (rentalMonths <= 12 && !validTOPs.includes(`${rentalMonths} bulan 1x`)) {

@@ -1606,6 +1606,9 @@
                 {{-- MOM10: Department Roles and Position Roles hidden - using Individual Role only --}}
                 {{-- <li data-tooltip="Department Roles" class="{{ request()->routeIs('system.department-roles.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.department-roles.index') }}')">Department Roles</li> --}}
                 {{-- <li data-tooltip="Position Roles" class="{{ request()->routeIs('system.position-roles.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.position-roles.index') }}')">Position Roles</li> --}}
+                @if(auth()->user()->canAccessMenuItem('system.master-term-of-payments'))
+                <li data-tooltip="Master Term of Payment" class="{{ request()->routeIs('system.master-term-of-payments.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.master-term-of-payments.index') }}')">Master Term of Payment</li>
+                @endif
                 @if(auth()->user()->canAccessMenuItem('system.provinces'))
                 <li data-tooltip="Master Location" class="{{ request()->routeIs('system.provinces.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.provinces.index') }}')">Master Location</li>
                 @endif

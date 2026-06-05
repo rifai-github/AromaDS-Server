@@ -1914,13 +1914,7 @@ class QuotationWizardController extends Controller
 
         $paymentMethods = ['Before Service', 'After Service'];
 
-        $termOfPaymentOptions = [
-            '2 bulan 1x', '3 bulan 1x', '4 bulan 1x', '5 bulan 1x', '6 bulan 1x',
-            'Tahunan', '7 bulan 1x', '8 bulan 1x', '9 bulan 1x', '10 bulan 1x',
-            '11 bulan 1x', '13 bulan 1x', '14 bulan 1x', '15 bulan 1x', '16 bulan 1x',
-            '17 bulan 1x', '18 bulan 1x', '19 bulan 1x', '20 bulan 1x', '21 bulan 1x',
-            '22 bulan 1x', '23 bulan 1x', '2 tahunan', '3 tahunan'
-        ];
+        $termOfPaymentOptions = $this->getTermOfPaymentOptions();
 
         $taxSettings = Cache::remember('quotation-wizard:tax-settings', now()->addMinutes(10), function () {
             return TaxSetting::all();
@@ -2000,6 +1994,66 @@ class QuotationWizardController extends Controller
             'installationTypes',
             'rentalAliases'
         );
+    }
+
+    private function getTermOfPaymentOptions()
+    {
+        return Cache::remember('quotation-wizard:term-of-payment-options', now()->addMinutes(10), function () {
+            $masterOption = MasterOption::where('name', 'Term of Payment')
+                ->where('is_active', true)
+                ->first();
+
+            $options = $masterOption
+                ? $masterOption->optionDetails()
+                    ->where('is_active', true)
+                    ->orderBy('id')
+                    ->get()
+                    ->map(function ($detail) {
+                        $isAdvance = $detail->code === 'advance';
+
+                        return [
+                            'value' => $detail->option_name,
+                            'label' => $detail->label ?: Quotation::formatTermsOfPaymentLabel($detail->option_name),
+                            'months' => $isAdvance ? null : (int) $detail->code,
+                            'is_advance' => $isAdvance,
+                        ];
+                    })
+                    ->values()
+                : collect();
+
+            return $options->isNotEmpty() ? $options : collect($this->defaultTermOfPaymentOptions());
+        });
+    }
+
+    private function defaultTermOfPaymentOptions(): array
+    {
+        return [
+            ['value' => '1 bulan 1x', 'label' => '1 bulan 1x', 'months' => 1, 'is_advance' => false],
+            ['value' => '2 bulan 1x', 'label' => '2 bulan 1x', 'months' => 2, 'is_advance' => false],
+            ['value' => '3 bulan 1x', 'label' => '3 bulan 1x', 'months' => 3, 'is_advance' => false],
+            ['value' => '4 bulan 1x', 'label' => '4 bulan 1x', 'months' => 4, 'is_advance' => false],
+            ['value' => '5 bulan 1x', 'label' => '5 bulan 1x', 'months' => 5, 'is_advance' => false],
+            ['value' => '6 bulan 1x', 'label' => '6 bulan 1x', 'months' => 6, 'is_advance' => false],
+            ['value' => 'Tahunan', 'label' => '1x Advance', 'months' => null, 'is_advance' => true],
+            ['value' => '7 bulan 1x', 'label' => '7 bulan 1x', 'months' => 7, 'is_advance' => false],
+            ['value' => '8 bulan 1x', 'label' => '8 bulan 1x', 'months' => 8, 'is_advance' => false],
+            ['value' => '9 bulan 1x', 'label' => '9 bulan 1x', 'months' => 9, 'is_advance' => false],
+            ['value' => '10 bulan 1x', 'label' => '10 bulan 1x', 'months' => 10, 'is_advance' => false],
+            ['value' => '11 bulan 1x', 'label' => '11 bulan 1x', 'months' => 11, 'is_advance' => false],
+            ['value' => '13 bulan 1x', 'label' => '13 bulan 1x', 'months' => 13, 'is_advance' => false],
+            ['value' => '14 bulan 1x', 'label' => '14 bulan 1x', 'months' => 14, 'is_advance' => false],
+            ['value' => '15 bulan 1x', 'label' => '15 bulan 1x', 'months' => 15, 'is_advance' => false],
+            ['value' => '16 bulan 1x', 'label' => '16 bulan 1x', 'months' => 16, 'is_advance' => false],
+            ['value' => '17 bulan 1x', 'label' => '17 bulan 1x', 'months' => 17, 'is_advance' => false],
+            ['value' => '18 bulan 1x', 'label' => '18 bulan 1x', 'months' => 18, 'is_advance' => false],
+            ['value' => '19 bulan 1x', 'label' => '19 bulan 1x', 'months' => 19, 'is_advance' => false],
+            ['value' => '20 bulan 1x', 'label' => '20 bulan 1x', 'months' => 20, 'is_advance' => false],
+            ['value' => '21 bulan 1x', 'label' => '21 bulan 1x', 'months' => 21, 'is_advance' => false],
+            ['value' => '22 bulan 1x', 'label' => '22 bulan 1x', 'months' => 22, 'is_advance' => false],
+            ['value' => '23 bulan 1x', 'label' => '23 bulan 1x', 'months' => 23, 'is_advance' => false],
+            ['value' => '2 tahunan', 'label' => '2 tahunan', 'months' => 24, 'is_advance' => false],
+            ['value' => '3 tahunan', 'label' => '3 tahunan', 'months' => 36, 'is_advance' => false],
+        ];
     }
 
 }
