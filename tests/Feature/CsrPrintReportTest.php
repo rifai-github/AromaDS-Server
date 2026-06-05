@@ -15,6 +15,16 @@ class CsrPrintReportTest extends TestCase
     {
         parent::setUp();
 
+        Schema::create('companies', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->text('address')->nullable();
+            $table->string('phone')->nullable();
+            $table->string('website')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('customers', function (Blueprint $table) {
             $table->id();
             $table->string('name')->nullable();
@@ -92,6 +102,43 @@ class CsrPrintReportTest extends TestCase
             $table->id();
             $table->string('rental_name')->nullable();
             $table->string('name')->nullable();
+            $table->string('rental_type')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('product_categories', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->boolean('is_unit')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('product_types', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('product_category_id')->nullable();
+            $table->string('name')->nullable();
+            $table->boolean('is_unit')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('master_products', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('product_category_id')->nullable();
+            $table->foreignId('product_type_id')->nullable();
+            $table->string('name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('rental_details', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('master_rental_id')->nullable();
+            $table->foreignId('product_category_id')->nullable();
+            $table->foreignId('product_type_id')->nullable();
+            $table->foreignId('master_product_id')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -115,13 +162,27 @@ class CsrPrintReportTest extends TestCase
             $table->timestamps();
             $table->softDeletes();
         });
+
+        Schema::create('job_schedule_room_rentals', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_room_id')->nullable();
+            $table->foreignId('job_advice_room_id')->nullable();
+            $table->boolean('is_primary')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+        });
     }
 
     protected function tearDown(): void
     {
         foreach ([
+            'job_schedule_room_rentals',
             'job_schedule_rooms',
             'job_advice_rooms',
+            'rental_details',
+            'master_products',
+            'product_types',
+            'product_categories',
             'master_rentals',
             'master_rooms',
             'job_assign_schedules',
@@ -132,6 +193,7 @@ class CsrPrintReportTest extends TestCase
             'job_advices',
             'contracts',
             'customers',
+            'companies',
         ] as $table) {
             Schema::dropIfExists($table);
         }
@@ -142,6 +204,7 @@ class CsrPrintReportTest extends TestCase
     public function test_csr_pdf_uses_product_item_qty_and_type_columns(): void
     {
         $job = (object) [
+            'id' => 1,
             'type' => 'service_first',
             'period' => 1,
             'schedule_date' => '2026-06-04',
@@ -178,10 +241,75 @@ class CsrPrintReportTest extends TestCase
 
         $this->assertStringContainsString('>Qty<', $html);
         $this->assertStringContainsString('>Type<', $html);
-        $this->assertStringNotContainsString('>Job No<', $html);
+        $this->assertStringNotContainsString('<th>Job No</th>', $html);
         $this->assertStringContainsString('C100 100 ml', $html);
         $this->assertStringContainsString('Service/Refill', $html);
         $this->assertStringContainsString('>2<', $html);
+    }
+
+    public function test_csr_pdf_filters_unit_only_rental_from_same_room(): void
+    {
+        $unitOnlyRoom = (object) [
+            'id' => 1001,
+            'quantity' => 1,
+            'install_job_schedule_id' => 1628,
+            'service_job_schedule_id' => null,
+            'remove_job_schedule_id' => null,
+            'rentalProduct' => (object) [
+                'rental_name' => 'ADS XL Unit Only',
+                'rental_type' => 'unit_only',
+                'rentalDetails' => collect([]),
+            ],
+        ];
+        $refillOnlyRoom = (object) [
+            'id' => 1002,
+            'quantity' => 1,
+            'install_job_schedule_id' => null,
+            'service_job_schedule_id' => 1629,
+            'remove_job_schedule_id' => null,
+            'rentalProduct' => (object) [
+                'rental_name' => 'Rental-5',
+                'rental_type' => 'refill_only',
+                'rentalDetails' => collect([]),
+            ],
+        ];
+        $job = (object) [
+            'id' => 1629,
+            'type' => 'service_first',
+            'period' => 1,
+            'schedule_date' => '2026-06-04',
+            'completed_at' => null,
+            'company_name' => 'Test 260218 PT',
+            'building_name' => 'Gedung Test260218',
+            'jobAdvice' => (object) [
+                'customer' => (object) ['name' => 'Test 260218 PT'],
+                'contract' => (object) ['contract_number' => 'JKT-CA/26-06/0002'],
+            ],
+            'building' => null,
+            'assignedTechnician' => null,
+            'jobAssignSchedules' => collect([]),
+            'jobScheduleRooms' => collect([
+                (object) [
+                    'id' => 1,
+                    'room_name' => 'Ruang Delima',
+                    'room' => (object) ['room_name' => 'Ruang Delima'],
+                    'jobAdviceRoom' => $unitOnlyRoom,
+                    'rentals' => collect([
+                        (object) ['jobAdviceRoom' => $unitOnlyRoom],
+                        (object) ['jobAdviceRoom' => $refillOnlyRoom],
+                    ]),
+                ],
+            ]),
+        ];
+
+        $html = view('operational.job-schedules.pdf-csr', [
+            'groupedJobs' => collect(['JKT-CSR/26-06/0004' => collect([$job])]),
+            'selectedRoomIds' => null,
+        ])->render();
+
+        $this->assertStringContainsString('Rental-5', $html);
+        $this->assertStringNotContainsString('ADS XL Unit Only', $html);
+        $this->assertStringContainsString('Service/Refill', $html);
     }
 
     public function test_print_csr_allows_new_job_without_job_number(): void

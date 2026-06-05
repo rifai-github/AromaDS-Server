@@ -123,12 +123,12 @@
 
             $buildingAddressParts = collect([
                 $building?->alamat_1 ?? $building?->address,
-                $building?->alamat_2,
-                $building?->subdistrict?->name,
-                $building?->district?->name,
-                $building?->city?->name,
-                $building?->province?->name,
-                $building?->kode_pos ?? $building?->postal_code,
+                data_get($building, 'alamat_2'),
+                data_get($building, 'subdistrict.name'),
+                data_get($building, 'district.name'),
+                data_get($building, 'city.name'),
+                data_get($building, 'province.name'),
+                data_get($building, 'kode_pos') ?? data_get($building, 'postal_code'),
             ])->filter(fn ($part) => filled($part))->unique()->values();
             $address = $buildingAddressParts->isNotEmpty()
                 ? $buildingAddressParts->implode(', ')
@@ -158,6 +158,87 @@
                     default => $type ? ucwords(str_replace('_', ' ', $type)) : '-',
                 };
             };
+            $detectRentalMaterialComposition = function ($rental): array {
+                $hasUnit = false;
+                $hasNonUnit = false;
+
+                foreach (($rental?->rentalDetails ?? collect()) as $detail) {
+                    $category = $detail->productCategory ?? $detail->masterProduct?->productCategory;
+                    $type = $detail->productType ?? $detail->masterProduct?->productType;
+                    $isUnit = $category?->is_unit ?? $type?->is_unit;
+
+                    if ($isUnit === null) {
+                        continue;
+                    }
+
+                    if ((bool) $isUnit) {
+                        $hasUnit = true;
+                    } else {
+                        $hasNonUnit = true;
+                    }
+
+                    if ($hasUnit && $hasNonUnit) {
+                        break;
+                    }
+                }
+
+                return ['has_unit' => $hasUnit, 'has_non_unit' => $hasNonUnit];
+            };
+            $resolveRentalFlowType = function ($jobAdviceRoom) use ($detectRentalMaterialComposition): ?string {
+                $rental = $jobAdviceRoom?->rentalProduct;
+                $rentalType = strtolower(trim(str_replace('-', '_', (string) ($rental?->rental_type ?? ''))));
+
+                if (in_array($rentalType, ['unit_only', 'refill_only', 'unit_refill', 'rental_only'], true)) {
+                    return $rentalType;
+                }
+
+                $composition = $detectRentalMaterialComposition($rental);
+
+                if ($composition['has_unit'] && ! $composition['has_non_unit']) {
+                    return 'unit_only';
+                }
+
+                if (! $composition['has_unit'] && $composition['has_non_unit']) {
+                    return 'refill_only';
+                }
+
+                if ($composition['has_unit'] && $composition['has_non_unit']) {
+                    return 'unit_refill';
+                }
+
+                return $rentalType ?: null;
+            };
+            $rentalBelongsToJob = function ($schedule, $jobAdviceRoom) use ($resolveRentalFlowType): bool {
+                if (! $jobAdviceRoom) {
+                    return true;
+                }
+
+                $scheduleId = (int) ($schedule->id ?? 0);
+                $linkedScheduleIds = collect([
+                    (int) ($jobAdviceRoom->install_job_schedule_id ?? 0),
+                    (int) ($jobAdviceRoom->service_job_schedule_id ?? 0),
+                    (int) ($jobAdviceRoom->remove_job_schedule_id ?? 0),
+                ])->filter()->values();
+
+                if ($linkedScheduleIds->isNotEmpty()) {
+                    return $linkedScheduleIds->contains($scheduleId);
+                }
+
+                $jobType = strtolower(str_replace([' ', '-'], '_', (string) ($schedule->type ?? '')));
+                $flowType = $resolveRentalFlowType($jobAdviceRoom);
+
+                if (! $flowType) {
+                    return true;
+                }
+
+                return match (true) {
+                    in_array($jobType, ['install', 'installation', 'install_free'], true) => in_array($flowType, ['unit_only', 'unit_refill', 'rental_only'], true),
+                    in_array($jobType, ['check', 'cek'], true) => $flowType === 'unit_only',
+                    in_array($jobType, ['service', 'service_first', 'service_routine', 'csr', 'maintenance'], true) => in_array($flowType, ['refill_only', 'unit_refill', 'rental_only'], true),
+                    str_contains($jobType, 'remove') => in_array($flowType, ['unit_only', 'unit_refill', 'rental_only'], true),
+                    default => true,
+                };
+            };
             $resolveRentalCategory = function ($jobAdviceRoom, $fallback = '-'): string {
                 $rental = $jobAdviceRoom?->rentalProduct;
                 $details = $rental?->rentalDetails ?? collect();
@@ -180,7 +261,10 @@
                 $firstCategory = $categories->first();
                 $category = $unitCategory['name'] ?? $firstCategory['name'] ?? null;
 
-                return $category ?: ($rental?->category ?: $fallback);
+                return $category
+                    ?: (data_get($rental, 'category')
+                    ?: (data_get($rental, 'rental_name')
+                    ?: (data_get($jobAdviceRoom, 'rental_name') ?: $fallback)));
             };
 
             foreach($schedules as $sch) {
@@ -200,17 +284,29 @@
                             continue;
                         }
 
-                        $jobAdviceRoom = $roomPivot->jobAdviceRoom;
-                        $itemName = $resolveRentalCategory($jobAdviceRoom);
+                        $rentalLinks = method_exists($roomPivot, 'relationLoaded')
+                            ? ($roomPivot->relationLoaded('rentals') ? $roomPivot->rentals : collect())
+                            : collect($roomPivot->rentals ?? []);
+                        $jobAdviceRooms = $rentalLinks->isNotEmpty()
+                            ? $rentalLinks->map(fn ($link) => $link->jobAdviceRoom)->filter()->values()
+                            : collect([$roomPivot->jobAdviceRoom])->filter()->values();
 
-                        $rooms->push([
-                            'reference' => $sch->job_number ?? $jobNumber,
-                            'item' => $itemName,
-                            'qty' => $jobAdviceRoom?->quantity ?? 1,
-                            'name' => $roomPivot->room->room_name ?? 'Unknown Room',
-                            'type' => $formatJobType($sch->type ?? $mainJob->type ?? null),
-                            'period' => $sch->period ?? '-'
-                        ]);
+                        foreach ($jobAdviceRooms as $jobAdviceRoom) {
+                            if (! $rentalBelongsToJob($sch, $jobAdviceRoom)) {
+                                continue;
+                            }
+
+                            $itemName = $resolveRentalCategory($jobAdviceRoom);
+
+                            $rooms->push([
+                                'reference' => $sch->job_number ?? $jobNumber,
+                                'item' => $itemName,
+                                'qty' => $jobAdviceRoom?->quantity ?? 1,
+                                'name' => $roomPivot->room->room_name ?? $roomPivot->room_name ?? 'Unknown Room',
+                                'type' => $formatJobType($sch->type ?? $mainJob->type ?? null),
+                                'period' => $sch->period ?? '-'
+                            ]);
+                        }
                     }
                 } elseif ($sch->room) {
                     $rooms->push([
