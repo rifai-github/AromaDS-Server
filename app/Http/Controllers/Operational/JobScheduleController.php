@@ -8465,6 +8465,7 @@ class JobScheduleController extends Controller
             'room_ids' => 'required|array',
             // 'room_ids.*' => 'exists:job_schedule_rooms,id',
             'team_id' => 'required|exists:teams,id',
+            'selected_display_count' => 'nullable|integer|min:1',
             'notes' => 'nullable|string|max:500'
         ]);
 
@@ -8698,9 +8699,13 @@ class JobScheduleController extends Controller
                 \Log::error("Bidirectional Sync Error (Bulk): " . $e->getMessage());
             }
 
+            $displaySuccessCount = (int) ($request->input('selected_display_count') ?: $successCount);
+
             return response()->json([
                 'status' => 'success',
-                'message' => "Successfully updated assignment for {$successCount} room(s).",
+                'message' => "Successfully updated assignment for {$displaySuccessCount} room(s).",
+                'processed_room_count' => $successCount,
+                'display_room_count' => $displaySuccessCount,
                 'success' => true
             ]);
 

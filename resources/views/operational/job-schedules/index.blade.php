@@ -3717,6 +3717,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                             width: '600px',
                             preConfirm: () => {
                                 const checkedBoxes = document.querySelectorAll('.swal-room-check:checked');
+                                const selectedDisplayCount = checkedBoxes.length;
                                 const selectedIds = [...new Set(Array.from(checkedBoxes).flatMap(cb => {
                                     return (cb.getAttribute('data-room-ids') || cb.value)
                                         .split(',')
@@ -3727,11 +3728,15 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                                     Swal.showValidationMessage('Pilih minimal satu room.');
                                     return false;
                                 }
-                                return selectedIds;
+                                return {
+                                    roomIds: selectedIds,
+                                    displayCount: selectedDisplayCount
+                                };
                             }
                         }).then((result) => {
                             if (result.isConfirmed) {
-                                const selectedRoomIds = result.value;
+                                const selectedRoomIds = result.value.roomIds;
+                                const selectedDisplayCount = result.value.displayCount;
                                 
                                 Swal.fire({
                                     title: 'Memproses...',
@@ -3751,6 +3756,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                                     body: JSON.stringify({
                                         room_ids: selectedRoomIds,
                                         team_id: teamId,
+                                        selected_display_count: selectedDisplayCount,
                                         notes: 'Bulk assignment via Job Schedule View'
                                     })
                                 })

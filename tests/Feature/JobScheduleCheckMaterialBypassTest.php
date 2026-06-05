@@ -64,6 +64,12 @@ class JobScheduleCheckMaterialBypassTest extends TestCase
         $this->assertStringContainsString('const groupedRoomMap = new Map();', $view);
         $this->assertStringContainsString('related_room_ids', $view);
         $this->assertStringContainsString('data-room-ids="${(item.related_room_ids || [item.id]).join(\',\')}"', $view);
+        $this->assertStringContainsString('selected_display_count: selectedDisplayCount', $view);
+
+        $controller = file_get_contents(app_path('Http/Controllers/Operational/JobScheduleController.php'));
+        $this->assertStringContainsString("'selected_display_count' => 'nullable|integer|min:1'", $controller);
+        $this->assertStringContainsString("'processed_room_count' => \$successCount", $controller);
+        $this->assertStringContainsString("'display_room_count' => \$displaySuccessCount", $controller);
     }
 
     private function validateMakeAssignTeam(JobSchedule $job): mixed
