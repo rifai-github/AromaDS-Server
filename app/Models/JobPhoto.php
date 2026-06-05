@@ -68,6 +68,11 @@ class JobPhoto extends Model
 
     // Accessors
 
+    public function getDisplayUpdatedAtAttribute()
+    {
+        return $this->updated_at ?: $this->created_at;
+    }
+
     public function getPhotoUrlAttribute()
     {
         return $this->photo_path ? asset('uploads/' . $this->photo_path) : null;

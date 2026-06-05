@@ -1523,30 +1523,29 @@
                                             </td>
                                             <td>
                                                 @php
-                                                    // Get created_at from photo object
-                                                    $createdAt = null;
+                                                    // Prefer the real last update time; fallback for legacy report photos.
+                                                    $displayUpdatedAt = null;
                                                     if (is_object($photo)) {
-                                                        // Try to get created_at as Carbon instance
                                                         if (method_exists($photo, 'getAttribute')) {
-                                                            // Eloquent model
-                                                            $createdAt = $photo->getAttribute('created_at');
-                                                        } elseif (isset($photo->created_at)) {
-                                                            // Object with created_at property
-                                                            $createdAt = $photo->created_at;
+                                                            $displayUpdatedAt = $photo->getAttribute('display_updated_at')
+                                                                ?? $photo->getAttribute('updated_at')
+                                                                ?? $photo->getAttribute('created_at');
+                                                        } elseif (isset($photo->updated_at) || isset($photo->created_at)) {
+                                                            $displayUpdatedAt = $photo->updated_at ?? $photo->created_at;
                                                         }
                                                     }
                                                     
                                                     // Convert to Carbon if needed
-                                                    if ($createdAt) {
-                                                        if (is_string($createdAt)) {
-                                                            $createdAt = \Carbon\Carbon::parse($createdAt);
-                                                        } elseif (!$createdAt instanceof \Carbon\Carbon) {
-                                                            $createdAt = \Carbon\Carbon::parse($createdAt);
+                                                    if ($displayUpdatedAt) {
+                                                        if (is_string($displayUpdatedAt)) {
+                                                            $displayUpdatedAt = \Carbon\Carbon::parse($displayUpdatedAt);
+                                                        } elseif (!$displayUpdatedAt instanceof \Carbon\Carbon) {
+                                                            $displayUpdatedAt = \Carbon\Carbon::parse($displayUpdatedAt);
                                                         }
                                                     }
                                                 @endphp
-                                                @if($createdAt)
-                                                    {{ $createdAt->setTimezone('Asia/Jakarta')->format('d/M/Y H:i:s') }} WIB
+                                                @if($displayUpdatedAt)
+                                                    {{ $displayUpdatedAt->setTimezone('Asia/Jakarta')->format('d/M/Y H:i:s') }} WIB
                                                 @else
                                                     -
                                                 @endif
