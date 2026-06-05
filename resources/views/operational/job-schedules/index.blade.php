@@ -3601,7 +3601,32 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                     Swal.close();
                     if (data.status === 'success') {
                         const rooms = data.data;
-                        const allItems = rooms.map(i => {
+                        const groupedRooms = [];
+                        const groupedRoomMap = new Map();
+
+                        rooms.forEach(i => {
+                            const key = [
+                                i.job_number || 'No Job No',
+                                i.room_name || '',
+                                i.job_status || '',
+                                i.status || '',
+                                i.team_id || ''
+                            ].join('|');
+
+                            if (!groupedRoomMap.has(key)) {
+                                const groupedItem = {
+                                    ...i,
+                                    related_room_ids: [i.id]
+                                };
+                                groupedRoomMap.set(key, groupedItem);
+                                groupedRooms.push(groupedItem);
+                                return;
+                            }
+
+                            groupedRoomMap.get(key).related_room_ids.push(i.id);
+                        });
+
+                        const allItems = groupedRooms.map(i => {
                             const isDone = i.job_status === 'done_job' || i.job_status === 'completed';
                             
                             // MOM: if status is 'can_reassign', it means team is assigned but material NOT yet checked by tech.
@@ -3654,6 +3679,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                                             <input type="checkbox" 
                                                 class="swal-room-check h-4 w-4 bg-white border border-gray-300 rounded cursor-pointer" 
                                                 value="${item.id}" 
+                                                data-room-ids="${(item.related_room_ids || [item.id]).join(',')}"
                                                 ${item.checked ? 'checked' : ''} 
                                                 ${isDisabled ? 'disabled' : ''}>
                                         </td>
@@ -3691,7 +3717,12 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                             width: '600px',
                             preConfirm: () => {
                                 const checkedBoxes = document.querySelectorAll('.swal-room-check:checked');
-                                const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
+                                const selectedIds = [...new Set(Array.from(checkedBoxes).flatMap(cb => {
+                                    return (cb.getAttribute('data-room-ids') || cb.value)
+                                        .split(',')
+                                        .map(id => id.trim())
+                                        .filter(Boolean);
+                                }))];
                                 if (selectedIds.length === 0) {
                                     Swal.showValidationMessage('Pilih minimal satu room.');
                                     return false;

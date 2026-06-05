@@ -61,6 +61,9 @@ class JobScheduleCheckMaterialBypassTest extends TestCase
         $this->assertStringContainsString('function openMaterialAction(jobScheduleId, type = \'\', displayType = \'\')', $view);
         $this->assertStringContainsString('Job Check/Remove tidak menggunakan alur material', $view);
         $this->assertStringContainsString('materialAssignOption.disabled = false', $view);
+        $this->assertStringContainsString('const groupedRoomMap = new Map();', $view);
+        $this->assertStringContainsString('related_room_ids', $view);
+        $this->assertStringContainsString('data-room-ids="${(item.related_room_ids || [item.id]).join(\',\')}"', $view);
     }
 
     private function validateMakeAssignTeam(JobSchedule $job): mixed
