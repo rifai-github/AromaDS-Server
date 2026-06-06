@@ -1021,6 +1021,14 @@ class InventoryIssuingController extends Controller
                 ], 422);
             }
 
+            if (! $sn->can_install) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Serial Number {$serialNumber} dalam kondisi {$sn->condition_label}. Tidak boleh dipakai untuk pemasangan."
+                ], 422);
+            }
+
             if ((int) $sn->warehouse_id !== (int) $issuing->warehouse_id) {
                 DB::rollBack();
                 $correctWarehouse = $issuing->warehouse?->name ?? 'warehouse issue';

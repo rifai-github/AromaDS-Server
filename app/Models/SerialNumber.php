@@ -11,9 +11,20 @@ class SerialNumber extends Model
 {
     use HasFactory, SoftDeletes, AutoFilterable;
 
+    public const CONDITION_NEW = 'new';
+    public const CONDITION_SECOND_READY = 'second_ready';
+    public const CONDITION_DAMAGED = 'damaged';
+
+    public const CONDITION_LABELS = [
+        self::CONDITION_NEW => 'Baru',
+        self::CONDITION_SECOND_READY => 'Bekas / Siap Pakai',
+        self::CONDITION_DAMAGED => 'Rusak',
+    ];
+
     protected $fillable = [
         'serial_number',
         'status',
+        'condition_status',
         'location_type',
         'location_id',
         'notes',
@@ -26,6 +37,7 @@ class SerialNumber extends Model
 
     protected $casts = [
         'status' => 'string',
+        'condition_status' => 'string',
         'location_type' => 'string',
         'location_id' => 'integer'
     ];
@@ -128,6 +140,22 @@ class SerialNumber extends Model
         return $query->whereIn('status', ['broken', 'damaged']);
     }
 
+    public function scopeByConditionStatus($query, string $conditionStatus)
+    {
+        return $query->where('condition_status', $conditionStatus);
+    }
+
+    public function scopeConditionInstallable($query)
+    {
+        return $query->where(function ($nested) {
+            $nested->whereNull('condition_status')
+                ->orWhereIn('condition_status', [
+                    self::CONDITION_NEW,
+                    self::CONDITION_SECOND_READY,
+                ]);
+        });
+    }
+
     public function scopeInWarehouse($query)
     {
         return $query->where('location_type', 'warehouse');
@@ -169,6 +197,44 @@ class SerialNumber extends Model
             'on_hand_remove' => 'On Hand Remove - Teknisi'
         ];
         return $statuses[$this->status] ?? ucfirst(str_replace('_', ' ', $this->status));
+    }
+
+    public function getEffectiveConditionStatusAttribute(): string
+    {
+        if (in_array($this->status, ['broken', 'damaged', 'retired'], true)) {
+            return self::CONDITION_DAMAGED;
+        }
+
+        $conditionStatus = $this->condition_status;
+
+        if ($conditionStatus === 'used') {
+            return self::CONDITION_SECOND_READY;
+        }
+
+        if (array_key_exists((string) $conditionStatus, self::CONDITION_LABELS)) {
+            return $conditionStatus;
+        }
+
+        return self::CONDITION_NEW;
+    }
+
+    public function getConditionLabelAttribute(): string
+    {
+        return self::CONDITION_LABELS[$this->effective_condition_status] ?? self::CONDITION_LABELS[self::CONDITION_NEW];
+    }
+
+    public function getCanInstallAttribute(): bool
+    {
+        return $this->effective_condition_status !== self::CONDITION_DAMAGED;
+    }
+
+    public function getInstallBlockReasonAttribute(): ?string
+    {
+        if ($this->can_install) {
+            return null;
+        }
+
+        return 'Unit dalam kondisi Rusak sehingga tidak boleh dipasang. Proses retur ke pusat diperlukan.';
     }
 
     public function getLocationTypeTextAttribute()

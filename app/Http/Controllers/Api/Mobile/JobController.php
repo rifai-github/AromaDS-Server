@@ -1710,7 +1710,7 @@ class JobController extends Controller
                                 $serialNumber = $unit->serial_number;
                             }
                             
-                            $products[] = [
+                            $products[] = array_merge([
                                 'product_id' => $unit->product_id,
                                 'product_name' => $unit->product->name ?? '-',
                                 'product_code' => $unit->product->sku ?? '-', // Add SKU
@@ -1723,7 +1723,7 @@ class JobController extends Controller
                                 'unit_on_wall_id' => $unit->id,
                                 'requires_serial_number' => $unit->product->requiresSerialNumber(),
                                 'is_unit' => $unit->product->productType?->is_unit ?? $unit->product->productCategory?->is_unit ?? false,
-                            ];
+                            ], $this->serialConditionPayload($unit->serialNumber));
                         }
                     }
                 }
@@ -3611,7 +3611,7 @@ class JobController extends Controller
             $productType = $masterProduct ? $masterProduct->productType : null;
             $warehouse = $serialNumber->warehouse;
             
-            $responseData = [
+            $responseData = array_merge([
                 'serial_number' => $serialNumber->serial_number,
                 'mac' => $macAddress ?? '-',
                 'device_type' => $deviceData['deviceType'] ?? '-',
@@ -3637,7 +3637,7 @@ class JobController extends Controller
                 'status' => $serialNumber->status,
                 'notes' => $serialNumber->notes ?? '',
                 'exists_in_db' => true,
-            ];
+            ], $this->serialConditionPayload($serialNumber));
             
             return response()->json([
                 'status' => 'success',
@@ -4878,6 +4878,15 @@ class JobController extends Controller
                 ], 400);
             }
 
+            if (! $newSnModel->can_install) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Serial Number {$newSn} dalam kondisi {$newSnModel->condition_label}. Tidak dapat dipasang.",
+                    'code' => 'INVALID_CONDITION',
+                    'data' => $this->serialConditionPayload($newSnModel),
+                ], 400);
+            }
+
             // Also check UnitOnWall specifically
             if ($newSnModel) {
                 $alreadyOnWall = \App\Models\UnitOnWall::where('serial_number_id', $newSnModel->id)
@@ -4896,6 +4905,7 @@ class JobController extends Controller
             if ($oldSnModel) {
                 $oldSnModel->update([
                     'status' => 'on_hand_remove',
+                    'condition_status' => \App\Models\SerialNumber::CONDITION_DAMAGED,
                     'location_type' => 'technician',
                     'location_id' => Auth::id()
                 ]);
@@ -5033,6 +5043,15 @@ class JobController extends Controller
                          return response()->json([
                             'status' => 'error',
                             'message' => "Serial Number {$serialNumberInput} dalam kondisi Rusak/Retired. Tidak dapat dipasang."
+                        ], 400);
+                    }
+
+                    if (! $serialNumber->can_install) {
+                         return response()->json([
+                            'status' => 'error',
+                            'message' => "Serial Number {$serialNumberInput} dalam kondisi {$serialNumber->condition_label}. Tidak dapat dipasang.",
+                            'code' => 'INVALID_CONDITION',
+                            'data' => $this->serialConditionPayload($serialNumber),
                         ], 400);
                     }
 
@@ -5268,7 +5287,7 @@ class JobController extends Controller
                     'status' => 'success',
                     'message' => 'Serial number valid (ditemukan di unit on wall)',
                     'source' => 'unit_on_wall', // Indicate source
-                    'data' => [
+                    'data' => array_merge([
                         'id' => $serialNumberId,
                         'serial_number' => $unitOnWall->serial_number ?? ($unitOnWall->serialNumber->serial_number ?? $serialNumberInput),
                         'product_id' => $unitOnWall->product_id,
@@ -5283,7 +5302,7 @@ class JobController extends Controller
                             'building' => $unitOnWall->building->nama_gedung ?? $unitOnWall->building_name ?? '-',
                             'room' => $unitOnWall->room->room_name ?? $unitOnWall->room_name ?? '-',
                         ],
-                    ]
+                    ], $this->serialConditionPayload($unitOnWall->serialNumber))
                 ]);
             } else {
                 \Log::warning("Serial number not found in unit on wall for remove job", [
@@ -5386,7 +5405,7 @@ class JobController extends Controller
                     'status' => 'success',
                     'message' => 'Serial number valid (ditemukan di unit on wall)',
                     'source' => 'unit_on_wall', // Indicate source
-                    'data' => [
+                    'data' => array_merge([
                         'serial_number' => $unitOnWall->serial_number,
                         'product_id' => $unitOnWall->product_id,
                         'product_name' => $unitOnWall->product->name ?? $unitOnWall->product_name ?? '-',
@@ -5398,7 +5417,7 @@ class JobController extends Controller
                             'building' => $unitOnWall->building->nama_gedung ?? $unitOnWall->building_name ?? '-',
                             'room' => $unitOnWall->room->room_name ?? $unitOnWall->room_name ?? '-',
                         ],
-                    ]
+                    ], $this->serialConditionPayload($unitOnWall->serialNumber))
                 ]);
             } else {
                 \Log::warning("Serial number not found in unit on wall either", [
@@ -5425,7 +5444,7 @@ class JobController extends Controller
                 'status' => 'success',
                 'message' => 'Serial number valid' . ($responseRoomName ? " (Room: {$responseRoomName})" : ''),
                 'source' => $source, // Use the detected source (verified_materials, materials, or unit_on_wall)
-                'data' => [
+                'data' => array_merge([
                     'id' => $serialNumber->id,
                     'serial_number' => $serialNumber->serial_number,
                     'product_id' => $serialNumber->master_product_id,
@@ -5437,7 +5456,7 @@ class JobController extends Controller
                     'warehouse' => $serialNumber->warehouse->name ?? '-',
                     'status' => $serialNumber->status,
                     'room_name' => $responseRoomName, // Include room_name in response
-                ]
+                ], $this->serialConditionPayload($serialNumber))
             ]);
         }
         
@@ -5453,6 +5472,25 @@ class JobController extends Controller
             'status' => 'error',
             'message' => 'Serial number tidak terdaftar untuk job ini. Pastikan SN sudah terverifikasi saat verifikasi material.'
         ], 404);
+    }
+
+    private function serialConditionPayload(?\App\Models\SerialNumber $serialNumber): array
+    {
+        if (! $serialNumber) {
+            return [
+                'condition_status' => \App\Models\SerialNumber::CONDITION_SECOND_READY,
+                'condition_label' => \App\Models\SerialNumber::CONDITION_LABELS[\App\Models\SerialNumber::CONDITION_SECOND_READY],
+                'can_install' => true,
+                'install_block_reason' => null,
+            ];
+        }
+
+        return [
+            'condition_status' => $serialNumber->effective_condition_status,
+            'condition_label' => $serialNumber->condition_label,
+            'can_install' => $serialNumber->can_install,
+            'install_block_reason' => $serialNumber->install_block_reason,
+        ];
     }
 
     private function hasExistingInstallScanForSerial(JobSchedule $job, string $serialNumber, ?string $selectedRoomName = null): bool

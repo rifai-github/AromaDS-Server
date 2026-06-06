@@ -707,6 +707,27 @@
                 </button>
             </div>
         </div>
+        @php
+            $conditionFilters = [
+                'all' => 'Semua',
+                'new' => 'Baru',
+                'second_ready' => 'Bekas / Siap Pakai',
+                'damaged' => 'Rusak',
+                'technician' => 'Di Teknisi',
+                'customer' => 'Di Customer',
+                'retired' => 'Hilang / Retired',
+            ];
+        @endphp
+        <div class="flex flex-wrap gap-2 items-center w-full p-4 bg-white border-t border-gray-100">
+            @foreach($conditionFilters as $key => $label)
+                <a
+                    href="{{ request()->fullUrlWithQuery(['condition_view' => $key, 'page' => null]) }}"
+                    class="px-3 py-2 text-xs rounded border {{ ($conditionView ?? 'all') === $key ? 'bg-[#214589] text-white border-[#214589]' : 'bg-white text-gray-700 border-gray-300' }}"
+                >
+                    {{ $label }}
+                </a>
+            @endforeach
+        </div>
         <!-- Controls Row -->
         <div class="flex flex-row justify-between items-center w-full p-4 bg-white">
             <div class="flex flex-row justify-start items-center w-full">
@@ -741,6 +762,7 @@
                         <th data-column="masterProduct__name">Product</th>
                         <th data-column="warehouse__name">Warehouse</th>
                         <th data-column="status">Status</th>
+                        <th data-column="condition_status">Kondisi Unit</th>
                         <th data-column="location_type">Location Type</th>
                         <th data-column="created_at" data-type="date">Created At</th>
                         <th data-column="createdBy.name">Created By</th>
@@ -795,6 +817,18 @@
                         </td>
                         <td>
                             @php
+                                $conditionClass = match($serialNumber->effective_condition_status) {
+                                    \App\Models\SerialNumber::CONDITION_DAMAGED => 'bg-red-100 text-red-800',
+                                    \App\Models\SerialNumber::CONDITION_SECOND_READY => 'bg-amber-100 text-amber-800',
+                                    default => 'bg-emerald-100 text-emerald-800',
+                                };
+                            @endphp
+                            <span class="px-2 py-1 text-xs rounded-full {{ $conditionClass }}">
+                                {{ $serialNumber->condition_label }}
+                            </span>
+                        </td>
+                        <td>
+                            @php
                                 $effectiveLocationType = $serialNumber->effective_location_type;
                                 $locationTypeText = $serialNumber->effective_location_type_text;
                             @endphp
@@ -813,7 +847,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="10" class="p-8 text-center">
+                        <td colspan="11" class="p-8 text-center">
                             <div class="text-gray-600">
                                 <i class="fas fa-barcode text-4xl mb-3"></i>
                                 <p class="text-lg">No serial numbers found</p>
@@ -1048,6 +1082,14 @@ function openCreateModal() {
                         </select>
                     </div>
                     <div class="form-group">
+                        <label class="form-label">Kondisi Unit</label>
+                        <select name="condition_status" class="form-input">
+                            <option value="new">Baru</option>
+                            <option value="second_ready">Bekas / Siap Pakai</option>
+                            <option value="damaged">Rusak</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label class="form-label">Warehouse</label>
                         <select name="warehouse_id" class="form-input">
                             <option value="">Select Warehouse</option>
@@ -1236,6 +1278,14 @@ function openEditModal(id) {
                                     <option value="in_use" ${data.data.status === 'in_use' ? 'selected' : ''}>In Use</option>
                                     <option value="maintenance" ${data.data.status === 'maintenance' ? 'selected' : ''}>Maintenance</option>
                                     <option value="damaged" ${data.data.status === 'damaged' ? 'selected' : ''}>Damaged</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Kondisi Unit</label>
+                                <select name="condition_status" class="form-input">
+                                    <option value="new" ${(data.data.condition_status || 'new') === 'new' ? 'selected' : ''}>Baru</option>
+                                    <option value="second_ready" ${(data.data.condition_status || 'new') === 'second_ready' ? 'selected' : ''}>Bekas / Siap Pakai</option>
+                                    <option value="damaged" ${(data.data.condition_status || 'new') === 'damaged' ? 'selected' : ''}>Rusak</option>
                                 </select>
                             </div>
                             <div class="form-group">

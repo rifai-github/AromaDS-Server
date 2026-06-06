@@ -149,6 +149,21 @@
                     </div>
                 </div>
                 <div>
+                    <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Kondisi Unit</div>
+                    <div>
+                        @php
+                            $conditionClass = match($serialNumber->effective_condition_status) {
+                                \App\Models\SerialNumber::CONDITION_DAMAGED => 'bg-danger',
+                                \App\Models\SerialNumber::CONDITION_SECOND_READY => 'bg-warning text-dark',
+                                default => 'bg-success',
+                            };
+                        @endphp
+                        <span class="badge {{ $conditionClass }}" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">
+                            {{ strtoupper($serialNumber->condition_label) }}
+                        </span>
+                    </div>
+                </div>
+                <div>
                     <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Warehouse</div>
                     <div style="font-size: 1rem; color: #212529;">{{ $serialNumber->warehouse->name ?? '-' }}</div>
                 </div>
@@ -452,6 +467,14 @@
                     <label class="form-label font-weight-bold">Notes</label>
                     <textarea name="notes" class="form-control" rows="3" placeholder="Tambahkan catatan jika diperlukan...">{{ $serialNumber->notes ?? '' }}</textarea>
                 </div>
+                <div class="mb-3 text-dark">
+                    <label class="form-label font-weight-bold">Kondisi Unit</label>
+                    <select name="condition_status" class="form-select">
+                        <option value="new" {{ $serialNumber->effective_condition_status === \App\Models\SerialNumber::CONDITION_NEW ? 'selected' : '' }}>Baru</option>
+                        <option value="second_ready" {{ $serialNumber->effective_condition_status === \App\Models\SerialNumber::CONDITION_SECOND_READY ? 'selected' : '' }}>Bekas / Siap Pakai</option>
+                        <option value="damaged" {{ $serialNumber->effective_condition_status === \App\Models\SerialNumber::CONDITION_DAMAGED ? 'selected' : '' }}>Rusak</option>
+                    </select>
+                </div>
             </div>
             <div class="modal-footer p-3 bg-light d-flex justify-content-end gap-2">
                 <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
@@ -477,6 +500,7 @@ function updateSerialNumber(e) {
         },
         body: JSON.stringify({
             status: formData.get('status'),
+            condition_status: formData.get('condition_status'),
             notes: formData.get('notes'),
             _method: 'PUT'
         })

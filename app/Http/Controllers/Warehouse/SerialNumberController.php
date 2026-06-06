@@ -35,6 +35,33 @@ class SerialNumberController extends Controller
         // Uses 'created_by' as owner, 'warehouse.branch_id' for branch access, and 'warehouse_id' for manager access.
         $query = $this->applyAccessControlFilter($query, null, 'created_by', null, 'warehouse.branch_id', null, 'warehouse_id');
 
+        $conditionView = $request->input('condition_view', 'all');
+        match ($conditionView) {
+            'new' => $query->where(function ($nested) {
+                $nested->whereNull('condition_status')
+                    ->orWhere('condition_status', SerialNumber::CONDITION_NEW);
+            })->whereNotIn('status', ['broken', 'damaged', 'retired']),
+            'second_ready' => $query->whereIn('condition_status', [
+                SerialNumber::CONDITION_SECOND_READY,
+                'used',
+            ])->whereNotIn('status', ['broken', 'damaged', 'retired']),
+            'damaged' => $query->where(function ($nested) {
+                $nested->where('condition_status', SerialNumber::CONDITION_DAMAGED)
+                    ->orWhereIn('status', ['broken', 'damaged']);
+            }),
+            'technician' => $query->where(function ($nested) {
+                $nested->where('location_type', 'technician')
+                    ->orWhereIn('status', ['on_hand', 'on_hand_remove']);
+            }),
+            'customer' => $query->where(function ($nested) {
+                $nested->where('location_type', 'customer')
+                    ->orWhere('status', 'in_use')
+                    ->orWhereHas('unitOnWalls', fn ($unitQuery) => $unitQuery->where('status', 'active'));
+            }),
+            'retired' => $query->where('status', 'retired'),
+            default => null,
+        };
+
         // Normalize status filter (e.g., "On Hand" -> "on_hand")
         if ($request->has('filter.status')) {
             $status = $request->input('filter.status');
@@ -47,7 +74,7 @@ class SerialNumberController extends Controller
         // Apply AutoFilterable
         $query->filter($request->all());
 
-        $serialNumbers = $query->orderBy('updated_at', 'desc')->paginate(15);
+        $serialNumbers = $query->orderBy('updated_at', 'desc')->paginate(15)->withQueryString();
 
         // Return JSON for AJAX requests
         if ($request->ajax()) {
@@ -67,7 +94,7 @@ class SerialNumberController extends Controller
             ->orderBy('name')
             ->get(['id', 'name']);
 
-        return view('warehouse.serial-numbers.index', compact('serialNumbers', 'products', 'warehouses'));
+        return view('warehouse.serial-numbers.index', compact('serialNumbers', 'products', 'warehouses', 'conditionView'));
     }
 
     public function create()
@@ -95,7 +122,8 @@ class SerialNumberController extends Controller
             'warehouse_id' => 'nullable|exists:warehouses,id',
             'master_product_id' => 'required|exists:master_products,id',
             'serial_number' => 'required|string|max:100|unique:serial_numbers',
-            'status' => 'required|in:ready,broken,on_service,in_use,retired,available,maintenance,damaged', // Include legacy statuses for backward compatibility
+            'status' => 'required|in:ready,broken,on_service,in_use,retired,available,maintenance,damaged,on_hand,on_hand_remove', // Include legacy statuses for backward compatibility
+            'condition_status' => 'nullable|in:new,second_ready,damaged',
             'notes' => 'nullable|string',
         ]);
 
@@ -107,6 +135,10 @@ class SerialNumberController extends Controller
                 'master_product_id' => $request->master_product_id,
                 'serial_number' => strtoupper($request->serial_number),
                 'status' => $request->status,
+                'condition_status' => $request->condition_status
+                    ?: (in_array($request->status, ['broken', 'damaged', 'retired'], true)
+                        ? SerialNumber::CONDITION_DAMAGED
+                        : SerialNumber::CONDITION_NEW),
                 'location_type' => null,
                 'location_id' => null,
                 'notes' => $request->notes,
@@ -374,7 +406,11 @@ class SerialNumberController extends Controller
         $rules = [];
         
         if ($request->has('status')) {
-            $rules['status'] = 'required|in:ready,broken,on_service,in_use,retired,available,maintenance,damaged'; // Include legacy statuses
+            $rules['status'] = 'required|in:ready,broken,on_service,in_use,retired,available,maintenance,damaged,on_hand,on_hand_remove'; // Include legacy statuses
+        }
+
+        if ($request->has('condition_status')) {
+            $rules['condition_status'] = 'nullable|in:new,second_ready,damaged';
         }
         
         if ($request->has('notes')) {
@@ -406,6 +442,12 @@ class SerialNumberController extends Controller
             // Only update fields that are provided
             if ($request->has('status')) {
                 $updateData['status'] = $request->status;
+            }
+
+            if ($request->has('condition_status')) {
+                $updateData['condition_status'] = $request->condition_status;
+            } elseif ($request->has('status') && in_array($request->status, ['broken', 'damaged', 'retired'], true)) {
+                $updateData['condition_status'] = SerialNumber::CONDITION_DAMAGED;
             }
             
             if ($request->has('notes')) {

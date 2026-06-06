@@ -16,36 +16,45 @@ class WarehousePlacementService
 
     public function resolveForNewStock(Warehouse $fallbackWarehouse): Warehouse
     {
-        return $this->resolveByCondition($fallbackWarehouse, self::CONDITION_NEW);
+        return $fallbackWarehouse;
     }
 
     public function resolveForDamagedStock(Warehouse $fallbackWarehouse): Warehouse
     {
-        return $this->resolveByCondition($fallbackWarehouse, self::CONDITION_DAMAGED);
+        return $fallbackWarehouse;
     }
 
     public function resolveForMaterialReturn(MaterialReturn $materialReturn, Warehouse $fallbackWarehouse): Warehouse
     {
-        return $this->resolveByCondition($fallbackWarehouse, $this->classifyMaterialReturn($materialReturn));
+        return $fallbackWarehouse;
     }
 
     public function resolveForReceiving(InventoryReceiving $inventoryReceiving, Warehouse $fallbackWarehouse): Warehouse
     {
+        return $fallbackWarehouse;
+    }
+
+    public function classifyReceivingCondition(InventoryReceiving $inventoryReceiving): ?string
+    {
         $materialReturn = $this->findMaterialReturnForReceiving($inventoryReceiving);
 
         if ($materialReturn) {
-            return $this->resolveForMaterialReturn($materialReturn, $fallbackWarehouse);
+            return $this->classifyMaterialReturn($materialReturn);
         }
 
         if ($this->isReceivingFromRemoveJob($inventoryReceiving)) {
-            return $this->resolveByCondition($fallbackWarehouse, self::CONDITION_USED);
+            return self::CONDITION_USED;
+        }
+
+        if ($this->isReceivingFromFieldReturn($inventoryReceiving)) {
+            return self::CONDITION_USED;
         }
 
         if ($this->isReceivingFromIssuing($inventoryReceiving)) {
-            return $fallbackWarehouse;
+            return null;
         }
 
-        return $this->resolveForNewStock($fallbackWarehouse);
+        return self::CONDITION_NEW;
     }
 
     public function classifyMaterialReturn(MaterialReturn $materialReturn): string
@@ -142,6 +151,24 @@ class WarehousePlacementService
             '/rv/',
             'remove job',
             'auto-return dari remove',
+        ]);
+    }
+
+    private function isReceivingFromFieldReturn(InventoryReceiving $inventoryReceiving): bool
+    {
+        $text = Str::lower(collect([
+            $inventoryReceiving->reference_no,
+            $inventoryReceiving->notes,
+        ])->filter()->implode(' '));
+
+        return Str::contains($text, [
+            '-csr/',
+            '/csr/',
+            'auto-return',
+            'retur',
+            'return',
+            'returned',
+            'penerimaan kembali',
         ]);
     }
 

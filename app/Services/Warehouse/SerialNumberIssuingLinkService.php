@@ -13,6 +13,10 @@ class SerialNumberIssuingLinkService
             return false;
         }
 
+        if (! $serialNumber->can_install) {
+            return false;
+        }
+
         if ($serialNumber->location_type && $serialNumber->location_type !== 'warehouse') {
             return false;
         }

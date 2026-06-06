@@ -8,6 +8,7 @@ use App\Models\InventoryMovement;
 use App\Models\InventoryRequest;
 use App\Models\InventoryReceiving;
 use App\Models\Product;
+use App\Models\SerialNumber;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Warehouse\WarehousePlacementService;
@@ -182,20 +183,34 @@ class InventoryReceivingController extends Controller
     private function releaseReceivedSerialNumbersToWarehouse(InventoryReceiving $inventoryReceiving, Warehouse $warehouse): int
     {
         $activeUnitStatuses = ['active', 'installed', 'on_wall', 'on wall', 'onwall'];
+        $placementCondition = app(WarehousePlacementService::class)
+            ->classifyReceivingCondition($inventoryReceiving);
+        $conditionStatus = match ($placementCondition) {
+            WarehousePlacementService::CONDITION_DAMAGED => SerialNumber::CONDITION_DAMAGED,
+            WarehousePlacementService::CONDITION_USED => SerialNumber::CONDITION_SECOND_READY,
+            WarehousePlacementService::CONDITION_NEW => SerialNumber::CONDITION_NEW,
+            default => null,
+        };
+
+        $updateData = [
+            'status' => 'ready',
+            'location_type' => 'warehouse',
+            'location_id' => $warehouse->id,
+            'warehouse_id' => $warehouse->id,
+            'updated_by' => Auth::id(),
+            'updated_at' => now(),
+        ];
+
+        if ($conditionStatus) {
+            $updateData['condition_status'] = $conditionStatus;
+        }
 
         $updatedCount = \App\Models\SerialNumber::where('inventory_receiving_id', $inventoryReceiving->id)
             ->whereIn('status', ['pending', 'on_hand', 'on_hand_remove', 'in_use'])
             ->whereDoesntHave('unitOnWalls', function ($query) use ($activeUnitStatuses) {
                 $query->whereIn('status', $activeUnitStatuses);
             })
-            ->update([
-                'status' => 'ready',
-                'location_type' => 'warehouse',
-                'location_id' => $warehouse->id,
-                'warehouse_id' => $warehouse->id,
-                'updated_by' => Auth::id(),
-                'updated_at' => now(),
-            ]);
+            ->update($updateData);
 
         $skippedActiveCount = \App\Models\SerialNumber::where('inventory_receiving_id', $inventoryReceiving->id)
             ->whereHas('unitOnWalls', function ($query) use ($activeUnitStatuses) {

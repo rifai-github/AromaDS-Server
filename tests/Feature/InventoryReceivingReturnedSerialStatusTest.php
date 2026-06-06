@@ -169,6 +169,7 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
             $table->id();
             $table->string('serial_number')->nullable();
             $table->string('status')->nullable();
+            $table->string('condition_status')->nullable();
             $table->string('location_type')->nullable();
             $table->foreignId('location_id')->nullable();
             $table->foreignId('warehouse_id')->nullable();
@@ -328,6 +329,7 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
             'location_id' => 5,
             'warehouse_id' => 5,
             'inventory_receiving_id' => $receiving->id,
+            'condition_status' => SerialNumber::CONDITION_SECOND_READY,
         ]);
     }
 
@@ -354,23 +356,25 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         ]);
     }
 
-    public function test_finalize_new_receiving_places_stock_in_new_warehouse_when_available(): void
+    public function test_finalize_new_receiving_keeps_single_branch_warehouse_and_marks_condition_new(): void
     {
         $this->seedJakartaConditionWarehouses();
-        $receiving = $this->seedReceivingWithSerial(status: 'pending');
+        $receiving = $this->seedReceivingWithSerial(status: 'pending', referenceNo: 'SUP-REC/26-06/0001');
+        $receiving->update(['notes' => 'Supplier receiving stok baru.']);
 
         app(InventoryReceivingController::class)->finalize($receiving);
 
         $this->assertDatabaseHas('warehouse_products', [
-            'warehouse_id' => 6,
+            'warehouse_id' => 5,
             'master_product_id' => 100,
             'quantity' => 1,
         ]);
         $this->assertDatabaseHas('serial_numbers', [
             'id' => 200,
-            'warehouse_id' => 6,
-            'location_id' => 6,
+            'warehouse_id' => 5,
+            'location_id' => 5,
             'status' => 'ready',
+            'condition_status' => SerialNumber::CONDITION_NEW,
         ]);
     }
 
@@ -537,7 +541,7 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         ]);
     }
 
-    public function test_finalize_return_receiving_places_normal_return_in_used_warehouse(): void
+    public function test_finalize_return_receiving_keeps_single_branch_warehouse_and_marks_second_ready(): void
     {
         $this->seedJakartaConditionWarehouses();
         $receiving = $this->seedReceivingWithSerial(status: 'pending', referenceNo: 'JKT-CSR/26-05/0001');
@@ -546,18 +550,24 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         app(InventoryReceivingController::class)->finalize($receiving);
 
         $this->assertDatabaseHas('warehouse_products', [
-            'warehouse_id' => 7,
+            'warehouse_id' => 5,
             'master_product_id' => 100,
             'quantity' => 1,
         ]);
         $this->assertDatabaseHas('inventory_movements', [
-            'warehouse_id' => 7,
+            'warehouse_id' => 5,
             'master_product_id' => 100,
             'reference_no' => 'BDG-IRC/26-05/0015',
         ]);
+        $this->assertDatabaseHas('serial_numbers', [
+            'id' => 200,
+            'warehouse_id' => 5,
+            'location_id' => 5,
+            'condition_status' => SerialNumber::CONDITION_SECOND_READY,
+        ]);
     }
 
-    public function test_finalize_remove_receiving_places_unit_in_used_warehouse(): void
+    public function test_finalize_remove_receiving_keeps_single_branch_warehouse_and_marks_second_ready(): void
     {
         $this->seedJakartaConditionWarehouses();
         $receiving = $this->seedReceivingWithSerial(status: 'pending', referenceNo: 'JKT-RV/26-06/0001');
@@ -573,7 +583,7 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         app(InventoryReceivingController::class)->finalize($receiving->fresh());
 
         $this->assertDatabaseHas('warehouse_products', [
-            'warehouse_id' => 7,
+            'warehouse_id' => 5,
             'master_product_id' => 100,
             'quantity' => 1,
         ]);
@@ -581,17 +591,18 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
             'id' => 200,
             'serial_number' => 'DFJKT024',
             'status' => 'ready',
-            'warehouse_id' => 7,
-            'location_id' => 7,
+            'warehouse_id' => 5,
+            'location_id' => 5,
+            'condition_status' => SerialNumber::CONDITION_SECOND_READY,
         ]);
         $this->assertDatabaseHas('inventory_movements', [
-            'warehouse_id' => 7,
+            'warehouse_id' => 5,
             'master_product_id' => 100,
             'reference_no' => 'JKT-IRC/26-06/0004',
         ]);
     }
 
-    public function test_repair_remove_receiving_moves_existing_new_warehouse_stock_to_used_warehouse(): void
+    public function test_repair_remove_receiving_no_longer_moves_to_used_warehouse_for_single_branch_flow(): void
     {
         $this->seedJakartaConditionWarehouses();
         $receiving = $this->seedReceivingWithSerial(status: 'ready', referenceNo: 'JKT-RV/26-06/0001');
@@ -646,28 +657,23 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         $this->assertDatabaseHas('serial_numbers', [
             'id' => 200,
             'serial_number' => 'DFJKT024',
-            'warehouse_id' => 7,
+            'warehouse_id' => 6,
             'location_type' => 'warehouse',
-            'location_id' => 7,
+            'location_id' => 6,
         ]);
         $this->assertDatabaseHas('warehouse_products', [
             'warehouse_id' => 6,
             'master_product_id' => 100,
-            'quantity' => 0,
-        ]);
-        $this->assertDatabaseHas('warehouse_products', [
-            'warehouse_id' => 7,
-            'master_product_id' => 100,
             'quantity' => 1,
         ]);
         $this->assertDatabaseHas('inventory_movements', [
-            'warehouse_id' => 7,
+            'warehouse_id' => 6,
             'reference_no' => 'JKT-IRC/26-06/0004',
             'reference_type' => 'inventory_receiving',
         ]);
     }
 
-    public function test_finalize_return_receiving_places_damaged_return_in_damaged_warehouse(): void
+    public function test_finalize_return_receiving_keeps_single_branch_warehouse_and_marks_damaged(): void
     {
         $this->seedJakartaConditionWarehouses();
         $receiving = $this->seedReceivingWithSerial(status: 'pending', referenceNo: 'JKT-CSR/26-05/0002');
@@ -676,19 +682,20 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         app(InventoryReceivingController::class)->finalize($receiving);
 
         $this->assertDatabaseHas('warehouse_products', [
-            'warehouse_id' => 8,
+            'warehouse_id' => 5,
             'master_product_id' => 100,
             'quantity' => 1,
         ]);
         $this->assertDatabaseHas('serial_numbers', [
             'id' => 200,
-            'warehouse_id' => 8,
-            'location_id' => 8,
+            'warehouse_id' => 5,
+            'location_id' => 5,
             'status' => 'ready',
+            'condition_status' => SerialNumber::CONDITION_DAMAGED,
         ]);
     }
 
-    public function test_updating_serial_status_to_broken_moves_serial_and_stock_to_damaged_warehouse(): void
+    public function test_updating_serial_status_to_broken_marks_condition_damaged_without_moving_warehouse(): void
     {
         $this->seedJakartaConditionWarehouses();
         $this->seedReceivingWithSerial(status: 'ready');
@@ -716,37 +723,19 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         $this->assertDatabaseHas('serial_numbers', [
             'id' => 200,
             'status' => 'broken',
-            'warehouse_id' => 8,
-            'location_type' => 'warehouse',
-            'location_id' => 8,
+            'condition_status' => SerialNumber::CONDITION_DAMAGED,
+            'warehouse_id' => 5,
+            'location_type' => 'customer',
+            'location_id' => 99,
         ]);
         $this->assertDatabaseHas('warehouse_products', [
             'warehouse_id' => 5,
             'master_product_id' => 100,
-            'quantity' => 0,
-        ]);
-        $this->assertDatabaseHas('warehouse_products', [
-            'warehouse_id' => 8,
-            'master_product_id' => 100,
-            'quantity' => 1,
-        ]);
-        $this->assertDatabaseHas('inventory_movements', [
-            'warehouse_id' => 5,
-            'master_product_id' => 100,
-            'reference_no' => 'BDG1001',
-            'reference_type' => 'serial_number_status_update',
-            'quantity' => -1,
-        ]);
-        $this->assertDatabaseHas('inventory_movements', [
-            'warehouse_id' => 8,
-            'master_product_id' => 100,
-            'reference_no' => 'BDG1001',
-            'reference_type' => 'serial_number_status_update',
             'quantity' => 1,
         ]);
     }
 
-    public function test_saving_existing_broken_serial_moves_it_to_damaged_warehouse_when_still_in_normal_warehouse(): void
+    public function test_saving_existing_broken_serial_marks_condition_damaged_without_moving_warehouse(): void
     {
         $this->seedJakartaConditionWarehouses();
         $this->seedReceivingWithSerial(status: 'broken');
@@ -774,15 +763,11 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         $this->assertDatabaseHas('serial_numbers', [
             'id' => 200,
             'status' => 'broken',
-            'warehouse_id' => 8,
+            'condition_status' => SerialNumber::CONDITION_DAMAGED,
+            'warehouse_id' => 5,
         ]);
         $this->assertDatabaseHas('warehouse_products', [
             'warehouse_id' => 5,
-            'master_product_id' => 100,
-            'quantity' => 0,
-        ]);
-        $this->assertDatabaseHas('warehouse_products', [
-            'warehouse_id' => 8,
             'master_product_id' => 100,
             'quantity' => 1,
         ]);
