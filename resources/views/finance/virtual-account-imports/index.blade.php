@@ -346,7 +346,7 @@ function applyFilters() {
     const status = document.getElementById('statusFilter').value;
     const date = document.getElementById('dateFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (search) params.append('search', search);
     if (bankId) params.append('bank_id', bankId);
     if (status) params.append('status', status);
@@ -436,7 +436,7 @@ function applyFilters() {
     const status = document.getElementById('statusFilter').value;
     const date = document.getElementById('dateFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     
     if (search) params.append('search', search);
     if (bank) params.append('bank_id', bank);

@@ -196,6 +196,8 @@ $(document).ready(function() {
         ],
         pageLength: 10,
         lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+        stateSave: true,
+        stateDuration: 0,
         language: {
             processing: '<i class="fas fa-spinner fa-spin"></i> Loading data...',
             lengthMenu: 'Show _MENU_ entries',
@@ -213,6 +215,16 @@ $(document).ready(function() {
         },
         responsive: true,
         dom: '<"top"lf>rt<"bottom"ip><"clear">',
+        initComplete: function() {
+            let api = this.api();
+
+            api.columns().every(function(index) {
+                let searchValue = this.search();
+                if (searchValue) {
+                    $('.column-search[data-column="' + index + '"]').val(searchValue);
+                }
+            });
+        },
         @if($rowClickRoute)
         createdRow: function(row, data, dataIndex) {
             $(row).css('cursor', 'pointer');

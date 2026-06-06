@@ -588,7 +588,7 @@ function applyFilters() {
     const dateFrom = document.getElementById('dateFromFilter').value;
     const dateTo = document.getElementById('dateToFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (type) params.append('backup_type', type);
     if (status) params.append('status', status);
     if (dateFrom) params.append('date_from', dateFrom);
@@ -603,7 +603,7 @@ function exportBackupLogs() {
     const dateFrom = document.getElementById('dateFromFilter').value;
     const dateTo = document.getElementById('dateToFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (type) params.append('backup_type', type);
     if (status) params.append('status', status);
     if (dateFrom) params.append('date_from', dateFrom);

@@ -567,7 +567,7 @@ function applyFilters() {
     const component = document.getElementById('componentFilter').value;
     const status = document.getElementById('statusFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (component) params.append('component', component);
     if (status) params.append('status', status);
     
@@ -578,7 +578,7 @@ function exportSystemHealth() {
     const component = document.getElementById('componentFilter').value;
     const status = document.getElementById('statusFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (component) params.append('component', component);
     if (status) params.append('status', status);
     

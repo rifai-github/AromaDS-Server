@@ -1765,7 +1765,7 @@ function applyFilters() {
     const dateFrom = document.getElementById('filterDateFrom').value;
     const dateTo = document.getElementById('filterDateTo').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (branchId) params.append('branch_id', branchId);
     if (dateFrom) params.append('date_from', dateFrom);
     if (dateTo) params.append('date_to', dateTo);

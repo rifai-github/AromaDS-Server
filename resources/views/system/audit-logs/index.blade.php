@@ -618,7 +618,7 @@ function applyFilters() {
     const action = document.getElementById('actionFilter').value;
     const modelType = document.getElementById('modelFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (userId) params.append('user_id', userId);
     if (action) params.append('action', action);
     if (modelType) params.append('model_type', modelType);
@@ -631,7 +631,7 @@ function exportAuditLogs() {
     const action = document.getElementById('actionFilter').value;
     const modelType = document.getElementById('modelFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (userId) params.append('user_id', userId);
     if (action) params.append('action', action);
     if (modelType) params.append('model_type', modelType);

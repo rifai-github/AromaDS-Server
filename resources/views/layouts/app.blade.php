@@ -2661,6 +2661,47 @@
 
     @stack('scripts')
 
+    <script>
+    (function() {
+        'use strict';
+
+        window.AromaTableState = window.AromaTableState || {
+            sortKeys: ['sort', 'direction'],
+            paramsWithCurrentSort: function() {
+                var currentParams = new URLSearchParams(window.location.search);
+                var nextParams = new URLSearchParams();
+
+                this.sortKeys.forEach(function(key) {
+                    if (currentParams.has(key)) {
+                        nextParams.set(key, currentParams.get(key));
+                    }
+                });
+
+                return nextParams;
+            },
+            applyCurrentSort: function(params) {
+                var nextParams = params || new URLSearchParams();
+                var currentParams = new URLSearchParams(window.location.search);
+
+                this.sortKeys.forEach(function(key) {
+                    if (!nextParams.has(key) && currentParams.has(key)) {
+                        nextParams.set(key, currentParams.get(key));
+                    }
+                });
+
+                return nextParams;
+            }
+        };
+
+        if (window.jQuery && jQuery.fn && jQuery.fn.dataTable) {
+            jQuery.extend(true, jQuery.fn.dataTable.defaults, {
+                stateSave: true,
+                stateDuration: 0
+            });
+        }
+    })();
+    </script>
+
     <!-- Global Modal Protection: Prevent closing modal when clicking outside -->
     <script>
     document.addEventListener('DOMContentLoaded', function() {

@@ -172,7 +172,7 @@ function applyFilters() {
     const status = document.getElementById('statusFilter').value;
     const fileType = document.getElementById('fileTypeFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (search) params.append('search', search);
     if (bankId) params.append('bank_id', bankId);
     if (status) params.append('status', status);

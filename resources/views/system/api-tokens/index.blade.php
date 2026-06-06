@@ -893,7 +893,7 @@ function applyFilters() {
     const userId = document.getElementById('userFilter').value;
     const status = document.getElementById('statusFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (userId) params.append('user_id', userId);
     if (status) params.append('status', status);
     
@@ -904,7 +904,7 @@ function exportApiTokens() {
     const userId = document.getElementById('userFilter').value;
     const status = document.getElementById('statusFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (userId) params.append('user_id', userId);
     if (status) params.append('status', status);
     

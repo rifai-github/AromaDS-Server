@@ -2087,7 +2087,7 @@ function applyPrintStatusFilter() {
     const searchInput = document.getElementById('searchInput');
     const searchValue = searchInput ? searchInput.value.trim() : '';
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     params.set('print_status', status);
     if (searchValue) {
         params.set('search', searchValue);
@@ -2128,11 +2128,13 @@ document.addEventListener('DOMContentLoaded', function() {
 function performSearch() {
     const searchInput = document.getElementById('searchInput');
     const searchValue = searchInput ? searchInput.value.trim() : '';
+    const params = window.AromaTableState.paramsWithCurrentSort();
     
     if (searchValue) {
-        window.location.href = '?search=' + encodeURIComponent(searchValue);
+        params.set('search', searchValue);
+        window.location.href = '?' + params.toString();
     } else {
-        window.location.href = window.location.pathname;
+        window.location.href = params.toString() ? '?' + params.toString() : window.location.pathname;
     }
 }
 
@@ -2146,7 +2148,7 @@ function applyFilters() {
     const dateTo = dateToInput._flatpickr ? dateToInput._flatpickr.selectedDates[0] : null;
     const searchValue = searchInput ? searchInput.value.trim() : '';
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     
     if (dateFrom) {
         params.set('date_from', dateFrom.toISOString().split('T')[0]);

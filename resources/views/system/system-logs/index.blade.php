@@ -597,7 +597,7 @@ function applyFilters() {
     const dateFrom = document.getElementById('dateFromFilter').value;
     const dateTo = document.getElementById('dateToFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (level) params.append('level', level);
     if (dateFrom) params.append('date_from', dateFrom);
     if (dateTo) params.append('date_to', dateTo);
@@ -610,7 +610,7 @@ function exportSystemLogs() {
     const dateFrom = document.getElementById('dateFromFilter').value;
     const dateTo = document.getElementById('dateToFilter').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (level) params.append('level', level);
     if (dateFrom) params.append('date_from', dateFrom);
     if (dateTo) params.append('date_to', dateTo);

@@ -665,7 +665,7 @@ function loadFiles() {
     const search = document.getElementById('searchInput').value;
     const category = document.getElementById('categoryFilter').value;
 
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (search) params.append('search', search);
     if (category) params.append('category_id', category);
 

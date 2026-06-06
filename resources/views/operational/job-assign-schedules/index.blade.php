@@ -1123,7 +1123,7 @@ function applyFilters() {
     const dateTo = document.getElementById('filterDateTo').value;
     const teamCode = document.getElementById('filterTeamCode').value;
     
-    const params = new URLSearchParams();
+    const params = window.AromaTableState.paramsWithCurrentSort();
     if (dateFrom) params.append('date_from', dateFrom);
     if (dateTo) params.append('date_to', dateTo);
     if (teamCode) params.append('team_code', teamCode);
