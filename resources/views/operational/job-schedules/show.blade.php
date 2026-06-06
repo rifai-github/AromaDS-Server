@@ -701,6 +701,11 @@
                             </button>
                         </li>
                         <li class="nav-item" role="presentation" style="flex: 1;">
+                            <button class="nav-link" id="mobile-sync-tab" data-bs-toggle="tab" data-bs-target="#mobile-sync" type="button" role="tab" aria-controls="mobile-sync" aria-selected="false">
+                                <i class="fas fa-mobile-alt me-2"></i>MOBILE SYNC
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation" style="flex: 1;">
                             <button class="nav-link" id="ba-files-tab" data-bs-toggle="tab" data-bs-target="#ba-files" type="button" role="tab" aria-controls="ba-files" aria-selected="false">
                                 <i class="fas fa-file-alt me-2"></i>BA FILES
                             </button>
@@ -1562,6 +1567,73 @@
                                     </tbody>
                                 </table>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mobile Sync Tab -->
+                <div class="tab-pane fade" id="mobile-sync" role="tabpanel" aria-labelledby="mobile-sync-tab">
+                    <div class="card" style="width: 100%; min-height: 360px;">
+                        <div class="card-header" style="background-color: #f8f9fa; border-bottom: 2px solid #0f766e;">
+                            <h5 class="card-title mb-0" style="color: #0f766e;">
+                                <i class="fas fa-mobile-alt me-2"></i>Mobile Sync
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            @if(($mobileSyncLogs ?? collect())->count() > 0)
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Action</th>
+                                                <th>Teknisi</th>
+                                                <th>Waktu Klik Kirim</th>
+                                                <th>Mode</th>
+                                                <th>Diterima Server</th>
+                                                <th>Delay Sync</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach($mobileSyncLogs as $syncLog)
+                                                @php
+                                                    $clickedAt = $syncLog->client_clicked_at;
+                                                    $receivedAt = $syncLog->server_received_at;
+                                                    $delaySeconds = ($clickedAt && $receivedAt) ? $clickedAt->diffInSeconds($receivedAt, false) : null;
+                                                    $delayLabel = '-';
+                                                    if ($delaySeconds !== null && $delaySeconds >= 0) {
+                                                        $delayLabel = $delaySeconds < 60
+                                                            ? $delaySeconds . ' detik'
+                                                            : floor($delaySeconds / 60) . ' menit ' . ($delaySeconds % 60) . ' detik';
+                                                    }
+                                                    $isOffline = $syncLog->client_delivery_mode === 'queued_offline';
+                                                @endphp
+                                                <tr>
+                                                    <td>{{ ucwords(str_replace('_', ' ', $syncLog->action)) }}</td>
+                                                    <td>{{ $syncLog->user?->name ?? '-' }}</td>
+                                                    <td>{{ $clickedAt ? $clickedAt->format('d M Y H:i:s') : '-' }}</td>
+                                                    <td>
+                                                        <span class="badge {{ $isOffline ? 'bg-warning text-dark' : 'bg-success' }}">
+                                                            {{ $isOffline ? 'Offline cache' : 'Langsung' }}
+                                                        </span>
+                                                    </td>
+                                                    <td>{{ $receivedAt ? $receivedAt->format('d M Y H:i:s') : '-' }}</td>
+                                                    <td>{{ $isOffline ? $delayLabel : '-' }}</td>
+                                                    <td>
+                                                        <span class="badge bg-primary">
+                                                            {{ ucfirst($syncLog->sync_status ?? 'synced') }}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            @else
+                                <div class="alert alert-info mb-0">
+                                    <i class="fas fa-info-circle me-2"></i>Belum ada audit mobile sync untuk job ini.
+                                </div>
+                            @endif
                         </div>
                     </div>
                 </div>

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\JobSchedule;
 use App\Models\InventoryIssuing;
 use App\Models\InventoryIssuingItem;
+use App\Services\MobileSyncLogService;
 use App\Services\Warehouse\SerialNumberIssuingLinkService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -329,6 +330,12 @@ class MaterialVerificationController extends Controller
             }
             
             DB::commit();
+
+            app(MobileSyncLogService::class)->record(
+                $request,
+                'verify_materials',
+                $jobSchedule->id
+            );
             
             return response()->json([
                 'status' => 'success',

@@ -2885,6 +2885,13 @@ class JobScheduleController extends Controller
 
         $unitDetails = $mergedDetails;
 
+        $mobileSyncLogs = \App\Models\MobileSyncLog::whereIn('job_schedule_id', $siblingJobIds)
+            ->with(['user', 'jobScheduleRoom'])
+            ->orderByDesc('server_received_at')
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get();
+
         return view('operational.job-schedules.show', compact(
             'jobSchedule', 
             'materialIssues', 
@@ -2902,7 +2909,8 @@ class JobScheduleController extends Controller
             'filterBuildingId',
             'hasActiveInvoice',
             'allJobReportsPerJS',
-            'unitDetails'
+            'unitDetails',
+            'mobileSyncLogs'
         ));
     }
 

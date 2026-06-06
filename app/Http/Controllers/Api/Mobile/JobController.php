@@ -7,6 +7,7 @@ use App\Models\JobSchedule;
 use App\Models\JobAssignMaterialIssue;
 use App\Models\JobFavorite;
 use App\Services\DocumentNumberService;
+use App\Services\MobileSyncLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -21,6 +22,24 @@ class JobController extends Controller
         'cities' => [],
         'provinces' => [],
     ];
+
+    private function recordMobileSync(
+        Request $request,
+        string $action,
+        ?int $jobScheduleId = null,
+        ?int $jobScheduleRoomId = null,
+        string $status = 'synced',
+        ?string $errorMessage = null
+    ): void {
+        app(MobileSyncLogService::class)->record(
+            $request,
+            $action,
+            $jobScheduleId,
+            $jobScheduleRoomId,
+            $status,
+            $errorMessage
+        );
+    }
 
     /**
      * Get all jobs for authenticated user's teams (not just today)
@@ -1292,6 +1311,8 @@ class JobController extends Controller
         if ($favorite) {
             // Remove from favorites
             $favorite->delete();
+            $this->recordMobileSync($request, 'toggle_favorite', (int) $jobScheduleId);
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Job removed from favorites',
@@ -1303,6 +1324,8 @@ class JobController extends Controller
                 'user_id' => $user->id,
                 'job_schedule_id' => $jobScheduleId,
             ]);
+            $this->recordMobileSync($request, 'toggle_favorite', (int) $jobScheduleId);
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Job added to favorites',
@@ -1370,6 +1393,8 @@ class JobController extends Controller
             \Log::error("Mobile API: Failed to auto-finalize issuings for Job {$job->id}: " . $e->getMessage());
             // We don't fail the whole request since material_checked is already saved
         }
+
+        $this->recordMobileSync($request, 'confirm_materials', $job->id);
         
         return response()->json([
             'status' => 'success',
@@ -2087,6 +2112,8 @@ class JobController extends Controller
         $job->started_at = now();
         $job->updated_by = Auth::id();
         $job->save();
+
+        $this->recordMobileSync($request, 'start_work', $job->id);
         
         return response()->json([
             'status' => 'success',
@@ -2517,6 +2544,8 @@ class JobController extends Controller
             }
 
             \DB::commit();
+
+            $this->recordMobileSync($request, 'complete_room', $jobSchedule?->id, $jobScheduleRoom?->id);
             
             return response()->json([
                 'status' => 'success',
@@ -3373,6 +3402,8 @@ class JobController extends Controller
             'uploaded_by' => $request->user()->id,
             'uploaded_at' => now(),
         ]);
+
+        $this->recordMobileSync($request, 'upload_photo', (int) $jobScheduleId, $request->job_schedule_room_id ?? $request->room_id);
         
         return response()->json([
             'status' => 'success',
@@ -3489,6 +3520,8 @@ class JobController extends Controller
                 \Log::error("Mobile API (Signature): Failed to trigger auto invoice for job {$job->job_number}: " . $e->getMessage());
             }
         }
+
+        $this->recordMobileSync($request, 'submit_signature', (int) $jobScheduleId);
         
         return response()->json([
             'status' => 'success',
@@ -3854,6 +3887,8 @@ class JobController extends Controller
             // frozen app cannot leave the job pending while the SN is locked.
             
             \DB::commit();
+
+            $this->recordMobileSync($request, 'save_scanned_unit', (int) $request->job_schedule_id);
             
             return response()->json([
                 'status' => 'success',
@@ -3933,6 +3968,8 @@ class JobController extends Controller
             // Update status to meninggalkan_lokasi
             $job->status = 'meninggalkan_lokasi';
             $job->save();
+
+            $this->recordMobileSync($request, 'leave_location', $job->id);
             
             return response()->json([
                 'status' => 'success',
@@ -4440,6 +4477,8 @@ class JobController extends Controller
             }
             
             \DB::commit();
+
+            $this->recordMobileSync($request, 'verify_job', $job->id);
             
             $message = $cannotCompleteAllRooms
                 ? 'Room yang belum selesai berhasil dipindahkan menjadi job outstanding. Verifikasi final bisa dilakukan setelah admin set Suspend atau DPF.'
@@ -4757,6 +4796,8 @@ class JobController extends Controller
                 ]);
             }
         }
+
+        $this->recordMobileSync($request, 'arrived_at_location', $job->id);
         
         return response()->json([
             'status' => 'success',
