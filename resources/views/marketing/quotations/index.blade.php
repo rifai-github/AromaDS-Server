@@ -1397,7 +1397,7 @@
                 <!-- Table Body -->
                 <tbody>
                     @forelse($quotations ?? [] as $quotation)
-                    <tr class="table-row-hover cursor-pointer border-b border-gray-200" data-id="{{ $quotation->id }}" onclick="window.location.href='{{ route('marketing.quotations.show', ':id') }}'.replace(':id', {{ $quotation->id }})">
+                    <tr class="table-row-hover cursor-pointer border-b border-gray-200" data-id="{{ $quotation->id }}" onclick="openQuotationDetail({{ $quotation->id }})">
                         <td class="w-[50px] p-2 text-center">
                             <input type="checkbox" class="row-checkbox w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px] cursor-pointer" value="{{ $quotation->id }}" onclick="event.stopPropagation()">
                         </td>
@@ -3741,6 +3741,16 @@ function copyQuotation(quotationId) {
             showErrorDialog('Gagal', 'Terjadi kesalahan saat meng-copy quotation.');
         });
     });
+}
+
+function openQuotationDetail(quotationId) {
+    const listUrl = window.location.href;
+    const detailUrl = new URL(@json(route('marketing.quotations.show', ':id')).replace(':id', quotationId), window.location.origin);
+
+    sessionStorage.setItem('aroma:list:marketing.quotations', listUrl);
+    detailUrl.searchParams.set('return_url', listUrl);
+
+    window.location.href = detailUrl.toString();
 }
 </script>
 

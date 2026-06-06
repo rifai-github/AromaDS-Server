@@ -2,6 +2,22 @@
 
 @section('title', 'Quotation Detail')
 
+@php
+    $quotationBackUrl = route('marketing.quotations.index');
+    $returnUrl = request('return_url');
+
+    if (is_string($returnUrl) && $returnUrl !== '') {
+        $decodedReturnUrl = urldecode($returnUrl);
+        $returnPath = parse_url($decodedReturnUrl, PHP_URL_PATH);
+        $returnHost = parse_url($decodedReturnUrl, PHP_URL_HOST);
+        $quotationIndexPath = parse_url(route('marketing.quotations.index'), PHP_URL_PATH);
+
+        if ($returnPath === $quotationIndexPath && ($returnHost === null || $returnHost === request()->getHost())) {
+            $quotationBackUrl = $decodedReturnUrl;
+        }
+    }
+@endphp
+
 @section('content')
 
 <!-- Force CSS untuk layout -->
@@ -90,7 +106,7 @@
                 <div class="card-header" style="background-color: #1e3a8a; border: none; padding: 1rem 1.5rem;">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <a href="{{ route('marketing.quotations.index') }}" class="btn btn-light btn-sm">
+                            <a href="{{ $quotationBackUrl }}" class="btn btn-light btn-sm" id="quotationBackToList">
                                 <i class="fas fa-arrow-left"></i> Back to List
                             </a>
                         </div>
@@ -1337,7 +1353,7 @@ function deleteQuotation() {
                 icon: 'success',
                 confirmButtonText: 'OK'
             }).then(() => {
-                window.location.href = '{{ route("marketing.quotations.index") }}';
+                window.location.href = document.getElementById('quotationBackToList')?.href || '{{ route("marketing.quotations.index") }}';
             });
         }
     });
@@ -1461,6 +1477,26 @@ $(document).on('change', '.autosave-goal', function() {
             });
         }
     });
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    const backLink = document.getElementById('quotationBackToList');
+    const quotationIndexPath = @json(parse_url(route('marketing.quotations.index'), PHP_URL_PATH));
+    const hasReturnUrl = new URLSearchParams(window.location.search).has('return_url');
+    const storedListUrl = sessionStorage.getItem('aroma:list:marketing.quotations');
+
+    if (!backLink || hasReturnUrl || !storedListUrl) {
+        return;
+    }
+
+    try {
+        const storedUrl = new URL(storedListUrl, window.location.origin);
+        if (storedUrl.origin === window.location.origin && storedUrl.pathname === quotationIndexPath) {
+            backLink.href = storedUrl.toString();
+        }
+    } catch (error) {
+        console.warn('Invalid quotation list URL state:', error);
+    }
 });
 </script>
 @endpush
