@@ -865,8 +865,19 @@ class WarehouseController extends Controller
             return false;
         }
 
-        if (\App\Models\InventoryReceiving::where('warehouse_id', $warehouse->id)
-            ->whereNotIn('status', ['received', 'cancelled'])
+        if (\App\Models\InventoryReceiving::whereNotIn('status', ['received', 'cancelled'])
+            ->where(function ($query) use ($warehouse) {
+                $query->whereHas('issuing', function ($issuingQuery) use ($warehouse) {
+                    $issuingQuery->where('warehouse_id', $warehouse->id);
+                });
+
+                if ($warehouse->branch_id) {
+                    $query->orWhere(function ($branchQuery) use ($warehouse) {
+                        $branchQuery->where('branch_id', $warehouse->branch_id)
+                            ->whereNull('issuing_id');
+                    });
+                }
+            })
             ->exists()) {
             return false;
         }
