@@ -7,6 +7,7 @@ use App\Models\StockAdjustment;
 use App\Models\Warehouse;
 use App\Models\MasterProduct;
 use App\Models\User;
+use App\Services\Warehouse\BranchWarehouseResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
@@ -16,6 +17,21 @@ use App\Http\Traits\AccessControlFilterTrait;
 class StockAdjustmentController extends Controller
 {
     use AccessControlFilterTrait;
+
+    private function resolveWarehouseFromRequest(Request $request): Warehouse
+    {
+        $branchId = $request->branch_id;
+
+        if (! $branchId && $request->warehouse_id) {
+            $branchId = Warehouse::find($request->warehouse_id)?->branch_id;
+        }
+
+        if (! $branchId) {
+            $branchId = Auth::user()?->branch_id;
+        }
+
+        return app(BranchWarehouseResolver::class)->resolveActiveForBranch($branchId);
+    }
 
     public function index(Request $request)
     {
@@ -88,7 +104,8 @@ class StockAdjustmentController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'warehouse_id' => 'required|exists:warehouses,id',
+            'branch_id' => 'nullable|exists:branches,id',
+            'warehouse_id' => 'nullable|exists:warehouses,id',
             'reason' => 'required|string|max:500',
             'adjustment_date' => 'required|date',
             'notes' => 'nullable|string|max:1000',
@@ -104,9 +121,11 @@ class StockAdjustmentController extends Controller
         try {
             DB::beginTransaction();
 
+            $warehouse = $this->resolveWarehouseFromRequest($request);
+
             $adjustment = StockAdjustment::create([
-                'adjustment_no' => StockAdjustment::generateAdjustmentNo($request->warehouse_id),
-                'warehouse_id' => $request->warehouse_id,
+                'adjustment_no' => StockAdjustment::generateAdjustmentNo($warehouse->id),
+                'warehouse_id' => $warehouse->id,
                 'reason' => $request->reason,
                 'adjustment_date' => $request->adjustment_date,
                 'status' => 'draft',
@@ -175,7 +194,8 @@ class StockAdjustmentController extends Controller
     {
         $adjustment = $stock_adjustment;
         $validator = Validator::make($request->all(), [
-            'warehouse_id' => 'sometimes|required|exists:warehouses,id',
+            'branch_id' => 'sometimes|nullable|exists:branches,id',
+            'warehouse_id' => 'sometimes|nullable|exists:warehouses,id',
             'reason' => 'sometimes|required|string|max:500',
             'adjustment_date' => 'sometimes|required|date',
             'notes' => 'sometimes|nullable|string|max:1000',
@@ -192,7 +212,10 @@ class StockAdjustmentController extends Controller
         try {
             DB::beginTransaction();
 
-            $updateData = $request->only(['warehouse_id', 'reason', 'adjustment_date', 'notes', 'status']);
+            $updateData = $request->only(['reason', 'adjustment_date', 'notes', 'status']);
+            if ($request->has('warehouse_id') || $request->has('branch_id')) {
+                $updateData['warehouse_id'] = $this->resolveWarehouseFromRequest($request)->id;
+            }
             $updateData['updated_by'] = Auth::id();
 
             $adjustment->update($updateData);

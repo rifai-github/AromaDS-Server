@@ -1069,13 +1069,14 @@
 
                 <!-- Warehouse Selection -->
                 <div class="form-group">
-                    <label class="form-label" for="warehouseSelect">Warehouse <span style="color: red;">*</span></label>
-                    <select id="warehouseSelect" name="warehouse_id" class="form-input" required>
+                    <label class="form-label" for="warehouseSelect">Gudang Cabang</label>
+                    <select id="warehouseSelect" name="warehouse_id" class="form-input d-none">
                         <option value="">-- Pilih Warehouse --</option>
                         @foreach(\App\Models\Warehouse::where('is_active', true)->get() as $warehouse)
                         <option value="{{ $warehouse->id }}">{{ $warehouse->name }}</option>
                         @endforeach
                     </select>
+                    <div class="form-input" style="background: #f3f4f6; color: #374151;">Otomatis mengikuti warehouse aktif branch yang dipilih</div>
                 </div>
 
                 <!-- Remarks -->

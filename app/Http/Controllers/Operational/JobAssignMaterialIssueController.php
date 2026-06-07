@@ -15,8 +15,10 @@ use App\Models\Building;
 use App\Models\Warehouse;
 use App\Models\MasterOption;
 use App\Models\OptionDetail;
+use App\Services\Warehouse\BranchWarehouseResolver;
 use App\Services\DocumentNumberService;
 use App\Services\OperationalAreaService;
+use DomainException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -713,6 +715,22 @@ class JobAssignMaterialIssueController extends Controller
         return view('operational.job-assign-material-issues.create', compact('jobAssignSchedules', 'teams', 'products', 'warehouses'));
     }
 
+    private function resolveMaterialIssueWarehouse(Request $request): Warehouse
+    {
+        $jobAssignSchedule = JobAssignSchedule::with(['jobSchedule.building', 'team'])
+            ->find($request->job_assign_schedule_id);
+
+        $branchId = $jobAssignSchedule?->jobSchedule?->building?->branch_id
+            ?? ($jobAssignSchedule?->jobSchedule?->branch_id ?? null)
+            ?? ($jobAssignSchedule?->team?->branch_office ?? null);
+
+        if (! $branchId && $request->warehouse_id) {
+            $branchId = Warehouse::find($request->warehouse_id)?->branch_id;
+        }
+
+        return app(BranchWarehouseResolver::class)->resolveActiveForBranch($branchId);
+    }
+
     /**
      * Store a newly created resource in storage.
      */
@@ -723,7 +741,7 @@ class JobAssignMaterialIssueController extends Controller
                 'job_assign_schedule_id' => 'required|exists:job_assign_schedules,id',
                 'team_id' => 'required|exists:teams,id',
                 'product_id' => 'required|exists:master_products,id',
-                'warehouse_id' => 'required|exists:warehouses,id',
+                'warehouse_id' => 'nullable|exists:warehouses,id',
                 'issue_date' => 'required|date',
                 'quantity' => 'required|numeric|min:0.01',
                 'unit_price' => 'required|numeric|min:0',
@@ -742,6 +760,20 @@ class JobAssignMaterialIssueController extends Controller
                 ], 422);
             }
             throw $e;
+        }
+
+        try {
+            $warehouse = $this->resolveMaterialIssueWarehouse($request);
+            $request->merge(['warehouse_id' => $warehouse->id]);
+        } catch (DomainException $e) {
+            if ($request->expectsJson() || $request->header('Accept') === 'application/json') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+
+            return back()->with('error', $e->getMessage())->withInput($request->all());
         }
 
         // Validate stock before creating material issue

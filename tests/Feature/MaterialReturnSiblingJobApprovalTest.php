@@ -213,7 +213,7 @@ class MaterialReturnSiblingJobApprovalTest extends TestCase
         ]);
     }
 
-    public function test_damaged_material_return_completion_places_stock_in_damaged_warehouse(): void
+    public function test_damaged_material_return_completion_keeps_stock_in_single_active_branch_warehouse(): void
     {
         DB::table('users')->insert([
             'id' => 1,
@@ -237,8 +237,8 @@ class MaterialReturnSiblingJobApprovalTest extends TestCase
 
         DB::table('warehouses')->insert([
             ['id' => 1, 'name' => 'Warehouse Jakarta', 'branch_id' => 1, 'is_active' => true, 'is_center' => true, 'created_at' => now(), 'updated_at' => now()],
-            ['id' => 2, 'name' => 'Warehouse Jakarta Bekas', 'branch_id' => 1, 'is_active' => true, 'is_center' => false, 'created_at' => now(), 'updated_at' => now()],
-            ['id' => 3, 'name' => 'Warehouse Jakarta Rusak', 'branch_id' => 1, 'is_active' => true, 'is_center' => false, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 2, 'name' => 'Warehouse Jakarta Bekas', 'branch_id' => 1, 'is_active' => false, 'is_center' => false, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 3, 'name' => 'Warehouse Jakarta Rusak', 'branch_id' => 1, 'is_active' => false, 'is_center' => false, 'created_at' => now(), 'updated_at' => now()],
         ]);
 
         DB::table('master_products')->insert([
@@ -281,7 +281,7 @@ class MaterialReturnSiblingJobApprovalTest extends TestCase
             'status' => MaterialReturn::STATUS_RETURNED,
         ]);
         $this->assertDatabaseHas('warehouse_products', [
-            'warehouse_id' => 3,
+            'warehouse_id' => 1,
             'master_product_id' => 1,
             'quantity' => 1,
         ]);

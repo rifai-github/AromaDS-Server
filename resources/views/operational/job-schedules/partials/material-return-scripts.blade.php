@@ -142,6 +142,8 @@
                         const firstItem = response.data[0];
                         if (firstItem.warehouse_id) {
                             $('#material_return_warehouse_id').val(firstItem.warehouse_id).trigger('change');
+                            const warehouseName = $('#material_return_warehouse_id option:selected').text();
+                            $('#material_return_warehouse_label').text(warehouseName || 'Otomatis mengikuti warehouse aktif cabang');
                         }
 
                         // Add row for each item
@@ -168,6 +170,7 @@
             const formData = {
                 return_date: $('#material_return_date').val(),
                 warehouse_id: $('#material_return_warehouse_id').val(),
+                return_reason_category: $('#material_return_reason_category').val(),
                 return_reason: $('#material_return_reason').val(),
                 notes: $('#material_return_notes').val(),
                 items: []

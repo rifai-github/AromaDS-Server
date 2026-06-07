@@ -60,6 +60,7 @@ class WarehousePlacementService
     public function classifyMaterialReturn(MaterialReturn $materialReturn): string
     {
         $text = collect([
+            $materialReturn->return_reason_category,
             $materialReturn->return_reason,
             $materialReturn->notes,
         ]);

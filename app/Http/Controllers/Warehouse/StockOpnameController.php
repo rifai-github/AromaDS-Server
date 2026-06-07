@@ -7,6 +7,7 @@ use App\Models\StockOpname;
 use App\Models\Warehouse;
 use App\Models\Branch;
 use App\Models\User;
+use App\Services\Warehouse\BranchWarehouseResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
@@ -16,6 +17,21 @@ class StockOpnameController extends Controller
 {
     use \App\Http\Traits\ColumnFilterTrait;
     use \App\Http\Traits\AccessControlFilterTrait;
+
+    private function resolveWarehouseFromRequest(Request $request): Warehouse
+    {
+        $branchId = $request->branch_id;
+
+        if (! $branchId && $request->warehouse_id) {
+            $branchId = Warehouse::find($request->warehouse_id)?->branch_id;
+        }
+
+        if (! $branchId) {
+            $branchId = Auth::user()?->branch_id;
+        }
+
+        return app(BranchWarehouseResolver::class)->resolveActiveForBranch($branchId);
+    }
 
     public function index(Request $request)
     {
@@ -113,7 +129,7 @@ class StockOpnameController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'branch_id' => 'nullable|exists:branches,id',
-            'warehouse_id' => 'required|exists:warehouses,id',
+            'warehouse_id' => 'nullable|exists:warehouses,id',
             'person_responsible' => 'nullable|exists:users,id',
             'opname_date' => 'required|date',
             'status' => 'required|in:draft,in-progress,completed,waiting for approval,approved',
@@ -133,14 +149,17 @@ class StockOpnameController extends Controller
         try {
             DB::beginTransaction();
 
+            $warehouse = $this->resolveWarehouseFromRequest($request);
+            $branchId = $request->branch_id ?: $warehouse->branch_id;
+
             // 2. Generate Opname Number with new format: BRANCH-SO/YYYY-MM/0001
-            $opnameNumber = StockOpname::generateOpnameNumber($request->branch_id);
+            $opnameNumber = StockOpname::generateOpnameNumber($branchId);
 
             $stockOpname = StockOpname::create([
                 'opname_no' => $opnameNumber,
                 'opname_number' => $opnameNumber, // Populate both to handle dual column schema
-                'branch_id' => $request->branch_id,
-                'warehouse_id' => $request->warehouse_id,
+                'branch_id' => $branchId,
+                'warehouse_id' => $warehouse->id,
                 'person_responsible' => $request->person_responsible ?? Auth::id(),
                 'opname_date' => $request->opname_date,
                 'status' => 'draft',
@@ -151,9 +170,9 @@ class StockOpnameController extends Controller
 
             // Optimized: Create Stock Opname only for products registered in this warehouse
             $products = DB::table('master_products')
-                ->join('warehouse_products', function($join) use ($request) {
+                ->join('warehouse_products', function($join) use ($warehouse) {
                     $join->on('master_products.id', '=', 'warehouse_products.master_product_id')
-                         ->where('warehouse_products.warehouse_id', '=', $request->warehouse_id);
+                         ->where('warehouse_products.warehouse_id', '=', $warehouse->id);
                 })
                 ->where('master_products.deleted_at', null)
                 ->select(
@@ -234,7 +253,7 @@ class StockOpnameController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'branch_id' => 'nullable|exists:branches,id',
-            'warehouse_id' => 'required|exists:warehouses,id',
+            'warehouse_id' => 'nullable|exists:warehouses,id',
             'person_responsible' => 'nullable|exists:users,id',
             'opname_date' => 'required|date',
             'status' => 'required|in:draft,in-progress,completed,waiting for approval,approved',
@@ -253,9 +272,12 @@ class StockOpnameController extends Controller
         try {
             DB::beginTransaction();
 
+            $warehouse = $this->resolveWarehouseFromRequest($request);
+            $branchId = $request->branch_id ?: $warehouse->branch_id;
+
             $stockOpname->update([
-                'branch_id' => $request->branch_id,
-                'warehouse_id' => $request->warehouse_id,
+                'branch_id' => $branchId,
+                'warehouse_id' => $warehouse->id,
                 'person_responsible' => $request->person_responsible,
                 'opname_date' => $request->opname_date,
                 'status' => $request->status,

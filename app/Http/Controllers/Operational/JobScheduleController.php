@@ -4578,6 +4578,7 @@ class JobScheduleController extends Controller
     {
         $request->validate([
             'return_reason' => 'nullable|string|max:1000',
+            'return_reason_category' => 'nullable|in:slow_moving,near_expired,customer_need_changed,damaged,other',
             'return_date' => 'nullable|date',
             'warehouse_id' => 'nullable|exists:warehouses,id',
             'notes' => 'nullable|string|max:1000',
@@ -4663,7 +4664,12 @@ class JobScheduleController extends Controller
                 ], 422);
             }
 
-            $warehouseId = $request->warehouse_id ?: $returnItems->first()['material_issue']->warehouse_id;
+            $fallbackWarehouseId = $request->warehouse_id ?: $returnItems->first()['material_issue']->warehouse_id;
+            $fallbackWarehouse = \App\Models\Warehouse::find($fallbackWarehouseId);
+            $branchId = $actualJobSchedule->building?->branch_id ?? $fallbackWarehouse?->branch_id;
+            $warehouseId = app(\App\Services\Warehouse\BranchWarehouseResolver::class)
+                ->resolveActiveForBranch($branchId)
+                ->id;
             if (!$warehouseId) {
                 DB::rollBack();
                 return response()->json([
@@ -4693,6 +4699,7 @@ class JobScheduleController extends Controller
                 'status' => \App\Models\MaterialReturn::STATUS_PENDING,
                 'return_date' => $request->return_date ?: now()->toDateString(),
                 'return_reason' => $request->return_reason ?: 'Auto return semua material issue untuk room',
+                'return_reason_category' => $request->return_reason_category ?: $this->inferMaterialReturnReasonCategory($request->return_reason),
                 'notes' => $request->notes,
                 'created_by' => Auth::id(),
                 'updated_by' => Auth::id(),
@@ -4801,6 +4808,29 @@ class JobScheduleController extends Controller
                 'message' => 'Failed to update room: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function inferMaterialReturnReasonCategory(?string $reason): string
+    {
+        $text = \Illuminate\Support\Str::lower((string) $reason);
+
+        if (\Illuminate\Support\Str::contains($text, ['slow moving', 'slow-moving', 'tidak laku'])) {
+            return 'slow_moving';
+        }
+
+        if (\Illuminate\Support\Str::contains($text, ['expired', 'expire', 'kadaluarsa', 'kedaluwarsa'])) {
+            return 'near_expired';
+        }
+
+        if (\Illuminate\Support\Str::contains($text, ['perubahan kebutuhan', 'kebutuhan customer', 'customer need'])) {
+            return 'customer_need_changed';
+        }
+
+        if (\Illuminate\Support\Str::contains($text, ['rusak', 'damaged', 'broken'])) {
+            return 'damaged';
+        }
+
+        return 'other';
     }
 
     /**

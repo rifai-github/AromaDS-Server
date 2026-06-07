@@ -21,6 +21,7 @@ class MaterialReturn extends Model
         'status',
         'return_date',
         'return_reason',
+        'return_reason_category',
         'notes',
         'approved_by',
         'approved_at',

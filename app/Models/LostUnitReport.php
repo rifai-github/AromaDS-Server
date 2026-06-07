@@ -35,6 +35,9 @@ class LostUnitReport extends Model
         'invoice_id',
         'status',
         'remark',
+        'bap_file',
+        'charge_customer',
+        'charge_amount',
         'created_by',
         'updated_by'
     ];
@@ -44,6 +47,8 @@ class LostUnitReport extends Model
         'lost_unit_price' => 'decimal:2',
         'original_price' => 'decimal:2',
         'is_price_manual' => 'boolean',
+        'charge_customer' => 'boolean',
+        'charge_amount' => 'decimal:2',
         'finalized_at' => 'datetime',
         'approved_at' => 'datetime',
     ];

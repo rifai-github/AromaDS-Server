@@ -9,9 +9,11 @@ use App\Models\Branch;
 use App\Models\User;
 use App\Models\MasterProduct;
 use App\Models\WarehouseType;
+use App\Services\Warehouse\BranchWarehouseResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class WarehouseController extends Controller
 {
@@ -148,6 +150,13 @@ class WarehouseController extends Controller
         if ($request->is_center && Warehouse::hasCenterWarehouse()) {
             $validator->after(function ($validator) {
                 $validator->errors()->add('is_center', 'A center warehouse already exists. Only one center warehouse is allowed.');
+            });
+        }
+
+        $isActive = filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN);
+        if ($isActive && app(BranchWarehouseResolver::class)->activeCountForBranch($request->branch_id) > 0) {
+            $validator->after(function ($validator) {
+                $validator->errors()->add('branch_id', 'Branch ini sudah memiliki warehouse aktif. Nonaktifkan warehouse lama sebelum membuat warehouse aktif baru.');
             });
         }
 
@@ -295,6 +304,28 @@ class WarehouseController extends Controller
         // Convert boolean fields
         $isActive = filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN);
         $isCenter = filter_var($request->is_center, FILTER_VALIDATE_BOOLEAN);
+
+        if ($isActive && app(BranchWarehouseResolver::class)->activeCountForBranch($request->branch_id, $warehouse->id) > 0) {
+            $validator->after(function ($validator) {
+                $validator->errors()->add('branch_id', 'Branch ini sudah memiliki warehouse aktif. Nonaktifkan warehouse lama sebelum mengaktifkan warehouse ini.');
+            });
+        }
+
+        if ($warehouse->is_active && ! $isActive && ! $this->canDeactivateWarehouse($warehouse)) {
+            $validator->after(function ($validator) {
+                $validator->errors()->add('is_active', 'Warehouse tidak bisa dinonaktifkan karena masih memiliki stok, SN aktif, atau dokumen inventory terbuka.');
+            });
+        }
+
+        if ($validator->fails()) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json([
+                    'status' => 'error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            return back()->withErrors($validator)->withInput();
+        }
 
         $warehouse->update([
             'warehouse_code' => $warehouseCode,
@@ -702,12 +733,8 @@ class WarehouseController extends Controller
                 return back()->with('error', $errorMessage);
             }
             
-            // 2. Does it have stock?
-            // Assuming warehouseProducts relationship exists
-            $hasStock = $warehouse->warehouseProducts()->where('quantity', '>', 0)->exists();
-            
-            if ($hasStock) {
-                $errorMessage = 'Cannot deactivate warehouse with remaining stock.';
+            if (! $this->canDeactivateWarehouse($warehouse)) {
+                $errorMessage = 'Cannot deactivate warehouse with remaining stock, active serial numbers, or open inventory documents.';
                 if (request()->ajax() || request()->wantsJson()) {
                     return response()->json([
                         'status' => 'error',
@@ -765,9 +792,8 @@ class WarehouseController extends Controller
                     continue;
                 }
                 
-                $hasStock = $warehouse->warehouseProducts()->where('quantity', '>', 0)->exists();
-                if ($hasStock) {
-                    $errors[] = "Warehouse '{$warehouse->name}': Cannot deactivate warehouse with remaining stock.";
+                if (! $this->canDeactivateWarehouse($warehouse)) {
+                    $errors[] = "Warehouse '{$warehouse->name}': Cannot deactivate warehouse with remaining stock, active serial numbers, or open inventory documents.";
                     continue;
                 }
                 
@@ -815,5 +841,42 @@ class WarehouseController extends Controller
                 'errors' => ['Error: ' . $e->getMessage()]
             ], 500);
         }
+    }
+
+    private function canDeactivateWarehouse(Warehouse $warehouse): bool
+    {
+        if ($warehouse->warehouseProducts()->where('quantity', '>', 0)->exists()) {
+            return false;
+        }
+
+        if ($warehouse->serialNumbers()
+            ->whereNotIn('status', ['retired'])
+            ->where(function ($query) {
+                $query->whereNull('location_type')
+                    ->orWhereIn('location_type', ['warehouse', 'technician', 'customer']);
+            })
+            ->exists()) {
+            return false;
+        }
+
+        if (\App\Models\InventoryIssuing::where('warehouse_id', $warehouse->id)
+            ->whereNotIn('status', ['received', 'cancelled'])
+            ->exists()) {
+            return false;
+        }
+
+        if (\App\Models\InventoryReceiving::where('warehouse_id', $warehouse->id)
+            ->whereNotIn('status', ['received', 'cancelled'])
+            ->exists()) {
+            return false;
+        }
+
+        if (\App\Models\InventoryRequest::where('warehouse_id', $warehouse->id)
+            ->whereNotIn('status', ['issued', 'rejected', 'cancelled'])
+            ->exists()) {
+            return false;
+        }
+
+        return true;
     }
 }

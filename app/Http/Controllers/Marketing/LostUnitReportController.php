@@ -13,10 +13,13 @@ use App\Models\JobAdvice;
 use App\Models\MasterRental;
 use App\Models\MasterRoom;
 use App\Models\RentalPrice;
+use App\Models\SerialNumber;
+use App\Models\UnitOnWall;
 use App\Services\DocumentNumberService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Database\Eloquent\Builder;
 
 use App\Http\Traits\AccessControlFilterTrait;
@@ -225,6 +228,9 @@ class LostUnitReportController extends Controller
         $request->validate([
             'contract_id' => 'required|exists:contracts,id',
             'remark' => 'required|string|max:500',
+            'bap_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
+            'charge_customer' => 'nullable|boolean',
+            'charge_amount' => 'nullable|numeric|min:0',
             'items' => 'required|array|min:1',
             'items.*.room_id' => 'required|exists:master_rooms,id',
             'items.*.master_rental_id' => 'required|exists:master_rentals,id',
@@ -336,6 +342,11 @@ class LostUnitReportController extends Controller
                 'lost_unit_price' => $totalLostUnitPrice,
                 'original_price' => $totalLostUnitPrice,
                 'is_price_manual' => false,
+                'bap_file' => $this->storeBapFile($request),
+                'charge_customer' => $request->boolean('charge_customer', true),
+                'charge_amount' => $request->boolean('charge_customer', true)
+                    ? ($request->charge_amount ?? $totalLostUnitPrice)
+                    : 0,
             ]);
 
 
@@ -462,6 +473,9 @@ class LostUnitReportController extends Controller
         $request->validate([
             'remark' => 'nullable|string|max:500',
             'lost_unit_price' => 'nullable|numeric|min:0',
+            'bap_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
+            'charge_customer' => 'nullable|boolean',
+            'charge_amount' => 'nullable|numeric|min:0',
         ]);
 
         try {
@@ -471,6 +485,22 @@ class LostUnitReportController extends Controller
                 'remark' => $request->remark,
                 'updated_by' => Auth::id(),
             ];
+
+            if ($request->hasFile('bap_file')) {
+                if ($lostUnitReport->bap_file) {
+                    Storage::disk('public')->delete($lostUnitReport->bap_file);
+                }
+
+                $updateData['bap_file'] = $this->storeBapFile($request);
+            }
+
+            if ($request->has('charge_customer')) {
+                $chargeCustomer = $request->boolean('charge_customer');
+                $updateData['charge_customer'] = $chargeCustomer;
+                $updateData['charge_amount'] = $chargeCustomer
+                    ? ($request->charge_amount ?? $lostUnitReport->lost_unit_price)
+                    : 0;
+            }
 
             // Check if price is manually changed
             if ($request->has('lost_unit_price')) {
@@ -532,6 +562,54 @@ class LostUnitReportController extends Controller
             }
             
             return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+        }
+    }
+
+    private function storeBapFile(Request $request): ?string
+    {
+        if (! $request->hasFile('bap_file')) {
+            return null;
+        }
+
+        return $request->file('bap_file')->store('lost-unit-reports/bap', 'public');
+    }
+
+    private function retireLostUnits(LostUnitReport $lostUnitReport): void
+    {
+        $lostUnitReport->loadMissing(['items', 'contract.customer']);
+
+        foreach ($lostUnitReport->items as $item) {
+            $unitQuery = UnitOnWall::where('room_id', $item->room_id)
+                ->where('rental_id', $item->master_rental_id)
+                ->where('status', 'active');
+
+            if ($lostUnitReport->building_id) {
+                $unitQuery->where('building_id', $lostUnitReport->building_id);
+            }
+
+            if ($lostUnitReport->contract?->customer_id) {
+                $unitQuery->where('customer_id', $lostUnitReport->contract->customer_id);
+            }
+
+            $units = $unitQuery->with('serialNumber')->get();
+
+            foreach ($units as $unit) {
+                $unit->update([
+                    'status' => 'removed',
+                    'notes' => trim(($unit->notes ? $unit->notes . "\n" : '') . "Retired by lost unit report {$lostUnitReport->report_number}."),
+                    'updated_by' => Auth::id(),
+                ]);
+
+                if ($unit->serialNumber) {
+                    $unit->serialNumber->update([
+                        'status' => 'retired',
+                        'condition_status' => SerialNumber::CONDITION_DAMAGED,
+                        'location_type' => 'customer',
+                        'notes' => trim(($unit->serialNumber->notes ? $unit->serialNumber->notes . "\n" : '') . "Retired by lost unit report {$lostUnitReport->report_number}."),
+                        'updated_by' => Auth::id(),
+                    ]);
+                }
+            }
         }
     }
 
@@ -631,6 +709,30 @@ class LostUnitReportController extends Controller
             return back()->with('error', 'Hanya report dengan status Draft yang dapat di-finalize.');
         }
 
+        if (! $lostUnitReport->bap_file) {
+            $message = 'BAP wajib diupload sebelum laporan unit hilang dapat di-finalize.';
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $message,
+                ], 422);
+            }
+
+            return back()->with('error', $message);
+        }
+
+        if ($lostUnitReport->charge_customer && (float) $lostUnitReport->charge_amount <= 0) {
+            $message = 'Nominal charge wajib diisi jika customer dikenakan charge.';
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $message,
+                ], 422);
+            }
+
+            return back()->with('error', $message);
+        }
+
         try {
             $lostUnitReport->update([
                 'status' => 'submitted',
@@ -695,6 +797,8 @@ class LostUnitReportController extends Controller
                 'approved_at' => now(),
                 'updated_by' => Auth::id(),
             ]);
+
+            $this->retireLostUnits($lostUnitReport);
 
             // Auto-generate invoice (only if not on hold)
             $contract = $lostUnitReport->contract;

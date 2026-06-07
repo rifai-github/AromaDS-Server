@@ -766,11 +766,23 @@ input[type="date"]:focus, input[type="text"]:focus, select:focus {
                 <!-- Status Filter -->
                 <x-filter-status />
                 
-                <button class="btn btn-primary" onclick="openCreateModal()">
-                    <i class="fas fa-plus"></i>
-                    <span class="hidden md:inline">Add New Warehouse</span>
-                    <span class="md:hidden">Add New</span>
-                </button>
+                @php
+                    $user = auth()->user();
+                    $effectiveRole = strtolower((string) ($user->getEffectiveRole() ?? $user->getRolesColumnValue() ?? ''));
+                    $canCreateWarehouse = str_contains($effectiveRole, 'admin')
+                        || str_starts_with($effectiveRole, 'management')
+                        || $user->hasRole('Admin')
+                        || $user->hasRole('super_admin')
+                        || $user->hasRoleStartingWith('Management')
+                        || $user->hasPermission('warehouse.warehouses.create');
+                @endphp
+                @if($canCreateWarehouse)
+                    <button class="btn btn-primary" onclick="openCreateModal()">
+                        <i class="fas fa-plus"></i>
+                        <span class="hidden md:inline">Add New Warehouse</span>
+                        <span class="md:hidden">Add New</span>
+                    </button>
+                @endif
             </div>
         </div>
         

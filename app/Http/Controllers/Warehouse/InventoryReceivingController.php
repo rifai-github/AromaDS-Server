@@ -12,6 +12,7 @@ use App\Models\SerialNumber;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Warehouse\WarehousePlacementService;
+use App\Services\Warehouse\BranchWarehouseResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -721,13 +722,9 @@ class InventoryReceivingController extends Controller
             if ($inventoryReceiving->issuing && $inventoryReceiving->issuing->warehouse_id) {
                 $warehouseId = $inventoryReceiving->issuing->warehouse_id;
             } elseif ($inventoryReceiving->branch_id) {
-                // Get warehouse from branch (first active warehouse in that branch)
-                $warehouse = \App\Models\Warehouse::where('branch_id', $inventoryReceiving->branch_id)
-                    ->where('is_active', true)
-                    ->first();
-                if ($warehouse) {
-                    $warehouseId = $warehouse->id;
-                }
+                $warehouseId = app(BranchWarehouseResolver::class)
+                    ->resolveActiveForBranch($inventoryReceiving->branch_id)
+                    ->id;
             }
 
             if (! $warehouseId) {

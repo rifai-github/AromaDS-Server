@@ -100,12 +100,12 @@
                     <!-- Warehouse -->
                     <div class="form-group">
                         <label for="warehouse_id" class="form-label">
-                            Warehouse <span class="text-red-500">*</span>
+                            Gudang Cabang
                         </label>
                         <select class="form-input @error('warehouse_id') border-red-500 @enderror" 
                                 id="warehouse_id" 
-                                name="warehouse_id" 
-                                required>
+                                name="warehouse_id"
+                                hidden>
                             <option value="">Select Warehouse</option>
                             @foreach($warehouses ?? [] as $warehouse)
                                 <option value="{{ $warehouse->id }}" {{ old('warehouse_id', $jobAssignMaterialIssue->materialIssue->warehouse_id) == $warehouse->id ? 'selected' : '' }}>
@@ -113,6 +113,7 @@
                                 </option>
                             @endforeach
                         </select>
+                        <div class="form-input bg-gray-100 text-gray-700">Otomatis mengikuti warehouse aktif branch job</div>
                         @error('warehouse_id')
                             <p class="text-red-500 text-sm mt-1">{{ $message }}</p>
                         @enderror

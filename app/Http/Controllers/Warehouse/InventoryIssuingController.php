@@ -10,6 +10,7 @@ use App\Models\Branch;
 use App\Models\Warehouse;
 use App\Models\MasterProduct;
 use App\Models\User;
+use App\Services\Warehouse\BranchWarehouseResolver;
 use App\Services\Warehouse\SerialNumberIssuingLinkService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -33,6 +34,11 @@ class InventoryIssuingController extends Controller
         }
 
         return null;
+    }
+
+    private function resolveWarehouseForBranch(int|string|null $branchId): Warehouse
+    {
+        return app(BranchWarehouseResolver::class)->resolveActiveForBranch($branchId);
     }
 
     public function index(Request $request)
@@ -177,7 +183,7 @@ class InventoryIssuingController extends Controller
     {
         $inventoryRequests = InventoryRequest::where('status', 'approved')->get();
         $branches = Branch::where('is_active', true)->get();
-        $warehouses = Warehouse::where('status', 'active')->get();
+        $warehouses = Warehouse::where('is_active', true)->get();
         $products = MasterProduct::where('is_active', true)->get();
         $users = User::where('department_id', 4)->get(); // Warehouse department
 
@@ -190,7 +196,7 @@ class InventoryIssuingController extends Controller
             $request->validate([
                 'inventory_request_id' => 'nullable|exists:inventory_requests,id',
                 'branch_id' => 'required|exists:branches,id',
-                'warehouse_id' => 'required|exists:warehouses,id',
+                'warehouse_id' => 'nullable|exists:warehouses,id',
                 'issue_date' => 'required|date',
                 'reference_no' => 'nullable|string|max:100',
                 'requested_by' => 'required|exists:users,id',
@@ -213,6 +219,9 @@ class InventoryIssuingController extends Controller
         }
 
         try {
+            $warehouse = $this->resolveWarehouseForBranch($request->branch_id);
+            $request->merge(['warehouse_id' => $warehouse->id]);
+
             DB::beginTransaction();
 
             // Generate issuing number using DocumentNumberService
@@ -263,7 +272,9 @@ class InventoryIssuingController extends Controller
                 'data' => $issuing->load(['branch', 'warehouse', 'requestedBy', 'items.product'])
             ]);
         } catch (\Exception $e) {
-            DB::rollback();
+            if (DB::transactionLevel() > 0) {
+                DB::rollback();
+            }
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create inventory issuing: ' . $e->getMessage()
@@ -319,7 +330,7 @@ class InventoryIssuingController extends Controller
         $issuing = InventoryIssuing::with(['items'])->findOrFail($id);
         $inventoryRequests = InventoryRequest::where('status', 'approved')->get();
         $branches = Branch::where('is_active', true)->get();
-        $warehouses = Warehouse::where('status', 'active')->get();
+        $warehouses = Warehouse::where('is_active', true)->get();
         $products = MasterProduct::where('is_active', true)->get();
         $users = User::where('department_id', 4)->get();
 
@@ -352,7 +363,7 @@ class InventoryIssuingController extends Controller
             $validationRules = array_merge($validationRules, [
                 'inventory_request_id' => 'nullable|exists:inventory_requests,id',
                 'branch_id' => 'required|exists:branches,id',
-                'warehouse_id' => 'required|exists:warehouses,id',
+                'warehouse_id' => 'nullable|exists:warehouses,id',
                 'issue_date' => 'required|date',
                 'reference_no' => 'nullable|string|max:100',
                 'requested_by' => 'required|exists:users,id',
@@ -368,7 +379,6 @@ class InventoryIssuingController extends Controller
             $updateData = array_merge($updateData, [
                 'inventory_request_id' => $request->inventory_request_id,
                 'branch_id' => $request->branch_id,
-                'warehouse_id' => $request->warehouse_id,
                 'issue_date' => $request->issue_date,
                 'reference_no' => $request->reference_no,
                 'requested_by' => $request->requested_by,
@@ -380,6 +390,10 @@ class InventoryIssuingController extends Controller
         $request->validate($validationRules);
 
         try {
+            if ($request->has('inventory_request_id')) {
+                $updateData['warehouse_id'] = $this->resolveWarehouseForBranch($request->branch_id)->id;
+            }
+
             DB::beginTransaction();
 
             $issuing = InventoryIssuing::findOrFail($id);

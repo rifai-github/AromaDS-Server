@@ -489,12 +489,32 @@
         </div>
         <div class="info-card-body">
             @if($report->status === 'draft')
-                <form action="{{ route('marketing.lost-unit-reports.update', $report->id) }}" method="POST">
+                <form action="{{ route('marketing.lost-unit-reports.update', $report->id) }}" method="POST" enctype="multipart/form-data">
                     @csrf
                     @method('PUT')
                     <input type="hidden" name="lost_unit_price" value="{{ $report->lost_unit_price }}">
                     <div class="mb-3">
                         <textarea name="remark" class="form-control" rows="4" placeholder="Enter description about the lost unit..." required>{{ $report->remark }}</textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Upload BAP <span class="text-danger">*</span></label>
+                        <input type="file" name="bap_file" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+                        @if($report->bap_file)
+                            <div class="small mt-2">
+                                <a href="{{ Storage::url($report->bap_file) }}" target="_blank">Lihat BAP saat ini</a>
+                            </div>
+                        @endif
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Customer dikenakan charge?</label>
+                        <select name="charge_customer" class="form-control">
+                            <option value="1" {{ $report->charge_customer ? 'selected' : '' }}>Ya</option>
+                            <option value="0" {{ !$report->charge_customer ? 'selected' : '' }}>Tidak</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Nominal Charge</label>
+                        <input type="number" name="charge_amount" class="form-control" min="0" step="0.01" value="{{ old('charge_amount', $report->charge_amount ?? $report->lost_unit_price) }}">
                     </div>
                     <div class="text-end">
                         <button type="submit" class="btn-action btn-primary btn-sm">

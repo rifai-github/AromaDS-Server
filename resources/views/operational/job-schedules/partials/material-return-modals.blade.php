@@ -25,12 +25,24 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label class="form-label fw-bold">Warehouse <span class="text-danger">*</span></label>
-                        <select class="form-select" id="material_return_warehouse_id" name="warehouse_id" required>
+                        <label class="form-label fw-bold">Gudang Cabang</label>
+                        <select class="form-select d-none" id="material_return_warehouse_id" name="warehouse_id">
                             <option value="">Select Warehouse</option>
                             @foreach($warehouses ?? [] as $warehouse)
                                 <option value="{{ $warehouse->id }}">{{ $warehouse->name }}</option>
                             @endforeach
+                        </select>
+                        <div class="form-control bg-light" id="material_return_warehouse_label">Otomatis mengikuti warehouse aktif cabang</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Kategori Alasan Retur <span class="text-danger">*</span></label>
+                        <select class="form-select" id="material_return_reason_category" name="return_reason_category" required>
+                            <option value="slow_moving">Slow moving</option>
+                            <option value="near_expired">Mendekati expired</option>
+                            <option value="customer_need_changed">Perubahan kebutuhan customer</option>
+                            <option value="damaged">Rusak</option>
+                            <option value="other">Lainnya</option>
                         </select>
                     </div>
                     

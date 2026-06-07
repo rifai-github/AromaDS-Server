@@ -19,13 +19,20 @@ class InventoryTransfer extends Model
         'to_warehouse_id',
         'transfer_date',
         'status',
+        'is_direct_branch_transfer',
+        'delivery_order_file',
+        'central_approved_by',
+        'central_approved_at',
+        'central_approval_notes',
         'notes',
         'created_by',
         'updated_by'
     ];
 
     protected $casts = [
-        'transfer_date' => 'date'
+        'transfer_date' => 'date',
+        'is_direct_branch_transfer' => 'boolean',
+        'central_approved_at' => 'datetime',
     ];
 
     // Relationships
