@@ -20,11 +20,6 @@ Primary manifests/config:
 ## Staging Server Testing
 
 - url: http://103.247.11.46/
-- When checking the staging server, use `ssh aroma-staging` (path /var/www/aroma-staging).
-- Treat staging as a live-like environment: inspect data carefully before changing anything, and do not run destructive repair/backfill/import commands unless the user explicitly approves.
-- The staging script/code should match the deploy branch. If behavior differs locally and on staging, compare against the deployed branch before assuming the bug is only data-related.
-- If dashboard testing is needed, log in through the dashboard with an account that matches the role being tested. Verify role-specific behavior, permissions, menus, buttons, and data visibility.
-- For dashboard/web bugs, actually open and exercise the affected dashboard flow whenever possible. Do not rely only on PHPUnit, static inspection, or route/controller checks for UI-facing fixes.
 - Use `Playwright` for direct dashboard testing: open the local/staging dashboard URL, log in with the correct role account, navigate the affected page, perform the relevant action, and inspect the resulting UI state.
 - When using `Playwright`, take a fresh snapshot after navigation, form submissions, modal opens, or dynamic updates before interacting with new elements.
 - Default credential for dashboard : password123

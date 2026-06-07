@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Marketing;
 
 use App\Http\Controllers\Controller;
+use App\Http\Traits\AccessControlFilterTrait;
 use App\Models\Survey;
 use App\Models\Quotation;
 use App\Models\QuotationDetail;
@@ -25,11 +26,40 @@ use Illuminate\Validation\ValidationException;
 
 class QuotationWizardController extends Controller
 {
+    use AccessControlFilterTrait;
+
     private function surveySelectionDuplicateKey(Survey $survey): string
     {
         $surveyNumber = strtolower(trim((string) $survey->survey_number));
 
         return $surveyNumber !== '' ? $surveyNumber : 'survey-id:' . $survey->id;
+    }
+
+    private function accessibleSurveyQuery($user = null)
+    {
+        $query = Survey::query();
+
+        return $this->applyAccessControlFilter($query, $user, 'created_by', 'marketing_id', null, null, null);
+    }
+
+    private function accessibleApprovedSurveyQuery($user = null)
+    {
+        return $this->accessibleSurveyQuery($user)->where('status', 'approved');
+    }
+
+    private function userCanAccessMarketingId($marketingId, $user = null): bool
+    {
+        if (!$marketingId) {
+            return false;
+        }
+
+        $user ??= Auth::user();
+
+        if ($this->hasUnrestrictedAccessControlData($user)) {
+            return true;
+        }
+
+        return in_array((int) $marketingId, array_map('intval', $this->getAccessibleUserIds($user)), true);
     }
 
     private function isSelectableAromaProduct(?MasterProduct $product): bool
@@ -244,6 +274,13 @@ class QuotationWizardController extends Controller
             
             // If no branch_id provided, try to get from survey/building location
             if (!$branchId && $surveyId) {
+                if (!$this->accessibleSurveyQuery()->whereKey($surveyId)->exists()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Survey is outside your accessible data scope.'
+                    ], 403);
+                }
+
                 $branchId = $this->getBranchIdFromSurvey($surveyId);
             }
             
@@ -500,6 +537,31 @@ class QuotationWizardController extends Controller
                     'message' => 'Validation failed',
                     'errors' => $validator->errors()
                 ], 422);
+            }
+
+            if (!$this->userCanAccessMarketingId($request->get('marketing_id'))) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Marketing user is outside your accessible data scope.'
+                ], 403);
+            }
+
+            $surveyIds = collect($request->get('survey_tags', []))
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+            if ($surveyIds->isNotEmpty()) {
+                $accessibleSurveyCount = $this->accessibleApprovedSurveyQuery()
+                    ->whereIn('id', $surveyIds->all())
+                    ->count();
+
+                if ($accessibleSurveyCount !== $surveyIds->count()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'One or more selected surveys are outside your accessible data scope.'
+                    ], 403);
+                }
             }
 
             $this->ensureRenewalSourceCanProceed(
@@ -1417,6 +1479,29 @@ class QuotationWizardController extends Controller
             ], 422);
         }
 
+        if (!$this->userCanAccessMarketingId($request->get('marketing_id'))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Marketing user is outside your accessible data scope.'
+            ], 403);
+        }
+
+        $surveyIds = collect($request->get('survey_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $accessibleSurveyCount = $this->accessibleApprovedSurveyQuery()
+            ->whereIn('id', $surveyIds->all())
+            ->count();
+
+        if ($accessibleSurveyCount !== $surveyIds->count()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'One or more selected surveys are outside your accessible data scope.'
+            ], 403);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -1597,19 +1682,15 @@ class QuotationWizardController extends Controller
     {
         $marketingId = $request->get('marketing_id');
         $user = auth()->user();
-        $canViewAll = $user->canViewAllData()
-            || $user->hasRoleStartingWith('Management')
-            || $user->hasRole('Admin');
 
-        if (!$marketingId && !$canViewAll) {
+        if ($marketingId && !$this->userCanAccessMarketingId($marketingId, $user)) {
             return response()->json([]);
         }
 
-        $query = Survey::with(['customer', 'building', 'surveyDetails'])
-            ->where('status', 'approved');
+        $query = $this->accessibleApprovedSurveyQuery($user)
+            ->with(['customer', 'building', 'surveyDetails']);
 
-        // Regular marketing staff only see their own surveys; admin/management see all
-        if (!$canViewAll && $marketingId) {
+        if ($marketingId) {
             $query->where('marketing_id', $marketingId);
         }
 
@@ -1632,7 +1713,9 @@ class QuotationWizardController extends Controller
             return response()->json([]);
         }
 
-        $survey = Survey::with(['surveyDetails'])->find($surveyId);
+        $survey = $this->accessibleApprovedSurveyQuery()
+            ->with(['surveyDetails'])
+            ->find($surveyId);
         
         if (!$survey) {
             return response()->json([]);
@@ -1652,9 +1735,9 @@ class QuotationWizardController extends Controller
             return response()->json([]);
         }
 
-        $surveys = Survey::with(['customer', 'building', 'surveyDetails'])
+        $surveys = $this->accessibleApprovedSurveyQuery()
+            ->with(['customer', 'building', 'surveyDetails'])
             ->whereIn('id', $surveyIds)
-            ->where('status', 'approved')
             ->get();
 
         $result = [];
@@ -1906,9 +1989,10 @@ class QuotationWizardController extends Controller
     }
     private function getQuotationWizardViewData(): array
     {
-        $surveys = Cache::remember('quotation-wizard:surveys', now()->addMinutes(5), function () {
-            return Survey::with(['customer:id,name', 'building:id,name,nama_gedung'])
-                ->where('status', 'approved')
+        $user = Auth::user();
+        $surveys = Cache::remember("quotation-wizard:surveys:user:{$user->id}", now()->addMinutes(5), function () use ($user) {
+            return $this->accessibleApprovedSurveyQuery($user)
+                ->with(['customer:id,name', 'building:id,name,nama_gedung'])
                 ->get();
         });
 
@@ -1920,8 +2004,10 @@ class QuotationWizardController extends Controller
             return TaxSetting::all();
         });
 
-        $marketingUsers = Cache::remember('quotation-wizard:marketing-users', now()->addMinutes(10), function () {
-            return User::where('is_active', true)->orderBy('name')->get(['id', 'name', 'salutation']);
+        $marketingUsers = Cache::remember("quotation-wizard:marketing-users:user:{$user->id}", now()->addMinutes(10), function () use ($user) {
+            return $this->applyAccessibleUserFilter(User::where('is_active', true), $user)
+                ->orderBy('name')
+                ->get(['id', 'name', 'salutation']);
         });
 
         $departments = Cache::remember('quotation-wizard:departments', now()->addMinutes(10), function () {

@@ -282,18 +282,30 @@ class QuotationController extends Controller
         $quotations = $query->paginate(15);
 
         // Data for dropdowns
-        $prospects = Cache::remember('quotation:index:prospects', 300, function () {
-            return \App\Models\Prospect::select('id', 'company_name', 'contact_person')
-                ->orderBy('company_name')
-                ->get();
-        });
+        $prospects = $this->applyAccessControlFilter(
+            \App\Models\Prospect::select('id', 'company_name', 'contact_person', 'assigned_to'),
+            Auth::user(),
+            'assigned_to',
+            'assigned_to',
+            'assignedTo.branch_id',
+            null,
+            null
+        )
+            ->orderBy('company_name')
+            ->get();
 
-        $surveys = Cache::remember('quotation:index:surveys', 300, function () {
-            return \App\Models\Survey::with(['surveyor:id,name'])
-                ->select('id', 'survey_number', 'surveyor_id')
-                ->orderByDesc('id')
-                ->get();
-        });
+        $surveys = $this->applyAccessControlFilter(
+            \App\Models\Survey::with(['surveyor:id,name'])
+                ->select('id', 'survey_number', 'surveyor_id', 'created_by', 'marketing_id'),
+            Auth::user(),
+            'created_by',
+            'marketing_id',
+            null,
+            null,
+            null
+        )
+            ->orderByDesc('id')
+            ->get();
 
         $approvers = Cache::remember('quotation:index:approvers', 300, function () {
             return User::where('is_active', true)
@@ -336,10 +348,22 @@ class QuotationController extends Controller
         $documentNumberService = new \App\Services\DocumentNumberService();
         $quotationNumber = $documentNumberService->generate('quotation');
         $customers = Customer::all();
-        $marketingStaff = User::all();
+        $marketingStaff = $this->applyAccessibleUserFilter(User::where('is_active', true), Auth::user())
+            ->orderBy('name')
+            ->get();
         $billingMethods = MasterOption::where('name', 'Billing Method')->first()?->optionDetails ?? collect();
         // Status field removed during creation - default to 'draft'
-        $surveys = collect(); // Empty collection for now
+        $surveys = $this->applyAccessControlFilter(
+            Survey::with(['customer:id,name', 'building:id,name,nama_gedung']),
+            Auth::user(),
+            'created_by',
+            'marketing_id',
+            null,
+            null,
+            null
+        )
+            ->where('status', 'approved')
+            ->get();
         $provinces = collect(); // Empty collection for now
         $products = collect(); // Empty collection for now
         
@@ -377,6 +401,40 @@ class QuotationController extends Controller
                 'status' => 'error',
                 'errors' => $validator->errors()
             ], 422);
+        }
+
+        $canUseSurvey = $this->applyAccessControlFilter(
+            Survey::query(),
+            Auth::user(),
+            'created_by',
+            'marketing_id',
+            null,
+            null,
+            null
+        )->whereKey($request->survey_id)->exists();
+
+        if (!$canUseSurvey) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Survey is outside your accessible data scope.'
+            ], 403);
+        }
+
+        $canUseProspect = $this->applyAccessControlFilter(
+            \App\Models\Prospect::query(),
+            Auth::user(),
+            'assigned_to',
+            'assigned_to',
+            'assignedTo.branch_id',
+            null,
+            null
+        )->whereKey($request->prospect_id)->exists();
+
+        if (!$canUseProspect) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Prospect is outside your accessible data scope.'
+            ], 403);
         }
 
         $this->ensureRenewalSourceCanProceed($request->quotation_type, $request->existing_contract_id);
@@ -2421,7 +2479,15 @@ class QuotationController extends Controller
 
     public function getSurveyData($id)
     {
-        $survey = Survey::with(['surveyor', 'marketing'])->find($id);
+        $survey = $this->applyAccessControlFilter(
+            Survey::with(['surveyor', 'marketing']),
+            Auth::user(),
+            'created_by',
+            'marketing_id',
+            null,
+            null,
+            null
+        )->find($id);
         
         if (!$survey) {
             return response()->json([

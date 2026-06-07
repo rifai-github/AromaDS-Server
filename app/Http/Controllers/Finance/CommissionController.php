@@ -16,6 +16,26 @@ use Illuminate\Support\Facades\DB;
 class CommissionController extends Controller
 {
     use AccessControlFilterTrait;
+
+    private function accessibleCommissionQuery()
+    {
+        $query = CommissionCalculation::query();
+        $user = Auth::user();
+
+        if ($this->hasUnrestrictedAccessControlData($user)) {
+            return $query;
+        }
+
+        $accessibleUserIds = $this->getAccessibleUserIds($user);
+
+        return $query->where(function ($q) use ($accessibleUserIds) {
+            $q->whereIn('user_id', $accessibleUserIds)
+                ->orWhereHas('contract', function ($contractQuery) use ($accessibleUserIds) {
+                    $contractQuery->whereIn('created_by', $accessibleUserIds)
+                        ->orWhereIn('marketing_id', $accessibleUserIds);
+                });
+        });
+    }
     
     /**
      * Display a listing of commission calculations
@@ -69,9 +89,12 @@ class CommissionController extends Controller
      */
     public function create()
     {
-        $users = User::where('is_active', true)->get();
+        $users = $this->applyAccessibleUserFilter(User::where('is_active', true), Auth::user())->get();
         $periods = AchievementPeriod::active()->get();
-        $contracts = \App\Models\Contract::where('status', 'active')->get();
+        $contracts = $this->applyContractAccessControlFilter(
+            \App\Models\Contract::where('status', 'active'),
+            Auth::user()
+        )->get();
 
         if (request()->expectsJson() || request()->is('api/*')) {
             return response()->json([
@@ -101,6 +124,28 @@ class CommissionController extends Controller
             'penalty_amount' => 'nullable|numeric|min:0',
             'calculation_notes' => 'nullable|string|max:1000'
         ]);
+
+        $canUseUser = $this->applyAccessibleUserFilter(User::query(), Auth::user())
+            ->whereKey($request->user_id)
+            ->exists();
+
+        if (!$canUseUser) {
+            return redirect()->back()
+                ->with('error', 'User is outside your accessible data scope.')
+                ->withInput();
+        }
+
+        if ($request->contract_id) {
+            $canUseContract = $this->applyContractAccessControlFilter(\App\Models\Contract::query(), Auth::user())
+                ->whereKey($request->contract_id)
+                ->exists();
+
+            if (!$canUseContract) {
+                return redirect()->back()
+                    ->with('error', 'Contract is outside your accessible data scope.')
+                    ->withInput();
+            }
+        }
 
         try {
             DB::beginTransaction();
@@ -143,6 +188,7 @@ class CommissionController extends Controller
      */
     public function show(CommissionCalculation $commission)
     {
+        $commission = $this->accessibleCommissionQuery()->whereKey($commission->id)->firstOrFail();
         $commission->load(['user', 'achievementPeriod', 'contract', 'approvedBy', 'createdBy']);
         
         if (request()->expectsJson() || request()->is('api/*')) {
@@ -160,9 +206,13 @@ class CommissionController extends Controller
      */
     public function edit(CommissionCalculation $commission)
     {
-        $users = User::where('is_active', true)->get();
+        $commission = $this->accessibleCommissionQuery()->whereKey($commission->id)->firstOrFail();
+        $users = $this->applyAccessibleUserFilter(User::where('is_active', true), Auth::user())->get();
         $periods = AchievementPeriod::active()->get();
-        $contracts = \App\Models\Contract::where('status', 'active')->get();
+        $contracts = $this->applyContractAccessControlFilter(
+            \App\Models\Contract::where('status', 'active'),
+            Auth::user()
+        )->get();
 
         if (request()->expectsJson() || request()->is('api/*')) {
             return response()->json([
@@ -182,6 +232,8 @@ class CommissionController extends Controller
      */
     public function update(Request $request, CommissionCalculation $commission)
     {
+        $commission = $this->accessibleCommissionQuery()->whereKey($commission->id)->firstOrFail();
+
         $request->validate([
             'user_id' => 'required|exists:users,id',
             'achievement_period_id' => 'required|exists:achievement_periods,id',
@@ -193,6 +245,28 @@ class CommissionController extends Controller
             'penalty_amount' => 'nullable|numeric|min:0',
             'calculation_notes' => 'nullable|string|max:1000'
         ]);
+
+        $canUseUser = $this->applyAccessibleUserFilter(User::query(), Auth::user())
+            ->whereKey($request->user_id)
+            ->exists();
+
+        if (!$canUseUser) {
+            return redirect()->back()
+                ->with('error', 'User is outside your accessible data scope.')
+                ->withInput();
+        }
+
+        if ($request->contract_id) {
+            $canUseContract = $this->applyContractAccessControlFilter(\App\Models\Contract::query(), Auth::user())
+                ->whereKey($request->contract_id)
+                ->exists();
+
+            if (!$canUseContract) {
+                return redirect()->back()
+                    ->with('error', 'Contract is outside your accessible data scope.')
+                    ->withInput();
+            }
+        }
 
         try {
             DB::beginTransaction();
@@ -233,6 +307,7 @@ class CommissionController extends Controller
     public function destroy(CommissionCalculation $commission)
     {
         try {
+            $commission = $this->accessibleCommissionQuery()->whereKey($commission->id)->firstOrFail();
             $commission->delete();
             return redirect()->route('commissions.index')
                 ->with('success', 'Commission calculation deleted successfully.');
@@ -248,6 +323,7 @@ class CommissionController extends Controller
     public function approve(CommissionCalculation $commission)
     {
         try {
+            $commission = $this->accessibleCommissionQuery()->whereKey($commission->id)->firstOrFail();
             $commission->approve(Auth::id());
             return redirect()->back()
                 ->with('success', 'Commission calculation approved successfully.');
@@ -263,6 +339,7 @@ class CommissionController extends Controller
     public function markAsPaid(CommissionCalculation $commission)
     {
         try {
+            $commission = $this->accessibleCommissionQuery()->whereKey($commission->id)->firstOrFail();
             $commission->markAsPaid();
             return redirect()->back()
                 ->with('success', 'Commission marked as paid successfully.');
@@ -282,6 +359,7 @@ class CommissionController extends Controller
         ]);
 
         try {
+            $commission = $this->accessibleCommissionQuery()->whereKey($commission->id)->firstOrFail();
             $commission->cancel($request->reason);
             return redirect()->back()
                 ->with('success', 'Commission calculation cancelled successfully.');

@@ -8,6 +8,28 @@ use Illuminate\Support\Facades\Auth;
 
 trait AccessControlFilterTrait
 {
+    protected function hasUnrestrictedAccessControlData(User $user): bool
+    {
+        if (($user->data_restriction ?? null) === 'none') {
+            return true;
+        }
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('roles')) {
+            if ($user->hasRole('super_admin') || $user->hasRoleStartingWith('Management') || $user->hasRole('Admin')) {
+                return true;
+            }
+        }
+
+        if (! \Illuminate\Support\Facades\Schema::hasTable('user_access_levels')) {
+            return false;
+        }
+
+        return $user->accessLevels()
+            ->where('access_type', 'company')
+            ->where('is_active', true)
+            ->exists();
+    }
+
     /**
      * Apply access control filter to query
      * Default: Jika tidak set hirarki, hanya bisa lihat data sendiri
@@ -18,18 +40,8 @@ trait AccessControlFilterTrait
             $user = Auth::user();
         }
 
-        // Check if user has Management role (can see all data)
-        if ($user->hasRoleStartingWith('Management')) {
-            return $query; // No filter, can see all
-        }
-
-        // Check if user has explicit 'company' access level
-        $companyAccess = $user->accessLevels()
-                             ->where('access_type', 'company')
-                             ->where('is_active', true)
-                             ->exists();
-        
-        if ($companyAccess) {
+        // Check if user has unrestricted access (Management/Admin/company access)
+        if ($this->hasUnrestrictedAccessControlData($user)) {
             return $query;
         }
 
@@ -131,8 +143,76 @@ trait AccessControlFilterTrait
                 $extraAccessLogic($containerQ);
             }
         });
-        
+
         return $query;
+    }
+
+    /**
+     * Apply the same user hierarchy to Contract queries.
+     */
+    protected function applyContractAccessControlFilter($query, $user = null, $createdByField = 'created_by', $marketingField = 'marketing_id')
+    {
+        if (!$user) {
+            $user = Auth::user();
+        }
+
+        if ($this->hasUnrestrictedAccessControlData($user)) {
+            return $query;
+        }
+
+        $accessibleUserIds = $this->getAccessibleUserIds($user);
+
+        return $query->where(function ($q) use ($accessibleUserIds, $createdByField, $marketingField) {
+            $q->whereIn($createdByField, $accessibleUserIds);
+
+            if ($marketingField && $marketingField !== $createdByField) {
+                $q->orWhereIn($marketingField, $accessibleUserIds);
+            }
+        });
+    }
+
+    /**
+     * Apply hierarchy to records that belong to a contract.
+     */
+    protected function applyContractRelatedAccessControlFilter($query, $user = null, $contractRelation = 'contract', $createdByField = 'created_by')
+    {
+        if (!$user) {
+            $user = Auth::user();
+        }
+
+        if ($this->hasUnrestrictedAccessControlData($user)) {
+            return $query;
+        }
+
+        $accessibleUserIds = $this->getAccessibleUserIds($user);
+
+        return $query->where(function ($q) use ($accessibleUserIds, $contractRelation, $createdByField) {
+            if ($createdByField) {
+                $q->whereIn($createdByField, $accessibleUserIds);
+            }
+
+            $method = $createdByField ? 'orWhereHas' : 'whereHas';
+            $q->{$method}($contractRelation, function ($contractQuery) use ($accessibleUserIds) {
+                $contractQuery->whereIn('created_by', $accessibleUserIds)
+                    ->orWhereIn('marketing_id', $accessibleUserIds);
+            });
+        });
+    }
+
+    /**
+     * Apply hierarchy to User dropdowns. Returns all active users for unrestricted access.
+     */
+    protected function applyAccessibleUserFilter($query, $user = null, $userIdField = 'id')
+    {
+        if (!$user) {
+            $user = Auth::user();
+        }
+
+        if ($this->hasUnrestrictedAccessControlData($user)) {
+            return $query;
+        }
+
+        return $query->whereIn($userIdField, $this->getAccessibleUserIds($user));
     }
     
     /**
@@ -142,6 +222,10 @@ trait AccessControlFilterTrait
     protected function getAccessibleUserIds(User $user)
     {
         $accessibleIds = [$user->id]; // Default: hanya user sendiri
+
+        if (! \Illuminate\Support\Facades\Schema::hasTable('user_access_levels')) {
+            return $accessibleIds;
+        }
         
         // Check if user has "none" access level (explicitly set to only own data)
         $noneAccess = $user->accessLevels()

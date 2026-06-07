@@ -77,8 +77,14 @@ class TaxInvoiceController extends Controller
 
         // Get filter options
         $customers = Customer::where('is_active', true)->get();
-        $contracts = Contract::where('status', 'active')->get();
-        $billingGroups = BillingGroup::where('is_active', true)->get();
+        $contracts = $this->applyContractAccessControlFilter(
+            Contract::where('status', 'active'),
+            Auth::user()
+        )->get();
+        $billingGroups = $this->applyContractRelatedAccessControlFilter(
+            BillingGroup::where('is_active', true),
+            Auth::user()
+        )->get();
         $statuses = ['draft', 'pending', 'approved', 'rejected', 'cancelled'];
         $taxStatuses = ['exempt', 'applied', 'pending'];
 
@@ -91,8 +97,14 @@ class TaxInvoiceController extends Controller
     public function create()
     {
         $customers = Customer::where('is_active', true)->get();
-        $contracts = Contract::where('status', 'active')->get();
-        $billingGroups = BillingGroup::where('is_active', true)->get();
+        $contracts = $this->applyContractAccessControlFilter(
+            Contract::where('status', 'active'),
+            Auth::user()
+        )->get();
+        $billingGroups = $this->applyContractRelatedAccessControlFilter(
+            BillingGroup::where('is_active', true),
+            Auth::user()
+        )->get();
         $taxSettings = TaxSetting::where('status', 'active')->get();
 
         return view('tax.invoices.create', compact('customers', 'contracts', 'billingGroups', 'taxSettings'));
@@ -124,6 +136,30 @@ class TaxInvoiceController extends Controller
             return redirect()->back()
                 ->withErrors($validator)
                 ->withInput();
+        }
+
+        if ($request->contract_id) {
+            $canUseContract = $this->applyContractAccessControlFilter(Contract::query(), Auth::user())
+                ->whereKey($request->contract_id)
+                ->exists();
+
+            if (!$canUseContract) {
+                return redirect()->back()
+                    ->with('error', 'Contract is outside your accessible data scope.')
+                    ->withInput();
+            }
+        }
+
+        if ($request->billing_group_id) {
+            $canUseBillingGroup = $this->applyContractRelatedAccessControlFilter(BillingGroup::query(), Auth::user())
+                ->whereKey($request->billing_group_id)
+                ->exists();
+
+            if (!$canUseBillingGroup) {
+                return redirect()->back()
+                    ->with('error', 'Billing group is outside your accessible data scope.')
+                    ->withInput();
+            }
         }
 
         try {
@@ -164,6 +200,11 @@ class TaxInvoiceController extends Controller
      */
     public function show(TaxInvoice $taxInvoice)
     {
+        $taxInvoice = $this->applyContractRelatedAccessControlFilter(
+            TaxInvoice::whereKey($taxInvoice->id),
+            Auth::user()
+        )->firstOrFail();
+
         $taxInvoice->load(['customer', 'contract', 'billingGroup', 'createdBy', 'updatedBy']);
         
         return view('tax.invoices.show', compact('taxInvoice'));
@@ -175,8 +216,18 @@ class TaxInvoiceController extends Controller
     public function edit(TaxInvoice $taxInvoice)
     {
         $customers = Customer::where('is_active', true)->get();
-        $contracts = Contract::where('status', 'active')->get();
-        $billingGroups = BillingGroup::where('is_active', true)->get();
+        $taxInvoice = $this->applyContractRelatedAccessControlFilter(
+            TaxInvoice::whereKey($taxInvoice->id),
+            Auth::user()
+        )->firstOrFail();
+        $contracts = $this->applyContractAccessControlFilter(
+            Contract::where('status', 'active'),
+            Auth::user()
+        )->get();
+        $billingGroups = $this->applyContractRelatedAccessControlFilter(
+            BillingGroup::where('is_active', true),
+            Auth::user()
+        )->get();
         $taxSettings = TaxSetting::where('status', 'active')->get();
 
         return view('tax.invoices.edit', compact('taxInvoice', 'customers', 'contracts', 'billingGroups', 'taxSettings'));
@@ -208,6 +259,35 @@ class TaxInvoiceController extends Controller
             return redirect()->back()
                 ->withErrors($validator)
                 ->withInput();
+        }
+
+        $taxInvoice = $this->applyContractRelatedAccessControlFilter(
+            TaxInvoice::whereKey($taxInvoice->id),
+            Auth::user()
+        )->firstOrFail();
+
+        if ($request->contract_id) {
+            $canUseContract = $this->applyContractAccessControlFilter(Contract::query(), Auth::user())
+                ->whereKey($request->contract_id)
+                ->exists();
+
+            if (!$canUseContract) {
+                return redirect()->back()
+                    ->with('error', 'Contract is outside your accessible data scope.')
+                    ->withInput();
+            }
+        }
+
+        if ($request->billing_group_id) {
+            $canUseBillingGroup = $this->applyContractRelatedAccessControlFilter(BillingGroup::query(), Auth::user())
+                ->whereKey($request->billing_group_id)
+                ->exists();
+
+            if (!$canUseBillingGroup) {
+                return redirect()->back()
+                    ->with('error', 'Billing group is outside your accessible data scope.')
+                    ->withInput();
+            }
         }
 
         try {

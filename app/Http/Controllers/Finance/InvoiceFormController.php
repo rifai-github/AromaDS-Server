@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
+use App\Http\Traits\AccessControlFilterTrait;
 use App\Models\Finance\InvoiceForm;
 use App\Models\Finance\InvoiceFormDetail;
 use App\Models\Finance\InvoiceFormRental;
@@ -19,9 +20,12 @@ use Carbon\Carbon;
 
 class InvoiceFormController extends Controller
 {
+    use AccessControlFilterTrait;
+
     public function index(Request $request)
     {
         $query = InvoiceForm::with(['contract:id,contract_number,customer_id', 'creator:id,name', 'updater:id,name']);
+        $this->applyContractRelatedAccessControlFilter($query, Auth::user());
 
         // Apply filters
         if ($request->filled('search')) {
@@ -66,10 +70,12 @@ class InvoiceFormController extends Controller
         $invoiceForms = $query->orderBy('created_at', 'desc')->paginate(25);
 
         // Get filter options - optimized queries
-        $contracts = Contract::select('id', 'contract_number', 'customer_id')
+        $contracts = $this->applyContractAccessControlFilter(
+            Contract::select('id', 'contract_number', 'customer_id', 'created_by', 'marketing_id')
             ->where('contract_status', 'active')
-            ->with('customer:id,company_name')
-            ->get();
+            ->with('customer:id,company_name'),
+            Auth::user()
+        )->get();
         $customers = Customer::select('id', 'company_name')->get();
         $users = User::select('id', 'name')->get();
 
@@ -78,10 +84,12 @@ class InvoiceFormController extends Controller
 
     public function create()
     {
-        $contracts = Contract::select('id', 'contract_number', 'customer_id')
+        $contracts = $this->applyContractAccessControlFilter(
+            Contract::select('id', 'contract_number', 'customer_id', 'created_by', 'marketing_id')
             ->where('contract_status', 'active')
-            ->with('customer:id,company_name')
-            ->get();
+            ->with('customer:id,company_name'),
+            Auth::user()
+        )->get();
         $customers = Customer::select('id', 'company_name')->get();
         $users = User::select('id', 'name')->get();
 
@@ -186,6 +194,11 @@ class InvoiceFormController extends Controller
 
     public function show(InvoiceForm $invoiceForm)
     {
+        $invoiceForm = $this->applyContractRelatedAccessControlFilter(
+            InvoiceForm::whereKey($invoiceForm->id),
+            Auth::user()
+        )->firstOrFail();
+
         $invoiceForm->load(['contract.customer', 'creator', 'updater', 'invoiceFormDetails', 'invoiceFormRentals', 'invoiceFormFiles.uploader']);
 
         return view('finance.invoice-forms.show', compact('invoiceForm'));
@@ -193,10 +206,17 @@ class InvoiceFormController extends Controller
 
     public function edit(InvoiceForm $invoiceForm)
     {
-        $contracts = Contract::select('id', 'contract_number', 'customer_id')
+        $invoiceForm = $this->applyContractRelatedAccessControlFilter(
+            InvoiceForm::whereKey($invoiceForm->id),
+            Auth::user()
+        )->firstOrFail();
+
+        $contracts = $this->applyContractAccessControlFilter(
+            Contract::select('id', 'contract_number', 'customer_id', 'created_by', 'marketing_id')
             ->where('contract_status', 'active')
-            ->with('customer:id,company_name')
-            ->get();
+            ->with('customer:id,company_name'),
+            Auth::user()
+        )->get();
         $customers = Customer::select('id', 'company_name')->get();
         $users = User::select('id', 'name')->get();
 

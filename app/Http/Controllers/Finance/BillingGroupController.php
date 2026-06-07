@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
+use App\Http\Traits\AccessControlFilterTrait;
 use App\Models\Finance\BillingGroup;
 use App\Models\Finance\BillingGroupBuilding;
 use App\Models\Contract;
@@ -18,6 +19,8 @@ use Illuminate\Support\Facades\Validator;
 
 class BillingGroupController extends Controller
 {
+    use AccessControlFilterTrait;
+
     private function prepareBillingGroupAttributes(array $attributes): array
     {
         static $hasPpnCodeColumn = null;
@@ -34,6 +37,7 @@ class BillingGroupController extends Controller
     public function index(Request $request)
     {
         $query = BillingGroup::with(['contract:id,contract_number,customer_id', 'creator:id,name', 'updater:id,name']);
+        $this->applyContractRelatedAccessControlFilter($query, auth()->user());
 
         // Filter by contract
         if ($request->filled('contract_id')) {
@@ -69,7 +73,10 @@ class BillingGroupController extends Controller
         $billingGroups = $query->orderBy('billing_start_date', 'desc')->paginate(15);
 
         // Get filter options - optimized queries
-        $contracts = Contract::select('id', 'contract_number')->where('status', 'active')->get();
+        $contracts = $this->applyContractAccessControlFilter(
+            Contract::select('id', 'contract_number', 'created_by', 'marketing_id')->where('status', 'active'),
+            auth()->user()
+        )->get();
         $frequencies = ['monthly', 'quarterly', 'yearly', 'one_time'];
 
         return view('finance.billing-groups.index', compact('billingGroups', 'contracts', 'frequencies'));
@@ -77,7 +84,10 @@ class BillingGroupController extends Controller
 
     public function create()
     {
-        $contracts = Contract::select('id', 'contract_number')->where('status', 'active')->get();
+        $contracts = $this->applyContractAccessControlFilter(
+            Contract::select('id', 'contract_number', 'created_by', 'marketing_id')->where('status', 'active'),
+            auth()->user()
+        )->get();
         $frequencies = ['monthly', 'quarterly', 'yearly', 'one_time'];
         $bankPayments = \App\Models\Finance\BankPayment::with('bank')->active()->get();
 
@@ -125,6 +135,16 @@ class BillingGroupController extends Controller
         if ($validator->fails()) {
             return redirect()->back()
                 ->withErrors($validator)
+                ->withInput();
+        }
+
+        $canUseContract = $this->applyContractAccessControlFilter(Contract::query(), auth()->user())
+            ->whereKey($request->contract_id)
+            ->exists();
+
+        if (!$canUseContract) {
+            return redirect()->back()
+                ->with('error', 'Contract is outside your accessible data scope.')
                 ->withInput();
         }
 
@@ -219,8 +239,10 @@ class BillingGroupController extends Controller
 
     public function show($id)
     {
-        $billingGroup = BillingGroup::with(['contract', 'creator', 'updater', 'buildings'])
-            ->findOrFail($id);
+        $billingGroup = $this->applyContractRelatedAccessControlFilter(
+            BillingGroup::with(['contract', 'creator', 'updater', 'buildings']),
+            auth()->user()
+        )->findOrFail($id);
 
         // Return JSON for AJAX/API requests
         if (request()->ajax() || request()->expectsJson()) {
@@ -235,8 +257,12 @@ class BillingGroupController extends Controller
 
     public function edit($id)
     {
-        $billingGroup = BillingGroup::findOrFail($id);
-        $contracts = Contract::select('id', 'contract_number')->where('status', 'active')->get();
+        $billingGroup = $this->applyContractRelatedAccessControlFilter(BillingGroup::query(), auth()->user())
+            ->findOrFail($id);
+        $contracts = $this->applyContractAccessControlFilter(
+            Contract::select('id', 'contract_number', 'created_by', 'marketing_id')->where('status', 'active'),
+            auth()->user()
+        )->get();
         $frequencies = ['monthly', 'quarterly', 'yearly', 'one_time'];
         $bankPayments = \App\Models\Finance\BankPayment::with('bank')->active()->get();
 
@@ -245,7 +271,8 @@ class BillingGroupController extends Controller
 
     public function update(Request $request, $id)
     {
-        $billingGroup = BillingGroup::findOrFail($id);
+        $billingGroup = $this->applyContractRelatedAccessControlFilter(BillingGroup::query(), auth()->user())
+            ->findOrFail($id);
 
         $validator = Validator::make($request->all(), [
             // PIC Information
