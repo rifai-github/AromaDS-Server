@@ -1397,6 +1397,15 @@
                                 <small id="pic_details" class="form-text text-muted" style="display: none;"></small>
                             </div>
                         </div>
+                        <div class="form-row" id="extra_unit_on_wall_group" style="display: none;">
+                            <div class="form-group" style="flex: 1;">
+                                <label class="form-label" for="extra_unit_on_wall_id">Unit On Wall (Auto-detect Contract)</label>
+                                <select class="form-select" id="extra_unit_on_wall_id" name="extra_unit_on_wall_id" disabled onchange="applyExtraUnitOnWallSelection()">
+                                    <option value="">Select Marketing First</option>
+                                </select>
+                                <small class="form-text text-muted">Select an installed/on-wall unit to auto-fill the related contract reference.</small>
+                            </div>
+                        </div>
                         <div class="form-row">
                             <div class="form-group" id="remove_date_group" style="display: none;">
                                 <label class="form-label" for="remove_date">Remove Date <span class="text-danger">*</span></label>
@@ -1418,6 +1427,13 @@
                                     <option value="1">Yes</option>
                                 </select>
                             </div>
+                        </div>
+                        <div class="modal-form-section" id="roomsSection" style="display: none;">
+                            <div class="modal-form-section-title">Rental Rooms</div>
+                            <div id="roomsContainer"></div>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="addRoomRow()" style="margin-top: 10px;">
+                                <i class="fas fa-plus"></i> Add Room
+                            </button>
                         </div>
                         <div class="form-row full-width">
                             <div class="form-group">
@@ -1774,6 +1790,8 @@ window.toggleRemoveDate = function() {
     const sourceContractRadio = document.getElementById('source_contract');
     const sourceQuotationRadio = document.getElementById('source_quotation');
     const extraOptionsGroup = document.getElementById('extra_options_group');
+    const extraUnitOnWallGroup = document.getElementById('extra_unit_on_wall_group');
+    const extraUnitOnWallSelect = document.getElementById('extra_unit_on_wall_id');
     const withInvoicingSelect = document.getElementById('with_invoicing');
     const withMaterialsSelect = document.getElementById('with_materials');
     
@@ -1806,10 +1824,22 @@ window.toggleRemoveDate = function() {
         if (extraOptionsGroup) {
             const shouldShowExtraOptions = normalizedType === 'extra';
             extraOptionsGroup.style.display = shouldShowExtraOptions ? 'flex' : 'none';
+            if (extraUnitOnWallGroup) {
+                extraUnitOnWallGroup.style.display = shouldShowExtraOptions ? 'flex' : 'none';
+            }
 
             if (!shouldShowExtraOptions) {
                 if (withInvoicingSelect) withInvoicingSelect.value = '0';
                 if (withMaterialsSelect) withMaterialsSelect.value = '0';
+                if (extraUnitOnWallSelect) {
+                    extraUnitOnWallSelect.value = '';
+                    extraUnitOnWallSelect.disabled = true;
+                    extraUnitOnWallSelect.innerHTML = '<option value="">Select Extra type first</option>';
+                }
+                pendingExtraContractRoomId = null;
+            } else {
+                const requestBySelect = document.getElementById('request_by');
+                loadExtraOnWallUnits(requestBySelect?.value || null);
             }
         }
 
@@ -1924,6 +1954,153 @@ function loadContracts(marketingId = null) {
     });
 }
 
+function loadExtraOnWallUnits(marketingId = null) {
+    const unitSelect = document.getElementById('extra_unit_on_wall_id');
+    if (!unitSelect) return Promise.resolve();
+
+    const typeSelect = document.getElementById('modal_type');
+    const normalizedType = String(typeSelect?.value || '').toLowerCase().replace(/\s+/g, '_');
+    if (normalizedType !== 'extra') {
+        unitSelect.disabled = true;
+        unitSelect.innerHTML = '<option value="">Select Extra type first</option>';
+        return Promise.resolve();
+    }
+
+    unitSelect.disabled = false;
+    unitSelect.innerHTML = '<option value="">Loading on-wall units...</option>';
+
+    let url = '/api/contracts/on-wall-units-for-job-advice';
+    const params = new URLSearchParams();
+    if (marketingId) {
+        params.append('marketing_id', marketingId);
+    }
+    if (params.toString()) {
+        url += `?${params.toString()}`;
+    }
+
+    return fetch(url, {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        const units = Array.isArray(data.data) ? data.data : [];
+        unitSelect.innerHTML = '<option value="">Select Unit On Wall</option>';
+
+        units.forEach(unit => {
+            const option = document.createElement('option');
+            option.value = unit.id;
+            option.dataset.contractId = unit.contract_id || '';
+            option.dataset.contractNumber = unit.contract_number || '';
+            option.dataset.contractRoomId = unit.contract_room_id || '';
+            option.dataset.marketingId = unit.marketing_id || '';
+
+            const serial = unit.serial_number ? `SN ${unit.serial_number}` : 'No SN';
+            const room = unit.room_name || 'Unknown Room';
+            const building = unit.building_name ? ` - ${unit.building_name}` : '';
+            const customer = unit.customer_name || 'Unknown Customer';
+            option.textContent = `${serial} | ${room}${building} | ${customer} | ${unit.contract_number}`;
+            unitSelect.appendChild(option);
+        });
+
+        if (units.length === 0) {
+            unitSelect.innerHTML = '<option value="">No on-wall units with detectable contract</option>';
+        }
+
+        if (typeof $ !== 'undefined' && typeof $.fn.select2 !== 'undefined') {
+            $(unitSelect).select2({
+                dropdownParent: $('#modalOverlay'),
+                placeholder: 'Select Unit On Wall',
+                allowClear: true,
+                width: '100%'
+            }).trigger('change.select2');
+        }
+
+        return data;
+    })
+    .catch(error => {
+        console.error('Error loading Extra Unit On Wall options:', error);
+        unitSelect.innerHTML = '<option value="">Error Loading Unit On Wall</option>';
+        throw error;
+    });
+}
+
+window.applyExtraUnitOnWallSelection = function() {
+    const unitSelect = document.getElementById('extra_unit_on_wall_id');
+    if (!unitSelect || !unitSelect.value) return;
+
+    const selectedUnitId = unitSelect.value;
+    const selectedOption = unitSelect.options[unitSelect.selectedIndex] || $(unitSelect).find(':selected')[0];
+    const contractId = selectedOption?.dataset?.contractId;
+    const marketingId = selectedOption?.dataset?.marketingId;
+    const contractRoomId = selectedOption?.dataset?.contractRoomId;
+    const selectedOptionHtml = selectedOption?.outerHTML || '';
+
+    if (!contractId) {
+        alert('Contract terkait unit ini belum dapat dideteksi.');
+        return;
+    }
+
+    pendingExtraContractRoomId = contractRoomId || null;
+
+    const restoreSelectedUnit = () => {
+        if (!selectedUnitId) return;
+
+        const currentUnitSelect = document.getElementById('extra_unit_on_wall_id');
+        if (!currentUnitSelect) return;
+
+        const hasSelectedOption = Array.from(currentUnitSelect.options).some(option => String(option.value) === String(selectedUnitId));
+        if (!hasSelectedOption && selectedOptionHtml) {
+            currentUnitSelect.insertAdjacentHTML('beforeend', selectedOptionHtml);
+        }
+
+        currentUnitSelect.value = selectedUnitId;
+        if (typeof $ !== 'undefined' && $.fn.select2) {
+            $('#extra_unit_on_wall_id').val(String(selectedUnitId)).trigger('change.select2');
+        }
+    };
+
+    const requestBySelect = document.getElementById('request_by');
+    if (marketingId && requestBySelect && String(requestBySelect.value) !== String(marketingId)) {
+        if (typeof $ !== 'undefined' && $.fn.select2) {
+            $('#request_by').val(String(marketingId)).trigger('change.select2');
+        } else {
+            requestBySelect.value = marketingId;
+        }
+    }
+
+    loadContracts(marketingId || requestBySelect?.value || null)
+        .then(() => {
+            restoreSelectedUnit();
+
+            const contractSelect = document.getElementById('contract_id');
+            if (!contractSelect) return;
+
+            contractSelect.value = contractId;
+            if (typeof $ !== 'undefined' && $.fn.select2) {
+                $('#contract_id').val(String(contractId)).trigger('change');
+            }
+            contractSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            loadContractRoomsForJobAdvice(contractSelect);
+
+            setTimeout(restoreSelectedUnit, 300);
+            setTimeout(restoreSelectedUnit, 900);
+        })
+        .catch(error => {
+            console.error('Failed to apply Unit On Wall contract selection:', error);
+            alert('Gagal mendeteksi contract dari Unit On Wall.');
+        });
+}
+
 // Function to load users for Request By dropdown
 function loadUsers() {
     console.log('Loading marketing users...');
@@ -2033,10 +2210,12 @@ function populateMarketingUsers(data) {
                 // Load data for selected user
                 loadContracts(selectedUserId);
                 loadQuotations(selectedUserId);
+                loadExtraOnWallUnits(selectedUserId);
             } else {
                 // Reset if cleared
                 $('#contract_id').html('<option value="">Select Marketing First</option>').attr('disabled', true);
                 $('#quotation_id').html('<option value="">Select Marketing First</option>').attr('disabled', true);
+                $('#extra_unit_on_wall_id').html('<option value="">Select Marketing First</option>').attr('disabled', true);
             }
         });
     } else {
@@ -2046,6 +2225,7 @@ function populateMarketingUsers(data) {
             if (selectedUserId) {
                  loadContracts(selectedUserId);
                  loadQuotations(selectedUserId);
+                 loadExtraOnWallUnits(selectedUserId);
             }
         });
     }
@@ -2057,7 +2237,8 @@ function populateMarketingUsers(data) {
         console.log('Auto-loading contracts and quotations for user:', userSelect.value);
         return Promise.all([
             loadContracts(userSelect.value),
-            loadQuotations(userSelect.value)
+            loadQuotations(userSelect.value),
+            loadExtraOnWallUnits(userSelect.value)
         ]).then(() => {
             console.log('Initial contracts and quotations loaded for user:', userSelect.value);
         });
@@ -2074,11 +2255,93 @@ let skipAutoLoadContractsQuotations = false; // Flag to skip auto-load when URL 
 let contractRooms = [];
 let rentalProducts = [];
 let roomRowCounter = 0;
+let pendingExtraContractRoomId = null;
+let contractJobAdviceJqueryBound = false;
+
+function loadContractRoomsForJobAdvice(contractSelectElement) {
+    const contractId = contractSelectElement?.value;
+    console.log('Contract selected (native):', contractId);
+
+    sourceType = 'contract';
+
+    const roomsSection = document.getElementById('roomsSection');
+    const roomsContainer = document.getElementById('roomsContainer');
+
+    if (!contractId) {
+        if (roomsSection) roomsSection.style.display = 'none';
+        if (roomsContainer) roomsContainer.innerHTML = '';
+        contractRooms = [];
+        return;
+    }
+
+    const selectedOption = contractSelectElement.options[contractSelectElement.selectedIndex];
+    const customerId = selectedOption?.getAttribute('data-customer-id');
+    console.log('Detected customerId:', customerId);
+
+    if (customerId) {
+        loadCustomerContacts(customerId);
+    }
+
+    const typeSelect = document.getElementById('modal_type');
+    const typeValue = typeSelect ? typeSelect.value : '';
+
+    if (roomsContainer) roomsContainer.innerHTML = '<p class="text-sm text-gray-500 py-2">Loading rooms...</p>';
+    if (roomsSection) roomsSection.style.display = 'block';
+
+    Promise.all([
+        fetch(`/api/contracts/${contractId}/for-job-advice?type=${encodeURIComponent(typeValue)}`).then(r => r.json()),
+        fetch('/warehouse/rental-products/dropdown').then(r => r.json()).catch(() => ({ data: [] }))
+    ]).then(([contractData, rentalsData]) => {
+        console.log('Contract data received:', contractData);
+
+        contractRooms = contractData.contract_rooms || contractData.contractRooms || contractData.data?.contract_rooms || contractData.data?.contractRooms || [];
+        quotationRooms = [];
+        rentalProducts = rentalsData.data || rentalsData || [];
+
+        if (contractRooms && contractRooms.length > 0) {
+            contractRooms = contractRooms.map(cr => ({
+                id: cr.id,
+                contract_room_id: cr.id,
+                room_id: cr.room_id || cr.room?.id,
+                room_name: cr.room?.room_name || cr.room_name || 'Room ' + cr.id,
+                building_name: cr.room?.building?.nama_gedung || cr.room?.building?.name || 'N/A',
+                rental_product_id: cr.rental_product_id,
+                has_active_unit: cr.has_active_unit,
+                active_sn: cr.active_sn
+            }));
+        }
+
+        if (contractRooms.length > 0) {
+            if (roomsSection) roomsSection.style.display = 'block';
+            if (roomsContainer) {
+                roomsContainer.innerHTML = '';
+                addRoomRow();
+            }
+        } else {
+            if (roomsSection) roomsSection.style.display = 'none';
+            if (roomsContainer) roomsContainer.innerHTML = '';
+
+            if (typeof Swal !== 'undefined') {
+                const contractNumber = contractData.contract_number || contractData.data?.contract_number || '';
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Contract Tidak Memiliki Rooms',
+                    html: `<div style="text-align: left;"><p><strong>Contract ${contractNumber}</strong> belum memiliki ruangan (rooms) yang terdaftar.</p></div>`,
+                    confirmButtonText: 'OK',
+                });
+            }
+        }
+    }).catch(error => {
+        console.error('Error loading contract data:', error);
+        if (roomsContainer) roomsContainer.innerHTML = '';
+    });
+}
 
 // MOM6: Load contract rooms when contract is selected
 // Revised to use jQuery for better compatibility with Select2 and PIC/Notes issues
 document.addEventListener('DOMContentLoaded', function() {
     if (typeof $ !== 'undefined') {
+        contractJobAdviceJqueryBound = true;
         $(document).on('change', '#contract_id', function(e) {
     const contractId = $(this).val();
     console.log('Contract selected (jQuery):', contractId);
@@ -2197,6 +2460,12 @@ document.addEventListener('DOMContentLoaded', function() {
 }
 });
 
+
+document.addEventListener('change', function(event) {
+    if (event.target?.id === 'contract_id' && !contractJobAdviceJqueryBound) {
+        loadContractRoomsForJobAdvice(event.target);
+    }
+});
 
 // MOM9: Load quotation rooms when quotation is selected (for Install Free)
 let quotationRooms = [];
@@ -2397,6 +2666,15 @@ function addRoomRow() {
     const roomsContainer = document.getElementById('roomsContainer');
     if (roomsContainer) {
         roomsContainer.insertAdjacentHTML('beforeend', roomRow);
+
+        if (!isQuotationSource && pendingExtraContractRoomId) {
+            const roomSelect = document.querySelector(`#${rowId} .room-select`);
+            if (roomSelect) {
+                roomSelect.value = pendingExtraContractRoomId;
+                loadRoomDetails(roomSelect, roomRowCounter);
+                pendingExtraContractRoomId = null;
+            }
+        }
     }
 }
 
