@@ -23,7 +23,7 @@ class JobScheduleDisplayTypeTest extends TestCase
     {
         $job = $this->makeMaterialCheckedService('service_first', ['unit_only']);
 
-        $this->assertSame('Check (CHK)', $job->display_type);
+        $this->assertSame('Job Check', $job->display_type);
     }
 
     public function test_refill_only_service_still_displays_as_service(): void

@@ -92,6 +92,32 @@ Shared services:
 - `DocumentNumberService`: document/job/invoice style numbering support.
 - `PhotoUploadService`, `DigitalSignatureService`, `GPSLocationService`, `QRCodeScannerService`, `SmartScentApiService`, `MobileSyncService`.
 
+## Job Type & Display Label Rules (CLIENT-CONFIRMED — do not change)
+
+Official, client-approved status labels and document codes. Load-bearing business rules — **do not rename labels, change doc-code prefixes, or alter derivation logic without explicit user approval.** Keep this table and the code in sync.
+
+| Rental Type | Event | Status label (`display_type`) | Doc code |
+|---|---|---|---|
+| — | Install Free | `Install Free` | IF |
+| — | Remove Free | `Remove Free` | RF |
+| **Unit + Refill** | Install (initial) | `Install (IR)` | IR |
+| | First service | `Service Pertama (CSR)` | CSR |
+| | Subsequent service periods | `Service` | CSR |
+| | Remove | `Remove` | RV |
+| **Unit Only** | First install | `Install (IR)` | IR |
+| | **Install, subsequent periods** | **`Job Check`** | **IR** |
+| | Remove | `Remove` | RV |
+| **Refill Only** | First service | `Service Pertama (CSR)` | CSR |
+| | Subsequent service periods | `Service` | CSR |
+
+Implementation facts to preserve:
+
+- **`Job Check` is a DERIVED display label, not a stored `type`.** No `check` type exists in the data. It is computed in `JobSchedule::getDisplayTypeAttribute()` (`app/Models/JobSchedule.php`): a job displays `Job Check` only when `type` ∈ (`service`, `service_first`, `service_routine`) **AND** `material_checked` is true **AND** every room resolves to `unit_only` (`hasOnlyRentalFlow(['unit_only'])`). A single `refill_only` room breaks it and the label falls back to `Service` / `Service Routine`.
+- The label string is exactly **`Job Check`** (no `(CHK)` suffix). Frontend `isCheckJobType()` in `resources/views/operational/job-schedules/index.blade.php` matches on the substring `check`/`chk`, so the label MUST keep the word "check".
+- `service` = ad-hoc/manual service; `service_routine` = auto-generated from a contract's periodic schedule (`ServiceSchedulingService` / `PeriodicJob`). Both render the `customer_service_report` (CSR) document.
+- Unit-only periodic jobs keep the **IR** document-number prefix even though their stored `type` is `service_routine` and label is `Job Check` — prefix and type intentionally differ; do not "fix" the prefix.
+- Locked by `tests/Unit/JobScheduleDisplayTypeTest.php`. If you must touch the logic, update that test and confirm it passes.
+
 ## API Patterns In This Codebase
 
 Auth:

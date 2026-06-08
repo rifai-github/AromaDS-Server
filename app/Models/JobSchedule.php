@@ -499,7 +499,7 @@ class JobSchedule extends Model
             'service' => 'Service',
             'service_first' => 'Service Pertama (CSR)',
             'service_routine' => 'Service Routine',
-            'check' => 'Check (CHK)',
+            'check' => 'Job Check',
             'remove' => 'Remove',
             'remove_free' => 'Remove Free',
             'maintenance' => 'Maintenance',
@@ -510,7 +510,7 @@ class JobSchedule extends Model
             && $this->material_checked
             && $this->hasOnlyRentalFlow(['unit_only'])
         ) {
-            return 'Check (CHK)';
+            return 'Job Check';
         }
         
         return $typeLabels[$type] ?? ucfirst(str_replace('_', ' ', $this->type ?? '-'));
