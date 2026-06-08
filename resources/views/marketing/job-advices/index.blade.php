@@ -2106,6 +2106,14 @@ function loadExtraOnWallUnits(marketingId = null) {
 }
 
 window.applyExtraUnitOnWallSelection = function() {
+    // Re-entry guard: restoreSelectedUnit() re-triggers a change event on this
+    // same <select> (Select2 relays change.select2 to the native onchange), which
+    // fires this handler again. The setTimeout(restoreSelectedUnit) calls run AFTER
+    // the promise's .finally() clears extraUnitApplying, so a plain flag check is
+    // not enough — restoreSelectedUnit suppresses the event synchronously around
+    // its own .trigger() via extraUnitRestoring instead.
+    if (extraUnitApplying || extraUnitRestoring) return;
+
     const unitSelect = document.getElementById('extra_unit_on_wall_id');
     if (!unitSelect || !unitSelect.value) return;
 
@@ -2120,6 +2128,7 @@ window.applyExtraUnitOnWallSelection = function() {
 
     if (!contractId) {
         alert('Contract terkait unit ini belum dapat dideteksi.');
+        extraUnitApplying = false;
         return;
     }
 
@@ -2141,7 +2150,14 @@ window.applyExtraUnitOnWallSelection = function() {
 
         currentUnitSelect.value = selectedUnitId;
         if (typeof $ !== 'undefined' && $.fn.select2) {
-            $('#extra_unit_on_wall_id').val(String(selectedUnitId)).trigger('change.select2');
+            // Suppress the re-entrant onchange that this trigger would otherwise
+            // cause; clear the flag synchronously once the trigger has returned.
+            extraUnitRestoring = true;
+            try {
+                $('#extra_unit_on_wall_id').val(String(selectedUnitId)).trigger('change.select2');
+            } finally {
+                extraUnitRestoring = false;
+            }
         }
     };
 
@@ -2352,6 +2368,7 @@ let pendingExtraContractRoomId = null;
 let contractJobAdviceJqueryBound = false;
 let extraOnWallRequestToken = 0;
 let extraUnitApplying = false;
+let extraUnitRestoring = false;
 
 function loadContractRoomsForJobAdvice(contractSelectElement) {
     const contractId = contractSelectElement?.value;
