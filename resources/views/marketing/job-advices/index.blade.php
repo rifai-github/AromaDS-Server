@@ -2063,6 +2063,7 @@ function loadExtraOnWallUnits(marketingId = null) {
             option.dataset.contractNumber = unit.contract_number || '';
             option.dataset.contractRoomId = unit.contract_room_id || '';
             option.dataset.marketingId = unit.marketing_id || '';
+            option.dataset.customerId = unit.customer_id || '';
 
             const serial = unit.serial_number ? `SN ${unit.serial_number}` : 'No SN';
             const room = unit.room_name || 'Unknown Room';
@@ -2105,6 +2106,7 @@ window.applyExtraUnitOnWallSelection = function() {
     const contractId = selectedOption?.dataset?.contractId;
     const marketingId = selectedOption?.dataset?.marketingId;
     const contractRoomId = selectedOption?.dataset?.contractRoomId;
+    const customerId = selectedOption?.dataset?.customerId;
     const selectedOptionHtml = selectedOption?.outerHTML || '';
 
     if (!contractId) {
@@ -2113,6 +2115,9 @@ window.applyExtraUnitOnWallSelection = function() {
     }
 
     pendingExtraContractRoomId = contractRoomId || null;
+    if (customerId) {
+        loadCustomerContacts(customerId);
+    }
 
     const restoreSelectedUnit = () => {
         if (!selectedUnitId) return;
@@ -3687,10 +3692,12 @@ function loadCustomerContacts(customerId) {
             let options = '<option value="">Select PIC</option>';
             const contacts = data.data || data;
             
-            if (Array.isArray(contacts)) {
+            if (Array.isArray(contacts) && contacts.length > 0) {
                 contacts.forEach(function(contact) {
                     options += '<option value="' + contact.id + '" data-email="' + (contact.email || '') + '" data-phone="' + (contact.phone || '') + '">' + contact.name + '</option>';
                 });
+            } else {
+                options += '<option value="" disabled>No PIC found - use + to add</option>';
             }
             
             console.log('PIC contacts loaded:', Array.isArray(contacts) ? contacts.length : 0, 'contacts for customer', customerId);
