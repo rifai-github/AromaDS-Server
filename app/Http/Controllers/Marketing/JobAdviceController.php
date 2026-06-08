@@ -404,6 +404,10 @@ class JobAdviceController extends Controller
     {
         \Log::info('Job Advice Store Payload:', $request->all());
 
+        if ($this->shouldSelectRoomsAfterJobAdviceCreate($request->type)) {
+            $request->merge(['rooms' => []]);
+        }
+
         // MOM9: Either contract_id OR quotation_id is required (for Install Free from Quotation)
         $request->validate([
             'contract_id' => 'nullable|exists:contracts,id',
@@ -811,6 +815,16 @@ class JobAdviceController extends Controller
     private function nullableInt($value): ?int
     {
         return $value === null || $value === '' ? null : (int) $value;
+    }
+
+    private function normalizedJobAdviceType($type): string
+    {
+        return str_replace(' ', '_', strtolower(trim((string) $type)));
+    }
+
+    private function shouldSelectRoomsAfterJobAdviceCreate($type): bool
+    {
+        return in_array($this->normalizedJobAdviceType($type), ['install', 'install_free'], true);
     }
 
     private function duplicateJobAdviceResponse(Request $request, JobAdvice $jobAdvice)
@@ -3432,6 +3446,15 @@ class JobAdviceController extends Controller
                     \Log::warning("Room data missing both contract_room_id and quotation_room_id", ['room_data' => $roomData]);
                     continue;
                 }
+
+                if ($this->shouldSelectRoomsAfterJobAdviceCreate($jobAdvice->type)) {
+                    unset(
+                        $roomData['contract_rental_id'],
+                        $roomData['quotation_rental_id'],
+                        $roomData['quotation_detail_id'],
+                        $roomData['rental_product_id']
+                    );
+                }
                 
                 // BACKEND VALIDATION FOR INSTALL JOB
                 // User Request: "satu ruangan bisa lebih dari 1 unit dari contract/quotation yg berbeda"
@@ -3693,6 +3716,14 @@ class JobAdviceController extends Controller
      */
     public function updateRoomRental(Request $request, \App\Models\JobAdviceRoom $jobAdviceRoom)
     {
+        $jobAdviceRoom->loadMissing('jobAdvice');
+        if ($this->normalizedJobAdviceType($jobAdviceRoom->jobAdvice?->type) !== 'change_rental') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Perubahan rental harus melalui JA Change Rental.',
+            ], 422);
+        }
+
          $request->validate([
             'rental_product_id' => 'required|exists:master_rentals,id',
             'quantity' => 'nullable|integer|min:1'

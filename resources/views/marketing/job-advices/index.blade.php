@@ -1527,6 +1527,26 @@ function isInstallFreeType(type) {
     return ['install_free', 'install free'].includes(String(type || '').toLowerCase());
 }
 
+function normalizeJobAdviceType(type) {
+    return String(type || '').toLowerCase().replace(/\s+/g, '_');
+}
+
+function shouldSelectRoomsAfterCreate(type) {
+    return ['install', 'install_free'].includes(normalizeJobAdviceType(type));
+}
+
+function resetCreateRoomSelection() {
+    const roomsSection = document.getElementById('roomsSection');
+    const roomsContainer = document.getElementById('roomsContainer');
+
+    if (roomsSection) roomsSection.style.display = 'none';
+    if (roomsContainer) roomsContainer.innerHTML = '';
+
+    contractRooms = [];
+    quotationRooms = [];
+    roomRowCounter = 0;
+}
+
 function addDaysToDateValue(dateValue, days) {
     if (!dateValue) return '';
     const date = new Date(`${dateValue}T00:00:00`);
@@ -1754,6 +1774,7 @@ window.toggleSourceType = function() {
     const contractSelect = document.getElementById('contract_id');
     const quotationSelect = document.getElementById('quotation_id');
     const typeSelect = document.getElementById('modal_type');
+    const isExtra = normalizeJobAdviceType(typeSelect?.value) === 'extra';
     
     if (sourceType === 'quotation') {
         // Show quotation, hide contract
@@ -1772,13 +1793,19 @@ window.toggleSourceType = function() {
         }
     } else {
         // Show contract, hide quotation
-        if (contractGroup) contractGroup.style.display = 'block';
+        if (contractGroup) contractGroup.style.display = isExtra ? 'none' : 'block';
         if (quotationGroup) quotationGroup.style.display = 'none';
         if (quotationSelect) {
             quotationSelect.removeAttribute('required');
             quotationSelect.value = '';
         }
-        if (contractSelect) contractSelect.setAttribute('required', 'required');
+        if (contractSelect) {
+            if (isExtra) {
+                contractSelect.removeAttribute('required');
+            } else {
+                contractSelect.setAttribute('required', 'required');
+            }
+        }
     }
 }
 
@@ -1794,10 +1821,12 @@ window.toggleRemoveDate = function() {
     const extraUnitOnWallSelect = document.getElementById('extra_unit_on_wall_id');
     const withInvoicingSelect = document.getElementById('with_invoicing');
     const withMaterialsSelect = document.getElementById('with_materials');
+    const contractGroup = document.getElementById('contract_group');
+    const contractSelect = document.getElementById('contract_id');
     
     if (typeSelect && removeDateGroup) {
         const type = typeSelect.value;
-        const normalizedType = String(type || '').toLowerCase().replace(/\s+/g, '_');
+        const normalizedType = normalizeJobAdviceType(type);
         if (type === 'install_free' || type === 'install free') {
             removeDateGroup.style.display = 'block';
             if (removeDateInput) removeDateInput.setAttribute('required', 'required');
@@ -1827,6 +1856,16 @@ window.toggleRemoveDate = function() {
             if (extraUnitOnWallGroup) {
                 extraUnitOnWallGroup.style.display = shouldShowExtraOptions ? 'flex' : 'none';
             }
+            if (contractGroup) {
+                contractGroup.style.display = shouldShowExtraOptions ? 'none' : 'block';
+            }
+            if (contractSelect) {
+                if (shouldShowExtraOptions) {
+                    contractSelect.removeAttribute('required');
+                } else {
+                    contractSelect.setAttribute('required', 'required');
+                }
+            }
 
             if (!shouldShowExtraOptions) {
                 if (withInvoicingSelect) withInvoicingSelect.value = '0';
@@ -1841,6 +1880,11 @@ window.toggleRemoveDate = function() {
                 const requestBySelect = document.getElementById('request_by');
                 loadExtraOnWallUnits(requestBySelect?.value || null);
             }
+        }
+
+        if (shouldSelectRoomsAfterCreate(type)) {
+            resetCreateRoomSelection();
+            return;
         }
 
         // MOM: Reload contract rooms if contract is selected (to reload rooms filter based on new type)
@@ -2284,6 +2328,10 @@ function loadContractRoomsForJobAdvice(contractSelectElement) {
 
     const typeSelect = document.getElementById('modal_type');
     const typeValue = typeSelect ? typeSelect.value : '';
+    if (shouldSelectRoomsAfterCreate(typeValue)) {
+        resetCreateRoomSelection();
+        return;
+    }
 
     if (roomsContainer) roomsContainer.innerHTML = '<p class="text-sm text-gray-500 py-2">Loading rooms...</p>';
     if (roomsSection) roomsSection.style.display = 'block';
@@ -2371,6 +2419,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // MOM: Pass job advice type to allow filtering logic
     const typeSelect = document.getElementById('modal_type');
     const typeValue = typeSelect ? typeSelect.value : '';
+    if (shouldSelectRoomsAfterCreate(typeValue)) {
+        resetCreateRoomSelection();
+        return;
+    }
     
     // Show partial loading for rooms
     if (roomsContainer) roomsContainer.innerHTML = '<p class="text-sm text-gray-500 py-2">Loading rooms...</p>';
@@ -2497,6 +2549,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load PIC immediately
     if (customerId) {
         loadCustomerContacts(customerId);
+    }
+
+    const typeSelect = document.getElementById('modal_type');
+    const typeValue = typeSelect ? typeSelect.value : '';
+    if (shouldSelectRoomsAfterCreate(typeValue)) {
+        resetCreateRoomSelection();
+        return;
     }
 
     // Show partial loading
@@ -3315,30 +3374,32 @@ window.submitForm = function(event, id = null) {
     
     // MOM6: Collect rooms data as array
     const rooms = [];
-    const roomInputs = document.querySelectorAll('.room-row');
-    roomInputs.forEach((roomRow, index) => {
-        const contractRoomId = roomRow.querySelector('[name*="[contract_room_id]"]')?.value;
-        const quotationRoomId = roomRow.querySelector('[name*="[quotation_room_id]"]')?.value;
-        const quotationRentalId = roomRow.querySelector('[name*="[quotation_rental_id]"]')?.value;
-        const quotationDetailId = roomRow.querySelector('[name*="[quotation_detail_id]"]')?.value;
-        const rentalProductId = roomRow.querySelector('[name*="[rental_product_id]"]')?.value;
-        const quantity = roomRow.querySelector('[name*="[quantity]"]')?.value;
-        const isTrial = roomRow.querySelector('[name*="[is_trial]"]')?.value;
-        const notes = roomRow.querySelector('[name*="[notes]"]')?.value;
-        
-        if ((contractRoomId || quotationRoomId) && rentalProductId) {
-            rooms.push({
-                contract_room_id: contractRoomId || null,
-                quotation_room_id: quotationRoomId || null,
-                quotation_rental_id: quotationRentalId || null,
-                quotation_detail_id: quotationDetailId || null,
-                rental_product_id: rentalProductId,
-                quantity: quantity || 1,
-                is_trial: isTrial === '1' ? true : false,
-                notes: notes || ''
-            });
-        }
-    });
+    if (!shouldSelectRoomsAfterCreate(data.type)) {
+        const roomInputs = document.querySelectorAll('.room-row');
+        roomInputs.forEach((roomRow, index) => {
+            const contractRoomId = roomRow.querySelector('[name*="[contract_room_id]"]')?.value;
+            const quotationRoomId = roomRow.querySelector('[name*="[quotation_room_id]"]')?.value;
+            const quotationRentalId = roomRow.querySelector('[name*="[quotation_rental_id]"]')?.value;
+            const quotationDetailId = roomRow.querySelector('[name*="[quotation_detail_id]"]')?.value;
+            const rentalProductId = roomRow.querySelector('[name*="[rental_product_id]"]')?.value;
+            const quantity = roomRow.querySelector('[name*="[quantity]"]')?.value;
+            const isTrial = roomRow.querySelector('[name*="[is_trial]"]')?.value;
+            const notes = roomRow.querySelector('[name*="[notes]"]')?.value;
+            
+            if ((contractRoomId || quotationRoomId) && rentalProductId) {
+                rooms.push({
+                    contract_room_id: contractRoomId || null,
+                    quotation_room_id: quotationRoomId || null,
+                    quotation_rental_id: quotationRentalId || null,
+                    quotation_detail_id: quotationDetailId || null,
+                    rental_product_id: rentalProductId,
+                    quantity: quantity || 1,
+                    is_trial: isTrial === '1' ? true : false,
+                    notes: notes || ''
+                });
+            }
+        });
+    }
     
     // Remove individual room fields and add as array
     Object.keys(data).forEach(key => {

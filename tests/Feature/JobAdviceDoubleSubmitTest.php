@@ -230,6 +230,71 @@ class JobAdviceDoubleSubmitTest extends TestCase
         ]);
     }
 
+    public function test_install_job_advice_ignores_rental_rooms_sent_during_create(): void
+    {
+        $controller = app(JobAdviceController::class);
+
+        $response = $controller->store($this->createRequest([
+            'expected_date' => '2026-06-06',
+            'rooms' => [
+                [
+                    'contract_room_id' => 999,
+                    'rental_product_id' => 999,
+                    'quantity' => 1,
+                ],
+            ],
+        ]));
+
+        $payload = $response->getData(true);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertDatabaseHas('job_advices', [
+            'contract_id' => 20,
+            'type' => 'Install',
+        ]);
+        $this->assertDatabaseCount('job_advice_rooms', 0);
+    }
+
+    public function test_install_job_advice_room_rental_cannot_be_updated_directly(): void
+    {
+        $controller = app(JobAdviceController::class);
+
+        DB::table('job_advices')->insert([
+            'id' => 50,
+            'contract_id' => 20,
+            'customer_id' => 10,
+            'type' => 'Install',
+            'status' => 'draft',
+            'expected_date' => '2026-06-07',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_advice_rooms')->insert([
+            'id' => 60,
+            'job_advice_id' => 50,
+            'rental_product_id' => 1,
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $controller->updateRoomRental(
+            Request::create('/marketing/job-advices/rooms/60/update-rental', 'POST', [
+                'rental_product_id' => 999,
+                'quantity' => 2,
+            ]),
+            \App\Models\JobAdviceRoom::findOrFail(60)
+        );
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertSame('Perubahan rental harus melalui JA Change Rental.', $response->getData(true)['message']);
+        $this->assertDatabaseHas('job_advice_rooms', [
+            'id' => 60,
+            'rental_product_id' => 1,
+            'quantity' => 1,
+        ]);
+    }
+
     private function createRequest(array $overrides = []): Request
     {
         $request = Request::create('/marketing/job-advices', 'POST', array_merge([
