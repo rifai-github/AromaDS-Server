@@ -17,6 +17,9 @@ use Illuminate\Support\Facades\DB;
 
 class WarehouseController extends Controller
 {
+    private const BRANCH_WAREHOUSE_TYPE_CODE = 'BRANCH';
+    private const CENTER_WAREHOUSE_TYPE_CODE = 'CENTER';
+
     use ColumnFilterTrait, \App\Http\Traits\AccessControlFilterTrait;
 
     public function index(Request $request)
@@ -134,6 +137,11 @@ class WarehouseController extends Controller
 
     public function store(Request $request)
     {
+        $request->merge([
+            'warehouse_type_id' => $request->input('warehouse_type_id')
+                ?: $this->resolveDefaultWarehouseTypeId($request),
+        ]);
+
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:100',
             'branch_id' => 'required|exists:branches,id',
@@ -268,6 +276,11 @@ class WarehouseController extends Controller
 
     public function update(Request $request, Warehouse $warehouse)
     {
+        $request->merge([
+            'warehouse_type_id' => $request->input('warehouse_type_id')
+                ?: $this->resolveDefaultWarehouseTypeId($request),
+        ]);
+
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:100',
             'branch_id' => 'required|exists:branches,id',
@@ -889,5 +902,34 @@ class WarehouseController extends Controller
         }
 
         return true;
+    }
+
+    private function resolveDefaultWarehouseTypeId(Request $request): int
+    {
+        $isCenter = filter_var($request->input('is_center', false), FILTER_VALIDATE_BOOLEAN);
+        $code = $isCenter ? self::CENTER_WAREHOUSE_TYPE_CODE : self::BRANCH_WAREHOUSE_TYPE_CODE;
+        $name = $isCenter ? 'Central Warehouse' : 'Branch Warehouse';
+
+        $type = WarehouseType::where('code', $code)->first()
+            ?: WarehouseType::where('name', $name)->first();
+
+        if (! $type) {
+            $type = WarehouseType::create([
+                'code' => $code,
+                'name' => $name,
+                'description' => $isCenter
+                    ? 'Default type for central warehouse locations.'
+                    : 'Default type for single warehouse per branch flow.',
+                'is_active' => true,
+            ]);
+        } elseif (! $type->is_active || $type->code !== $code || $type->name !== $name) {
+            $type->update([
+                'code' => $code,
+                'name' => $name,
+                'is_active' => true,
+            ]);
+        }
+
+        return $type->id;
     }
 }

@@ -434,7 +434,7 @@
                     </div>
                 </div>
                 <div class="info-item">
-                    <div class="info-label">Warehouse Type</div>
+                    <div class="info-label">Location Type</div>
                     <div class="info-value">
                         @if($warehouse->warehouseType)
                             {{ $warehouse->warehouseType->name }}

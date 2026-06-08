@@ -819,7 +819,7 @@ input[type="date"]:focus, input[type="text"]:focus, select:focus {
                         <th data-column="warehouse_code">Warehouse Code</th>
                         <th data-column="name">Warehouse Name</th>
                         <th data-column="branch__name">Branch</th>
-                        <th data-column="warehouseType__name">Type</th>
+                        <th data-column="warehouseType__name">Location Type</th>
                         <th data-column="address">Address</th>
                         <th data-column="manager">Manager</th>
                         <th data-column="is_center">Center</th>
@@ -1115,7 +1115,6 @@ function openCreateModal() {
         .then(response => response.json())
         .then(result => {
             const branches = result.data.branches;
-            const warehouseTypes = result.data.warehouse_types;
             const users = result.data.users || [];
             const hasCenterWarehouse = result.data.has_center_warehouse;
             
@@ -1137,13 +1136,6 @@ function openCreateModal() {
                                 <select name="branch_id" class="form-input" required>
                                     <option value="">Select Branch</option>
                                     ${branches.map(branch => `<option value="${branch.id}">${branch.name}</option>`).join('')}
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Warehouse Type *</label>
-                                <select name="warehouse_type_id" class="form-input" required>
-                                    <option value="">Select Type</option>
-                                    ${warehouseTypes.map(type => `<option value="${type.id}">${type.name}</option>`).join('')}
                                 </select>
                             </div>
                             <div class="form-group">
@@ -1304,7 +1296,7 @@ function openViewModal(id) {
                             <p class="detail-value">${data.branch?.name || '-'}</p>
                         </div>
                         <div class="detail-item">
-                            <label class="form-label">Warehouse Type</label>
+                            <label class="form-label">Location Type</label>
                             <p class="detail-value">${data.warehouse_type?.name || '-'}</p>
                         </div>
                         <div class="detail-item">
@@ -1424,7 +1416,6 @@ function openEditModal(id) {
             const data = result.data;
             const warehouse = data.warehouse;
             const branches = data.branches;
-            const warehouseTypes = data.warehouse_types;
             const users = data.users || [];
             const hasCenterWarehouse = data.has_center_warehouse;
             
@@ -1446,13 +1437,6 @@ function openEditModal(id) {
                                 <select name="branch_id" class="form-input" required>
                                     <option value="">Select Branch</option>
                                     ${branches.map(branch => `<option value="${branch.id}" ${branch.id == warehouse.branch_id ? 'selected' : ''}>${branch.name}</option>`).join('')}
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Warehouse Type *</label>
-                                <select name="warehouse_type_id" class="form-input" required>
-                                    <option value="">Select Type</option>
-                                    ${warehouseTypes.map(type => `<option value="${type.id}" ${type.id == warehouse.warehouse_type_id ? 'selected' : ''}>${type.name}</option>`).join('')}
                                 </select>
                             </div>
                             <div class="form-group">

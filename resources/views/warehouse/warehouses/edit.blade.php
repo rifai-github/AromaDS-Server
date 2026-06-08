@@ -203,23 +203,6 @@
                         @enderror
                     </div>
 
-                    <!-- Warehouse Type -->
-                    <div class="form-group">
-                        <label class="form-label required">Warehouse Type</label>
-                        <select name="warehouse_type_id" class="form-select" required>
-                            <option value="">Select Warehouse Type</option>
-                            @foreach($warehouseTypes as $type)
-                                <option value="{{ $type->id }}" 
-                                        {{ old('warehouse_type_id', $warehouse->warehouse_type_id) == $type->id ? 'selected' : '' }}>
-                                    {{ $type->name }}
-                                </option>
-                            @endforeach
-                        </select>
-                        @error('warehouse_type_id')
-                            <span class="error-message">{{ $message }}</span>
-                        @enderror
-                    </div>
-
                     <!-- Type (Center/Branch) -->
                     <div class="form-group">
                         <label class="form-label required">Type</label>
