@@ -128,6 +128,49 @@ class JobAssignMaterialIssueController extends Controller
         return $currentBrandLine === $newBrandLine;
     }
 
+    private function normalizePackageMaterialFamily(?MasterProduct $product): ?string
+    {
+        if (!$product) {
+            return null;
+        }
+
+        $source = trim((string) ($product->variant_name ?: $product->name));
+        if ($source === '') {
+            return null;
+        }
+
+        $normalized = strtolower($source);
+        $normalized = preg_replace('/\b\d+(?:\.\d+)?\s*(ml|liter|ltr|l)\b/i', ' ', $normalized);
+        $normalized = preg_replace('/\[[^\]]*\]|\([^\)]*\)/', ' ', $normalized);
+        $normalized = preg_replace('/[-_]+/', ' ', $normalized);
+        $normalized = preg_replace('/\s+/', ' ', trim($normalized));
+
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    private function productsHaveSamePackageMaterialFamily(?MasterProduct $currentProduct, ?MasterProduct $newProduct): bool
+    {
+        if (!$currentProduct || !$newProduct) {
+            return false;
+        }
+
+        if ((int) $currentProduct->id === (int) $newProduct->id) {
+            return true;
+        }
+
+        $currentFamily = $this->normalizePackageMaterialFamily($currentProduct);
+        $newFamily = $this->normalizePackageMaterialFamily($newProduct);
+
+        if (!$currentFamily || !$newFamily || $currentFamily !== $newFamily) {
+            return false;
+        }
+
+        $currentBrandLine = $this->normalizeProductBrandLine($currentProduct->brand_line);
+        $newBrandLine = $this->normalizeProductBrandLine($newProduct->brand_line);
+
+        return !$currentBrandLine || !$newBrandLine || $currentBrandLine === $newBrandLine;
+    }
+
     private function isAromaMaterialProduct(?MasterProduct $product): bool
     {
         if (!$product) {
@@ -5013,6 +5056,16 @@ class JobAssignMaterialIssueController extends Controller
                         'message' => 'Material ini tidak termasuk daftar material yang dipilih untuk detail rental tersebut.'
                     ], 422);
                 }
+            }
+
+            if ($productChanged
+                && ($item->is_copied || $this->isPackageConversionMaterial($item->product))
+                && !$this->productsHaveSamePackageMaterialFamily($item->product, $newProduct)
+            ) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Material copy/split hanya boleh diganti ke material yang sama dengan kemasan berbeda.'
+                ], 422);
             }
 
             if ($productChanged && !$isAllowedProductForRentalDetail && !$this->productsHaveSameBrandLine($item->product, $newProduct)) {

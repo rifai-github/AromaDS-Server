@@ -1301,15 +1301,23 @@
                                             );
 
                                             if ($hasStrictAllowedProductList) {
-                                                if (in_array((int) $p->id, $allowedProductIds, true) || (int) $p->id === (int) $item->product_id) {
-                                                    return true;
-                                                }
+                                                if ($hasSpecificVariant) {
+                                                    if ((int) $p->id === (int) $item->product_id) {
+                                                        return true;
+                                                    }
 
-                                                if ($isAromaType && $sameVariant) {
+                                                    if (!$sameVariant) {
+                                                        return false;
+                                                    }
+
                                                     if ($normalizedCurrentBrandLine && $productBrandLine && $normalizedCurrentBrandLine !== $productBrandLine) {
                                                         return false;
                                                     }
 
+                                                    return true;
+                                                }
+
+                                                if (in_array((int) $p->id, $allowedProductIds, true) || (int) $p->id === (int) $item->product_id) {
                                                     return true;
                                                 }
 
@@ -1800,6 +1808,75 @@ function getProductBomPerUnit(product) {
     return parseFloat(product.bom_quantity || 0);
 }
 
+function normalizeProductBrandLine(product) {
+    return String(product?.brand_line || '').trim().toLowerCase().replace(/\s+/g, ' ') || null;
+}
+
+function normalizePackageMaterialFamily(product) {
+    const source = String(product?.variant_name || product?.name || '').trim();
+    if (!source) {
+        return null;
+    }
+
+    return source
+        .toLowerCase()
+        .replace(/\b\d+(?:\.\d+)?\s*(ml|liter|ltr|l)\b/gi, ' ')
+        .replace(/\[[^\]]*\]|\([^\)]*\)/g, ' ')
+        .replace(/[-_]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim() || null;
+}
+
+function isPackageConversionMaterialProduct(product) {
+    if (!product) {
+        return false;
+    }
+
+    const haystack = [
+        product.productType?.name,
+        product.product_type?.name,
+        product.productCategory?.name,
+        product.product_category?.name,
+        product.name,
+        product.sku,
+        product.variant_name,
+        product.brand_line,
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    if (haystack.includes('hand sanitizer') || haystack.includes('sanitizer') || /\bhs\s*refill\b/.test(haystack) || /\bhsr[-\s]/.test(haystack) || /\bhsd[-\s]/.test(haystack)) {
+        return false;
+    }
+
+    return ['aroma', 'refill', 'variant', 'fragrance', 'scent', 'squash', 'essence', 'signature', 'artisan', 'luxo'].some(keyword => haystack.includes(keyword))
+        || /\boil\b/.test(haystack);
+}
+
+function filterSamePackageMaterialFamily(currentProduct, productList) {
+    if (!isPackageConversionMaterialProduct(currentProduct)) {
+        return productList;
+    }
+
+    const currentFamily = normalizePackageMaterialFamily(currentProduct);
+    const currentBrandLine = normalizeProductBrandLine(currentProduct);
+
+    if (!currentFamily) {
+        return productList;
+    }
+
+    return productList.filter(product => {
+        if (String(product.id) === String(currentProduct.id)) {
+            return true;
+        }
+
+        if (normalizePackageMaterialFamily(product) !== currentFamily) {
+            return false;
+        }
+
+        const productBrandLine = normalizeProductBrandLine(product);
+        return !currentBrandLine || !productBrandLine || currentBrandLine === productBrandLine;
+    });
+}
+
 // Modal functions
 function openModal(title) {
     document.getElementById('modalTitle').textContent = title;
@@ -2132,6 +2209,8 @@ function openEditModal(id) {
                                         } else if (productCategoryId) {
                                             filteredProducts = availableProducts.filter(p => p.product_category_id == productCategoryId || (p.productCategory && p.productCategory.id == productCategoryId));
                                         }
+
+                                        filteredProducts = filterSamePackageMaterialFamily(item.product, filteredProducts);
                                         
                                         // Unit row styling
                                         const rowStyle = isUnit ? 'background-color: #f9fafb; opacity: 0.8;' : '';
@@ -2157,7 +2236,7 @@ function openEditModal(id) {
                                         } else {
                                             let optionProducts = filteredProducts.slice();
                                             const currentProductAllowed = optionProducts.some(p => String(p.id) === String(item.product.id));
-                                            if (allowedProductIds.length === 0 && !currentProductAllowed) {
+                                            if (!currentProductAllowed) {
                                                 optionProducts.unshift(item.product);
                                             }
 
@@ -2345,6 +2424,7 @@ function handleComponentChange(selectElement, rowIndex) {
         .map(id => id.trim())
         .filter(Boolean);
     const productCategoryId = productSelect.dataset.productCategoryId || '';
+    const originalProduct = window.availableProducts.find(p => String(p.id) === String(productSelect.dataset.originalProductId));
 
     let filteredProducts = window.availableProducts;
     if (allowedProductIds.length > 0) {
@@ -2354,6 +2434,8 @@ function handleComponentChange(selectElement, rowIndex) {
     } else if (productCategoryId) {
         filteredProducts = window.availableProducts.filter(p => p.product_category_id == productCategoryId || (p.productCategory && p.productCategory.id == productCategoryId));
     }
+
+    filteredProducts = filterSamePackageMaterialFamily(originalProduct, filteredProducts);
     
     // Rebuild options
     let options = '<option value="">-- Select Product --</option>';

@@ -106,6 +106,29 @@ class MaterialAromaClassificationTest extends TestCase
         $this->assertFalse($method->invoke($controller, $product));
     }
 
+    public function test_job_assign_material_issue_package_split_must_keep_same_material_family(): void
+    {
+        $controller = new JobAssignMaterialIssueController();
+        $method = (new ReflectionClass($controller))->getMethod('productsHaveSamePackageMaterialFamily');
+        $method->setAccessible(true);
+
+        $lemon500 = $this->product('Lemon Squash 500ml', 'LEM-500', 'Aroma Refill', null, null, 'Lemon Squash');
+        $lemon500->id = 1;
+
+        $lemon250 = $this->product('Lemon Squash 250ml', 'LEM-250', 'Aroma Refill', null, null, 'Lemon Squash');
+        $lemon250->id = 2;
+
+        $whiteRose50 = $this->product('White Rose 50ml', 'WRO-50', 'Aroma Refill', null, null, 'White Rose');
+        $whiteRose50->id = 3;
+
+        $cleaner100 = $this->product('Cleaner 100ml', 'CLN-100', 'Cleaner', 'Cleaner', null, 'Cleaner');
+        $cleaner100->id = 4;
+
+        $this->assertTrue($method->invoke($controller, $lemon500, $lemon250));
+        $this->assertFalse($method->invoke($controller, $lemon500, $whiteRose50));
+        $this->assertFalse($method->invoke($controller, $lemon500, $cleaner100));
+    }
+
     public function test_job_schedule_uses_selected_material_list_product_when_detail_has_no_default_product(): void
     {
         $controller = new JobScheduleController();
@@ -155,12 +178,14 @@ class MaterialAromaClassificationTest extends TestCase
         string $sku,
         ?string $categoryName,
         ?string $typeName,
-        ?string $brandLine = null
+        ?string $brandLine = null,
+        ?string $variantName = null
     ): MasterProduct {
         $product = new MasterProduct([
             'name' => $name,
             'sku' => $sku,
             'brand_line' => $brandLine,
+            'variant_name' => $variantName,
         ]);
 
         if ($categoryName) {
