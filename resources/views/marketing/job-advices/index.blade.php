@@ -1856,14 +1856,15 @@ window.toggleRemoveDate = function() {
             if (extraUnitOnWallGroup) {
                 extraUnitOnWallGroup.style.display = shouldShowExtraOptions ? 'flex' : 'none';
             }
+            const shouldShowContractReference = !shouldShowExtraOptions && normalizedType !== 'install_free';
             if (contractGroup) {
-                contractGroup.style.display = shouldShowExtraOptions ? 'none' : 'block';
+                contractGroup.style.display = shouldShowContractReference ? 'block' : 'none';
             }
             if (contractSelect) {
-                if (shouldShowExtraOptions) {
-                    contractSelect.removeAttribute('required');
-                } else {
+                if (shouldShowContractReference) {
                     contractSelect.setAttribute('required', 'required');
+                } else {
+                    contractSelect.removeAttribute('required');
                 }
             }
 
