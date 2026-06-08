@@ -1467,18 +1467,7 @@
 
             // Handle PIC selection details display
             $('#customer_contact_id').on('change', function() {
-                const selectedOption = $(this).find('option:selected');
-                const email = selectedOption.data('email');
-                const phone = selectedOption.data('phone');
-                
-                if (email || phone) {
-                    let details = [];
-                    if (phone) details.push('Phone: ' + phone);
-                    if (email) details.push('Email: ' + email);
-                    $('#pic_details').text(details.join(' | ')).show();
-                } else {
-                    $('#pic_details').hide();
-                }
+                setPicDetailsFromSelectedOption(this);
             });
         }
 
@@ -2154,10 +2143,12 @@ window.applyExtraUnitOnWallSelection = function() {
 
             contractSelect.value = contractId;
             if (typeof $ !== 'undefined' && $.fn.select2) {
-                $('#contract_id').val(String(contractId)).trigger('change');
+                $('#contract_id').val(String(contractId)).trigger('change.select2');
             }
-            contractSelect.dispatchEvent(new Event('change', { bubbles: true }));
-            loadContractRoomsForJobAdvice(contractSelect);
+            return loadContractRoomsForJobAdvice(contractSelect);
+        })
+        .then(() => {
+            restoreSelectedUnit();
 
             setTimeout(restoreSelectedUnit, 300);
             setTimeout(restoreSelectedUnit, 900);
@@ -2338,7 +2329,7 @@ function loadContractRoomsForJobAdvice(contractSelectElement) {
         if (roomsSection) roomsSection.style.display = 'none';
         if (roomsContainer) roomsContainer.innerHTML = '';
         contractRooms = [];
-        return;
+        return Promise.resolve();
     }
 
     const selectedOption = contractSelectElement.options[contractSelectElement.selectedIndex];
@@ -2353,13 +2344,13 @@ function loadContractRoomsForJobAdvice(contractSelectElement) {
     const typeValue = typeSelect ? typeSelect.value : '';
     if (shouldSelectRoomsAfterCreate(typeValue)) {
         resetCreateRoomSelection();
-        return;
+        return Promise.resolve();
     }
 
     if (roomsContainer) roomsContainer.innerHTML = '<p class="text-sm text-gray-500 py-2">Loading rooms...</p>';
     if (roomsSection) roomsSection.style.display = 'block';
 
-    Promise.all([
+    return Promise.all([
         fetch(`/api/contracts/${contractId}/for-job-advice?type=${encodeURIComponent(typeValue)}`).then(r => r.json()),
         fetch('/warehouse/rental-products/dropdown').then(r => r.json()).catch(() => ({ data: [] }))
     ]).then(([contractData, rentalsData]) => {
@@ -3670,16 +3661,43 @@ document.head.appendChild(style);
 
 // Global variable to store current customer ID for PIC modal
 let currentCustomerIdForPic = null;
+let customerContactsRequestToken = 0;
+
+function setPicDetailsFromSelectedOption(picSelect) {
+    const selectedOption = picSelect?.options?.[picSelect.selectedIndex];
+    const email = selectedOption?.dataset?.email;
+    const phone = selectedOption?.dataset?.phone;
+    const picDetails = document.getElementById('pic_details');
+
+    if (!picDetails) return;
+
+    if (email || phone) {
+        const details = [];
+        if (phone) details.push('Phone: ' + phone);
+        if (email) details.push('Email: ' + email);
+        picDetails.textContent = details.join(' | ');
+        picDetails.style.display = '';
+    } else {
+        picDetails.textContent = '';
+        picDetails.style.display = 'none';
+    }
+}
 
 // Function to load customer contacts (vanilla JS version)
 function loadCustomerContacts(customerId) {
     currentCustomerIdForPic = customerId;
+    const requestToken = ++customerContactsRequestToken;
     
     const picSelect = document.getElementById('customer_contact_id');
     if (!picSelect) return;
+    const previouslySelectedPicId = picSelect.value;
 
     if (!customerId) {
         picSelect.innerHTML = '<option value="">Select PIC</option>';
+        if (typeof $ !== 'undefined' && typeof $.fn.select2 !== 'undefined') {
+            $(picSelect).val('').trigger('change.select2');
+        }
+        setPicDetailsFromSelectedOption(picSelect);
         return;
     }
 
@@ -3689,18 +3707,23 @@ function loadCustomerContacts(customerId) {
             return response.json();
         })
         .then(function(data) {
+            if (requestToken !== customerContactsRequestToken || String(customerId) !== String(currentCustomerIdForPic)) {
+                return;
+            }
+
             let options = '<option value="">Select PIC</option>';
             const contacts = data.data || data;
+            const contactsArray = Array.isArray(contacts) ? contacts : [];
             
-            if (Array.isArray(contacts) && contacts.length > 0) {
-                contacts.forEach(function(contact) {
+            if (contactsArray.length > 0) {
+                contactsArray.forEach(function(contact) {
                     options += '<option value="' + contact.id + '" data-email="' + (contact.email || '') + '" data-phone="' + (contact.phone || '') + '">' + contact.name + '</option>';
                 });
             } else {
                 options += '<option value="" disabled>No PIC found - use + to add</option>';
             }
             
-            console.log('PIC contacts loaded:', Array.isArray(contacts) ? contacts.length : 0, 'contacts for customer', customerId);
+            console.log('PIC contacts loaded:', contactsArray.length, 'contacts for customer', customerId);
             
             // Destroy Select2 first, update options, then re-initialize
             if (typeof $ !== 'undefined' && typeof $.fn.select2 !== 'undefined') {
@@ -3714,6 +3737,11 @@ function loadCustomerContacts(customerId) {
             }
             
             picSelect.innerHTML = options;
+            if (previouslySelectedPicId && contactsArray.some(contact => String(contact.id) === String(previouslySelectedPicId))) {
+                picSelect.value = previouslySelectedPicId;
+            } else {
+                picSelect.value = '';
+            }
             // Ensure the select is visible (Select2 destroy should handle this, but just in case)
             picSelect.style.display = '';
             
@@ -3725,7 +3753,9 @@ function loadCustomerContacts(customerId) {
                     allowClear: true,
                     width: '100%'
                 });
+                $(picSelect).val(picSelect.value || '').trigger('change.select2');
             }
+            setPicDetailsFromSelectedOption(picSelect);
         })
         .catch(function(error) {
             console.error('Error loading contacts:', error);
