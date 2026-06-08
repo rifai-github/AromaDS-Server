@@ -1535,6 +1535,14 @@ function shouldSelectRoomsAfterCreate(type) {
     return ['install', 'install_free'].includes(normalizeJobAdviceType(type));
 }
 
+function getSelectedMarketingUserId() {
+    if (typeof $ !== 'undefined' && $.fn.select2) {
+        return $('#request_by').val() || document.getElementById('request_by')?.value || null;
+    }
+
+    return document.getElementById('request_by')?.value || null;
+}
+
 function resetCreateRoomSelection() {
     const roomsSection = document.getElementById('roomsSection');
     const roomsContainer = document.getElementById('roomsContainer');
@@ -1878,8 +1886,8 @@ window.toggleRemoveDate = function() {
                 }
                 pendingExtraContractRoomId = null;
             } else {
-                const requestBySelect = document.getElementById('request_by');
-                loadExtraOnWallUnits(requestBySelect?.value || null);
+                loadExtraOnWallUnits(getSelectedMarketingUserId());
+                setTimeout(() => loadExtraOnWallUnits(getSelectedMarketingUserId()), 150);
             }
         }
 
@@ -2004,20 +2012,27 @@ function loadExtraOnWallUnits(marketingId = null) {
     if (!unitSelect) return Promise.resolve();
 
     const typeSelect = document.getElementById('modal_type');
-    const normalizedType = String(typeSelect?.value || '').toLowerCase().replace(/\s+/g, '_');
+    const normalizedType = normalizeJobAdviceType(typeSelect?.value);
     if (normalizedType !== 'extra') {
         unitSelect.disabled = true;
         unitSelect.innerHTML = '<option value="">Select Extra type first</option>';
+        if (typeof $ !== 'undefined' && typeof $.fn.select2 !== 'undefined') {
+            $(unitSelect).prop('disabled', true).trigger('change.select2');
+        }
         return Promise.resolve();
     }
 
+    const selectedMarketingId = marketingId || getSelectedMarketingUserId();
     unitSelect.disabled = false;
     unitSelect.innerHTML = '<option value="">Loading on-wall units...</option>';
+    if (typeof $ !== 'undefined' && typeof $.fn.select2 !== 'undefined') {
+        $(unitSelect).prop('disabled', false).trigger('change.select2');
+    }
 
     let url = '/api/contracts/on-wall-units-for-job-advice';
     const params = new URLSearchParams();
-    if (marketingId) {
-        params.append('marketing_id', marketingId);
+    if (selectedMarketingId) {
+        params.append('marketing_id', selectedMarketingId);
     }
     if (params.toString()) {
         url += `?${params.toString()}`;
@@ -2059,9 +2074,11 @@ function loadExtraOnWallUnits(marketingId = null) {
 
         if (units.length === 0) {
             unitSelect.innerHTML = '<option value="">No on-wall units with detectable contract</option>';
+            unitSelect.disabled = true;
         }
 
         if (typeof $ !== 'undefined' && typeof $.fn.select2 !== 'undefined') {
+            $(unitSelect).prop('disabled', unitSelect.disabled);
             $(unitSelect).select2({
                 dropdownParent: $('#modalOverlay'),
                 placeholder: 'Select Unit On Wall',
@@ -2517,6 +2534,10 @@ document.addEventListener('DOMContentLoaded', function() {
 document.addEventListener('change', function(event) {
     if (event.target?.id === 'contract_id' && !contractJobAdviceJqueryBound) {
         loadContractRoomsForJobAdvice(event.target);
+    }
+
+    if (event.target?.id === 'modal_type' && normalizeJobAdviceType(event.target.value) === 'extra') {
+        setTimeout(() => loadExtraOnWallUnits(getSelectedMarketingUserId()), 150);
     }
 });
 
