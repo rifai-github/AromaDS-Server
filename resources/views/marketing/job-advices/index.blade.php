@@ -1871,7 +1871,7 @@ window.toggleRemoveDate = function() {
                 if (extraUnitOnWallSelect) {
                     extraUnitOnWallSelect.value = '';
                     extraUnitOnWallSelect.disabled = true;
-                    extraUnitOnWallSelect.innerHTML = '<option value="">Select Extra type first</option>';
+                    extraUnitOnWallSelect.innerHTML = '<option value="">Select Marketing First</option>';
                 }
                 pendingExtraContractRoomId = null;
             } else {
@@ -1885,7 +1885,6 @@ window.toggleRemoveDate = function() {
         }
 
         // MOM: Reload contract rooms if contract is selected (to reload rooms filter based on new type)
-        const contractSelect = document.getElementById('contract_id');
         if (contractSelect && contractSelect.value) {
             console.log('Type changed, reloading contract rooms...');
             contractSelect.dispatchEvent(new Event('change'));
@@ -2002,16 +2001,18 @@ function loadExtraOnWallUnits(marketingId = null) {
 
     const typeSelect = document.getElementById('modal_type');
     const normalizedType = normalizeJobAdviceType(typeSelect?.value);
-    if (normalizedType !== 'extra') {
+    const selectedMarketingId = marketingId || getSelectedMarketingUserId();
+
+    if (normalizedType !== 'extra' || !selectedMarketingId) {
+        unitSelect.value = '';
         unitSelect.disabled = true;
-        unitSelect.innerHTML = '<option value="">Select Extra type first</option>';
+        unitSelect.innerHTML = '<option value="">Select Marketing First</option>';
         if (typeof $ !== 'undefined' && typeof $.fn.select2 !== 'undefined') {
             $(unitSelect).prop('disabled', true).trigger('change.select2');
         }
         return Promise.resolve();
     }
 
-    const selectedMarketingId = marketingId || getSelectedMarketingUserId();
     const previousSelectedUnitId = unitSelect.value;
     const previousSelectedOption = previousSelectedUnitId
         ? Array.from(unitSelect.options).find(option => String(option.value) === String(previousSelectedUnitId))
