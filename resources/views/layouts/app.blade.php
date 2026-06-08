@@ -3476,7 +3476,106 @@
         });
     })();
     </script>
-    
+
+    <!-- ========================================
+         GLOBAL LIST FILTER PERSISTENCE
+         Mengingat filter + pagination halaman list (mis. ?filter[rental_code]=IIA&page=1)
+         supaya saat user buka salah satu item lalu klik "Back to List" (atau Back),
+         state filter tidak hilang. Berlaku global untuk semua halaman list+detail.
+         ======================================== -->
+    <script>
+    (function() {
+        'use strict';
+
+        var STORAGE_PREFIX = 'listReturnUrl:';
+
+        function storageKeyFor(path) {
+            // Normalisasi: buang trailing slash supaya '/x' dan '/x/' sama.
+            var clean = (path || '').replace(/\/+$/, '');
+            return STORAGE_PREFIX + (clean || '/');
+        }
+
+        // Sebuah halaman dianggap "list" jika punya filter aktif / pagination di URL,
+        // atau punya tabel yang di-enhance dengan kolom filter (data-column).
+        function isListPage() {
+            try {
+                var params = new URL(window.location.href).searchParams;
+                var hasFilterParam = false;
+                params.forEach(function(_, key) {
+                    if (key === 'page' || key === 'search' || key.indexOf('filter[') === 0) {
+                        hasFilterParam = true;
+                    }
+                });
+                if (hasFilterParam) return true;
+            } catch (e) { /* ignore */ }
+            return !!document.querySelector('table th[data-column]');
+        }
+
+        // Simpan URL list saat ini, dikunci oleh pathname-nya.
+        function rememberCurrentListUrl() {
+            if (!isListPage()) return;
+            try {
+                sessionStorage.setItem(
+                    storageKeyFor(window.location.pathname),
+                    window.location.href
+                );
+            } catch (e) { /* sessionStorage tidak tersedia */ }
+        }
+
+        // Untuk halaman detail: cari link "kembali ke list" lalu ganti href-nya dengan
+        // URL list yang tersimpan (berisi filter). Deteksi TIDAK bergantung pada teks
+        // tombol (yang bervariasi: "Back", "Back to List", "Kembali", dst.) melainkan
+        // pada href yang mengarah ke path list yang URL-nya pernah kita simpan.
+        function restoreBackToListLinks() {
+            // Jangan rewrite link di halaman yang merupakan list itu sendiri.
+            var currentPath = window.location.pathname.replace(/\/+$/, '');
+
+            var links = document.querySelectorAll('a[href]');
+            links.forEach(function(link) {
+                var targetPath;
+                try {
+                    targetPath = new URL(link.href, window.location.origin).pathname;
+                } catch (e) { return; }
+
+                var cleanTarget = targetPath.replace(/\/+$/, '');
+
+                // Lewati link yang menunjuk ke halaman saat ini sendiri.
+                if (cleanTarget === currentPath) return;
+
+                // Hanya proses jika link belum membawa query string (href polos ke index).
+                var hasQuery;
+                try {
+                    hasQuery = new URL(link.href, window.location.origin).search.length > 0;
+                } catch (e) { hasQuery = false; }
+                if (hasQuery) return;
+
+                var saved = null;
+                try {
+                    saved = sessionStorage.getItem(storageKeyFor(targetPath));
+                } catch (e) { /* ignore */ }
+
+                if (!saved) return;
+
+                // Pastikan path tersimpan benar-benar untuk list ini (bukan kebetulan),
+                // dan halaman saat ini adalah turunan dari list tsb (mis. detail item).
+                try {
+                    var savedPath = new URL(saved).pathname.replace(/\/+$/, '');
+                    var isDescendant = currentPath === cleanTarget ||
+                        currentPath.indexOf(cleanTarget + '/') === 0;
+                    if (savedPath === cleanTarget && isDescendant) {
+                        link.href = saved;
+                    }
+                } catch (e) { /* ignore */ }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            rememberCurrentListUrl();
+            restoreBackToListLinks();
+        });
+    })();
+    </script>
+
     <!-- ========================================
          GLOBAL DOUBLE-CLICK PREVENTION
          Mencegah user klik berkali-kali pada tombol submit/save/create
