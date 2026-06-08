@@ -69,8 +69,9 @@
                         <th style="width: 60px;">No</th>
                         <th>Label</th>
                         <th>Value</th>
-                        <th style="width: 120px;">Months</th>
-                        <th style="width: 120px;">Type</th>
+                        <th style="width: 150px;">Mode</th>
+                        <th style="width: 110px;">Months</th>
+                        <th style="width: 120px;">Payment Count</th>
                         <th>Description</th>
                         <th style="width: 110px;">Status</th>
                         <th style="width: 260px;">Actions</th>
@@ -80,14 +81,30 @@
                     @forelse($terms as $index => $term)
                         @php
                             $isAdvance = $term->code === 'advance';
-                            $months = $isAdvance ? null : (int) $term->code;
+                            $metadata = json_decode($term->option_description ?? '', true);
+                            $hasMetadata = is_array($metadata);
+                            $billingMode = $hasMetadata
+                                ? ($metadata['billing_mode'] ?? ($isAdvance ? 'advance' : 'fixed_interval'))
+                                : ($term->code === 'installments' ? 'per_contract_period' : ($isAdvance ? 'advance' : 'fixed_interval'));
+                            $description = $hasMetadata ? ($metadata['description'] ?? null) : $term->option_description;
+                            $months = $billingMode === 'fixed_interval' && ! $isAdvance
+                                ? (int) ($metadata['months'] ?? $term->code)
+                                : null;
+                            $paymentCount = $billingMode === 'per_contract_period'
+                                ? (int) ($metadata['payment_count'] ?? 0)
+                                : null;
+                            $modeLabel = $isAdvance
+                                ? '1x Advance'
+                                : ($billingMode === 'per_contract_period' ? 'Periode Kontrak' : 'Fixed Interval');
                             $termPayload = [
                                 'id' => $term->id,
                                 'label' => $term->label ?: $term->option_name,
                                 'value' => $term->option_name,
                                 'months' => $months,
+                                'billing_mode' => $billingMode === 'advance' ? 'fixed_interval' : $billingMode,
+                                'payment_count' => $paymentCount,
                                 'is_advance' => $isAdvance,
-                                'description' => $term->option_description,
+                                'description' => $description,
                                 'is_active' => $term->is_active,
                             ];
                         @endphp
@@ -95,9 +112,10 @@
                             <td>{{ $index + 1 }}</td>
                             <td>{{ $term->label ?: $term->option_name }}</td>
                             <td>{{ $term->option_name }}</td>
-                            <td>{{ $isAdvance ? '-' : $months }}</td>
-                            <td>{{ $isAdvance ? '1x Advance' : 'Interval' }}</td>
-                            <td>{{ $term->option_description ?: '-' }}</td>
+                            <td>{{ $modeLabel }}</td>
+                            <td>{{ $months ?: '-' }}</td>
+                            <td>{{ $paymentCount ? $paymentCount . 'x' : '-' }}</td>
+                            <td>{{ $description ?: '-' }}</td>
                             <td>
                                 <span class="status-badge {{ $term->is_active ? 'status-active' : 'status-inactive' }}">
                                     {{ $term->is_active ? 'Active' : 'Inactive' }}
@@ -132,7 +150,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" style="text-align: center; color: #6b7280; padding: 28px;">Belum ada Term of Payment.</td>
+                            <td colspan="9" style="text-align: center; color: #6b7280; padding: 28px;">Belum ada Term of Payment.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -160,10 +178,23 @@
                     <input type="text" class="form-control" id="value" name="value" required placeholder="Contoh: 1 bulan 1x">
                 </div>
                 <div class="form-row">
+                    <label for="billing_mode">Mode Pembayaran</label>
+                    <select class="form-control" id="billing_mode" name="billing_mode" onchange="toggleTermModeState()">
+                        <option value="fixed_interval">Fixed Interval - tiap N bulan</option>
+                        <option value="per_contract_period">Periode Kontrak - N kali dalam satu kontrak</option>
+                    </select>
+                </div>
+                <div class="form-row">
                     <label for="months">Jumlah Bulan</label>
                     <input type="number" class="form-control" id="months" name="months" min="1" max="120" placeholder="Contoh: 1">
+                </div>
+                <div class="form-row">
+                    <label for="payment_count">Jumlah Pembayaran Dalam Periode Kontrak</label>
+                    <input type="number" class="form-control" id="payment_count" name="payment_count" min="2" max="24" placeholder="Contoh: 2, 3, atau 4">
+                </div>
+                <div class="form-row">
                     <label class="form-check">
-                        <input type="checkbox" id="is_advance" name="is_advance" value="1" onchange="toggleAdvanceState()">
+                        <input type="checkbox" id="is_advance" name="is_advance" value="1" onchange="toggleTermModeState()">
                         <span>1x Advance / bayar sekali untuk seluruh periode</span>
                     </label>
                 </div>
@@ -191,7 +222,8 @@
         document.getElementById('formMethod').value = 'POST';
         document.getElementById('termForm').reset();
         document.getElementById('is_active').checked = true;
-        toggleAdvanceState();
+        document.getElementById('billing_mode').value = 'fixed_interval';
+        toggleTermModeState();
         document.getElementById('termModal').classList.add('show');
     }
 
@@ -202,10 +234,12 @@
         document.getElementById('label').value = term.label || '';
         document.getElementById('value').value = term.value || '';
         document.getElementById('months').value = term.months || '';
+        document.getElementById('billing_mode').value = term.billing_mode || 'fixed_interval';
+        document.getElementById('payment_count').value = term.payment_count || '';
         document.getElementById('is_advance').checked = !!term.is_advance;
         document.getElementById('description').value = term.description || '';
         document.getElementById('is_active').checked = !!term.is_active;
-        toggleAdvanceState();
+        toggleTermModeState();
         document.getElementById('termModal').classList.add('show');
     }
 
@@ -213,11 +247,22 @@
         document.getElementById('termModal').classList.remove('show');
     }
 
-    function toggleAdvanceState() {
+    function toggleTermModeState() {
         const isAdvance = document.getElementById('is_advance').checked;
+        const billingMode = document.getElementById('billing_mode');
         const months = document.getElementById('months');
-        months.disabled = isAdvance;
+        const paymentCount = document.getElementById('payment_count');
+
+        billingMode.disabled = isAdvance;
+        months.disabled = isAdvance || billingMode.value !== 'fixed_interval';
+        paymentCount.disabled = isAdvance || billingMode.value !== 'per_contract_period';
+
         if (isAdvance) {
+            months.value = '';
+            paymentCount.value = '';
+        } else if (billingMode.value === 'fixed_interval') {
+            paymentCount.value = '';
+        } else {
             months.value = '';
         }
     }

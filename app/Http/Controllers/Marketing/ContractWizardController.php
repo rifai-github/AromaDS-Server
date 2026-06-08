@@ -380,7 +380,7 @@ class ContractWizardController extends Controller
                 'start_date' => $request->contract_date, // Use contract_date as start_date
                 'end_date' => $endDate, // Based on rental_period, NOT TOP
                 'contract_value' => $quotation->grand_total ?? 0, // Use quotation grand total as contract value
-                'term_of_payment' => $quotation->term_of_payment,
+                'term_of_payment' => $quotation->terms_of_payment ?? $quotation->term_of_payment,
                 'install_date' => $request->install_date,
                 'first_service_date' => $request->first_service,
                 'pic_service_email' => $request->pic_service_email,

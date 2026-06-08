@@ -573,6 +573,7 @@ class QuotationWizardController extends Controller
             // Get action parameter
             $action = $request->get('action', 'draft');
             $quotationDate = \Carbon\Carbon::parse($request->get('quotation_date'))->toDateString();
+            $topMonths = $this->resolveTopMonthsFromRequest($request);
             
             // MOM10: Generate quotation number using DocumentNumberService
             // Get branch code from selected branch_id or from survey's building location
@@ -667,6 +668,7 @@ class QuotationWizardController extends Controller
                 'rental_period' => $request->get('rental_period'),
                 'rental_unit' => $request->get('rental_unit'),
                 'terms_of_payment' => $request->get('term_of_payment'),
+                'top_months' => $topMonths,
                 'marketing_id' => $request->get('marketing_id'),
                 'internal_notes' => $request->get('remark_internal'),
                 'additional_notes' => $request->get('remark_external'),
@@ -879,6 +881,7 @@ class QuotationWizardController extends Controller
             // Get action parameter
             $action = $request->get('action', 'draft');
             $quotationDate = \Carbon\Carbon::parse($request->get('quotation_date'))->toDateString();
+            $topMonths = $this->resolveTopMonthsFromRequest($request);
 
             DB::beginTransaction();
 
@@ -941,6 +944,7 @@ class QuotationWizardController extends Controller
                     'rental_period' => $request->get('rental_period'),
                     'rental_unit' => $request->get('rental_unit'),
                     'terms_of_payment' => $request->get('term_of_payment'),
+                    'top_months' => $topMonths,
                     'marketing_id' => $request->get('marketing_id'),
                     'internal_notes' => $request->get('remark_internal'),
                     'additional_notes' => $request->get('remark_external'),
@@ -2096,12 +2100,19 @@ class QuotationWizardController extends Controller
                     ->get()
                     ->map(function ($detail) {
                         $isAdvance = $detail->code === 'advance';
+                        $metadata = $this->decodeTermOfPaymentMetadata($detail->option_description);
+                        $billingMode = $isAdvance
+                            ? 'advance'
+                            : ($metadata['billing_mode'] ?? ($detail->code === 'installments' ? 'per_contract_period' : 'fixed_interval'));
+                        $months = $billingMode === 'fixed_interval' ? (int) ($metadata['months'] ?? $detail->code) : null;
 
                         return [
                             'value' => $detail->option_name,
                             'label' => $detail->label ?: Quotation::formatTermsOfPaymentLabel($detail->option_name),
-                            'months' => $isAdvance ? null : (int) $detail->code,
+                            'months' => $isAdvance ? null : $months,
                             'is_advance' => $isAdvance,
+                            'billing_mode' => $billingMode,
+                            'payment_count' => $billingMode === 'per_contract_period' ? (int) ($metadata['payment_count'] ?? 0) : null,
                         ];
                     })
                     ->values()
@@ -2114,32 +2125,141 @@ class QuotationWizardController extends Controller
     private function defaultTermOfPaymentOptions(): array
     {
         return [
-            ['value' => '1 bulan 1x', 'label' => '1 bulan 1x', 'months' => 1, 'is_advance' => false],
-            ['value' => '2 bulan 1x', 'label' => '2 bulan 1x', 'months' => 2, 'is_advance' => false],
-            ['value' => '3 bulan 1x', 'label' => '3 bulan 1x', 'months' => 3, 'is_advance' => false],
-            ['value' => '4 bulan 1x', 'label' => '4 bulan 1x', 'months' => 4, 'is_advance' => false],
-            ['value' => '5 bulan 1x', 'label' => '5 bulan 1x', 'months' => 5, 'is_advance' => false],
-            ['value' => '6 bulan 1x', 'label' => '6 bulan 1x', 'months' => 6, 'is_advance' => false],
-            ['value' => 'Tahunan', 'label' => '1x Advance', 'months' => null, 'is_advance' => true],
-            ['value' => '7 bulan 1x', 'label' => '7 bulan 1x', 'months' => 7, 'is_advance' => false],
-            ['value' => '8 bulan 1x', 'label' => '8 bulan 1x', 'months' => 8, 'is_advance' => false],
-            ['value' => '9 bulan 1x', 'label' => '9 bulan 1x', 'months' => 9, 'is_advance' => false],
-            ['value' => '10 bulan 1x', 'label' => '10 bulan 1x', 'months' => 10, 'is_advance' => false],
-            ['value' => '11 bulan 1x', 'label' => '11 bulan 1x', 'months' => 11, 'is_advance' => false],
-            ['value' => '13 bulan 1x', 'label' => '13 bulan 1x', 'months' => 13, 'is_advance' => false],
-            ['value' => '14 bulan 1x', 'label' => '14 bulan 1x', 'months' => 14, 'is_advance' => false],
-            ['value' => '15 bulan 1x', 'label' => '15 bulan 1x', 'months' => 15, 'is_advance' => false],
-            ['value' => '16 bulan 1x', 'label' => '16 bulan 1x', 'months' => 16, 'is_advance' => false],
-            ['value' => '17 bulan 1x', 'label' => '17 bulan 1x', 'months' => 17, 'is_advance' => false],
-            ['value' => '18 bulan 1x', 'label' => '18 bulan 1x', 'months' => 18, 'is_advance' => false],
-            ['value' => '19 bulan 1x', 'label' => '19 bulan 1x', 'months' => 19, 'is_advance' => false],
-            ['value' => '20 bulan 1x', 'label' => '20 bulan 1x', 'months' => 20, 'is_advance' => false],
-            ['value' => '21 bulan 1x', 'label' => '21 bulan 1x', 'months' => 21, 'is_advance' => false],
-            ['value' => '22 bulan 1x', 'label' => '22 bulan 1x', 'months' => 22, 'is_advance' => false],
-            ['value' => '23 bulan 1x', 'label' => '23 bulan 1x', 'months' => 23, 'is_advance' => false],
-            ['value' => '2 tahunan', 'label' => '2 tahunan', 'months' => 24, 'is_advance' => false],
-            ['value' => '3 tahunan', 'label' => '3 tahunan', 'months' => 36, 'is_advance' => false],
+            $this->fixedIntervalTopOption('1 bulan 1x', 1),
+            $this->fixedIntervalTopOption('2 bulan 1x', 2),
+            $this->fixedIntervalTopOption('3 bulan 1x', 3),
+            $this->fixedIntervalTopOption('4 bulan 1x', 4),
+            $this->fixedIntervalTopOption('5 bulan 1x', 5),
+            $this->fixedIntervalTopOption('6 bulan 1x', 6),
+            ['value' => 'Tahunan', 'label' => '1x Advance', 'months' => null, 'is_advance' => true, 'billing_mode' => 'advance', 'payment_count' => null],
+            $this->perContractPeriodTopOption(2),
+            $this->perContractPeriodTopOption(3),
+            $this->perContractPeriodTopOption(4),
+            $this->fixedIntervalTopOption('7 bulan 1x', 7),
+            $this->fixedIntervalTopOption('8 bulan 1x', 8),
+            $this->fixedIntervalTopOption('9 bulan 1x', 9),
+            $this->fixedIntervalTopOption('10 bulan 1x', 10),
+            $this->fixedIntervalTopOption('11 bulan 1x', 11),
+            $this->fixedIntervalTopOption('13 bulan 1x', 13),
+            $this->fixedIntervalTopOption('14 bulan 1x', 14),
+            $this->fixedIntervalTopOption('15 bulan 1x', 15),
+            $this->fixedIntervalTopOption('16 bulan 1x', 16),
+            $this->fixedIntervalTopOption('17 bulan 1x', 17),
+            $this->fixedIntervalTopOption('18 bulan 1x', 18),
+            $this->fixedIntervalTopOption('19 bulan 1x', 19),
+            $this->fixedIntervalTopOption('20 bulan 1x', 20),
+            $this->fixedIntervalTopOption('21 bulan 1x', 21),
+            $this->fixedIntervalTopOption('22 bulan 1x', 22),
+            $this->fixedIntervalTopOption('23 bulan 1x', 23),
+            $this->fixedIntervalTopOption('2 tahunan', 24),
+            $this->fixedIntervalTopOption('3 tahunan', 36),
         ];
+    }
+
+    private function fixedIntervalTopOption(string $value, int $months): array
+    {
+        return [
+            'value' => $value,
+            'label' => $value,
+            'months' => $months,
+            'is_advance' => false,
+            'billing_mode' => 'fixed_interval',
+            'payment_count' => null,
+        ];
+    }
+
+    private function perContractPeriodTopOption(int $paymentCount): array
+    {
+        return [
+            'value' => "{$paymentCount}x per periode contract",
+            'label' => "{$paymentCount}x dalam Periode Contract",
+            'months' => null,
+            'is_advance' => false,
+            'billing_mode' => 'per_contract_period',
+            'payment_count' => $paymentCount,
+        ];
+    }
+
+    private function decodeTermOfPaymentMetadata(?string $description): array
+    {
+        if (! $description) {
+            return [];
+        }
+
+        $decoded = json_decode($description, true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function resolveTopMonthsFromRequest(Request $request): ?int
+    {
+        $termOfPayment = trim((string) $request->get('term_of_payment', ''));
+        $rentalMonths = $this->resolveRentalPeriodMonths($request->get('rental_period'), $request->get('rental_unit'));
+
+        if ($termOfPayment === '' || $rentalMonths <= 0) {
+            return null;
+        }
+
+        $selectedOption = $this->getTermOfPaymentOptions()
+            ->first(fn ($option) => ($option['value'] ?? null) === $termOfPayment);
+
+        if ($selectedOption && ! empty($selectedOption['is_advance'])) {
+            return null;
+        }
+
+        if (($selectedOption['billing_mode'] ?? null) === 'per_contract_period') {
+            $paymentCount = (int) ($selectedOption['payment_count'] ?? 0);
+
+            if ($paymentCount <= 0 || $rentalMonths % $paymentCount !== 0) {
+                throw ValidationException::withMessages([
+                    'term_of_payment' => "Term of Payment {$termOfPayment} tidak cocok untuk periode {$rentalMonths} bulan. Periode kontrak harus habis dibagi {$paymentCount}x.",
+                ]);
+            }
+
+            return (int) ($rentalMonths / $paymentCount);
+        }
+
+        $topMonths = (int) ($selectedOption['months'] ?? 0);
+
+        if ($topMonths <= 0) {
+            $topMonths = $this->parseFixedTopMonths($termOfPayment);
+        }
+
+        if ($topMonths > 0 && $rentalMonths % $topMonths !== 0) {
+            throw ValidationException::withMessages([
+                'term_of_payment' => "Term of Payment {$termOfPayment} tidak cocok untuk periode {$rentalMonths} bulan.",
+            ]);
+        }
+
+        return $topMonths > 0 ? $topMonths : null;
+    }
+
+    private function resolveRentalPeriodMonths($rentalPeriod, ?string $rentalUnit): int
+    {
+        $period = (int) $rentalPeriod;
+
+        if ($period <= 0) {
+            return 0;
+        }
+
+        if ($rentalUnit === 'hari') {
+            return $period < 30 ? 1 : (int) ceil($period / 30);
+        }
+
+        return $period;
+    }
+
+    private function parseFixedTopMonths(string $termOfPayment): int
+    {
+        if (preg_match('/(\d+)\s*(bulan|month)/i', $termOfPayment, $matches)) {
+            return (int) $matches[1];
+        }
+
+        if (preg_match('/(\d+)\s*(tahun|year|tahunan)/i', $termOfPayment, $matches)) {
+            return (int) $matches[1] * 12;
+        }
+
+        return 0;
     }
 
 }

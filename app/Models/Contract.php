@@ -681,6 +681,19 @@ class Contract extends Model
             return 1;
         }
 
+        if ($this->quotation && $this->quotation->top_months) {
+            return (int) $this->quotation->top_months;
+        }
+
+        if (preg_match('/(\d+)\s*x.*(periode|period|contract|kontrak)/i', $term, $matches)) {
+            $paymentCount = (int) $matches[1];
+            $contractMonths = $this->getContractDurationMonthsForTop();
+
+            if ($paymentCount > 0 && $contractMonths > 0) {
+                return max(1, (int) floor($contractMonths / $paymentCount));
+            }
+        }
+
         // Match patterns like "1 bulan", "2 bulan", "12 bulan"
         if (preg_match('/(\d+)\s*(bulan|month)/i', $term, $matches)) {
             return (int) $matches[1];
@@ -703,12 +716,31 @@ class Contract extends Model
             return 12;
         }
 
-        // Fallback to quotation.top_months if available
-        if ($this->quotation && $this->quotation->top_months) {
-            return (int) $this->quotation->top_months;
+        return 1;
+    }
+
+    private function getContractDurationMonthsForTop(): int
+    {
+        if ($this->start_date && $this->end_date) {
+            $start = \Carbon\Carbon::parse($this->start_date)->startOfDay();
+            $end = \Carbon\Carbon::parse($this->end_date)->startOfDay()->addDay();
+
+            return max(1, (int) ceil($start->diffInDays($end) / 30));
         }
 
-        return 1;
+        $quotation = $this->quotation;
+        if (! $quotation || ! $quotation->rental_period) {
+            return 0;
+        }
+
+        $period = (int) $quotation->rental_period;
+        if ($period <= 0) {
+            return 0;
+        }
+
+        return $quotation->rental_unit === 'hari'
+            ? ($period < 30 ? 1 : (int) ceil($period / 30))
+            : $period;
     }
 
     public function getIsFullySignedAttribute()

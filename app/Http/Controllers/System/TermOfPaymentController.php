@@ -13,6 +13,8 @@ use Illuminate\Validation\ValidationException;
 class TermOfPaymentController extends Controller
 {
     private const MASTER_OPTION_NAME = 'Term of Payment';
+    private const BILLING_MODE_FIXED_INTERVAL = 'fixed_interval';
+    private const BILLING_MODE_PER_CONTRACT_PERIOD = 'per_contract_period';
 
     public function index()
     {
@@ -33,8 +35,8 @@ class TermOfPaymentController extends Controller
             'master_option_id' => $masterOption->id,
             'option_name' => $data['value'],
             'label' => $data['label'],
-            'code' => $data['is_advance'] ? 'advance' : (string) $data['months'],
-            'option_description' => $data['description'] ?? null,
+            'code' => $this->termCode($data),
+            'option_description' => $this->termDescriptionPayload($data),
             'is_active' => $request->boolean('is_active', true),
             'created_by' => Auth::id(),
             'updated_by' => Auth::id(),
@@ -56,8 +58,8 @@ class TermOfPaymentController extends Controller
         $masterTermOfPayment->update([
             'option_name' => $data['value'],
             'label' => $data['label'],
-            'code' => $data['is_advance'] ? 'advance' : (string) $data['months'],
-            'option_description' => $data['description'] ?? null,
+            'code' => $this->termCode($data),
+            'option_description' => $this->termDescriptionPayload($data),
             'is_active' => $request->boolean('is_active'),
             'updated_by' => Auth::id(),
         ]);
@@ -118,16 +120,28 @@ class TermOfPaymentController extends Controller
             'label' => 'required|string|max:255',
             'value' => 'required|string|max:255',
             'months' => 'nullable|integer|min:1|max:120',
+            'billing_mode' => 'nullable|in:fixed_interval,per_contract_period',
+            'payment_count' => 'nullable|integer|min:2|max:24',
             'is_advance' => 'nullable|boolean',
             'description' => 'nullable|string|max:500',
             'is_active' => 'nullable|boolean',
         ]);
 
         $data['is_advance'] = $request->boolean('is_advance');
+        $data['billing_mode'] = $data['is_advance']
+            ? self::BILLING_MODE_FIXED_INTERVAL
+            : ($data['billing_mode'] ?? self::BILLING_MODE_FIXED_INTERVAL);
+        $data['payment_count'] = $data['payment_count'] ?? null;
 
-        if (! $data['is_advance'] && empty($data['months'])) {
+        if (! $data['is_advance'] && $data['billing_mode'] === self::BILLING_MODE_FIXED_INTERVAL && empty($data['months'])) {
             throw ValidationException::withMessages([
                 'months' => 'Jumlah bulan wajib diisi jika bukan 1x Advance.',
+            ]);
+        }
+
+        if (! $data['is_advance'] && $data['billing_mode'] === self::BILLING_MODE_PER_CONTRACT_PERIOD && empty($data['payment_count'])) {
+            throw ValidationException::withMessages([
+                'payment_count' => 'Jumlah pembayaran wajib diisi untuk mode per periode kontrak.',
             ]);
         }
 
@@ -144,6 +158,29 @@ class TermOfPaymentController extends Controller
         }
 
         return $data;
+    }
+
+    private function termCode(array $data): string
+    {
+        if ($data['is_advance']) {
+            return 'advance';
+        }
+
+        if ($data['billing_mode'] === self::BILLING_MODE_PER_CONTRACT_PERIOD) {
+            return 'installments';
+        }
+
+        return (string) $data['months'];
+    }
+
+    private function termDescriptionPayload(array $data): string
+    {
+        return json_encode([
+            'description' => $data['description'] ?? null,
+            'billing_mode' => $data['is_advance'] ? 'advance' : $data['billing_mode'],
+            'months' => $data['billing_mode'] === self::BILLING_MODE_FIXED_INTERVAL ? ($data['months'] ?? null) : null,
+            'payment_count' => $data['billing_mode'] === self::BILLING_MODE_PER_CONTRACT_PERIOD ? ($data['payment_count'] ?? null) : null,
+        ]);
     }
 
     private function forgetQuotationTermCache(): void

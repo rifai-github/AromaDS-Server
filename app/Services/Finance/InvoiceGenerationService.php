@@ -943,13 +943,14 @@ class InvoiceGenerationService
         $endDate = $contract->end_date;
         $periodCounter = 1;
         $periodType = $contract->invoice_period_type ?? 'contract_date';
+        $topIntervalMonths = max(1, (int) ($contract->top_interval_months ?? 1));
         
-        // Handle "contract_date" & "service" logic (Iterate by month from Start Date)
+        // Handle "contract_date" & "service" logic (iterate by TOP interval from Start Date)
         // Note: For "service", the period calculation is same as contract_date, 
         // but the invoice DATE logic in createInvoiceForRentalPeriod differs.
         if ($periodType === 'contract_date' || $periodType === 'service') {
             while ($currentDate <= $endDate) {
-                $periodEnd = $currentDate->copy()->addMonth()->subDay();
+                $periodEnd = $currentDate->copy()->addMonths($topIntervalMonths)->subDay();
                 if ($periodEnd > $endDate) {
                     $periodEnd = $endDate;
                 }
@@ -961,7 +962,7 @@ class InvoiceGenerationService
                     'status' => $this->getPeriodStatus($contract, $currentDate, $periodEnd)
                 ];
                 
-                $currentDate = $currentDate->copy()->addMonth();
+                $currentDate = $currentDate->copy()->addMonths($topIntervalMonths);
                 $periodCounter++;
             }
         } 

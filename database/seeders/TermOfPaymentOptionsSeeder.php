@@ -56,31 +56,34 @@ class TermOfPaymentOptionsSeeder extends Seeder
         );
 
         $terms = [
-            ['value' => '1 bulan 1x', 'label' => '1 bulan 1x', 'code' => '1', 'description' => 'Pembayaran setiap 1 bulan'],
-            ['value' => '2 bulan 1x', 'label' => '2 bulan 1x', 'code' => '2', 'description' => 'Pembayaran setiap 2 bulan'],
-            ['value' => '3 bulan 1x', 'label' => '3 bulan 1x', 'code' => '3', 'description' => 'Pembayaran setiap 3 bulan'],
-            ['value' => '4 bulan 1x', 'label' => '4 bulan 1x', 'code' => '4', 'description' => 'Pembayaran setiap 4 bulan'],
-            ['value' => '5 bulan 1x', 'label' => '5 bulan 1x', 'code' => '5', 'description' => 'Pembayaran setiap 5 bulan'],
-            ['value' => '6 bulan 1x', 'label' => '6 bulan 1x', 'code' => '6', 'description' => 'Pembayaran setiap 6 bulan'],
-            ['value' => 'Tahunan', 'label' => '1x Advance', 'code' => 'advance', 'description' => 'Pembayaran 1x advance untuk seluruh periode kontrak'],
-            ['value' => '7 bulan 1x', 'label' => '7 bulan 1x', 'code' => '7', 'description' => 'Pembayaran setiap 7 bulan'],
-            ['value' => '8 bulan 1x', 'label' => '8 bulan 1x', 'code' => '8', 'description' => 'Pembayaran setiap 8 bulan'],
-            ['value' => '9 bulan 1x', 'label' => '9 bulan 1x', 'code' => '9', 'description' => 'Pembayaran setiap 9 bulan'],
-            ['value' => '10 bulan 1x', 'label' => '10 bulan 1x', 'code' => '10', 'description' => 'Pembayaran setiap 10 bulan'],
-            ['value' => '11 bulan 1x', 'label' => '11 bulan 1x', 'code' => '11', 'description' => 'Pembayaran setiap 11 bulan'],
-            ['value' => '13 bulan 1x', 'label' => '13 bulan 1x', 'code' => '13', 'description' => 'Pembayaran setiap 13 bulan'],
-            ['value' => '14 bulan 1x', 'label' => '14 bulan 1x', 'code' => '14', 'description' => 'Pembayaran setiap 14 bulan'],
-            ['value' => '15 bulan 1x', 'label' => '15 bulan 1x', 'code' => '15', 'description' => 'Pembayaran setiap 15 bulan'],
-            ['value' => '16 bulan 1x', 'label' => '16 bulan 1x', 'code' => '16', 'description' => 'Pembayaran setiap 16 bulan'],
-            ['value' => '17 bulan 1x', 'label' => '17 bulan 1x', 'code' => '17', 'description' => 'Pembayaran setiap 17 bulan'],
-            ['value' => '18 bulan 1x', 'label' => '18 bulan 1x', 'code' => '18', 'description' => 'Pembayaran setiap 18 bulan'],
-            ['value' => '19 bulan 1x', 'label' => '19 bulan 1x', 'code' => '19', 'description' => 'Pembayaran setiap 19 bulan'],
-            ['value' => '20 bulan 1x', 'label' => '20 bulan 1x', 'code' => '20', 'description' => 'Pembayaran setiap 20 bulan'],
-            ['value' => '21 bulan 1x', 'label' => '21 bulan 1x', 'code' => '21', 'description' => 'Pembayaran setiap 21 bulan'],
-            ['value' => '22 bulan 1x', 'label' => '22 bulan 1x', 'code' => '22', 'description' => 'Pembayaran setiap 22 bulan'],
-            ['value' => '23 bulan 1x', 'label' => '23 bulan 1x', 'code' => '23', 'description' => 'Pembayaran setiap 23 bulan'],
-            ['value' => '2 tahunan', 'label' => '2 tahunan', 'code' => '24', 'description' => 'Pembayaran setiap 2 tahun'],
-            ['value' => '3 tahunan', 'label' => '3 tahunan', 'code' => '36', 'description' => 'Pembayaran setiap 3 tahun'],
+            $this->fixedIntervalTerm('1 bulan 1x', 1),
+            $this->fixedIntervalTerm('2 bulan 1x', 2),
+            $this->fixedIntervalTerm('3 bulan 1x', 3),
+            $this->fixedIntervalTerm('4 bulan 1x', 4),
+            $this->fixedIntervalTerm('5 bulan 1x', 5),
+            $this->fixedIntervalTerm('6 bulan 1x', 6),
+            $this->advanceTerm(),
+            $this->perContractPeriodTerm(2),
+            $this->perContractPeriodTerm(3),
+            $this->perContractPeriodTerm(4),
+            $this->fixedIntervalTerm('7 bulan 1x', 7),
+            $this->fixedIntervalTerm('8 bulan 1x', 8),
+            $this->fixedIntervalTerm('9 bulan 1x', 9),
+            $this->fixedIntervalTerm('10 bulan 1x', 10),
+            $this->fixedIntervalTerm('11 bulan 1x', 11),
+            $this->fixedIntervalTerm('13 bulan 1x', 13),
+            $this->fixedIntervalTerm('14 bulan 1x', 14),
+            $this->fixedIntervalTerm('15 bulan 1x', 15),
+            $this->fixedIntervalTerm('16 bulan 1x', 16),
+            $this->fixedIntervalTerm('17 bulan 1x', 17),
+            $this->fixedIntervalTerm('18 bulan 1x', 18),
+            $this->fixedIntervalTerm('19 bulan 1x', 19),
+            $this->fixedIntervalTerm('20 bulan 1x', 20),
+            $this->fixedIntervalTerm('21 bulan 1x', 21),
+            $this->fixedIntervalTerm('22 bulan 1x', 22),
+            $this->fixedIntervalTerm('23 bulan 1x', 23),
+            $this->fixedIntervalTerm('2 tahunan', 24, 'Pembayaran setiap 2 tahun'),
+            $this->fixedIntervalTerm('3 tahunan', 36, 'Pembayaran setiap 3 tahun'),
         ];
 
         foreach ($terms as $term) {
@@ -99,5 +102,50 @@ class TermOfPaymentOptionsSeeder extends Seeder
         }
 
         $this->command?->info('Term of Payment options seeded successfully.');
+    }
+
+    private function fixedIntervalTerm(string $value, int $months, ?string $description = null): array
+    {
+        return [
+            'value' => $value,
+            'label' => $value,
+            'code' => (string) $months,
+            'description' => json_encode([
+                'description' => $description ?? "Pembayaran setiap {$months} bulan",
+                'billing_mode' => 'fixed_interval',
+                'months' => $months,
+                'payment_count' => null,
+            ]),
+        ];
+    }
+
+    private function advanceTerm(): array
+    {
+        return [
+            'value' => 'Tahunan',
+            'label' => '1x Advance',
+            'code' => 'advance',
+            'description' => json_encode([
+                'description' => 'Pembayaran 1x advance untuk seluruh periode kontrak',
+                'billing_mode' => 'advance',
+                'months' => null,
+                'payment_count' => null,
+            ]),
+        ];
+    }
+
+    private function perContractPeriodTerm(int $paymentCount): array
+    {
+        return [
+            'value' => "{$paymentCount}x per periode contract",
+            'label' => "{$paymentCount}x dalam Periode Contract",
+            'code' => 'installments',
+            'description' => json_encode([
+                'description' => "Pembayaran {$paymentCount}x dibagi rata dalam satu periode kontrak",
+                'billing_mode' => 'per_contract_period',
+                'months' => null,
+                'payment_count' => $paymentCount,
+            ]),
+        ];
     }
 }

@@ -821,6 +821,8 @@
                                                             value="{{ $termOption['value'] }}"
                                                             data-months="{{ $termOption['months'] }}"
                                                             data-advance="{{ $termOption['is_advance'] ? '1' : '0' }}"
+                                                            data-billing-mode="{{ $termOption['billing_mode'] ?? 'fixed_interval' }}"
+                                                            data-payment-count="{{ $termOption['payment_count'] ?? '' }}"
                                                         >
                                                             {{ $termOption['label'] }}
                                                         </option>
@@ -6309,6 +6311,64 @@ $(document).ready(function() {
         return option ? option.label : (value === 'Tahunan' ? '1x Advance' : value);
     }
 
+    function resolveFixedTopMonths(termOfPayment, selectedTopOption) {
+        let topMonths = selectedTopOption && selectedTopOption.months ? parseInt(selectedTopOption.months) : 0;
+
+        if (!topMonths && termOfPayment.includes('bulan')) {
+            topMonths = parseInt(termOfPayment.split(' ')[0]);
+        } else if (!topMonths && termOfPayment.includes('tahunan')) {
+            topMonths = parseInt(termOfPayment.split(' ')[0]) * 12;
+        }
+
+        return topMonths || 0;
+    }
+
+    function resolveTopCompatibility(termOfPayment, rentalMonths) {
+        const selectedTopOption = getTermOfPaymentOption(termOfPayment);
+
+        if (selectedTopOption && selectedTopOption.is_advance) {
+            return { isValid: true, isAdvance: true, divisor: null, actualIntervalMonths: null, description: '1x Advance' };
+        }
+
+        if (selectedTopOption && selectedTopOption.billing_mode === 'per_contract_period') {
+            const paymentCount = parseInt(selectedTopOption.payment_count || 0);
+            const isValid = paymentCount > 0 && rentalMonths > 0 && rentalMonths % paymentCount === 0;
+
+            return {
+                isValid: isValid,
+                isAdvance: false,
+                billingMode: 'per_contract_period',
+                divisor: paymentCount,
+                paymentCount: paymentCount,
+                actualIntervalMonths: isValid ? rentalMonths / paymentCount : null,
+                description: paymentCount ? `${paymentCount}x dalam periode kontrak` : 'Periode kontrak'
+            };
+        }
+
+        const topMonths = resolveFixedTopMonths(termOfPayment, selectedTopOption);
+
+        return {
+            isValid: topMonths > 0 && rentalMonths > 0 && rentalMonths % topMonths === 0,
+            isAdvance: false,
+            billingMode: 'fixed_interval',
+            divisor: topMonths,
+            paymentCount: null,
+            actualIntervalMonths: topMonths,
+            description: topMonths ? `${topMonths} bulan` : formatTermOfPaymentLabel(termOfPayment)
+        };
+    }
+
+    function validTermOfPaymentValues(rentalMonths) {
+        return (window.termOfPaymentOptions || [])
+            .filter(function(option) {
+                const compatibility = resolveTopCompatibility(option.value, rentalMonths);
+                return compatibility.isAdvance || compatibility.isValid;
+            })
+            .map(function(option) {
+                return option.value;
+            });
+    }
+
     function checkRentalPeriodCompatibility() {
         if (window.isPopulatingData) {
             console.log('Skipping compatibility check during data population');
@@ -6318,8 +6378,6 @@ $(document).ready(function() {
         const rentalPeriod = parseInt($('#rental_period').val()) || 0;
         const rentalUnit = $('#rental_unit').val();
         const termOfPayment = $('#term_of_payment').val();
-        const paymentMethod = $('#payment_method').val();
-
         if (rentalPeriod > 0 && rentalUnit && termOfPayment) {
             console.log('=== RENTAL PERIOD COMPATIBILITY CHECK ===');
             console.log('Rental Period:', rentalPeriod, rentalUnit);
@@ -6334,41 +6392,28 @@ $(document).ready(function() {
                 rentalMonths = rentalPeriod;
             }
             
-            const selectedTopOption = getTermOfPaymentOption(termOfPayment);
+            const topCompatibility = resolveTopCompatibility(termOfPayment, rentalMonths);
 
-            if (selectedTopOption && selectedTopOption.is_advance) {
+            if (topCompatibility.isAdvance) {
                 console.log('Validation PASSED: 1x Advance means 1x payment for the whole contract period');
                 return;
             }
 
-            // Extract months from dynamic TOP metadata, fallback to legacy parsing.
-            let topMonths = selectedTopOption && selectedTopOption.months ? parseInt(selectedTopOption.months) : 0;
-            if (!topMonths && termOfPayment.includes('bulan')) {
-                topMonths = parseInt(termOfPayment.split(' ')[0]);
-            } else if (!topMonths && termOfPayment.includes('tahunan')) {
-                topMonths = parseInt(termOfPayment.split(' ')[0]) * 12;
-            }
+            const topMonths = topCompatibility.actualIntervalMonths || topCompatibility.divisor || 0;
 
             console.log('Rental Months:', rentalMonths);
-            console.log('TOP Months:', topMonths);
+            console.log('TOP Compatibility:', topCompatibility);
 
             // VALIDATION: Rental period must be divisible by TOP
-            if (topMonths > 0 && rentalMonths > 0) {
-                const remainder = rentalMonths % topMonths;
+            if (topCompatibility.divisor > 0 && rentalMonths > 0) {
+                const remainder = rentalMonths % topCompatibility.divisor;
                 
                 console.log('Modulo Result (remainder):', remainder);
                 
                 // If not divisible (remainder > 0), show error
-                if (remainder !== 0) {
+                if (!topCompatibility.isValid) {
                     // Find valid TOP options that divide evenly
-                    let validTOPs = (window.termOfPaymentOptions || [])
-                        .filter(function(option) {
-                            const months = parseInt(option.months || 0);
-                            return !option.is_advance && months > 0 && months <= rentalMonths && rentalMonths % months === 0;
-                        })
-                        .map(function(option) {
-                            return option.value;
-                        });
+                    let validTOPs = validTermOfPaymentValues(rentalMonths);
                     
                     // Also add rental period itself as valid option
                     if (rentalMonths <= 12 && !validTOPs.includes(`${rentalMonths} bulan 1x`)) {
@@ -6382,9 +6427,9 @@ $(document).ready(function() {
                         html: `
                             <div class="text-start">
                                 <p><strong>Periode Sewa:</strong> ${rentalPeriod} ${rentalUnit} (${rentalMonths} bulan)</p>
-                                <p><strong>Term of Payment:</strong> ${formatTermOfPaymentLabel(termOfPayment)} (${topMonths} bulan)</p>
-                                <p class="text-danger"><strong>Masalah:</strong> Periode sewa harus habis dibagi dengan Term of Payment!</p>
-                                <p><strong>Perhitungan:</strong> ${rentalMonths} bulan ÷ ${topMonths} bulan = ${(rentalMonths / topMonths).toFixed(2)} (tidak habis)</p>
+                                <p><strong>Term of Payment:</strong> ${formatTermOfPaymentLabel(termOfPayment)} (${topCompatibility.description})</p>
+                                <p class="text-danger"><strong>Masalah:</strong> Periode sewa harus habis dibagi rata oleh Term of Payment.</p>
+                                <p><strong>Perhitungan:</strong> ${topCompatibility.billingMode === 'per_contract_period' ? `${rentalMonths} bulan / ${topCompatibility.paymentCount || 0} pembayaran` : `${rentalMonths} bulan / ${topMonths || 0} bulan`} tidak habis dibagi rata.</p>
                                 <hr>
                                 <p><strong>Pilihan Term of Payment yang Valid:</strong></p>
                                 <ul class="text-start">
