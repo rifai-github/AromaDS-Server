@@ -682,6 +682,30 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         // STUDY CASE B1: Material return per room routes
         Route::post('job-schedules/{jobSchedule}/rooms/{roomId}/material-return', [JobScheduleController::class, 'createMaterialReturn'])->name('job-schedules.rooms.material-return.create');
         Route::post('job-schedules/{jobSchedule}/rooms/{roomId}/complete-manual', [JobScheduleController::class, 'completeRoomManual'])->name('job-schedules.rooms.complete-manual');
+        // Web fallback (APK error): finish a job with Berita Acara (PIC name + signature + photo)
+        Route::post('job-schedules/{jobSchedule}/complete-with-ba', [JobScheduleController::class, 'completeWithBa'])
+            ->name('job-schedules.complete-with-ba')
+            ->middleware('permission:operational.job-schedules-complete-ba.update,operational.job-schedules.update');
+        // Web fallback Phase 2: technician location lifecycle from dashboard
+        Route::post('job-schedules/{jobSchedule}/arrived', [JobScheduleController::class, 'arrivedAtLocationWeb'])
+            ->name('job-schedules.arrived')
+            ->middleware('permission:operational.job-schedules-complete-ba.update,operational.job-schedules.update');
+        Route::post('job-schedules/{jobSchedule}/start-work', [JobScheduleController::class, 'startWorkWeb'])
+            ->name('job-schedules.start-work')
+            ->middleware('permission:operational.job-schedules-complete-ba.update,operational.job-schedules.update');
+        Route::post('job-schedules/{jobSchedule}/leave-location', [JobScheduleController::class, 'leaveLocationWeb'])
+            ->name('job-schedules.leave-location')
+            ->middleware('permission:operational.job-schedules-complete-ba.update,operational.job-schedules.update');
+        // Web fallback Phase 3: material confirm/verify + scanned unit aroma schedule from dashboard
+        Route::post('job-schedules/{jobSchedule}/confirm-materials', [JobScheduleController::class, 'confirmMaterialsWeb'])
+            ->name('job-schedules.confirm-materials')
+            ->middleware('permission:operational.job-schedules-complete-ba.update,operational.job-schedules.update');
+        Route::post('job-schedules/{jobSchedule}/verify-materials', [JobScheduleController::class, 'verifyMaterialsWeb'])
+            ->name('job-schedules.verify-materials')
+            ->middleware('permission:operational.job-schedules-complete-ba.update,operational.job-schedules.update');
+        Route::post('job-schedules/{jobSchedule}/save-scanned-unit', [JobScheduleController::class, 'saveScannedUnitWeb'])
+            ->name('job-schedules.save-scanned-unit')
+            ->middleware('permission:operational.job-schedules-complete-ba.update,operational.job-schedules.update');
         Route::post('job-schedules/{jobSchedule}/material-returns/{returnId}/approve', [JobScheduleController::class, 'approveMaterialReturn'])->name('job-schedules.material-returns.approve');
         Route::post('job-schedules/{jobSchedule}/material-returns/{returnId}/complete', [JobScheduleController::class, 'completeMaterialReturn'])->name('job-schedules.material-returns.complete');
         Route::get('job-schedules/{jobSchedule}/material-returns', [JobScheduleController::class, 'getMaterialReturns'])->name('job-schedules.material-returns');

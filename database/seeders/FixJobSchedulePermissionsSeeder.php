@@ -24,6 +24,8 @@ class FixJobSchedulePermissionsSeeder extends Seeder
             'operational.job-schedules.approve-material-return' => 'Approve Material Return',
             'operational.job-schedules.approve-material-return.view' => 'View Approve Material Return Action',
             'operational.job-schedules.approve' => 'Approve Job Schedules',
+            // Web fallback (APK error): finish job with Berita Acara from dashboard
+            'operational.job-schedules-complete-ba.update' => 'Complete Job with Berita Acara from Web',
         ];
 
         foreach ($permissions as $name => $description) {
@@ -34,8 +36,8 @@ class FixJobSchedulePermissionsSeeder extends Seeder
 
             $this->command->info("Permission ensure created: {$name}");
 
-            // Assign to Administrator and Operational Manager roles
-            $roles = Role::whereIn('name', ['Administrator', 'Super Admin', 'Operational Manager'])->get();
+            // Assign to Administrator, Operational Manager, and Operasional roles
+            $roles = Role::whereIn('name', ['Administrator', 'Super Admin', 'Operational Manager', 'Operasional', 'Operational'])->get();
             
             foreach ($roles as $role) {
                 if (!$role->hasPermission($name)) {

@@ -3439,140 +3439,10 @@ class JobScheduleController extends Controller
             
             // AUTO-EXECUTE LOGIC when status changes to completion statuses
             // MOM13: completed, done_job, suspend (selesai tanpa tagih), dpf (selesai tetap tagih)
-            $completionStatuses = ['done_job', 'completed', 'suspend', 'dpf', 'cancelled'];
-            
-            // FIX BUG 1: If the user clicked "Done Job" from the Web UI, but they clicked on a row where the first 
-            // representative JobSchedule was already 'completed' (by the mobile app), we MUST STILL propagate 
-            // the completion status to the OTHER sibling JobSchedules that are not yet completed!
-            if (isset($updateData['status']) && in_array($updateData['status'], $completionStatuses)) {
-                
-                // [FIX BUG 1] Propagate completion status to ALL sibling JobSchedules
-                $schedulesToComplete = collect([$jobSchedule]);
-                if (in_array($updateData['status'], ['completed', 'done_job']) && $jobSchedule->job_number) {
-                    $siblings = \App\Models\JobSchedule::where('job_number', $jobSchedule->job_number)
-                        ->where('id', '!=', $jobSchedule->id)
-                        ->whereNotIn('status', $completionStatuses)
-                        ->get();
-                        
-                    foreach ($siblings as $sibling) {
-                        $siblingValidation = $this->validateWebCompletionTransition($sibling, $updateData['status']);
-                        if ($siblingValidation !== true) {
-                            \Log::warning('Skipping sibling completion propagation because status flow is not ready', [
-                                'job_schedule_id' => $sibling->id,
-                                'job_number' => $sibling->job_number,
-                                'current_status' => $sibling->status,
-                                'target_status' => $updateData['status'],
-                                'reason' => $siblingValidation['message'] ?? null,
-                            ]);
-                            continue;
-                        }
-
-                        $siblingUpdates = ['status' => $updateData['status'], 'updated_by' => Auth::id()];
-                        if (isset($updateData['ba_date'])) $siblingUpdates['ba_date'] = $updateData['ba_date'];
-                        if (isset($updateData['ba_number'])) $siblingUpdates['ba_number'] = $updateData['ba_number'];
-                        if (isset($updateData['completed_at'])) $siblingUpdates['completed_at'] = $updateData['completed_at'];
-                        
-                        $this->completeScheduleRoomsFromWeb($sibling);
-                        $sibling->update($siblingUpdates);
-                        $schedulesToComplete->push($sibling);
-                    }
-                    
-                }
-
-                // Process Auto-Execution Logic securely for all completed schedules
-                $jobAdvice = $jobSchedule->jobAdvice;
-                
-                if ($jobAdvice) {
-                    // AUTO-GENERATE INVOICE when job status changes to completion statuses (Berdasarkan BRD)
-                    // MOM8: Skip invoice untuk install free/trial job
-                    // MOM13: completed, done_job, dpf trigger invoice. suspend = no invoice
-                    $invoiceTriggerStatuses = ['completed', 'done_job', 'dpf']; // Suspend TIDAK trigger invoice
-                    if (in_array($updateData['status'], $invoiceTriggerStatuses)) {
-                        if ($jobAdvice->contract_id) {
-                            // Check if this is install free/trial job
-                            $isInstallFreeOrTrial = $this->isInstallFreeOrTrial($jobSchedule, $jobAdvice);
-                            
-                            if (!$isInstallFreeOrTrial) {
-                                $this->triggerAutoInvoiceGeneration($jobAdvice->contract_id);
-                            }
-                        }
-                    }
-                    
-                    // Process Invoice & Remove Job generation for every completed schedule.
-                    // The Remove Free generator is idempotent per JobAdviceRoom, so do not stop
-                    // after the first IF room: grouped/web completions can finish multiple IFs.
-                    
-                    foreach ($schedulesToComplete as $completedSchedule) {
-                        $completedSchedule->refresh();
-                        app(\App\Services\Operational\JobMaterialCompletionService::class)
-                            ->finalizeForCompletedJob($completedSchedule);
-                        
-                        // AUTO-CREATE UNIT ON WALL (Runs per room / JobSchedule)
-                        $unitOnWallCreated = false;
-                        $installTypes = ['install', 'Install', 'Install Free', 'install_free', 'service', 'Service', 'change_rental', 'change rental'];
-                        if (in_array($completedSchedule->type, $installTypes) && $completedSchedule->areAllRoomsCompleted()) {
-                            $unitOnWallCreated = $this->autoCreateUnitOnWall($completedSchedule, $jobAdvice);
-                        }
-
-                        if ($jobAdvice && in_array(strtolower((string) $completedSchedule->type), ['install'], true)) {
-                            $this->generateUnitOnlyCheckSchedulesAfterInstall($completedSchedule, $jobAdvice);
-                        }
-                        
-                        // AUTO-CREATE REMOVE JOB only if Unit On Wall was successfully created
-                        if (in_array($completedSchedule->type, $installTypes) && $jobAdvice && $jobAdvice->remove_date && $unitOnWallCreated) {
-                            $isInstallFree = false;
-                            if ($jobAdvice && $jobAdvice->type) {
-                                $jaTypeLower = strtolower(trim($jobAdvice->type));
-                                $isInstallFree = ($jaTypeLower === 'install_free' || $jaTypeLower === 'install free');
-                            }
-                            
-                            if ($isInstallFree) {
-                                // Generate per completed room, not per JA. A previous room may already
-                                // have its remove job while another room finishes later.
-                                $jobAdviceController = new \App\Http\Controllers\Marketing\JobAdviceController();
-                                $jobAdviceController->generateRemoveFreeSchedule($jobAdvice, $completedSchedule);
-                            } else if (!$isInstallFree) {
-                            }
-                        }
-                        
-                        // MOM13: When the FIRST service/check completes, generate ALL remaining
-                        // periods at once. Standalone Service JAs create their first job as
-                        // service_routine, so include it alongside service/service_first.
-                        if (in_array(strtolower((string) $completedSchedule->type), ['service', 'service_first', 'service_routine'], true)) {
-                            $this->generateFollowUpServiceSchedules($completedSchedule, $jobAdvice);
-                            $this->checkAndCreateRemoveJobAfterAllServicesComplete($completedSchedule, $jobAdvice);
-                            $this->autoUpdateUnitOnWallLastServiceDate($completedSchedule, $jobAdvice);
-                        }
-                    }
-                    
-                    // AUTO-REMOVE/HIDE UNIT ON WALL when remove job (Return) is completed
-                    // "ketika remove job sudah selesai, unit on wall akan otomatis ter-hide/removed"
-                    $removeTypes = ['remove', 'remove_free', 'remove free'];
-                    if (
-                        in_array(strtolower($jobSchedule->type), $removeTypes, true)
-                        && in_array($updateData['status'], ['completed', 'done_job'], true)
-                    ) {
-                        $this->autoRemoveUnitOnWall($jobSchedule, $jobAdvice);
-                        
-                        // MOM8: Skip invoice untuk remove job dari install free/trial
-                        // Check if the original install job was install free/trial
-                        $isInstallFreeOrTrial = $this->isRemoveJobFromInstallFree($jobSchedule, $jobAdvice);
-                        
-                        if ($jobAdvice->contract_id && !$isInstallFreeOrTrial) {
-                            $this->triggerAutoInvoiceGeneration($jobAdvice->contract_id);
-                        }
-                    } else if ($jobAdvice->contract_id) {
-                        // MOM15: Real-time Invoice Trigger for Service Jobs
-                        // If this job is part of a contract, check if this completion triggers an invoice
-                        // (i.e., if this was the last job needed for the billing period)
-                        try {
-                            $invoiceService = app(\App\Services\Finance\InvoiceGenerationService::class);
-                            $invoiceService->attemptAutoInvoiceForContract($jobAdvice->contract_id);
-                        } catch (\Exception $e) {
-                            \Log::error("Failed to trigger real-time invoice check: " . $e->getMessage());
-                        }
-                    }
-                }
+            // Extracted to runCompletionAutomation() so the web "Done Job with BA" path
+            // (completeWithBa) reuses the EXACT same downstream automation instead of duplicating it.
+            if (isset($updateData['status'])) {
+                $this->runCompletionAutomation($jobSchedule, $updateData['status'], $updateData);
             }
 
             // If request expects JSON, return JSON response
@@ -3583,7 +3453,7 @@ class JobScheduleController extends Controller
                     'data' => $jobSchedule->fresh()
                 ]);
             }
-            
+
             // Otherwise redirect back (for form submission like "Done Job" button)
             return redirect()->route('operational.job-schedules.show', $jobSchedule->id)
                 ->with('success', 'Job schedule updated successfully');
@@ -4758,13 +4628,167 @@ class JobScheduleController extends Controller
     }
 
     /**
+     * Run the post-completion automation for a JobSchedule moving into a
+     * completion status (done_job/completed/suspend/dpf/cancelled).
+     *
+     * Extracted verbatim from update() so the web "Done Job with BA" path
+     * (completeWithBa) reuses the EXACT same downstream automation — sibling
+     * propagation, material finalization, unit-on-wall, remove-job/remove-free
+     * generation, follow-up service schedules, and auto-invoice — instead of
+     * maintaining a second, divergent copy of the state machine.
+     */
+    private function runCompletionAutomation(JobSchedule $jobSchedule, string $status, array $completionMeta = []): void
+    {
+        // MOM13: completed, done_job, suspend (selesai tanpa tagih), dpf (selesai tetap tagih)
+        $completionStatuses = ['done_job', 'completed', 'suspend', 'dpf', 'cancelled'];
+
+        if (!in_array($status, $completionStatuses)) {
+            return;
+        }
+
+        // [FIX BUG 1] Propagate completion status to ALL sibling JobSchedules
+        $schedulesToComplete = collect([$jobSchedule]);
+        if (in_array($status, ['completed', 'done_job']) && $jobSchedule->job_number) {
+            $siblings = \App\Models\JobSchedule::where('job_number', $jobSchedule->job_number)
+                ->where('id', '!=', $jobSchedule->id)
+                ->whereNotIn('status', $completionStatuses)
+                ->get();
+
+            foreach ($siblings as $sibling) {
+                $siblingValidation = $this->validateWebCompletionTransition($sibling, $status);
+                if ($siblingValidation !== true) {
+                    \Log::warning('Skipping sibling completion propagation because status flow is not ready', [
+                        'job_schedule_id' => $sibling->id,
+                        'job_number' => $sibling->job_number,
+                        'current_status' => $sibling->status,
+                        'target_status' => $status,
+                        'reason' => $siblingValidation['message'] ?? null,
+                    ]);
+                    continue;
+                }
+
+                $siblingUpdates = ['status' => $status, 'updated_by' => Auth::id()];
+                if (isset($completionMeta['ba_date'])) $siblingUpdates['ba_date'] = $completionMeta['ba_date'];
+                if (isset($completionMeta['ba_number'])) $siblingUpdates['ba_number'] = $completionMeta['ba_number'];
+                if (isset($completionMeta['completed_at'])) $siblingUpdates['completed_at'] = $completionMeta['completed_at'];
+
+                $this->completeScheduleRoomsFromWeb($sibling);
+                $sibling->update($siblingUpdates);
+                $schedulesToComplete->push($sibling);
+            }
+        }
+
+        // Process Auto-Execution Logic securely for all completed schedules
+        $jobAdvice = $jobSchedule->jobAdvice;
+
+        if ($jobAdvice) {
+            // AUTO-GENERATE INVOICE when job status changes to completion statuses (Berdasarkan BRD)
+            // MOM8: Skip invoice untuk install free/trial job
+            // MOM13: completed, done_job, dpf trigger invoice. suspend = no invoice
+            $invoiceTriggerStatuses = ['completed', 'done_job', 'dpf']; // Suspend TIDAK trigger invoice
+            if (in_array($status, $invoiceTriggerStatuses)) {
+                if ($jobAdvice->contract_id) {
+                    // Check if this is install free/trial job
+                    $isInstallFreeOrTrial = $this->isInstallFreeOrTrial($jobSchedule, $jobAdvice);
+
+                    if (!$isInstallFreeOrTrial) {
+                        $this->triggerAutoInvoiceGeneration($jobAdvice->contract_id);
+                    }
+                }
+            }
+
+            // Process Invoice & Remove Job generation for every completed schedule.
+            // The Remove Free generator is idempotent per JobAdviceRoom, so do not stop
+            // after the first IF room: grouped/web completions can finish multiple IFs.
+
+            foreach ($schedulesToComplete as $completedSchedule) {
+                $completedSchedule->refresh();
+                app(\App\Services\Operational\JobMaterialCompletionService::class)
+                    ->finalizeForCompletedJob($completedSchedule);
+
+                // AUTO-CREATE UNIT ON WALL (Runs per room / JobSchedule)
+                $unitOnWallCreated = false;
+                $installTypes = ['install', 'Install', 'Install Free', 'install_free', 'service', 'Service', 'change_rental', 'change rental'];
+                if (in_array($completedSchedule->type, $installTypes) && $completedSchedule->areAllRoomsCompleted()) {
+                    $unitOnWallCreated = $this->autoCreateUnitOnWall($completedSchedule, $jobAdvice);
+                }
+
+                if ($jobAdvice && in_array(strtolower((string) $completedSchedule->type), ['install'], true)) {
+                    $this->generateUnitOnlyCheckSchedulesAfterInstall($completedSchedule, $jobAdvice);
+                }
+
+                // AUTO-CREATE REMOVE JOB only if Unit On Wall was successfully created
+                if (in_array($completedSchedule->type, $installTypes) && $jobAdvice && $jobAdvice->remove_date && $unitOnWallCreated) {
+                    $isInstallFree = false;
+                    if ($jobAdvice && $jobAdvice->type) {
+                        $jaTypeLower = strtolower(trim($jobAdvice->type));
+                        $isInstallFree = ($jaTypeLower === 'install_free' || $jaTypeLower === 'install free');
+                    }
+
+                    if ($isInstallFree) {
+                        // Generate per completed room, not per JA. A previous room may already
+                        // have its remove job while another room finishes later.
+                        $jobAdviceController = new \App\Http\Controllers\Marketing\JobAdviceController();
+                        $jobAdviceController->generateRemoveFreeSchedule($jobAdvice, $completedSchedule);
+                    }
+                }
+
+                // MOM13: When the FIRST service/check completes, generate ALL remaining
+                // periods at once. Standalone Service JAs create their first job as
+                // service_routine, so include it alongside service/service_first.
+                if (in_array(strtolower((string) $completedSchedule->type), ['service', 'service_first', 'service_routine'], true)) {
+                    $this->generateFollowUpServiceSchedules($completedSchedule, $jobAdvice);
+                    $this->checkAndCreateRemoveJobAfterAllServicesComplete($completedSchedule, $jobAdvice);
+                    $this->autoUpdateUnitOnWallLastServiceDate($completedSchedule, $jobAdvice);
+                }
+            }
+
+            // AUTO-REMOVE/HIDE UNIT ON WALL when remove job (Return) is completed
+            // "ketika remove job sudah selesai, unit on wall akan otomatis ter-hide/removed"
+            $removeTypes = ['remove', 'remove_free', 'remove free'];
+            if (
+                in_array(strtolower($jobSchedule->type), $removeTypes, true)
+                && in_array($status, ['completed', 'done_job'], true)
+            ) {
+                $this->autoRemoveUnitOnWall($jobSchedule, $jobAdvice);
+
+                // MOM8: Skip invoice untuk remove job dari install free/trial
+                // Check if the original install job was install free/trial
+                $isInstallFreeOrTrial = $this->isRemoveJobFromInstallFree($jobSchedule, $jobAdvice);
+
+                if ($jobAdvice->contract_id && !$isInstallFreeOrTrial) {
+                    $this->triggerAutoInvoiceGeneration($jobAdvice->contract_id);
+                }
+            } else if ($jobAdvice->contract_id) {
+                // MOM15: Real-time Invoice Trigger for Service Jobs
+                // If this job is part of a contract, check if this completion triggers an invoice
+                // (i.e., if this was the last job needed for the billing period)
+                try {
+                    $invoiceService = app(\App\Services\Finance\InvoiceGenerationService::class);
+                    $invoiceService->attemptAutoInvoiceForContract($jobAdvice->contract_id);
+                } catch (\Exception $e) {
+                    \Log::error("Failed to trigger real-time invoice check: " . $e->getMessage());
+                }
+            }
+        }
+    }
+
+    /**
      * Complete a room manual via web interface
      */
     public function completeRoomManual(Request $request, JobSchedule $jobSchedule, $roomId)
     {
+        $request->validate([
+            'before_photos' => 'nullable|array',
+            'before_photos.*' => 'image|max:5120', // 5MB per photo
+            'after_photos' => 'nullable|array',
+            'after_photos.*' => 'image|max:5120',
+            'notes' => 'nullable|string',
+        ]);
+
         try {
             DB::beginTransaction();
-            
+
             $jobScheduleRoom = \App\Models\JobScheduleRoom::findOrFail($roomId);
 
             $roomCompletionValidation = $this->validateWebRoomCompletion($jobSchedule);
@@ -4780,10 +4804,19 @@ class JobScheduleController extends Controller
                     'message' => 'Room ini tidak terhubung dengan job schedule yang sedang dibuka.',
                 ], 422);
             }
-            
+
+            // Persist before/after work photos (mirrors mobile completeRoom)
+            app(\App\Services\Operational\JobWebCompletionService::class)->completeRoomWithPhotos(
+                $jobSchedule,
+                $jobScheduleRoom,
+                $request->file('before_photos') ?? [],
+                $request->file('after_photos') ?? [],
+                Auth::id()
+            );
+
             // Mark as completed using existing model method
-            $jobScheduleRoom->markAsCompleted(Auth::id(), 'Completed manually via web admin');
-            
+            $jobScheduleRoom->markAsCompleted(Auth::id(), $request->input('notes') ?: 'Completed manually via web admin');
+
             // Optional: Check if all rooms are now completed and update job schedule status
             if ($jobSchedule->areAllRoomsCompleted()) {
                 if (!in_array($jobSchedule->status, ['done_job', 'completed', 'selesai', 'teknisi_selesai_pengerjaan'])) {
@@ -4808,6 +4841,261 @@ class JobScheduleController extends Controller
                 'message' => 'Failed to update room: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Web fallback (APK error): finish a job with Berita Acara from the dashboard.
+     *
+     * Replicates the mobile verifyJob() full-completion path — captures PIC name,
+     * signature, and PIC/work photos, creates the JobReport, stamps BA date/number,
+     * moves the job to done_job, then runs the SAME runCompletionAutomation() the
+     * "Done Job" button uses. Requires all rooms completed with before/after photos
+     * (the same readiness invariant as mobile).
+     */
+    public function completeWithBa(Request $request, JobSchedule $jobSchedule)
+    {
+        $validator = Validator::make($request->all(), [
+            'pic_name' => 'required|string|max:255',
+            'signature' => 'nullable|string', // base64 data URI
+            'pic_photo' => 'nullable|image|max:5120',
+            'photos' => 'nullable|array',
+            'photos.*' => 'image|max:5120',
+            'notes' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        if ($jobSchedule->status === 'undone') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat diselesaikan.',
+            ], 423);
+        }
+
+        // Same status-flow gate as the "Done Job" button.
+        $transitionValidation = $this->validateWebCompletionTransition($jobSchedule, 'done_job');
+        if ($transitionValidation !== true) {
+            return response()->json($transitionValidation, 422);
+        }
+
+        // Readiness: all rooms must be completed before BA can be issued (mirrors
+        // mobile validateJobReadyForMobileCompletion for the full path).
+        if (!$jobSchedule->areAllRoomsCompleted()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Semua ruangan harus berstatus selesai (lengkap dengan foto before/after) sebelum BA dapat dibuat.',
+            ], 422);
+        }
+
+        // PIC photo + signature are mandatory (mirrors verifyJob:4046-4053),
+        // allowing already-saved values from a prior partial submission.
+        $existingReport = \App\Models\JobReport::where('job_schedule_id', $jobSchedule->id)->first();
+        $hasPicPhoto = $request->hasFile('pic_photo') || !empty($existingReport?->photo_pic);
+        $hasSignature = $request->filled('signature') || !empty($existingReport?->signature_file) || !empty($existingReport?->signature_data);
+
+        if (!$hasPicPhoto || !$hasSignature) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Foto PIC dan tanda tangan wajib diisi sebelum BA dapat disimpan.',
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $service = app(\App\Services\Operational\JobWebCompletionService::class);
+            $meta = $service->finalizeWithBa($jobSchedule, [
+                'pic_name' => $request->input('pic_name'),
+                'notes' => $request->input('notes'),
+                'signature_base64' => $request->input('signature'),
+                'pic_photo' => $request->file('pic_photo'),
+                'work_photos' => $request->file('photos') ?? [],
+            ], Auth::id());
+
+            // Move to done_job + propagate via the shared automation (single state machine).
+            $this->completeScheduleRoomsFromWeb($jobSchedule);
+            $jobSchedule->status = 'done_job';
+            $jobSchedule->updated_by = Auth::id();
+            $jobSchedule->save();
+
+            $this->runCompletionAutomation($jobSchedule, 'done_job', $meta);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Job berhasil diselesaikan dengan Berita Acara.',
+                'data' => [
+                    'ba_number' => $meta['ba_number'] ?? null,
+                    'ba_date' => $meta['ba_date'] ?? null,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error("completeWithBa failed for job {$jobSchedule->id}: " . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal menyelesaikan job: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Web fallback (Phase 2): record technician arrival from the dashboard.
+     */
+    public function arrivedAtLocationWeb(Request $request, JobSchedule $jobSchedule)
+    {
+        $request->validate([
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'notes' => 'nullable|string',
+        ]);
+
+        if ($jobSchedule->status === 'undone') {
+            return response()->json(['status' => 'error', 'message' => 'Job sedang dalam proses koreksi BA Date dan tidak dapat diubah.'], 423);
+        }
+
+        try {
+            DB::beginTransaction();
+            $res = app(\App\Services\Operational\JobWebCompletionService::class)
+                ->arrivedAtLocation($jobSchedule, $request->input('latitude'), $request->input('longitude'), Auth::id(), $request->input('notes'));
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Kedatangan teknisi dicatat (Tiba di Lokasi).',
+                'data' => $res,
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error("arrivedAtLocationWeb failed for job {$jobSchedule->id}: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Gagal mencatat kedatangan: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Web fallback (Phase 2): start work from the dashboard.
+     */
+    public function startWorkWeb(Request $request, JobSchedule $jobSchedule)
+    {
+        if ($jobSchedule->status === 'undone') {
+            return response()->json(['status' => 'error', 'message' => 'Job sedang dalam proses koreksi BA Date dan tidak dapat diubah.'], 423);
+        }
+
+        try {
+            DB::beginTransaction();
+            $res = app(\App\Services\Operational\JobWebCompletionService::class)->startWork($jobSchedule, Auth::id());
+            if (!$res['ok']) {
+                DB::rollBack();
+                return response()->json(['status' => 'error', 'message' => $res['message']], 422);
+            }
+            DB::commit();
+
+            return response()->json(['status' => 'success', 'message' => 'Pekerjaan dimulai (On Progress Teknisi).']);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error("startWorkWeb failed for job {$jobSchedule->id}: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Gagal memulai pekerjaan: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Web fallback (Phase 2): leave location from the dashboard.
+     */
+    public function leaveLocationWeb(Request $request, JobSchedule $jobSchedule)
+    {
+        $request->validate([
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'notes' => 'nullable|string',
+        ]);
+
+        if ($jobSchedule->status === 'undone') {
+            return response()->json(['status' => 'error', 'message' => 'Job sedang dalam proses koreksi BA Date dan tidak dapat diubah.'], 423);
+        }
+
+        try {
+            DB::beginTransaction();
+            app(\App\Services\Operational\JobWebCompletionService::class)
+                ->leaveLocation($jobSchedule, $request->input('latitude'), $request->input('longitude'), Auth::id(), $request->input('notes'));
+            DB::commit();
+
+            return response()->json(['status' => 'success', 'message' => 'Status diubah menjadi Meninggalkan Lokasi.']);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error("leaveLocationWeb failed for job {$jobSchedule->id}: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Gagal mencatat meninggalkan lokasi: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Web fallback (Phase 3): confirm materials from the dashboard
+     * (mirror mobile confirmMaterials → material_checked + finalize issuings).
+     */
+    public function confirmMaterialsWeb(Request $request, JobSchedule $jobSchedule)
+    {
+        $res = app(\App\Services\Operational\JobWebCompletionService::class)
+            ->confirmMaterials($jobSchedule, Auth::id());
+
+        return response()->json([
+            'status' => $res['ok'] ? 'success' : 'error',
+            'message' => $res['message'],
+        ], $res['code']);
+    }
+
+    /**
+     * Web fallback (Phase 3): verify material pickup from the dashboard
+     * (mirror mobile verifyMaterials → issuing 'sent', SN on_hand, job barang_diambil).
+     */
+    public function verifyMaterialsWeb(Request $request, JobSchedule $jobSchedule)
+    {
+        $res = app(\App\Services\Operational\JobWebCompletionService::class)
+            ->verifyMaterials($jobSchedule, Auth::id());
+
+        return response()->json([
+            'status' => $res['ok'] ? 'success' : 'error',
+            'message' => $res['message'],
+        ], $res['code']);
+    }
+
+    /**
+     * Web fallback (Phase 3): save a selected unit + aroma schedule from the
+     * dashboard (mirror mobile saveScannedUnit; DB-record-only, no device push).
+     */
+    public function saveScannedUnitWeb(Request $request, JobSchedule $jobSchedule)
+    {
+        $validated = $request->validate([
+            'room_id' => 'required|integer',
+            'mac' => 'required|string',
+            'device_type' => 'required|string',
+            'device_name' => 'nullable|string',
+            'notes' => 'nullable|string',
+            'schedule' => 'nullable|array',
+        ]);
+
+        $res = app(\App\Services\Operational\JobWebCompletionService::class)->saveScannedUnit(
+            $jobSchedule,
+            (int) $validated['room_id'],
+            $validated['mac'],
+            $validated['device_type'],
+            $validated['device_name'] ?? null,
+            $validated['schedule'] ?? null,
+            $validated['notes'] ?? null,
+            Auth::id()
+        );
+
+        return response()->json([
+            'status' => $res['ok'] ? 'success' : 'error',
+            'message' => $res['message'],
+            'data' => ['job_schedule_unit_id' => $res['job_schedule_unit_id']],
+        ], $res['code']);
     }
 
     private function inferMaterialReturnReasonCategory(?string $reason): string

@@ -599,17 +599,48 @@
                                     ? 'Selesaikan semua room terlebih dahulu'
                                     : ($canDoneFromStatus ? 'Selesaikan pekerjaan' : 'Done Job hanya bisa setelah On Progress Teknisi');
                             @endphp
+                            @php
+                                $arrivedAllowed = in_array($jobSchedule->status, ['barang_diambil','barang_dipersiapkan','assign_material','assign_team','scheduled','new_job','meninggalkan_lokasi'], true);
+                                $startAllowed = in_array($jobSchedule->status, ['teknisi_tiba_dilokasi','barang_diambil'], true);
+                                $leaveAllowed = in_array($jobSchedule->status, ['teknisi_tiba_dilokasi','in_progress','teknisi_sedang_pengerjaan','teknisi_selesai_pengerjaan'], true);
+                                // Phase 3 material lifecycle (only for non-remove jobs that use materials)
+                                $isMaterialJob = !in_array(strtolower($jobSchedule->type), ['remove','remove_free','remove free'], true);
+                                $confirmMaterialAllowed = $isMaterialJob && $jobSchedule->status === 'barang_siap_diambil';
+                                $verifyMaterialAllowed = $isMaterialJob && in_array($jobSchedule->status, ['barang_dipersiapkan','barang_siap_diambil','assign_material'], true);
+                            @endphp
+                            {{-- Phase 3 web fallback: material confirm / verify --}}
+                            @if($confirmMaterialAllowed)
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="webMaterialAction('confirm-materials','Konfirmasi material yang akan diambil teknisi?')" title="Konfirmasi Material dari web">
+                                <i class="fas fa-clipboard-check"></i> Konfirmasi Material
+                            </button>
+                            @endif
+                            @if($verifyMaterialAllowed)
+                            <button type="button" class="btn btn-outline-dark btn-sm" onclick="webMaterialAction('verify-materials','Verifikasi pengambilan barang (Barang Diambil)?')" title="Verifikasi Ambil Barang dari web">
+                                <i class="fas fa-box-open"></i> Ambil Barang
+                            </button>
+                            @endif
+                            {{-- Phase 2 web fallback: technician location lifecycle --}}
+                            @if($arrivedAllowed)
+                            <button type="button" class="btn btn-info btn-sm" onclick="webLifecycleAction('arrived','Catat kedatangan teknisi (Tiba di Lokasi)?')" title="Catat Tiba di Lokasi dari web">
+                                <i class="fas fa-map-marker-alt"></i> Tiba di Lokasi
+                            </button>
+                            @endif
+                            @if($startAllowed)
+                            <button type="button" class="btn btn-primary btn-sm" onclick="webLifecycleAction('start-work','Mulai pekerjaan (On Progress Teknisi)?')" title="Mulai Kerja dari web">
+                                <i class="fas fa-play"></i> Mulai Kerja
+                            </button>
+                            @endif
+                            @if($leaveAllowed)
+                            <button type="button" class="btn btn-warning btn-sm" onclick="webLifecycleAction('leave-location','Tandai teknisi meninggalkan lokasi sementara?')" title="Tinggalkan Lokasi dari web">
+                                <i class="fas fa-sign-out-alt"></i> Tinggalkan Lokasi
+                            </button>
+                            @endif
                             @if(!in_array($jobSchedule->status, ['completed', 'done_job', 'cancelled', 'suspend', 'dpf']))
-                            <form method="POST" action="{{ route('operational.job-schedules.update', $jobSchedule->id) }}" id="doneJobForm" style="display: inline;" onsubmit="return confirmDoneJob(event);">
-                                @csrf
-                                @method('PUT')
-                                <input type="hidden" name="status" value="completed">
-                                <button type="submit" id="headerDoneButton" class="btn btn-success btn-sm" data-can-done-from-status="{{ $canDoneFromStatus ? '1' : '0' }}" {{ $doneButtonDisabled ? 'disabled' : '' }} 
-                                    style="{{ $doneButtonDisabled ? 'background-color: #6c757d; border-color: #6c757d; cursor: not-allowed; opacity: 1;' : '' }}"
-                                    title="{{ $doneButtonTitle }}">
-                                    <i class="fas fa-check-circle"></i> Done Job
-                                </button>
-                            </form>
+                            <button type="button" id="headerDoneButton" class="btn btn-success btn-sm" data-can-done-from-status="{{ $canDoneFromStatus ? '1' : '0' }}" {{ $doneButtonDisabled ? 'disabled' : '' }}
+                                style="{{ $doneButtonDisabled ? 'background-color: #6c757d; border-color: #6c757d; cursor: not-allowed; opacity: 1;' : '' }}"
+                                title="{{ $doneButtonTitle }}" onclick="openDoneJobBaModal()">
+                                <i class="fas fa-check-circle"></i> Done Job
+                            </button>
                             @endif
                             @if($jobSchedule->status === 'done_job' || $jobSchedule->status === 'completed')
                             <form method="POST" action="{{ route('operational.job-schedules.undone', $jobSchedule->id) }}" style="display: inline;" onsubmit="return confirmUndoneJob(event);">
@@ -1298,10 +1329,20 @@
                 <!-- Serial Numbers Tab -->
                 <div class="tab-pane fade" id="serial-numbers" role="tabpanel" aria-labelledby="serial-numbers-tab">
                     <div class="card" style="width: 100%; min-height: 500px;">
-                        <div class="card-header" style="background-color: #f8f9fa; border-bottom: 2px solid #1e3a8a;">
+                        <div class="card-header d-flex justify-content-between align-items-center" style="background-color: #f8f9fa; border-bottom: 2px solid #1e3a8a;">
                             <h5 class="card-title mb-0" style="color: #1e3a8a;">
                                 <i class="fas fa-barcode me-2"></i>Serial Numbers
                             </h5>
+                            @php
+                                $aromaJobAllowed = !in_array(strtolower($jobSchedule->type), ['remove','remove_free','remove free'], true)
+                                    && !in_array($jobSchedule->status, ['done_job','completed','cancelled','undone'], true)
+                                    && ($jobSchedule->jobScheduleRooms->isNotEmpty());
+                            @endphp
+                            @if($aromaJobAllowed)
+                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="openAromaUnitModal()" title="Set unit & jadwal aroma dari web (fallback APK)">
+                                <i class="fas fa-spray-can me-1"></i> Set Unit & Jadwal Aroma
+                            </button>
+                            @endif
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
@@ -2039,9 +2080,130 @@
         </div>
     </div>
 </div>
+
+<!-- Web fallback: Done Job with Berita Acara modal -->
+<div class="modal fade" id="doneJobBaModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header" style="background:#1e3a8a;color:#fff;">
+                <h5 class="modal-title"><i class="fas fa-file-signature me-2"></i>Selesaikan Job — Berita Acara</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:13px;color:#6b7280;">
+                    Gunakan form ini bila aplikasi teknisi tidak dapat dipakai. Pastikan semua ruangan sudah berstatus selesai (lengkap dengan foto before/after) sebelum membuat BA.
+                </p>
+                <form id="doneJobBaForm" enctype="multipart/form-data">
+                    @csrf
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Nama PIC Lapangan <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="pic_name" id="baPicName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Foto PIC <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" name="pic_photo" id="baPicPhoto" accept="image/*" capture="environment">
+                        <div class="form-text">Di tablet/HP tombol ini menawarkan kamera. Bisa juga unggah file.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Foto Dokumentasi Tambahan (opsional)</label>
+                        <input type="file" class="form-control" name="photos[]" id="baWorkPhotos" accept="image/*" capture="environment" multiple>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Tanda Tangan PIC <span class="text-danger">*</span></label>
+                        <div style="border:1px solid #d1d5db;border-radius:6px;background:#fff;">
+                            <canvas id="baSignaturePad" style="width:100%;height:180px;touch-action:none;"></canvas>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="clearBaSignature()">
+                            <i class="fas fa-eraser"></i> Hapus Tanda Tangan
+                        </button>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Catatan (opsional)</label>
+                        <textarea class="form-control" name="notes" id="baNotes" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-success" id="baSubmitBtn" onclick="submitDoneJobBa()">
+                    <i class="fas fa-check-circle"></i> Selesaikan & Buat BA
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- Phase 3 web fallback: set scanned unit + aroma schedule (DB-record-only) --}}
+<div class="modal fade" id="aromaUnitModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header" style="background:#1e3a8a;color:#fff;">
+                <h5 class="modal-title"><i class="fas fa-spray-can me-2"></i>Set Unit & Jadwal Aroma</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:13px;color:#6b7280;">
+                    Catat unit yang dipasang dan jadwal aromanya bila aplikasi teknisi tidak dapat dipakai.
+                    Data disimpan ke job (record-only); pengaturan tidak dikirim langsung ke perangkat SmartScent fisik.
+                </p>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Ruangan <span class="text-danger">*</span></label>
+                    <select class="form-select" id="aromaRoom">
+                        <option value="">— Pilih ruangan —</option>
+                        @foreach($jobSchedule->jobScheduleRooms as $jsr)
+                            @php $jarId = $jsr->job_advice_room_id; @endphp
+                            @if($jarId)
+                            <option value="{{ $jarId }}">{{ $jsr->room_name ?? ('Room #'.$jarId) }}</option>
+                            @endif
+                        @endforeach
+                    </select>
+                </div>
+                <div class="row">
+                    <div class="col-md-7 mb-3">
+                        <label class="form-label fw-bold">Serial Number / MAC Unit <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="aromaMac" placeholder="cth. AA:BB:CC:DD:EE:FF">
+                    </div>
+                    <div class="col-md-5 mb-3">
+                        <label class="form-label fw-bold">Tipe Unit</label>
+                        <input type="text" class="form-control" id="aromaDeviceType" value="SmartScent">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">Jam Mulai</label>
+                        <input type="time" class="form-control" id="aromaStart" value="08:00">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">Jam Selesai</label>
+                        <input type="time" class="form-control" id="aromaEnd" value="17:00">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">Intensitas</label>
+                        <select class="form-select" id="aromaIntensity">
+                            <option value="low">Rendah</option>
+                            <option value="medium" selected>Sedang</option>
+                            <option value="high">Tinggi</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label fw-bold">Catatan (opsional)</label>
+                    <textarea class="form-control" id="aromaNotes" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-primary" id="aromaSubmitBtn" onclick="submitAromaUnit()">
+                    <i class="fas fa-save"></i> Simpan Unit & Jadwal
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 @endpush
 
 @push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
 <script>
     // Permissions for JS
     @php
@@ -2469,10 +2631,40 @@ function confirmUndoneJob(event) {
 function completeRoomManual(roomId) {
     const btn = event.currentTarget;
     const originalContent = btn.innerHTML;
-    showConfirmDialog(
-        'Tandai ruangan ini sebagai selesai?',
-        'Status ruangan akan diubah menjadi selesai.'
-    ).then((result) => {
+    Swal.fire({
+        title: 'Selesaikan Ruangan',
+        html: `
+            <p style="font-size:13px;color:#6b7280;margin-bottom:12px;text-align:left;">
+                Unggah foto dokumentasi pekerjaan. Di tablet/HP, tombol unggah otomatis menawarkan kamera.
+            </p>
+            <div style="text-align:left;margin-bottom:10px;">
+                <label style="font-weight:600;font-size:13px;">Foto Before Work</label>
+                <input type="file" id="manualBeforePhotos" class="swal2-file" accept="image/*" capture="environment" multiple>
+            </div>
+            <div style="text-align:left;margin-bottom:10px;">
+                <label style="font-weight:600;font-size:13px;">Foto After Work</label>
+                <input type="file" id="manualAfterPhotos" class="swal2-file" accept="image/*" capture="environment" multiple>
+            </div>
+            <div style="text-align:left;">
+                <label style="font-weight:600;font-size:13px;">Catatan (opsional)</label>
+                <textarea id="manualRoomNotes" class="swal2-textarea" style="margin:0;" placeholder="Catatan ruangan"></textarea>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Tandai Selesai',
+        cancelButtonText: 'Batal',
+        focusConfirm: false,
+        preConfirm: () => {
+            const fd = new FormData();
+            const before = document.getElementById('manualBeforePhotos').files;
+            const after = document.getElementById('manualAfterPhotos').files;
+            for (let i = 0; i < before.length; i++) fd.append('before_photos[]', before[i]);
+            for (let i = 0; i < after.length; i++) fd.append('after_photos[]', after[i]);
+            const notes = document.getElementById('manualRoomNotes').value;
+            if (notes) fd.append('notes', notes);
+            return fd;
+        }
+    }).then((result) => {
         if (!result.isConfirmed) {
             return;
         }
@@ -2483,6 +2675,9 @@ function completeRoomManual(roomId) {
         $.ajax({
             url: `{{ route('operational.job-schedules.rooms.complete-manual', [ 'jobSchedule' => $jobSchedule->id, 'roomId' => ':roomId' ]) }}`.replace(':roomId', roomId),
             method: 'POST',
+            data: result.value,
+            processData: false,
+            contentType: false,
             headers: {
                 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
             },
@@ -2675,4 +2870,201 @@ function saveBaDateInline(dateStr) {
 </script>
 <!-- Flatpickr JS -->
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+<!-- Web fallback: Done Job with Berita Acara -->
+<script>
+// Phase 2: technician location lifecycle actions from the dashboard
+function webLifecycleAction(action, confirmText) {
+    const routes = {
+        'arrived': `{{ route('operational.job-schedules.arrived', $jobSchedule->id) }}`,
+        'start-work': `{{ route('operational.job-schedules.start-work', $jobSchedule->id) }}`,
+        'leave-location': `{{ route('operational.job-schedules.leave-location', $jobSchedule->id) }}`,
+    };
+    Swal.fire({
+        title: 'Konfirmasi',
+        text: confirmText,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, lanjutkan',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+        $.ajax({
+            url: routes[action],
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+            success: function(data) {
+                Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message, timer: 1500, showConfirmButton: false })
+                    .then(() => window.location.reload());
+            },
+            error: function(xhr) {
+                const msg = xhr.responseJSON ? (xhr.responseJSON.message || 'Aksi gagal') : 'Terjadi kesalahan sistem';
+                Swal.fire('Gagal', msg, 'error');
+            }
+        });
+    });
+}
+
+// Phase 3 web fallback: material confirm / verify
+function webMaterialAction(action, confirmText) {
+    const routes = {
+        'confirm-materials': `{{ route('operational.job-schedules.confirm-materials', $jobSchedule->id) }}`,
+        'verify-materials': `{{ route('operational.job-schedules.verify-materials', $jobSchedule->id) }}`,
+    };
+    Swal.fire({
+        title: 'Konfirmasi',
+        text: confirmText,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, lanjutkan',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+        $.ajax({
+            url: routes[action],
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+            success: function(data) {
+                Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message, timer: 1600, showConfirmButton: false })
+                    .then(() => window.location.reload());
+            },
+            error: function(xhr) {
+                const msg = xhr.responseJSON ? (xhr.responseJSON.message || 'Aksi gagal') : 'Terjadi kesalahan sistem';
+                Swal.fire('Gagal', msg, 'error');
+            }
+        });
+    });
+}
+
+// Phase 3 web fallback: set unit + aroma schedule
+function openAromaUnitModal() {
+    new bootstrap.Modal(document.getElementById('aromaUnitModal')).show();
+}
+
+function submitAromaUnit() {
+    const roomId = document.getElementById('aromaRoom').value;
+    const mac = document.getElementById('aromaMac').value.trim();
+    if (!roomId) { Swal.fire('Lengkapi Data', 'Ruangan wajib dipilih.', 'warning'); return; }
+    if (!mac) { Swal.fire('Lengkapi Data', 'Serial Number / MAC unit wajib diisi.', 'warning'); return; }
+
+    const payload = {
+        room_id: roomId,
+        mac: mac,
+        device_type: document.getElementById('aromaDeviceType').value.trim() || 'SmartScent',
+        notes: document.getElementById('aromaNotes').value || null,
+        schedule: {
+            start: document.getElementById('aromaStart').value,
+            end: document.getElementById('aromaEnd').value,
+            intensity: document.getElementById('aromaIntensity').value,
+        },
+    };
+
+    const btn = document.getElementById('aromaSubmitBtn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+
+    $.ajax({
+        url: `{{ route('operational.job-schedules.save-scanned-unit', $jobSchedule->id) }}`,
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+        data: payload,
+        success: function(data) {
+            Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message, timer: 1600, showConfirmButton: false })
+                .then(() => window.location.reload());
+        },
+        error: function(xhr) {
+            btn.disabled = false;
+            btn.innerHTML = original;
+            const msg = xhr.responseJSON ? (xhr.responseJSON.message || 'Gagal menyimpan') : 'Terjadi kesalahan sistem';
+            Swal.fire('Gagal', msg, 'error');
+        }
+    });
+}
+
+let baSignaturePad = null;
+
+function openDoneJobBaModal() {
+    const modalEl = document.getElementById('doneJobBaModal');
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+
+    // Init/resize signature pad after the modal is visible (canvas needs layout).
+    modalEl.addEventListener('shown.bs.modal', function initPad() {
+        const canvas = document.getElementById('baSignaturePad');
+        const ratio = Math.max(window.devicePixelRatio || 1, 1);
+        canvas.width = canvas.offsetWidth * ratio;
+        canvas.height = canvas.offsetHeight * ratio;
+        canvas.getContext('2d').scale(ratio, ratio);
+        if (!baSignaturePad) {
+            baSignaturePad = new SignaturePad(canvas, { backgroundColor: 'rgba(255,255,255,0)' });
+        } else {
+            baSignaturePad.clear();
+        }
+    }, { once: true });
+}
+
+function clearBaSignature() {
+    if (baSignaturePad) baSignaturePad.clear();
+}
+
+function submitDoneJobBa() {
+    const picName = document.getElementById('baPicName').value.trim();
+    if (!picName) {
+        Swal.fire('Lengkapi Data', 'Nama PIC wajib diisi.', 'warning');
+        return;
+    }
+    if (!baSignaturePad || baSignaturePad.isEmpty()) {
+        Swal.fire('Lengkapi Data', 'Tanda tangan PIC wajib diisi.', 'warning');
+        return;
+    }
+    const picPhoto = document.getElementById('baPicPhoto').files;
+    if (!picPhoto.length) {
+        Swal.fire('Lengkapi Data', 'Foto PIC wajib diunggah.', 'warning');
+        return;
+    }
+
+    const fd = new FormData();
+    fd.append('pic_name', picName);
+    fd.append('signature', baSignaturePad.toDataURL('image/png'));
+    fd.append('pic_photo', picPhoto[0]);
+    const work = document.getElementById('baWorkPhotos').files;
+    for (let i = 0; i < work.length; i++) fd.append('photos[]', work[i]);
+    const notes = document.getElementById('baNotes').value;
+    if (notes) fd.append('notes', notes);
+
+    const btn = document.getElementById('baSubmitBtn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+
+    $.ajax({
+        url: `{{ route('operational.job-schedules.complete-with-ba', $jobSchedule->id) }}`,
+        method: 'POST',
+        data: fd,
+        processData: false,
+        contentType: false,
+        headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+        success: function(data) {
+            if (data.status === 'success') {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Berhasil',
+                    html: data.message + (data.data && data.data.ba_number ? '<br><small>No. BA: <b>' + data.data.ba_number + '</b></small>' : ''),
+                }).then(() => window.location.reload());
+            } else {
+                Swal.fire('Gagal', data.message || 'Gagal menyimpan BA', 'error');
+                btn.disabled = false;
+                btn.innerHTML = original;
+            }
+        },
+        error: function(xhr) {
+            const msg = xhr.responseJSON ? (xhr.responseJSON.message || 'Validasi gagal') : 'Terjadi kesalahan sistem';
+            Swal.fire('Gagal', msg, 'error');
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    });
+}
+</script>
 @endpush
