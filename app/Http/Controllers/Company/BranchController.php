@@ -8,6 +8,8 @@ use App\Models\Branch;
 use App\Models\Company;
 use App\Models\BranchSetting;
 use App\Models\BranchWarehouse;
+use App\Models\Warehouse;
+use App\Models\WarehouseType;
 use App\Models\OperationalArea;
 use App\Models\BranchPic;
 use App\Models\Province;
@@ -153,6 +155,11 @@ class BranchController extends Controller
             }
 
             $branch = Branch::create($branchData);
+
+            // Auto-create a warehouse for this branch when "Has Warehouse" is checked.
+            if ($hasWarehouse) {
+                $this->createWarehouseForBranch($branch);
+            }
 
             DB::commit();
 
@@ -310,6 +317,12 @@ class BranchController extends Controller
 
             $branch->update($branchData);
 
+            // Auto-create a warehouse when "Has Warehouse" is (now) enabled and
+            // the branch does not have one yet. No-op if it already has a warehouse.
+            if ($hasWarehouse) {
+                $this->createWarehouseForBranch($branch);
+            }
+
             DB::commit();
 
             return response()->json([
@@ -440,6 +453,72 @@ class BranchController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Auto-create a default warehouse for a branch when "Has Warehouse" is enabled.
+     * Skips creation if the branch already has at least one warehouse.
+     */
+    private function createWarehouseForBranch(Branch $branch): ?Warehouse
+    {
+        // Avoid duplicates (e.g. branch toggled has_warehouse off then on again).
+        if ($branch->warehouses()->exists()) {
+            return null;
+        }
+
+        return Warehouse::create([
+            'warehouse_code' => $this->generateWarehouseCode(),
+            'name' => 'Gudang ' . $branch->name,
+            'branch_id' => $branch->id,
+            'warehouse_type_id' => $this->resolveBranchWarehouseTypeId(),
+            'address' => $branch->address_1,
+            'phone' => $branch->phone_1,
+            'is_active' => true,
+            'is_center' => false,
+            'created_by' => Auth::id(),
+            'updated_by' => Auth::id(),
+        ]);
+    }
+
+    /**
+     * Generate a unique warehouse code (mirrors WarehouseController::generateWarehouseCode).
+     */
+    private function generateWarehouseCode(): string
+    {
+        $prefix = 'WH';
+        $year = date('Y');
+        $month = date('m');
+
+        $lastWarehouse = Warehouse::where('warehouse_code', 'like', $prefix . $year . $month . '%')
+            ->orderBy('warehouse_code', 'desc')
+            ->first();
+
+        $newNumber = $lastWarehouse
+            ? intval(substr($lastWarehouse->warehouse_code, -3)) + 1
+            : 1;
+
+        return $prefix . $year . $month . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Resolve (or create) the default "Branch Warehouse" type id.
+     * Mirrors WarehouseController::resolveDefaultWarehouseTypeId for the non-center case.
+     */
+    private function resolveBranchWarehouseTypeId(): int
+    {
+        $type = WarehouseType::where('code', 'BRANCH')->first()
+            ?: WarehouseType::where('name', 'Branch Warehouse')->first();
+
+        if (! $type) {
+            $type = WarehouseType::create([
+                'code' => 'BRANCH',
+                'name' => 'Branch Warehouse',
+                'description' => 'Default type for single warehouse per branch flow.',
+                'is_active' => true,
+            ]);
+        }
+
+        return $type->id;
     }
 
     // Branch Warehouse Management
