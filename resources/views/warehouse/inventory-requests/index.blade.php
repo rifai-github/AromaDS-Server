@@ -1343,9 +1343,7 @@ function openCreateModal() {
                                             <select name="items[0][master_product_id]" class="form-input" required style="width: 100%;">
                                                 <option value="">Select Product</option>
                                                 ${data.data.products.map(product => {
-                                                    const packageSize = product.packaging_size ? product.packaging_size.name : 'Unit';
-                                                    const sku = product.sku ? ` (${product.sku})` : '';
-                                                    return `<option value="${product.id}">${product.name} - ${packageSize}${sku}</option>`;
+                                                    return `<option value="${product.id}">${product.name}</option>`;
                                                 }).join('')}
                                             </select>
                                         </div>
@@ -1851,9 +1849,7 @@ function addItem() {
     newRow.style.cssText = 'margin-bottom: 16px;';
     
     const productOptions = window.productsData.map(product => {
-        const packageSize = product.packaging_size ? product.packaging_size.name : 'Unit';
-        const sku = product.sku ? ` (${product.sku})` : '';
-        return `<option value="${product.id}">${product.name} - ${packageSize}${sku}</option>`;
+        return `<option value="${product.id}">${product.name}</option>`;
     }).join('');
     
     newRow.innerHTML = `
