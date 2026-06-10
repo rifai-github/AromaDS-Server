@@ -1853,7 +1853,7 @@ function openViewModal(id) {
                         </div>
                         <div class="detail-item">
                             <label class="form-label">Variant</label>
-                            <p class="detail-value">${data.data.variant_name || data.data.name || '-'}</p>
+                            <p class="detail-value">${data.data.variant_name || '-'}</p>
                         </div>
                         <div class="detail-item">
                             <label class="form-label">Dimensi</label>
