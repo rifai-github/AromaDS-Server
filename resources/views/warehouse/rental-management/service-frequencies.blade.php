@@ -94,6 +94,7 @@
         padding: 12px 16px;
         text-align: left;
         border-bottom: 1px solid #e9ecef;
+        color: #374151;
     }
 
     .data-table th {
@@ -112,6 +113,18 @@
         border-radius: 12px;
         font-size: 12px;
         font-weight: 500;
+        display: inline-block;
+        line-height: 1.2;
+    }
+
+    .badge-info {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+
+    .badge-primary {
+        background: #e0e7ff;
+        color: #3730a3;
     }
 
     .badge-success {
