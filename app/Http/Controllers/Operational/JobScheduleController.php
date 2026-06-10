@@ -127,6 +127,7 @@ class JobScheduleController extends Controller
         if ($viewMode === 'room') {
             $query = \App\Models\JobScheduleRoom::with([
                 'jobSchedule.jobAdvice.customer',
+                'jobSchedule.jobAdvice.quotation',
                 'jobSchedule.jobAdvice.contract.quotation.branch.city',
                 'jobSchedule.building.city',
                 'jobSchedule.building.branch.city',
@@ -143,6 +144,7 @@ class JobScheduleController extends Controller
         } else {
             $query = JobSchedule::with([
                 'jobAdvice.customer',
+                'jobAdvice.quotation',
                 'jobAdvice.contract.quotation.branch.city',
                 'building.city',
                 'building.branch.city',
@@ -297,6 +299,10 @@ class JobScheduleController extends Controller
                          $q->where('job_number', 'like', "%{$search}%")
                            ->orWhere('company_name', 'like', "%{$search}%")
                            ->orWhere('contract_number', 'like', "%{$search}%")
+                           ->orWhere('quotation_number', 'like', "%{$search}%")
+                           ->orWhereHas('jobAdvice.quotation', function($subQ) use ($search) {
+                               $subQ->where('quotation_number', 'like', "%{$search}%");
+                           })
                            ->orWhereHas('jobAdvice.customer', function($subQ) use ($search) {
                                $subQ->where('name', 'like', "%{$search}%");
                            })
@@ -312,6 +318,10 @@ class JobScheduleController extends Controller
                     $q->where('job_number', 'like', "%{$search}%")
                       ->orWhere('company_name', 'like', "%{$search}%")
                       ->orWhere('contract_number', 'like', "%{$search}%")
+                      ->orWhere('quotation_number', 'like', "%{$search}%")
+                      ->orWhereHas('jobAdvice.quotation', function($subQ) use ($search) {
+                          $subQ->where('quotation_number', 'like', "%{$search}%");
+                      })
                       ->orWhereHas('jobAdvice.customer', function($subQ) use ($search) {
                           $subQ->where('name', 'like', "%{$search}%");
                       })
@@ -341,7 +351,7 @@ class JobScheduleController extends Controller
         }
 
         if ($request->filled('contract_number') && !$request->has('filter')) {
-             $applyJobFilter($query, 'contract_number', '=', $request->contract_number);
+             $this->applyDisplayContractNumberFilter($query, $request->contract_number, $viewMode);
         }
         
         if ($request->filled('schedule_date') && !$request->has('filter')) {
@@ -526,6 +536,11 @@ class JobScheduleController extends Controller
                     }
                     continue; 
                 }
+
+                if ($normalizedKey === 'contract_number') {
+                    $this->applyDisplayContractNumberFilter($query, $value, $viewMode);
+                    continue;
+                }
                 
                 // Adjust key for Room View
                 $targetKey = $normalizedKey;
@@ -696,6 +711,37 @@ class JobScheduleController extends Controller
             $job->period ?? 'no-period',
             $jobNumber !== '' ? "job:{$jobNumber}" : 'job:unassigned',
         ]);
+    }
+
+    private function applyDisplayContractNumberFilter($query, string $value, string $viewMode): void
+    {
+        $applyToJob = function ($jobQuery) use ($value) {
+            $jobQuery->where(function ($contractQuery) use ($value) {
+                $contractQuery->where('contract_number', 'like', "%{$value}%")
+                    ->orWhere(function ($installFreeQuery) use ($value) {
+                        $installFreeQuery
+                            ->where(function ($typeQuery) {
+                                $typeQuery->whereRaw("LOWER(REPLACE(COALESCE(type, ''), ' ', '_')) = ?", ['install_free'])
+                                    ->orWhereHas('jobAdvice', function ($jobAdviceQuery) {
+                                        $jobAdviceQuery->whereRaw("LOWER(REPLACE(COALESCE(type, ''), ' ', '_')) = ?", ['install_free']);
+                                    });
+                            })
+                            ->where(function ($quotationQuery) use ($value) {
+                                $quotationQuery->where('quotation_number', 'like', "%{$value}%")
+                                    ->orWhereHas('jobAdvice.quotation', function ($jobAdviceQuotationQuery) use ($value) {
+                                        $jobAdviceQuotationQuery->where('quotation_number', 'like', "%{$value}%");
+                                    });
+                            });
+                    });
+            });
+        };
+
+        if ($viewMode === 'room') {
+            $query->whereHas('jobSchedule', $applyToJob);
+            return;
+        }
+
+        $applyToJob($query);
     }
 
     private function normalizeSelectedJobScheduleRoomIds(array $roomIds): array

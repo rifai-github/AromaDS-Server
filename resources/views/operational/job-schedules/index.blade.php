@@ -1140,6 +1140,16 @@
                         
                         // Logic for P.Invoice (From Quotation)
                         $pInvoice = $job->invoice_period ?? '-';
+                        $jobTypeKey = strtolower(str_replace(' ', '_', trim((string) ($job->type ?? ''))));
+                        $jobAdviceTypeKey = strtolower(str_replace(' ', '_', trim((string) ($job->jobAdvice?->type ?? ''))));
+                        $isInstallFreeJob = in_array($jobTypeKey, ['install_free'], true)
+                            || in_array($jobAdviceTypeKey, ['install_free'], true);
+                        $quotationDisplayNumber = $job->quotation_number
+                            ?: ($job->jobAdvice?->quotation?->quotation_number
+                                ?: ($job->jobAdvice?->contract?->quotation?->quotation_number ?? null));
+                        $contractDisplayNumber = ($isInstallFreeJob && filled($quotationDisplayNumber))
+                            ? $quotationDisplayNumber
+                            : ($job->contract_number ?: '-');
 
                         // Check if this job employs granular room-level assignments
                         $hasAnyRoomAssignment = false;
@@ -1301,7 +1311,7 @@
                         <td>{{ $job->jobAdvice?->customer?->name ?? $job->company_name ?? '-' }}</td>
                         
                         <!-- 7. Nomor Contract -->
-                        <td>{{ $job->contract_number ?? '-' }}</td>
+                        <td>{{ $contractDisplayNumber }}</td>
                         
                         <!-- 8. Building Name -->
                         <td>{{ $job->building?->nama_gedung ?? '-' }}</td>
