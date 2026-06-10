@@ -76,6 +76,18 @@
     .table td {
         padding: 12px !important;
         vertical-align: middle !important;
+        color: #334155 !important;
+    }
+
+    .table .badge {
+        display: inline-block;
+        line-height: 1.2;
+    }
+
+    .table .badge-secondary {
+        background-color: #f1f5f9 !important;
+        color: #475569 !important;
+        border: 1px solid #e2e8f0 !important;
     }
     
     .qty-input {
