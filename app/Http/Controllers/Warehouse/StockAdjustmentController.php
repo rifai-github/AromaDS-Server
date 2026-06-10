@@ -98,7 +98,7 @@ class StockAdjustmentController extends Controller
             ]);
         }
 
-        return view('warehouse.stock-adjustments.create', compact('warehouses'));
+        return redirect()->route('warehouse.stock-adjustments.index');
     }
 
     public function store(Request $request)

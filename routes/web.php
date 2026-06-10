@@ -1214,6 +1214,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('stock-opnames/details/{detail}/update', [StockOpnameController::class, 'updateDetail'])->name('stock-opnames.details.update')->middleware('permission:warehouse.stock-opnames.update');
         Route::get('stock-opnames/dashboard', [StockOpnameController::class, 'dashboard'])->name('stock-opnames.dashboard')->middleware('permission:warehouse.stock-opnames.view');
         Route::resource('stock-opnames', StockOpnameController::class)->except(['create', 'edit'])->middleware('permission:warehouse.stock-opnames.view');
+        Route::get('stock-adjustments/create', [StockAdjustmentController::class, 'create'])->name('stock-adjustments.create')->middleware('permission:warehouse.stock-adjustments.view');
         Route::resource('stock-adjustments', StockAdjustmentController::class)->except(['create', 'edit'])->middleware('permission:warehouse.stock-adjustments.view');
         Route::post('stock-adjustments/bulk-delete', [StockAdjustmentController::class, 'bulkDelete'])->name('stock-adjustments.bulk-delete')->middleware('permission:warehouse.stock-adjustments.delete');
         Route::post('stock-adjustments/{stock_adjustment}/add-item', [StockAdjustmentController::class, 'addItem'])->name('stock-adjustments.add-item')->middleware('permission:warehouse.stock-adjustments.update');
