@@ -69,6 +69,8 @@ class MobilePartialCompletionReturnTest extends TestCase
             $table->string('job_number')->nullable();
             $table->string('type')->nullable();
             $table->string('status')->nullable();
+            $table->boolean('material_checked')->default(false);
+            $table->timestamp('material_checked_at')->nullable();
             $table->foreignId('job_advice_id')->nullable();
             $table->foreignId('building_id')->nullable();
             $table->string('building_name')->nullable();
@@ -142,6 +144,13 @@ class MobilePartialCompletionReturnTest extends TestCase
             $table->string('status')->nullable();
             $table->timestamps();
             $table->softDeletes();
+        });
+
+        Schema::create('team_members', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('team_id')->nullable();
+            $table->foreignId('user_id')->nullable();
+            $table->timestamps();
         });
 
         Schema::create('material_issues', function (Blueprint $table) {
@@ -235,6 +244,7 @@ class MobilePartialCompletionReturnTest extends TestCase
         Schema::create('inventory_issuings', function (Blueprint $table) {
             $table->id();
             $table->string('issuing_number')->nullable();
+            $table->string('reference_no')->nullable();
             $table->foreignId('warehouse_id')->nullable();
             $table->string('status')->nullable();
             $table->timestamps();
@@ -321,6 +331,21 @@ class MobilePartialCompletionReturnTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('job_team_locations', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_id')->nullable();
+            $table->foreignId('user_id')->nullable();
+            $table->foreignId('team_id')->nullable();
+            $table->decimal('latitude', 10, 7)->nullable();
+            $table->decimal('longitude', 10, 7)->nullable();
+            $table->string('device_info')->nullable();
+            $table->string('action')->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamp('recorded_at')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('job_schedule_units', function (Blueprint $table) {
             $table->id();
             $table->foreignId('job_schedule_id')->nullable();
@@ -370,7 +395,9 @@ class MobilePartialCompletionReturnTest extends TestCase
             'material_issue_items',
             'job_assign_material_issues',
             'material_issues',
+            'team_members',
             'job_assign_schedules',
+            'job_team_locations',
             'job_photos',
             'job_schedule_units',
             'job_reports',
@@ -449,6 +476,50 @@ class MobilePartialCompletionReturnTest extends TestCase
         $this->assertDatabaseCount('inventory_movements', 0);
     }
 
+    public function test_arrival_rejects_job_with_stale_material_checked_before_technician_receives_material(): void
+    {
+        $this->seedPartialCompletionScenario();
+
+        DB::table('job_schedules')->where('id', 10)->update([
+            'type' => 'service_first',
+            'status' => 'assign_team',
+            'material_checked' => true,
+            'material_checked_at' => now()->subMinutes(10),
+            'updated_at' => now(),
+        ]);
+        DB::table('inventory_issuings')->where('id', 55)->update([
+            'status' => 'processed',
+            'updated_at' => now(),
+        ]);
+        DB::table('team_members')->insert([
+            'team_id' => 12,
+            'user_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/api/v1/mobile/jobs/10/arrived-at-location', 'POST', [
+            'latitude' => -6.1910233,
+            'longitude' => 106.7625460,
+        ]);
+        $request->setUserResolver(fn () => User::find(1));
+
+        $response = app(JobController::class)->arrivedAtLocation($request, 10);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertStringContainsString('belum diverifikasi', $payload['message']);
+        $this->assertDatabaseHas('job_schedules', [
+            'id' => 10,
+            'status' => 'assign_team',
+            'material_checked' => true,
+        ]);
+        $this->assertDatabaseMissing('job_team_locations', [
+            'job_schedule_id' => 10,
+            'action' => 'arrived',
+        ]);
+    }
+
     public function test_partial_completion_keeps_source_job_waiting_and_moves_unfinished_room_to_follow_up(): void
     {
         $this->seedPartialCompletionScenario();
@@ -468,6 +539,8 @@ class MobilePartialCompletionReturnTest extends TestCase
             'job_advice_id' => 70,
             'status' => 'in_progress',
             'type' => 'service',
+            'material_checked' => true,
+            'material_checked_at' => now()->subMinutes(10),
             'period' => 3,
             'service_frequency' => 1,
             'service_period_type' => '1 Bulan 1x',
@@ -532,6 +605,8 @@ class MobilePartialCompletionReturnTest extends TestCase
         $this->assertSame('1 Bulan 1x', $followUpJob->service_period_type);
         $this->assertSame(30, (int) $followUpJob->service_interval_days);
         $this->assertSame('BDG-JA/26-05/0002', $followUpJob->reference_number);
+        $this->assertFalse((bool) $followUpJob->material_checked);
+        $this->assertNull($followUpJob->material_checked_at);
 
         $this->assertDatabaseHas('job_schedule_rooms', [
             'job_schedule_id' => $followUpJob->id,
@@ -899,6 +974,7 @@ class MobilePartialCompletionReturnTest extends TestCase
         DB::table('inventory_issuings')->insert([
             'id' => 55,
             'issuing_number' => 'BDG-WI/26-05/0002',
+            'reference_no' => 'BDG-MA/26-05/0002',
             'warehouse_id' => 5,
             'status' => 'sent',
             'created_at' => now(),

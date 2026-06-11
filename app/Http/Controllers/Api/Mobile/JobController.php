@@ -748,8 +748,16 @@ class JobController extends Controller
             $buildingAddress = '-';
         }
         
-        // Check if materials have been checked from database
-        $materialChecked = $job->material_checked ?? false;
+        // Check if materials have been checked from database, but do not trust
+        // the flag alone. Follow-up jobs can inherit stale material_checked
+        // values from their source job, while their own WI is still only Ready.
+        $materialChecked = (bool) ($job->material_checked ?? false);
+        $hasMaterialIssue = $this->jobHasMaterialIssue($job);
+        $materialPickupVerified = $hasMaterialIssue
+            ? $this->materialPickupVerifiedForJob($job)
+            : false;
+        $canBypassMaterialVerification = ! $hasMaterialIssue
+            && $this->jobCanBypassMaterialVerification($job, false);
         
         // IMPORTANT: If status indicates technician has arrived or work has progressed,
         // material MUST have been checked already (workflow: verify material → arrive → work)
@@ -769,32 +777,24 @@ class JobController extends Controller
             'teknisi_selesai_pengerjaan'
         ];
         
+        if ($hasMaterialIssue && ! $materialPickupVerified) {
+            $materialChecked = false;
+        }
         // Priority 1: If status is beyond material verification stage, materialChecked MUST be true
-        if (in_array($job->status, $statusesRequiringMaterialCheck)) {
+        else if (in_array($job->status, $statusesRequiringMaterialCheck)) {
             if (!$materialChecked) {
                 $materialChecked = true;
                 
                 // Also update database if not already set
-                if (!$job->material_checked) {
-                    $job->update([
-                        'material_checked' => true,
-                        'material_checked_at' => now(),
-                    ]);
-                }
+                $this->markJobMaterialCheckedIfNeeded($job);
             }
         }
-        // Auto-set material_checked = true for remove jobs (no material verification needed)
-        // Remove jobs take units from Unit On Wall, not from inventory issuing
-        else if (!$materialChecked && in_array(strtolower($job->type), ['remove', 'remove_free', 'remove free', 'check', 'ganti_unit'])) {
+        // Auto-set material_checked = true for jobs that do not need warehouse pickup.
+        else if (!$materialChecked && $canBypassMaterialVerification) {
             $materialChecked = true;
             
             // Also update database if not already set
-            if (!$job->material_checked) {
-                $job->update([
-                    'material_checked' => true,
-                    'material_checked_at' => now(),
-                ]);
-            }
+            $this->markJobMaterialCheckedIfNeeded($job);
         }
         // Specific logic for material verification button:
         // The button should only be active/visible if status is 'barang_siap_diambil' (Ready for Pickup)
@@ -806,33 +806,6 @@ class JobController extends Controller
                 // Setting it to true was causing Arrival button to appear too early.
                 // By keeping it false, Arrival button stays hidden, and App should only show Verify button if status is Ready.
                 $materialChecked = false; 
-            }
-        }
-        // Auto-set material_checked = true for service jobs without material issue (e.g., first service)
-        // This allows "Tiba di Lokasi" button to be enabled immediately
-        else if (!$materialChecked) {
-            // Check if this is a service job or change rental
-            $isServiceJob = $this->isServiceLikeJob($job);
-            $isPeriodOne = ($job->period == 1 || $job->period == null);
-            
-            if ($isServiceJob && $isPeriodOne) {
-                // Check if job has any material issue via job assign schedule
-                $hasMaterialIssue = JobAssignMaterialIssue::whereHas('jobAssignSchedule', function($q) use ($job) {
-                    $q->where('job_schedule_id', $job->id);
-                })->exists();
-                
-                // If no material issue, auto-set material_checked = true
-                if (!$hasMaterialIssue) {
-                    $materialChecked = true;
-                    
-                    // Also update database if not already set
-                    if (!$job->material_checked) {
-                        $job->update([
-                            'material_checked' => true,
-                            'material_checked_at' => now(),
-                        ]);
-                    }
-                }
             }
         }
         
@@ -2098,6 +2071,13 @@ class JobController extends Controller
                 'message' => 'Job harus dalam status "Tiba di Lokasi" atau "Barang Diambil" sebelum dapat mulai pekerjaan. Status saat ini: ' . ($job->status_text ?? $job->status)
             ], 400);
         }
+
+        if ($materialBlockReason = $this->getMaterialReadinessBlockReason($job)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $materialBlockReason,
+            ], 409);
+        }
         
         // IR-CSR Dependency Check
         $dependencyCheck = $this->checkJobDependency($job);
@@ -2300,6 +2280,13 @@ class JobController extends Controller
                     'status' => 'error',
                     'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat diselesaikan ulang dari aplikasi teknisi.'
                 ], 423);
+            }
+
+            if ($materialBlockReason = $this->getMaterialReadinessBlockReason($jobSchedule)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $materialBlockReason,
+                ], 409);
             }
 
             $this->ensureMobileRentalScheduleRoomsForJob($jobSchedule);
@@ -2716,14 +2703,86 @@ class JobController extends Controller
         ], true);
     }
 
-    private function getMaterialReadinessBlockReason(JobSchedule $job): ?string
+    private function materialIssuesForJob(JobSchedule $job)
     {
-        $materialIssues = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function ($query) use ($job) {
+        foreach (['material_issues', 'job_assign_material_issues', 'job_assign_schedules'] as $table) {
+            if (! \Illuminate\Support\Facades\Schema::hasTable($table)) {
+                return collect();
+            }
+        }
+
+        return \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function ($query) use ($job) {
             $query->where('job_schedule_id', $job->id);
         })->get();
+    }
+
+    private function jobHasMaterialIssue(JobSchedule $job): bool
+    {
+        return $this->materialIssuesForJob($job)->isNotEmpty();
+    }
+
+    private function jobCanBypassMaterialVerification(JobSchedule $job, ?bool $hasMaterialIssue = null): bool
+    {
+        if ($hasMaterialIssue ?? $this->jobHasMaterialIssue($job)) {
+            return false;
+        }
+
+        $type = strtolower(trim(str_replace('-', '_', (string) ($job->type ?? ''))));
+        if (in_array($type, ['remove', 'remove_free', 'remove free', 'check', 'ganti_unit'], true)) {
+            return true;
+        }
+
+        $isPeriodOne = $job->period === null || (is_numeric($job->period) && (int) $job->period === 1);
+
+        return $this->isServiceLikeJob($job) && $isPeriodOne;
+    }
+
+    private function materialPickupVerifiedForJob(JobSchedule $job): bool
+    {
+        $materialIssues = $this->materialIssuesForJob($job);
 
         if ($materialIssues->isEmpty()) {
-            return null;
+            return $this->jobCanBypassMaterialVerification($job, false);
+        }
+
+        $issueNumbers = $materialIssues->pluck('issue_number')->filter()->values();
+        if ($issueNumbers->isEmpty()) {
+            return false;
+        }
+
+        if (! \Illuminate\Support\Facades\Schema::hasTable('inventory_issuings')) {
+            return false;
+        }
+
+        return \App\Models\InventoryIssuing::whereIn('reference_no', $issueNumbers)
+            ->whereIn('status', ['sent', 'received'])
+            ->exists();
+    }
+
+    private function markJobMaterialCheckedIfNeeded(JobSchedule $job): void
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasColumn('job_schedules', 'material_checked')) {
+            return;
+        }
+
+        if ($job->material_checked) {
+            return;
+        }
+
+        $job->update([
+            'material_checked' => true,
+            'material_checked_at' => now(),
+        ]);
+    }
+
+    private function getMaterialReadinessBlockReason(JobSchedule $job): ?string
+    {
+        $materialIssues = $this->materialIssuesForJob($job);
+
+        if ($materialIssues->isEmpty()) {
+            return $this->jobCanBypassMaterialVerification($job, false)
+                ? null
+                : 'Material issue tidak ditemukan untuk job ini. Admin perlu assign material atau tandai job sebagai tidak memerlukan material sebelum teknisi dapat tiba di lokasi.';
         }
 
         $issueNumbers = $materialIssues->pluck('issue_number')->filter()->values();
@@ -2741,6 +2800,10 @@ class JobController extends Controller
 
         if (!$hasReadyIssuing) {
             return 'Material sudah dibuat tetapi belum ada Inventory Issuing yang siap untuk job ini.';
+        }
+
+        if (! $this->materialPickupVerifiedForJob($job)) {
+            return 'Material untuk job ini belum diverifikasi/diterima teknisi. Silakan lakukan Verifikasi Material sebelum tiba di lokasi.';
         }
 
         return null;
@@ -3139,6 +3202,9 @@ class JobController extends Controller
 
         if ($existingJob) {
             $this->syncPartialCompletionFollowUpScheduleContext($sourceJob, $existingJob);
+            if (! $this->materialPickupVerifiedForJob($existingJob)) {
+                $this->resetPartialCompletionFollowUpMaterialState($existingJob);
+            }
 
             return $existingJob;
         }
@@ -3162,6 +3228,7 @@ class JobController extends Controller
         $newJob->created_by = auth()->id();
         $newJob->updated_by = auth()->id();
         $this->syncPartialCompletionFollowUpScheduleContext($sourceJob, $newJob, false);
+        $this->resetPartialCompletionFollowUpMaterialState($newJob, false);
         $newJob->save();
 
         return $newJob;
@@ -3178,14 +3245,28 @@ class JobController extends Controller
             'reference_number',
             'job_reference_number',
             'day',
-            'material_checked',
-            'material_checked_at',
         ];
 
         foreach ($columnsToCopy as $column) {
             if (\Illuminate\Support\Facades\Schema::hasColumn('job_schedules', $column)) {
                 $followUpJob->{$column} = $sourceJob->{$column};
             }
+        }
+
+        if ($save && $followUpJob->isDirty()) {
+            $followUpJob->updated_by = auth()->id();
+            $followUpJob->save();
+        }
+    }
+
+    private function resetPartialCompletionFollowUpMaterialState(JobSchedule $followUpJob, bool $save = true): void
+    {
+        if (\Illuminate\Support\Facades\Schema::hasColumn('job_schedules', 'material_checked')) {
+            $followUpJob->material_checked = false;
+        }
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('job_schedules', 'material_checked_at')) {
+            $followUpJob->material_checked_at = null;
         }
 
         if ($save && $followUpJob->isDirty()) {
@@ -4790,6 +4871,10 @@ class JobController extends Controller
 
         foreach ($arrivalJobs as $arrivalJob) {
             if (in_array($arrivalJob->status, $allowedStatuses, true)) {
+                if ($arrivalJob->id !== $job->id && $this->getMaterialReadinessBlockReason($arrivalJob)) {
+                    continue;
+                }
+
                 $arrivalJob->update([
                     'status' => 'teknisi_tiba_dilokasi',
                     'updated_by' => Auth::id()
