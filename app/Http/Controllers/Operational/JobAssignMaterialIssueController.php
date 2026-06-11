@@ -171,6 +171,68 @@ class JobAssignMaterialIssueController extends Controller
         return !$currentBrandLine || !$newBrandLine || $currentBrandLine === $newBrandLine;
     }
 
+    private function validateMaterialIssueItemsProductConsistency($materialIssueItems, ?string $issueNumber = null): array
+    {
+        $groups = [];
+
+        foreach ($materialIssueItems ?? [] as $item) {
+            $product = $item->product;
+            if (!$this->isPackageConversionMaterial($product)) {
+                continue;
+            }
+
+            $groupKey = $this->buildMaterialIssueItemRoomRentalKey($item);
+            $family = $this->normalizePackageMaterialFamily($product) ?: 'product-id:' . ($product->id ?? 'unknown');
+
+            if (!isset($groups[$groupKey])) {
+                $groups[$groupKey] = [
+                    'label' => $this->formatMaterialIssueItemGroupLabel($item),
+                    'families' => [],
+                ];
+            }
+
+            $groups[$groupKey]['families'][$family][] = $product->name ?? ('Product ID ' . ($product->id ?? '-'));
+        }
+
+        $errors = [];
+        foreach ($groups as $group) {
+            $families = array_filter($group['families'], fn ($products) => !empty($products));
+
+            if (count($families) <= 1) {
+                continue;
+            }
+
+            $productNames = collect($families)
+                ->flatten()
+                ->unique()
+                ->values()
+                ->implode(', ');
+
+            $prefix = $issueNumber ? "Material issue {$issueNumber}: " : '';
+            $errors[] = $prefix . "{$group['label']} tidak boleh memakai fragrance/aroma berbeda dalam satu rental. Ditemukan: {$productNames}. Copy material hanya boleh untuk material yang sama dengan kemasan berbeda.";
+        }
+
+        return $errors;
+    }
+
+    private function validateMaterialIssueItemProductConsistency(JobAssignMaterialIssue $jobAssignMaterialIssue): array
+    {
+        $jobAssignMaterialIssue->loadMissing([
+            'materialIssue.items.product.productType',
+            'materialIssue.items.product.productCategory',
+        ]);
+
+        $materialIssue = $jobAssignMaterialIssue->materialIssue;
+        if (!$materialIssue) {
+            return [];
+        }
+
+        return $this->validateMaterialIssueItemsProductConsistency(
+            $materialIssue->items ?? collect(),
+            $materialIssue->issue_number
+        );
+    }
+
     private function isAromaMaterialProduct(?MasterProduct $product): bool
     {
         if (!$product) {
@@ -379,6 +441,41 @@ class JobAssignMaterialIssueController extends Controller
         }
 
         return null;
+    }
+
+    private function extractSavedItemRentalName(?string $notes): ?string
+    {
+        if (!$notes) {
+            return null;
+        }
+
+        if (preg_match('/Rental:\s*([^,]+)/', $notes, $matches)) {
+            $rentalName = trim($matches[1]);
+
+            return $rentalName !== '' ? $rentalName : null;
+        }
+
+        return null;
+    }
+
+    private function buildMaterialIssueItemRoomRentalKey($item): string
+    {
+        $roomName = strtolower(trim((string) ($item->room_name ?? '')));
+        $rentalName = strtolower(trim((string) ($this->extractSavedItemRentalName($item->notes ?? null) ?? '')));
+
+        return implode('|', [
+            $roomName !== '' ? $roomName : '-',
+            $rentalName !== '' ? $rentalName : '-',
+        ]);
+    }
+
+    private function formatMaterialIssueItemGroupLabel($item): string
+    {
+        $roomName = trim((string) ($item->room_name ?? '')) ?: '-';
+        $rentalName = $this->extractSavedItemRentalName($item->notes ?? null) ?: '-';
+
+        return 'Room ' . $roomName
+            . ', Rental ' . $rentalName;
     }
 
     private function getUserBranchAccessIds($user): array
@@ -2341,6 +2438,15 @@ class JobAssignMaterialIssueController extends Controller
                         continue;
                     }
 
+                    $materialConsistencyErrors = $this->validateMaterialIssueItemProductConsistency($jobAssignMaterialIssue);
+                    if (!empty($materialConsistencyErrors)) {
+                        $errors = array_merge($errors, $materialConsistencyErrors);
+                        \Log::warning("Material issue {$materialIssue->issue_number} has mixed fragrance/aroma items for the same room/rental.", [
+                            'errors' => $materialConsistencyErrors,
+                        ]);
+                        continue;
+                    }
+
                     // Auto-approve if status is pending (for auto-created material issues)
                     if ($materialIssue->status === 'pending') {
                         $materialIssue->update([
@@ -2573,6 +2679,11 @@ class JobAssignMaterialIssueController extends Controller
             DB::beginTransaction();
 
             $materialIssue = $jobAssignMaterialIssue->materialIssue;
+            $materialConsistencyErrors = $this->validateMaterialIssueItemProductConsistency($jobAssignMaterialIssue);
+            if (!empty($materialConsistencyErrors)) {
+                throw new \Exception(implode("\n", $materialConsistencyErrors));
+            }
+
             $materialIssue->issue();
 
             // AUTO-CREATE INVENTORY ISSUING (warehouse1.md: issuing berasal dari material issued)
@@ -3319,6 +3430,7 @@ class JobAssignMaterialIssueController extends Controller
                         
                         foreach ($alternativeProducts as $altProduct) {
                             if (!$altProduct->packagingSize) continue;
+                            if (!$this->productsHaveSamePackageMaterialFamily($product, $altProduct)) continue;
                             
                             // Get stock for alternative
                             $altWarehouseProduct = \App\Models\WarehouseProduct::where('warehouse_id', $warehouse->id)
@@ -4791,13 +4903,26 @@ class JobAssignMaterialIssueController extends Controller
             $suggestedQty = 0;
             
             if ($originalItem->product && $hasTarget && $remainingTarget > 0) {
-                $variantName = $originalItem->product->variant_name;
+                $variantName = trim((string) $originalItem->product->variant_name);
                 
-                // Find all active products with same variant
-                $candidates = \App\Models\MasterProduct::where('variant_name', $variantName)
+                // Find all active package candidates, then keep only the same material family.
+                // Some legacy fragrance products have empty variant_name, so variant-only matching
+                // can accidentally pull a different fragrance into the same room/rental.
+                $candidateQuery = \App\Models\MasterProduct::with([
+                        'productType',
+                        'productCategory',
+                        'packagingSize',
+                    ])
                     ->where('is_active', true)
+                    ->when($variantName !== '', fn ($query) => $query->where('variant_name', $variantName))
+                    ->when($variantName === '' && $originalItem->product->product_category_id, fn ($query) => $query->where('product_category_id', $originalItem->product->product_category_id))
+                    ->when($variantName === '' && !$originalItem->product->product_category_id && $originalItem->product->product_type_id, fn ($query) => $query->where('product_type_id', $originalItem->product->product_type_id));
+
+                $candidates = $candidateQuery
                     ->orderBy('bom_quantity', 'desc') // Start from largest package
-                    ->get();
+                    ->get()
+                    ->filter(fn ($candidate) => $this->productsHaveSamePackageMaterialFamily($originalItem->product, $candidate))
+                    ->values();
                 
                 foreach ($candidates as $candidate) {
                     $bomPerUnit = $candidate->bom_quantity ?? 0;
@@ -4822,6 +4947,13 @@ class JobAssignMaterialIssueController extends Controller
                         $suggestedProduct = $candidate; // This will be the smallest due to descending order if we go to the end
                     }
                 }
+            }
+
+            if (!$this->productsHaveSamePackageMaterialFamily($originalItem->product, $suggestedProduct)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Copy Material hanya boleh memakai fragrance/material yang sama dengan kemasan berbeda.'
+                ], 422);
             }
 
             // 4. Replicate and set values

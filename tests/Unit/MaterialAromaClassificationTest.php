@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Http\Controllers\Operational\JobAssignMaterialIssueController;
 use App\Http\Controllers\Operational\JobScheduleController;
 use App\Models\MasterProduct;
+use App\Models\MaterialIssueItem;
 use App\Models\MasterRental;
 use App\Models\ProductCategory;
 use App\Models\ProductType;
@@ -129,6 +130,69 @@ class MaterialAromaClassificationTest extends TestCase
         $this->assertFalse($method->invoke($controller, $lemon500, $cleaner100));
     }
 
+    public function test_job_assign_material_issue_package_split_allows_same_fragrance_with_empty_variant_name(): void
+    {
+        $controller = new JobAssignMaterialIssueController();
+        $method = (new ReflectionClass($controller))->getMethod('productsHaveSamePackageMaterialFamily');
+        $method->setAccessible(true);
+
+        $lemongrass100 = $this->product('Fragrance Lemongrass Mix 100 ml', 'LEM-MIX-100', 'Aroma Refill', null);
+        $lemongrass100->id = 11;
+
+        $lemongrass50 = $this->product('Fragrance Lemongrass Mix 50 ml', 'LEM-MIX-50', 'Aroma Refill', null);
+        $lemongrass50->id = 12;
+
+        $coffee100 = $this->product('Fragrance Coffee Mix More 100 ml', 'COF-MIX-100', 'Aroma Refill', null);
+        $coffee100->id = 13;
+
+        $this->assertTrue($method->invoke($controller, $lemongrass100, $lemongrass50));
+        $this->assertFalse($method->invoke($controller, $lemongrass100, $coffee100));
+    }
+
+    public function test_job_assign_material_issue_rejects_mixed_fragrance_for_same_room_rental(): void
+    {
+        $controller = new JobAssignMaterialIssueController();
+        $method = (new ReflectionClass($controller))->getMethod('validateMaterialIssueItemsProductConsistency');
+        $method->setAccessible(true);
+
+        $lemongrass100 = $this->product('Fragrance Lemongrass Mix 100 ml', 'LEM-MIX-100', 'Aroma Refill', null);
+        $lemongrass100->id = 21;
+
+        $coffee100 = $this->product('Fragrance Coffee Mix More 100 ml', 'COF-MIX-100', 'Aroma Refill', null);
+        $coffee100->id = 22;
+
+        $errors = $method->invoke($controller, collect([
+            $this->materialIssueItem('Ruang VIP', 'ADS W300 300 ml baterai', '9', $lemongrass100),
+            $this->materialIssueItem('Ruang VIP', 'ADS W300 300 ml baterai', '9', $coffee100, true),
+        ]), 'MI-TEST');
+
+        $this->assertNotEmpty($errors);
+        $this->assertStringContainsString('Ruang VIP', $errors[0]);
+        $this->assertStringContainsString('ADS W300 300 ml baterai', $errors[0]);
+        $this->assertStringContainsString('Fragrance Lemongrass Mix 100 ml', $errors[0]);
+        $this->assertStringContainsString('Fragrance Coffee Mix More 100 ml', $errors[0]);
+    }
+
+    public function test_job_assign_material_issue_allows_same_fragrance_different_package_for_same_room_rental(): void
+    {
+        $controller = new JobAssignMaterialIssueController();
+        $method = (new ReflectionClass($controller))->getMethod('validateMaterialIssueItemsProductConsistency');
+        $method->setAccessible(true);
+
+        $lemongrass100 = $this->product('Fragrance Lemongrass Mix 100 ml', 'LEM-MIX-100', 'Aroma Refill', null);
+        $lemongrass100->id = 31;
+
+        $lemongrass50 = $this->product('Fragrance Lemongrass Mix 50 ml', 'LEM-MIX-50', 'Aroma Refill', null);
+        $lemongrass50->id = 32;
+
+        $errors = $method->invoke($controller, collect([
+            $this->materialIssueItem('Ruang VIP', 'ADS W300 300 ml baterai', '9', $lemongrass100),
+            $this->materialIssueItem('Ruang VIP', 'ADS W300 300 ml baterai', '9', $lemongrass50, true),
+        ]), 'MI-TEST');
+
+        $this->assertSame([], $errors);
+    }
+
     public function test_job_schedule_uses_selected_material_list_product_when_detail_has_no_default_product(): void
     {
         $controller = new JobScheduleController();
@@ -171,6 +235,23 @@ class MaterialAromaClassificationTest extends TestCase
         }
 
         return $detail;
+    }
+
+    private function materialIssueItem(
+        string $roomName,
+        string $rentalName,
+        string $componentId,
+        MasterProduct $product,
+        bool $isCopied = false
+    ): MaterialIssueItem {
+        $item = new MaterialIssueItem([
+            'room_name' => $roomName,
+            'notes' => "Room: {$roomName}, Rental: {$rentalName}, ComponentID: {$componentId}" . ($isCopied ? ' [Copied]' : ''),
+            'is_copied' => $isCopied,
+        ]);
+        $item->setRelation('product', $product);
+
+        return $item;
     }
 
     private function product(
