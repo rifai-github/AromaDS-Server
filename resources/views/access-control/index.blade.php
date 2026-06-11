@@ -681,13 +681,6 @@ $(document).ready(function() {
         $('#' + modalId).removeClass('show');
     };
 
-    // Close modal when clicking outside
-    $('.h-modal').on('click', function(e) {
-        if (e.target === this) {
-            $(this).removeClass('show');
-        }
-    });
-
     // Form submission handling for Access Levels
     $('#accessLevelsForm').on('submit', function(e) {
         e.preventDefault();

@@ -2708,6 +2708,25 @@
         // ============================================
         // 1. CUSTOM MODALS (modal-overlay with onclick)
         // ============================================
+        const modalBackdropSelector = [
+            '.modal-overlay',
+            '[class*="modal-overlay"]',
+            '[class*="ModalOverlay"]',
+            '[id*="modalOverlay"]',
+            '[id*="ModalOverlay"]',
+            '.h-modal'
+        ].join(', ');
+
+        // Capture backdrop clicks before page-level handlers can close custom modals.
+        document.addEventListener('click', function(event) {
+            const target = event.target;
+
+            if (target instanceof Element && target.matches(modalBackdropSelector)) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }
+        }, true);
+
         // Remove onclick handlers from modal overlays
         function removeModalOverlayClickHandlers() {
             document.querySelectorAll('.modal-overlay, [class*="ModalOverlay"], [id*="modalOverlay"], [id*="ModalOverlay"]').forEach(function(overlay) {
