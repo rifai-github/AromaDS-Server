@@ -728,20 +728,31 @@ class AromaChangeController extends Controller
                                 $q->where('contract_id', $contractId);
                           });
                 })
+                ->where(function($query) use ($contractRoom) {
+                    $query->where('room_id', $contractRoom->room_id)
+                        ->orWhereHas('jobScheduleRooms', function($q) use ($contractRoom) {
+                            $q->where('room_id', $contractRoom->room_id);
+                        });
+                })
                 ->whereIn('status', ['scheduled', 'new_job', 'assign_team', 'assign_material']) // pending statuses
                 ->whereDate('schedule_date', '>=', now())
                 ->orderBy('schedule_date', 'asc')
                 ->get();
 
             // Filter relevant schedules and format for frontend
-            $formattedSchedules = $schedules->map(function($schedule) {
-                return [
-                    'id' => $schedule->id,
-                    'date_formatted' => $schedule->schedule_date->format('d M Y'),
-                    'period' => $schedule->period, // e.g., "Service #1" or "Jan 2026"
-                    'label' => $schedule->schedule_date->format('M Y') . ' (Service Period: ' . $schedule->period . ')'
-                ];
-            });
+            $formattedSchedules = $schedules
+                ->unique(function($schedule) {
+                    return $schedule->schedule_date->format('Y-m') . '|' . $schedule->period;
+                })
+                ->map(function($schedule) {
+                    return [
+                        'id' => $schedule->id,
+                        'date_formatted' => $schedule->schedule_date->format('d M Y'),
+                        'period' => $schedule->period, // e.g., "Service #1" or "Jan 2026"
+                        'label' => $schedule->schedule_date->format('M Y') . ' (Service Period: ' . $schedule->period . ')'
+                    ];
+                })
+                ->values();
 
             return response()->json($formattedSchedules);
 
