@@ -638,18 +638,7 @@
                                     <td>{{ $rental->rental_name ?? $rental->masterRental->rental_name ?? '-' }}</td>
                                     <td class="text-center">{{ number_format($rental->quantity, 0) }}</td>
                                     <td class="text-end">
-                                        @if($invoice->invoice_status === 'draft')
-                                            <input type="number" 
-                                                   class="form-control form-control-sm text-end rental-price-input" 
-                                                   data-rental-id="{{ $rental->id }}"
-                                                   data-invoice-id="{{ $invoice->id }}"
-                                                   value="{{ $rental->unit_price }}" 
-                                                   step="1000"
-                                                   min="0"
-                                                   style="width: 150px; display: inline-block;">
-                                        @else
-                                            Rp {{ number_format($rental->unit_price, 0, ',', '.') }}
-                                        @endif
+                                        Rp {{ number_format($rental->unit_price, 0, ',', '.') }}
                                     </td>
                                     <td class="text-end rental-total-{{ $rental->id }}">Rp {{ number_format($rental->total_price, 0, ',', '.') }}</td>
                                     <td>{{ $rental->updated_at->format('d/M/Y - H:i') }}</td>
@@ -1617,41 +1606,6 @@ $(document).ready(function() {
             $('#detail-tax-label').text(response.tax_label);
         }
     }
-
-    $('.rental-price-input').on('change', function() {
-        const rentalId = $(this).data('rental-id');
-        const invoiceId = $(this).data('invoice-id');
-        const newPrice = $(this).val();
-        const $input = $(this);
-        
-        $input.prop('disabled', true);
-        
-        $.ajax({
-            url: `/finance/invoices/${invoiceId}/rental-details/${rentalId}/update-price`,
-            method: 'POST',
-            data: {
-                _token: '{{ csrf_token() }}',
-                unit_price: newPrice
-            },
-            success: function(response) {
-                // Update rental total
-                $(`.rental-total-${rentalId}`).text('Rp ' + response.formatted_rental_total);
-                syncInvoiceTotals(response);
-                
-                showNotification('success', 'Harga berhasil diperbarui.');
-                
-                // Reload page after short delay to refresh all data
-                setTimeout(function() {
-                    window.location.reload();
-                }, 1000);
-            },
-            error: function(xhr) {
-                const errorMsg = xhr.responseJSON?.message || 'Gagal memperbarui harga.';
-                showNotification('error', errorMsg);
-                $input.prop('disabled', false);
-            }
-        });
-    });
 
     $('.discount-amount-input').on('change', function() {
         const invoiceId = $(this).data('invoice-id');

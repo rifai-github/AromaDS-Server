@@ -2265,85 +2265,10 @@ class InvoiceController extends Controller
      */
     public function updateRentalPrice(Request $request, Invoice $invoice, $rentalDetailId)
     {
-        $request->validate([
-            'unit_price' => 'required|numeric|min:0'
-        ]);
-        
-        // Only allow update if invoice is draft
-        if ($invoice->invoice_status !== 'draft') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Hanya invoice dengan status Draft yang dapat diedit.'
-            ], 403);
-        }
-        
-        DB::beginTransaction();
-        try {
-            // Update rental detail price
-            $rentalDetail = \App\Models\Finance\InvoiceRentalDetail::findOrFail($rentalDetailId);
-            $rentalDetail->update([
-                'unit_price' => $request->unit_price,
-                'total_price' => $request->unit_price * $rentalDetail->quantity,
-                'updated_by' => Auth::id()
-            ]);
-            
-            // Recalculate invoice totals
-            $subtotal = $invoice->invoiceRentalDetails()->sum('total_price');
-            $taxPayload = $this->buildInvoiceTaxPayload(
-                $invoice->customer,
-                (float) $subtotal,
-                (float) ($invoice->discount_amount ?? 0),
-                $invoice->tax_code
-            );
-            $taxAmount = $taxPayload['tax_amount'];
-            $grandTotal = $taxPayload['grand_total'];
-            
-            $invoice->update([
-                'subtotal' => $subtotal,
-                'tax_setting_id' => $taxPayload['tax_setting_id'],
-                'tax_code' => $taxPayload['tax_code'],
-                'tax_number' => $taxPayload['tax_number'],
-                'npwp_number' => $taxPayload['npwp_number'],
-                'tax_address' => $taxPayload['tax_address'],
-                'subtotal_after_discount' => $taxPayload['subtotal_after_discount'],
-                'tax_amount' => $taxAmount,
-                'total_amount' => $grandTotal,
-                'grand_total' => $grandTotal,
-                'outstanding' => max($grandTotal - ($invoice->total_paid ?? 0), 0),
-                'updated_by' => Auth::id()
-            ]);
-            
-            DB::commit();
-            
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Price updated successfully',
-                'rental_total' => $rentalDetail->total_price,
-                'formatted_rental_total' => number_format($rentalDetail->total_price, 0, ',', '.'),
-                'subtotal' => $subtotal,
-                'formatted_subtotal' => number_format($subtotal, 0, ',', '.'),
-                'discount_amount' => $invoice->discount_amount,
-                'formatted_discount' => number_format($invoice->discount_amount, 0, ',', '.'),
-                'subtotal_after_discount' => $invoice->subtotal_after_discount,
-                'formatted_subtotal_after_discount' => number_format($invoice->subtotal_after_discount, 0, ',', '.'),
-                'tax_amount' => $taxAmount,
-                'formatted_tax' => number_format($taxAmount, 0, ',', '.'),
-                'show_tax' => $taxPayload['tax_amount'] > 0 || ($taxPayload['finance_tax_code']?->hasZeroTaxPrint() ?? false),
-                'tax_label' => ($taxPayload['finance_tax_code']?->hasZeroTaxPrint() ?? false) ? 'PPN (0%)' : 'PPN',
-                'show_discount' => (float) $invoice->discount_amount > 0,
-                'grand_total' => $grandTotal,
-                'formatted_grand_total' => number_format($grandTotal, 0, ',', '.'),
-                'outstanding' => $invoice->outstanding,
-                'formatted_outstanding' => number_format($invoice->outstanding, 0, ',', '.')
-            ]);
-            
-        } catch (\Exception $e) {
-            DB::rollback();
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to update price: ' . $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Harga rental invoice mengikuti kontrak dan tidak dapat diedit dari invoice.'
+        ], 403);
     }
 
     public function updateDiscount(Request $request, Invoice $invoice)

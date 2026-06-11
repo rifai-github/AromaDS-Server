@@ -20,6 +20,7 @@ class Invoice extends Model
 
     protected $fillable = [
         'invoice_number',
+        'contract_id',
         'contract_number',
         'po_number',
         'customer_id',
@@ -41,10 +42,13 @@ class Invoice extends Model
         'subtotal',
         'tax_amount',
         'total_amount',
+        'grand_total',
+        'total_paid',
         'discount_amount',
         'paid_amount',
         'balance_amount',
         'notes',
+        'status',
         'terms_conditions',
         'created_by',
         'updated_by',

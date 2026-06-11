@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Contract;
 use App\Models\Customer;
+use App\Models\Invoice as LegacyInvoice;
 use App\Models\Finance\BillingGroup;
 use App\Models\Finance\Invoice;
 use App\Models\JobSchedule;
@@ -134,7 +135,10 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->id();
             $table->foreignId('job_advice_id')->nullable();
             $table->foreignId('contract_room_id')->nullable();
+            $table->foreignId('contract_rental_id')->nullable();
             $table->foreignId('rental_product_id')->nullable();
+            $table->string('room_name')->nullable();
+            $table->string('rental_name')->nullable();
             $table->foreignId('install_job_schedule_id')->nullable();
             $table->foreignId('service_job_schedule_id')->nullable();
             $table->foreignId('remove_job_schedule_id')->nullable();
@@ -150,6 +154,7 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->string('type')->nullable();
             $table->string('status')->nullable();
             $table->foreignId('job_advice_id')->nullable();
+            $table->foreignId('room_id')->nullable();
             $table->date('schedule_date')->nullable();
             $table->date('ba_date')->nullable();
             $table->timestamps();
@@ -1047,6 +1052,250 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'subtotal' => 1500000,
             'total_amount' => 1500000,
             'grand_total' => 1500000,
+        ]);
+    }
+
+    public function test_expected_invoice_rows_use_schedule_room_scope_for_partial_follow_up_jobs(): void
+    {
+        $customer = Customer::create(['name' => 'Abadi Company']);
+        $contract = Contract::create([
+            'contract_number' => 'SBY-CA/26-06/0001',
+            'customer_id' => $customer->id,
+            'payment_terms' => 30,
+        ]);
+
+        DB::table('buildings')->insert([
+            'id' => 190,
+            'building_name' => 'Hotel Melton Surabaya',
+            'name' => 'Hotel Melton Surabaya',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rooms')->insert([
+            ['id' => 400, 'building_id' => 190, 'room_name' => 'Lobby', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 401, 'building_id' => 190, 'room_name' => 'Ruang VIP', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rooms')->insert([
+            ['id' => 500, 'contract_id' => $contract->id, 'room_id' => 400, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 501, 'contract_id' => $contract->id, 'room_id' => 401, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('master_rentals')->insert([
+            ['id' => 700, 'rental_name' => 'ADS W300 500 ml', 'rental_type' => 'unit_refill', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 701, 'rental_name' => 'ADS W300 300 ml baterai', 'rental_type' => 'unit_refill', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rentals')->insert([
+            [
+                'id' => 800,
+                'contract_id' => $contract->id,
+                'master_rental_id' => 700,
+                'room_id' => 400,
+                'quantity' => 1,
+                'unit_price' => 5000000,
+                'total_price' => 5000000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 801,
+                'contract_id' => $contract->id,
+                'master_rental_id' => 701,
+                'room_id' => 401,
+                'quantity' => 1,
+                'unit_price' => 1000000,
+                'total_price' => 1000000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $lobbyJobAdviceId = DB::table('job_advices')->insertGetId([
+            'contract_id' => $contract->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $vipJobAdviceId = DB::table('job_advices')->insertGetId([
+            'contract_id' => $contract->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $originalLobbyJob = JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-06/0001',
+            'type' => 'service_first',
+            'status' => 'meninggalkan_lokasi',
+            'job_advice_id' => $lobbyJobAdviceId,
+            'schedule_date' => '2026-06-11',
+            'ba_date' => '2026-06-11',
+        ]);
+        $vipJob = JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-06/0002',
+            'type' => 'service_first',
+            'status' => 'done_job',
+            'job_advice_id' => $vipJobAdviceId,
+            'room_id' => 401,
+            'schedule_date' => '2026-06-11',
+            'ba_date' => '2026-06-11',
+        ]);
+        $followUpLobbyJob = JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-06/0003',
+            'type' => 'service_first',
+            'status' => 'done_job',
+            'job_advice_id' => $lobbyJobAdviceId,
+            'room_id' => null,
+            'schedule_date' => '2026-06-11',
+            'ba_date' => '2026-06-11',
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            [
+                'id' => 900,
+                'job_advice_id' => $lobbyJobAdviceId,
+                'contract_room_id' => 500,
+                'contract_rental_id' => 800,
+                'rental_product_id' => 700,
+                'service_job_schedule_id' => $originalLobbyJob->id,
+                'room_name' => 'Lobby',
+                'rental_name' => 'ADS W300 500 ml',
+                'status' => 'completed',
+                'is_trial' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 901,
+                'job_advice_id' => $vipJobAdviceId,
+                'contract_room_id' => 501,
+                'contract_rental_id' => 801,
+                'rental_product_id' => 701,
+                'service_job_schedule_id' => $vipJob->id,
+                'room_name' => 'Ruang VIP',
+                'rental_name' => 'ADS W300 300 ml baterai',
+                'status' => 'completed',
+                'is_trial' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            [
+                'job_schedule_id' => $originalLobbyJob->id,
+                'job_advice_room_id' => 900,
+                'room_id' => 400,
+                'room_name' => 'Lobby',
+                'status' => 'cancelled',
+                'notes' => 'Pekerjaan tidak selesai, dipindahkan ke Job baru.',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'job_schedule_id' => $vipJob->id,
+                'job_advice_room_id' => 901,
+                'room_id' => 401,
+                'room_name' => 'Ruang VIP',
+                'status' => 'completed',
+                'notes' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'job_schedule_id' => $followUpLobbyJob->id,
+                'job_advice_room_id' => 900,
+                'room_id' => 400,
+                'room_name' => 'Lobby',
+                'status' => 'completed',
+                'notes' => 'Pindahan dari Job SBY-CSR/26-06/0001',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $invoice = LegacyInvoice::create([
+            'invoice_number' => 'SBY-INV/26-06/0001',
+            'contract_id' => $contract->id,
+            'contract_number' => $contract->contract_number,
+            'customer_id' => $customer->id,
+            'invoice_status' => 'draft',
+            'invoice_date' => '2026-06-11',
+            'due_date' => '2026-07-11',
+        ]);
+
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+            public function generate(
+                string $documentType,
+                ?string $branchCode = null,
+                ?int $buildingId = null,
+                ?int $contractId = null,
+                ?int $quotationId = null,
+                ?int $surveyId = null,
+                ?int $warehouseId = null,
+                ?int $branchId = null,
+                \DateTimeInterface|string|null $documentDate = null
+            ): string {
+                return 'SBY-INV/26-06/0001';
+            }
+        });
+
+        $expectedRows = collect($service->expectedRentalDetailsForInvoice($invoice));
+
+        $this->assertCount(2, $expectedRows);
+        $this->assertSame(6000000.0, (float) $expectedRows->sum('total_price'));
+        $this->assertSame(1, $expectedRows->where('room_name', 'Lobby')->count());
+        $this->assertSame(1, $expectedRows->where('room_name', 'Ruang VIP')->count());
+        $this->assertFalse(
+            $expectedRows->contains(fn ($row) => $row['job_no'] === 'SBY-CSR/26-06/0003' && $row['room_name'] === 'Ruang VIP')
+        );
+
+        $invoice->invoiceRentalDetails()->create([
+            'master_rental_id' => 700,
+            'job_no' => 'SBY-CSR/26-06/0003',
+            'room_name' => 'Lobby',
+            'rental_name' => 'ADS W300 500 ml',
+            'quantity' => 1,
+            'unit_price' => 5000000,
+            'total_price' => 5000000,
+        ]);
+        $invoice->invoiceRentalDetails()->create([
+            'master_rental_id' => 701,
+            'job_no' => 'SBY-CSR/26-06/0003',
+            'room_name' => 'Ruang VIP',
+            'rental_name' => 'ADS W300 300 ml baterai',
+            'quantity' => 1,
+            'unit_price' => 1000000,
+            'total_price' => 1000000,
+        ]);
+        $invoice->invoiceRentalDetails()->create([
+            'master_rental_id' => 701,
+            'job_no' => 'SBY-CSR/26-06/0002',
+            'room_name' => 'Ruang VIP',
+            'rental_name' => 'ADS W300 300 ml baterai',
+            'quantity' => 1,
+            'unit_price' => 1000000,
+            'total_price' => 1000000,
+        ]);
+
+        $this->artisan('finance:repair-missing-invoice-rental-details', [
+            '--invoice-number' => ['SBY-INV/26-06/0001'],
+            '--rebuild' => true,
+        ])->assertSuccessful();
+        $this->assertDatabaseCount('invoice_rental_details', 3);
+
+        $this->artisan('finance:repair-missing-invoice-rental-details', [
+            '--invoice-number' => ['SBY-INV/26-06/0001'],
+            '--rebuild' => true,
+            '--apply' => true,
+        ])->assertSuccessful();
+
+        $this->assertDatabaseCount('invoice_rental_details', 2);
+        $this->assertDatabaseMissing('invoice_rental_details', [
+            'invoice_id' => $invoice->id,
+            'job_no' => 'SBY-CSR/26-06/0003',
+            'room_name' => 'Ruang VIP',
+        ]);
+        $this->assertDatabaseHas('invoices', [
+            'id' => $invoice->id,
+            'subtotal' => 6000000,
+            'total_amount' => 6000000,
+            'grand_total' => 6000000,
         ]);
     }
 

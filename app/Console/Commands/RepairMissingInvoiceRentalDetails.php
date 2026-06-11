@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Contract;
 use App\Models\Invoice;
 use App\Services\Finance\InvoiceGenerationService;
 use Illuminate\Console\Command;
@@ -14,9 +15,11 @@ class RepairMissingInvoiceRentalDetails extends Command
         {--invoice-id=* : Specific invoice id, repeatable}
         {--invoice-number=* : Specific invoice number, repeatable}
         {--include-finalized : Allow approved/sent/tax approved/paid invoices}
+        {--sync-contract-id : Fill invoice.contract_id from contract_number when missing}
+        {--rebuild : Replace existing rental rows with expected rows}
         {--apply : Apply the repair. Default is dry-run}';
 
-    protected $description = 'Add missing rental rows to existing invoices using the completed IR/CSR trigger jobs for the invoice month';
+    protected $description = 'Add or rebuild invoice rental rows using completed IR/CSR trigger jobs for the invoice month';
 
     private const FINAL_STATUSES = ['approved', 'sent', 'tax_approved', 'paid'];
 
@@ -25,6 +28,8 @@ class RepairMissingInvoiceRentalDetails extends Command
         $invoiceIds = collect($this->option('invoice-id'))->filter()->map(fn ($id) => (int) $id)->values();
         $invoiceNumbers = collect($this->option('invoice-number'))->filter()->map(fn ($number) => trim((string) $number))->values();
         $apply = (bool) $this->option('apply');
+        $rebuild = (bool) $this->option('rebuild');
+        $syncContractId = (bool) $this->option('sync-contract-id');
 
         if ($invoiceIds->isEmpty() && $invoiceNumbers->isEmpty()) {
             $this->error('Use --invoice-id or --invoice-number. This repair intentionally does not run without a specific target.');
@@ -59,9 +64,71 @@ class RepairMissingInvoiceRentalDetails extends Command
             }
 
             $expectedRows = $invoiceGenerationService->expectedRentalDetailsForInvoice($invoice);
+            $scanned += count($expectedRows);
+
+            if ($syncContractId && empty($invoice->contract_id) && $invoice->contract_number) {
+                $contract = Contract::where('contract_number', $invoice->contract_number)->first();
+                if ($contract) {
+                    if ($apply) {
+                        $invoice->forceFill([
+                            'contract_id' => $contract->id,
+                            'updated_by' => auth()->id(),
+                        ])->save();
+                    }
+
+                    $rows[] = $this->row($apply ? 'FIXED' : 'PLAN', $invoice, null, "sync contract_id={$contract->id}");
+                }
+            }
+
+            if ($rebuild) {
+                if (empty($expectedRows)) {
+                    $skipped++;
+                    $rows[] = $this->row('SKIP', $invoice, null, 'no expected rental rows; rebuild skipped to avoid deleting invoice lines');
+
+                    continue;
+                }
+
+                $planned += $invoice->invoiceRentalDetails->count() + count($expectedRows);
+
+                foreach ($invoice->invoiceRentalDetails as $existing) {
+                    $rows[] = $this->row('REMOVE', $invoice, [
+                        'job_no' => $existing->job_no,
+                        'rental_name' => $existing->rental_name,
+                        'room_name' => $existing->room_name,
+                        'total_price' => $existing->total_price,
+                    ], 'existing rental row will be replaced');
+                }
+
+                foreach ($expectedRows as $expected) {
+                    $rows[] = $this->row('ADD', $invoice, $expected, 'expected rental row');
+                }
+
+                if ($apply) {
+                    DB::transaction(function () use ($invoice, $expectedRows, $invoiceGenerationService, &$applied) {
+                        $removed = $invoice->invoiceRentalDetails()->count();
+                        $invoice->invoiceRentalDetails()->delete();
+                        $applied += $removed;
+
+                        foreach ($expectedRows as $expected) {
+                            $payload = $expected;
+                            $payload['created_by'] = auth()->id();
+
+                            if (Schema::hasColumn('invoice_rental_details', 'updated_by')) {
+                                $payload['updated_by'] = auth()->id();
+                            }
+
+                            $invoice->invoiceRentalDetails()->create($payload);
+                            $applied++;
+                        }
+
+                        $invoiceGenerationService->refreshInvoiceTotals($invoice);
+                    });
+                }
+
+                continue;
+            }
 
             foreach ($expectedRows as $expected) {
-                $scanned++;
                 $exists = $invoice->invoiceRentalDetails->contains(function ($detail) use ($expected) {
                     return (int) $detail->master_rental_id === (int) $expected['master_rental_id']
                         && $this->normalize($detail->room_name) === $this->normalize($expected['room_name']);
