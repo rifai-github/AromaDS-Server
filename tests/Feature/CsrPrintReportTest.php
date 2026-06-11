@@ -312,6 +312,59 @@ class CsrPrintReportTest extends TestCase
         $this->assertStringContainsString('Service/Refill', $html);
     }
 
+    public function test_csr_pdf_prints_schedule_room_rental_when_service_link_points_to_future_job(): void
+    {
+        $currentServiceRoom = (object) [
+            'id' => 2001,
+            'quantity' => 1,
+            'install_job_schedule_id' => null,
+            'service_job_schedule_id' => 2900,
+            'remove_job_schedule_id' => null,
+            'rentalProduct' => (object) [
+                'rental_name' => 'ADS W300 500 ml',
+                'rental_type' => 'refill_only',
+                'rentalDetails' => collect([]),
+            ],
+        ];
+
+        $job = (object) [
+            'id' => 7,
+            'type' => 'service_first',
+            'period' => 1,
+            'schedule_date' => '2026-06-11',
+            'completed_at' => null,
+            'company_name' => 'Abadi Company',
+            'building_name' => 'Hotel Melton Surabaya',
+            'jobAdvice' => (object) [
+                'customer' => (object) ['name' => 'Abadi Company'],
+                'contract' => (object) ['contract_number' => 'SBY-CA/26-06/0001'],
+            ],
+            'building' => null,
+            'assignedTechnician' => null,
+            'jobAssignSchedules' => collect([]),
+            'jobScheduleRooms' => collect([
+                (object) [
+                    'id' => 70,
+                    'room_name' => 'Lobby',
+                    'room' => (object) ['room_name' => 'Lobby'],
+                    'jobAdviceRoom' => null,
+                    'rentals' => collect([
+                        (object) ['jobAdviceRoom' => $currentServiceRoom],
+                    ]),
+                ],
+            ]),
+        ];
+
+        $html = view('operational.job-schedules.pdf-csr', [
+            'groupedJobs' => collect(['SBY-CSR/26-06/0003' => collect([$job])]),
+            'selectedRoomIds' => null,
+        ])->render();
+
+        $this->assertStringContainsString('ADS W300 500 ml', $html);
+        $this->assertStringContainsString('Lobby', $html);
+        $this->assertStringContainsString('SBY-CSR/26-06/0003', $html);
+    }
+
     public function test_print_csr_allows_new_job_without_job_number(): void
     {
         DB::table('customers')->insert(['id' => 1, 'name' => 'Siloam']);

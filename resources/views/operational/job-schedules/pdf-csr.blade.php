@@ -208,24 +208,26 @@
 
                 return $rentalType ?: null;
             };
-            $rentalBelongsToJob = function ($schedule, $jobAdviceRoom) use ($resolveRentalFlowType): bool {
+            $rentalBelongsToJob = function ($schedule, $jobAdviceRoom, bool $linkedThroughScheduleRoom = false) use ($resolveRentalFlowType): bool {
                 if (! $jobAdviceRoom) {
                     return true;
                 }
 
                 $scheduleId = (int) ($schedule->id ?? 0);
-                $linkedScheduleIds = collect([
-                    (int) ($jobAdviceRoom->install_job_schedule_id ?? 0),
-                    (int) ($jobAdviceRoom->service_job_schedule_id ?? 0),
-                    (int) ($jobAdviceRoom->remove_job_schedule_id ?? 0),
-                ])->filter()->values();
-
-                if ($linkedScheduleIds->isNotEmpty()) {
-                    return $linkedScheduleIds->contains($scheduleId);
-                }
-
                 $jobType = strtolower(str_replace([' ', '-'], '_', (string) ($schedule->type ?? '')));
                 $flowType = $resolveRentalFlowType($jobAdviceRoom);
+
+                if (! $linkedThroughScheduleRoom) {
+                    $linkedScheduleIds = collect([
+                        (int) ($jobAdviceRoom->install_job_schedule_id ?? 0),
+                        (int) ($jobAdviceRoom->service_job_schedule_id ?? 0),
+                        (int) ($jobAdviceRoom->remove_job_schedule_id ?? 0),
+                    ])->filter()->values();
+
+                    if ($linkedScheduleIds->isNotEmpty()) {
+                        return $linkedScheduleIds->contains($scheduleId);
+                    }
+                }
 
                 if (! $flowType) {
                     return true;
@@ -287,12 +289,23 @@
                         $rentalLinks = method_exists($roomPivot, 'relationLoaded')
                             ? ($roomPivot->relationLoaded('rentals') ? $roomPivot->rentals : collect())
                             : collect($roomPivot->rentals ?? []);
-                        $jobAdviceRooms = $rentalLinks->isNotEmpty()
-                            ? $rentalLinks->map(fn ($link) => $link->jobAdviceRoom)->filter()->values()
-                            : collect([$roomPivot->jobAdviceRoom])->filter()->values();
+                        $jobAdviceRoomEntries = $rentalLinks->isNotEmpty()
+                            ? $rentalLinks
+                                ->map(fn ($link) => [
+                                    'room' => $link->jobAdviceRoom,
+                                    'linked_through_schedule_room' => true,
+                                ])
+                                ->filter(fn ($entry) => filled($entry['room']))
+                                ->values()
+                            : collect([[
+                                'room' => $roomPivot->jobAdviceRoom,
+                                'linked_through_schedule_room' => false,
+                            ]])->filter(fn ($entry) => filled($entry['room']))->values();
 
-                        foreach ($jobAdviceRooms as $jobAdviceRoom) {
-                            if (! $rentalBelongsToJob($sch, $jobAdviceRoom)) {
+                        foreach ($jobAdviceRoomEntries as $entry) {
+                            $jobAdviceRoom = $entry['room'];
+
+                            if (! $rentalBelongsToJob($sch, $jobAdviceRoom, $entry['linked_through_schedule_room'])) {
                                 continue;
                             }
 

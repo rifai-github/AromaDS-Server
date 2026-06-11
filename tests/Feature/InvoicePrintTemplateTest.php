@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Finance\InvoiceController;
 use App\Models\Finance\Invoice;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -237,6 +238,22 @@ class InvoicePrintTemplateTest extends TestCase
 
         $this->assertStringContainsString('Authorized By', $html);
         $this->assertStringContainsString('Manager Finance', $html);
+    }
+
+    public function test_invoice_header_print_keeps_only_first_system_csr_attachment(): void
+    {
+        $controller = new InvoiceController;
+        $method = new \ReflectionMethod($controller, 'getDefaultPrintAttachmentIds');
+        $method->setAccessible(true);
+
+        $ids = $method->invoke($controller, collect([
+            (object) ['id' => 'sys-csr-7'],
+            (object) ['id' => 'sys-csr-6'],
+            (object) ['id' => 'inv-9'],
+            (object) ['id' => 'ba-3'],
+        ]));
+
+        $this->assertSame(['sys-csr-7', 'inv-9', 'ba-3'], $ids);
     }
 
     private function makeInvoice(array $overrides = []): Invoice

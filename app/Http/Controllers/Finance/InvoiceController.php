@@ -763,6 +763,52 @@ class InvoiceController extends Controller
         return $allFiles->sortByDesc('updated_at');
     }
 
+    private function getDefaultPrintAttachmentIds($files): array
+    {
+        $selectedIds = [];
+        $hasSystemCsr = false;
+
+        foreach ($files as $file) {
+            $id = (string) ($file->id ?? '');
+
+            // Header PRINT keeps one generated CSR; manual combined downloads can still include checked CSR files.
+            if (str_starts_with($id, 'sys-csr-')) {
+                if ($hasSystemCsr) {
+                    continue;
+                }
+
+                $hasSystemCsr = true;
+            }
+
+            $selectedIds[] = $id;
+        }
+
+        return $selectedIds;
+    }
+
+    private function csrPrintRelations(): array
+    {
+        return [
+            'jobAdvice.customer',
+            'jobAdvice.contract',
+            'building.city',
+            'building.province',
+            'building.district',
+            'building.subdistrict',
+            'assignedTechnician',
+            'jobAssignSchedules.team',
+            'jobScheduleRooms.room',
+            'jobScheduleRooms.rentals.jobAdviceRoom.rentalProduct.rentalDetails.productCategory',
+            'jobScheduleRooms.rentals.jobAdviceRoom.rentalProduct.rentalDetails.productType',
+            'jobScheduleRooms.rentals.jobAdviceRoom.rentalProduct.rentalDetails.masterProduct.productCategory',
+            'jobScheduleRooms.rentals.jobAdviceRoom.rentalProduct.rentalDetails.masterProduct.productType',
+            'jobScheduleRooms.jobAdviceRoom.rentalProduct.rentalDetails.productCategory',
+            'jobScheduleRooms.jobAdviceRoom.rentalProduct.rentalDetails.productType',
+            'jobScheduleRooms.jobAdviceRoom.rentalProduct.rentalDetails.masterProduct.productCategory',
+            'jobScheduleRooms.jobAdviceRoom.rentalProduct.rentalDetails.masterProduct.productType',
+        ];
+    }
+
     /**
      * Resolve a robust path for an attachment given its stored DB path
      */
@@ -1388,12 +1434,16 @@ class InvoiceController extends Controller
             'file_ids.*' => 'string'
         ]);
 
+        $hasExplicitFileSelection = $request->has('file_ids');
+        $isHeaderPrint = $request->query('inline') === 'true' && !$hasExplicitFileSelection;
         $selectedIds = $request->input('file_ids', []);
         
         // If no files selected (e.g. from Print button), auto-select ALL files
         if (empty($selectedIds)) {
             $allFiles = $this->getAllInvoiceAttachments($invoice);
-            $selectedIds = $allFiles->pluck('id')->toArray();
+            $selectedIds = $isHeaderPrint
+                ? $this->getDefaultPrintAttachmentIds($allFiles)
+                : $allFiles->pluck('id')->toArray();
         }
 
         // 0. Validation: Ensure invoice is ready for print/download.
@@ -1434,7 +1484,7 @@ class InvoiceController extends Controller
             // 3. (REMOVED) Static CSR Generation block was here. 
             // Now handled dynamically in Step 4 below based on selectedIds (including sys-csr virtual IDs).
             
-            $generatedTempPdfs = []; // Track CSR PDFs to cleanup later
+            $generatedTempPdfs = []; // Track generated PDFs to cleanup later
 
             // 4. Collect Additional Attachments
             foreach ($selectedIds as $id) {
@@ -1446,14 +1496,10 @@ class InvoiceController extends Controller
 
                         if ($baseJob && in_array($baseJob->status, ['done_job', 'completed'])) {
                             // Fetch all sibling jobs in the same group to include all rooms
-                            $jobs = \App\Models\JobSchedule::with([
-                                'jobAdvice.customer', 'jobAdvice.contract', 'building', 
-                                'assignedTechnician', 'jobAssignSchedules.team',
-                                'jobScheduleRooms.room', 'jobScheduleRooms.jobAdviceRoom.rentalProduct'
-                            ])
-                            ->where('job_number', $baseJob->job_number)
-                            ->whereIn('status', ['done_job', 'completed'])
-                            ->get();
+                            $jobs = \App\Models\JobSchedule::with($this->csrPrintRelations())
+                                ->where('job_number', $baseJob->job_number)
+                                ->whereIn('status', ['done_job', 'completed'])
+                                ->get();
 
                             // Match grouping logic from JobScheduleController.printCsr
                             $groupedJobs = $jobs->groupBy('job_number');
@@ -1494,6 +1540,15 @@ class InvoiceController extends Controller
                         $mergePaths[] = $filePath;
                     }
                 }
+            }
+
+            if ($isHeaderPrint) {
+                $receiptPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('finance.invoices.delivery_receipt_pdf', compact('invoice'));
+                $tempReceiptPath = storage_path('app/temp/delivery_receipt_' . $invoice->id . '_' . time() . '.pdf');
+                file_put_contents($tempReceiptPath, $receiptPdf->output());
+
+                $mergePaths[] = $tempReceiptPath;
+                $generatedTempPdfs[] = $tempReceiptPath;
             }
 
             // 5. Call Node.js script to merge
