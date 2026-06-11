@@ -699,7 +699,14 @@
                 <h1 class="text-xl font-semibold text-[#214589]">Serial Numbers</h1>
             </div>
             
-            <div class="flex flex-row justify-end items-center">
+            <div class="flex flex-row justify-end items-center gap-2">
+                @if(auth()->user() && auth()->user()->hasPermission('warehouse.serial-numbers.create'))
+                <button class="btn btn-secondary" onclick="openImportModal()">
+                    <i class="fas fa-file-import"></i>
+                    <span class="hidden md:inline">Import Excel/CSV</span>
+                    <span class="md:hidden">Import</span>
+                </button>
+                @endif
                 <button class="btn btn-primary" onclick="openCreateModal()">
                     <i class="fas fa-plus"></i>
                     <span class="hidden md:inline">Add New Serial Number</span>
@@ -1037,6 +1044,147 @@ function closeModal() {
     document.body.style.overflow = 'auto';
     document.getElementById('modalBody').innerHTML = '';
     document.getElementById('modalFooter').innerHTML = '';
+}
+
+// ===== Import Excel/CSV functions =====
+function openImportModal() {
+    openModal('Import Serial Number dari Excel/CSV');
+    document.getElementById('modalBody').innerHTML = `
+        <form id="snImportForm" onsubmit="snPreviewImport(event)">
+            <div class="form-group">
+                <label class="form-label">Pilih File Excel / CSV *</label>
+                <input type="file" name="file" id="snImportFile" class="form-input" accept=".csv,.txt,.xlsx,.xls" required onchange="snHandleFileSelect(event)">
+                <small class="text-muted">Format: .xlsx, .xls, atau .csv. Maksimum 10MB.</small>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 my-3">
+                <div class="font-semibold text-blue-900 mb-1">Unduh contoh format:</div>
+                <a href="/warehouse/serial-numbers/import-template?format=xlsx" class="text-blue-700 underline mr-3">Template Excel (.xlsx)</a>
+                <a href="/warehouse/serial-numbers/import-template?format=csv" class="text-blue-700 underline">Template CSV</a>
+            </div>
+            <div id="snPreviewSection" style="display:none;">
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 my-3">
+                    <div class="font-semibold mb-2">Hasil Preview:</div>
+                    <div id="snPreviewContent"></div>
+                </div>
+            </div>
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <div class="font-semibold text-yellow-900 mb-1">📋 Ketentuan kolom:</div>
+                <ul class="text-sm text-yellow-800 space-y-1 list-disc list-inside">
+                    <li><strong>Wajib:</strong> serial_number, status, warehouse (kode/nama), dan salah satu dari product_sku / product_name</li>
+                    <li><strong>status</strong>: ready, broken, on_service, in_use, retired, available, maintenance, damaged, on_hand, on_hand_remove</li>
+                    <li><strong>Opsional:</strong> condition_status (new/second_ready/damaged), notes</li>
+                    <li>serial_number diubah otomatis menjadi HURUF BESAR; yang sudah ada akan dilewati</li>
+                </ul>
+            </div>
+        </form>
+    `;
+    document.getElementById('modalFooter').innerHTML = `
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Batal</button>
+        <button type="button" class="btn btn-info" onclick="snPreviewImport(event)" id="snPreviewBtn" disabled>Preview</button>
+        <button type="button" class="btn btn-primary" onclick="snConfirmImport()" id="snConfirmBtn" style="display:none;">Mulai Import</button>
+    `;
+}
+
+function snHandleFileSelect(event) {
+    const btn = document.getElementById('snPreviewBtn');
+    btn.disabled = !(event.target.files && event.target.files.length > 0);
+    document.getElementById('snPreviewSection').style.display = 'none';
+    document.getElementById('snConfirmBtn').style.display = 'none';
+}
+
+function snPreviewImport(event) {
+    if (event) event.preventDefault();
+    const form = document.getElementById('snImportForm');
+    const formData = new FormData(form);
+    const previewBtn = document.getElementById('snPreviewBtn');
+    const section = document.getElementById('snPreviewSection');
+    const content = document.getElementById('snPreviewContent');
+
+    if (!formData.get('file') || !formData.get('file').name) {
+        alert('Silakan pilih file terlebih dahulu.');
+        return;
+    }
+
+    previewBtn.disabled = true;
+    previewBtn.textContent = 'Memuat...';
+    section.style.display = 'block';
+    content.innerHTML = '<div class="text-center py-3 text-sm text-gray-500">Menganalisis file...</div>';
+
+    fetch('/warehouse/serial-numbers/import-preview', {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        },
+        body: formData
+    })
+    .then(r => r.json())
+    .then(result => {
+        previewBtn.disabled = false;
+        previewBtn.textContent = 'Preview';
+        if (result.status !== 'success') {
+            content.innerHTML = '<div class="text-red-600 text-sm">' + (result.message || 'Gagal membaca file.') + '</div>';
+            return;
+        }
+        const p = result.preview;
+        let html = '<div class="text-sm space-y-1">';
+        html += '<div>Total baris: <strong>' + p.total_rows + '</strong></div>';
+        html += '<div>Baru: <strong class="text-green-700">' + p.new + '</strong> &middot; Sudah ada (dilewati): <strong class="text-gray-600">' + p.existing + '</strong></div>';
+        if (p.errors && p.errors.length) {
+            html += '<div class="mt-2 text-red-600"><strong>' + p.errors.length + ' peringatan:</strong><ul class="list-disc list-inside">';
+            p.errors.slice(0, 10).forEach(e => { html += '<li>' + e + '</li>'; });
+            if (p.errors.length > 10) html += '<li>...dan ' + (p.errors.length - 10) + ' lainnya</li>';
+            html += '</ul></div>';
+        }
+        html += '</div>';
+        content.innerHTML = html;
+        document.getElementById('snConfirmBtn').style.display = (p.new > 0) ? 'inline-flex' : 'none';
+    })
+    .catch(() => {
+        previewBtn.disabled = false;
+        previewBtn.textContent = 'Preview';
+        content.innerHTML = '<div class="text-red-600 text-sm">Terjadi kesalahan saat memproses file.</div>';
+    });
+}
+
+function snConfirmImport() {
+    const form = document.getElementById('snImportForm');
+    const formData = new FormData(form);
+    const confirmBtn = document.getElementById('snConfirmBtn');
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Mengimpor...';
+
+    fetch('/warehouse/serial-numbers/import', {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        },
+        body: formData
+    })
+    .then(r => r.json())
+    .then(result => {
+        const content = document.getElementById('snPreviewContent');
+        const s = result.stats || {};
+        let html = '<div class="text-sm space-y-1"><div class="font-semibold text-green-700">' + (result.message || 'Import selesai') + '</div>';
+        if (s.errors && s.errors.length) {
+            html += '<div class="mt-2 text-red-600"><strong>Baris gagal:</strong><ul class="list-disc list-inside">';
+            s.errors.slice(0, 20).forEach(e => { html += '<li>Baris ' + e.row + ': ' + e.error + '</li>'; });
+            if (s.errors.length > 20) html += '<li>...dan ' + (s.errors.length - 20) + ' lainnya</li>';
+            html += '</ul></div>';
+        }
+        html += '</div>';
+        content.innerHTML = html;
+        confirmBtn.style.display = 'none';
+        setTimeout(() => { window.location.reload(); }, 1800);
+    })
+    .catch(() => {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Mulai Import';
+        alert('Terjadi kesalahan saat mengimpor.');
+    });
 }
 
 // CRUD Modal functions

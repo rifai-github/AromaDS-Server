@@ -10,6 +10,7 @@ use App\Http\Controllers\Company\CompanyController;
 use App\Http\Controllers\Company\CompanyVirtualAccountController;
 use App\Http\Controllers\Company\CustomerContactController;
 use App\Http\Controllers\Company\CustomerController;
+use App\Http\Controllers\Company\CustomerImportController;
 use App\Http\Controllers\Company\CustomerTaxController;
 use App\Http\Controllers\Company\MasterPriceSlabController;
 use App\Http\Controllers\Company\SupplierController;
@@ -110,8 +111,10 @@ use App\Http\Controllers\Warehouse\InventoryReceivingController;
 use App\Http\Controllers\Warehouse\InventoryRequestController;
 use App\Http\Controllers\Warehouse\MasterProductController;
 use App\Http\Controllers\Warehouse\MasterRentalController;
+use App\Http\Controllers\Warehouse\MasterRentalImportController;
 use App\Http\Controllers\Warehouse\ProductTypeController;
 use App\Http\Controllers\Warehouse\SerialNumberController;
+use App\Http\Controllers\Warehouse\SerialNumberImportController;
 use App\Http\Controllers\Warehouse\StockAdjustmentController;
 use App\Http\Controllers\Warehouse\StockOpnameController;
 use App\Http\Controllers\Warehouse\UnitOnWallController;
@@ -1179,6 +1182,9 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('master-rentals', [MasterRentalController::class, 'index'])->name('master-rentals.index')->middleware('permission:warehouse.master-rentals.view');
         Route::get('master-rentals/create', [MasterRentalController::class, 'create'])->name('master-rentals.create')->middleware('permission:warehouse.master-rentals.create');
         Route::post('master-rentals', [MasterRentalController::class, 'store'])->name('master-rentals.store')->middleware('permission:warehouse.master-rentals.create');
+        Route::get('master-rentals/import-template', [MasterRentalImportController::class, 'template'])->name('master-rentals.import-template')->middleware('permission:warehouse.master-rentals.create');
+        Route::post('master-rentals/import-preview', [MasterRentalImportController::class, 'preview'])->name('master-rentals.import-preview')->middleware('permission:warehouse.master-rentals.create');
+        Route::post('master-rentals/import', [MasterRentalImportController::class, 'import'])->name('master-rentals.import')->middleware('permission:warehouse.master-rentals.create');
         Route::get('master-rentals/{masterRental}', [MasterRentalController::class, 'show'])->name('master-rentals.show')->middleware('permission:warehouse.master-rentals.view');
         Route::get('master-rentals/{masterRental}/edit', [MasterRentalController::class, 'edit'])->name('master-rentals.edit')->middleware('permission:warehouse.master-rentals.update');
         Route::put('master-rentals/{masterRental}', [MasterRentalController::class, 'update'])->name('master-rentals.update')->middleware('permission:warehouse.master-rentals.update');
@@ -1222,6 +1228,9 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('stock-adjustments/{stock_adjustment}/approve', [StockAdjustmentController::class, 'approve'])->name('stock-adjustments.approve')->middleware('permission:warehouse.stock-adjustments.update');
         Route::post('stock-adjustments/{stock_adjustment}/reject', [StockAdjustmentController::class, 'reject'])->name('stock-adjustments.reject')->middleware('permission:warehouse.stock-adjustments.update');
         Route::get('stock-adjustments/dashboard', [StockAdjustmentController::class, 'dashboard'])->name('stock-adjustments.dashboard')->middleware('permission:warehouse.stock-adjustments.view');
+        Route::get('serial-numbers/import-template', [SerialNumberImportController::class, 'template'])->name('serial-numbers.import-template')->middleware('permission:warehouse.serial-numbers.create');
+        Route::post('serial-numbers/import-preview', [SerialNumberImportController::class, 'preview'])->name('serial-numbers.import-preview')->middleware('permission:warehouse.serial-numbers.create');
+        Route::post('serial-numbers/import', [SerialNumberImportController::class, 'import'])->name('serial-numbers.import')->middleware('permission:warehouse.serial-numbers.create');
         Route::resource('serial-numbers', SerialNumberController::class)->middleware('permission:warehouse.serial-numbers.view');
         Route::post('serial-numbers/bulk-delete', [SerialNumberController::class, 'bulkDelete'])->name('serial-numbers.bulk-delete')->middleware('permission:warehouse.serial-numbers.delete');
         Route::resource('unit-on-walls', UnitOnWallController::class)->middleware('permission:warehouse.unit-on-walls.view');
@@ -1502,6 +1511,9 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('branches/{branch}/pics/{pic}/set-primary', [BranchController::class, 'setPrimaryPic'])->name('branches.pics.set-primary')->middleware('permission:company.branches.update');
 
         // Customer Management
+        Route::get('customers/import-template', [CustomerImportController::class, 'template'])->name('customers.import-template')->middleware('permission:company.customers.create');
+        Route::post('customers/import-preview', [CustomerImportController::class, 'preview'])->name('customers.import-preview')->middleware('permission:company.customers.create');
+        Route::post('customers/import', [CustomerImportController::class, 'import'])->name('customers.import')->middleware('permission:company.customers.create');
         Route::resource('customers', CustomerController::class)->middleware('permission:company.customers.view');
         Route::get('customers/{customer}/details', [CustomerController::class, 'details'])->name('customers.details')->middleware('permission:company.customers.view');
 

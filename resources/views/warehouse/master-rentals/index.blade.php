@@ -811,6 +811,13 @@
                     <span class="hidden md:inline">Manage Freq</span>
                     <span class="md:hidden">Freq</span>
                 </a>
+                @if(auth()->user() && auth()->user()->hasPermission('warehouse.master-rentals.create'))
+                <button class="btn btn-secondary" onclick="openRentalImportModal()">
+                    <i class="fas fa-file-import"></i>
+                    <span class="hidden md:inline">Import Excel/CSV</span>
+                    <span class="md:hidden">Import</span>
+                </button>
+                @endif
                 <button class="btn btn-primary" onclick="openAddRentalModal()">
                     <i class="fas fa-plus"></i>
                     <span class="hidden md:inline">Add New Rental</span>
@@ -1115,6 +1122,124 @@ document.addEventListener('change', function(e) {
         headerSelectAllCheckbox.indeterminate = anyChecked && !allChecked;
     }
 });
+
+// ===== Import Excel/CSV functions =====
+function openRentalImportModal() {
+    openModal('Import Master Rental dari Excel/CSV');
+    document.getElementById('modalBody').innerHTML = `
+        <form id="rentalImportForm" onsubmit="rentalPreviewImport(event)">
+            <div class="form-group">
+                <label class="form-label">Pilih File Excel / CSV *</label>
+                <input type="file" name="file" id="rentalImportFile" class="form-input" accept=".csv,.txt,.xlsx,.xls" required onchange="rentalImportFileSelect(event)">
+                <small class="text-muted">Format: .xlsx, .xls, atau .csv. Maksimum 10MB.</small>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 my-3">
+                <div class="font-semibold text-blue-900 mb-1">Unduh contoh format:</div>
+                <a href="/warehouse/master-rentals/import-template?format=xlsx" class="text-blue-700 underline mr-3">Template Excel (.xlsx)</a>
+                <a href="/warehouse/master-rentals/import-template?format=csv" class="text-blue-700 underline">Template CSV</a>
+            </div>
+            <div id="rentalPreviewSection" style="display:none;">
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 my-3">
+                    <div class="font-semibold mb-2">Hasil Preview:</div>
+                    <div id="rentalPreviewContent"></div>
+                </div>
+            </div>
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <div class="font-semibold text-yellow-900 mb-1">📋 Ketentuan kolom:</div>
+                <ul class="text-sm text-yellow-800 space-y-1 list-disc list-inside">
+                    <li><strong>Wajib:</strong> rental_name, category, rental_type, service_frequency</li>
+                    <li><strong>rental_type</strong>: unit_only, refill_only, atau unit_refill</li>
+                    <li><strong>service_frequency</strong>: kode/nama frekuensi yang sudah terdaftar</li>
+                    <li><strong>Opsional:</strong> rental_code (otomatis jika kosong), daily_price, monthly_price, lost_unit_price, install_duration, service_duration, alias, description, is_active (Y/N)</li>
+                </ul>
+            </div>
+        </form>
+    `;
+    document.getElementById('modalFooter').innerHTML = `
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Batal</button>
+        <button type="button" class="btn btn-info" onclick="rentalPreviewImport(event)" id="rentalPreviewBtn" disabled>Preview</button>
+        <button type="button" class="btn btn-primary" onclick="rentalConfirmImport()" id="rentalConfirmBtn" style="display:none;">Mulai Import</button>
+    `;
+}
+
+function rentalImportFileSelect(event) {
+    document.getElementById('rentalPreviewBtn').disabled = !(event.target.files && event.target.files.length > 0);
+    document.getElementById('rentalPreviewSection').style.display = 'none';
+    document.getElementById('rentalConfirmBtn').style.display = 'none';
+}
+
+function rentalPreviewImport(event) {
+    if (event) event.preventDefault();
+    const formData = new FormData(document.getElementById('rentalImportForm'));
+    const previewBtn = document.getElementById('rentalPreviewBtn');
+    const section = document.getElementById('rentalPreviewSection');
+    const content = document.getElementById('rentalPreviewContent');
+
+    if (!formData.get('file') || !formData.get('file').name) { alert('Silakan pilih file terlebih dahulu.'); return; }
+
+    previewBtn.disabled = true; previewBtn.textContent = 'Memuat...';
+    section.style.display = 'block';
+    content.innerHTML = '<div class="text-center py-3 text-sm text-gray-500">Menganalisis file...</div>';
+
+    fetch('/warehouse/master-rentals/import-preview', {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'
+        },
+        body: formData
+    })
+    .then(r => r.json())
+    .then(result => {
+        previewBtn.disabled = false; previewBtn.textContent = 'Preview';
+        if (result.status !== 'success') { content.innerHTML = '<div class="text-red-600 text-sm">' + (result.message || 'Gagal membaca file.') + '</div>'; return; }
+        const p = result.preview;
+        let html = '<div class="text-sm space-y-1"><div>Total baris: <strong>' + p.total_rows + '</strong></div>';
+        html += '<div>Baru: <strong class="text-green-700">' + p.new + '</strong> &middot; Pakai kode existing: <strong class="text-gray-600">' + p.existing + '</strong></div>';
+        if (p.errors && p.errors.length) {
+            html += '<div class="mt-2 text-red-600"><strong>' + p.errors.length + ' peringatan:</strong><ul class="list-disc list-inside">';
+            p.errors.slice(0, 10).forEach(e => { html += '<li>' + e + '</li>'; });
+            if (p.errors.length > 10) html += '<li>...dan ' + (p.errors.length - 10) + ' lainnya</li>';
+            html += '</ul></div>';
+        }
+        html += '</div>';
+        content.innerHTML = html;
+        document.getElementById('rentalConfirmBtn').style.display = (p.total_rows > 0) ? 'inline-flex' : 'none';
+    })
+    .catch(() => { previewBtn.disabled = false; previewBtn.textContent = 'Preview'; content.innerHTML = '<div class="text-red-600 text-sm">Terjadi kesalahan saat memproses file.</div>'; });
+}
+
+function rentalConfirmImport() {
+    const formData = new FormData(document.getElementById('rentalImportForm'));
+    const confirmBtn = document.getElementById('rentalConfirmBtn');
+    confirmBtn.disabled = true; confirmBtn.textContent = 'Mengimpor...';
+
+    fetch('/warehouse/master-rentals/import', {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'
+        },
+        body: formData
+    })
+    .then(r => r.json())
+    .then(result => {
+        const content = document.getElementById('rentalPreviewContent');
+        const s = result.stats || {};
+        let html = '<div class="text-sm space-y-1"><div class="font-semibold text-green-700">' + (result.message || 'Import selesai') + '</div>';
+        if (s.errors && s.errors.length) {
+            html += '<div class="mt-2 text-red-600"><strong>Baris gagal:</strong><ul class="list-disc list-inside">';
+            s.errors.slice(0, 20).forEach(e => { html += '<li>Baris ' + e.row + ': ' + e.error + '</li>'; });
+            if (s.errors.length > 20) html += '<li>...dan ' + (s.errors.length - 20) + ' lainnya</li>';
+            html += '</ul></div>';
+        }
+        html += '</div>';
+        content.innerHTML = html;
+        confirmBtn.style.display = 'none';
+        setTimeout(() => { window.location.reload(); }, 1800);
+    })
+    .catch(() => { confirmBtn.disabled = false; confirmBtn.textContent = 'Mulai Import'; alert('Terjadi kesalahan saat mengimpor.'); });
+}
 
 // Modal functions
 function openModal(title) {

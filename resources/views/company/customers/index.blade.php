@@ -825,6 +825,13 @@
                     <span class="hidden md:inline">How to Create Customer</span>
                     <span class="md:hidden">Info</span>
                 </button>
+                @if(auth()->user() && auth()->user()->hasPermission('company.customers.create'))
+                <button class="btn btn-secondary" onclick="openCustomerImportModal()">
+                    <i class="fas fa-file-import"></i>
+                    <span class="hidden md:inline">Import Excel/CSV</span>
+                    <span class="md:hidden">Import</span>
+                </button>
+                @endif
                 <button class="btn btn-primary" onclick="openCreateModal()">
                     <i class="fas fa-plus"></i>
                     <span class="hidden md:inline">Add New Customer</span>
@@ -3577,6 +3584,144 @@ function onContactCreated(contact) {
         refreshMultiPicContacts(contact.id, contactLabel);
     }
 }
+
+// ===== Import Excel/CSV functions =====
+function openCustomerImportModal() {
+    document.getElementById('customerImportOverlay').classList.remove('hidden');
+    document.getElementById('customerImportFile').value = '';
+    document.getElementById('custImportPreviewSection').style.display = 'none';
+    document.getElementById('custImportConfirmBtn').style.display = 'none';
+    document.getElementById('custImportPreviewBtn').disabled = true;
+    document.body.style.overflow = 'hidden';
+}
+
+function closeCustomerImportModal() {
+    document.getElementById('customerImportOverlay').classList.add('hidden');
+    document.body.style.overflow = 'auto';
+}
+
+function custImportFileSelect(event) {
+    document.getElementById('custImportPreviewBtn').disabled = !(event.target.files && event.target.files.length > 0);
+    document.getElementById('custImportPreviewSection').style.display = 'none';
+    document.getElementById('custImportConfirmBtn').style.display = 'none';
+}
+
+function customerPreviewImport(event) {
+    if (event) event.preventDefault();
+    const formData = new FormData(document.getElementById('customerImportForm'));
+    const previewBtn = document.getElementById('custImportPreviewBtn');
+    const section = document.getElementById('custImportPreviewSection');
+    const content = document.getElementById('custImportPreviewContent');
+
+    if (!formData.get('file') || !formData.get('file').name) { alert('Silakan pilih file terlebih dahulu.'); return; }
+
+    previewBtn.disabled = true; previewBtn.textContent = 'Memuat...';
+    section.style.display = 'block';
+    content.innerHTML = '<div class="text-center py-3 text-sm text-gray-500">Menganalisis file...</div>';
+
+    fetch('/company/customers/import-preview', {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'
+        },
+        body: formData
+    })
+    .then(r => r.json())
+    .then(result => {
+        previewBtn.disabled = false; previewBtn.textContent = 'Preview';
+        if (result.status !== 'success') { content.innerHTML = '<div class="text-red-600 text-sm">' + (result.message || 'Gagal membaca file.') + '</div>'; return; }
+        const p = result.preview;
+        let html = '<div class="text-sm space-y-1"><div>Total baris: <strong>' + p.total_rows + '</strong></div>';
+        html += '<div>Baru: <strong class="text-green-700">' + p.new + '</strong> &middot; Nama sudah ada: <strong class="text-gray-600">' + p.existing + '</strong></div>';
+        if (p.errors && p.errors.length) {
+            html += '<div class="mt-2 text-red-600"><strong>' + p.errors.length + ' peringatan:</strong><ul class="list-disc list-inside">';
+            p.errors.slice(0, 10).forEach(e => { html += '<li>' + e + '</li>'; });
+            if (p.errors.length > 10) html += '<li>...dan ' + (p.errors.length - 10) + ' lainnya</li>';
+            html += '</ul></div>';
+        }
+        html += '</div>';
+        content.innerHTML = html;
+        document.getElementById('custImportConfirmBtn').style.display = (p.total_rows > 0) ? 'inline-flex' : 'none';
+    })
+    .catch(() => { previewBtn.disabled = false; previewBtn.textContent = 'Preview'; content.innerHTML = '<div class="text-red-600 text-sm">Terjadi kesalahan saat memproses file.</div>'; });
+}
+
+function customerConfirmImport() {
+    const formData = new FormData(document.getElementById('customerImportForm'));
+    const confirmBtn = document.getElementById('custImportConfirmBtn');
+    confirmBtn.disabled = true; confirmBtn.textContent = 'Mengimpor...';
+
+    fetch('/company/customers/import', {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'
+        },
+        body: formData
+    })
+    .then(r => r.json())
+    .then(result => {
+        const content = document.getElementById('custImportPreviewContent');
+        const s = result.stats || {};
+        let html = '<div class="text-sm space-y-1"><div class="font-semibold text-green-700">' + (result.message || 'Import selesai') + '</div>';
+        if (s.errors && s.errors.length) {
+            html += '<div class="mt-2 text-red-600"><strong>Baris gagal:</strong><ul class="list-disc list-inside">';
+            s.errors.slice(0, 20).forEach(e => { html += '<li>Baris ' + e.row + ': ' + e.error + '</li>'; });
+            if (s.errors.length > 20) html += '<li>...dan ' + (s.errors.length - 20) + ' lainnya</li>';
+            html += '</ul></div>';
+        }
+        html += '</div>';
+        content.innerHTML = html;
+        confirmBtn.style.display = 'none';
+        setTimeout(() => { window.location.reload(); }, 1800);
+    })
+    .catch(() => { confirmBtn.disabled = false; confirmBtn.textContent = 'Mulai Import'; alert('Terjadi kesalahan saat mengimpor.'); });
+}
 </script>
+
+<!-- Customer Import Modal -->
+<div id="customerImportOverlay" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onclick="if(event.target===this) closeCustomerImportModal()">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between border-b px-5 py-3">
+            <h2 class="text-lg font-semibold text-[#214589]">Import Customer dari Excel/CSV</h2>
+            <button class="text-gray-400 hover:text-gray-600" onclick="closeCustomerImportModal()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="px-5 py-4">
+            <form id="customerImportForm" onsubmit="customerPreviewImport(event)">
+                <div class="form-group">
+                    <label class="form-label">Pilih File Excel / CSV *</label>
+                    <input type="file" name="file" id="customerImportFile" class="form-input" accept=".csv,.txt,.xlsx,.xls" required onchange="custImportFileSelect(event)">
+                    <small class="text-muted">Format: .xlsx, .xls, atau .csv. Maksimum 10MB.</small>
+                </div>
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 my-3">
+                    <div class="font-semibold text-blue-900 mb-1">Unduh contoh format:</div>
+                    <a href="/company/customers/import-template?format=xlsx" class="text-blue-700 underline mr-3">Template Excel (.xlsx)</a>
+                    <a href="/company/customers/import-template?format=csv" class="text-blue-700 underline">Template CSV</a>
+                </div>
+                <div id="custImportPreviewSection" style="display:none;">
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 my-3">
+                        <div class="font-semibold mb-2">Hasil Preview:</div>
+                        <div id="custImportPreviewContent"></div>
+                    </div>
+                </div>
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <div class="font-semibold text-yellow-900 mb-1">📋 Ketentuan kolom:</div>
+                    <ul class="text-sm text-yellow-800 space-y-1 list-disc list-inside">
+                        <li><strong>Wajib:</strong> name</li>
+                        <li><strong>Opsional:</strong> phone, email, address, company_type (default PT), is_pkp (Y/N), customer_category, province, city, district, subdistrict, postal_code, npwp, customer_group, label_alias, is_active (Y/N)</li>
+                        <li>customer_category & wilayah dicocokkan dengan nama yang sudah terdaftar; jika diisi tapi tidak ditemukan, baris dilaporkan gagal</li>
+                        <li>customer_code dibuat otomatis. Import PIC/kontak belum termasuk (menyusul)</li>
+                    </ul>
+                </div>
+            </form>
+        </div>
+        <div class="flex justify-end gap-2 border-t px-5 py-3">
+            <button type="button" class="btn btn-secondary" onclick="closeCustomerImportModal()">Batal</button>
+            <button type="button" class="btn btn-info" onclick="customerPreviewImport(event)" id="custImportPreviewBtn" disabled>Preview</button>
+            <button type="button" class="btn btn-primary" onclick="customerConfirmImport()" id="custImportConfirmBtn" style="display:none;">Mulai Import</button>
+        </div>
+    </div>
+</div>
 @include('company.customers.status-modal')
 @endsection
