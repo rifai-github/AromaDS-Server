@@ -230,22 +230,36 @@ class PackagingSizeController extends Controller
     public function destroy(PackagingSize $packagingSize)
     {
         try {
+            DB::beginTransaction();
+
             // Check if packaging size is used by any products
             $productsCount = $packagingSize->products()->count();
             if ($productsCount > 0) {
+                DB::rollBack();
+
                 return response()->json([
                     'status' => 'error',
                     'message' => "Cannot delete packaging size. It is used by {$productsCount} product(s)."
                 ], 422);
             }
 
+            if (Auth::id()) {
+                $packagingSize->updated_by = Auth::id();
+            }
+
             $packagingSize->delete();
+
+            DB::commit();
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Packaging size deleted successfully.'
             ]);
         } catch (\Exception $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to delete packaging size: ' . $e->getMessage()
