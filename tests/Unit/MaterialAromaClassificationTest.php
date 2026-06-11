@@ -149,6 +149,25 @@ class MaterialAromaClassificationTest extends TestCase
         $this->assertFalse($method->invoke($controller, $lemongrass100, $coffee100));
     }
 
+    public function test_job_assign_material_issue_package_split_uses_product_name_when_variant_is_generic_brand_line(): void
+    {
+        $controller = new JobAssignMaterialIssueController();
+        $method = (new ReflectionClass($controller))->getMethod('productsHaveSamePackageMaterialFamily');
+        $method->setAccessible(true);
+
+        $lemongrass100 = $this->product('Fragrance Lemongrass Mix 100 ml', 'LEM-MIX-100', 'Aroma Refill', null, 'Signature', 'Signature');
+        $lemongrass100->id = 14;
+
+        $lemongrass50 = $this->product('Fragrance Lemongrass Mix 50 ml', 'LEM-MIX-50', 'Aroma Refill', null, 'Signature', 'Signature');
+        $lemongrass50->id = 15;
+
+        $coffee100 = $this->product('Fragrance Coffee Mix More 100 ml', 'COF-MIX-100', 'Aroma Refill', null, 'Signature', 'Signature');
+        $coffee100->id = 16;
+
+        $this->assertTrue($method->invoke($controller, $lemongrass100, $lemongrass50));
+        $this->assertFalse($method->invoke($controller, $lemongrass100, $coffee100));
+    }
+
     public function test_job_assign_material_issue_rejects_mixed_fragrance_for_same_room_rental(): void
     {
         $controller = new JobAssignMaterialIssueController();

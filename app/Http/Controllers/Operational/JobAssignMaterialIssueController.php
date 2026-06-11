@@ -134,7 +134,7 @@ class JobAssignMaterialIssueController extends Controller
             return null;
         }
 
-        $source = trim((string) ($product->variant_name ?: $product->name));
+        $source = trim((string) ($product->name ?: $product->variant_name));
         if ($source === '') {
             return null;
         }
