@@ -532,6 +532,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('lost-unit-reports/items/{item}/update-price', [LostUnitReportController::class, 'updateItemPrice'])->name('lost-unit-reports.update-item-price');
 
         // Aroma Change Routes
+        Route::get('aroma-changes/get-aroma-products', [AromaChangeController::class, 'getAromaProducts'])->name('aroma-changes.get-aroma-products');
         Route::get('aroma-changes/get-contracts', [AromaChangeController::class, 'getContracts'])->name('aroma-changes.get-contracts');
         Route::get('aroma-changes/get-schedules', [AromaChangeController::class, 'getSchedules'])->name('aroma-changes.get-schedules');
         Route::resource('aroma-changes', AromaChangeController::class);

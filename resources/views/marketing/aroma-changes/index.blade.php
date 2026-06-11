@@ -886,7 +886,7 @@ function loadAromas() {
     }
 
     $.ajax({
-        url: '/marketing/quotations/wizard/get-aroma-products',
+        url: '{{ route("marketing.aroma-changes.get-aroma-products") }}',
         method: 'GET',
         dataType: 'json',
         success: function(response) {
@@ -967,6 +967,10 @@ $(document).on('change', '#contractSelect', function() {
                                 'data-building-id': contractRoom.room?.building_id,
                                 'data-aroma-code': contractRoom.aroma_code || '',
                                 'data-aroma-name': contractRoom.aroma_name || '',
+                                'data-aroma-product-id': contractRoom.aroma_product_id || '',
+                                'data-aroma-product-name': contractRoom.aroma_product_name || '',
+                                'data-aroma-sku': contractRoom.aroma_sku || '',
+                                'data-aroma-packaging-size': contractRoom.aroma_packaging_size || '',
                                 'data-aroma-brand-line': contractRoom.aroma_brand_line || '',
                                 text: buildingName ? `${buildingName} - ${roomName} (${currentAroma})` : `${roomName} (${currentAroma})`
                             }));
@@ -1010,13 +1014,19 @@ $(document).on('change', '#roomSelect', function() {
     const selectedOption = $(this).find('option:selected');
     const aromaCode = selectedOption.data('aroma-code');
     const aromaName = selectedOption.data('aroma-name');
+    const aromaProductId = selectedOption.data('aroma-product-id');
+    const aromaProductName = selectedOption.data('aroma-product-name');
+    const aromaSku = selectedOption.data('aroma-sku');
+    const aromaPackagingSize = selectedOption.data('aroma-packaging-size');
     const brandLine = selectedOption.data('aroma-brand-line') || '';
     
     if (aromaCode || aromaName) {
         $('#currentAromaContent').html(`
             <i class="fas fa-spray-can"></i> 
             <strong>${aromaName || aromaCode}</strong>
-            ${aromaCode ? `<br><small>Code: ${aromaCode}</small>` : ''}
+            ${aromaProductName && aromaProductName !== aromaName ? `<br><small>Product: ${aromaProductName}</small>` : ''}
+            ${aromaSku || aromaCode ? `<br><small>Code/SKU: ${aromaSku || aromaCode}</small>` : ''}
+            ${aromaPackagingSize ? `<br><small>Packaging: ${aromaPackagingSize}</small>` : ''}
         `);
         $('#currentAromaInfo').show();
     } else {
@@ -1027,7 +1037,7 @@ $(document).on('change', '#roomSelect', function() {
     const contractId = $('#contractSelect').val();
     const contractRoomId = selectedOption.val();
     loadSchedules(contractId, contractRoomId);
-    populateAromaOptions(aromaChangeBootstrap.aromas || [], brandLine);
+    populateAromaOptions(aromaChangeBootstrap.aromas || [], brandLine, aromaName, aromaProductId);
 });
 
 // Load Schedules Function
@@ -1078,29 +1088,48 @@ function normalizeBrandLine(value) {
     return (value || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function populateAromaOptions(products, currentBrandLine = '') {
+function normalizeAromaName(value) {
+    return (value || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function populateAromaOptions(products, currentBrandLine = '', currentAromaName = '', currentProductId = '') {
     const select = $('#aromaSelect');
     select.empty().append('<option value="">Select new aroma...</option>');
 
     const normalizedCurrentBrandLine = normalizeBrandLine(currentBrandLine);
+    const normalizedCurrentAromaName = normalizeAromaName(currentAromaName);
+    const currentProductIdText = currentProductId ? currentProductId.toString() : '';
     const filteredProducts = normalizedCurrentBrandLine
         ? products.filter(product => normalizeBrandLine(product.brand_line) === normalizedCurrentBrandLine)
         : products;
+    const availableProducts = filteredProducts.filter(product => {
+        const sameProduct = currentProductIdText && product.id?.toString() === currentProductIdText;
+        const sameAroma = normalizedCurrentAromaName && normalizeAromaName(product.display_name || product.name) === normalizedCurrentAromaName;
+
+        return !sameProduct && !sameAroma;
+    });
 
     if (products.length > 0) {
-        filteredProducts.forEach(product => {
+        availableProducts.forEach(product => {
+            const displayName = product.display_name || product.name;
+            const optionText = product.brand_line ? `${displayName} (${product.brand_line})` : displayName;
+
             select.append($('<option>', {
                 value: product.id,
-                'data-name': product.name || '',
+                'data-name': displayName || '',
+                'data-product-name': product.product_name || product.name || '',
+                'data-sku': product.sku || '',
                 'data-variant': product.variant || '',
                 'data-brand-line': product.brand_line || '',
-                'data-display-name': product.display_name || product.name,
-                text: product.brand_line ? `${product.display_name || product.name} (${product.brand_line})` : (product.display_name || product.name)
+                'data-display-name': displayName,
+                text: optionText
             }));
         });
 
         if (filteredProducts.length === 0) {
             select.append('<option value="">No aroma products found for this brand line</option>');
+        } else if (availableProducts.length === 0) {
+            select.append('<option value="">No other aroma products found for this brand line</option>');
         }
 
         initSelect2For(select);
@@ -1145,13 +1174,14 @@ function submitCreateForm() {
     // Get aroma data from selected option
     const aromaName = newAromaOption.data('display-name') || newAromaOption.data('name') || newAromaOption.text();
     const aromaVariant = newAromaOption.data('variant') || '';
+    const aromaSku = newAromaOption.data('sku') || '';
     
     const formData = {
         contract_id: contractId,
         building_id: roomOption.data('building-id'),
         room_id: roomOption.data('room-id'),
         contract_room_id: contractRoomId,
-        new_aroma_code: aromaVariant || aromaName,  // Use variant as code if available
+        new_aroma_code: aromaSku || aromaVariant || aromaName,
         new_aroma_name: aromaName,
         new_product_type_id: newAromaOption.val(),
         change_reason: $('[name="change_reason"]').val(),
@@ -1180,6 +1210,75 @@ function submitCreateForm() {
     });
 }
 
+function escapeHtml(value) {
+    return $('<div>').text(value ?? '').html();
+}
+
+function stripPackagingSuffix(value, packagingSize = '') {
+    let text = (value || '').toString().trim();
+    const packageText = (packagingSize || '').toString().trim();
+
+    if (packageText) {
+        text = text.replace(new RegExp(`\\s*${packageText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.?$`, 'i'), '').trim();
+    }
+
+    return text.replace(/\s+\d+(?:[\.,]\d+)?\s*(ml|ltr|liter|l|gr|gram|g|kg)\.?$/i, '').trim();
+}
+
+function resolveAromaDetail(product, fallbackName, fallbackCode) {
+    const packagingSize = product?.packaging_size?.name || product?.packaging_size || '';
+    const productName = product?.name || product?.product_name || '';
+    const baseName = stripPackagingSuffix(productName, packagingSize);
+    const variantName = product?.variant_name || product?.variant || '';
+    const brandLine = product?.brand_line || '';
+    const fallback = fallbackName || fallbackCode || '';
+    const fallbackLooksGeneric = fallback && (
+        normalizeAromaName(fallback) === normalizeAromaName(variantName)
+        || normalizeAromaName(fallback) === normalizeAromaName(brandLine)
+    );
+    const displayName = baseName && (!fallback || fallbackLooksGeneric) ? baseName : (fallback || baseName || '-');
+    const sku = product?.sku || product?.product_code || fallbackCode || '';
+    const category = product?.product_category?.name || product?.category || '';
+
+    return {
+        displayName,
+        productName,
+        sku,
+        brandLine,
+        variantName,
+        category,
+        packagingSize
+    };
+}
+
+function renderAromaCard(product, fallbackName, fallbackCode) {
+    const detail = resolveAromaDetail(product, fallbackName, fallbackCode);
+    const meta = [
+        detail.brandLine ? `Brand: ${detail.brandLine}` : '',
+        detail.sku ? `SKU: ${detail.sku}` : ''
+    ].filter(Boolean).join(' | ');
+
+    return `
+        <span>${escapeHtml(detail.displayName)}</span>
+        ${meta ? `<br><small>${escapeHtml(meta)}</small>` : ''}
+    `;
+}
+
+function renderAromaDetail(product, fallbackName, fallbackCode) {
+    const detail = resolveAromaDetail(product, fallbackName, fallbackCode);
+    const lines = [
+        `<strong>${escapeHtml(detail.displayName)}</strong>`,
+        detail.productName ? `Product: ${escapeHtml(detail.productName)}` : '',
+        detail.brandLine ? `Brand Line: ${escapeHtml(detail.brandLine)}` : '',
+        detail.variantName ? `Variant: ${escapeHtml(detail.variantName)}` : '',
+        detail.sku ? `Code/SKU: ${escapeHtml(detail.sku)}` : '',
+        detail.packagingSize ? `Packaging: ${escapeHtml(detail.packagingSize)}` : '',
+        detail.category ? `Category: ${escapeHtml(detail.category)}` : ''
+    ].filter(Boolean);
+
+    return lines.join('<br>');
+}
+
 // View aroma change
 function viewAromaChange(id) {
     $('#viewAromaModal').addClass('show');
@@ -1199,18 +1298,23 @@ function viewAromaChange(id) {
         },
         success: function(response) {
             const data = response.data;
+            const previousAromaCard = renderAromaCard(data.previous_product, data.previous_aroma_name, data.previous_aroma_code);
+            const newAromaCard = renderAromaCard(data.new_product, data.new_aroma_name, data.new_aroma_code);
+            const previousAromaDetail = renderAromaDetail(data.previous_product, data.previous_aroma_name, data.previous_aroma_code);
+            const newAromaDetail = renderAromaDetail(data.new_product, data.new_aroma_name, data.new_aroma_code);
+
             $('#viewAromaContent').html(`
                 <div class="aroma-change-arrow">
                     <div class="old-aroma">
                         <strong>Previous Aroma</strong><br>
-                        ${data.previous_aroma_name || data.previous_aroma_code || '-'}
+                        ${previousAromaCard}
                     </div>
                     <div class="arrow-icon">
                         <i class="fas fa-arrow-right"></i>
                     </div>
                     <div class="new-aroma">
                         <strong>New Aroma</strong><br>
-                        ${data.new_aroma_name || data.new_aroma_code || '-'}
+                        ${newAromaCard}
                     </div>
                 </div>
                 
@@ -1222,6 +1326,14 @@ function viewAromaChange(id) {
                     <tr>
                         <th>Status</th>
                         <td><span class="badge ${data.status_badge}">${data.status_text}</span></td>
+                    </tr>
+                    <tr>
+                        <th>Aroma Lama</th>
+                        <td>${previousAromaDetail}</td>
+                    </tr>
+                    <tr>
+                        <th>Aroma Baru</th>
+                        <td>${newAromaDetail}</td>
                     </tr>
                     <tr>
                         <th>Contract</th>

@@ -113,6 +113,16 @@ class AromaChange extends Model
         return $this->belongsTo(ProductCategory::class, 'new_product_category_id');
     }
 
+    public function previousProduct()
+    {
+        return $this->belongsTo(MasterProduct::class, 'previous_product_id');
+    }
+
+    public function newProduct()
+    {
+        return $this->belongsTo(MasterProduct::class, 'new_product_id');
+    }
+
     public function requestedBy()
     {
         return $this->belongsTo(User::class, 'requested_by');

@@ -30,7 +30,9 @@ class AromaChangeController extends Controller
             'room',
             'requestedBy',
             'approvedBy',
-            'appliedBy'
+            'appliedBy',
+            'previousProduct',
+            'newProduct'
         ]);
 
         // Filter by contract
@@ -104,7 +106,9 @@ class AromaChangeController extends Controller
                 ->with([
                     'contractRooms.room.building',
                     'customer',
-                    'quotation.quotationRooms.aromaProduct'
+                    'quotation.quotationRooms.aromaProduct.productCategory',
+                    'quotation.quotationRooms.aromaProduct.productType',
+                    'quotation.quotationRooms.aromaProduct.packagingSize'
                 ]);
 
             $contract = $contractQuery->find($request->contract_id);
@@ -130,10 +134,13 @@ class AromaChangeController extends Controller
                 foreach ($contract->quotation->quotationRooms as $qRoom) {
                     if ($qRoom->aromaProduct) {
                         $aromaMap[$qRoom->room_id] = [
-                            'code' => $qRoom->aromaProduct->code, // Assuming 'code' exists on product
-                            'name' => $qRoom->aromaProduct->variant_name,
+                            'code' => $this->aromaProductCode($qRoom->aromaProduct),
+                            'name' => $this->aromaProductDisplayName($qRoom->aromaProduct),
                             'product_id' => $qRoom->aroma_product_id,
-                            'brand_line' => $qRoom->aromaProduct->brand_line
+                            'brand_line' => $qRoom->aromaProduct->brand_line,
+                            'product_name' => $qRoom->aromaProduct->name,
+                            'sku' => $qRoom->aromaProduct->sku ?: $qRoom->aromaProduct->getAttribute('product_code'),
+                            'packaging_size' => $qRoom->aromaProduct->packagingSize?->name,
                         ];
                     }
                 }
@@ -148,11 +155,17 @@ class AromaChangeController extends Controller
                     $room->aroma_name = $aromaInfo['name'];
                     $room->aroma_product_id = $aromaInfo['product_id'];
                     $room->aroma_brand_line = $aromaInfo['brand_line'];
+                    $room->aroma_product_name = $aromaInfo['product_name'];
+                    $room->aroma_sku = $aromaInfo['sku'];
+                    $room->aroma_packaging_size = $aromaInfo['packaging_size'];
                 } else {
                     $room->aroma_code = ''; // No aroma set
                     $room->aroma_name = 'No Aroma';
                     $room->aroma_product_id = null;
                     $room->aroma_brand_line = null;
+                    $room->aroma_product_name = null;
+                    $room->aroma_sku = null;
+                    $room->aroma_packaging_size = null;
                 }
                 
                 return $room;
@@ -177,6 +190,42 @@ class AromaChangeController extends Controller
         $search = $request->input('search');
 
         return response()->json($this->getActiveContractOptions($search, 20));
+    }
+
+    public function getAromaProducts(Request $request)
+    {
+        $products = MasterProduct::with(['productCategory', 'productType', 'packagingSize'])
+            ->where('is_active', true)
+            ->whereNotNull('brand_line')
+            ->where('brand_line', '!=', '')
+            ->get()
+            ->filter(fn ($product) => $this->isSelectableAromaProduct($product));
+
+        $aromaProducts = $products
+            ->groupBy(fn ($product) => $this->aromaProductGroupKey($product))
+            ->map(function($group) {
+                $product = $this->preferredAromaProduct($group);
+                $displayName = $this->aromaProductDisplayName($product);
+
+                return [
+                    'id' => $product->id,
+                    'name' => $displayName,
+                    'product_name' => $product->name,
+                    'sku' => $product->sku ?: $product->getAttribute('product_code'),
+                    'variant' => $product->variant_name,
+                    'variant_name' => $product->variant_name,
+                    'brand_line' => $product->brand_line,
+                    'category' => $product->productCategory?->name,
+                    'packaging_size' => $product->packagingSize?->name,
+                    'display_name' => $displayName,
+                    'detail_label' => trim($displayName . ' - ' . ($product->brand_line ?: ''), ' -'),
+                    'product_type' => 'Aroma/Variant'
+                ];
+            })
+            ->sortBy(fn ($product) => strtolower(($product['brand_line'] ?? '') . '|' . ($product['display_name'] ?? '')))
+            ->values();
+
+        return response()->json($aromaProducts);
     }
 
     protected function getActiveContractOptions(?string $search = null, int $limit = 50)
@@ -239,16 +288,18 @@ class AromaChangeController extends Controller
             $previousMasterProduct = null;
             
             // Fetch Quotation Data
-            $contractForAroma = Contract::with(['quotation.quotationRooms.aromaProduct'])->find($request->contract_id);
+            $contractForAroma = Contract::with([
+                'quotation.quotationRooms.aromaProduct.productCategory',
+                'quotation.quotationRooms.aromaProduct.productType',
+                'quotation.quotationRooms.aromaProduct.packagingSize'
+            ])->find($request->contract_id);
             if ($contractForAroma && $contractForAroma->quotation && $contractForAroma->quotation->quotationRooms) {
                 $qRoom = $contractForAroma->quotation->quotationRooms->where('room_id', $contractRoom->room_id)->first();
                 if ($qRoom && $qRoom->aromaProduct) {
                     $previousMasterProduct = $qRoom->aromaProduct;
-                    $previousAromaCode = $qRoom->aromaProduct->code ?? $qRoom->aromaProduct->product_code ?? ''; 
-                    $previousAromaName = $qRoom->aromaProduct->variant_name;
-                    if (empty($previousAromaCode) && $qRoom->aromaProduct->variant) {
-                        $previousAromaCode = $qRoom->aromaProduct->variant;
-                    }
+                    $previousAromaCode = $this->aromaProductCode($qRoom->aromaProduct);
+                    $previousAromaName = $this->aromaProductDisplayName($qRoom->aromaProduct);
+                    $previousProductCategoryId = $qRoom->aromaProduct->product_category_id ?: $previousProductCategoryId;
                 }
             }
 
@@ -260,9 +311,8 @@ class AromaChangeController extends Controller
                 $newProductCategoryId = $masterProduct->product_category_id;
                 // Also keep new_product_type_id for backward compatibility (stores MasterProduct ID in this flow)
                 $newProductTypeId = $masterProduct->id; 
-                $newAromaCode = $masterProduct->variant
-                    ?: ($masterProduct->product_code ?: ($masterProduct->variant_name ?: $masterProduct->sku));
-                $newAromaName = $masterProduct->variant_name;
+                $newAromaCode = $this->aromaProductCode($masterProduct);
+                $newAromaName = $this->aromaProductDisplayName($masterProduct);
             } else {
                 // Fallback (Should not happen if selected from list)
                 $newProductCategoryId = $this->detectProductCategoryId('');
@@ -299,6 +349,7 @@ class AromaChangeController extends Controller
             }
 
             $this->ensureSameAromaBrandLine($previousMasterProduct, $masterProduct);
+            $this->ensureDifferentAromaProduct($previousMasterProduct, $masterProduct);
             
             // Compare Brand Lines
             if ($masterProduct && $previousMasterProduct) {
@@ -417,6 +468,12 @@ class AromaChangeController extends Controller
             'requestedBy',
             'approvedBy',
             'appliedBy',
+            'previousProduct.productCategory',
+            'previousProduct.productType',
+            'previousProduct.packagingSize',
+            'newProduct.productCategory',
+            'newProduct.productType',
+            'newProduct.packagingSize',
             'createdBy',
             'updatedBy'
         ]);
@@ -488,12 +545,11 @@ class AromaChangeController extends Controller
 
             $previousMasterProduct = $this->resolvePreviousAromaProductForChange($aromaChange);
             $this->ensureSameAromaBrandLine($previousMasterProduct, $masterProduct);
+            $this->ensureDifferentAromaProduct($previousMasterProduct, $masterProduct);
 
             $aromaChange->update([
-                'new_aroma_code' => $masterProduct
-                    ? ($masterProduct->variant ?: ($masterProduct->product_code ?: ($masterProduct->variant_name ?: $masterProduct->sku)))
-                    : $request->new_aroma_code,
-                'new_aroma_name' => $masterProduct ? ($masterProduct->variant_name ?: $request->new_aroma_name) : $request->new_aroma_name,
+                'new_aroma_code' => $masterProduct ? $this->aromaProductCode($masterProduct) : $request->new_aroma_code,
+                'new_aroma_name' => $masterProduct ? $this->aromaProductDisplayName($masterProduct) : $request->new_aroma_name,
                 'new_product_type_id' => $request->new_product_type_id,
                 'new_product_category_id' => $newProductCategoryId,
                 'new_product_id' => $masterProduct ? $masterProduct->id : null,
@@ -983,10 +1039,133 @@ class AromaChangeController extends Controller
         }
     }
 
+    private function ensureDifferentAromaProduct(?MasterProduct $previousProduct, ?MasterProduct $newProduct): void
+    {
+        if (!$previousProduct || !$newProduct) {
+            return;
+        }
+
+        $sameProduct = (int) $previousProduct->id === (int) $newProduct->id;
+        $sameBrandLine = $this->normalizeBrandLine($previousProduct->brand_line) === $this->normalizeBrandLine($newProduct->brand_line);
+        $sameAromaName = $this->normalizeAromaName($this->aromaProductDisplayName($previousProduct)) === $this->normalizeAromaName($this->aromaProductDisplayName($newProduct));
+
+        if ($sameProduct || ($sameBrandLine && $sameAromaName)) {
+            throw new \InvalidArgumentException('Aroma baru harus berbeda dari aroma lama.');
+        }
+    }
+
     private function normalizeBrandLine(?string $brandLine): ?string
     {
         $normalized = trim(strtolower((string) $brandLine));
 
         return $normalized !== '' ? preg_replace('/\s+/', ' ', $normalized) : null;
+    }
+
+    private function isSelectableAromaProduct(?MasterProduct $product): bool
+    {
+        if (!$product) {
+            return false;
+        }
+
+        $name = strtolower(trim((string) $product->name));
+        $sku = strtolower(trim((string) $product->sku));
+        $variant = strtolower(trim((string) $product->variant_name));
+        $categoryName = strtolower($product->productCategory?->name ?? '');
+        $typeName = strtolower($product->productType?->name ?? '');
+
+        $isUnit = (bool) ($product->productCategory?->is_unit ?? $product->productType?->is_unit ?? false);
+        $hasSerialNumber = (bool) ($product->productCategory?->has_serial_number ?? $product->productType?->has_serial_number ?? false);
+        $isTestProduct = str_contains($name, 'test')
+            || str_contains($sku, 'test')
+            || str_contains($variant, 'test')
+            || preg_match('/^ta\d*/i', (string) $product->sku);
+
+        $looksLikeAroma = str_contains($name, 'fragrance')
+            || str_contains($name, 'aroma')
+            || str_contains($name, 'refill')
+            || str_contains($name, 'scent')
+            || str_contains($categoryName, 'refill')
+            || str_contains($categoryName, 'aroma')
+            || str_contains($categoryName, 'fragrance')
+            || str_contains($categoryName, 'scent')
+            || str_contains($typeName, 'aroma')
+            || str_contains($typeName, 'fragrance')
+            || str_contains($typeName, 'scent')
+            || str_contains($typeName, 'variant')
+            || str_contains($typeName, 'refill');
+
+        return !$isUnit && !$hasSerialNumber && !$isTestProduct && $looksLikeAroma;
+    }
+
+    private function aromaProductGroupKey(MasterProduct $product): string
+    {
+        return implode('|', [
+            $this->normalizeBrandLine($product->brand_line) ?: '',
+            $this->normalizeAromaName($this->aromaProductDisplayName($product)),
+        ]);
+    }
+
+    private function preferredAromaProduct($products): MasterProduct
+    {
+        return collect($products)
+            ->sortBy(function($candidate) {
+                $categoryName = strtolower($candidate->productCategory?->name ?? '');
+                $packageName = strtolower(preg_replace('/\s+/', '', (string) $candidate->packagingSize?->name));
+
+                return [
+                    str_contains($categoryName, 'refill') || str_contains($categoryName, 'aroma') ? 0 : 1,
+                    $packageName === '100ml' ? 0 : 1,
+                    $candidate->id,
+                ];
+            })
+            ->first();
+    }
+
+    private function aromaProductDisplayName(?MasterProduct $product): string
+    {
+        if (!$product) {
+            return '';
+        }
+
+        $name = trim((string) $product->name);
+        $nameWithoutPackaging = $this->removePackagingSuffix($name, $product->packagingSize?->name);
+
+        return $nameWithoutPackaging
+            ?: trim((string) $product->variant_name)
+            ?: trim((string) $product->sku)
+            ?: (string) $product->id;
+    }
+
+    private function aromaProductCode(?MasterProduct $product): string
+    {
+        if (!$product) {
+            return '';
+        }
+
+        return trim((string) (
+            $product->getAttribute('product_code')
+            ?: $product->sku
+            ?: $product->getAttribute('variant')
+            ?: $product->variant_name
+            ?: $product->id
+        ));
+    }
+
+    private function removePackagingSuffix(string $name, ?string $packagingName = null): string
+    {
+        $cleanName = trim($name);
+        $packagingName = trim((string) $packagingName);
+
+        if ($packagingName !== '') {
+            $pattern = '/\s*' . preg_quote($packagingName, '/') . '\.?$/i';
+            $cleanName = trim(preg_replace($pattern, '', $cleanName));
+        }
+
+        return trim(preg_replace('/\s+\d+(?:[\.,]\d+)?\s*(ml|ltr|liter|l|gr|gram|g|kg)\.?$/i', '', $cleanName));
+    }
+
+    private function normalizeAromaName(?string $value): string
+    {
+        return preg_replace('/\s+/', ' ', strtolower(trim((string) $value)));
     }
 }
