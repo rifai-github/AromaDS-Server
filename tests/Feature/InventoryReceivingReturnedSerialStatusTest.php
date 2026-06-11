@@ -773,6 +773,153 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         ]);
     }
 
+    public function test_finalize_field_return_non_serial_item_keeps_zero_received_quantity_out_of_stock(): void
+    {
+        $this->seedNonSerialProduct();
+
+        DB::table('inventory_receivings')->insert([
+            'id' => 51,
+            'receiving_number' => 'BDG-IRC/26-05/0016',
+            'reference_no' => 'BDG-CSR/26-05/0099',
+            'branch_id' => 1,
+            'received_from' => 1,
+            'received_by_old' => 1,
+            'schedule_date' => now()->toDateString(),
+            'status' => 'pending',
+            'notes' => 'Auto-return dari Aplikasi teknisi via Job BDG-CSR/26-05/0099 (Pekerjaan tidak selesai).',
+            'created_by' => 1,
+            'updated_by' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_receiving_items')->insert([
+            'id' => 61,
+            'inventory_receiving_id' => 51,
+            'master_product_id' => 101,
+            'quantity' => 2,
+            'quantity_received' => 0,
+            'notes' => 'Auto-return fragrance belum diterima gudang',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        app(InventoryReceivingController::class)->finalize(InventoryReceiving::findOrFail(51));
+
+        $this->assertDatabaseHas('inventory_receivings', [
+            'id' => 51,
+            'status' => 'received',
+        ]);
+        $this->assertDatabaseHas('inventory_receiving_items', [
+            'id' => 61,
+            'quantity_received' => 0,
+        ]);
+        $this->assertSame(0.0, (float) DB::table('warehouse_products')
+            ->where('warehouse_id', 5)
+            ->where('master_product_id', 101)
+            ->sum('quantity'));
+        $this->assertDatabaseMissing('inventory_movements', [
+            'reference_no' => 'BDG-IRC/26-05/0016',
+            'master_product_id' => 101,
+        ]);
+    }
+
+    public function test_non_unit_batch_serial_can_be_reused_in_return_receiving_from_issuing(): void
+    {
+        $this->seedNonSerialProduct();
+
+        DB::table('inventory_issuings')->insert([
+            'id' => 80,
+            'warehouse_id' => 5,
+            'issuing_number' => 'BDG-WI/26-06/0001',
+            'status' => 'processed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_receivings')->insert([
+            'id' => 52,
+            'receiving_number' => 'BDG-IRC/26-06/0002',
+            'reference_no' => 'BDG-WI/26-06/0001',
+            'issuing_id' => 80,
+            'branch_id' => 1,
+            'received_from' => 1,
+            'received_by_old' => 1,
+            'schedule_date' => now()->toDateString(),
+            'status' => 'pending',
+            'notes' => 'Technician return fragrance batch',
+            'created_by' => 1,
+            'updated_by' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_receiving_items')->insert([
+            'id' => 62,
+            'inventory_receiving_id' => 52,
+            'master_product_id' => 101,
+            'quantity' => 2,
+            'quantity_received' => 0,
+            'notes' => 'Return fragrance batch',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('serial_numbers')->insert([
+            'id' => 201,
+            'serial_number' => 'BATCH-LEMONGRASS-001',
+            'status' => 'ready',
+            'location_type' => 'warehouse',
+            'location_id' => 5,
+            'warehouse_id' => 5,
+            'master_product_id' => 101,
+            'created_by' => 1,
+            'updated_by' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $controller = app(InventoryReceivingController::class);
+        $receiving = InventoryReceiving::findOrFail(52);
+
+        $firstResponse = $controller->scanSerialNumber(Request::create(
+            '/warehouse/inventory-receivings/52/scan-serial-number',
+            'POST',
+            ['master_product_id' => 101, 'serial_number' => 'BATCH-LEMONGRASS-001']
+        ), $receiving);
+
+        $firstPayload = $firstResponse->getData(true);
+        $this->assertSame(200, $firstResponse->getStatusCode());
+        $this->assertSame('success', $firstPayload['status']);
+        $this->assertSame(1.0, (float) $firstPayload['remaining_quantity']);
+
+        $secondResponse = $controller->scanSerialNumber(Request::create(
+            '/warehouse/inventory-receivings/52/scan-serial-number',
+            'POST',
+            ['master_product_id' => 101, 'serial_number' => 'BATCH-LEMONGRASS-001']
+        ), $receiving->fresh());
+
+        $secondPayload = $secondResponse->getData(true);
+        $this->assertSame(200, $secondResponse->getStatusCode());
+        $this->assertSame('success', $secondPayload['status']);
+        $this->assertSame(0.0, (float) $secondPayload['remaining_quantity']);
+
+        $this->assertSame(2, DB::table('serial_numbers')
+            ->where('inventory_receiving_id', 52)
+            ->where('master_product_id', 101)
+            ->where('serial_number', 'BATCH-LEMONGRASS-001')
+            ->count());
+        $this->assertDatabaseHas('inventory_receiving_items', [
+            'id' => 62,
+            'quantity_received' => 2,
+        ]);
+        $this->assertDatabaseHas('serial_numbers', [
+            'id' => 201,
+            'status' => 'ready',
+            'inventory_receiving_id' => null,
+        ]);
+    }
+
     private function seedReceivingWithSerial(string $status, string $referenceNo = 'BDG-CSR/26-05/0011'): InventoryReceiving
     {
         DB::table('inventory_receivings')->insert([
@@ -819,6 +966,27 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         ]);
 
         return InventoryReceiving::findOrFail(50);
+    }
+
+    private function seedNonSerialProduct(): void
+    {
+        DB::table('product_categories')->insert([
+            'id' => 11,
+            'name' => 'Aroma',
+            'has_serial_number' => false,
+            'is_unit' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('master_products')->insert([
+            'id' => 101,
+            'product_category_id' => 11,
+            'name' => 'Fragrance Lemongrass Mix 250 ml',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     private function seedJakartaConditionWarehouses(): void

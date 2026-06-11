@@ -333,8 +333,9 @@
                                         @forelse(($receiving->items ?? []) as $item)
                                         @php
                                             $snCount = isset($serialNumbers[$item->master_product_id]) ? $serialNumbers[$item->master_product_id]->count() : 0;
+                                            $hasSerial = $item->product?->requiresSerialNumber() ?? false;
                                         @endphp
-                                        <tr data-product-row="{{ $item->master_product_id }}" data-total-qty="{{ (int)$item->quantity }}">
+                                        <tr data-product-row="{{ $item->master_product_id }}" data-item-id="{{ $item->id }}" data-total-qty="{{ (int)$item->quantity }}">
                                             <td>
                                                 <strong>{{ $item->product->name ?? '-' }}</strong>
                                                 @if($item->product?->sku)
@@ -344,7 +345,6 @@
                                             <td>{{ $item->product?->productCategory?->name ?? '-' }}</td>
                                             <td class="sn-registered-container">
                                                 @php
-                                                    $hasSerial = $item->product?->requiresSerialNumber() ?? false;
                                                     // ALWAYS use total requested quantity as the denominator for display
                                                     $displayDenominator = (int)$item->quantity;
                                                 @endphp
@@ -377,9 +377,16 @@
                                             </td>
                                             @if($isPending)
                                             <td style="text-align: center;">
-                                                <button type="button" class="btn btn-sm btn-primary" 
-                                                    onclick="openScanSNModal('{{ $item->master_product_id }}')" 
-                                                    title="Scan QR / Input SN">
+                                                @if(!$hasSerial)
+                                                <button type="button" class="btn btn-sm btn-success me-1"
+                                                    onclick='openUpdateQtyModal({{ $item->id }}, {{ $item->master_product_id }}, @json($item->product->name ?? "-"), {{ (int)$item->quantity }}, {{ (int)($item->quantity_received ?? 0) }})'
+                                                    title="Update Qty Received">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                                @endif
+                                                <button type="button" class="btn btn-sm btn-primary"
+                                                    onclick="openScanSNModal('{{ $item->master_product_id }}')"
+                                                    title="{{ $hasSerial ? 'Scan QR / Input SN' : 'Input Batch SN (Optional)' }}">
                                                     <i class="fas fa-qrcode"></i>
                                                 </button>
                                             </td>
@@ -619,6 +626,140 @@ function closeEditReceivingModal() {
     if (modal) {
         modal.remove();
     }
+}
+
+function openUpdateQtyModal(itemId, productId, productName, totalQty, currentQty) {
+    const modal = document.createElement('div');
+    const safeProductName = escapeHtml(productName);
+    modal.id = 'updateQtyModal';
+    modal.style.cssText = `
+        display: flex !important;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.5);
+        z-index: 9999;
+        align-items: center;
+        justify-content: center;
+        overflow-y: auto;
+    `;
+
+    modal.innerHTML = `
+        <div class="modal-dialog" style="margin: auto; width: 100%; max-width: 460px;">
+            <div class="modal-content" style="background-color: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); border: none;">
+                <div class="modal-header" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: white; border-radius: 12px 12px 0 0; padding: 16px 20px; border-bottom: none;">
+                    <h5 class="modal-title" style="font-weight: 600; font-size: 1.15rem;">
+                        <i class="fas fa-edit me-2"></i>Update Qty Received
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" onclick="closeUpdateQtyModal()"></button>
+                </div>
+                <form id="updateQtyForm" onsubmit="return false;">
+                    @csrf
+                    <div class="modal-body" style="background-color: white; padding: 24px;">
+                        <div class="mb-4 p-3" style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px;">
+                            <div style="font-size: 0.75rem; color: #047857; font-weight: 600; text-transform: uppercase;">Produk</div>
+                            <div style="font-size: 1.05rem; color: #064e3b; font-weight: 700;">${safeProductName}</div>
+                            <div class="mt-1 text-muted">Quantity: ${totalQty}</div>
+                        </div>
+                        <input type="hidden" name="item_id" value="${itemId}">
+                        <input type="hidden" id="updateQtyProductId" value="${productId}">
+                        <div class="mb-3">
+                            <label class="form-label" style="font-weight: 600; color: #374151; margin-bottom: 8px; display: block;">
+                                Qty Received
+                            </label>
+                            <input type="number" name="quantity_received" id="updateQtyReceivedInput" class="form-control" min="0" max="${totalQty}" step="1" value="${currentQty}" required
+                                style="padding: 10px 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+                            <small class="text-muted mt-1 d-block">Qty yang tidak diterima tidak akan masuk stok saat finalize.</small>
+                        </div>
+                        <div id="updateQtyError" class="alert alert-danger d-none" role="alert"></div>
+                    </div>
+                    <div class="modal-footer" style="background-color: #f9fafb; border-radius: 0 0 12px 12px; padding: 16px 20px; border-top: 1px solid #e5e7eb; gap: 10px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeUpdateQtyModal()" style="padding: 8px 16px; border-radius: 8px; font-weight: 500;">Cancel</button>
+                        <button type="button" class="btn btn-success no-double-click-prevention" onclick="submitUpdateQty()" id="updateQtySubmitBtn" style="padding: 8px 16px; border-radius: 8px; font-weight: 500;">
+                            <i class="fas fa-save me-2"></i>Simpan Qty
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    setTimeout(() => document.getElementById('updateQtyReceivedInput')?.focus(), 100);
+}
+
+function escapeHtml(value) {
+    const div = document.createElement('div');
+    div.textContent = value ?? '';
+    return div.innerHTML;
+}
+
+function closeUpdateQtyModal() {
+    const modal = document.getElementById('updateQtyModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+function submitUpdateQty() {
+    const form = document.getElementById('updateQtyForm');
+    const submitBtn = document.getElementById('updateQtySubmitBtn');
+    const errorDiv = document.getElementById('updateQtyError');
+
+    if (!form) {
+        showErrorDialog('Gagal', 'Form tidak ditemukan.');
+        return;
+    }
+
+    errorDiv.classList.add('d-none');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...';
+
+    fetch('{{ route("warehouse.inventory-receivings.update-item-quantity", $receiving->id) }}', {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        },
+        body: new FormData(form)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.status === 'success') {
+            const productId = document.getElementById('updateQtyProductId')?.value;
+            const qtyReceived = parseInt(result.data?.quantity_received ?? 0);
+            const row = productId ? document.querySelector(`tr[data-product-row="${productId}"]`) : null;
+
+            if (row) {
+                const totalQty = parseInt(row.getAttribute('data-total-qty') || 0);
+                const qtyBadge = row.querySelector('.qty-received-badge');
+                if (qtyBadge) {
+                    qtyBadge.textContent = qtyReceived;
+                    qtyBadge.classList.toggle('bg-success', qtyReceived >= totalQty);
+                    qtyBadge.classList.toggle('bg-primary', qtyReceived < totalQty);
+                }
+                globalRemainingQty[productId] = Math.max(0, totalQty - qtyReceived);
+            }
+
+            closeUpdateQtyModal();
+            showNotification('success', result.message || 'Quantity Received berhasil diupdate!');
+        } else {
+            errorDiv.textContent = result.message || 'Gagal mengupdate Quantity Received';
+            errorDiv.classList.remove('d-none');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-save me-2"></i>Simpan Qty';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        errorDiv.textContent = 'Terjadi kesalahan saat mengupdate Quantity Received';
+        errorDiv.classList.remove('d-none');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-save me-2"></i>Simpan Qty';
+    });
 }
 
 function handleFinalizeReceiving(event, form) {

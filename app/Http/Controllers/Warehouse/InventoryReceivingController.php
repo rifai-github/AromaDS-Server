@@ -5,14 +5,14 @@ namespace App\Http\Controllers\Warehouse;
 use App\Http\Controllers\Controller;
 use App\Http\Traits\AccessControlFilterTrait;
 use App\Models\InventoryMovement;
-use App\Models\InventoryRequest;
 use App\Models\InventoryReceiving;
+use App\Models\InventoryRequest;
 use App\Models\Product;
 use App\Models\SerialNumber;
 use App\Models\User;
 use App\Models\Warehouse;
-use App\Services\Warehouse\WarehousePlacementService;
 use App\Services\Warehouse\BranchWarehouseResolver;
+use App\Services\Warehouse\WarehousePlacementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -463,7 +463,14 @@ class InventoryReceivingController extends Controller
      */
     public function show($id)
     {
-        $inventoryReceiving = InventoryReceiving::with(['branch', 'receivedFrom', 'receivedBy', 'issuing', 'items.product.productType'])->find($id);
+        $inventoryReceiving = InventoryReceiving::with([
+            'branch',
+            'receivedFrom',
+            'receivedBy',
+            'issuing',
+            'items.product.productCategory',
+            'items.product.productType',
+        ])->find($id);
 
         if (! $inventoryReceiving) {
             if (request()->expectsJson()) {
@@ -504,9 +511,13 @@ class InventoryReceivingController extends Controller
                 $serialNumbers[$productId] = $sns;
 
                 // Calculate remaining quantity across all rows for this product.
-                $registeredSNCount = $sns->count();
                 $requestedQty = (float) $items->sum('quantity');
-                $remainingQuantities[$productId] = max(0, $requestedQty - $registeredSNCount);
+                $registeredSNCount = $sns->count();
+                $requiresSerial = $this->productRequiresSerialNumber($items->first()?->product);
+                $receivedQty = (float) $items->sum('quantity_received');
+                $fulfilledQty = $requiresSerial ? $registeredSNCount : $receivedQty;
+
+                $remainingQuantities[$productId] = max(0, $requestedQty - $fulfilledQty);
             }
         }
 
@@ -905,9 +916,7 @@ class InventoryReceivingController extends Controller
             foreach ($inventoryReceiving->items->groupBy('master_product_id') as $productId => $items) {
                 $firstItem = $items->first();
                 $snCount = (int) ($snCountsByProduct[$productId] ?? 0);
-                $isSerialTracked = $this->productRequiresSerialNumber($firstItem->product) || $snCount > 0;
-
-                if (! $isSerialTracked) {
+                if (! $this->productRequiresSerialNumber($firstItem->product)) {
                     continue;
                 }
 
@@ -947,15 +956,20 @@ class InventoryReceivingController extends Controller
                     // For SN items, strict adherence to what was scanned/inputted. Default to 0 if null.
                     $receivedQty = (float) ($item->quantity_received ?? 0);
                 } else {
-                    // For Non-SN items, Auto-Receive Full Quantity if not explicitly set (NULL or 0)
-                    // This fixes the issue where Refill/Cleaner items showed 0 Received
-                    $receivedQty = (float) (($item->quantity_received === null || $item->quantity_received == 0) ? $item->quantity : $item->quantity_received);
+                    // For non-SN items, null means "not filled yet"; explicit 0 means lost/not returned.
+                    $receivedQty = (float) ($item->quantity_received === null ? $item->quantity : $item->quantity_received);
                 }
 
                 // Persist the determined quantity to the item so it displays correctly in UI and Inventory Request
                 if ($item->quantity_received != $receivedQty) {
                     $item->update(['quantity_received' => $receivedQty]);
                     $item->quantity_received = $receivedQty; // Update instance for later use in this request
+                }
+
+                if ($receivedQty <= 0) {
+                    \Log::info("Skipping stock update for product {$item->master_product_id} in Receiving {$inventoryReceiving->receiving_number}: received quantity is 0.");
+
+                    continue;
                 }
 
                 // Find or create warehouse_product record
@@ -1150,6 +1164,32 @@ class InventoryReceivingController extends Controller
                 ->find($request->master_product_id);
             $selectedProductIsUnit = $this->productIsUnit($selectedProduct);
 
+            $requestedQty = (float) $inventoryReceiving->items()
+                ->where('master_product_id', $request->master_product_id)
+                ->sum('quantity');
+
+            if ($requestedQty <= 0) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Produk tidak ditemukan di inventory receiving ini.',
+                ], 422);
+            }
+
+            $currentSNCount = \App\Models\SerialNumber::where('inventory_receiving_id', $inventoryReceiving->id)
+                ->where('master_product_id', $request->master_product_id)
+                ->count();
+
+            if ($currentSNCount >= $requestedQty) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Serial Number untuk produk ini sudah memenuhi qty request ({$requestedQty}).",
+                ], 422);
+            }
+
             // Unit SN remains unique. Non-unit batch SN may repeat for the same product.
             $existingSerialNumbers = \App\Models\SerialNumber::withTrashed()
                 ->with(['masterProduct.productCategory', 'masterProduct.productType', 'warehouse'])
@@ -1191,7 +1231,7 @@ class InventoryReceivingController extends Controller
                     return (int) $sn->master_product_id !== (int) $request->master_product_id;
                 });
 
-                if (! $selectedProductIsUnit && ! $isReceivingFromIssuing && ! $existingSN && $differentProductSN) {
+                if (! $selectedProductIsUnit && ! $existingSN && $differentProductSN) {
                     DB::rollBack();
 
                     $existingProductName = $differentProductSN->masterProduct->name ?? 'Unknown Product';
@@ -1203,23 +1243,9 @@ class InventoryReceivingController extends Controller
                     ], 422);
                 }
 
-                // Return receivings must reuse an existing technician-held SN.
-                $allowedReturnStatuses = ['on_hand', 'on_hand_remove'];
-
-                if ($existingSN && in_array($existingSN->status, $allowedReturnStatuses)) {
-                    // Update existing SN to point to this receiving
-                    $existingSN->update([
-                        'inventory_receiving_id' => $inventoryReceiving->id,
-                        'warehouse_id' => $warehouse->id,
-                        'status' => 'pending', // Pending until receiving is finalized
-                        'notes' => ($existingSN->notes ? $existingSN->notes."\n" : '')."Returned via Receiving: {$inventoryReceiving->receiving_number}. User Note: ".$request->notes,
-                        'updated_by' => Auth::id(),
-                    ]);
-
-                    $newSerialNumber = $existingSN;
-                    \Log::info("Serial Number {$serialNumber} (ID: {$existingSN->id}) is being RETURNED via Receiving {$inventoryReceiving->receiving_number}");
-                } elseif (! $selectedProductIsUnit && ! $isReceivingFromIssuing && $existingSN && (int) $existingSN->master_product_id === (int) $request->master_product_id) {
-                    // New supplier receiving for refill/cleaner/spare part may use the same batch SN.
+                if (! $selectedProductIsUnit && $existingSN && (int) $existingSN->master_product_id === (int) $request->master_product_id) {
+                    // Non-unit items (fragrance/cleaner/refill) use batch SNs. The same batch
+                    // code may appear more than once for the same product and receiving.
                     $newSerialNumber = \App\Models\SerialNumber::create([
                         'serial_number' => $serialNumber,
                         'master_product_id' => $request->master_product_id,
@@ -1230,6 +1256,18 @@ class InventoryReceivingController extends Controller
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id(),
                     ]);
+                } elseif ($selectedProductIsUnit && $existingSN && in_array($existingSN->status, ['on_hand', 'on_hand_remove'], true)) {
+                    // Unit returns reuse the exact technician-held serial record.
+                    $existingSN->update([
+                        'inventory_receiving_id' => $inventoryReceiving->id,
+                        'warehouse_id' => $warehouse->id,
+                        'status' => 'pending', // Pending until receiving is finalized
+                        'notes' => ($existingSN->notes ? $existingSN->notes."\n" : '')."Returned via Receiving: {$inventoryReceiving->receiving_number}. User Note: ".$request->notes,
+                        'updated_by' => Auth::id(),
+                    ]);
+
+                    $newSerialNumber = $existingSN;
+                    \Log::info("Serial Number {$serialNumber} (ID: {$existingSN->id}) is being RETURNED via Receiving {$inventoryReceiving->receiving_number}");
                 } else {
                     DB::rollBack();
 
@@ -1258,7 +1296,7 @@ class InventoryReceivingController extends Controller
                     ], 422);
                 }
             } else {
-                if ($isReceivingFromIssuing) {
+                if ($isReceivingFromIssuing && $selectedProductIsUnit) {
                     DB::rollBack();
 
                     return response()->json([
@@ -1280,17 +1318,9 @@ class InventoryReceivingController extends Controller
                 ]);
             }
 
-            $requestedQty = (float) $inventoryReceiving->items()
-                ->where('master_product_id', $request->master_product_id)
-                ->sum('quantity');
-
             $currentSNCount = \App\Models\SerialNumber::where('inventory_receiving_id', $inventoryReceiving->id)
                 ->where('master_product_id', $request->master_product_id)
                 ->count();
-
-            if ($currentSNCount > $requestedQty) {
-                throw new \Exception("Serial Number untuk produk ini sudah memenuhi qty request ({$requestedQty}).");
-            }
 
             $this->syncReceivedQuantitiesForProduct($inventoryReceiving, (int) $request->master_product_id);
 
