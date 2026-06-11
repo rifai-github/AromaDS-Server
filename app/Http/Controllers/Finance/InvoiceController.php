@@ -155,15 +155,7 @@ class InvoiceController extends Controller
             $query->where('invoice_date', '<=', $request->date_to);
         }
 
-        // Print Status Filter
-        if ($request->input('print_status') === 'sudah') {
-            $query->where('is_printed', true);
-        } elseif ($request->input('print_status') === 'semua') {
-            // No filter
-        } else {
-            // Default: Belum
-            $query->where('is_printed', false);
-        }
+        $this->applyPrintStatusFilter($query, $request);
 
         if ($request->filled('payment_method') && !$request->has('filter')) {
             $query->where('payment_method', $request->payment_method);
@@ -212,6 +204,15 @@ class InvoiceController extends Controller
         $paymentMethods = ['virtual_account', 'bank_transfer', 'cash'];
 
         return view('finance.invoices.index', compact('invoices', 'contracts', 'invoiceRegenerationContracts', 'customers', 'taxSettings', 'defaultVatSetting', 'financeTaxCodeRules', 'statuses', 'paymentMethods'));
+    }
+
+    private function applyPrintStatusFilter($query, Request $request): void
+    {
+        if ($request->input('print_status') === 'sudah') {
+            $query->where('is_printed', true);
+        } elseif ($request->input('print_status') === 'belum') {
+            $query->where('is_printed', false);
+        }
     }
 
     public function create()

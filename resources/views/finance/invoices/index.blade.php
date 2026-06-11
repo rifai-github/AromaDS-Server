@@ -680,9 +680,9 @@
                     <span style="font-size: 14px; font-weight: 600; color: #374151;">Status Print</span>
                     <select id="filterPrintStatus" onchange="applyPrintStatusFilter()"
                         style="background: #f9fafb; border: 1px solid #d1d5db; border-radius: 12px; padding: 12px 20px; font-size: 14px; font-weight: 600; color: #374151; width: 140px; outline: none; appearance: none; cursor: pointer;">
-                        <option value="belum" {{ request('print_status') === 'belum' || !request()->has('print_status') ? 'selected' : '' }}>Belum</option>
+                        <option value="semua" {{ request('print_status') === 'semua' || !request()->has('print_status') ? 'selected' : '' }}>Semua</option>
+                        <option value="belum" {{ request('print_status') === 'belum' ? 'selected' : '' }}>Belum</option>
                         <option value="sudah" {{ request('print_status') === 'sudah' ? 'selected' : '' }}>Sudah</option>
-                        <option value="semua" {{ request('print_status') === 'semua' ? 'selected' : '' }}>Semua</option>
                     </select>
                 </div>
 
