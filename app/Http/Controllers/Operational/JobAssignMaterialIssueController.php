@@ -171,6 +171,11 @@ class JobAssignMaterialIssueController extends Controller
         return !$currentBrandLine || !$newBrandLine || $currentBrandLine === $newBrandLine;
     }
 
+    private function shouldEnforcePackageMaterialFamilyOnUpdate($item): bool
+    {
+        return (bool) ($item?->is_copied ?? false);
+    }
+
     private function validateMaterialIssueItemsProductConsistency($materialIssueItems, ?string $issueNumber = null): array
     {
         $groups = [];
@@ -5191,7 +5196,7 @@ class JobAssignMaterialIssueController extends Controller
             }
 
             if ($productChanged
-                && ($item->is_copied || $this->isPackageConversionMaterial($item->product))
+                && $this->shouldEnforcePackageMaterialFamilyOnUpdate($item)
                 && !$this->productsHaveSamePackageMaterialFamily($item->product, $newProduct)
             ) {
                 return response()->json([

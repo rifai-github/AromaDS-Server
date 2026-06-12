@@ -168,6 +168,24 @@ class MaterialAromaClassificationTest extends TestCase
         $this->assertFalse($method->invoke($controller, $lemongrass100, $coffee100));
     }
 
+    public function test_job_assign_material_issue_original_aroma_update_does_not_use_copy_split_family_guard(): void
+    {
+        $controller = new JobAssignMaterialIssueController();
+        $method = (new ReflectionClass($controller))->getMethod('shouldEnforcePackageMaterialFamilyOnUpdate');
+        $method->setAccessible(true);
+
+        $originalItem = new MaterialIssueItem([
+            'is_copied' => false,
+        ]);
+
+        $copiedItem = new MaterialIssueItem([
+            'is_copied' => true,
+        ]);
+
+        $this->assertFalse($method->invoke($controller, $originalItem));
+        $this->assertTrue($method->invoke($controller, $copiedItem));
+    }
+
     public function test_job_assign_material_issue_rejects_mixed_fragrance_for_same_room_rental(): void
     {
         $controller = new JobAssignMaterialIssueController();
