@@ -1709,16 +1709,19 @@ class QuotationWizardController extends Controller
     public function getSurveysByCustomer(Request $request)
     {
         $marketingId = $request->get('marketing_id');
+        $customerId = $request->get('customer_id');
         $user = auth()->user();
 
-        if ($marketingId && !$this->userCanAccessMarketingId($marketingId, $user)) {
+        if (!$customerId && $marketingId && !$this->userCanAccessMarketingId($marketingId, $user)) {
             return response()->json([]);
         }
 
         $query = $this->accessibleApprovedSurveyQuery($user)
             ->with(['customer', 'building', 'surveyDetails']);
 
-        if ($marketingId) {
+        if ($customerId) {
+            $query->where('customer_id', $customerId);
+        } elseif ($marketingId) {
             $query->where('marketing_id', $marketingId);
         }
 

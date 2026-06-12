@@ -2754,8 +2754,17 @@ $(document).ready(function() {
     }
 
     // ===== SURVEY MANAGEMENT =====
+    function getRenewalSurveyCustomerId() {
+        if ($('#quotation_type').val() !== 'renewal' || !window.renewalContractData) {
+            return null;
+        }
+
+        return window.renewalContractData.customer?.id || window.renewalContractData.customer_id || null;
+    }
+
     function loadSurveys() {
         const marketingId = $('#marketing_id').val();
+        const renewalCustomerId = getRenewalSurveyCustomerId();
         const surveySelect = $('#survey_tags');
         
         if (!marketingId) {
@@ -2765,13 +2774,14 @@ $(document).ready(function() {
 
         // SMART LOAD: Check if surveys are already loaded for this marketing ID
         const loadedMarketingId = surveySelect.data('loaded-marketing-id');
-        if (loadedMarketingId == marketingId && surveySelect.children('option').length > 1) {
-            console.log('Surveys already loaded for marketing:', marketingId, '- skipping reload');
+        const loadedCustomerId = surveySelect.data('loaded-customer-id') || null;
+        if (loadedMarketingId == marketingId && loadedCustomerId == renewalCustomerId && surveySelect.children('option').length > 1) {
+            console.log('Surveys already loaded for marketing/customer:', marketingId, renewalCustomerId, '- skipping reload');
             restoreSurveySelections();
             return;
         }
         
-        console.log('Loading surveys for marketing:', marketingId);
+        console.log('Loading surveys for marketing/customer:', marketingId, renewalCustomerId);
         
         // Clear existing options
         surveySelect.empty();
@@ -2787,7 +2797,10 @@ $(document).ready(function() {
         $.ajax({
             url: '{{ route("marketing.quotations.wizard.get-surveys-by-customer") }}',
             method: 'GET',
-            data: { marketing_id: marketingId },
+            data: {
+                marketing_id: marketingId,
+                customer_id: renewalCustomerId
+            },
             success: function(response) {
                 console.log('Surveys loaded:', response);
                 
@@ -2868,6 +2881,7 @@ $(document).ready(function() {
                 
                 // Mark as loaded for this marketing ID
                 surveySelect.data('loaded-marketing-id', marketingId);
+                surveySelect.data('loaded-customer-id', renewalCustomerId);
                 
                 // Update button state
                 updateNextButtonState();
@@ -5969,6 +5983,7 @@ $(document).ready(function() {
                 if (response.status === 'success') {
                     const data = response.data;
                     console.log('Contract data loaded:', data);
+                    window.renewalContractData = data;
                     
                     // Populate step 1 fields
                     window.isPopulatingData = true;
@@ -6066,11 +6081,15 @@ $(document).ready(function() {
                     console.log('=== POPULATING RENEWAL DATA ===');
                     
                     // 1. Set Survey
-                    if (data.survey_id) {
-                        console.log('Setting Survey ID for restoration:', data.survey_id);
+                    const renewalSurveyIds = Array.isArray(data.survey_ids) && data.survey_ids.length > 0
+                        ? data.survey_ids
+                        : (data.survey_id ? [data.survey_id] : []);
+
+                    if (renewalSurveyIds.length > 0) {
+                        console.log('Setting Survey IDs for restoration:', renewalSurveyIds);
                         
                         // Set global variable for loadSurveys() to pick up when it finishes
-                        const surveyIds = [data.survey_id.toString()];
+                        const surveyIds = renewalSurveyIds.map(id => id.toString());
                         window.globalSurveySelections = surveyIds;
                         localStorage.setItem('quotation_survey_selections', JSON.stringify(surveyIds));
                         
@@ -6079,14 +6098,18 @@ $(document).ready(function() {
                         // or just to be safe.
                         if ($('#survey_tags').hasClass('select2-hidden-accessible')) {
                              // If data.survey is available (from updated backend), we can create option
-                             if (data.survey) {
-                                  const label = `${data.survey.survey_number} - ${data.survey.customer_name}`;
+                             const surveysForOptions = Array.isArray(data.surveys) && data.surveys.length > 0
+                                ? data.surveys
+                                : (data.survey ? [data.survey] : []);
+
+                             surveysForOptions.forEach(function(survey) {
+                                  const label = `${survey.survey_number} - ${survey.customer_name}`;
                                   // Check if option exists
-                                  if ($('#survey_tags option[value="' + data.survey.id + '"]').length === 0) {
-                                      const newOption = new Option(label, data.survey.id, true, true);
+                                  if ($('#survey_tags option[value="' + survey.id + '"]').length === 0) {
+                                      const newOption = new Option(label, survey.id, true, true);
                                       $('#survey_tags').append(newOption);
                                   }
-                             }
+                             });
                              $('#survey_tags').val(surveyIds).trigger('change');
                         }
                     }

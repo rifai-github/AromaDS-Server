@@ -87,6 +87,16 @@ class QuotationSurveySelectionDedupTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        DB::table('users')->insert([
+            'id' => 8,
+            'name' => 'Other Marketing User',
+            'email' => 'other-marketing@example.test',
+            'password' => 'password',
+            'data_restriction' => 'none',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     protected function tearDown(): void
@@ -149,12 +159,35 @@ class QuotationSurveySelectionDedupTest extends TestCase
         ], array_column($payload, 'survey_number'));
     }
 
+    public function test_renewal_customer_survey_selection_includes_same_customer_surveys_from_other_marketing(): void
+    {
+        $this->insertSurvey(10, 'SBY-SR/26-06/0001', now()->subMinutes(2), marketingId: 8);
+        $this->insertSurvey(11, 'SBY-SR/26-06/0002', now(), marketingId: 7);
+        $this->actingAs(User::findOrFail(7));
+
+        $controller = app(QuotationWizardController::class);
+        $response = $controller->getSurveysByCustomer(Request::create(
+            '/marketing/quotations/wizard/get-surveys-by-customer',
+            'GET',
+            ['marketing_id' => 7, 'customer_id' => 1]
+        ));
+
+        $payload = $response->getData(true);
+
+        $this->assertCount(2, $payload);
+        $this->assertSame([
+            'SBY-SR/26-06/0002',
+            'SBY-SR/26-06/0001',
+        ], array_column($payload, 'survey_number'));
+    }
+
     private function insertSurvey(
         int $id,
         string $number,
         $createdAt,
         int $customerId = 1,
-        string $roomName = 'Lobby'
+        string $roomName = 'Lobby',
+        int $marketingId = 7
     ): void
     {
         DB::table('surveys')->insert([
@@ -162,7 +195,7 @@ class QuotationSurveySelectionDedupTest extends TestCase
             'survey_number' => $number,
             'customer_id' => $customerId,
             'building_id' => 1,
-            'marketing_id' => 7,
+            'marketing_id' => $marketingId,
             'survey_date' => '2026-05-10',
             'status' => 'approved',
             'created_at' => $createdAt,

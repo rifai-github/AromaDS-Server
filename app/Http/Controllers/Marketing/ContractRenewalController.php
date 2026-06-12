@@ -371,8 +371,11 @@ class ContractRenewalController extends Controller
                 'contractRooms.billingGroup',
                 'contractRentals.masterRental',
                 'contractRentals.room',
+                'contractSurveys.survey.building',
                 'quotation.survey.surveyDetails',
+                'quotation.survey.building',
                 'quotation.quotationSurveys.survey.surveyDetails',
+                'quotation.quotationSurveys.survey.building',
                 'quotation.quotationRooms',
                 'quotation.primaryPic',
                 'quotation.primaryPic.customerContact',
@@ -412,6 +415,7 @@ class ContractRenewalController extends Controller
             ];
 
             $activeUnitOnWalls = $this->getActiveUnitOnWallsForRenewal($contract);
+            $renewalSurveys = $this->getRenewalSurveys($contract);
             
             // Prepare data for quotation wizard
             // Use actual_start_date and actual_end_date (BA date based)
@@ -426,8 +430,9 @@ class ContractRenewalController extends Controller
                 'contract_terms' => $contract->contract_terms,
                 'marketing_id' => $contract->marketing_id,
                 'branch_id' => $contract->quotation->branch_id ?? null,
-                'survey_id' => $contract->quotation->survey_id ?? null,
-                'survey_number' => $contract->quotation->survey->survey_number ?? null,
+                'survey_id' => $renewalSurveys->first()?->id ?? $contract->quotation->survey_id ?? null,
+                'survey_ids' => $renewalSurveys->pluck('id')->values(),
+                'survey_number' => $renewalSurveys->first()?->survey_number ?? $contract->quotation->survey->survey_number ?? null,
  // Add Survey ID
                 'rental_period' => $contract->quotation->rental_period ?? 12,
                 'rental_unit' => $contract->quotation->rental_unit ?? 'bulan',
@@ -553,11 +558,10 @@ class ContractRenewalController extends Controller
                         'rental_alias' => $rental->rental_alias,
                     ];
                 }),
-                'survey' => $contract->quotation->survey ? [
-                    'id' => $contract->quotation->survey->id,
-                    'survey_number' => $contract->quotation->survey->survey_number,
-                    'customer_name' => $contract->customer->name ?? ''
-                ] : null,
+                'survey' => $renewalSurveys->first() ? $this->formatRenewalSurvey($renewalSurveys->first(), $contract) : null,
+                'surveys' => $renewalSurveys
+                    ->map(fn (Survey $survey) => $this->formatRenewalSurvey($survey, $contract))
+                    ->values(),
                 'remark_internal' => $contract->internal_remark ?? ($contract->quotation->internal_notes ?? ''),
                 'remark_external' => $contract->external_remark ?? ($contract->quotation->additional_notes ?? ''),
                 'pic_id' => $contract->quotation->primaryPic->customer_contact_id ?? null,
@@ -574,6 +578,28 @@ class ContractRenewalController extends Controller
             Log::error("Error fetching contract for renewal: " . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => 'Failed to fetch contract details: ' . $e->getMessage()], 500);
         }
+    }
+
+    private function getRenewalSurveys(Contract $contract)
+    {
+        return collect()
+            ->push($contract->quotation?->survey)
+            ->merge($contract->quotation?->quotationSurveys?->pluck('survey') ?? collect())
+            ->merge($contract->contractSurveys?->pluck('survey') ?? collect())
+            ->filter()
+            ->unique('id')
+            ->values();
+    }
+
+    private function formatRenewalSurvey(Survey $survey, Contract $contract): array
+    {
+        return [
+            'id' => $survey->id,
+            'survey_number' => $survey->survey_number,
+            'customer_name' => $survey->customer->name ?? $contract->customer->name ?? '',
+            'building_name' => $survey->building->name ?? $survey->building->nama_gedung ?? '',
+            'marketing_id' => $survey->marketing_id,
+        ];
     }
 
     private function buildRenewalRooms(Contract $contract, $activeUnitOnWalls)
