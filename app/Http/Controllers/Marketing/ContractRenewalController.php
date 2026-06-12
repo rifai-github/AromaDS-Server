@@ -547,6 +547,7 @@ class ContractRenewalController extends Controller
                         'rental_name' => $resolvedRentalName,
                         'rental_price' => $rental->unit_price ?? $rental->masterRental->rental_price ?? 0,
                         'quantity' => $rental->quantity ?? 1,
+                        'qty_free' => $rental->qty_free ?? 0,
                         'unit' => $rental->masterRental->unit ?? 'unit',
                         'notes' => $rental->notes, 
                         'rental_alias' => $rental->rental_alias,

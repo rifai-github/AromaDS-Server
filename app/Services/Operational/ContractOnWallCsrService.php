@@ -227,14 +227,14 @@ class ContractOnWallCsrService
         return $roomGroup['rentals']->map(function ($contractRental) use ($jobAdvice, $contractRoom, $unitOnWall, $room, $userId) {
             $rental = $contractRental->masterRental;
 
-            return JobAdviceRoom::create([
+            $payload = [
                 'job_advice_id' => $jobAdvice->id,
                 'contract_room_id' => $contractRoom->id,
                 'contract_rental_id' => $contractRental->id,
                 'rental_product_id' => $contractRental->master_rental_id,
                 'room_name' => $room?->room_name,
                 'rental_name' => $contractRental->rental_alias ?: ($rental?->rental_name ?? 'Rental'),
-                'quantity' => (int) max(1, (float) ($contractRental->quantity ?? 1)),
+                'quantity' => (int) max(1, ceil((float) ($contractRental->quantity ?? 0) + (float) ($contractRental->qty_free ?? 0))),
                 'rental_specification_ml' => $this->rentalSpecificationMl($rental),
                 'rental_has_installation' => false,
                 'rental_has_service' => true,
@@ -244,7 +244,13 @@ class ContractOnWallCsrService
                 'notes' => 'Auto CSR: unit already active on wall.',
                 'created_by' => $userId,
                 'updated_by' => $userId,
-            ]);
+            ];
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('job_advice_rooms', 'qty_free')) {
+                $payload['qty_free'] = $contractRental->qty_free ?? 0;
+            }
+
+            return JobAdviceRoom::create($payload);
         })->values();
     }
 

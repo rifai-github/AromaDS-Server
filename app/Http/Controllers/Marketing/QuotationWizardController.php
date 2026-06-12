@@ -753,6 +753,9 @@ class QuotationWizardController extends Controller
                     }
                 }
 
+                [$quantity, $qtyFree] = $this->normalizeRentalItemQuantities($item);
+                $unitPrice = $quantity > 0 ? ($item['price'] ?? 0) : 0;
+
                 // Create quotation detail
                 $quotation->quotationDetails()->create([
                     'survey_id' => $surveyId,
@@ -761,9 +764,10 @@ class QuotationWizardController extends Controller
                     'rental_alias' => $item['rental_alias'] ?? null, // Rental alias per item
                     'remark' => $item['remark'] ?? null, // Remark per rental item
                     'room_name' => $roomName,
-                    'quantity' => $item['quantity'] ?? 1,
-                    'unit_price' => $item['price'] ?? 0,
-                    'total_price' => ($item['quantity'] ?? 1) * ($item['price'] ?? 0),
+                    'quantity' => $quantity,
+                    'qty_free' => $qtyFree,
+                    'unit_price' => $unitPrice,
+                    'total_price' => $quantity * $unitPrice,
                     'specifications' => $specifications,
                     'created_by' => auth()->id(),
                     'updated_by' => auth()->id()
@@ -1017,6 +1021,9 @@ class QuotationWizardController extends Controller
                         }
                      }
 
+                     [$quantity, $qtyFree] = $this->normalizeRentalItemQuantities($item);
+                     $unitPrice = $quantity > 0 ? ($item['price'] ?? 0) : 0;
+
                      $quotation->quotationDetails()->create([
                         'master_rental_id' => $item['product_id'] ?? null,
                         'rental_alias' => $item['rental_alias'] ?? null,
@@ -1024,9 +1031,10 @@ class QuotationWizardController extends Controller
                         'room_name' => $roomName,
                         'survey_id' => $surveyId, // NEW COLUMN - Important for Sync!
                         'room_id' => $roomId,     // NEW COLUMN - Important for Sync!
-                        'quantity' => $item['quantity'] ?? 1,
-                        'unit_price' => $item['price'] ?? 0,
-                        'total_price' => ($item['quantity'] ?? 1) * ($item['price'] ?? 0),
+                        'quantity' => $quantity,
+                        'qty_free' => $qtyFree,
+                        'unit_price' => $unitPrice,
+                        'total_price' => $quantity * $unitPrice,
                         'specifications' => $specifications,
                         'created_by' => $quotation->created_by, // Preserve creator logic? Or auth?
                         'updated_by' => auth()->id()
@@ -1154,6 +1162,18 @@ class QuotationWizardController extends Controller
         }
         
         return (float) $cleaned;
+    }
+
+    private function normalizeRentalItemQuantities(array $item): array
+    {
+        $quantity = max(0, (float) ($item['quantity'] ?? 0));
+        $qtyFree = max(0, (float) ($item['qty_free'] ?? 0));
+
+        if ($quantity <= 0 && $qtyFree <= 0) {
+            $quantity = 1;
+        }
+
+        return [$quantity, $qtyFree];
     }
 
     private function ensureRenewalSourceCanProceed(?string $quotationType, ?int $existingContractId): void
@@ -1617,6 +1637,9 @@ class QuotationWizardController extends Controller
                         $specifications = $specifications ?: $this->masterRoomSpecifications($contractRoom->room);
                     }
 
+                    [$quantity, $qtyFree] = $this->normalizeRentalItemQuantities($item);
+                    $unitPrice = $quantity > 0 ? ($item['price'] ?? 0) : 0;
+
                      QuotationDetail::create([
                         'quotation_id' => $quotation->id,
                         'survey_id' => $item['survey_id'],
@@ -1625,9 +1648,10 @@ class QuotationWizardController extends Controller
                         'rental_alias' => $item['rental_alias'] ?? null,
                         'remark' => $item['remark'] ?? null,
                         'room_name' => $roomName,
-                        'quantity' => $item['quantity'],
-                        'unit_price' => $item['price'],
-                        'total_price' => $item['price'] * $item['quantity'],
+                        'quantity' => $quantity,
+                        'qty_free' => $qtyFree,
+                        'unit_price' => $unitPrice,
+                        'total_price' => $unitPrice * $quantity,
                         'specifications' => $specifications,
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id()

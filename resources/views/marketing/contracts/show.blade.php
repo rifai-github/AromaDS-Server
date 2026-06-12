@@ -1165,6 +1165,7 @@
                                             <th data-no-filter>No</th>
                                             <th data-column="masterRental.rental_name">Rental Name</th>
                                             <th data-column="quantity">Qty</th>
+                                            <th data-column="qty_free">Qty Free</th>
                                             <th data-column="unit_price">Price</th>
                                             <th data-column="total_price">Total</th>
                                             <th data-column="masterRental.description">Description</th>
@@ -1177,6 +1178,7 @@
                                             <td>{{ $index + 1 }}</td>
                                             <td>{{ $contractRental->rental_alias ?? ($contractRental->masterRental->rental_name ?? '-') }}</td>
                                             <td>{{ $contractRental->quantity}}</td>
+                                            <td>{{ $contractRental->qty_free ?? 0 }}</td>
                                             <td>Rp {{ number_format($contractRental->unit_price, 0, ',', '.') }}</td>
                                             <td>Rp {{ number_format($contractRental->total_price, 0, ',', '.') }}</td>
                                             <td>{{ $contractRental->masterRental->description ?? '-' }}</td>
@@ -1196,7 +1198,7 @@
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="5" class="text-center text-muted">
+                                            <td colspan="6" class="text-center text-muted">
                                                 <i class="fas fa-info-circle me-2"></i>
                                                 No rentals found.
                                             </td>

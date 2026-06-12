@@ -17,6 +17,7 @@ class ContractRental extends Model
         'rental_alias',
         'room_id',
         'quantity',
+        'qty_free',
         'unit_price',
         'total_price',
         'created_by',
@@ -26,7 +27,8 @@ class ContractRental extends Model
     protected $casts = [
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
-        'quantity' => 'decimal:2'
+        'quantity' => 'decimal:2',
+        'qty_free' => 'decimal:2'
     ];
 
     // Relationships
@@ -91,5 +93,10 @@ class ContractRental extends Model
     public function setTotalPriceAttribute($value)
     {
         $this->attributes['total_price'] = $this->quantity * $this->unit_price;
+    }
+
+    public function getOperationalQuantityAttribute()
+    {
+        return (float) ($this->quantity ?? 0) + (float) ($this->qty_free ?? 0);
     }
 }

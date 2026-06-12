@@ -219,6 +219,7 @@
                     <th>Room Name</th>
                     <th>Product</th>
                     <th>Quantity</th>
+                    <th>Qty Free</th>
                     <th>Unit Price</th>
                     <th>Total Price</th>
                 </tr>
@@ -230,6 +231,7 @@
                     <td>{{ $detail->room_name ?? '-' }}</td>
                     <td>{{ $detail->rental_alias ?? ($detail->masterRental->rental_name ?? '-') }}</td>
                     <td>{{ $detail->quantity ?? 0 }}</td>
+                    <td>{{ $detail->qty_free ?? 0 }}</td>
                     <td>Rp {{ number_format($detail->unit_price ?? 0, 0, ',', '.') }}</td>
                     <td>Rp {{ number_format($detail->total_price ?? 0, 0, ',', '.') }}</td>
                 </tr>

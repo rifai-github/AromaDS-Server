@@ -464,6 +464,7 @@
                                             <th data-column="remark">Remark</th>
                                             <th data-column="masterRental.name">Rental</th>
                                             <th data-column="qty" data-type="numeric">Qty</th>
+                                            <th data-column="qty_free" data-type="numeric">Qty Free</th>
                                             <th data-column="rental_price" data-type="numeric">Harga Rental / Bulan</th>
                                             <th data-column="total_price" data-type="numeric">Total</th>
                                             @if($quotation->status === 'draft')
@@ -684,6 +685,7 @@
                                             </td>
                                             <td>{{ $displayRentalName }}</td>
                                             <td>{{ $detail->quantity ?? '-' }}</td>
+                                            <td>{{ $detail->qty_free ?? 0 }}</td>
                                             <td>Rp {{ number_format($detail->unit_price ?? 0, 0, ',', '.') }}</td>
                                             <td>Rp {{ number_format($detail->total_price ?? 0, 0, ',', '.') }}</td>
                                             @if($quotation->status === 'draft')
@@ -696,7 +698,7 @@
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="{{ $quotation->status === 'draft' ? '10' : '9' }}" class="text-center text-muted">
+                                            <td colspan="{{ $quotation->status === 'draft' ? '11' : '10' }}" class="text-center text-muted">
                                                 <i class="fas fa-info-circle me-2"></i>
                                                 No quotation details found.
                                             </td>
@@ -705,7 +707,7 @@
                                     </tbody>
                                     <tfoot>
                                         <tr>
-                                            <td colspan="{{ $quotation->status === 'draft' ? '9' : '8' }}"><strong>Sub Total</strong></td>
+                                            <td colspan="{{ $quotation->status === 'draft' ? '10' : '9' }}"><strong>Sub Total</strong></td>
                                             <td><strong>Rp {{ number_format($quotation->total_amount ?? 0, 0, ',', '.') }}</strong></td>
                                         </tr>
                                         <!--<tr>
@@ -713,7 +715,7 @@
                                             <td><strong>Rp {{ number_format($quotation->tax_amount ?? 0, 0, ',', '.') }}</strong></td>
                                         </tr> -->
                                         <tr>
-                                            <td colspan="{{ $quotation->status === 'draft' ? '9' : '8' }}"><strong>Grand Total</strong></td>
+                                            <td colspan="{{ $quotation->status === 'draft' ? '10' : '9' }}"><strong>Grand Total</strong></td>
                                             <td><strong>Rp {{ number_format($quotation->grand_total ?? 0, 0, ',', '.') }}</strong></td>
                                         </tr>
                                     </tfoot>

@@ -440,6 +440,7 @@
                                     <tr>
                                         <th>Deskripsi Item</th>
                                         <th>Qty</th>
+                                        <th>Qty Free</th>
                                         <th>Harga Rental / Bulan</th>
                                     </tr>
                                 </thead>
@@ -1649,7 +1650,7 @@ function displayQuotationItems(items) {
     
     if (!items || items.length === 0) {
         console.log('No items found or items is empty');
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center">No items found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center">No items found</td></tr>';
         return;
     }
     
@@ -1690,6 +1691,7 @@ function displayQuotationItems(items) {
         row.innerHTML = `
             <td>${itemDescription}</td>
             <td>${item.quantity || 0}</td>
+            <td>${item.qty_free || 0}</td>
             <td>${formattedPrice}</td>
         `;
         tbody.appendChild(row);

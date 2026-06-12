@@ -21,6 +21,7 @@ class JobAdviceRoom extends Model
         'room_name',
         'rental_name',
         'quantity',
+        'qty_free',
         'rental_specification_ml',
         'rental_has_installation',
         'rental_has_service',
@@ -38,6 +39,7 @@ class JobAdviceRoom extends Model
 
     protected $casts = [
         'quantity' => 'integer',
+        'qty_free' => 'decimal:2',
         'rental_specification_ml' => 'decimal:2',
         'rental_has_installation' => 'boolean',
         'rental_has_service' => 'boolean',
@@ -74,6 +76,11 @@ class JobAdviceRoom extends Model
     public function rentalProduct()
     {
         return $this->belongsTo(MasterRental::class, 'rental_product_id');
+    }
+
+    public function getOperationalQuantityAttribute()
+    {
+        return (float) ($this->quantity ?? 0);
     }
 
     public function installJobSchedule()

@@ -382,7 +382,7 @@ class BillingGroupService
                 continue;
             }
 
-            $targetInvoice->invoiceRentalDetails()->create([
+            $payload = [
                 'master_rental_id' => $detail->master_rental_id,
                 'job_no' => $detail->job_no,
                 'building_name' => $detail->building_name,
@@ -392,7 +392,13 @@ class BillingGroupService
                 'unit_price' => $detail->unit_price,
                 'total_price' => $detail->total_price,
                 'created_by' => $userId,
-            ]);
+            ];
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('invoice_rental_details', 'qty_free')) {
+                $payload['qty_free'] = $detail->qty_free ?? 0;
+            }
+
+            $targetInvoice->invoiceRentalDetails()->create($payload);
         }
     }
 
@@ -478,10 +484,11 @@ class BillingGroupService
                     }
 
                     $quantity = $contractRental->quantity ?? 1;
+                    $qtyFree = $contractRental->qty_free ?? 0;
                     $unitPrice = $contractRental->unit_price ?? 0;
                     $totalPrice = $contractRental->total_price ?? ($quantity * $unitPrice);
 
-                    $invoice->invoiceRentalDetails()->create([
+                    $payload = [
                         'master_rental_id' => $masterRental->id,
                         'job_no' => '-', // Tidak menggunakan nomor job khusus untuk billing group bulanan yang fix
                         'building_name' => $contractRoom->building->building_name ?? '',
@@ -491,7 +498,13 @@ class BillingGroupService
                         'unit_price' => $unitPrice,
                         'total_price' => $totalPrice,
                         'created_by' => auth()->id() ?? \App\Models\User::first()->id ?? null // Fallback if run via CLI script
-                    ]);
+                    ];
+
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('invoice_rental_details', 'qty_free')) {
+                        $payload['qty_free'] = $qtyFree;
+                    }
+
+                    $invoice->invoiceRentalDetails()->create($payload);
                     $hasDetails = true;
                     $createdKeys[$detailKey] = true;
                 }

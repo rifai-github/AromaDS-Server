@@ -2061,6 +2061,7 @@ function initializeFromExistingQuotation(data) {
                     productName: productName,
                     price: price,
                     quantity: detail.quantity,
+                    qty_free: detail.qty_free || 0,
                     remark: detail.remark || '',
                     rental_alias: detail.rental_alias
                 }
@@ -2080,6 +2081,7 @@ function initializeFromExistingQuotation(data) {
         productName: c.productName,
         price: c.formData.price,
         quantity: c.formData.quantity,
+        qtyFree: c.formData.qty_free || '0',
         remark: c.formData.remark,
         rentalAlias: c.formData.rental_alias
     }));
@@ -2624,8 +2626,9 @@ $(document).ready(function() {
                 productName: productName,
                 price: config.find('input[name*="[price]"]').val() || '',
                 quantity: config.find('input[name*="[quantity]"]').val() || '1',
+                qty_free: config.find('input[name*="[qty_free]"]').val() || '0',
                 remark: config.find('input[name*="[remark]"]').val() || '',
-                rental_alias: config.find('input[name*="[rental_alias]"]').val() || ''
+                rental_alias: config.find('[name*="[rental_alias]"]').val() || ''
             };
             
             rentalConfigs.push({
@@ -2646,6 +2649,7 @@ $(document).ready(function() {
             productName: c.formData.productName || c.productName || '',
             price: c.formData.price || '',
             quantity: c.formData.quantity || '1',
+            qtyFree: c.formData.qty_free || '0',
             remark: c.formData.remark || '',
             rentalAlias: c.formData.rental_alias || ''
         })).filter(c => c.productId && c.productId !== ''); // Only save configs with product selected
@@ -4037,11 +4041,12 @@ $(document).ready(function() {
         let subTotal = 0;
         $('.rental-configuration').each(function() {
             const quantity = parseFloat($(this).find('input[name*="quantity"]').val()) || 0;
+            const qtyFree = parseFloat($(this).find('input[name*="qty_free"]').val()) || 0;
             const price = parseFloat($(this).find('input[name*="price"]').val()) || 0;
             const itemTotal = quantity * price;
             subTotal += itemTotal;
             
-            console.log('Rental item - Qty:', quantity, 'Price:', price, 'Total:', itemTotal);
+            console.log('Rental item - Qty:', quantity, 'Qty Free:', qtyFree, 'Price:', price, 'Total:', itemTotal);
         });
         
         console.log('Sub total calculated:', subTotal);
@@ -4065,7 +4070,7 @@ $(document).ready(function() {
         calculateStep5Totals();
     });
     
-    $(document).on('input change', '.rental-configuration input[name*="quantity"], .rental-configuration input[name*="price"]', function() {
+    $(document).on('input change', '.rental-configuration input[name*="quantity"], .rental-configuration input[name*="qty_free"], .rental-configuration input[name*="price"]', function() {
         calculateStep5Totals();
         updateNextButtonState();
     });
@@ -4169,8 +4174,9 @@ $(document).ready(function() {
                         '<div class="table-responsive">' +
                             '<table class="table table-striped mb-0">' +
                                 '<thead class="table-dark"><tr>' +
-                                    '<th style="width: 60%;">Deskripsi Item</th>' +
+                                    '<th style="width: 50%;">Deskripsi Item</th>' +
                                     '<th style="width: 10%;" class="text-center">Qty</th>' +
+                                    '<th style="width: 10%;" class="text-center">Qty Free</th>' +
                                     '<th style="width: 15%;" class="text-center">Harga Rental</th>' +
                                     '<th style="width: 15%;" class="text-center">/ TOP</th>' +
                                 '</tr></thead>' +
@@ -4311,6 +4317,7 @@ $(document).ready(function() {
                         productName: c.formData?.productName || c.productName || '',
                         price: c.formData?.price || '',
                         quantity: c.formData?.quantity || '1',
+                        qtyFree: c.formData?.qty_free || '0',
                         remark: c.formData?.remark || '',
                         rentalAlias: c.formData?.rental_alias || ''
                     }));
@@ -4439,7 +4446,7 @@ $(document).ready(function() {
                             <strong>${roomData.room.name}</strong>
                             ${roomData.aromaText}
                         </td>
-                        <td class="text-center" colspan="2">-</td>
+                        <td class="text-center" colspan="3">-</td>
                         <td class="text-end"><strong>Rp ${Math.round(roomData.room.total).toLocaleString('id-ID')}</strong></td>
                     </tr>
                 `;
@@ -4458,9 +4465,10 @@ $(document).ready(function() {
                 const config = $(this);
                 const productId = config.find('select[name*="product_id"]').val();
                 const productName = config.find('select[name*="product_id"] option:selected').text();
-                const rentalAlias = config.find('input[name*="rental_alias"]').val() || '';
+                const rentalAlias = config.find('[name*="rental_alias"]').val() || '';
                 const displayName = rentalAlias || productName; // Use rental alias if exists, otherwise rental name
                 const quantity = config.find('input[name*="quantity"]').val() || '1';
+                const qtyFree = config.find('input[name*="qty_free"]').val() || '0';
                 const price = config.find('input[name*="price"]').val() || '0';
                 const remark = config.find('textarea[name*="remark"]').val() || config.find('input[name*="remark"]').val() || '';
                 const roomId = config.data('room-id') || config.find('input[name*="room_id"]').val() || 'unknown';
@@ -4498,6 +4506,7 @@ $(document).ready(function() {
                                         ${remark ? `<br><small class="text-info">Remark: ${remark}</small>` : ''}
                                     </td>
                                     <td class="text-center">${quantity}</td>
+                                    <td class="text-center">${qtyFree}</td>
                                     <td class="text-end">Rp ${Math.round(priceNum).toLocaleString('id-ID')}</td>
                                     <td class="text-end">Rp ${Math.round(total).toLocaleString('id-ID')}</td>
                                 </tr>
@@ -4515,6 +4524,7 @@ $(document).ready(function() {
                     const rentalAlias = config.rentalAlias || '';
                     const displayName = rentalAlias || productName;
                     const quantity = config.quantity || '1';
+                    const qtyFree = config.qtyFree || config.qty_free || '0';
                     const price = config.price || '0';
                     const remark = config.remark || '';
                     const roomId = config.roomId || '';
@@ -4549,6 +4559,7 @@ $(document).ready(function() {
                                             ${remark ? `<br><small class="text-info">Remark: ${remark}</small>` : ''}
                                         </td>
                                         <td class="text-center">${quantity}</td>
+                                        <td class="text-center">${qtyFree}</td>
                                         <td class="text-end">Rp ${Math.round(priceNum).toLocaleString('id-ID')}</td>
                                         <td class="text-end">Rp ${Math.round(total).toLocaleString('id-ID')}</td>
                                     </tr>
@@ -4563,7 +4574,7 @@ $(document).ready(function() {
         }
         
         if (rentalItemsHtml === '') {
-            rentalItemsHtml = '<tr><td colspan="4" class="text-center">No rental items configured</td></tr>';
+            rentalItemsHtml = '<tr><td colspan="5" class="text-center">No rental items configured</td></tr>';
         }
         
         $('#summary-rental-items').html(rentalItemsHtml);
@@ -4852,6 +4863,7 @@ $(document).ready(function() {
                     productName: rental.rental_name,
                     price: rental.rental_price,
                     quantity: rental.quantity,
+                    qty_free: rental.qty_free || 0,
                     remark: rental.notes,
                     rental_alias: rental.rental_alias
                 }
@@ -5043,6 +5055,7 @@ $(document).ready(function() {
                         // Fill other fields
                         targetForm.find('input[name*="price"]').val(config.formData.price);
                         targetForm.find('input[name*="quantity"]').val(config.formData.quantity);
+                        targetForm.find('input[name*="qty_free"]').val(config.formData.qty_free || 0);
                         targetForm.find('input[name*="remark"]').val(config.formData.remark || '');
                         targetForm.find('[name*="rental_alias"]').val(config.formData.rental_alias || '');
                         
@@ -5110,19 +5123,25 @@ $(document).ready(function() {
                             </div>
                         </div>
                         <div class="row">
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <div class="form-group mb-3">
                                     <label class="form-label">Harga (Quote Price)</label>
                                     <input type="number" class="form-control" name="rental_items[${uniqueId}][price]" placeholder="Harga" min="0" step="1" required>
                                 </div>
                             </div>
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <div class="form-group mb-3">
                                     <label class="form-label">Quantity</label>
-                                    <input type="number" class="form-control" name="rental_items[${uniqueId}][quantity]" placeholder="Qty" min="1" value="1" required>
+                                    <input type="number" class="form-control" name="rental_items[${uniqueId}][quantity]" placeholder="Qty" min="0" value="1" required>
                                 </div>
                             </div>
-                            <div class="col-md-4">
+                            <div class="col-md-3">
+                                <div class="form-group mb-3">
+                                    <label class="form-label">Qty Free</label>
+                                    <input type="number" class="form-control" name="rental_items[${uniqueId}][qty_free]" placeholder="Qty Free" min="0" value="0">
+                                </div>
+                            </div>
+                            <div class="col-md-3">
                                 <div class="form-group mb-3">
                                     <label class="form-label">Remark</label>
                                     <input type="text" class="form-control" name="rental_items[${uniqueId}][remark]" placeholder="Remark">
@@ -5649,15 +5668,21 @@ $(document).ready(function() {
                     let incompleteConfigs = 0;
                     let missingProducts = [];
                     let missingPrices = [];
+                    let missingQuantities = [];
                     
                     rentalConfigs.each(function() {
                         const config = $(this);
                         const roomId = config.data('room-id');
                         const productSelect = config.find('.rental-product-select');
                         const priceInput = config.find('input[name*="price"]');
+                        const quantityInput = config.find('input[name*="quantity"]');
+                        const qtyFreeInput = config.find('input[name*="qty_free"]');
                         
                         // Get room name for better error message
                         const roomDisplay = config.find('.room-display-container input[type="text"]').val() || `Room ${roomId}`;
+                        const paidQty = parseFloat(quantityInput.val()) || 0;
+                        const freeQty = parseFloat(qtyFreeInput.val()) || 0;
+                        const priceValue = priceInput.val() === '' ? null : parseFloat(priceInput.val());
                         
                         const val = productSelect.val();
                         if (!val || val === '' || val === null) {
@@ -5666,7 +5691,13 @@ $(document).ready(function() {
                             console.log('Missing product for room:', roomDisplay, 'Val:', val);
                         }
                         
-                        if (!priceInput.val() || parseFloat(priceInput.val()) <= 0) {
+                        if (paidQty <= 0 && freeQty <= 0) {
+                            incompleteConfigs++;
+                            missingQuantities.push(roomDisplay);
+                            console.log('Missing quantity for room:', roomDisplay);
+                        }
+
+                        if (priceValue === null || priceValue < 0 || (paidQty > 0 && priceValue <= 0)) {
                             incompleteConfigs++;
                             missingPrices.push(roomDisplay);
                             console.log('Missing price for room:', roomDisplay);
@@ -5675,6 +5706,10 @@ $(document).ready(function() {
                     
                     if (missingProducts.length > 0) {
                         missingFields.push('Produk Rental untuk: ' + missingProducts.join(', '));
+                        isValid = false;
+                    }
+                    if (missingQuantities.length > 0) {
+                        missingFields.push('Quantity/Qty Free untuk: ' + missingQuantities.join(', '));
                         isValid = false;
                     }
                     if (missingPrices.length > 0) {
@@ -6126,6 +6161,7 @@ $(document).ready(function() {
                                     productName: rental.rental_name,
                                     price: rental.rental_price,
                                     quantity: rental.quantity,
+                                    qty_free: rental.qty_free || 0,
                                     remark: rental.notes,
                                     rental_alias: rental.rental_alias
                                 }
@@ -6630,6 +6666,7 @@ $(document).ready(function() {
             const productId = $(this).find('select[name*="product_id"]').val();
             const price = $(this).find('input[name*="price"]').val();
             const quantity = $(this).find('input[name*="quantity"]').val();
+            const qtyFree = $(this).find('input[name*="qty_free"]').val();
             const remark = $(this).find('input[name*="remark"]').val();
             
             // Get room name from display container or from room selection
@@ -6678,7 +6715,7 @@ $(document).ready(function() {
                 const fieldName = $(this).find('select[name*="room_id"], input[name*="room_id"]').first().attr('name');
                 const uniqueId = fieldName ? fieldName.match(/rental_items\[([^\]]+)\]/)[1] : `survey-${surveyId}-room-${roomId}-${Date.now()}`;
                 
-                const rentalAlias = $(this).find('input[name*="rental_alias"]').val() || '';
+                const rentalAlias = $(this).find('[name*="rental_alias"]').val() || '';
                 
                 rentalItems[uniqueId] = {
                     survey_id: surveyId,
@@ -6688,6 +6725,7 @@ $(document).ready(function() {
                     product_id: productId,
                     price: price,
                     quantity: quantity,
+                    qty_free: qtyFree || 0,
                     remark: remark,
                     rental_alias: rentalAlias,
                     specifications: specifications
@@ -6707,6 +6745,7 @@ $(document).ready(function() {
             formData.append(`rental_items[${uniqueId}][product_id]`, item.product_id);
             formData.append(`rental_items[${uniqueId}][price]`, item.price);
             formData.append(`rental_items[${uniqueId}][quantity]`, item.quantity);
+            formData.append(`rental_items[${uniqueId}][qty_free]`, item.qty_free || 0);
             formData.append(`rental_items[${uniqueId}][remark]`, item.remark || '');
             formData.append(`rental_items[${uniqueId}][rental_alias]`, item.rental_alias || '');
             if (item.specifications) {

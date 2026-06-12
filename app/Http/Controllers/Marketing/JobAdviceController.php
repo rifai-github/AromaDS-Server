@@ -448,7 +448,8 @@ class JobAdviceController extends Controller
             'rooms.*.quotation_rental_id' => 'nullable|exists:quotation_rentals,id',
             'rooms.*.quotation_detail_id' => 'nullable|exists:quotation_details,id',
             'rooms.*.rental_product_id' => 'required|exists:master_rentals,id',
-            'rooms.*.quantity' => 'required|integer|min:1',
+            'rooms.*.quantity' => 'nullable|integer|min:0',
+            'rooms.*.qty_free' => 'nullable|numeric|min:0',
             'rooms.*.is_trial' => 'nullable|boolean',
             'rooms.*.notes' => 'nullable|string',
         ], [
@@ -677,7 +678,8 @@ class JobAdviceController extends Controller
                         }
 
                         $roomData['rental_product_id'] = $quotationRental->master_rental_id;
-                        $roomData['quantity'] = $quotationRental->quantity ?? ($roomData['quantity'] ?? 1);
+                        $roomData['quantity'] = $this->operationalQuantity($quotationRental);
+                        $roomData['qty_free'] = $quotationRental->qty_free ?? 0;
                     } elseif (!empty($roomData['quotation_room_id']) && !empty($roomData['quotation_detail_id'])) {
                         $quotationRoom = \App\Models\QuotationRoom::with('quotation.quotationDetails.room')->find($roomData['quotation_room_id']);
                         $quotationDetail = $this->resolveQuotationDetailForRoom($quotationRoom, (int) $roomData['quotation_detail_id']);
@@ -688,7 +690,8 @@ class JobAdviceController extends Controller
                         }
 
                         $roomData['rental_product_id'] = $quotationDetail->master_rental_id;
-                        $roomData['quantity'] = $quotationDetail->quantity ?? ($roomData['quantity'] ?? 1);
+                        $roomData['quantity'] = $this->operationalQuantity($quotationDetail);
+                        $roomData['qty_free'] = $quotationDetail->qty_free ?? 0;
                     }
 
                     $this->createJobAdviceRoom($jobAdvice, $roomData);
@@ -787,6 +790,7 @@ class JobAdviceController extends Controller
                     'quotation_detail_id' => $this->nullableInt($room['quotation_detail_id'] ?? null),
                     'rental_product_id' => $this->nullableInt($room['rental_product_id'] ?? null),
                     'quantity' => (int) ($room['quantity'] ?? 1),
+                    'qty_free' => (float) ($room['qty_free'] ?? 0),
                 ];
             })
             ->sortBy(fn ($room) => implode('|', array_map(fn ($value) => (string) ($value ?? ''), $room)))
@@ -805,6 +809,7 @@ class JobAdviceController extends Controller
                     'quotation_detail_id' => $this->nullableInt($room->quotation_detail_id),
                     'rental_product_id' => $this->nullableInt($room->rental_product_id),
                     'quantity' => (int) ($room->quantity ?? 1),
+                    'qty_free' => (float) ($room->qty_free ?? 0),
                 ];
             })
             ->sortBy(fn ($room) => implode('|', array_map(fn ($value) => (string) ($value ?? ''), $room)))
@@ -815,6 +820,29 @@ class JobAdviceController extends Controller
     private function nullableInt($value): ?int
     {
         return $value === null || $value === '' ? null : (int) $value;
+    }
+
+    private function sourcePaidQuantity($source): float
+    {
+        if (is_array($source)) {
+            return max(0, (float) ($source['quantity'] ?? 0));
+        }
+
+        return max(0, (float) ($source->quantity ?? 0));
+    }
+
+    private function sourceFreeQuantity($source): float
+    {
+        if (is_array($source)) {
+            return max(0, (float) ($source['qty_free'] ?? 0));
+        }
+
+        return max(0, (float) ($source->qty_free ?? 0));
+    }
+
+    private function operationalQuantity($source): int
+    {
+        return max(1, (int) ceil($this->sourcePaidQuantity($source) + $this->sourceFreeQuantity($source)));
     }
 
     private function normalizedJobAdviceType($type): string
@@ -1655,6 +1683,8 @@ class JobAdviceController extends Controller
         $contractRentalId = $roomData['contract_rental_id'] ?? null;
         $quotationRentalId = $roomData['quotation_rental_id'] ?? null;
         $quotationDetailId = $roomData['quotation_detail_id'] ?? null;
+        $operationalQuantity = max(1, (int) ceil((float) ($roomData['quantity'] ?? 1)));
+        $qtyFree = max(0, (float) ($roomData['qty_free'] ?? 0));
 
         // MOM9: Handle both contract room and quotation room
         if (!empty($roomData['contract_room_id'])) {
@@ -1797,7 +1827,7 @@ class JobAdviceController extends Controller
             }
         }
         
-        $jaRoom = \App\Models\JobAdviceRoom::create([
+        $payload = [
             'job_advice_id' => $jobAdvice->id,
             'contract_room_id' => $contractRoom->id ?? null,
             'quotation_room_id' => $quotationRoom->id ?? null,
@@ -1807,7 +1837,7 @@ class JobAdviceController extends Controller
             'rental_product_id' => $rental->id,
             'room_name' => $roomName,
             'rental_name' => $finalRentalName, // MOM9: Use rental_alias from quotation detail if available
-            'quantity' => $roomData['quantity'] ?? 1,
+            'quantity' => $operationalQuantity,
             'rental_specification_ml' => $rentalSpecML,
             // rental_has_installation and rental_has_service will be determined based on Job Advice type
             // Install Free â†’ no service (only install)
@@ -1822,7 +1852,13 @@ class JobAdviceController extends Controller
             'notes' => $roomData['notes'] ?? null,
             'created_by' => Auth::id(),
             'updated_by' => Auth::id()
-        ]);
+        ];
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('job_advice_rooms', 'qty_free')) {
+            $payload['qty_free'] = $qtyFree;
+        }
+
+        $jaRoom = \App\Models\JobAdviceRoom::create($payload);
         
         return $jaRoom;
     }
@@ -3413,7 +3449,8 @@ class JobAdviceController extends Controller
             'rooms.*.quotation_rental_id' => 'nullable|exists:quotation_rentals,id',
             'rooms.*.quotation_detail_id' => 'nullable|exists:quotation_details,id',
             'rooms.*.rental_product_id' => 'nullable|exists:master_rentals,id',
-            'rooms.*.quantity' => 'nullable|integer|min:1',
+            'rooms.*.quantity' => 'nullable|integer|min:0',
+            'rooms.*.qty_free' => 'nullable|numeric|min:0',
             'rooms.*.notes' => 'nullable|string',
         ]);
         
@@ -3537,7 +3574,9 @@ class JobAdviceController extends Controller
                         $rentalProductDetails[] = [
                             'rental_product_id' => $cr->master_rental_id,
                             'contract_rental_id' => $cr->id,
-                            'quotation_rental_id' => null
+                            'quotation_rental_id' => null,
+                            'quantity' => $this->operationalQuantity($cr),
+                            'qty_free' => $this->sourceFreeQuantity($cr),
                         ];
                     }
                 } elseif (!empty($roomData['quotation_rental_id'])) {
@@ -3549,7 +3588,8 @@ class JobAdviceController extends Controller
                             'rental_product_id' => $qr->master_rental_id,
                             'contract_rental_id' => null,
                             'quotation_rental_id' => $qr->id,
-                            'quantity' => $qr->quantity ?? 1
+                            'quantity' => $this->operationalQuantity($qr),
+                            'qty_free' => $this->sourceFreeQuantity($qr),
                         ];
                     }
                 } elseif (!empty($roomData['quotation_detail_id']) && $quotationRoom) {
@@ -3560,7 +3600,8 @@ class JobAdviceController extends Controller
                             'contract_rental_id' => null,
                             'quotation_rental_id' => null,
                             'quotation_detail_id' => $qd->id,
-                            'quantity' => $qd->quantity ?? 1
+                            'quantity' => $this->operationalQuantity($qd),
+                            'qty_free' => $this->sourceFreeQuantity($qd),
                         ];
                     } else {
                         \Log::warning("Quotation detail does not belong to selected quotation room", ['room_data' => $roomData]);
@@ -3586,7 +3627,8 @@ class JobAdviceController extends Controller
                                 'rental_product_id' => $cr->master_rental_id,
                                 'contract_rental_id' => $cr->id,
                                 'quotation_rental_id' => null,
-                                'quantity' => $cr->quantity ?? 1 // Use contract quantity
+                                'quantity' => $this->operationalQuantity($cr),
+                                'qty_free' => $this->sourceFreeQuantity($cr),
                             ];
                         }
                     } elseif ($quotationRoom) {
@@ -3599,7 +3641,8 @@ class JobAdviceController extends Controller
                                     'rental_product_id' => $qr->master_rental_id,
                                     'contract_rental_id' => null,
                                     'quotation_rental_id' => $qr->id,
-                                    'quantity' => $qr->quantity ?? 1 // Use quotation quantity
+                                    'quantity' => $this->operationalQuantity($qr),
+                                    'qty_free' => $this->sourceFreeQuantity($qr),
                                 ];
                             }
                         } else {
@@ -3613,7 +3656,8 @@ class JobAdviceController extends Controller
                                     'contract_rental_id' => null,
                                     'quotation_rental_id' => null,
                                     'quotation_detail_id' => $qd->id,
-                                    'quantity' => $qd->quantity ?? 1 // Use quotation detail quantity
+                                    'quantity' => $this->operationalQuantity($qd),
+                                    'qty_free' => $this->sourceFreeQuantity($qd),
                                 ];
                             }
                         }
@@ -3646,26 +3690,30 @@ class JobAdviceController extends Controller
                     // Final duplicate check inside the loop to ensure we don't add same contract_rental_id twice
                     $existsFinal = false;
                     $sourceQty = null;
+                    $sourceQtyFree = null;
 
                     if (!empty($detail['contract_rental_id'])) {
                         $existsFinal = $jobAdvice->rooms()->where('contract_rental_id', $detail['contract_rental_id'])->exists();
                         // Get quantity from ContractRental
                         $contractRental = \App\Models\ContractRental::find($detail['contract_rental_id']);
                         if ($contractRental) {
-                            $sourceQty = $contractRental->quantity;
+                            $sourceQty = $this->operationalQuantity($contractRental);
+                            $sourceQtyFree = $this->sourceFreeQuantity($contractRental);
                         }
                     } elseif (!empty($detail['quotation_rental_id'])) {
                         $existsFinal = $jobAdvice->rooms()->where('quotation_rental_id', $detail['quotation_rental_id'])->exists();
                         $quotationRental = \App\Models\QuotationRental::find($detail['quotation_rental_id']);
                         if ($quotationRental) {
-                            $sourceQty = $quotationRental->quantity;
+                            $sourceQty = $this->operationalQuantity($quotationRental);
+                            $sourceQtyFree = $this->sourceFreeQuantity($quotationRental);
                         }
                     } elseif (!empty($detail['quotation_detail_id'])) {
                          // Fallback logic used quotation_detail_id
                          $existsFinal = $jobAdvice->rooms()->where('quotation_detail_id', $detail['quotation_detail_id'])->exists();
                          $qd = \App\Models\QuotationDetail::find($detail['quotation_detail_id']);
                          if ($qd) {
-                             $sourceQty = $qd->quantity;
+                             $sourceQty = $this->operationalQuantity($qd);
+                             $sourceQtyFree = $this->sourceFreeQuantity($qd);
                          }
                     }
                     
@@ -3674,6 +3722,9 @@ class JobAdviceController extends Controller
                     // Use source quantity if available, otherwise fallback to request data or 1
                     if ($sourceQty !== null) {
                         $roomDataForCreate['quantity'] = $sourceQty;
+                    }
+                    if ($sourceQtyFree !== null) {
+                        $roomDataForCreate['qty_free'] = $sourceQtyFree;
                     }
 
                     $jaRoom = $this->createJobAdviceRoom($jobAdvice, $roomDataForCreate);
@@ -3726,13 +3777,15 @@ class JobAdviceController extends Controller
 
          $request->validate([
             'rental_product_id' => 'required|exists:master_rentals,id',
-            'quantity' => 'nullable|integer|min:1'
+            'quantity' => 'nullable|integer|min:1',
+            'qty_free' => 'nullable|numeric|min:0',
         ]);
 
         try {
             $oldRentalId = $jobAdviceRoom->rental_product_id;
             $newRentalId = $request->rental_product_id;
             $newQuantity = $request->quantity;
+            $newQtyFree = $request->qty_free;
 
             $updateData = [
                 'rental_product_id' => $newRentalId
@@ -3741,6 +3794,9 @@ class JobAdviceController extends Controller
             // Update quantity jika dikirim
             if ($newQuantity) {
                 $updateData['quantity'] = $newQuantity;
+            }
+            if ($request->has('qty_free') && \Illuminate\Support\Facades\Schema::hasColumn('job_advice_rooms', 'qty_free')) {
+                $updateData['qty_free'] = max(0, (float) $newQtyFree);
             }
 
             $jobAdviceRoom->update($updateData);

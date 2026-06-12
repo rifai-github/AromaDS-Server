@@ -1590,6 +1590,7 @@ class QuotationController extends Controller
                     'rental_alias' => $detail->rental_alias, // Copy rental_alias from quotation detail
                     'room_id' => $masterRoomId,
                     'quantity' => $detail->quantity,
+                    'qty_free' => $detail->qty_free ?? 0,
                     'unit_price' => $detail->unit_price,
                     'total_price' => $detail->total_price,
                     'created_by' => Auth::id() ?? 1,
@@ -2026,18 +2027,29 @@ class QuotationController extends Controller
             }
 
             foreach ($rentalsForRoom as $rental) {
+                $paidQty = (float) ($rental->quantity ?? 0);
+                $qtyFree = (float) ($rental->qty_free ?? 0);
+                $operationalQty = max(1, (int) ceil($paidQty + $qtyFree));
+
                 // Create one JobAdviceRoom per rental so downstream job schedules can keep the full mapping
-                \App\Models\JobAdviceRoom::create([
+                $jobAdviceRoomPayload = [
                     'job_advice_id' => $jobAdvice->id,
                     'contract_room_id' => $contractRoom->id,
+                    'contract_rental_id' => $rental->id,
                     'rental_product_id' => $rental->master_rental_id,
                     'room_name' => $contractRoom->room->room_name ?? 'Room ' . $contractRoom->id,
                     'rental_name' => $rental->rental_alias ?? ($rental->masterRental->rental_name ?? 'N/A'),
-                    'quantity' => $rental->quantity ?? 1,
+                    'quantity' => $operationalQty,
                     'status' => 'pending',
                     'created_by' => Auth::id() ?? 1,
                     'updated_by' => Auth::id() ?? 1
-                ]);
+                ];
+
+                if (\Illuminate\Support\Facades\Schema::hasColumn('job_advice_rooms', 'qty_free')) {
+                    $jobAdviceRoomPayload['qty_free'] = $qtyFree;
+                }
+
+                \App\Models\JobAdviceRoom::create($jobAdviceRoomPayload);
             }
         }
 
@@ -2201,7 +2213,8 @@ class QuotationController extends Controller
             'room_name' => 'required|string|max:100',
             'survey_id' => 'nullable|exists:surveys,id',
             'room_id' => 'nullable|exists:survey_details,id',
-            'quantity' => 'required|numeric|min:0.01',
+            'quantity' => 'required|numeric|min:0',
+            'qty_free' => 'nullable|numeric|min:0',
             'unit_price' => 'required|numeric|min:0',
             'specifications' => 'nullable|string'
         ]);
@@ -2213,7 +2226,17 @@ class QuotationController extends Controller
             ], 422);
         }
 
-        $totalPrice = $request->quantity * $request->unit_price;
+        if ((float) $request->quantity <= 0 && (float) $request->input('qty_free', 0) <= 0) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => ['quantity' => ['Qty atau Qty Free harus lebih dari 0.']]
+            ], 422);
+        }
+
+        $quantity = (float) $request->quantity;
+        $qtyFree = (float) $request->input('qty_free', 0);
+        $unitPrice = $quantity > 0 ? (float) $request->unit_price : 0;
+        $totalPrice = $quantity * $unitPrice;
         [$surveyId, $surveyDetailId] = $this->resolveQuotationDetailSurveyAndRoom($quotation, [
             'survey_id' => $request->survey_id,
             'room_id' => $request->room_id,
@@ -2226,8 +2249,9 @@ class QuotationController extends Controller
             'room_id' => $surveyDetailId,
             'master_rental_id' => $request->master_rental_id,
             'room_name' => $request->room_name,
-            'quantity' => $request->quantity,
-            'unit_price' => $request->unit_price,
+            'quantity' => $quantity,
+            'qty_free' => $qtyFree,
+            'unit_price' => $unitPrice,
             'total_price' => $totalPrice,
             'specifications' => $request->specifications,
             'created_by' => Auth::id()
@@ -2258,7 +2282,8 @@ class QuotationController extends Controller
             'room_name' => 'required|string|max:100',
             'survey_id' => 'nullable|exists:surveys,id',
             'room_id' => 'nullable|exists:survey_details,id',
-            'quantity' => 'required|numeric|min:0.01',
+            'quantity' => 'required|numeric|min:0',
+            'qty_free' => 'nullable|numeric|min:0',
             'unit_price' => 'required|numeric|min:0',
             'specifications' => 'nullable|string'
         ]);
@@ -2270,7 +2295,17 @@ class QuotationController extends Controller
             ], 422);
         }
 
-        $totalPrice = $request->quantity * $request->unit_price;
+        if ((float) $request->quantity <= 0 && (float) $request->input('qty_free', 0) <= 0) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => ['quantity' => ['Qty atau Qty Free harus lebih dari 0.']]
+            ], 422);
+        }
+
+        $quantity = (float) $request->quantity;
+        $qtyFree = (float) $request->input('qty_free', 0);
+        $unitPrice = $quantity > 0 ? (float) $request->unit_price : 0;
+        $totalPrice = $quantity * $unitPrice;
         [$surveyId, $surveyDetailId] = $this->resolveQuotationDetailSurveyAndRoom($quotation, [
             'survey_id' => $request->survey_id ?? $detail->survey_id,
             'room_id' => $request->room_id ?? $detail->room_id,
@@ -2282,8 +2317,9 @@ class QuotationController extends Controller
             'room_id' => $surveyDetailId,
             'master_rental_id' => $request->master_rental_id,
             'room_name' => $request->room_name,
-            'quantity' => $request->quantity,
-            'unit_price' => $request->unit_price,
+            'quantity' => $quantity,
+            'qty_free' => $qtyFree,
+            'unit_price' => $unitPrice,
             'total_price' => $totalPrice,
             'specifications' => $request->specifications,
             'updated_by' => Auth::id() ?? 1 // Fallback to admin user if not authenticated
@@ -2351,7 +2387,8 @@ class QuotationController extends Controller
             'details.*.room_name' => 'required|string|max:100',
             'details.*.survey_id' => 'nullable|exists:surveys,id',
             'details.*.room_id' => 'nullable|exists:survey_details,id',
-            'details.*.quantity' => 'required|numeric|min:0.01',
+            'details.*.quantity' => 'required|numeric|min:0',
+            'details.*.qty_free' => 'nullable|numeric|min:0',
             'details.*.unit_price' => 'required|numeric|min:0',
             'details.*.specifications' => 'nullable|string'
         ]);
@@ -2365,7 +2402,17 @@ class QuotationController extends Controller
 
         $details = [];
         foreach ($request->details as $detailData) {
-            $totalPrice = $detailData['quantity'] * $detailData['unit_price'];
+            if ((float) ($detailData['quantity'] ?? 0) <= 0 && (float) ($detailData['qty_free'] ?? 0) <= 0) {
+                return response()->json([
+                    'status' => 'error',
+                    'errors' => ['details' => ['Qty atau Qty Free harus lebih dari 0 untuk setiap detail.']]
+                ], 422);
+            }
+
+            $quantity = (float) ($detailData['quantity'] ?? 0);
+            $qtyFree = (float) ($detailData['qty_free'] ?? 0);
+            $unitPrice = $quantity > 0 ? (float) ($detailData['unit_price'] ?? 0) : 0;
+            $totalPrice = $quantity * $unitPrice;
             [$surveyId, $surveyDetailId] = $this->resolveQuotationDetailSurveyAndRoom($quotation, $detailData);
             
             $details[] = [
@@ -2374,8 +2421,9 @@ class QuotationController extends Controller
                 'room_id' => $surveyDetailId,
                 'master_rental_id' => $detailData['master_rental_id'],
                 'room_name' => $detailData['room_name'],
-                'quantity' => $detailData['quantity'],
-                'unit_price' => $detailData['unit_price'],
+                'quantity' => $quantity,
+                'qty_free' => $qtyFree,
+                'unit_price' => $unitPrice,
                 'total_price' => $totalPrice,
                 'specifications' => $detailData['specifications'] ?? null,
                 'created_by' => Auth::id(),

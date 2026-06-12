@@ -19,6 +19,7 @@ class QuotationDetail extends Model
         'remark',
         'room_name',
         'quantity',
+        'qty_free',
         'unit_price',
         'total_price',
         'specifications',
@@ -28,6 +29,7 @@ class QuotationDetail extends Model
 
     protected $casts = [
         'quantity' => 'decimal:2',
+        'qty_free' => 'decimal:2',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2'
     ];
@@ -116,5 +118,10 @@ class QuotationDetail extends Model
     public function calculateTotalPrice()
     {
         return $this->quantity * $this->unit_price;
+    }
+
+    public function getOperationalQuantityAttribute()
+    {
+        return (float) ($this->quantity ?? 0) + (float) ($this->qty_free ?? 0);
     }
 }

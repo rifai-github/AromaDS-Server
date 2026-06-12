@@ -328,6 +328,7 @@ class ContractController extends Controller
                         'rental_name' => $rental->rental->rental_name ?? '',
                         'rental_price' => $rental->rental->rental_price ?? 0,
                         'quantity' => $rental->quantity,
+                        'qty_free' => $rental->qty_free ?? 0,
                         'total_price' => $rental->total_price,
                     ];
                 }),
@@ -1322,6 +1323,8 @@ class ContractController extends Controller
                             'id' => $rental->id, // This is contract_rental_id
                             'master_rental_id' => $rental->master_rental_id,
                             'rental_name' => $rental->rental_alias ?? ($rental->masterRental?->rental_name ?? 'Unknown Rental'),
+                            'quantity' => $rental->quantity ?? 0,
+                            'qty_free' => $rental->qty_free ?? 0,
                         ];
                     })->values()->toArray();
 

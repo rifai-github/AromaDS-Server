@@ -545,6 +545,7 @@ class InvoiceGenerationService
                     'room_name' => $rental['room_name'] ?: ($jobSchedule->room?->room_name ?? $jobSchedule->room_name ?? ''),
                     'rental_name' => $rental['rental_name'] ?? 'Service',
                     'quantity' => $rental['quantity'],
+                    'qty_free' => $rental['qty_free'] ?? 0,
                     'unit_price' => $rental['unit_price'],
                     'total_price' => $rental['total_price'],
                 ];
@@ -810,6 +811,7 @@ class InvoiceGenerationService
                 ?? $jobAdviceRoom->room_name
                 ?? '',
             'quantity' => $contractRental->quantity ?? 1,
+            'qty_free' => $contractRental->qty_free ?? 0,
             'unit_price' => $contractRental->unit_price ?? 0,
             'total_price' => $contractRental->total_price ?? (($contractRental->quantity ?? 1) * ($contractRental->unit_price ?? 0)),
         ];
@@ -851,6 +853,7 @@ class InvoiceGenerationService
             'rental_name' => $masterRental->rental_name ?? 'Service',
             'room_name' => $scheduleRoom?->room_name ?? $contractRoom->room->room_name ?? '',
             'quantity' => $contractRental->quantity ?? 1,
+            'qty_free' => $contractRental->qty_free ?? 0,
             'unit_price' => $contractRental->unit_price ?? 0,
             'total_price' => $contractRental->total_price ?? (($contractRental->quantity ?? 1) * ($contractRental->unit_price ?? 0)),
         ];
@@ -1019,7 +1022,7 @@ class InvoiceGenerationService
         // NEW: We only create rental-specific detail to avoid duplication in printing.
         // invoiceRentalDetails represents the breakdown. 
         // Standard invoiceDetails is for generic items (non-job etc.)
-        $invoice->invoiceRentalDetails()->create([
+        $payload = [
             'master_rental_id' => $rental['master_rental_id'],
             'job_no' => $jobSchedule->job_number,
             'building_name' => $jobSchedule->building->building_name ?? $jobSchedule->building_name ?? '',
@@ -1029,7 +1032,13 @@ class InvoiceGenerationService
             'unit_price' => $rental['unit_price'],
             'total_price' => $rental['total_price'],
             'created_by' => auth()->id()
-        ]);
+        ];
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('invoice_rental_details', 'qty_free')) {
+            $payload['qty_free'] = $rental['qty_free'] ?? 0;
+        }
+
+        $invoice->invoiceRentalDetails()->create($payload);
     }
 
     /**

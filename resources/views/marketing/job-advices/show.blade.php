@@ -542,6 +542,7 @@
                                             <th>Action</th>
                                             <th>Nama Rental</th>
                                             <th>Qty</th>
+                                            <th>Qty Free</th>
                                             <th>Rental Price</th>
                                             <th>Nama Perusahaan</th>
                                             <th>Gedung</th>
@@ -735,7 +736,7 @@
                                                         @if($jobAdvice->status === 'draft')
                                                             <span class="badge bg-primary mt-1 w-100 p-2 rounded-pill text-uppercase" 
                                                                   style="cursor: pointer; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1); background-color: #0d6efd !important; color: white !important;"
-                                                                  onclick="openChangeRentalModal({{ $jaRoom->id }}, {{ $jaRoom->rental_product_id ?? 'null' }}, {{ $jaRoom->quantity ?? 1 }})"
+                                                                  onclick="openChangeRentalModal({{ $jaRoom->id }}, {{ $jaRoom->rental_product_id ?? 'null' }}, {{ $jaRoom->quantity ?? 1 }}, {{ $jaRoom->qty_free ?? 0 }})"
                                                                   title="Change Rental">
                                                                 <i class="fas fa-exchange-alt me-1"></i> Change Rental
                                                             </span>
@@ -746,6 +747,7 @@
                                                 @endif
                                             </td>
                                             <td class="text-center">{{ $jaRoom->quantity ?? 1 }}</td>
+                                            <td class="text-center">{{ $jaRoom->qty_free ?? 0 }}</td>
                                             <td class="text-right">
                                                 @php
                                                     // MOM9: Use price from quotation detail/rental if available, otherwise from master rental
@@ -1780,7 +1782,7 @@ function openEditModal() {
 </script>
 <script>
 // Change Rental (Old vs New)
-function openChangeRentalModal(roomId, currentRentalId, currentQty = 1) { // Default qty 1
+function openChangeRentalModal(roomId, currentRentalId, currentQty = 1, currentQtyFree = 0) { // Default qty 1
     // 1. Fetch rental products for dropdown
     Swal.fire({
         title: 'Loading Rentals...',
@@ -1831,6 +1833,10 @@ function openChangeRentalModal(roomId, currentRentalId, currentQty = 1) { // Def
                 <input type="number" id="new_rental_qty" class="form-control" value="${currentQty}" min="1">
                 <small class="text-muted text-danger">Perubahan Qty akan mempengaruhi Invoice bulan berikutnya.</small>
             </div>
+            <div class="mb-3 text-start">
+                <label class="form-label fw-bold">Qty Free</label>
+                <input type="number" id="new_rental_qty_free" class="form-control" value="${currentQtyFree}" min="0">
+            </div>
         `;
 
         Swal.fire({
@@ -1854,6 +1860,7 @@ function openChangeRentalModal(roomId, currentRentalId, currentQty = 1) { // Def
             preConfirm: () => {
                 let selectedId = document.getElementById('new_rental_select').value;
                 let newQty = document.getElementById('new_rental_qty').value;
+                let newQtyFree = document.getElementById('new_rental_qty_free').value || 0;
 
                  // If Select2 is used, value might need to be retrieved from jQuery
                 if (typeof $.fn.select2 !== 'undefined') {
@@ -1870,11 +1877,11 @@ function openChangeRentalModal(roomId, currentRentalId, currentQty = 1) { // Def
                     return false;
                 }
 
-                return { rentalId: selectedId, qty: newQty };
+                return { rentalId: selectedId, qty: newQty, qtyFree: newQtyFree };
             }
         }).then((result) => {
             if (result.isConfirmed && result.value) {
-                updateRoomRental(roomId, result.value.rentalId, result.value.qty);
+                updateRoomRental(roomId, result.value.rentalId, result.value.qty, result.value.qtyFree);
             }
         });
     })
@@ -1887,7 +1894,7 @@ function openChangeRentalModal(roomId, currentRentalId, currentQty = 1) { // Def
     });
 }
 
-function updateRoomRental(roomId, newRentalId, newQty) {
+function updateRoomRental(roomId, newRentalId, newQty, newQtyFree = 0) {
     Swal.fire({
         title: 'Menyimpan...',
         text: 'Mengubah data rental...',
@@ -1906,7 +1913,8 @@ function updateRoomRental(roomId, newRentalId, newQty) {
         },
         body: JSON.stringify({
             rental_product_id: newRentalId,
-            quantity: newQty // Send quantity
+            quantity: newQty,
+            qty_free: newQtyFree
         })
     })
     .then(response => response.json())

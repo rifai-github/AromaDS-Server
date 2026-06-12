@@ -623,6 +623,7 @@
                                     <th>Ruangan</th>
                                     <th>Rental</th>
                                     <th class="text-center">Quantity</th>
+                                    <th class="text-center">Qty Free</th>
                                     <th class="text-end">Price</th>
                                     <th class="text-end">Total</th>
                                     <th>Terakhir Update</th>
@@ -637,6 +638,7 @@
                                     <td>{{ $rental->room_name ?: ($rental->jobSchedule->room->room_name ?? '-') }}</td>
                                     <td>{{ $rental->rental_name ?? $rental->masterRental->rental_name ?? '-' }}</td>
                                     <td class="text-center">{{ number_format($rental->quantity, 0) }}</td>
+                                    <td class="text-center">{{ number_format($rental->qty_free ?? 0, 0) }}</td>
                                     <td class="text-end">
                                         Rp {{ number_format($rental->unit_price, 0, ',', '.') }}
                                     </td>
@@ -646,7 +648,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="9" class="text-center py-5 text-muted">
+                                    <td colspan="10" class="text-center py-5 text-muted">
                                         <i class="fas fa-info-circle me-2"></i>No data found in rentals.
                                     </td>
                                 </tr>

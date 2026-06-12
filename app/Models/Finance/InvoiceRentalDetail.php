@@ -19,6 +19,7 @@ class InvoiceRentalDetail extends Model
         'rental_name',
         'room_name',
         'quantity',
+        'qty_free',
         'unit_price',
         'total_price',
         'created_by',
@@ -27,6 +28,7 @@ class InvoiceRentalDetail extends Model
 
     protected $casts = [
         'quantity' => 'decimal:2',
+        'qty_free' => 'decimal:2',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
     ];
@@ -61,6 +63,11 @@ class InvoiceRentalDetail extends Model
     public function getFormattedQuantityAttribute()
     {
         return number_format($this->quantity, 2);
+    }
+
+    public function getFormattedQtyFreeAttribute()
+    {
+        return number_format($this->qty_free ?? 0, 2);
     }
 
     public function getFormattedUnitPriceAttribute()

@@ -18,6 +18,7 @@ class QuotationRental extends Model
         'master_rental_id',
         'aroma_name',
         'quantity',
+        'qty_free',
         'unit_price',
         'total_price',
         'rental_specifications',
@@ -31,6 +32,7 @@ class QuotationRental extends Model
 
     protected $casts = [
         'quantity' => 'decimal:2',
+        'qty_free' => 'decimal:2',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
         'bottom_price' => 'decimal:2',
@@ -136,6 +138,11 @@ class QuotationRental extends Model
     public function calculateTotalPrice()
     {
         return $this->quantity * $this->unit_price;
+    }
+
+    public function getOperationalQuantityAttribute()
+    {
+        return (float) ($this->quantity ?? 0) + (float) ($this->qty_free ?? 0);
     }
 
     public function updateTotalPrice()

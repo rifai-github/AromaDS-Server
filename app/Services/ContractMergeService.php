@@ -144,6 +144,7 @@ class ContractMergeService
                     'rental_alias' => $sourceRental->rental_alias,
                     'room_id' => $sourceRental->room_id,
                     'quantity' => $sourceRental->quantity,
+                    'qty_free' => $sourceRental->qty_free ?? 0,
                     'unit_price' => $sourceRental->unit_price,
                     'total_price' => $sourceRental->total_price,
                     'created_by' => Auth::id(),

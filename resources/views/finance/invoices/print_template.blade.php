@@ -136,10 +136,11 @@
         <thead>
             <tr>
                 <th style="width: 5%;" class="center">No</th>
-                <th style="width: 45%;">Description</th>
+                <th style="width: 40%;">Description</th>
                 <th style="width: 15%;" class="right">Price</th>
                 <th style="width: 10%;" class="center">Qty</th>
-                <th style="width: 25%;" class="right">Subtotal</th>
+                <th style="width: 10%;" class="center">Qty Free</th>
+                <th style="width: 20%;" class="right">Subtotal</th>
             </tr>
         </thead>
         <tbody>
@@ -160,6 +161,7 @@
                 </td>
                 <td class="right">{{ number_format($rental->unit_price, 0) }}</td>
                 <td class="center">{{ number_format($rental->quantity, 0) }}</td>
+                <td class="center">{{ number_format($rental->qty_free ?? 0, 0) }}</td>
                 <td class="right">{{ number_format($rental->total_price, 0) }}</td>
             </tr>
             @endforeach
@@ -179,32 +181,33 @@
                 </td>
                 <td class="right">{{ number_format($item->unit_price, 0) }}</td>
                 <td class="center">{{ number_format($item->quantity, 0) }}</td>
+                <td class="center">0</td>
                 <td class="right">{{ number_format($item->total_price, 0) }}</td>
             </tr>
             @endif
             @endforeach
             
             <tr class="total-row">
-                <td colspan="3"></td>
+                <td colspan="4"></td>
                 <td class="right">Subtotal:</td>
                 <td class="right">{{ number_format($invoice->subtotal, 0) }}</td>
             </tr>
             @if($invoice->discount_amount > 0)
             <tr class="total-row">
-                <td colspan="3"></td>
+                <td colspan="4"></td>
                 <td class="right">Discount:</td>
                 <td class="right">-{{ number_format($invoice->discount_amount, 0) }}</td>
             </tr>
             @endif
             @if($showTaxRow)
             <tr class="total-row">
-                <td colspan="3"></td>
+                <td colspan="4"></td>
                 <td class="right">{{ $taxRowLabel }}:</td>
                 <td class="right">{{ number_format($invoice->tax_amount, 0) }}</td>
             </tr>
             @endif
             <tr class="total-row" style="font-size: 14px; color: #214589;">
-                <td colspan="3"></td>
+                <td colspan="4"></td>
                 <td class="right">Total:</td>
                 <td class="right">Rp {{ number_format($invoice->grand_total, 0) }}</td>
             </tr>

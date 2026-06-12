@@ -383,6 +383,7 @@
                                                     <th>Room Name</th>
                                                     <th>Specifications</th>
                                                     <th>Quantity</th>
+                                                    <th>Qty Free</th>
                                                     <th>Unit Price</th>
                                                     <th>Total Price</th>
                                                     <th>Actions</th>
@@ -407,6 +408,7 @@
                                                             @endif
                                                         </td>
                                                         <td>{{ $detail->quantity }}</td>
+                                                        <td>{{ $detail->qty_free ?? 0 }}</td>
                                                         <td>Rp {{ number_format($detail->unit_price, 0, ',', '.') }}</td>
                                                         <td>Rp {{ number_format($detail->total_price, 0, ',', '.') }}</td>
                                                         <td>
@@ -456,6 +458,7 @@
                                                     <th>Room</th>
                                                     <th>Product</th>
                                                     <th>Quantity</th>
+                                                    <th>Qty Free</th>
                                                     <th>Unit Price</th>
                                                     <th>Total</th>
                                                     <th>Actions</th>
@@ -473,6 +476,7 @@
                                                             @endif
                                                         </td>
                                                         <td>{{ $detail->quantity }}</td>
+                                                        <td>{{ $detail->qty_free ?? 0 }}</td>
                                                         <td>Rp {{ number_format($detail->unit_price, 0, ',', '.') }}</td>
                                                         <td>Rp {{ number_format($detail->total_price, 0, ',', '.') }}</td>
                                                         <td>

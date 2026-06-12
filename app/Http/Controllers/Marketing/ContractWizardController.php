@@ -684,6 +684,7 @@ class ContractWizardController extends Controller
                     'rental_alias' => $detail->rental_alias,
                     'room_id' => $masterRoomId,
                     'quantity' => $detail->quantity,
+                    'qty_free' => $detail->qty_free ?? 0,
                     'unit_price' => $detail->unit_price,
                     'total_price' => $detail->total_price,
                     'created_by' => Auth::id(),

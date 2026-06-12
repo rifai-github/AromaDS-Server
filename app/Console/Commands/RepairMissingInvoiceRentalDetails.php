@@ -111,6 +111,9 @@ class RepairMissingInvoiceRentalDetails extends Command
 
                         foreach ($expectedRows as $expected) {
                             $payload = $expected;
+                            if (! Schema::hasColumn('invoice_rental_details', 'qty_free')) {
+                                unset($payload['qty_free']);
+                            }
                             $payload['created_by'] = auth()->id();
 
                             if (Schema::hasColumn('invoice_rental_details', 'updated_by')) {
@@ -146,6 +149,9 @@ class RepairMissingInvoiceRentalDetails extends Command
                 if ($apply) {
                     DB::transaction(function () use ($invoice, $expected, $invoiceGenerationService, &$applied) {
                         $payload = $expected;
+                        if (! Schema::hasColumn('invoice_rental_details', 'qty_free')) {
+                            unset($payload['qty_free']);
+                        }
                         $payload['created_by'] = auth()->id();
 
                         if (Schema::hasColumn('invoice_rental_details', 'updated_by')) {

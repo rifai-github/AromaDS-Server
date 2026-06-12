@@ -13,20 +13,31 @@ class ContractRentalController extends Controller
     public function update(Request $request, $id)
     {
         $request->validate([
-            'quantity' => 'required|numeric|min:1',
+            'quantity' => 'required|numeric|min:0',
+            'qty_free' => 'nullable|numeric|min:0',
             'unit_price' => 'required|numeric|min:0',
             'rental_alias' => 'nullable|string|max:255',
         ]);
 
         try {
             $rental = ContractRental::findOrFail($id);
+
+            if ((float) $request->quantity <= 0 && (float) $request->input('qty_free', 0) <= 0) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Qty atau Qty Free harus lebih dari 0.'
+                ], 422);
+            }
             
-            // Calculate total price
-            $totalPrice = $request->quantity * $request->unit_price;
+            $quantity = (float) $request->quantity;
+            $qtyFree = (float) $request->input('qty_free', 0);
+            $unitPrice = $quantity > 0 ? (float) $request->unit_price : 0;
+            $totalPrice = $quantity * $unitPrice;
 
             $rental->update([
-                'quantity' => $request->quantity,
-                'unit_price' => $request->unit_price,
+                'quantity' => $quantity,
+                'qty_free' => $qtyFree,
+                'unit_price' => $unitPrice,
                 'total_price' => $totalPrice, // Explicitly set total price
                 'rental_alias' => $request->rental_alias,
                 'updated_by' => Auth::id(),
