@@ -808,11 +808,11 @@ class SurveyWizardController extends Controller
             ->limit(100)
             ->get(['id', 'name', 'salutation', 'email']);
 
-        // Format names with salutation
+        // Marketing dropdowns show the sales name without salutation titles.
         $staff = $staff->map(function($user) {
             return [
                 'id' => $user->id,
-                'name' => ($user->salutation ? $user->salutation . ' ' : '') . $user->name,
+                'name' => $user->name,
                 'email' => $user->email
             ];
         });

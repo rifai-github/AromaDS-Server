@@ -696,7 +696,7 @@
                                                     <option value="">Pilih marketing...</option>
                                                     @foreach($marketingUsers as $user)
                                                         <option value="{{ $user->id }}" {{ (isset($quotation) && $quotation->marketing_id == $user->id) || auth()->id() == $user->id ? 'selected' : '' }}>
-                                                            {{ ($user->salutation ? $user->salutation . ' ' : '') . $user->name }}
+                                                            {{ $user->name }}
                                                         </option>
                                                     @endforeach
                                                 </select>

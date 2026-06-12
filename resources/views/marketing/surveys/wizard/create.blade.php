@@ -571,7 +571,7 @@
                                         <select class="form-control select2" id="marketing_staff_id" name="marketing_staff_id" required>
                                             <option value="">Pilih Marketing Staff</option>
                                             @foreach($marketingStaff as $staff)
-                                                <option value="{{ $staff->id }}" {{ $staff->id == Auth::id() ? 'selected' : '' }}>{{ ($staff->salutation ? $staff->salutation . ' ' : '') . $staff->name }}</option>
+                                                <option value="{{ $staff->id }}" {{ $staff->id == Auth::id() ? 'selected' : '' }}>{{ $staff->name }}</option>
                                             @endforeach
                                         </select>
                                         <small class="form-text text-muted d-block">Bisa diketik untuk mencari nama marketing</small>
