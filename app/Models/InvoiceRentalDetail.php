@@ -25,7 +25,7 @@ class InvoiceRentalDetail extends Model
 
     protected $casts = [
         'quantity' => 'integer',
-        'qty_free' => 'decimal:2',
+        'qty_free' => 'integer',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
         'created_at' => 'datetime',

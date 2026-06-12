@@ -31,8 +31,8 @@ class QuotationRental extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'decimal:2',
-        'qty_free' => 'decimal:2',
+        'quantity' => 'integer',
+        'qty_free' => 'integer',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
         'bottom_price' => 'decimal:2',

@@ -22,7 +22,7 @@ class InvoiceFormDetail extends Model
 
     protected $casts = [
         'price' => 'decimal:2',
-        'quantity' => 'decimal:2',
+        'quantity' => 'integer',
         'discount' => 'decimal:2',
         'total' => 'decimal:2',
     ];

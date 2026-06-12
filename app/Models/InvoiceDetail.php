@@ -21,7 +21,7 @@ class InvoiceDetail extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'decimal:2',
+        'quantity' => 'integer',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
         'created_at' => 'datetime',
@@ -54,7 +54,7 @@ class InvoiceDetail extends Model
 
     public function getQuantityFormattedAttribute()
     {
-        return number_format($this->quantity, 2, ',', '.');
+        return number_format($this->quantity, 0, ',', '.');
     }
 
     public function getSubtotalAttribute()

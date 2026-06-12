@@ -27,9 +27,9 @@ class InventoryIssuingItem extends Model
     ];
 
     protected $casts = [
-        'quantity_requested' => 'decimal:2',
-        'quantity_issued' => 'decimal:2',
-        'quantity_received' => 'decimal:2',
+        'quantity_requested' => 'integer',
+        'quantity_issued' => 'integer',
+        'quantity_received' => 'integer',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
         'created_at' => 'datetime',

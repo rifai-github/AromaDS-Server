@@ -27,8 +27,8 @@ class ContractRental extends Model
     protected $casts = [
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
-        'quantity' => 'decimal:2',
-        'qty_free' => 'decimal:2'
+        'quantity' => 'integer',
+        'qty_free' => 'integer'
     ];
 
     // Relationships

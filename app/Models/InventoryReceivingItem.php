@@ -20,7 +20,7 @@ class InventoryReceivingItem extends Model
 
     protected $casts = [
         'quantity' => 'integer',
-        'quantity_received' => 'decimal:2',
+        'quantity_received' => 'integer',
     ];
 
     /**

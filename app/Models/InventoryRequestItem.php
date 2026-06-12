@@ -25,10 +25,10 @@ class InventoryRequestItem extends Model
 
     protected $casts = [
         'quantity' => 'integer',
-        'approved_qty' => 'decimal:2',
-        'issued_qty' => 'decimal:2',
-        'received_qty' => 'decimal:2',
-        'returned_qty' => 'decimal:2',
+        'approved_qty' => 'integer',
+        'issued_qty' => 'integer',
+        'received_qty' => 'integer',
+        'returned_qty' => 'integer',
     ];
 
     /**

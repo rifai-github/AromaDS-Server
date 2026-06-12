@@ -27,8 +27,8 @@ class InvoiceRentalDetail extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'decimal:2',
-        'qty_free' => 'decimal:2',
+        'quantity' => 'integer',
+        'qty_free' => 'integer',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
     ];
@@ -62,12 +62,12 @@ class InvoiceRentalDetail extends Model
     // Accessors & Mutators
     public function getFormattedQuantityAttribute()
     {
-        return number_format($this->quantity, 2);
+        return number_format($this->quantity, 0);
     }
 
     public function getFormattedQtyFreeAttribute()
     {
-        return number_format($this->qty_free ?? 0, 2);
+        return number_format($this->qty_free ?? 0, 0);
     }
 
     public function getFormattedUnitPriceAttribute()

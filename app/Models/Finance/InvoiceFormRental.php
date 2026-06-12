@@ -21,7 +21,7 @@ class InvoiceFormRental extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'decimal:2',
+        'quantity' => 'integer',
         'price' => 'decimal:2',
     ];
 

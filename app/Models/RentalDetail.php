@@ -28,7 +28,7 @@ class RentalDetail extends Model
 
     protected $casts = [
         'service_frequency_multiplier' => 'integer',
-        'quantity' => 'decimal:2',
+        'quantity' => 'integer',
     ];
 
     // Relationships

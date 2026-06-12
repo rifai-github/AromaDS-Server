@@ -39,7 +39,7 @@ class JobAdviceRoom extends Model
 
     protected $casts = [
         'quantity' => 'integer',
-        'qty_free' => 'decimal:2',
+        'qty_free' => 'integer',
         'rental_specification_ml' => 'decimal:2',
         'rental_has_installation' => 'boolean',
         'rental_has_service' => 'boolean',

@@ -29,7 +29,7 @@ class MaterialIssueItem extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'decimal:2',
+        'quantity' => 'integer',
         'convert' => 'decimal:2',
         'bom_quantity' => 'decimal:2',
         'unit_price' => 'decimal:2',
