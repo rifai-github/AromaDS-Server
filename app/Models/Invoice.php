@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\HasComprehensiveAuditTrail;
+use Illuminate\Support\Facades\Schema;
 
 class Invoice extends Model
 {
@@ -132,6 +133,22 @@ class Invoice extends Model
     public function invoiceActivities()
     {
         return $this->hasMany(InvoiceActivity::class);
+    }
+
+    public function logActivity(string $type, string $notes, ?int $userId = null): \App\Models\Finance\InvoiceActivity
+    {
+        $payload = [
+            'invoice_id' => $this->id,
+            'activity_type' => $type,
+            'notes' => $notes,
+            'created_by' => $userId ?? auth()->id() ?? $this->updated_by ?? $this->created_by ?? 1,
+        ];
+
+        if (! Schema::hasTable('invoice_activities')) {
+            return new \App\Models\Finance\InvoiceActivity($payload);
+        }
+
+        return \App\Models\Finance\InvoiceActivity::create($payload);
     }
 
     public function jobSchedules()

@@ -13,6 +13,8 @@ use App\Models\TaxSetting;
 use App\Models\JobSchedule;
 use App\Services\DocumentNumberService;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class Invoice extends Model
 {
@@ -194,6 +196,150 @@ class Invoice extends Model
     public function bankReceipts()
     {
         return $this->hasMany(BankReceipt::class, 'invoice_reference', 'invoice_number');
+    }
+
+    public function logActivity(string $type, string $notes, ?int $userId = null): InvoiceActivity
+    {
+        if (! Schema::hasTable('invoice_activities')) {
+            return new InvoiceActivity([
+                'invoice_id' => $this->id,
+                'activity_type' => $type,
+                'notes' => $notes,
+                'created_by' => $userId ?? auth()->id() ?? $this->updated_by ?? $this->created_by ?? 1,
+            ]);
+        }
+
+        return $this->invoiceActivities()->create([
+            'activity_type' => $type,
+            'notes' => $notes,
+            'created_by' => $userId ?? auth()->id() ?? $this->updated_by ?? $this->created_by ?? 1,
+        ]);
+    }
+
+    public function getActivityTimelineAttribute(): Collection
+    {
+        $this->loadMissing([
+            'creator',
+            'invoiceActivities.creator',
+            'invoiceFollowUps.creator',
+            'invoiceFollowUps.updater',
+            'bankReceipts.creator',
+        ]);
+
+        $timeline = collect();
+
+        $hasCreatedActivity = $this->invoiceActivities->contains('activity_type', 'created');
+
+        if (! $hasCreatedActivity) {
+            $timeline->push([
+                'source' => 'invoice',
+                'type' => 'created',
+                'title' => 'Invoice Created',
+                'notes' => 'Invoice record created',
+                'status' => $this->invoice_status,
+                'icon' => 'fas fa-file-invoice',
+                'color' => 'primary',
+                'performed_by' => $this->creator->name ?? 'System',
+                'occurred_at' => $this->created_at,
+            ]);
+        }
+
+        foreach ($this->invoiceActivities as $activity) {
+            $timeline->push([
+                'source' => 'activity',
+                'type' => $activity->activity_type,
+                'title' => $activity->activity_type_label,
+                'notes' => $activity->notes,
+                'status' => null,
+                'icon' => $this->timelineIconForActivity($activity->activity_type),
+                'color' => $this->timelineColorForActivity($activity->activity_type),
+                'performed_by' => $activity->creator->name ?? 'System',
+                'occurred_at' => $activity->created_at,
+            ]);
+        }
+
+        foreach ($this->invoiceFollowUps as $followUp) {
+            $timeline->push([
+                'source' => 'follow_up',
+                'type' => $followUp->follow_up_type,
+                'title' => 'Follow Up - ' . $followUp->follow_up_type_label,
+                'notes' => $followUp->notes,
+                'status' => $followUp->status,
+                'icon' => $this->timelineIconForFollowUp($followUp->follow_up_type),
+                'color' => 'primary',
+                'performed_by' => $followUp->creator->name ?? 'System',
+                'occurred_at' => $followUp->created_at,
+            ]);
+
+            if ($followUp->updated_by && $followUp->updated_at && $followUp->updated_at->gt($followUp->created_at)) {
+                $timeline->push([
+                    'source' => 'follow_up',
+                    'type' => 'updated',
+                    'title' => 'Follow Up Updated',
+                    'notes' => $followUp->notes,
+                    'status' => $followUp->status,
+                    'icon' => 'fas fa-edit',
+                    'color' => 'secondary',
+                    'performed_by' => $followUp->updater->name ?? 'System',
+                    'occurred_at' => $followUp->updated_at,
+                ]);
+            }
+        }
+
+        foreach ($this->bankReceipts as $receipt) {
+            $timeline->push([
+                'source' => 'receipt',
+                'type' => 'paid',
+                'title' => 'Payment Receipt',
+                'notes' => trim(($receipt->receipt_number ? "Receipt: {$receipt->receipt_number}. " : '') . ($receipt->notes ?? '')),
+                'status' => $receipt->status,
+                'icon' => 'fas fa-receipt',
+                'color' => $receipt->status === 'verified' ? 'success' : 'info',
+                'performed_by' => $receipt->creator->name ?? 'System',
+                'occurred_at' => $receipt->payment_date ?? $receipt->created_at,
+            ]);
+        }
+
+        return $timeline
+            ->filter(fn ($item) => $item['occurred_at'])
+            ->sortByDesc('occurred_at')
+            ->values();
+    }
+
+    private function timelineIconForActivity(?string $type): string
+    {
+        return [
+            'created' => 'fas fa-file-invoice',
+            'sent' => 'fas fa-paper-plane',
+            'viewed' => 'fas fa-eye',
+            'paid' => 'fas fa-check-circle',
+            'overdue' => 'fas fa-exclamation-triangle',
+            'updated' => 'fas fa-edit',
+            'cancelled' => 'fas fa-ban',
+        ][$type] ?? 'fas fa-history';
+    }
+
+    private function timelineColorForActivity(?string $type): string
+    {
+        return [
+            'created' => 'primary',
+            'sent' => 'info',
+            'viewed' => 'secondary',
+            'paid' => 'success',
+            'overdue' => 'danger',
+            'updated' => 'warning',
+            'cancelled' => 'danger',
+        ][$type] ?? 'secondary';
+    }
+
+    private function timelineIconForFollowUp(?string $type): string
+    {
+        return [
+            'email' => 'fas fa-envelope',
+            'phone' => 'fas fa-phone',
+            'visit' => 'fas fa-user-friends',
+            'letter' => 'fas fa-file-alt',
+        ][$type] ?? 'fas fa-comment-dots';
     }
 
     public function billingGroup()

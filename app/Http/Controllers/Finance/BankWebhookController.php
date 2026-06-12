@@ -100,13 +100,11 @@ class BankWebhookController extends Controller
             ]);
 
             // Create invoice activity log
-            \App\Models\InvoiceActivity::create([
-                'invoice_id' => $invoice->id,
-                'activity_type' => 'paid',
-                'description' => "Invoice paid via Virtual Account. Bank Receipt: {$bankReceipt->receipt_number}",
-                'performed_by' => 1, // System user
-                'performed_at' => now(),
-            ]);
+            $invoice->logActivity(
+                'paid',
+                "Invoice paid via Virtual Account. Bank Receipt: {$bankReceipt->receipt_number}",
+                1
+            );
 
             // AUTO-CALCULATE COMMISSION (Berdasarkan BRD)
             try {
@@ -191,13 +189,11 @@ class BankWebhookController extends Controller
                     ]);
 
                     // Create invoice activity log
-                    \App\Models\InvoiceActivity::create([
-                        'invoice_id' => $invoice->id,
-                        'activity_type' => 'paid',
-                        'description' => "Invoice paid via Bank Receipt verification. Receipt: {$bankReceipt->receipt_number}",
-                        'performed_by' => auth()->id(),
-                        'performed_at' => now(),
-                    ]);
+                    $invoice->logActivity(
+                        'paid',
+                        "Invoice paid via Bank Receipt verification. Receipt: {$bankReceipt->receipt_number}",
+                        auth()->id()
+                    );
 
                     // AUTO-CALCULATE COMMISSION on cash receipt
                     try {

@@ -132,7 +132,7 @@ class BillingGroupService
         $taxAmount = $taxObligation ? ($billingGroup->billing_amount * 0.11) : 0;
         $totalAmount = $billingGroup->billing_amount + $taxAmount;
 
-        return Invoice::create([
+        $invoice = Invoice::create([
             'invoice_number' => $this->documentNumberService->generate(
                 'invoice',
                 null,
@@ -160,6 +160,14 @@ class BillingGroupService
             'billing_group_id' => $billingGroup->id,
             'created_by' => auth()->id(),
         ]);
+
+        $invoice->logActivity(
+            'created',
+            'Invoice auto-generated from billing group',
+            auth()->id()
+        );
+
+        return $invoice;
     }
 
     /**

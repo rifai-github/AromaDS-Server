@@ -570,7 +570,7 @@ class InvoiceController extends Controller
             'invoiceRentalDetails.masterRental', 
             'invoiceFiles.creator', 
             'invoiceActivities.creator', 
-            'bankReceipts.createdBy',
+            'bankReceipts.creator',
             'contract.billingGroup', 
             'customer',
             'invoiceFollowUps' => function($query) {
@@ -902,6 +902,21 @@ class InvoiceController extends Controller
                 'pada' => $validated['pada'] ?? null,
                 'catatan_pengiriman' => $validated['catatan_pengiriman'] ?? null,
             ]);
+
+            $deliveryNotes = collect([
+                isset($validated['kirim']) ? 'Method: ' . $validated['kirim'] : null,
+                isset($validated['dikirim_oleh']) ? 'Sent by: ' . $validated['dikirim_oleh'] : null,
+                isset($validated['dikirim_pada']) ? 'Sent at: ' . $validated['dikirim_pada'] : null,
+                isset($validated['diterima_oleh']) ? 'Received by: ' . $validated['diterima_oleh'] : null,
+                isset($validated['pada']) ? 'Received at: ' . $validated['pada'] : null,
+                isset($validated['catatan_pengiriman']) ? 'Notes: ' . $validated['catatan_pengiriman'] : null,
+            ])->filter()->implode("\n");
+
+            $invoice->logActivity(
+                'updated',
+                'Delivery information updated' . ($deliveryNotes ? "\n" . $deliveryNotes : ''),
+                Auth::id()
+            );
 
             return response()->json([
                 'success' => true,
@@ -1870,14 +1885,7 @@ class InvoiceController extends Controller
             foreach ($invoices as $invoice) {
                 $invoice->update(['invoice_status' => 'sent']);
                 
-                // Create activity log
-                InvoiceActivity::create([
-                    'invoice_id' => $invoice->id,
-                    'activity_type' => 'sent',
-                    'description' => 'Invoice sent to customer',
-                    'performed_by' => Auth::id(),
-                    'performed_at' => now(),
-                ]);
+                $invoice->logActivity('sent', 'Invoice sent to customer', Auth::id());
                 
                 $count++;
             }
@@ -2046,6 +2054,12 @@ class InvoiceController extends Controller
                 'created_by' => Auth::id(),
                 'updated_by' => Auth::id()
             ]);
+
+            $invoice->logActivity(
+                'created',
+                'Invoice auto-generated after all jobs completed for period: ' . $request->rental_period,
+                Auth::id()
+            );
 
             return response()->json([
                 'status' => 'success',

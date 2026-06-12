@@ -757,7 +757,7 @@
                                     <td>{{ $receipt->payment_date ? $receipt->payment_date->format('d/M/Y') : '-' }}</td>
                                     <td class="text-end">Rp {{ number_format($receipt->amount, 0, ',', '.') }}</td>
                                     <td><span class="badge bg-light text-dark border">{{ ucfirst($receipt->payment_method) }}</span></td>
-                                    <td>{{ $receipt->createdBy->name ?? '-' }}</td>
+                                    <td>{{ $receipt->creator->name ?? '-' }}</td>
                                 </tr>
                                 @empty
                                 <tr>
@@ -772,36 +772,34 @@
                 <!-- Tab 6: ACTIVITIES -->
                 <div class="tab-pane fade" id="activities" role="tabpanel">
                     <div class="timeline p-3">
-                        @forelse($invoice->invoiceFollowUps as $followUp)
+                        @forelse($invoice->activity_timeline as $activity)
                         <div class="activity-item d-flex gap-3 mb-4 pb-4 border-bottom">
                             <div class="activity-icon">
-                                <span class="bg-primary bg-opacity-10 text-primary p-3 rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
-                                    <i class="{{ $followUp->follow_up_type === 'email' ? 'fas fa-envelope' : 
-                                                  ($followUp->follow_up_type === 'phone' ? 'fas fa-phone' : 
-                                                  ($followUp->follow_up_type === 'visit' ? 'fas fa-user-friends' : 'fas fa-file-alt')) }} fa-lg"></i>
+                                <span class="bg-{{ $activity['color'] }} bg-opacity-10 text-{{ $activity['color'] }} p-3 rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                    <i class="{{ $activity['icon'] }} fa-lg"></i>
                                 </span>
                             </div>
                             <div class="activity-content flex-grow-1">
                                 <div class="d-flex justify-content-between align-items-start mb-2">
                                     <div>
-                                        <h6 class="fw-bold text-dark mb-1">{{ $followUp->follow_up_type_label }}</h6>
+                                        <h6 class="fw-bold text-dark mb-1">{{ $activity['title'] }}</h6>
                                         <div class="text-muted small">
-                                            <i class="fas fa-calendar me-1"></i> {{ $followUp->follow_up_date->format('d/M/Y') }}
+                                            <i class="fas fa-calendar me-1"></i> {{ $activity['occurred_at']->format('d/M/Y') }}
                                             <span class="mx-2">|</span>
-                                            <i class="fas fa-user-circle me-1"></i> {{ $followUp->creator->name ?? 'System' }}
+                                            <i class="fas fa-user-circle me-1"></i> {{ $activity['performed_by'] }}
                                             <span class="mx-2">|</span>
-                                            <i class="fas fa-clock me-1"></i> {{ $followUp->created_at->format('d/M/Y H:i') }}
+                                            <i class="fas fa-clock me-1"></i> {{ $activity['occurred_at']->format('d/M/Y H:i') }}
                                         </div>
                                     </div>
-                                    @if($followUp->status)
-                                    <span class="badge bg-info">{{ ucfirst($followUp->status) }}</span>
+                                    @if($activity['status'])
+                                    <span class="badge bg-info">{{ ucfirst($activity['status']) }}</span>
                                     @endif
                                 </div>
                                 
-                                @if($followUp->notes)
+                                @if($activity['notes'])
                                 <div class="mt-2 p-3 bg-light rounded border-start border-primary border-4">
                                     <div class="small text-muted mb-1"><i class="fas fa-sticky-note me-1"></i> Catatan:</div>
-                                    <div style="white-space: pre-wrap;">{{ $followUp->notes }}</div>
+                                    <div style="white-space: pre-wrap;">{{ $activity['notes'] }}</div>
                                 </div>
                                 @endif
                             </div>
@@ -809,7 +807,7 @@
                         @empty
                         <div class="text-center py-5">
                             <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
-                            <p class="text-muted">Belum ada follow-up untuk invoice ini.</p>
+                            <p class="text-muted">Belum ada aktivitas untuk invoice ini.</p>
                         </div>
                         @endforelse
                     </div>

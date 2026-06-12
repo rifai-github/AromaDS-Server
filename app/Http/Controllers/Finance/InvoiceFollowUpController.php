@@ -151,7 +151,7 @@ class InvoiceFollowUpController extends Controller
         }
 
         try {
-            InvoiceFollowUp::create([
+            $followUp = InvoiceFollowUp::create([
                 'invoice_id' => $request->invoice_id,
                 'follow_up_date' => $request->follow_up_date,
                 'follow_up_type' => $request->follow_up_type,
@@ -159,6 +159,12 @@ class InvoiceFollowUpController extends Controller
                 'status' => $request->status,
                 'created_by' => auth()->id(),
             ]);
+
+            $followUp->invoice?->logActivity(
+                'updated',
+                'Invoice follow up created' . "\n" . $this->formatFollowUpLogNotes($followUp),
+                auth()->id()
+            );
 
             if ($request->ajax()) {
                 return response()->json([
@@ -262,6 +268,8 @@ class InvoiceFollowUpController extends Controller
         }
 
         try {
+            $oldNotes = $this->formatFollowUpLogNotes($followUp);
+
             $followUp->update([
                 'invoice_id' => $request->invoice_id,
                 'follow_up_date' => $request->follow_up_date,
@@ -270,6 +278,13 @@ class InvoiceFollowUpController extends Controller
                 'status' => $request->status,
                 'updated_by' => auth()->id(),
             ]);
+
+            $followUp->refresh();
+            $followUp->invoice?->logActivity(
+                'updated',
+                "Invoice follow up updated\nBefore:\n{$oldNotes}\nAfter:\n" . $this->formatFollowUpLogNotes($followUp),
+                auth()->id()
+            );
 
             if ($request->ajax()) {
                 return response()->json([
@@ -373,7 +388,7 @@ class InvoiceFollowUpController extends Controller
         }
 
         try {
-            InvoiceFollowUp::create([
+            $followUp = InvoiceFollowUp::create([
                 'invoice_id' => $invoiceId,
                 'follow_up_date' => $request->follow_up_date,
                 'follow_up_type' => $request->follow_up_type,
@@ -382,6 +397,12 @@ class InvoiceFollowUpController extends Controller
                 'created_by' => auth()->id(),
             ]);
 
+            $followUp->invoice?->logActivity(
+                'updated',
+                'Invoice follow up created' . "\n" . $this->formatFollowUpLogNotes($followUp),
+                auth()->id()
+            );
+
             return redirect()->route('finance.invoices.show', $invoiceId)
                 ->with('success', 'Invoice follow up created successfully.');
         } catch (\Exception $e) {
@@ -389,5 +410,15 @@ class InvoiceFollowUpController extends Controller
                 ->with('error', 'Error creating invoice follow up: ' . $e->getMessage())
                 ->withInput();
         }
+    }
+
+    private function formatFollowUpLogNotes(InvoiceFollowUp $followUp): string
+    {
+        return collect([
+            'Date: ' . optional($followUp->follow_up_date)->format('d/M/Y'),
+            'Type: ' . $followUp->follow_up_type_label,
+            'Status: ' . ucfirst((string) $followUp->status),
+            'Notes: ' . $followUp->notes,
+        ])->filter()->implode("\n");
     }
 }

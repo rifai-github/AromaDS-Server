@@ -433,7 +433,7 @@ class InvoiceGenerationService
         // Helper to get Billing Group
         $billingGroup = $contract->billingGroup;
 
-        return Invoice::create([
+        $invoice = Invoice::create([
             'invoice_number' => $invoiceNumber,
             'contract_number' => $contract->contract_number,
             'contract_id' => $contract->id,
@@ -469,6 +469,14 @@ class InvoiceGenerationService
             'terms_conditions' => $contract->terms_conditions ?? '',
             'created_by' => auth()->id()
         ]);
+
+        $invoice->logActivity(
+            'created',
+            'Invoice auto-generated for rental period ' . $rentalPeriod,
+            auth()->id()
+        );
+
+        return $invoice;
     }
 
     /**
