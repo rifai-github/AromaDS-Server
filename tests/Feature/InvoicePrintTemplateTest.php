@@ -117,12 +117,21 @@ class InvoicePrintTemplateTest extends TestCase
             $table->decimal('total_price', 12, 2)->default(0);
             $table->timestamps();
         });
+
+        Schema::create('job_schedules', function (Blueprint $table) {
+            $table->id();
+            $table->string('job_number')->nullable();
+            $table->string('contract_number')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
     }
 
     protected function tearDown(): void
     {
         foreach ([
             'invoice_details',
+            'job_schedules',
             'invoice_rental_details',
             'invoices',
             'contracts',
@@ -254,6 +263,58 @@ class InvoicePrintTemplateTest extends TestCase
         ]));
 
         $this->assertSame(['sys-csr-7', 'inv-9', 'ba-3'], $ids);
+    }
+
+    public function test_delivery_receipt_renumbers_documents_and_counts_invoice_jobs_only(): void
+    {
+        $invoice = $this->makeInvoice([
+            'invoice_number' => 'SBY-INV/26-06/0001',
+            'contract_number' => 'SBY-CA/26-06/0001',
+        ]);
+
+        DB::table('contracts')->insert([
+            'id' => 70,
+            'contract_number' => 'SBY-CA/26-06/0001',
+            'customer_id' => 10,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('invoice_rental_details')->insert([
+            'invoice_id' => 20,
+            'rental_name' => 'C200 200 ml',
+            'room_name' => 'Meeting Room',
+            'job_no' => 'SBY-CSR/26-06/0003',
+            'quantity' => 1,
+            'unit_price' => 120000,
+            'total_price' => 120000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $jobs = [];
+        for ($i = 1; $i <= 26; $i++) {
+            $jobs[] = [
+                'job_number' => sprintf('SBY-CSR/26-06/%04d', $i),
+                'contract_number' => 'SBY-CA/26-06/0001',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+        DB::table('job_schedules')->insert($jobs);
+
+        $invoice = $invoice->fresh(['customer', 'contract', 'invoiceRentalDetails']);
+
+        $html = View::make('finance.invoices.delivery_receipt_pdf', compact('invoice'))->render();
+
+        $this->assertStringNotContainsString('Faktur Pajak Asli', $html);
+        $this->assertStringContainsString('<td class="center">1</td>', $html);
+        $this->assertStringContainsString('<td class="center">2</td>', $html);
+        $this->assertStringContainsString('<td class="center">3</td>', $html);
+        $this->assertStringNotContainsString('<td class="center">4</td>', $html);
+        $this->assertStringContainsString('Lampiran Kontrak / PO No: SBY-CA/26-06/0001', $html);
+        $this->assertStringContainsString('Berita Acara Pekerjaan (2 dokumen)', $html);
+        $this->assertStringNotContainsString('26 dokumen', $html);
     }
 
     private function makeInvoice(array $overrides = []): Invoice

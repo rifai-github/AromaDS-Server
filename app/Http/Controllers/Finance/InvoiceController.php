@@ -1855,7 +1855,7 @@ class InvoiceController extends Controller
             ], 422);
         }
         
-        $invoice->load(['customer', 'invoiceDetails']);
+        $invoice->load(['customer', 'invoiceDetails', 'invoiceRentalDetails', 'contract']);
 
         // Generate PDF tanda terima
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('finance.invoices.delivery_receipt_pdf', compact('invoice'));

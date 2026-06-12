@@ -34,7 +34,28 @@
     </style>
 </head>
 <body>
-    @php $company = \App\Models\Company::first(); @endphp
+    @php
+        $company = \App\Models\Company::first();
+        $submittedDocuments = collect([
+            'Invoice Asli No: ' . $invoice->invoice_number,
+        ]);
+
+        if ($invoice->faktur_pajak) {
+            $submittedDocuments->push('Faktur Pajak Asli');
+        }
+
+        if ($invoice->contract) {
+            $submittedDocuments->push('Lampiran Kontrak / PO No: ' . $invoice->contract->contract_number);
+        }
+
+        $invoiceJobNumbers = $invoice->invoiceRentalDetails
+            ? $invoice->invoiceRentalDetails->pluck('job_no')->filter()->unique()->values()
+            : collect();
+
+        if ($invoiceJobNumbers->isNotEmpty()) {
+            $submittedDocuments->push('Berita Acara Pekerjaan (' . $invoiceJobNumbers->count() . ' dokumen)');
+        }
+    @endphp
 
     <!-- Header -->
     <table class="header-table">
@@ -80,28 +101,12 @@
             </tr>
         </thead>
         <tbody>
+            @foreach($submittedDocuments as $document)
             <tr>
-                <td class="center">1</td>
-                <td>Invoice Asli No: {{ $invoice->invoice_number }}</td>
+                <td class="center">{{ $loop->iteration }}</td>
+                <td>{{ $document }}</td>
             </tr>
-            @if($invoice->faktur_pajak)
-            <tr>
-                <td class="center">2</td>
-                <td>Faktur Pajak Asli</td>
-            </tr>
-            @endif
-            @if($invoice->contract)
-            <tr>
-                <td class="center">3</td>
-                <td>Lampiran Kontrak / PO No: {{ $invoice->contract->contract_number }}</td>
-            </tr>
-            @endif
-            @if($invoice->jobSchedules && $invoice->jobSchedules->count() > 0)
-            <tr>
-                <td class="center">4</td>
-                <td>Berita Acara Pekerjaan ({{ $invoice->jobSchedules->count() }} dokumen)</td>
-            </tr>
-            @endif
+            @endforeach
         </tbody>
     </table>
 
