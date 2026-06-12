@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class AromaChangeController extends Controller
 {
@@ -243,11 +244,16 @@ class AromaChangeController extends Controller
             ->orderBy('id', 'desc');
 
         if ($search) {
-            $query->where(function($q) use ($search) {
+            $customersHasCompanyName = Schema::hasColumn('customers', 'company_name');
+
+            $query->where(function($q) use ($search, $customersHasCompanyName) {
                 $q->where('contract_number', 'LIKE', "%{$search}%")
-                    ->orWhereHas('customer', function($dq) use ($search) {
-                        $dq->where('name', 'LIKE', "%{$search}%")
-                            ->orWhere('company_name', 'LIKE', "%{$search}%");
+                    ->orWhereHas('customer', function($dq) use ($search, $customersHasCompanyName) {
+                        $dq->where('name', 'LIKE', "%{$search}%");
+
+                        if ($customersHasCompanyName) {
+                            $dq->orWhere('company_name', 'LIKE', "%{$search}%");
+                        }
                     });
             });
         }
