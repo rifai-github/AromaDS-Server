@@ -105,6 +105,10 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('.add-rental-btn[data-survey-id="${surveyId}"][data-contract-room-id="${contractRoomId}"]', $view);
         $this->assertStringContainsString('seenRenewalRooms', $view);
         $this->assertStringContainsString('normalizeRenewalRoomName(r.room_name)', $view);
+        $this->assertStringContainsString('function isFreeOnlyRentalConfig', $view);
+        $this->assertStringContainsString('function applyFreeOnlyPriceState', $view);
+        $this->assertStringContainsString("priceInput.data('paid-price-before-free'", $view);
+        $this->assertStringContainsString('const effectivePriceNum = isFreeOnlyRentalConfig(config) ? 0 : priceNum;', $view);
     }
 
     public function test_quotation_detail_page_cleans_renewal_room_display_and_falls_back_to_existing_contract(): void

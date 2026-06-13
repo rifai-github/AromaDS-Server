@@ -303,12 +303,6 @@ class ContractRenewalController extends Controller
             $includeId = $request->input('include_id');
 
             $contracts = $query->get()
-                ->filter(function ($contract) use ($includeId) {
-                    $blockReason = $contract->getRenewalBlockReason();
-
-                    return ($includeId && (int) $contract->id === (int) $includeId)
-                        || $blockReason === null;
-                })
                 ->values()
                 ->map(function ($contract) use ($includeId) {
                     $blockReason = $contract->getRenewalBlockReason();
@@ -385,13 +379,6 @@ class ContractRenewalController extends Controller
 
             $blockReason = $contract->getRenewalBlockReason();
 
-            if ($blockReason) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => $blockReason
-                ], 403);
-            }
-
             // Explicitly calculate days until expiry for frontend display
             // Use actual_end_date (BA date based) - if null, contract hasn't started yet
             $actualStartDate = $contract->actual_start_date;
@@ -408,8 +395,8 @@ class ContractRenewalController extends Controller
             }
 
             $eligibility = [
-                'eligible' => true,
-                'reason' => null,
+                'eligible' => $blockReason === null,
+                'reason' => $blockReason,
                 'days_until_expiry' => $daysUntilExpiry !== null ? (int) $daysUntilExpiry : null,
                 'renewal_window_days' => $renewalWindowDays,
             ];

@@ -1195,12 +1195,8 @@ class QuotationWizardController extends Controller
             ]);
         }
 
-        $blockReason = $contract->getRenewalBlockReason();
-        if ($blockReason) {
-            throw ValidationException::withMessages([
-                'existing_contract_id' => $blockReason,
-            ]);
-        }
+        // Quotation renewal may be prepared while operational jobs are still active.
+        // Final renewal/contract execution remains guarded by contract renewal rules.
     }
 
     private function ensureRenewalSourceMatchesSelection(Request $request): void

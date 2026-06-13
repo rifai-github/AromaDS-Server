@@ -4047,6 +4047,37 @@ $(document).ready(function() {
             }
         });
     }
+
+    function isFreeOnlyRentalConfig(rentalConfig) {
+        const quantity = parseFloat(rentalConfig.find('input[name*="quantity"]').val()) || 0;
+        const qtyFree = parseFloat(rentalConfig.find('input[name*="qty_free"]').val()) || 0;
+
+        return quantity <= 0 && qtyFree > 0;
+    }
+
+    function applyFreeOnlyPriceState(rentalConfig) {
+        const priceInput = rentalConfig.find('input[name*="price"]');
+        if (!priceInput.length) return 0;
+
+        const currentPrice = parseFloat(priceInput.val()) || 0;
+
+        if (isFreeOnlyRentalConfig(rentalConfig)) {
+            if (currentPrice > 0) {
+                priceInput.data('paid-price-before-free', currentPrice);
+            }
+
+            priceInput.val(0);
+            return 0;
+        }
+
+        const previousPaidPrice = parseFloat(priceInput.data('paid-price-before-free')) || 0;
+        if (currentPrice === 0 && previousPaidPrice > 0) {
+            priceInput.val(previousPaidPrice);
+            return previousPaidPrice;
+        }
+
+        return currentPrice;
+    }
     
     function calculateStep5Totals() {
         console.log('=== CALCULATING STEP 5 TOTALS ===');
@@ -4054,9 +4085,10 @@ $(document).ready(function() {
         // Calculate sub total from Step 4 rental configurations
         let subTotal = 0;
         $('.rental-configuration').each(function() {
-            const quantity = parseFloat($(this).find('input[name*="quantity"]').val()) || 0;
-            const qtyFree = parseFloat($(this).find('input[name*="qty_free"]').val()) || 0;
-            const price = parseFloat($(this).find('input[name*="price"]').val()) || 0;
+            const rentalConfig = $(this);
+            const quantity = parseFloat(rentalConfig.find('input[name*="quantity"]').val()) || 0;
+            const qtyFree = parseFloat(rentalConfig.find('input[name*="qty_free"]').val()) || 0;
+            const price = applyFreeOnlyPriceState(rentalConfig);
             const itemTotal = quantity * price;
             subTotal += itemTotal;
             
@@ -4099,6 +4131,7 @@ $(document).ready(function() {
             fetchAndApplyRentalProductPrice(productSelect);
         }
 
+        applyFreeOnlyPriceState(rentalConfig);
         updateNextButtonState();
     });
 
@@ -4354,7 +4387,7 @@ $(document).ready(function() {
                 const roomId = config.find('select[name*="room_id"]').val() || config.data('room-id');
                 const roomName = config.find('select[name*="room_id"] option:selected').text() || 
                                config.find('.room-display-container input[type="text"]').val() || '';
-                const price = parseFloat(config.find('input[name*="price"]').val() || '0');
+                const price = applyFreeOnlyPriceState(config);
                 const quantity = parseFloat(config.find('input[name*="quantity"]').val() || '1');
                 const total = price * quantity;
                 
@@ -4376,7 +4409,9 @@ $(document).ready(function() {
                     const roomName = config.roomName || 'Room ' + roomId;
                     const price = parseFloat(config.price || '0');
                     const quantity = parseFloat(config.quantity || '1');
-                    const total = price * quantity;
+                    const qtyFree = parseFloat(config.qtyFree || config.qty_free || '0');
+                    const effectivePrice = quantity <= 0 && qtyFree > 0 ? 0 : price;
+                    const total = effectivePrice * quantity;
                     
                     if (roomId) {
                         if (!roomTotals[roomId]) {
@@ -4504,11 +4539,12 @@ $(document).ready(function() {
                         processedItems.add(itemKey);
                         rentalItemPromises.push((async function() {
                             const priceNum = await resolveSummaryRentalPrice(productId, surveyId, productName, price);
-                            if (priceNum > 0 && parseRentalCurrencyValue(price) === 0) {
-                                config.find('input[name*="price"]').val(priceNum).trigger('change');
+                            const effectivePriceNum = isFreeOnlyRentalConfig(config) ? 0 : priceNum;
+                            if (effectivePriceNum > 0 && parseRentalCurrencyValue(price) === 0) {
+                                config.find('input[name*="price"]').val(effectivePriceNum).trigger('change');
                             }
                             const qtyNum = parseRentalCurrencyValue(quantity) || 1;
-                            const total = priceNum * qtyNum;
+                            const total = effectivePriceNum * qtyNum;
                             summarySubTotal += total;
 
                             return `
@@ -4521,7 +4557,7 @@ $(document).ready(function() {
                                     </td>
                                     <td class="text-center">${quantity}</td>
                                     <td class="text-center">${qtyFree}</td>
-                                    <td class="text-end">Rp ${Math.round(priceNum).toLocaleString('id-ID')}</td>
+                                    <td class="text-end">Rp ${Math.round(effectivePriceNum).toLocaleString('id-ID')}</td>
                                     <td class="text-end">Rp ${Math.round(total).toLocaleString('id-ID')}</td>
                                 </tr>
                             `;
@@ -4560,8 +4596,11 @@ $(document).ready(function() {
                             processedItems.add(itemKey);
                             rentalItemPromises.push((async function() {
                                 const priceNum = await resolveSummaryRentalPrice(productId, surveyId, productName, price);
+                                const paidQtyNum = parseRentalCurrencyValue(quantity) || 0;
+                                const qtyFreeNum = parseRentalCurrencyValue(qtyFree) || 0;
+                                const effectivePriceNum = paidQtyNum <= 0 && qtyFreeNum > 0 ? 0 : priceNum;
                                 const qtyNum = parseRentalCurrencyValue(quantity) || 1;
-                                const total = priceNum * qtyNum;
+                                const total = effectivePriceNum * qtyNum;
                                 summarySubTotal += total;
 
                                 return `
@@ -4574,7 +4613,7 @@ $(document).ready(function() {
                                         </td>
                                         <td class="text-center">${quantity}</td>
                                         <td class="text-center">${qtyFree}</td>
-                                        <td class="text-end">Rp ${Math.round(priceNum).toLocaleString('id-ID')}</td>
+                                        <td class="text-end">Rp ${Math.round(effectivePriceNum).toLocaleString('id-ID')}</td>
                                         <td class="text-end">Rp ${Math.round(total).toLocaleString('id-ID')}</td>
                                     </tr>
                                 `;
@@ -5369,6 +5408,8 @@ $(document).ready(function() {
             priceInput.prop('readonly', false).removeClass('bg-light');
             priceLabel.find('.corporate-badge').remove();
         }
+
+        applyFreeOnlyPriceState(rentalConfig);
     }
 
     function fetchAndApplyRentalProductPrice(productSelect, selectedData = {}) {
@@ -5396,6 +5437,7 @@ $(document).ready(function() {
                 const price = resolveRentalProductPriceFromData(product);
                 if (price !== undefined && price !== null && price !== '') {
                     priceInput.val(price).trigger('change');
+                    applyFreeOnlyPriceState(rentalConfig);
                 }
             },
             error: function(xhr, status, error) {

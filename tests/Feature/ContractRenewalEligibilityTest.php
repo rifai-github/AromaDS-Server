@@ -210,6 +210,24 @@ class ContractRenewalEligibilityTest extends TestCase
         $this->assertContains('BDG-CA/26-05/0007', collect($payload['data'])->pluck('contract_number')->all());
     }
 
+    public function test_dropdown_includes_contract_with_blocking_job_for_sq_renewal_selection(): void
+    {
+        $contract = $this->createContract('SBY-CA/26-06/0001');
+        $this->createJob($contract, 'SBY-IR/26-06/0001', 'install', 'scheduled');
+
+        $response = app(ContractRenewalController::class)->getEligibleContracts(
+            Request::create('/marketing/contract-renewals/eligible-contracts', 'GET')
+        );
+
+        $payload = $response->getData(true);
+        $contractPayload = collect($payload['data'])->firstWhere('contract_number', 'SBY-CA/26-06/0001');
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertNotNull($contractPayload);
+        $this->assertFalse($contractPayload['eligible']);
+        $this->assertStringContainsString('Job Schedule aktif/belum selesai', $contractPayload['block_reason']);
+    }
+
     public function test_dropdown_includes_eligible_contract_with_past_original_end_date_and_different_marketing(): void
     {
         DB::table('customers')->insert([
