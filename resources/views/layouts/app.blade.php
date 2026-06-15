@@ -30,6 +30,47 @@
             background: #dbecfd;
         }
 
+        /* Bootstrap 5 no longer styles legacy .badge-* classes used by older views. */
+        .badge.badge-primary {
+            background-color: #0d6efd !important;
+            color: #fff !important;
+        }
+
+        .badge.badge-secondary {
+            background-color: #6c757d !important;
+            color: #fff !important;
+        }
+
+        .badge.badge-success {
+            background-color: #198754 !important;
+            color: #fff !important;
+        }
+
+        .badge.badge-danger {
+            background-color: #dc3545 !important;
+            color: #fff !important;
+        }
+
+        .badge.badge-warning {
+            background-color: #ffc107 !important;
+            color: #000 !important;
+        }
+
+        .badge.badge-info {
+            background-color: #0dcaf0 !important;
+            color: #000 !important;
+        }
+
+        .badge.badge-light {
+            background-color: #f8f9fa !important;
+            color: #000 !important;
+        }
+
+        .badge.badge-dark {
+            background-color: #212529 !important;
+            color: #fff !important;
+        }
+
         .sidebar {
             position: fixed;
             top: 0;
