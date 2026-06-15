@@ -1484,7 +1484,7 @@ function formatDateWithThreeDigitMonth(dateInput) {
     
     let date = dateInput instanceof Date ? dateInput : null;
     if (!date && typeof dateInput === 'string') {
-        const dateOnlyMatch = dateInput.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/);
+        const dateOnlyMatch = dateInput.match(/^(\d{4})-(\d{2})-(\d{2})$/);
         date = dateOnlyMatch
             ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
             : new Date(dateInput);
@@ -1560,16 +1560,23 @@ function dateValueForInput(dateInput) {
     if (!dateInput) return '';
 
     if (typeof dateInput === 'string') {
-        const match = dateInput.match(/^(\d{4}-\d{2}-\d{2})/);
+        const match = dateInput.match(/^(\d{4}-\d{2}-\d{2})$/);
         if (match) return match[1];
     }
 
     const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
     if (Number.isNaN(date.getTime())) return '';
 
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(date);
+
+    const year = parts.find(p => p.type === 'year').value;
+    const month = parts.find(p => p.type === 'month').value;
+    const day = parts.find(p => p.type === 'day').value;
 
     return `${year}-${month}-${day}`;
 }

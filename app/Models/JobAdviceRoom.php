@@ -78,9 +78,34 @@ class JobAdviceRoom extends Model
         return $this->belongsTo(MasterRental::class, 'rental_product_id');
     }
 
+    public function contractRental()
+    {
+        return $this->belongsTo(ContractRental::class);
+    }
+
+    public function quotationRental()
+    {
+        return $this->belongsTo(QuotationRental::class);
+    }
+
+    public function quotationDetail()
+    {
+        return $this->belongsTo(QuotationDetail::class);
+    }
+
     public function getOperationalQuantityAttribute()
     {
-        return (float) ($this->quantity ?? 0);
+        $source = $this->contractRental ?? $this->quotationRental ?? $this->quotationDetail;
+
+        if ($source) {
+            return (float) ($source->quantity ?? 0) + (float) ($source->qty_free ?? 0);
+        }
+
+        if ($this->quantity === null && $this->qty_free === null) {
+            return 1;
+        }
+
+        return (float) ($this->quantity ?? 0) + (float) ($this->qty_free ?? 0);
     }
 
     public function installJobSchedule()

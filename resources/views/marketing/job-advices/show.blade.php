@@ -639,6 +639,7 @@
                                             
                                             // Use rental_alias if available, otherwise use default rental name
                                             $rentalName = $rentalAlias ?? ($rental?->rental_name ?? $jaRoom->rental_name ?? 'N/A');
+                                            $billingSource = $jaRoom->contractRental ?? $jaRoom->quotationRental ?? $jaRoom->quotationDetail ?? null;
                                             
                                             // MOM9: Get rental price from quotation detail or quotation rental if available
                                             $rentalPrice = null;
@@ -653,6 +654,28 @@
                                                 if ($quotationRental && $quotationRental->unit_price) {
                                                     $rentalPrice = $quotationRental->unit_price;
                                                 }
+                                            }
+
+                                            if (!$billingSource && isset($contractRental) && $contractRental) {
+                                                $billingSource = $contractRental;
+                                            }
+
+                                            $displayQty = $billingSource ? ($billingSource->quantity ?? 0) : ($jaRoom->quantity ?? 1);
+                                            $displayQtyFree = $billingSource ? ($billingSource->qty_free ?? 0) : ($jaRoom->qty_free ?? 0);
+
+                                            $displayPrice = null;
+                                            if ($billingSource && $billingSource->total_price !== null) {
+                                                $displayPrice = $billingSource->total_price;
+                                            } elseif ($billingSource && $billingSource->unit_price !== null) {
+                                                $displayPrice = ((float) ($billingSource->quantity ?? 0)) * ((float) $billingSource->unit_price);
+                                            } elseif ($quotationDetail && $quotationDetail->total_price !== null) {
+                                                $displayPrice = $quotationDetail->total_price;
+                                            } elseif ($quotationDetail && $quotationDetail->unit_price !== null) {
+                                                $displayPrice = ((float) ($quotationDetail->quantity ?? 0)) * ((float) $quotationDetail->unit_price);
+                                            } elseif ($rentalPrice !== null) {
+                                                $displayPrice = $rentalPrice;
+                                            } elseif ($rental?->monthly_price !== null) {
+                                                $displayPrice = $rental->monthly_price;
                                             }
                                             
                                             // MOM9: Get aroma from quotation room (for wangi column)
@@ -736,7 +759,7 @@
                                                         @if($jobAdvice->status === 'draft')
                                                             <span class="badge bg-primary mt-1 w-100 p-2 rounded-pill text-uppercase" 
                                                                   style="cursor: pointer; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1); background-color: #0d6efd !important; color: white !important;"
-                                                                  onclick="openChangeRentalModal({{ $jaRoom->id }}, {{ $jaRoom->rental_product_id ?? 'null' }}, {{ $jaRoom->quantity ?? 1 }}, {{ $jaRoom->qty_free ?? 0 }})"
+                                                                  onclick="openChangeRentalModal({{ $jaRoom->id }}, {{ $jaRoom->rental_product_id ?? 'null' }}, {{ $displayQty }}, {{ $displayQtyFree }})"
                                                                   title="Change Rental">
                                                                 <i class="fas fa-exchange-alt me-1"></i> Change Rental
                                                             </span>
@@ -746,14 +769,10 @@
                                                     {{ $rentalName }}
                                                 @endif
                                             </td>
-                                            <td class="text-center">{{ $jaRoom->quantity ?? 1 }}</td>
-                                            <td class="text-center">{{ $jaRoom->qty_free ?? 0 }}</td>
+                                            <td class="text-center">{{ $displayQty }}</td>
+                                            <td class="text-center">{{ $displayQtyFree }}</td>
                                             <td class="text-right">
-                                                @php
-                                                    // MOM9: Use price from quotation detail/rental if available, otherwise from master rental
-                                                    $displayPrice = $rentalPrice ?? ($rental?->monthly_price ?? null);
-                                                @endphp
-                                                {{ $displayPrice ? 'Rp ' . number_format($displayPrice, 0, ',', '.') : '-' }}
+                                                {{ $displayPrice !== null ? 'Rp ' . number_format((float) $displayPrice, 0, ',', '.') : '-' }}
                                             </td>
                                             <td>{{ $customer?->name ?? 'N/A' }}</td>
                                             <td>{{ $building?->nama_gedung ?? $building?->name ?? 'N/A' }}</td>
@@ -1552,16 +1571,23 @@ function openEditModal() {
             if (!dateString) return '';
 
             if (typeof dateString === 'string') {
-                const match = dateString.match(/^(\d{4}-\d{2}-\d{2})/);
+                const match = dateString.match(/^(\d{4}-\d{2}-\d{2})$/);
                 if (match) return match[1];
             }
 
             const date = new Date(dateString);
             if (Number.isNaN(date.getTime())) return '';
 
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
+            const parts = new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'Asia/Jakarta',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            }).formatToParts(date);
+
+            const year = parts.find(p => p.type === 'year').value;
+            const month = parts.find(p => p.type === 'month').value;
+            const day = parts.find(p => p.type === 'day').value;
 
             return `${year}-${month}-${day}`;
         };

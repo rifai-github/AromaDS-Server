@@ -6751,8 +6751,8 @@ class JobScheduleController extends Controller
                     }
                 }
                 
-                // Create Unit On Wall for quantity specified in JA Room
-                $quantity = $jaRoom->quantity ?? 1;
+                // Create Unit On Wall for paid + free quantity from the JA source line.
+                $quantity = max(0, (int) ceil((float) ($jaRoom->operational_quantity ?? 0)));
                 
                 // Get company_name
                 $companyName = $installJob->company_name ?? null;

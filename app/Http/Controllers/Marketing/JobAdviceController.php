@@ -678,7 +678,7 @@ class JobAdviceController extends Controller
                         }
 
                         $roomData['rental_product_id'] = $quotationRental->master_rental_id;
-                        $roomData['quantity'] = $this->operationalQuantity($quotationRental);
+                        $roomData['quantity'] = $this->sourcePaidQuantity($quotationRental);
                         $roomData['qty_free'] = $quotationRental->qty_free ?? 0;
                     } elseif (!empty($roomData['quotation_room_id']) && !empty($roomData['quotation_detail_id'])) {
                         $quotationRoom = \App\Models\QuotationRoom::with('quotation.quotationDetails.room')->find($roomData['quotation_room_id']);
@@ -690,7 +690,7 @@ class JobAdviceController extends Controller
                         }
 
                         $roomData['rental_product_id'] = $quotationDetail->master_rental_id;
-                        $roomData['quantity'] = $this->operationalQuantity($quotationDetail);
+                        $roomData['quantity'] = $this->sourcePaidQuantity($quotationDetail);
                         $roomData['qty_free'] = $quotationDetail->qty_free ?? 0;
                     }
 
@@ -905,6 +905,9 @@ class JobAdviceController extends Controller
             'requestedBy',
             'customerContact',
             'rooms.rentalProduct',
+            'rooms.contractRental',
+            'rooms.quotationRental',
+            'rooms.quotationDetail',
             'rooms.contractRoom.room.building',
             'rooms.quotationRoom.room.building',
             'contract.quotation.survey.building', // Load building from survey
@@ -919,7 +922,7 @@ class JobAdviceController extends Controller
         
         // Return view for web request
         if (request()->wantsJson()) {
-            return response()->json($jobAdvice);
+            return response()->json($this->formatJobAdviceForJson($jobAdvice));
         }
         
         return view('marketing.job-advices.show', compact('jobAdvice'));
@@ -927,8 +930,21 @@ class JobAdviceController extends Controller
 
     public function edit(JobAdvice $jobAdvice)
     {
-        // No extra relationships needed for the basic edit modal
-        return response()->json($jobAdvice);
+        // Keep date-only fields as calendar dates so browser timezone conversion cannot move them.
+        return response()->json($this->formatJobAdviceForJson($jobAdvice));
+    }
+
+    private function formatJobAdviceForJson(JobAdvice $jobAdvice): array
+    {
+        $payload = $jobAdvice->toArray();
+
+        foreach (['expected_date', 'first_service_date', 'remove_date'] as $field) {
+            $payload[$field] = $jobAdvice->{$field}
+                ? $jobAdvice->{$field}->format('Y-m-d')
+                : null;
+        }
+
+        return $payload;
     }
 
     public function update(Request $request, JobAdvice $jobAdvice)
@@ -1683,7 +1699,7 @@ class JobAdviceController extends Controller
         $contractRentalId = $roomData['contract_rental_id'] ?? null;
         $quotationRentalId = $roomData['quotation_rental_id'] ?? null;
         $quotationDetailId = $roomData['quotation_detail_id'] ?? null;
-        $operationalQuantity = max(1, (int) ceil((float) ($roomData['quantity'] ?? 1)));
+        $paidQuantity = max(0, (int) ceil((float) ($roomData['quantity'] ?? 1)));
         $qtyFree = max(0, (float) ($roomData['qty_free'] ?? 0));
 
         // MOM9: Handle both contract room and quotation room
@@ -1837,7 +1853,7 @@ class JobAdviceController extends Controller
             'rental_product_id' => $rental->id,
             'room_name' => $roomName,
             'rental_name' => $finalRentalName, // MOM9: Use rental_alias from quotation detail if available
-            'quantity' => $operationalQuantity,
+            'quantity' => $paidQuantity,
             'rental_specification_ml' => $rentalSpecML,
             // rental_has_installation and rental_has_service will be determined based on Job Advice type
             // Install Free â†’ no service (only install)
@@ -3575,7 +3591,7 @@ class JobAdviceController extends Controller
                             'rental_product_id' => $cr->master_rental_id,
                             'contract_rental_id' => $cr->id,
                             'quotation_rental_id' => null,
-                            'quantity' => $this->operationalQuantity($cr),
+                            'quantity' => $this->sourcePaidQuantity($cr),
                             'qty_free' => $this->sourceFreeQuantity($cr),
                         ];
                     }
@@ -3588,7 +3604,7 @@ class JobAdviceController extends Controller
                             'rental_product_id' => $qr->master_rental_id,
                             'contract_rental_id' => null,
                             'quotation_rental_id' => $qr->id,
-                            'quantity' => $this->operationalQuantity($qr),
+                            'quantity' => $this->sourcePaidQuantity($qr),
                             'qty_free' => $this->sourceFreeQuantity($qr),
                         ];
                     }
@@ -3600,7 +3616,7 @@ class JobAdviceController extends Controller
                             'contract_rental_id' => null,
                             'quotation_rental_id' => null,
                             'quotation_detail_id' => $qd->id,
-                            'quantity' => $this->operationalQuantity($qd),
+                            'quantity' => $this->sourcePaidQuantity($qd),
                             'qty_free' => $this->sourceFreeQuantity($qd),
                         ];
                     } else {
@@ -3627,7 +3643,7 @@ class JobAdviceController extends Controller
                                 'rental_product_id' => $cr->master_rental_id,
                                 'contract_rental_id' => $cr->id,
                                 'quotation_rental_id' => null,
-                                'quantity' => $this->operationalQuantity($cr),
+                                'quantity' => $this->sourcePaidQuantity($cr),
                                 'qty_free' => $this->sourceFreeQuantity($cr),
                             ];
                         }
@@ -3641,7 +3657,7 @@ class JobAdviceController extends Controller
                                     'rental_product_id' => $qr->master_rental_id,
                                     'contract_rental_id' => null,
                                     'quotation_rental_id' => $qr->id,
-                                    'quantity' => $this->operationalQuantity($qr),
+                                    'quantity' => $this->sourcePaidQuantity($qr),
                                     'qty_free' => $this->sourceFreeQuantity($qr),
                                 ];
                             }
@@ -3656,7 +3672,7 @@ class JobAdviceController extends Controller
                                     'contract_rental_id' => null,
                                     'quotation_rental_id' => null,
                                     'quotation_detail_id' => $qd->id,
-                                    'quantity' => $this->operationalQuantity($qd),
+                                    'quantity' => $this->sourcePaidQuantity($qd),
                                     'qty_free' => $this->sourceFreeQuantity($qd),
                                 ];
                             }
@@ -3697,14 +3713,14 @@ class JobAdviceController extends Controller
                         // Get quantity from ContractRental
                         $contractRental = \App\Models\ContractRental::find($detail['contract_rental_id']);
                         if ($contractRental) {
-                            $sourceQty = $this->operationalQuantity($contractRental);
+                            $sourceQty = $this->sourcePaidQuantity($contractRental);
                             $sourceQtyFree = $this->sourceFreeQuantity($contractRental);
                         }
                     } elseif (!empty($detail['quotation_rental_id'])) {
                         $existsFinal = $jobAdvice->rooms()->where('quotation_rental_id', $detail['quotation_rental_id'])->exists();
                         $quotationRental = \App\Models\QuotationRental::find($detail['quotation_rental_id']);
                         if ($quotationRental) {
-                            $sourceQty = $this->operationalQuantity($quotationRental);
+                            $sourceQty = $this->sourcePaidQuantity($quotationRental);
                             $sourceQtyFree = $this->sourceFreeQuantity($quotationRental);
                         }
                     } elseif (!empty($detail['quotation_detail_id'])) {
@@ -3712,7 +3728,7 @@ class JobAdviceController extends Controller
                          $existsFinal = $jobAdvice->rooms()->where('quotation_detail_id', $detail['quotation_detail_id'])->exists();
                          $qd = \App\Models\QuotationDetail::find($detail['quotation_detail_id']);
                          if ($qd) {
-                             $sourceQty = $this->operationalQuantity($qd);
+                             $sourceQty = $this->sourcePaidQuantity($qd);
                              $sourceQtyFree = $this->sourceFreeQuantity($qd);
                          }
                     }

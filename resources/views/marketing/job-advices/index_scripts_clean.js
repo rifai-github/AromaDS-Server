@@ -158,6 +158,31 @@ function formatDateWithThreeDigitMonth(dateInput) {
     return `${day}/${month}/${year} ${hour}:${minute}`;
 }
 
+function dateValueForInput(dateInput) {
+    if (!dateInput) return '';
+
+    if (typeof dateInput === 'string') {
+        const match = dateInput.match(/^(\d{4}-\d{2}-\d{2})$/);
+        if (match) return match[1];
+    }
+
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (Number.isNaN(date.getTime())) return '';
+
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(date);
+
+    const year = parts.find(p => p.type === 'year').value;
+    const month = parts.find(p => p.type === 'month').value;
+    const day = parts.find(p => p.type === 'day').value;
+
+    return `${year}-${month}-${day}`;
+}
+
     // DOMContentLoaded wrapper for initial page listeners
     document.addEventListener('DOMContentLoaded', function() {
         const selectAll = document.getElementById('selectAll');
@@ -1330,7 +1355,7 @@ function openEditModal(id) {
                             <div class="form-row">
                                 <div class="form-group">
                                     <label class="form-label" for="edit_expected_date">Expected Date</label>
-                                    <input type="date" class="form-input" id="edit_expected_date" name="expected_date" value="${data.expected_date ? new Date(data.expected_date).toISOString().split('T')[0] : ''}" required>
+                                    <input type="date" class="form-input" id="edit_expected_date" name="expected_date" value="${dateValueForInput(data.expected_date)}" required>
                                 </div>
                             </div>
                         </div>
@@ -1340,7 +1365,7 @@ function openEditModal(id) {
                             <div class="form-row">
                                 <div class="form-group">
                                     <label class="form-label" for="edit_remove_date">Remove Date</label>
-                                    <input type="date" class="form-input" id="edit_remove_date" name="remove_date" value="${data.remove_date ? new Date(data.remove_date).toISOString().split('T')[0] : ''}">
+                                    <input type="date" class="form-input" id="edit_remove_date" name="remove_date" value="${dateValueForInput(data.remove_date)}">
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label" for="edit_status">Status</label>
@@ -1946,8 +1971,8 @@ document.addEventListener('DOMContentLoaded', function() {
         endPicker.setDate(next14Days);
         
         console.log('Auto-set filter dates:', {
-            from: today.toISOString().split('T')[0],
-            to: next14Days.toISOString().split('T')[0]
+            from: dateValueForInput(today),
+            to: dateValueForInput(next14Days)
         });
     }
 

@@ -2,6 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Marketing\JobAdviceController;
+use App\Models\ContractRental;
+use App\Models\JobAdvice;
+use App\Models\JobAdviceRoom;
 use Tests\TestCase;
 
 class JobAdviceModalScriptTest extends TestCase
@@ -14,7 +18,42 @@ class JobAdviceModalScriptTest extends TestCase
         $this->assertStringNotContainsString("toISOString().split('T')[0]", $indexView);
         $this->assertStringNotContainsString("toISOString().split('T')[0]", $showView);
         $this->assertStringContainsString('function dateValueForInput(dateInput)', $indexView);
-        $this->assertStringContainsString("dateString.match(/^(\\d{4}-\\d{2}-\\d{2})/)", $showView);
+        $this->assertStringContainsString("dateString.match(/^(\\d{4}-\\d{2}-\\d{2})$/)", $showView);
+    }
+
+    public function test_job_advice_edit_endpoint_returns_calendar_dates_without_utc_shift(): void
+    {
+        $jobAdvice = new JobAdvice([
+            'job_advice_number' => 'JKT-JA/26-06/0003',
+            'type' => 'install',
+            'expected_date' => '2026-06-15',
+            'first_service_date' => '2026-06-20',
+            'remove_date' => '2026-07-15',
+            'status' => 'draft',
+        ]);
+
+        $response = (new JobAdviceController())->edit($jobAdvice);
+
+        $this->assertSame('2026-06-15', $response->getData(true)['expected_date']);
+        $this->assertSame('2026-06-20', $response->getData(true)['first_service_date']);
+        $this->assertSame('2026-07-15', $response->getData(true)['remove_date']);
+    }
+
+    public function test_job_advice_room_operational_quantity_includes_free_source_quantity(): void
+    {
+        $room = new JobAdviceRoom([
+            'quantity' => 0,
+            'qty_free' => 1,
+        ]);
+
+        $room->setRelation('contractRental', new ContractRental([
+            'quantity' => 0,
+            'qty_free' => 1,
+        ]));
+
+        $this->assertSame(0, $room->quantity);
+        $this->assertSame(1, $room->qty_free);
+        $this->assertSame(1.0, $room->operational_quantity);
     }
 
     public function test_install_job_advice_create_flow_keeps_rental_rooms_hidden(): void
