@@ -1717,7 +1717,7 @@ class QuotationWizardController extends Controller
 
         if ($customerId) {
             $query->where('customer_id', $customerId);
-        } elseif ($marketingId) {
+        } elseif ($marketingId && (int) $marketingId !== (int) $user->id) {
             $query->where('marketing_id', $marketingId);
         }
 

@@ -47,6 +47,7 @@ class QuotationSurveySelectionDedupTest extends TestCase
             $table->foreignId('customer_id')->nullable();
             $table->foreignId('building_id')->nullable();
             $table->foreignId('marketing_id')->nullable();
+            $table->foreignId('created_by')->nullable();
             $table->date('survey_date')->nullable();
             $table->string('status')->nullable();
             $table->timestamps();
@@ -60,6 +61,30 @@ class QuotationSurveySelectionDedupTest extends TestCase
             $table->string('room_type')->nullable();
             $table->integer('quantity_needed')->nullable();
             $table->json('specifications')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('user_access_levels', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id');
+            $table->string('access_type');
+            $table->json('access_config')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
+
+        Schema::create('warehouses', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('manager')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('warehouse_admins', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('warehouse_id');
+            $table->foreignId('user_id');
             $table->timestamps();
         });
 
@@ -101,7 +126,7 @@ class QuotationSurveySelectionDedupTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['survey_details', 'surveys', 'buildings', 'customers', 'users'] as $table) {
+        foreach (['warehouse_admins', 'warehouses', 'user_access_levels', 'survey_details', 'surveys', 'buildings', 'customers', 'users'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -159,6 +184,47 @@ class QuotationSurveySelectionDedupTest extends TestCase
         ], array_column($payload, 'survey_number'));
     }
 
+    public function test_default_marketing_selection_includes_accessible_subordinate_surveys(): void
+    {
+        DB::table('users')->insert([
+            'id' => 9,
+            'name' => 'Marketing Manager',
+            'email' => 'marketing-manager@example.test',
+            'password' => 'password',
+            'data_restriction' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('user_access_levels')->insert([
+            'user_id' => 9,
+            'access_type' => 'hierarchical',
+            'access_config' => json_encode(['subordinates' => [7]]),
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->insertSurvey(10, 'JKT-SR/26-06/0001', now()->subMinute(), marketingId: 7);
+        $this->insertSurvey(11, 'JKT-SR/26-06/0002', now(), marketingId: 9);
+        $this->actingAs(User::findOrFail(9));
+
+        $controller = app(QuotationWizardController::class);
+        $response = $controller->getSurveysByCustomer(Request::create(
+            '/marketing/quotations/wizard/get-surveys-by-customer',
+            'GET',
+            ['marketing_id' => 9]
+        ));
+
+        $payload = $response->getData(true);
+
+        $this->assertCount(2, $payload);
+        $this->assertSame([
+            'JKT-SR/26-06/0002',
+            'JKT-SR/26-06/0001',
+        ], array_column($payload, 'survey_number'));
+    }
+
     public function test_renewal_customer_survey_selection_includes_same_customer_surveys_from_other_marketing(): void
     {
         $this->insertSurvey(10, 'SBY-SR/26-06/0001', now()->subMinutes(2), marketingId: 8);
@@ -196,6 +262,7 @@ class QuotationSurveySelectionDedupTest extends TestCase
             'customer_id' => $customerId,
             'building_id' => 1,
             'marketing_id' => $marketingId,
+            'created_by' => $marketingId,
             'survey_date' => '2026-05-10',
             'status' => 'approved',
             'created_at' => $createdAt,
