@@ -1107,6 +1107,7 @@ function openViewModal(id) {
                                     <th class="border p-2 text-left">Item Summary</th>
                                     <th class="border p-2 text-center">Type</th>
                                     <th class="border p-2 text-right">Qty</th>
+                                    <th class="border p-2 text-left">Serial Numbers</th>
                                     <th class="border p-2 text-left">Notes</th>
                                 </tr>
                             </thead>
@@ -1120,10 +1121,11 @@ function openViewModal(id) {
                                             </span>
                                         </td>
                                         <td class="border p-2 text-right">${item.adjustment_qty}</td>
+                                        <td class="border p-2">${Array.isArray(item.serial_numbers) && item.serial_numbers.length ? item.serial_numbers.map(sn => `<span class="badge badge-info mr-1">${sn}</span>`).join('') : '-'}</td>
                                         <td class="border p-2">${item.notes || '-'}</td>
                                     </tr>
                                 `).join('')}
-                                ${items.length === 0 ? '<tr><td colspan="4" class="p-4 text-center text-gray-500">No items added yet.</td></tr>' : ''}
+                                ${items.length === 0 ? '<tr><td colspan="5" class="p-4 text-center text-gray-500">No items added yet.</td></tr>' : ''}
                             </tbody>
                         </table>
                     </div>
@@ -1496,11 +1498,66 @@ function closeErrorModal() {
     document.body.style.overflow = 'auto';
 }
 
+window.stockAdjustmentAddItemProducts = window.stockAdjustmentAddItemProducts || {};
+
+function parseStockAdjustmentSerialNumbers(value) {
+    return (value || '')
+        .split(/[\s,;]+/)
+        .map(sn => sn.trim().toUpperCase())
+        .filter(Boolean);
+}
+
+function renderAdjustmentSerialFields(productSelectId, typeSelectId, qtyInputId, wrapperId, textareaId, selectId, labelId, helpId) {
+    const product = (window.stockAdjustmentAddItemProducts[productSelectId] || {})[document.getElementById(productSelectId).value];
+    const type = document.getElementById(typeSelectId).value;
+    const qty = parseInt(document.getElementById(qtyInputId).value || '0', 10);
+    const wrapper = document.getElementById(wrapperId);
+    const textarea = document.getElementById(textareaId);
+    const select = document.getElementById(selectId);
+    const label = document.getElementById(labelId);
+    const help = document.getElementById(helpId);
+
+    textarea.style.display = 'none';
+    select.style.display = 'none';
+    wrapper.style.display = 'none';
+    help.textContent = '';
+
+    if (!product || !product.requires_serial_number) {
+        return;
+    }
+
+    wrapper.style.display = 'block';
+    label.textContent = type === 'increase'
+        ? `Serial Numbers Baru (${qty || 0} SN wajib)`
+        : `Serial Numbers yang Dikeluarkan (${qty || 0} SN wajib)`;
+
+    if (type === 'increase') {
+        textarea.style.display = 'block';
+        help.textContent = 'Masukkan SN unit tambahan yang belum pernah terdaftar. Pisahkan dengan baris baru, koma, atau spasi.';
+        return;
+    }
+
+    select.style.display = 'block';
+    select.innerHTML = '';
+    (product.available_serial_numbers || []).forEach(sn => {
+        const option = document.createElement('option');
+        option.value = sn;
+        option.textContent = sn;
+        select.appendChild(option);
+    });
+    help.textContent = 'Pilih SN ready di warehouse yang akan dikeluarkan dari stok.';
+}
+
 function showAddItemModal(adjustmentId, warehouseId) {
     const productSelectId = `product-select-${Date.now()}`;
     const qtyInputId = `qty-input-${Date.now()}`;
     const typeSelectId = `type-select-${Date.now()}`;
     const notesInputId = `notes-input-${Date.now()}`;
+    const serialWrapperId = `serial-wrapper-${Date.now()}`;
+    const serialTextareaId = `serial-textarea-${Date.now()}`;
+    const serialSelectId = `serial-select-${Date.now()}`;
+    const serialLabelId = `serial-label-${Date.now()}`;
+    const serialHelpId = `serial-help-${Date.now()}`;
 
     const modalHtml = `
         <div id="addItemModal" class="modal-overlay show" style="z-index: 1060;">
@@ -1533,15 +1590,29 @@ function showAddItemModal(adjustmentId, warehouseId) {
                         <label class="form-label">Catatan</label>
                         <input type="text" id="${notesInputId}" class="form-input">
                     </div>
+                    <div id="${serialWrapperId}" class="form-group mt-4" style="display:none;">
+                        <label id="${serialLabelId}" class="form-label">Serial Numbers</label>
+                        <textarea id="${serialTextareaId}" class="form-input" rows="4" style="display:none;" placeholder="Masukkan SN baru, 1 SN per baris"></textarea>
+                        <select id="${serialSelectId}" class="form-input" multiple size="7" style="display:none;"></select>
+                        <small id="${serialHelpId}" class="text-gray-500 block mt-1"></small>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" onclick="document.getElementById('addItemModal').remove()">Batal</button>
-                    <button class="btn btn-primary" onclick="submitAddItem(${adjustmentId}, '${productSelectId}', '${typeSelectId}', '${qtyInputId}', '${notesInputId}')">Tambah Item</button>
+                    <button class="btn btn-primary" onclick="submitAddItem(${adjustmentId}, '${productSelectId}', '${typeSelectId}', '${qtyInputId}', '${notesInputId}', '${serialTextareaId}', '${serialSelectId}')">Tambah Item</button>
                 </div>
             </div>
         </div>
     `;
     document.body.insertAdjacentHTML('beforeend', modalHtml);
+    window.stockAdjustmentAddItemProducts[productSelectId] = {};
+
+    [productSelectId, typeSelectId, qtyInputId].forEach(id => {
+        const eventName = id === qtyInputId ? 'input' : 'change';
+        document.getElementById(id).addEventListener(eventName, () => {
+            renderAdjustmentSerialFields(productSelectId, typeSelectId, qtyInputId, serialWrapperId, serialTextareaId, serialSelectId, serialLabelId, serialHelpId);
+        });
+    });
 
     // Initialize products
     fetch(`/warehouse/stock-adjustments/create?warehouse_id=${warehouseId}`, {
@@ -1552,17 +1623,34 @@ function showAddItemModal(adjustmentId, warehouseId) {
         const select = document.getElementById(productSelectId);
         select.innerHTML = '<option value="">Pilih Produk</option>';
         data.data.products.forEach(p => {
+            window.stockAdjustmentAddItemProducts[productSelectId][p.id] = p;
             select.innerHTML += `<option value="${p.id}">${p.name} (${p.sku || ''})</option>`;
         });
+        renderAdjustmentSerialFields(productSelectId, typeSelectId, qtyInputId, serialWrapperId, serialTextareaId, serialSelectId, serialLabelId, serialHelpId);
     });
 }
 
-function submitAddItem(adjId, pId, tId, qId, nId) {
+function submitAddItem(adjId, pId, tId, qId, nId, serialTextareaId, serialSelectId) {
+    const product = (window.stockAdjustmentAddItemProducts[pId] || {})[document.getElementById(pId).value];
+    const type = document.getElementById(tId).value;
+    const qty = parseInt(document.getElementById(qId).value || '0', 10);
+    const serialNumbers = product?.requires_serial_number
+        ? (type === 'decrease'
+            ? Array.from(document.getElementById(serialSelectId).selectedOptions).map(option => option.value)
+            : parseStockAdjustmentSerialNumbers(document.getElementById(serialTextareaId).value))
+        : [];
+
+    if (product?.requires_serial_number && serialNumbers.length !== qty) {
+        showErrorDialog('Gagal', `Produk ini wajib ${qty} serial number. Saat ini terisi ${serialNumbers.length}.`);
+        return;
+    }
+
     const data = {
         master_product_id: document.getElementById(pId).value,
-        adjustment_type: document.getElementById(tId).value,
-        adjustment_qty: document.getElementById(qId).value,
+        adjustment_type: type,
+        adjustment_qty: qty,
         notes: document.getElementById(nId).value,
+        serial_numbers: serialNumbers,
     };
 
     fetch(`/warehouse/stock-adjustments/${adjId}/add-item`, {

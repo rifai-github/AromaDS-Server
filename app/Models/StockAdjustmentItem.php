@@ -14,11 +14,13 @@ class StockAdjustmentItem extends Model
         'master_product_id',
         'adjustment_qty',
         'adjustment_type',
-        'notes'
+        'notes',
+        'serial_numbers',
     ];
 
     protected $casts = [
-        'adjustment_qty' => 'integer'
+        'adjustment_qty' => 'integer',
+        'serial_numbers' => 'array',
     ];
 
     public function stockAdjustment()

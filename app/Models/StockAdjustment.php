@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Http\Traits\AutoFilterable;
+use Illuminate\Validation\ValidationException;
 
 class StockAdjustment extends Model
 {
@@ -176,6 +177,12 @@ class StockAdjustment extends Model
     // Business Logic Methods
     public function approve($userId)
     {
+        $this->loadMissing(['items.masterProduct.productCategory', 'items.masterProduct.productType']);
+
+        foreach ($this->items as $item) {
+            $this->validateSerialNumbersForItem($item);
+        }
+
         $this->update([
             'status' => 'approved',
             'approved_by' => $userId,
@@ -205,6 +212,11 @@ class StockAdjustment extends Model
                 $movementType = 'out';
             }
 
+            $this->applySerialNumbersForItem($item, $userId);
+
+            $serialNumbers = $this->normalizeSerialNumbers($item->serial_numbers ?? []);
+            $serialNotes = empty($serialNumbers) ? '' : ' SN: '.implode(', ', $serialNumbers);
+
             // Create Inventory Movement
             InventoryMovement::create([
                 'warehouse_id' => $this->warehouse_id,
@@ -215,11 +227,148 @@ class StockAdjustment extends Model
                 'quantity' => $item->adjustment_qty,
                 'reference_no' => $this->adjustment_no,
                 'reference_type' => 'Stock Adjustment',
-                'notes' => $this->reason . ($item->notes ? ' - ' . $item->notes : ''),
+                'notes' => $this->reason . ($item->notes ? ' - ' . $item->notes : '') . $serialNotes,
                 'created_by' => $userId,
                 'updated_by' => $userId,
             ]);
         }
+    }
+
+    private function validateSerialNumbersForItem(StockAdjustmentItem $item): void
+    {
+        $product = $item->masterProduct;
+        if (! $product?->requiresSerialNumber()) {
+            return;
+        }
+
+        $quantity = (int) $item->adjustment_qty;
+        $serialNumbers = $this->normalizeSerialNumbers($item->serial_numbers ?? []);
+
+        if ($quantity < 1 || count($serialNumbers) !== $quantity) {
+            throw ValidationException::withMessages([
+                'serial_numbers' => "Produk {$product->name} wajib memiliki {$quantity} serial number untuk stock adjustment.",
+            ]);
+        }
+
+        if (($item->adjustment_type === 'decrease' || $product->requiresUniqueSerialNumber())
+            && count($serialNumbers) !== count(array_unique($serialNumbers))) {
+            throw ValidationException::withMessages([
+                'serial_numbers' => "Serial number untuk produk {$product->name} tidak boleh duplikat.",
+            ]);
+        }
+
+        if ($item->adjustment_type === 'increase') {
+            $existing = SerialNumber::withTrashed()
+                ->whereIn('serial_number', $serialNumbers)
+                ->when(
+                    ! $product->requiresUniqueSerialNumber(),
+                    fn ($query) => $query->where('master_product_id', $item->master_product_id)
+                )
+                ->pluck('serial_number')
+                ->unique()
+                ->values();
+
+            if ($existing->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'serial_numbers' => 'Serial number sudah terdaftar: '.$existing->implode(', '),
+                ]);
+            }
+
+            return;
+        }
+
+        $available = $this->availableWarehouseSerialNumbersQuery($item, $serialNumbers)
+            ->pluck('serial_number')
+            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->unique()
+            ->values();
+
+        $missing = collect($serialNumbers)->diff($available)->values();
+        if ($missing->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'serial_numbers' => 'Serial number tidak tersedia di warehouse ini: '.$missing->implode(', '),
+            ]);
+        }
+    }
+
+    private function applySerialNumbersForItem(StockAdjustmentItem $item, int $userId): void
+    {
+        $product = $item->masterProduct;
+        if (! $product?->requiresSerialNumber()) {
+            return;
+        }
+
+        $serialNumbers = $this->normalizeSerialNumbers($item->serial_numbers ?? []);
+
+        if ($item->adjustment_type === 'increase') {
+            foreach ($serialNumbers as $serialNumber) {
+                SerialNumber::create([
+                    'serial_number' => $serialNumber,
+                    'status' => 'ready',
+                    'condition_status' => SerialNumber::CONDITION_NEW,
+                    'location_type' => 'warehouse',
+                    'location_id' => $this->warehouse_id,
+                    'warehouse_id' => $this->warehouse_id,
+                    'master_product_id' => $item->master_product_id,
+                    'notes' => trim("Created from Stock Adjustment {$this->adjustment_no}. ".($item->notes ?? '')),
+                    'created_by' => $userId,
+                    'updated_by' => $userId,
+                ]);
+            }
+
+            return;
+        }
+
+        $this->availableWarehouseSerialNumbersQuery($item, $serialNumbers)
+            ->lockForUpdate()
+            ->get()
+            ->each(function (SerialNumber $serialNumber) use ($item, $userId) {
+                $notes = trim(($serialNumber->notes ? $serialNumber->notes."\n" : '')
+                    ."Adjusted out via Stock Adjustment {$this->adjustment_no}. Reason: {$this->reason}"
+                    .($item->notes ? " - {$item->notes}" : ''));
+
+                $serialNumber->update([
+                    'status' => 'retired',
+                    'location_type' => null,
+                    'location_id' => null,
+                    'warehouse_id' => null,
+                    'notes' => $notes,
+                    'updated_by' => $userId,
+                ]);
+            });
+    }
+
+    private function availableWarehouseSerialNumbersQuery(StockAdjustmentItem $item, array $serialNumbers)
+    {
+        return SerialNumber::query()
+            ->where('warehouse_id', $this->warehouse_id)
+            ->where('master_product_id', $item->master_product_id)
+            ->whereIn('serial_number', $serialNumbers)
+            ->whereIn('status', ['ready', 'available'])
+            ->where(function ($query) {
+                $query->whereNull('location_type')
+                    ->orWhere('location_type', 'warehouse');
+            })
+            ->whereDoesntHave('unitOnWalls', function ($query) {
+                $query->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall']);
+            });
+    }
+
+    private function normalizeSerialNumbers($serialNumbers): array
+    {
+        if (is_string($serialNumbers)) {
+            $serialNumbers = preg_split('/[\s,;]+/', $serialNumbers) ?: [];
+        }
+
+        if (! is_array($serialNumbers)) {
+            return [];
+        }
+
+        return collect($serialNumbers)
+            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->filter()
+            ->values()
+            ->all();
     }
 
     public function reject($userId)

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\StockAdjustment;
 use App\Models\Warehouse;
 use App\Models\MasterProduct;
+use App\Models\SerialNumber;
 use App\Models\User;
 use App\Services\Warehouse\BranchWarehouseResolver;
 use Illuminate\Http\Request;
@@ -18,6 +19,42 @@ use App\Http\Traits\AccessControlFilterTrait;
 class StockAdjustmentController extends Controller
 {
     use AccessControlFilterTrait;
+
+    private function normalizeSerialNumbers($serialNumbers): array
+    {
+        if (is_string($serialNumbers)) {
+            $serialNumbers = preg_split('/[\s,;]+/', $serialNumbers) ?: [];
+        }
+
+        if (! is_array($serialNumbers)) {
+            return [];
+        }
+
+        return collect($serialNumbers)
+            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function getAvailableSerialNumbers(int $warehouseId, int $productId)
+    {
+        return SerialNumber::query()
+            ->where('warehouse_id', $warehouseId)
+            ->where('master_product_id', $productId)
+            ->whereIn('status', ['ready', 'available'])
+            ->where(function ($query) {
+                $query->whereNull('location_type')
+                    ->orWhere('location_type', 'warehouse');
+            })
+            ->whereDoesntHave('unitOnWalls', function ($query) {
+                $query->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall']);
+            })
+            ->orderBy('serial_number')
+            ->pluck('serial_number')
+            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->values();
+    }
 
     private function resolveWarehouseFromRequest(Request $request): Warehouse
     {
@@ -71,10 +108,27 @@ class StockAdjustmentController extends Controller
             $products = MasterProduct::whereHas('warehouseProducts', function($query) use ($request) {
                 $query->where('warehouse_id', $request->warehouse_id);
             })
-            ->select('id', 'name', 'sku', 'packaging_size_id', 'packaging_size')
-            ->with('packagingSize:id,name')
+            ->select('id', 'name', 'sku', 'packaging_size_id', 'packaging_size', 'product_category_id', 'product_type_id')
+            ->with(['packagingSize:id,name', 'productCategory:id,has_serial_number,is_unit', 'productType:id,has_serial_number,is_unit'])
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->map(function (MasterProduct $product) use ($request) {
+                $requiresSerialNumber = $product->requiresSerialNumber();
+
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'sku' => $product->sku,
+                    'packaging_size' => $product->packagingSize
+                        ? ['id' => $product->packagingSize->id, 'name' => $product->packagingSize->name]
+                        : $product->packaging_size,
+                    'requires_serial_number' => $requiresSerialNumber,
+                    'requires_unique_serial_number' => $product->requiresUniqueSerialNumber(),
+                    'available_serial_numbers' => $requiresSerialNumber
+                        ? $this->getAvailableSerialNumbers((int) $request->warehouse_id, (int) $product->id)
+                        : [],
+                ];
+            });
 
             return response()->json([
                 'status' => 'success',
@@ -340,6 +394,13 @@ class StockAdjustmentController extends Controller
                 'message' => 'Stock adjustment approved successfully',
                 'data' => $adjustment->load(['warehouse', 'items.masterProduct', 'createdBy', 'approvedBy'])
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollback();
+            return response()->json([
+                'status' => 'error',
+                'message' => collect($e->errors())->flatten()->first() ?: 'Serial number validation failed.',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             DB::rollback();
             return response()->json([
@@ -353,13 +414,18 @@ class StockAdjustmentController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'master_product_id' => 'required|exists:master_products,id',
-            'adjustment_qty' => 'required|numeric|min:0.01',
+            'adjustment_qty' => 'required|integer|min:1',
             'adjustment_type' => 'required|in:increase,decrease',
             'notes' => 'nullable|string|max:255',
+            'serial_numbers' => 'nullable',
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
+            return response()->json([
+                'status' => 'error',
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 422);
         }
 
         try {
@@ -370,12 +436,74 @@ class StockAdjustmentController extends Controller
                 return response()->json(['status' => 'error', 'message' => 'Cannot add item to non-draft adjustment'], 403);
             }
 
+            $product = MasterProduct::with(['productCategory', 'productType'])->findOrFail($request->master_product_id);
+            $serialNumbers = $this->normalizeSerialNumbers($request->input('serial_numbers', []));
+
+            if ($product->requiresSerialNumber()) {
+                $quantity = (int) $request->adjustment_qty;
+
+                if (count($serialNumbers) !== $quantity) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "Produk {$product->name} wajib memiliki {$quantity} serial number.",
+                    ], 422);
+                }
+
+                if (($request->adjustment_type === 'decrease' || $product->requiresUniqueSerialNumber())
+                    && count($serialNumbers) !== count(array_unique($serialNumbers))) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Serial number tidak boleh duplikat dalam item adjustment.',
+                    ], 422);
+                }
+
+                if ($request->adjustment_type === 'increase') {
+                    $existing = SerialNumber::withTrashed()
+                        ->whereIn('serial_number', $serialNumbers)
+                        ->when(
+                            ! $product->requiresUniqueSerialNumber(),
+                            fn ($query) => $query->where('master_product_id', $product->id)
+                        )
+                        ->pluck('serial_number')
+                        ->unique()
+                        ->values();
+
+                    if ($existing->isNotEmpty()) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Serial number sudah terdaftar: '.$existing->implode(', '),
+                        ], 422);
+                    }
+                } else {
+                    $available = $this->getAvailableSerialNumbers((int) $stock_adjustment->warehouse_id, (int) $product->id);
+                    $missing = collect($serialNumbers)->diff($available)->values();
+
+                    if ($missing->isNotEmpty()) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Serial number tidak tersedia di warehouse ini: '.$missing->implode(', '),
+                        ], 422);
+                    }
+                }
+            } else {
+                $serialNumbers = [];
+            }
+
             $item = \App\Models\StockAdjustmentItem::create([
                 'stock_adjustment_id' => $stock_adjustment->id,
                 'master_product_id' => $request->master_product_id,
                 'adjustment_qty' => $request->adjustment_qty,
                 'adjustment_type' => $request->adjustment_type,
                 'notes' => $request->notes,
+                'serial_numbers' => $serialNumbers,
             ]);
 
             DB::commit();

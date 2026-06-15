@@ -19,6 +19,80 @@ class StockOpnameController extends Controller
     use \App\Http\Traits\ColumnFilterTrait;
     use \App\Http\Traits\AccessControlFilterTrait;
 
+    private function normalizeSerialNumbers($serialNumbers): array
+    {
+        if (is_string($serialNumbers)) {
+            $serialNumbers = preg_split('/[\s,;]+/', $serialNumbers) ?: [];
+        }
+
+        if (! is_array($serialNumbers)) {
+            return [];
+        }
+
+        return collect($serialNumbers)
+            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function availableWarehouseSerialNumbers(int $warehouseId, int $productId)
+    {
+        return \App\Models\SerialNumber::query()
+            ->where('warehouse_id', $warehouseId)
+            ->where('master_product_id', $productId)
+            ->whereIn('status', ['ready', 'available'])
+            ->where(function ($query) {
+                $query->whereNull('location_type')
+                    ->orWhere('location_type', 'warehouse');
+            })
+            ->whereDoesntHave('unitOnWalls', function ($query) {
+                $query->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall']);
+            })
+            ->pluck('serial_number')
+            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->unique()
+            ->values();
+    }
+
+    private function resolveAdjustmentSerialNumbersFromOpnameDetail($detail, int $warehouseId): array
+    {
+        $product = $detail->masterProduct;
+        if (! $product?->requiresSerialNumber()) {
+            return [];
+        }
+
+        $variance = (int) $detail->variance;
+        $requiredQuantity = abs($variance);
+        if ($requiredQuantity < 1) {
+            return [];
+        }
+
+        $scanned = collect($this->normalizeSerialNumbers($detail->scanned_serial_numbers ?? []));
+        if ($scanned->isEmpty()) {
+            return [];
+        }
+
+        $available = $this->availableWarehouseSerialNumbers($warehouseId, (int) $detail->master_product_id);
+
+        if ($variance > 0) {
+            $newSerials = $scanned->diff($available)->values();
+
+            if ($newSerials->count() === $requiredQuantity) {
+                return $newSerials->all();
+            }
+
+            if ($scanned->count() === $requiredQuantity) {
+                return $scanned->all();
+            }
+
+            return $newSerials->take($requiredQuantity)->all();
+        }
+
+        return $available->diff($scanned)->take($requiredQuantity)->values()->all();
+    }
+
     private function resolveWarehouseFromRequest(Request $request): Warehouse
     {
         $branchId = $request->branch_id;
@@ -701,7 +775,10 @@ class StockOpnameController extends Controller
                         ], 400);
                     }
 
-                    $detailsWithVariance = $stockOpname->stockOpnameDetails()->where('variance', '!=', 0)->get();
+                    $detailsWithVariance = $stockOpname->stockOpnameDetails()
+                        ->with(['masterProduct.productCategory', 'masterProduct.productType'])
+                        ->where('variance', '!=', 0)
+                        ->get();
                     if ($detailsWithVariance->count() === 0) {
                         return response()->json([
                             'status' => 'error',
@@ -726,6 +803,7 @@ class StockOpnameController extends Controller
                             'adjustment_qty' => abs($detail->variance),
                             'adjustment_type' => $detail->variance > 0 ? 'increase' : 'decrease',
                             'notes' => 'From SO ' . $stockOpname->opname_number,
+                            'serial_numbers' => $this->resolveAdjustmentSerialNumbersFromOpnameDetail($detail, (int) $stockOpname->warehouse_id),
                         ]);
                     }
 

@@ -225,6 +225,7 @@
                                     <th>SKU</th>
                                     <th class="text-center">Type</th>
                                     <th class="text-end">Quantity</th>
+                                    <th>Serial Numbers</th>
                                     <th>Notes</th>
                                     @if($adjustment->status === 'draft')
                                     <th class="text-center" style="width: 50px;">Action</th>
@@ -242,6 +243,19 @@
                                         </span>
                                     </td>
                                     <td class="text-end font-weight-bold">{{ number_format($item->adjustment_qty, 0) }}</td>
+                                    <td>
+                                        @if(is_array($item->serial_numbers) && count($item->serial_numbers) > 0)
+                                            <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                                                @foreach($item->serial_numbers as $serialNumber)
+                                                    <span class="badge badge-info font-mono">{{ $serialNumber }}</span>
+                                                @endforeach
+                                            </div>
+                                        @elseif($item->masterProduct?->requiresSerialNumber())
+                                            <span class="text-danger">SN belum diinput</span>
+                                        @else
+                                            <span class="text-muted">-</span>
+                                        @endif
+                                    </td>
                                     <td>{{ $item->notes ?: '-' }}</td>
                                     @if($adjustment->status === 'draft')
                                     <td class="text-center">
@@ -253,7 +267,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="6" class="text-center text-muted p-4">
+                                    <td colspan="{{ $adjustment->status === 'draft' ? 7 : 6 }}" class="text-center text-muted p-4">
                                         <i class="fas fa-info-circle me-2"></i>No items added to this adjustment yet.
                                     </td>
                                 </tr>
@@ -331,6 +345,12 @@
                     <label class="block text-sm font-medium text-gray-700 mb-1" style="display: block; margin-bottom: 0.5rem;">Notes (Optional)</label>
                     <textarea id="item_notes" class="form-control" rows="2" style="width: 100%; padding: 0.5rem;"></textarea>
                 </div>
+                <div id="item_serial_wrapper" class="mb-4" style="margin-bottom: 1rem; display:none;">
+                    <label id="item_serial_label" class="block text-sm font-medium text-gray-700 mb-1" style="display: block; margin-bottom: 0.5rem;">Serial Numbers</label>
+                    <textarea id="item_serial_numbers" class="form-control" rows="4" style="width: 100%; padding: 0.5rem; display:none;" placeholder="Masukkan SN baru, 1 SN per baris"></textarea>
+                    <select id="item_decrease_serial_numbers" class="form-control" multiple size="7" style="width: 100%; padding: 0.5rem; display:none;"></select>
+                    <small id="item_serial_help" class="text-muted d-block mt-1"></small>
+                </div>
                 <div class="flex justify-end gap-3 mt-6 text-end">
                     <button type="button" onclick="closeAddItemModal()" class="btn btn-secondary me-2">Cancel</button>
                     <button type="submit" class="btn btn-primary">Add Item</button>
@@ -370,6 +390,7 @@
 <script>
     const adjustmentId = {{ $adjustment->id }};
     const warehouseId = {{ $adjustment->warehouse_id }};
+    const stockAdjustmentProducts = {};
 
     function submitForApproval() {
         showConfirmDialog(
@@ -463,6 +484,7 @@
             select.innerHTML = '<option value="">Pilih Produk</option>';
             if(data.data.products) {
                 data.data.products.forEach(p => {
+                    stockAdjustmentProducts[p.id] = p;
                     let text = p.name;
                     if(p.sku) text += ` (${p.sku})`;
                     
@@ -473,6 +495,7 @@
                     select.innerHTML += `<option value="${p.id}">${text}</option>`;
                 });
             }
+            updateSerialNumberInput();
         })
         .catch(err => {
             console.error(err);
@@ -480,14 +503,79 @@
         });
     }
 
+    function parseSerialNumbers(value) {
+        return (value || '')
+            .split(/[\s,;]+/)
+            .map(sn => sn.trim().toUpperCase())
+            .filter(Boolean);
+    }
+
+    function getSelectedDecreaseSerialNumbers() {
+        return Array.from(document.getElementById('item_decrease_serial_numbers').selectedOptions)
+            .map(option => option.value);
+    }
+
+    function updateSerialNumberInput() {
+        const product = stockAdjustmentProducts[document.getElementById('item_product_id').value];
+        const type = document.getElementById('item_type').value;
+        const qty = parseInt(document.getElementById('item_qty').value || '0', 10);
+        const wrapper = document.getElementById('item_serial_wrapper');
+        const textarea = document.getElementById('item_serial_numbers');
+        const select = document.getElementById('item_decrease_serial_numbers');
+        const label = document.getElementById('item_serial_label');
+        const help = document.getElementById('item_serial_help');
+
+        textarea.style.display = 'none';
+        select.style.display = 'none';
+        wrapper.style.display = 'none';
+        help.textContent = '';
+
+        if (!product || !product.requires_serial_number) {
+            return;
+        }
+
+        wrapper.style.display = 'block';
+        label.textContent = type === 'increase'
+            ? `Serial Numbers Baru (${qty || 0} SN wajib)`
+            : `Serial Numbers yang Dikeluarkan (${qty || 0} SN wajib)`;
+
+        if (type === 'increase') {
+            textarea.style.display = 'block';
+            help.textContent = 'Untuk increase, masukkan SN unit tambahan yang belum pernah terdaftar. Pisahkan dengan baris baru, koma, atau spasi.';
+            return;
+        }
+
+        select.style.display = 'block';
+        select.innerHTML = '';
+        (product.available_serial_numbers || []).forEach(sn => {
+            const option = document.createElement('option');
+            option.value = sn;
+            option.textContent = sn;
+            select.appendChild(option);
+        });
+        help.textContent = 'Untuk decrease, pilih SN unit ready di warehouse yang akan dikeluarkan dari stok.';
+    }
+
     function submitAddItem(e) {
         e.preventDefault();
+        const product = stockAdjustmentProducts[document.getElementById('item_product_id').value];
+        const type = document.getElementById('item_type').value;
+        const qty = parseInt(document.getElementById('item_qty').value || '0', 10);
+        const serialNumbers = product?.requires_serial_number
+            ? (type === 'decrease' ? getSelectedDecreaseSerialNumbers() : parseSerialNumbers(document.getElementById('item_serial_numbers').value))
+            : [];
+
+        if (product?.requires_serial_number && serialNumbers.length !== qty) {
+            showErrorDialog('Gagal', `Produk ini wajib ${qty} serial number. Saat ini terisi ${serialNumbers.length}.`);
+            return;
+        }
         
         const data = {
             master_product_id: document.getElementById('item_product_id').value,
-            adjustment_type: document.getElementById('item_type').value,
-            adjustment_qty: document.getElementById('item_qty').value,
-            notes: document.getElementById('item_notes').value
+            adjustment_type: type,
+            adjustment_qty: qty,
+            notes: document.getElementById('item_notes').value,
+            serial_numbers: serialNumbers
         };
 
         fetch(`/warehouse/stock-adjustments/${adjustmentId}/add-item`, {
@@ -523,6 +611,10 @@
             else showErrorDialog('Gagal', res.message);
         });
     }
+
+    document.getElementById('item_product_id')?.addEventListener('change', updateSerialNumberInput);
+    document.getElementById('item_type')?.addEventListener('change', updateSerialNumberInput);
+    document.getElementById('item_qty')?.addEventListener('input', updateSerialNumberInput);
 
     function deleteItem(itemId) {
         showConfirmDialog(
