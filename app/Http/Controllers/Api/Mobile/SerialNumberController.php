@@ -18,14 +18,7 @@ class SerialNumberController extends Controller
             'serial_number' => 'required|string',
         ]);
 
-        $serialNumber = SerialNumber::with([
-            'masterProduct.productType',
-            'masterProduct.packagingSize',
-            'masterProduct.primaryPhoto',
-            'warehouse.branch'
-        ])
-        ->where('serial_number', $request->serial_number)
-        ->first();
+        $serialNumber = $this->findSerialNumberForMobileCheck($request->serial_number);
 
         if (!$serialNumber) {
             return response()->json([
@@ -112,5 +105,37 @@ class SerialNumberController extends Controller
             ]
         ]);
     }
-}
 
+    private function findSerialNumberForMobileCheck(string $serialNumber): ?SerialNumber
+    {
+        $normalizedSerial = strtoupper(trim($serialNumber));
+        $relations = [
+            'masterProduct.productCategory',
+            'masterProduct.productType',
+            'masterProduct.packagingSize',
+            'masterProduct.primaryPhoto',
+            'warehouse.branch',
+        ];
+
+        $baseQuery = SerialNumber::with($relations)
+            ->whereRaw('UPPER(serial_number) = ?', [$normalizedSerial]);
+
+        $readyWarehouseSerial = (clone $baseQuery)
+            ->whereIn('status', ['ready', 'available'])
+            ->where(function ($query) {
+                $query->whereNull('location_type')
+                    ->orWhere('location_type', 'warehouse');
+            })
+            ->orderBy('id')
+            ->first();
+
+        if ($readyWarehouseSerial) {
+            return $readyWarehouseSerial;
+        }
+
+        return $baseQuery
+            ->orderByRaw("CASE WHEN status IN ('ready', 'available') THEN 0 ELSE 1 END")
+            ->orderBy('id')
+            ->first();
+    }
+}

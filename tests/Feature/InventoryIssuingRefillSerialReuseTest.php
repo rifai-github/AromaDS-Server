@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Warehouse\InventoryIssuingController;
+use App\Http\Controllers\Api\Mobile\SerialNumberController as MobileSerialNumberController;
 use App\Models\InventoryIssuing;
 use App\Models\InventoryIssuingItem;
 use App\Models\User;
@@ -51,6 +52,17 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
             $table->foreignId('product_category_id')->nullable();
             $table->foreignId('product_type_id')->nullable();
             $table->string('name')->nullable();
+            $table->string('sku')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('product_photos', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('master_product_id')->nullable();
+            $table->string('file_path')->nullable();
+            $table->boolean('is_primary')->default(false);
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->softDeletes();
         });
@@ -133,6 +145,7 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
             'inventory_issuing_items',
             'inventory_issuings',
             'warehouses',
+            'product_photos',
             'master_products',
             'product_types',
             'product_categories',
@@ -253,6 +266,49 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
             'id' => 200,
             'serial_number_id' => 503,
         ]);
+    }
+
+    public function test_mobile_batch_serial_check_uses_ready_warehouse_record_when_same_serial_has_customer_record(): void
+    {
+        $this->seedProduct(12, 102, 'Fragrance Lemongrass Mix 100ml', hasSerialNumber: false, isUnit: false);
+
+        DB::table('serial_numbers')->insert([
+            [
+                'id' => 502,
+                'serial_number' => 'RLG100001',
+                'master_product_id' => 102,
+                'warehouse_id' => 1,
+                'status' => 'in_use',
+                'location_type' => 'customer',
+                'location_id' => 77,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 503,
+                'serial_number' => 'RLG100001',
+                'master_product_id' => 102,
+                'warehouse_id' => 1,
+                'status' => 'ready',
+                'location_type' => 'warehouse',
+                'location_id' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $response = app(MobileSerialNumberController::class)->getBySerialNumber(Request::create(
+            '/api/v1/mobile/serial-numbers/check',
+            'POST',
+            ['serial_number' => 'rlg100001']
+        ));
+
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $payload['status']);
+        $this->assertSame(503, $payload['data']['id']);
+        $this->assertSame('ready', $payload['data']['status']);
     }
 
     public function test_unit_serial_still_cannot_be_reused_in_another_prepared_inventory_issuing(): void

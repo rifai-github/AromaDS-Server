@@ -2462,6 +2462,10 @@ class JobController extends Controller
                             ->first();
                     }
 
+                    if ($relatedScheduleRoom) {
+                        $this->ensurePhysicalRoomPhotosForScheduleRoom($jobSchedule, $relatedScheduleRoom);
+                    }
+
                     if ($relatedScheduleRoom && $relatedScheduleRoom->status !== \App\Models\JobScheduleRoom::STATUS_COMPLETED) {
                         $relatedScheduleRoom->markAsCompleted(Auth::id(), $completionNote);
                     }
@@ -2623,6 +2627,103 @@ class JobController extends Controller
         }
 
         return false;
+    }
+
+    private function ensurePhysicalRoomPhotosForScheduleRoom(JobSchedule $job, \App\Models\JobScheduleRoom $targetRoom): void
+    {
+        foreach (['Before Work', 'After Work'] as $photoType) {
+            if ($this->jobScheduleRoomHasPhotoType($targetRoom->id, $photoType)) {
+                continue;
+            }
+
+            $sourcePhoto = $this->findPhysicalRoomPhotoForScheduleRoom($job, $targetRoom, $photoType);
+            if (!$sourcePhoto) {
+                continue;
+            }
+
+            $this->syncJobPhotoRecord(
+                $job->id,
+                $photoType,
+                $sourcePhoto->photo_path,
+                $sourcePhoto->description ?: "Foto {$photoType} - Room: " . ($targetRoom->room_name ?? 'N/A'),
+                $targetRoom->id
+            );
+        }
+    }
+
+    private function findPhysicalRoomPhotoForScheduleRoom(JobSchedule $job, \App\Models\JobScheduleRoom $targetRoom, string $photoType): ?\App\Models\JobPhoto
+    {
+        $relatedScheduleRoomIds = collect();
+        $relatedAdviceRoomIds = collect();
+
+        if ($targetRoom->job_advice_room_id) {
+            $job->loadMissing('jobAdvice.rooms');
+            $targetAdviceRoom = ($job->jobAdvice?->rooms ?? collect())
+                ->firstWhere('id', $targetRoom->job_advice_room_id)
+                ?? $targetRoom->jobAdviceRoom;
+
+            $relatedAdviceRoomIds = $this->getRelatedAdviceRoomsForPhysicalRoom($job->jobAdvice, $targetAdviceRoom)
+                ->pluck('id')
+                ->filter()
+                ->values();
+
+            if ($relatedAdviceRoomIds->isNotEmpty()) {
+                $relatedScheduleRoomIds = \App\Models\JobScheduleRoom::where('job_schedule_id', $job->id)
+                    ->whereIn('job_advice_room_id', $relatedAdviceRoomIds)
+                    ->pluck('id');
+            }
+        }
+
+        if ($targetRoom->room_id) {
+            $samePhysicalRoomIds = \App\Models\JobScheduleRoom::where('job_schedule_id', $job->id)
+                ->where('room_id', $targetRoom->room_id)
+                ->pluck('id');
+
+            $relatedScheduleRoomIds = $relatedScheduleRoomIds
+                ->merge($samePhysicalRoomIds)
+                ->unique()
+                ->values();
+        }
+
+        $sourceRoomIds = $relatedScheduleRoomIds
+            ->filter(fn ($id) => (int) $id !== (int) $targetRoom->id)
+            ->values();
+
+        if ($sourceRoomIds->isNotEmpty()) {
+            $sourcePhoto = \App\Models\JobPhoto::where('job_schedule_id', $job->id)
+                ->where('photo_type', $photoType)
+                ->whereIn('job_schedule_room_id', $sourceRoomIds)
+                ->latest('id')
+                ->first();
+
+            if ($sourcePhoto) {
+                return $sourcePhoto;
+            }
+        }
+
+        $legacyRoomIds = $relatedAdviceRoomIds
+            ->push($targetRoom->job_advice_room_id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($legacyRoomIds->isNotEmpty()) {
+            $legacyPhoto = \App\Models\JobPhoto::where('job_schedule_id', $job->id)
+                ->where('photo_type', $photoType)
+                ->whereIn('job_schedule_room_id', $legacyRoomIds)
+                ->latest('id')
+                ->first();
+
+            if ($legacyPhoto) {
+                return $legacyPhoto;
+            }
+        }
+
+        return \App\Models\JobPhoto::where('job_schedule_id', $job->id)
+            ->where('photo_type', $photoType)
+            ->whereNull('job_schedule_room_id')
+            ->latest('id')
+            ->first();
     }
 
     private function requestIndicatesCannotCompleteAllRooms(Request $request): bool
@@ -2854,6 +2955,8 @@ class JobController extends Controller
             if ($room->status === \App\Models\JobScheduleRoom::STATUS_CANCELLED) {
                 continue;
             }
+
+            $this->ensurePhysicalRoomPhotosForScheduleRoom($job, $room);
 
             $hasBefore = $this->jobScheduleRoomHasPhotoType($room->id, 'Before Work');
             $hasAfter = $this->jobScheduleRoomHasPhotoType($room->id, 'After Work');
