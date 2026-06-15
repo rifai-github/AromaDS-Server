@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use App\Http\Traits\AccessControlFilterTrait;
 
 class StockAdjustmentController extends Controller
@@ -118,31 +119,70 @@ class StockAdjustmentController extends Controller
             ], 422);
         }
 
+        $warehouse = $this->resolveWarehouseFromRequest($request);
+        $reason = trim((string) $request->reason);
+        $notes = $request->filled('notes') ? trim((string) $request->notes) : null;
+        $lockKey = 'stock-adjustments:create:' . sha1(implode('|', [
+            Auth::id(),
+            $warehouse->id,
+            $request->adjustment_date,
+            $reason,
+            $notes ?? '',
+        ]));
+
         try {
-            DB::beginTransaction();
+            return Cache::lock($lockKey, 10)->block(5, function () use ($request, $warehouse, $reason, $notes) {
+                return DB::transaction(function () use ($request, $warehouse, $reason, $notes) {
+                    $recentDuplicate = StockAdjustment::where('warehouse_id', $warehouse->id)
+                        ->whereDate('adjustment_date', $request->adjustment_date)
+                        ->where('reason', $reason)
+                        ->where('status', 'draft')
+                        ->where('created_by', Auth::id())
+                        ->where('created_at', '>=', now()->subMinute())
+                        ->whereDoesntHave('items')
+                        ->where(function ($query) use ($notes) {
+                            if ($notes === null) {
+                                $query->whereNull('notes')->orWhere('notes', '');
+                                return;
+                            }
 
-            $warehouse = $this->resolveWarehouseFromRequest($request);
+                            $query->where('notes', $notes);
+                        })
+                        ->latest('id')
+                        ->first();
 
-            $adjustment = StockAdjustment::create([
-                'adjustment_no' => StockAdjustment::generateAdjustmentNo($warehouse->id),
-                'warehouse_id' => $warehouse->id,
-                'reason' => $request->reason,
-                'adjustment_date' => $request->adjustment_date,
-                'status' => 'draft',
-                'notes' => $request->notes,
-                'created_by' => Auth::id(),
-                'updated_by' => Auth::id(),
-            ]);
+                    if ($recentDuplicate) {
+                        return response()->json([
+                            'status' => 'success',
+                            'message' => 'Stock adjustment already created from this submission',
+                            'data' => $recentDuplicate->load(['warehouse', 'masterProduct', 'createdBy'])
+                        ]);
+                    }
 
-            DB::commit();
+                    $adjustment = StockAdjustment::create([
+                        'adjustment_no' => StockAdjustment::generateAdjustmentNo($warehouse->id),
+                        'warehouse_id' => $warehouse->id,
+                        'reason' => $reason,
+                        'adjustment_date' => $request->adjustment_date,
+                        'status' => 'draft',
+                        'notes' => $notes,
+                        'created_by' => Auth::id(),
+                        'updated_by' => Auth::id(),
+                    ]);
 
+                    return response()->json([
+                        'status' => 'success',
+                        'message' => 'Stock adjustment created successfully',
+                        'data' => $adjustment->load(['warehouse', 'masterProduct', 'createdBy'])
+                    ]);
+                });
+            });
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
             return response()->json([
-                'status' => 'success',
-                'message' => 'Stock adjustment created successfully',
-                'data' => $adjustment->load(['warehouse', 'masterProduct', 'createdBy'])
-            ]);
+                'status' => 'error',
+                'message' => 'Stock adjustment is still being created. Please wait a moment.'
+            ], 429);
         } catch (\Exception $e) {
-            DB::rollback();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create stock adjustment: ' . $e->getMessage()

@@ -1260,8 +1260,21 @@ function openEditModal(id) {
 
 function submitForm(event, id = null) {
     event.preventDefault();
+
+    const form = event.target;
+    if (form.dataset.submitting === 'true') {
+        return;
+    }
+
+    form.dataset.submitting = 'true';
+    const submitButton = document.querySelector(`button[type="submit"][form="${form.id}"]`);
+    const originalSubmitHtml = submitButton ? submitButton.innerHTML : '';
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+    }
     
-    const formData = new FormData(event.target);
+    const formData = new FormData(form);
     const data = Object.fromEntries(formData.entries());
     
     const url = id ? `/warehouse/stock-adjustments/${id}` : '/warehouse/stock-adjustments';
@@ -1291,6 +1304,17 @@ function submitForm(event, id = null) {
     .catch(error => {
         console.error('Error:', error);
         showErrorDialog('Gagal', 'Terjadi kesalahan.');
+    })
+    .finally(() => {
+        if (!form.isConnected) {
+            return;
+        }
+
+        form.dataset.submitting = 'false';
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.innerHTML = originalSubmitHtml;
+        }
     });
 }
 

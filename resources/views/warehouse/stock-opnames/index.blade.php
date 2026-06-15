@@ -1666,14 +1666,24 @@ function approveOpname(id) {
     });
 }
 
+const pendingStockAdjustmentRequests = new Set();
+
 function createStockAdjustment(id) {
+    if (pendingStockAdjustmentRequests.has(id)) {
+        return;
+    }
+
+    pendingStockAdjustmentRequests.add(id);
     confirmStockOpnameAction(
         'Buat Stock Adjustment?',
         'Item yang memiliki selisih stok akan ditambahkan otomatis.',
         'Ya, buat',
         'Batal'
     ).then((confirmed) => {
-        if (!confirmed) return;
+        if (!confirmed) {
+            pendingStockAdjustmentRequests.delete(id);
+            return;
+        }
 
         fetch(stockOpnameActionUrl(@json(route('warehouse.stock-opnames.create-adjustment', ['stockOpname' => '__ID__'])), id), {
             method: 'POST',
@@ -1695,6 +1705,9 @@ function createStockAdjustment(id) {
         .catch(error => {
             console.error('Error:', error);
             showErrorDialog('Gagal', 'Terjadi kesalahan saat membuat stock adjustment.');
+        })
+        .finally(() => {
+            pendingStockAdjustmentRequests.delete(id);
         });
     });
 }

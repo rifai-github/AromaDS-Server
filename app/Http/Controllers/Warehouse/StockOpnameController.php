@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 class StockOpnameController extends Controller
 {
@@ -671,71 +672,85 @@ class StockOpnameController extends Controller
     }
     public function createAdjustment(Request $request, StockOpname $stockOpname)
     {
-        if ($stockOpname->status !== 'approved') {
+        try {
+            return Cache::lock('stock-opnames:create-adjustment:' . $stockOpname->id, 10)->block(5, function () use ($stockOpname) {
+                return DB::transaction(function () use ($stockOpname) {
+                    $stockOpname = StockOpname::whereKey($stockOpname->id)->lockForUpdate()->firstOrFail();
+                    $adjustmentReason = 'Adjustment from Stock Opname ' . $stockOpname->opname_number;
+
+                    $existingAdjustment = \App\Models\StockAdjustment::where('warehouse_id', $stockOpname->warehouse_id)
+                        ->where('reason', $adjustmentReason)
+                        ->latest('id')
+                        ->first();
+
+                    if ($existingAdjustment) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Stock adjustment for this opname already exists.',
+                            'data' => [
+                                'adjustment_id' => $existingAdjustment->id,
+                                'adjustment_number' => $existingAdjustment->adjustment_no,
+                            ],
+                        ], 400);
+                    }
+
+                    if ($stockOpname->status !== 'approved') {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Only approved opnames can create adjustment.'
+                        ], 400);
+                    }
+
+                    $detailsWithVariance = $stockOpname->stockOpnameDetails()->where('variance', '!=', 0)->get();
+                    if ($detailsWithVariance->count() === 0) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'No variance found in this opname. No adjustment needed.'
+                        ], 400);
+                    }
+
+                    $adjustment = \App\Models\StockAdjustment::create([
+                        'adjustment_no' => \App\Models\StockAdjustment::generateAdjustmentNo($stockOpname->warehouse_id),
+                        'warehouse_id' => $stockOpname->warehouse_id,
+                        'reason' => $adjustmentReason,
+                        'adjustment_date' => now(),
+                        'status' => 'waiting for approval',
+                        'created_by' => Auth::id(),
+                        'updated_by' => Auth::id(),
+                    ]);
+
+                    foreach ($detailsWithVariance as $detail) {
+                        \App\Models\StockAdjustmentItem::create([
+                            'stock_adjustment_id' => $adjustment->id,
+                            'master_product_id' => $detail->master_product_id,
+                            'adjustment_qty' => abs($detail->variance),
+                            'adjustment_type' => $detail->variance > 0 ? 'increase' : 'decrease',
+                            'notes' => 'From SO ' . $stockOpname->opname_number,
+                        ]);
+                    }
+
+                    // Update Stock Opname status to completed
+                    $stockOpname->update([
+                        'status' => 'completed',
+                        'updated_by' => Auth::id()
+                    ]);
+
+                    return response()->json([
+                        'status' => 'success',
+                        'message' => 'Stock adjustment created successfully',
+                        'data' => [
+                            'adjustment_id' => $adjustment->id,
+                            'adjustment_number' => $adjustment->adjustment_no
+                        ]
+                    ]);
+                });
+            });
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Only approved opnames can create adjustment.'
-            ], 400);
-        }
-
-        try {
-            DB::beginTransaction();
-            
-            // Check if already has adjustment
-            $exists = \App\Models\StockAdjustment::where('reason', 'like', '%' . $stockOpname->opname_number . '%')->exists();
-            if ($exists) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Stock adjustment for this opname already exists.'
-                ], 400);
-            }
-
-            $detailsWithVariance = $stockOpname->stockOpnameDetails()->where('variance', '!=', 0)->get();
-            if ($detailsWithVariance->count() === 0) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'No variance found in this opname. No adjustment needed.'
-                ], 400);
-            }
-
-            $adjustment = \App\Models\StockAdjustment::create([
-                'adjustment_no' => \App\Models\StockAdjustment::generateAdjustmentNo($stockOpname->warehouse_id),
-                'warehouse_id' => $stockOpname->warehouse_id,
-                'reason' => 'Adjustment from Stock Opname ' . $stockOpname->opname_number,
-                'adjustment_date' => now(),
-                'status' => 'waiting for approval',
-                'created_by' => Auth::id(),
-                'updated_by' => Auth::id(),
-            ]);
-
-            foreach ($detailsWithVariance as $detail) {
-                \App\Models\StockAdjustmentItem::create([
-                    'stock_adjustment_id' => $adjustment->id,
-                    'master_product_id' => $detail->master_product_id,
-                    'adjustment_qty' => abs($detail->variance),
-                    'adjustment_type' => $detail->variance > 0 ? 'increase' : 'decrease',
-                    'notes' => 'From SO ' . $stockOpname->opname_number,
-                ]);
-            }
-
-            // Update Stock Opname status to completed
-            $stockOpname->update([
-                'status' => 'completed',
-                'updated_by' => Auth::id()
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Stock adjustment created successfully',
-                'data' => [
-                    'adjustment_id' => $adjustment->id,
-                    'adjustment_number' => $adjustment->adjustment_no
-                ]
-            ]);
+                'message' => 'Stock adjustment is still being created. Please wait a moment.'
+            ], 429);
         } catch (\Exception $e) {
-            DB::rollback();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create adjustment: ' . $e->getMessage()
