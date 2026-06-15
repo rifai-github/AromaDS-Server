@@ -67,6 +67,50 @@ class SubmitIssueGroupedSelectionTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('product_types', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('packaging_sizes', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('master_products', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('product_type_id')->nullable();
+            $table->foreignId('packaging_size_id')->nullable();
+            $table->string('name')->nullable();
+            $table->decimal('bom_quantity', 10, 2)->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('rental_details', function (Blueprint $table) {
+            $table->id();
+            $table->decimal('bom_rental_qty', 10, 2)->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('material_issue_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('material_issue_id')->nullable();
+            $table->foreignId('job_assign_schedule_id')->nullable();
+            $table->foreignId('product_id')->nullable();
+            $table->string('room_name')->nullable();
+            $table->integer('quantity')->nullable();
+            $table->decimal('bom_quantity', 10, 2)->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('job_assign_material_issues', function (Blueprint $table) {
             $table->id();
             $table->foreignId('job_assign_schedule_id')->nullable();
@@ -80,6 +124,11 @@ class SubmitIssueGroupedSelectionTest extends TestCase
     {
         foreach ([
             'job_assign_material_issues',
+            'material_issue_items',
+            'rental_details',
+            'master_products',
+            'packaging_sizes',
+            'product_types',
             'material_issues',
             'job_assign_schedules',
             'job_schedule_rooms',
@@ -231,6 +280,166 @@ class SubmitIssueGroupedSelectionTest extends TestCase
         $this->assertStringContainsString('Lobby', $errors[0]);
     }
 
+    public function test_material_issue_bom_target_mismatch_blocks_submit_issue(): void
+    {
+        $now = now();
+
+        DB::table('job_schedules')->insert([
+            'id' => 1,
+            'job_number' => 'JKT-IF/26-06/0001',
+            'room_name' => 'Meeting Room',
+            'type' => 'install_free',
+            'status' => 'assign_material',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 20,
+            'job_schedule_id' => 1,
+            'status' => 'assigned',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('material_issues')->insert([
+            'id' => 30,
+            'issue_number' => 'JKT-MI/26-06/0001',
+            'status' => 'approved',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('job_assign_material_issues')->insert([
+            'id' => 40,
+            'job_assign_schedule_id' => 20,
+            'material_issue_id' => 30,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('product_types')->insert([
+            'id' => 50,
+            'name' => 'ADS W300',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('master_products')->insert([
+            'id' => 60,
+            'product_type_id' => 50,
+            'name' => 'ADS W300 Battery',
+            'bom_quantity' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('rental_details')->insert([
+            'id' => 70,
+            'bom_rental_qty' => 4,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('material_issue_items')->insert([
+            'id' => 80,
+            'material_issue_id' => 30,
+            'job_assign_schedule_id' => 20,
+            'product_id' => 60,
+            'room_name' => 'Meeting Room',
+            'quantity' => 1,
+            'bom_quantity' => 1,
+            'notes' => 'Room: Meeting Room, Rental: ADS W300, ComponentID: 70',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $errors = $this->validateBomTargets(40);
+
+        $this->assertCount(1, $errors);
+        $this->assertStringContainsString('Qty BOM: 1, Target: 4', $errors[0]);
+        $this->assertStringContainsString('JKT-IF/26-06/0001', $errors[0]);
+    }
+
+    public function test_material_issue_matching_bom_target_can_submit_issue(): void
+    {
+        $now = now();
+
+        DB::table('job_schedules')->insert([
+            'id' => 1,
+            'job_number' => 'JKT-IF/26-06/0002',
+            'room_name' => 'Meeting Room',
+            'type' => 'install_free',
+            'status' => 'assign_material',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 20,
+            'job_schedule_id' => 1,
+            'status' => 'assigned',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('material_issues')->insert([
+            'id' => 30,
+            'issue_number' => 'JKT-MI/26-06/0002',
+            'status' => 'approved',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('job_assign_material_issues')->insert([
+            'id' => 40,
+            'job_assign_schedule_id' => 20,
+            'material_issue_id' => 30,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('product_types')->insert([
+            'id' => 50,
+            'name' => 'ADS W300',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('master_products')->insert([
+            'id' => 60,
+            'product_type_id' => 50,
+            'name' => 'ADS W300 Battery',
+            'bom_quantity' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('rental_details')->insert([
+            'id' => 70,
+            'bom_rental_qty' => 4,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('material_issue_items')->insert([
+            'id' => 80,
+            'material_issue_id' => 30,
+            'job_assign_schedule_id' => 20,
+            'product_id' => 60,
+            'room_name' => 'Meeting Room',
+            'quantity' => 4,
+            'bom_quantity' => 1,
+            'notes' => 'Room: Meeting Room, Rental: ADS W300, ComponentID: 70',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $errors = $this->validateBomTargets(40);
+
+        $this->assertSame([], $errors);
+    }
+
     private function validateSelectedIssues(array $ids): array
     {
         $selected = JobAssignMaterialIssue::with([
@@ -242,5 +451,15 @@ class SubmitIssueGroupedSelectionTest extends TestCase
         $method->setAccessible(true);
 
         return $method->invoke(app(JobAssignMaterialIssueController::class), $selected);
+    }
+
+    private function validateBomTargets(int $id): array
+    {
+        $jobAssignMaterialIssue = JobAssignMaterialIssue::findOrFail($id);
+
+        $method = new ReflectionMethod(JobAssignMaterialIssueController::class, 'validateMaterialIssueBomTargets');
+        $method->setAccessible(true);
+
+        return $method->invoke(app(JobAssignMaterialIssueController::class), $jobAssignMaterialIssue);
     }
 }

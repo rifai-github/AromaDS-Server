@@ -2895,25 +2895,9 @@ function executeSubmitIssue(materialIssueIds, forceContinue) {
         Object.values(groupedVolumes).forEach(group => {
             const { jobNumber, roomName, productType, targetBomQty, totalVolume } = group;
             const componentLabel = productType && productType !== '-' ? ` - ${productType}` : '';
-            
-            // Check job type (Trial, Complain, Extra, Install Free have different rules)
-            const isSpecialJob = jobNumber.includes('Trial') || 
-                                jobNumber.includes('Complain') || 
-                                jobNumber.includes('Extra') || 
-                                jobNumber.includes('-IF') || 
-                                jobNumber.includes('Install Free');
-            
-            
-            if (isSpecialJob) {
-                // For special jobs, total issued can be less than or equal to target
-                if (totalVolume > targetBomQty) {
-                    bomValidationErrors.push(`${jobNumber} (${roomName}${componentLabel}): Total volume (${totalVolume}) tidak boleh melebihi BOM Rental Qty (${targetBomQty})`);
-                }
-            } else {
-                // For regular jobs, total issued must EXACTLY match target
-                if (Math.abs(totalVolume - targetBomQty) > 0.01) {
-                    bomValidationErrors.push(`${jobNumber} (${roomName}${componentLabel}): Total volume (${totalVolume}) tidak sesuai BOM Rental Qty (${targetBomQty})`);
-                }
+
+            if (Math.abs(totalVolume - targetBomQty) > 0.01) {
+                bomValidationErrors.push(`${jobNumber} (${roomName}${componentLabel}): Total volume (${totalVolume}) tidak sesuai BOM Rental Qty (${targetBomQty})`);
             }
         });
         

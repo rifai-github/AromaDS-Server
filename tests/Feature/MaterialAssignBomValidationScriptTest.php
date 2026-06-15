@@ -42,6 +42,15 @@ class MaterialAssignBomValidationScriptTest extends TestCase
         $this->assertSame(250, array_values($groupedVolumes)[0]);
     }
 
+    public function test_bom_validation_does_not_allow_install_free_to_submit_below_target(): void
+    {
+        $view = file_get_contents(resource_path('views/operational/job-assign-material-issues/index.blade.php'));
+
+        $this->assertStringContainsString('Math.abs(totalVolume - targetBomQty) > 0.01', $view);
+        $this->assertStringNotContainsString("jobNumber.includes('-IF')", $view);
+        $this->assertStringNotContainsString('total issued can be less than or equal to target', $view);
+    }
+
     private function extractComponentKeyBlock(string $view): string
     {
         $start = strpos($view, 'const componentKey = [');

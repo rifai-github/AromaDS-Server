@@ -238,6 +238,104 @@ class JobAssignMaterialIssueController extends Controller
         );
     }
 
+    private function validateMaterialIssueBomTargets(JobAssignMaterialIssue $jobAssignMaterialIssue): array
+    {
+        $jobAssignMaterialIssue->loadMissing([
+            'jobAssignSchedule.jobSchedule',
+            'materialIssue.items.product.packagingSize',
+            'materialIssue.items.product.productType',
+            'materialIssue.items.product.productCategory',
+        ]);
+
+        $materialIssue = $jobAssignMaterialIssue->materialIssue;
+        if (!$materialIssue || !$materialIssue->items || $materialIssue->items->isEmpty()) {
+            return [];
+        }
+
+        $rentalDetailIds = $materialIssue->items
+            ->map(fn ($item) => $this->extractRentalDetailIdFromMaterialIssueItem($item))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($rentalDetailIds->isEmpty()) {
+            return [];
+        }
+
+        $rentalDetails = \App\Models\RentalDetail::query()
+            ->select('id', 'bom_rental_qty')
+            ->whereIn('id', $rentalDetailIds)
+            ->get()
+            ->keyBy('id');
+
+        $groups = [];
+        foreach ($materialIssue->items as $item) {
+            $rentalDetailId = $this->extractRentalDetailIdFromMaterialIssueItem($item);
+            if (!$rentalDetailId || !$rentalDetails->has($rentalDetailId)) {
+                continue;
+            }
+
+            $targetBomQty = (float) ($rentalDetails->get($rentalDetailId)->bom_rental_qty ?? 0);
+            if ($targetBomQty <= 0) {
+                continue;
+            }
+
+            $productType = $item->product?->productType?->name
+                ?? $item->product?->productCategory?->name
+                ?? 'Material';
+            $roomName = trim((string) ($item->room_name ?: '-'));
+            $groupKey = implode('|', [
+                $roomName,
+                $rentalDetailId,
+                $targetBomQty,
+                strtolower($productType),
+            ]);
+
+            if (!isset($groups[$groupKey])) {
+                $groups[$groupKey] = [
+                    'room_name' => $roomName,
+                    'product_type' => $productType,
+                    'target_bom_qty' => $targetBomQty,
+                    'total_bom_qty' => 0.0,
+                ];
+            }
+
+            $groups[$groupKey]['total_bom_qty'] += $this->calculateBomQuantity($item->product, (float) ($item->quantity ?? 0));
+        }
+
+        $errors = [];
+        $issueNumber = $materialIssue->issue_number ?: ('ID ' . $materialIssue->id);
+        $jobNumber = $jobAssignMaterialIssue->jobAssignSchedule?->jobSchedule?->job_number ?: '-';
+
+        foreach ($groups as $group) {
+            if (abs($group['total_bom_qty'] - $group['target_bom_qty']) <= 0.01) {
+                continue;
+            }
+
+            $errors[] = sprintf(
+                'Material issue %s (Job %s, Room %s - %s) belum sesuai target BOM. Qty BOM: %s, Target: %s. Sesuaikan Qty Issue sebelum Submit to Issue.',
+                $issueNumber,
+                $jobNumber,
+                $group['room_name'],
+                $group['product_type'],
+                rtrim(rtrim(number_format($group['total_bom_qty'], 2, '.', ''), '0'), '.'),
+                rtrim(rtrim(number_format($group['target_bom_qty'], 2, '.', ''), '0'), '.')
+            );
+        }
+
+        return $errors;
+    }
+
+    private function extractRentalDetailIdFromMaterialIssueItem($item): ?int
+    {
+        $notes = (string) ($item->notes ?? '');
+        if ($notes && preg_match('/(?:RentalDetailID|ComponentID):\s*(\d+)/', $notes, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
     private function isAromaMaterialProduct(?MasterProduct $product): bool
     {
         if (!$product) {
@@ -2452,6 +2550,15 @@ class JobAssignMaterialIssueController extends Controller
                         continue;
                     }
 
+                    $bomTargetErrors = $this->validateMaterialIssueBomTargets($jobAssignMaterialIssue);
+                    if (!empty($bomTargetErrors)) {
+                        $errors = array_merge($errors, $bomTargetErrors);
+                        \Log::warning("Material issue {$materialIssue->issue_number} does not match BOM rental target.", [
+                            'errors' => $bomTargetErrors,
+                        ]);
+                        continue;
+                    }
+
                     // Auto-approve if status is pending (for auto-created material issues)
                     if ($materialIssue->status === 'pending') {
                         $materialIssue->update([
@@ -2687,6 +2794,11 @@ class JobAssignMaterialIssueController extends Controller
             $materialConsistencyErrors = $this->validateMaterialIssueItemProductConsistency($jobAssignMaterialIssue);
             if (!empty($materialConsistencyErrors)) {
                 throw new \Exception(implode("\n", $materialConsistencyErrors));
+            }
+
+            $bomTargetErrors = $this->validateMaterialIssueBomTargets($jobAssignMaterialIssue);
+            if (!empty($bomTargetErrors)) {
+                throw new \Exception(implode("\n", $bomTargetErrors));
             }
 
             $materialIssue->issue();
