@@ -1703,16 +1703,17 @@ class JobController extends Controller
             } else {
                 // OTHER JOBS: Get from Material Issue Items or Rental Components
                 // Priority 1: Get from Material Issue Items (factual data)
-                if ($jobAssign) {
-                    $jobAssignMaterialIssues = $jobAssign->jobAssignMaterialIssues; 
+                $materialJob = $specificJobScheduleId === $job->id
+                    ? $job
+                    : (JobSchedule::find($specificJobScheduleId) ?? $job);
+                $materialIssues = $this->materialIssuesForJob($materialJob);
+
+                if ($materialIssues->isNotEmpty()) {
                     
                     // Collect processed MI IDs to avoid duplicates if multiple loops (though unlikely)
                     $processedMiIds = [];
 
-                    foreach ($jobAssignMaterialIssues as $jami) {
-                        $materialIssue = $jami->materialIssue;
-                        if (!$materialIssue) continue;
-
+                    foreach ($materialIssues as $materialIssue) {
                         if (in_array($materialIssue->id, $processedMiIds)) continue;
                         $processedMiIds[] = $materialIssue->id;
 
@@ -1721,6 +1722,7 @@ class JobController extends Controller
                         // Note: Aroma Change issuing might be pending or processed.
                         $inventoryIssuing = \App\Models\InventoryIssuing::where('reference_no', $materialIssue->issue_number)
                             ->whereIn('status', ['pending', 'processed', 'sent', 'received']) 
+                            ->with(['items.product.productType', 'items.product.productCategory', 'items.serialNumber'])
                             ->first();
 
                         if ($inventoryIssuing) {
@@ -1736,14 +1738,15 @@ class JobController extends Controller
                                 $targetJobAssignScheduleId = $specificJobAssign?->id;
                                 $itemMatch = false;
                                 
-                                if ($item->job_assign_schedule_id && $targetJobAssignScheduleId) {
-                                    $itemMatch = ($item->job_assign_schedule_id == $targetJobAssignScheduleId);
+                                if ($item->job_assign_schedule_id && $targetJobAssignScheduleId && (int) $item->job_assign_schedule_id === (int) $targetJobAssignScheduleId) {
+                                    $itemMatch = true;
                                 } elseif ($item->room_name && $roomName) {
+                                    // Reassignment can leave WI items pointing at a cancelled
+                                    // JobAssignSchedule. Room name is the stable material key.
                                     $itemMatch = (trim(strtolower($item->room_name)) === trim(strtolower($roomName)));
-                                } else {
-                                    // Fallback for legacy items or if no specific assignment found: 
-                                    // show in all rooms to prevent "missing" materials but log it
-                                    $itemMatch = true; 
+                                } elseif (!$item->job_assign_schedule_id && !$item->room_name) {
+                                    // Fallback for legacy items with no room/assignment metadata.
+                                    $itemMatch = true;
                                 }
 
                                 if (!$itemMatch) {
@@ -1766,7 +1769,7 @@ class JobController extends Controller
                                             'quantity' => $item->quantity_issued ?? 0, 
                                             'unit' => $item->product->unit ?? 'pcs',
                                             'source' => 'inventory_issuing', 
-                                            'serial_number' => '', 
+                                            'serial_number' => $item->serialNumber?->serial_number ?? '',
                                             'requires_serial_number' => $this->isCsrJob($job)
                                                 ? false
                                                 : $item->product->requiresSerialNumber(),

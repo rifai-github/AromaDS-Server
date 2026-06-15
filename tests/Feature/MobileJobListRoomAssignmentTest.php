@@ -64,6 +64,11 @@ class MobileJobListRoomAssignmentTest extends TestCase
         foreach ([
             'job_favorites',
             'unit_on_walls',
+            'inventory_issuing_items',
+            'inventory_issuings',
+            'serial_numbers',
+            'material_issue_items',
+            'material_issues',
             'job_schedule_room_rentals',
             'job_schedule_room_assignments',
             'job_assign_material_issues',
@@ -72,6 +77,11 @@ class MobileJobListRoomAssignmentTest extends TestCase
             'job_schedules',
             'job_advice_rooms',
             'job_advices',
+            'master_products',
+            'product_types',
+            'product_categories',
+            'rental_component_products',
+            'rental_components',
             'master_rentals',
             'contract_rooms',
             'master_rooms',
@@ -312,6 +322,242 @@ class MobileJobListRoomAssignmentTest extends TestCase
         $this->assertSame('ADS XL Unit Only, Rental-5', $roomsPayload['data'][0]['rental_name']);
     }
 
+    public function test_mobile_job_rooms_keep_materials_after_team_reassignment(): void
+    {
+        DB::table('product_types')->insert([
+            'id' => 700,
+            'name' => 'Unit',
+            'is_unit' => true,
+            'has_serial_number' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('master_products')->insert([
+            [
+                'id' => 900,
+                'product_type_id' => 700,
+                'name' => 'Diffuser W300 Black',
+                'sku' => 'DW300B',
+                'unit' => 'pcs',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 901,
+                'product_type_id' => 700,
+                'name' => 'PURE Dispenser 7200',
+                'sku' => 'PD7200',
+                'unit' => 'pcs',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('serial_numbers')->insert([
+            [
+                'id' => 1000,
+                'master_product_id' => 900,
+                'serial_number' => 'DW300B2606031',
+                'status' => 'on_hand',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 1001,
+                'master_product_id' => 901,
+                'serial_number' => 'PD72002606001',
+                'status' => 'on_hand',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('master_rooms')->insert([
+            'id' => 501,
+            'room_name' => 'Lobby',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('contract_rooms')->insert([
+            'id' => 71,
+            'room_id' => 501,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('master_rentals')->insert([
+            [
+                'id' => 701,
+                'rental_name' => 'ADS W300 300 ml baterai',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 702,
+                'rental_name' => 'Rental Unit Only',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            [
+                'id' => 92,
+                'job_advice_id' => 30,
+                'contract_room_id' => 71,
+                'rental_product_id' => 701,
+                'room_name' => 'Lobby',
+                'rental_name' => 'ADS W300 300 ml baterai',
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 93,
+                'job_advice_id' => 30,
+                'contract_room_id' => 71,
+                'rental_product_id' => 702,
+                'room_name' => 'Lobby',
+                'rental_name' => 'Rental Unit Only',
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_schedules')->insert([
+            'id' => 44,
+            'job_number' => 'JKT-IR/26-06/0001',
+            'job_advice_id' => 30,
+            'type' => 'install',
+            'status' => 'in_progress',
+            'room_id' => 501,
+            'room_name' => 'Lobby',
+            'schedule_date' => '2026-06-15',
+            'material_checked' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            [
+                'id' => 64,
+                'job_schedule_id' => 44,
+                'team_id' => null,
+                'status' => 'cancelled',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 65,
+                'job_schedule_id' => 44,
+                'team_id' => 10,
+                'status' => 'assigned',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('material_issues')->insert([
+            'id' => 88,
+            'issue_number' => 'JKT-MI/26-06/0001',
+            'status' => 'issued',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_material_issues')->insert([
+            'id' => 89,
+            'job_assign_schedule_id' => 64,
+            'material_issue_id' => 88,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('material_issue_items')->insert([
+            [
+                'id' => 90,
+                'material_issue_id' => 88,
+                'job_assign_schedule_id' => 64,
+                'room_name' => 'Lobby',
+                'product_id' => 900,
+                'quantity' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 91,
+                'material_issue_id' => 88,
+                'job_assign_schedule_id' => 64,
+                'room_name' => 'Lobby',
+                'product_id' => 901,
+                'quantity' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('inventory_issuings')->insert([
+            'id' => 92,
+            'issuing_number' => 'JKT-WI/26-06/0002',
+            'reference_no' => 'JKT-MI/26-06/0001',
+            'status' => 'sent',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_issuing_items')->insert([
+            [
+                'id' => 93,
+                'inventory_issuing_id' => 92,
+                'job_assign_schedule_id' => 64,
+                'room_name' => 'Lobby',
+                'product_id' => 900,
+                'serial_number_id' => 1000,
+                'quantity_requested' => 1,
+                'quantity_issued' => 1,
+                'quantity_received' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 94,
+                'inventory_issuing_id' => 92,
+                'job_assign_schedule_id' => 64,
+                'room_name' => 'Lobby',
+                'product_id' => 901,
+                'serial_number_id' => 1001,
+                'quantity_requested' => 1,
+                'quantity_issued' => 1,
+                'quantity_received' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $request = Request::create('/api/v1/mobile/jobs/44/rooms', 'GET');
+        $request->setUserResolver(fn () => User::find(1));
+        $this->actingAs(User::find(1));
+
+        $roomsResponse = app(JobController::class)->getJobRooms(44);
+        $roomsPayload = $roomsResponse->getData(true);
+        $products = collect($roomsPayload['data'][0]['products']);
+
+        $this->assertSame('success', $roomsPayload['status']);
+        $this->assertCount(1, $roomsPayload['data']);
+        $this->assertSame('ADS W300 300 ml baterai, Rental Unit Only', $roomsPayload['data'][0]['rental_name']);
+        $this->assertSame(
+            ['Diffuser W300 Black', 'PURE Dispenser 7200'],
+            $products->pluck('product_name')->all()
+        );
+        $this->assertSame(
+            ['DW300B2606031', 'PD72002606001'],
+            $products->pluck('serial_number')->all()
+        );
+    }
+
     private function createSchema(): void
     {
         Schema::create('users', function (Blueprint $table) {
@@ -387,6 +633,56 @@ class MobileJobListRoomAssignmentTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('product_categories', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->boolean('is_unit')->default(false);
+            $table->boolean('has_serial_number')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('product_types', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->boolean('is_unit')->default(false);
+            $table->boolean('has_serial_number')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('master_products', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('product_type_id')->nullable();
+            $table->foreignId('product_category_id')->nullable();
+            $table->string('name')->nullable();
+            $table->string('sku')->nullable();
+            $table->string('unit')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('rental_components', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('master_rental_id')->nullable();
+            $table->string('component_name')->nullable();
+            $table->integer('quantity')->default(1);
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('rental_component_products', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('rental_component_id')->nullable();
+            $table->foreignId('master_product_id')->nullable();
+            $table->boolean('is_preferred')->default(false);
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('job_advice_rooms', function (Blueprint $table) {
             $table->id();
             $table->foreignId('job_advice_id')->nullable();
@@ -439,6 +735,61 @@ class MobileJobListRoomAssignmentTest extends TestCase
             $table->foreignId('material_issue_id')->nullable();
             $table->timestamps();
             $table->softDeletes();
+        });
+
+        Schema::create('material_issues', function (Blueprint $table) {
+            $table->id();
+            $table->string('issue_number')->nullable();
+            $table->string('status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('material_issue_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('material_issue_id')->nullable();
+            $table->foreignId('job_assign_schedule_id')->nullable();
+            $table->foreignId('product_id')->nullable();
+            $table->string('room_name')->nullable();
+            $table->integer('quantity')->default(0);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('serial_numbers', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('master_product_id')->nullable();
+            $table->foreignId('warehouse_id')->nullable();
+            $table->string('serial_number')->nullable();
+            $table->string('status')->nullable();
+            $table->string('condition_status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('inventory_issuings', function (Blueprint $table) {
+            $table->id();
+            $table->string('issuing_number')->nullable();
+            $table->string('reference_no')->nullable();
+            $table->string('status')->nullable();
+            $table->foreignId('warehouse_id')->nullable();
+            $table->foreignId('team_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('inventory_issuing_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('inventory_issuing_id')->nullable();
+            $table->foreignId('job_assign_schedule_id')->nullable();
+            $table->foreignId('product_id')->nullable();
+            $table->foreignId('serial_number_id')->nullable();
+            $table->string('room_name')->nullable();
+            $table->integer('quantity_requested')->default(0);
+            $table->integer('quantity_issued')->default(0);
+            $table->integer('quantity_received')->default(0);
+            $table->text('notes')->nullable();
+            $table->timestamps();
         });
 
         Schema::create('job_schedule_rooms', function (Blueprint $table) {
