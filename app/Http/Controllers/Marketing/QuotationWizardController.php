@@ -47,6 +47,46 @@ class QuotationWizardController extends Controller
         return $this->accessibleSurveyQuery($user)->where('status', 'approved');
     }
 
+    private function selectedSurveyCustomerValidationError($surveyIds, string $field = 'survey_tags'): ?array
+    {
+        $surveyIds = collect($surveyIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($surveyIds->count() <= 1) {
+            return null;
+        }
+
+        $surveys = Survey::with('customer:id,name')
+            ->whereIn('id', $surveyIds->all())
+            ->get(['id', 'survey_number', 'customer_id']);
+
+        $customerGroups = $surveys
+            ->groupBy(fn (Survey $survey) => $survey->customer_id ?: 'no-customer')
+            ->filter(fn ($group) => $group->isNotEmpty());
+
+        if ($customerGroups->count() <= 1) {
+            return null;
+        }
+
+        $details = $customerGroups->map(function ($group, $customerId) {
+            $customerName = $group->first()->customer?->name ?? 'Unknown Customer';
+            $surveyNumbers = $group->pluck('survey_number')->filter()->join(', ');
+
+            return "Customer {$customerId} ({$customerName}): {$surveyNumbers}";
+        })->values()->all();
+
+        return [
+            'success' => false,
+            'message' => 'Survey yang dipilih berasal dari customer record yang berbeda. Pilih survey dari customer yang sama, atau rapikan/merge data customer terlebih dahulu.',
+            'errors' => [
+                $field => $details,
+            ],
+        ];
+    }
+
     private function userCanAccessMarketingId($marketingId, $user = null): bool
     {
         if (!$marketingId) {
@@ -562,6 +602,10 @@ class QuotationWizardController extends Controller
                         'message' => 'One or more selected surveys are outside your accessible data scope.'
                     ], 403);
                 }
+
+                if ($surveyCustomerError = $this->selectedSurveyCustomerValidationError($surveyIds, 'survey_tags')) {
+                    return response()->json($surveyCustomerError, 422);
+                }
             }
 
             $this->ensureRenewalSourceCanProceed(
@@ -887,6 +931,10 @@ class QuotationWizardController extends Controller
                     'message' => 'Validation failed',
                     'errors' => $validator->errors()
                 ], 422);
+            }
+
+            if ($surveyCustomerError = $this->selectedSurveyCustomerValidationError($request->get('survey_tags', []), 'survey_tags')) {
+                return response()->json($surveyCustomerError, 422);
             }
 
             $this->ensureRenewalSourceCanProceed(
@@ -1545,6 +1593,10 @@ class QuotationWizardController extends Controller
                 'success' => false,
                 'message' => 'One or more selected surveys are outside your accessible data scope.'
             ], 403);
+        }
+
+        if ($surveyCustomerError = $this->selectedSurveyCustomerValidationError($surveyIds, 'survey_ids')) {
+            return response()->json($surveyCustomerError, 422);
         }
 
         try {

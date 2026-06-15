@@ -1123,6 +1123,9 @@ function loadQuotationData(quotationId) {
                 quotationData.customer = data.customer || quotationData.customer || null;
                 quotationData.marketing = data.marketing || quotationData.marketing || null;
                 quotationData.quotationDetails = Array.isArray(data.quotationDetails) ? data.quotationDetails : [];
+                quotationData.quotationBuildings = Array.isArray(data.quotationBuildings)
+                    ? data.quotationBuildings
+                    : (Array.isArray(data.quotation_buildings) ? data.quotation_buildings : []);
                 console.log('✓ Quotation data stored globally');
                 console.log('Quotation data:', quotationData);
                 console.log('Customer data:', quotationData.customer);
@@ -1411,13 +1414,70 @@ function fetchCustomerContactsCached(customerId) {
     return request;
 }
 
-function fetchCustomerBuildingsCached(customerId) {
-    if (!customerId) {
-        return Promise.resolve([]);
+function normalizeBuildingsResponse(data) {
+    if (Array.isArray(data)) {
+        return data;
     }
 
-    if (customerLookupCache.buildings.has(customerId)) {
-        return customerLookupCache.buildings.get(customerId);
+    if (data && data.status === 'success' && Array.isArray(data.data)) {
+        return data.data;
+    }
+
+    if (data && data.status === 'success' && data.data && Array.isArray(data.data.data)) {
+        return data.data.data;
+    }
+
+    return [];
+}
+
+function getQuotationBuildings() {
+    if (!quotationData) {
+        return [];
+    }
+
+    if (Array.isArray(quotationData.quotationBuildings)) {
+        return quotationData.quotationBuildings;
+    }
+
+    if (Array.isArray(quotationData.quotation_buildings)) {
+        return quotationData.quotation_buildings;
+    }
+
+    return [];
+}
+
+function mergeBuildingsById(...buildingLists) {
+    const merged = new Map();
+
+    buildingLists.flat().forEach(building => {
+        const id = parseInt(building && building.id);
+        if (!id || Number.isNaN(id)) {
+            return;
+        }
+
+        merged.set(id, {
+            ...(merged.get(id) || {}),
+            ...building,
+            id,
+        });
+    });
+
+    return Array.from(merged.values()).sort((a, b) => {
+        const nameA = (a.nama_gedung || a.name || '').toString();
+        const nameB = (b.nama_gedung || b.name || '').toString();
+        return nameA.localeCompare(nameB);
+    });
+}
+
+function fetchCustomerBuildingsCached(customerId) {
+    if (!customerId) {
+        return Promise.resolve(getQuotationBuildings());
+    }
+
+    const cacheKey = `${customerId}:${quotationData && quotationData.id ? quotationData.id : 'customer-only'}`;
+
+    if (customerLookupCache.buildings.has(cacheKey)) {
+        return customerLookupCache.buildings.get(cacheKey);
     }
 
     const request = fetch(`/api/customers/${customerId}/buildings`, {
@@ -1427,27 +1487,13 @@ function fetchCustomerBuildingsCached(customerId) {
         }
     })
     .then(response => response.json())
-    .then(data => {
-        if (Array.isArray(data)) {
-            return data;
-        }
-
-        if (data.status === 'success' && Array.isArray(data.data)) {
-            return data.data;
-        }
-
-        if (data.status === 'success' && data.data && Array.isArray(data.data.data)) {
-            return data.data.data;
-        }
-
-        return [];
-    })
+    .then(data => mergeBuildingsById(normalizeBuildingsResponse(data), getQuotationBuildings()))
     .catch(error => {
-        customerLookupCache.buildings.delete(customerId);
+        customerLookupCache.buildings.delete(cacheKey);
         throw error;
     });
 
-    customerLookupCache.buildings.set(customerId, request);
+    customerLookupCache.buildings.set(cacheKey, request);
 
     return request;
 }
@@ -1500,6 +1546,9 @@ function loadQuotationDetails() {
                     quotationData.customer = data.customer || quotationData.customer || null;
                     quotationData.marketing = data.marketing || quotationData.marketing || null;
                     quotationData.quotationDetails = Array.isArray(data.quotationDetails) ? data.quotationDetails : [];
+                    quotationData.quotationBuildings = Array.isArray(data.quotationBuildings)
+                        ? data.quotationBuildings
+                        : (Array.isArray(data.quotation_buildings) ? data.quotation_buildings : []);
                 }
                 console.log('Quotation details count:', data.quotationDetails ? data.quotationDetails.length : 'undefined');
                 displayQuotationInfo(data.quotation);

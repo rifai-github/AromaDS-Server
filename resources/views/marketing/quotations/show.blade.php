@@ -454,11 +454,12 @@
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
-                                <table class="table table-bordered table-striped" id="quotationDetailsTable" style="min-width: 1400px; white-space: nowrap;">
+                                <table class="table table-bordered table-striped" id="quotationDetailsTable" style="min-width: 1550px; white-space: nowrap;">
                                     <thead>
                                         <tr>
                                             <th data-no-filter>No</th>
                                             <th data-column="surveyDetail.survey.survey_number">Survey No</th>
+                                            <th data-column="building">Building</th>
                                             <th data-column="surveyDetail.room_name">Nama Ruangan</th>
                                             <th data-column="specification">Spesifikasi</th>
                                             <th data-column="remark">Remark</th>
@@ -650,6 +651,26 @@
                                                 @endforelse
                                             </td>
                                             <td>
+                                                @php
+                                                    $displayBuilding = $quotationRoom?->room?->building
+                                                        ?? $detail->survey?->building
+                                                        ?? $detail->room?->survey?->building
+                                                        ?? $surveys->first()?->building;
+                                                    $buildingName = $displayBuilding?->nama_gedung ?: $displayBuilding?->name;
+                                                    $buildingAddress = $displayBuilding?->alamat_1 ?: $displayBuilding?->address;
+                                                @endphp
+
+                                                @if($displayBuilding)
+                                                    <strong>{{ $buildingName ?: '-' }}</strong>
+                                                    @if($buildingAddress)
+                                                        <br>
+                                                        <small class="text-muted">{{ $buildingAddress }}</small>
+                                                    @endif
+                                                @else
+                                                    -
+                                                @endif
+                                            </td>
+                                            <td>
                                                 {{ $displayRoomName !== '' ? $displayRoomName : '-' }}
                                                 @if($quotationRoom && $quotationRoom->aromaProduct)
                                                     <br>
@@ -698,7 +719,7 @@
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="{{ $quotation->status === 'draft' ? '11' : '10' }}" class="text-center text-muted">
+                                            <td colspan="{{ $quotation->status === 'draft' ? '12' : '11' }}" class="text-center text-muted">
                                                 <i class="fas fa-info-circle me-2"></i>
                                                 No quotation details found.
                                             </td>
@@ -707,16 +728,22 @@
                                     </tbody>
                                     <tfoot>
                                         <tr>
-                                            <td colspan="{{ $quotation->status === 'draft' ? '10' : '9' }}"><strong>Sub Total</strong></td>
+                                            <td colspan="10"><strong>Sub Total</strong></td>
                                             <td><strong>Rp {{ number_format($quotation->total_amount ?? 0, 0, ',', '.') }}</strong></td>
+                                            @if($quotation->status === 'draft')
+                                            <td></td>
+                                            @endif
                                         </tr>
                                         <!--<tr>
                                             <td colspan="{{ $quotation->status === 'draft' ? '8' : '7' }}"><strong>PPN</strong></td>
                                             <td><strong>Rp {{ number_format($quotation->tax_amount ?? 0, 0, ',', '.') }}</strong></td>
                                         </tr> -->
                                         <tr>
-                                            <td colspan="{{ $quotation->status === 'draft' ? '10' : '9' }}"><strong>Grand Total</strong></td>
+                                            <td colspan="10"><strong>Grand Total</strong></td>
                                             <td><strong>Rp {{ number_format($quotation->grand_total ?? 0, 0, ',', '.') }}</strong></td>
+                                            @if($quotation->status === 'draft')
+                                            <td></td>
+                                            @endif
                                         </tr>
                                     </tfoot>
                                 </table>
