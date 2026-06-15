@@ -308,7 +308,7 @@ class InventoryIssuingController extends Controller
 
     public function show($id)
     {
-        $issuing = InventoryIssuing::with(['inventoryRequest', 'branch', 'warehouse', 'requestedBy', 'issuedBy', 'receivedBy', 'items.product.productType', 'items.product.productCategory'])
+        $issuing = InventoryIssuing::with(['inventoryRequest', 'branch', 'warehouse', 'requestedBy', 'issuedBy', 'receivedBy', 'team', 'items.product.productType', 'items.product.productCategory'])
             ->findOrFail($id);
 
         // Load issuing items with serial numbers

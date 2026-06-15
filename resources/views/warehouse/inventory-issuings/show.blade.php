@@ -426,7 +426,7 @@
                                             <td>{{ $issuing->issuing_number }}</td>
                                             <td>
                                                 @if($displayRoomName)
-                                                    <span class="badge badge-info">{{ $displayRoomName }}</span>
+                                                    <span class="badge" style="background-color: #e0f2fe; color: #0f172a; border: 1px solid #7dd3fc;">{{ $displayRoomName }}</span>
                                                 @else
                                                     -
                                                 @endif

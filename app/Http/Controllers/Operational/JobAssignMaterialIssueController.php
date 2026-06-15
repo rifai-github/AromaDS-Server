@@ -3614,7 +3614,9 @@ class JobAssignMaterialIssueController extends Controller
         try {
             $jobAssignMaterialIssue->load([
                 'materialIssue.warehouse',
-                'materialIssue.items.product'
+                'materialIssue.items.product',
+                'jobAssignSchedule.team',
+                'jobAssignSchedule.jobSchedule.assignedTechnician',
             ]);
             
             $materialIssue = $jobAssignMaterialIssue->materialIssue;
@@ -3748,6 +3750,9 @@ class JobAssignMaterialIssueController extends Controller
             }
             
             $branchId = $warehouse->branch_id;
+            $assignedTeam = $jobAssignMaterialIssue->jobAssignSchedule?->team;
+            $assignedReceiverId = $jobAssignMaterialIssue->jobAssignSchedule?->jobSchedule?->assigned_technician_id
+                ?: $assignedTeam?->team_head_id;
 
             // MOM11: Generate issuing number using DocumentNumberService with IIS code
             $documentNumberService = new DocumentNumberService();
@@ -3772,7 +3777,8 @@ class JobAssignMaterialIssueController extends Controller
                 'reference_no' => $materialIssue->issue_number,
                 'requested_by' => $materialIssue->requested_by ?? auth()->id(),
                 'issued_by' => null,
-                'received_by' => null,
+                'received_by' => $assignedReceiverId,
+                'team_id' => $jobAssignMaterialIssue->jobAssignSchedule?->team_id,
                 'status' => 'pending', // Un-prepared status (warehouse1.md: status baru di buat adalah Un-prepared)
                 'remarks' => trim(($materialIssue->description ?: '') . ' ' . ($materialIssue->notes ?: '')) ?: null,
                 'issued_at' => null, // Not issued yet, will be set when ready to issue

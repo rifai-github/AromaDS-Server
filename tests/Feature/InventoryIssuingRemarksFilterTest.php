@@ -245,4 +245,23 @@ class InventoryIssuingRemarksFilterTest extends TestCase
         $this->assertStringContainsString("\$issuing->status !== 'pending' ?", $view);
         $this->assertStringContainsString("\$issuing->issuedBy?->name", $view);
     }
+
+    public function test_auto_created_inventory_issuing_prefills_team_and_planned_receiver(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/Operational/JobAssignMaterialIssueController.php'));
+
+        $this->assertStringContainsString("'team_id' => \$jobAssignMaterialIssue->jobAssignSchedule?->team_id", $controller);
+        $this->assertStringContainsString("'received_by' => \$assignedReceiverId", $controller);
+        $this->assertStringContainsString("'issued_by' => null", $controller);
+    }
+
+    public function test_inventory_issuing_detail_loads_team_and_uses_readable_room_badge(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/Warehouse/InventoryIssuingController.php'));
+        $view = file_get_contents(resource_path('views/warehouse/inventory-issuings/show.blade.php'));
+
+        $this->assertStringContainsString("'receivedBy', 'team'", $controller);
+        $this->assertStringContainsString('color: #0f172a', $view);
+        $this->assertStringContainsString('{{ $displayRoomName }}', $view);
+    }
 }
