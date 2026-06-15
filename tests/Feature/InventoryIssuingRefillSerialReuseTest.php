@@ -188,6 +188,73 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
         ]);
     }
 
+    public function test_batch_scan_uses_ready_warehouse_record_when_same_serial_has_customer_record(): void
+    {
+        $this->seedProduct(12, 102, 'Fragrance Lemongrass Mix 100ml', hasSerialNumber: false, isUnit: false);
+        $this->actingAs(User::findOrFail(1));
+
+        DB::table('serial_numbers')->insert([
+            [
+                'id' => 502,
+                'serial_number' => 'RLG100001',
+                'master_product_id' => 102,
+                'warehouse_id' => 1,
+                'status' => 'in_use',
+                'location_type' => 'customer',
+                'location_id' => 77,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 503,
+                'serial_number' => 'RLG100001',
+                'master_product_id' => 102,
+                'warehouse_id' => 1,
+                'status' => 'ready',
+                'location_type' => 'warehouse',
+                'location_id' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('inventory_issuings')->insert([
+            'id' => 2,
+            'issuing_number' => 'JKT-WI/26-06/0004',
+            'warehouse_id' => 1,
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_issuing_items')->insert([
+            'id' => 200,
+            'inventory_issuing_id' => 2,
+            'product_id' => 102,
+            'serial_number_id' => null,
+            'quantity_requested' => 3,
+            'quantity_issued' => 3,
+            'quantity_received' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = app(InventoryIssuingController::class)->scanSerialNumber(Request::create(
+            '/warehouse/inventory-issuings/2/scan-serial-number',
+            'POST',
+            ['issuing_item_id' => 200, 'serial_number' => 'RLG100001']
+        ), 2);
+
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $payload['status']);
+        $this->assertDatabaseHas('inventory_issuing_items', [
+            'id' => 200,
+            'serial_number_id' => 503,
+        ]);
+    }
+
     public function test_unit_serial_still_cannot_be_reused_in_another_prepared_inventory_issuing(): void
     {
         $this->seedProduct(11, 101, 'Premium Diffuser Unit', hasSerialNumber: true, isUnit: true);

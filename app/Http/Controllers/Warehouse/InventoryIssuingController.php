@@ -1032,10 +1032,9 @@ class InventoryIssuingController extends Controller
 
             $serialNumber = strtoupper(trim($request->serial_number));
             
-            // Validasi 1: SN harus ada di serial_numbers table
-            $sn = \App\Models\SerialNumber::where('serial_number', $serialNumber)
-                ->lockForUpdate()
-                ->first();
+            // Validasi 1: SN harus ada di serial_numbers table. Batch/refill SN may have
+            // duplicate rows, so choose an available row for this item before falling back.
+            $sn = $this->findSerialNumberForIssuingScan($serialNumber, $issuing, $issuingItem);
             
             if (!$sn) {
                 DB::rollBack();
@@ -1457,6 +1456,45 @@ public function getUserTeams($userId)
                 $query->whereIn('status', ['pending', 'processed']);
             })
             ->latest('id')
+            ->first();
+    }
+
+    private function findSerialNumberForIssuingScan(string $serialNumber, InventoryIssuing $issuing, \App\Models\InventoryIssuingItem $issuingItem): ?\App\Models\SerialNumber
+    {
+        $baseQuery = \App\Models\SerialNumber::with(['masterProduct.productCategory', 'masterProduct.productType', 'warehouse'])
+            ->where('serial_number', $serialNumber)
+            ->lockForUpdate();
+
+        $requiresUniqueSerial = $issuingItem->product?->requiresUniqueSerialNumber() ?? true;
+
+        if (! $requiresUniqueSerial) {
+            $availableBatchSerial = (clone $baseQuery)
+                ->where('master_product_id', $issuingItem->product_id)
+                ->whereIn('status', ['ready', 'available'])
+                ->where(function ($query) {
+                    $query->whereNull('location_type')
+                        ->orWhere('location_type', 'warehouse');
+                })
+                ->when($issuing->warehouse_id, fn ($query) => $query->where('warehouse_id', $issuing->warehouse_id))
+                ->orderBy('id')
+                ->first();
+
+            if ($availableBatchSerial) {
+                return $availableBatchSerial;
+            }
+
+            $sameProductSerial = (clone $baseQuery)
+                ->where('master_product_id', $issuingItem->product_id)
+                ->orderBy('id')
+                ->first();
+
+            if ($sameProductSerial) {
+                return $sameProductSerial;
+            }
+        }
+
+        return $baseQuery
+            ->orderBy('id')
             ->first();
     }
 
