@@ -682,6 +682,12 @@ class QuotationController extends Controller
         // Auto-inherit marketing staff from prospect for data consistency
         $prospect = \App\Models\Prospect::find($request->prospect_id);
         $marketingId = $prospect ? $prospect->assigned_to : $quotation->marketing_id;
+
+        if (in_array($request->status, ['sent', 'approved', 'accepted'], true)) {
+            $quotation->rental_period = $request->rental_period;
+            $quotation->rental_unit = $request->rental_unit ?? $quotation->rental_unit;
+            $quotation->ensureServiceFrequencyPeriodCompatible();
+        }
         
         $quotation->update([
             'quotation_number' => $request->quotation_number ?? $quotation->quotation_number,
@@ -1072,6 +1078,16 @@ class QuotationController extends Controller
             ], 422);
         }
 
+        $detailsCount = \App\Models\QuotationDetail::where('quotation_id', $quotation->id)->count();
+        if ($detailsCount === 0) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Cannot finalize quotation without any quotation details. Please add rental items first.'
+            ], 422);
+        }
+
+        $quotation->ensureServiceFrequencyPeriodCompatible();
+
         // Update quotation status to waiting for approval
         $quotation->update([
             'status' => 'waiting_for_approval',
@@ -1104,6 +1120,8 @@ class QuotationController extends Controller
                 'message' => 'Cannot approve quotation without any quotation details. Please add rental items first.'
             ], 422);
         }
+
+        $quotation->ensureServiceFrequencyPeriodCompatible();
 
         $this->ensureQuotationRenewalCanProceed($quotation, true);
 
@@ -1236,6 +1254,8 @@ class QuotationController extends Controller
             ], 422);
         }
 
+        $quotation->ensureServiceFrequencyPeriodCompatible();
+
         $user = Auth::user();
         
         // Check if user can request approval (has write/create permission for quotations)
@@ -1344,6 +1364,8 @@ class QuotationController extends Controller
             ], 422);
         }
 
+        $quotation->ensureServiceFrequencyPeriodCompatible();
+
         $quotation->update([
             'status' => 'sent',
             'updated_by' => Auth::id() ?? 1 // Fallback to admin user if not authenticated
@@ -1366,6 +1388,7 @@ class QuotationController extends Controller
         }
 
         $this->ensureQuotationRenewalCanProceed($quotation);
+        $quotation->ensureServiceFrequencyPeriodCompatible();
 
         $quotation->update([
             'status' => 'accepted',
@@ -1406,6 +1429,7 @@ class QuotationController extends Controller
         }
 
         $this->ensureQuotationRenewalCanProceed($quotation);
+        $quotation->ensureServiceFrequencyPeriodCompatible();
 
         $contract = $this->generateContractFromQuotation($quotation);
 

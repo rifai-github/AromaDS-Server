@@ -800,6 +800,19 @@ class QuotationWizardController extends Controller
             } else {
                 \Log::warning('No room_selections_data found in request');
             }
+
+            if ($action === 'finalize') {
+                try {
+                    $quotation->ensureServiceFrequencyPeriodCompatible();
+                } catch (ValidationException $e) {
+                    $quotation->update([
+                        'status' => 'draft',
+                        'updated_by' => auth()->id(),
+                    ]);
+
+                    throw $e;
+                }
+            }
             
             // Determine status and message based on action
             $status = $action === 'finalize' ? 'waiting_for_approval' : 'draft';
@@ -1061,6 +1074,10 @@ class QuotationWizardController extends Controller
                             ]);
                         }
                     }
+                }
+
+                if ($action === 'finalize') {
+                    $quotation->ensureServiceFrequencyPeriodCompatible();
                 }
 
                 DB::commit();
@@ -1346,6 +1363,8 @@ class QuotationWizardController extends Controller
                 $quotation->quotation_type,
                 $quotation->existing_contract_id
             );
+
+            $quotation->ensureServiceFrequencyPeriodCompatible();
             
             // Update quotation status
             $quotation->update([
@@ -1361,6 +1380,12 @@ class QuotationWizardController extends Controller
                 'message' => 'Quotation has been approved successfully'
             ]);
             
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->validator->errors()->first(),
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             \Log::error('Quotation approval error: ' . $e->getMessage());
             return response()->json([

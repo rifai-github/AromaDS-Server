@@ -10,6 +10,7 @@ use App\Models\MasterPriceSlab;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ApprovalController extends Controller
 {
@@ -92,6 +93,13 @@ class ApprovalController extends Controller
                 'status' => 'success',
                 'message' => 'Approval processed successfully'
             ]);
+        } catch (ValidationException $e) {
+            DB::rollback();
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->validator->errors()->first(),
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             DB::rollback();
             return response()->json([

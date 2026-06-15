@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Http\Traits\AutoFilterable;
+use Illuminate\Validation\ValidationException;
 
 class Quotation extends Model
 {
@@ -188,6 +189,83 @@ class Quotation extends Model
         return $this->hasMany(QuotationRental::class);
     }
 
+    public function getRentalPeriodMonthsAttribute(): int
+    {
+        $period = (int) $this->rental_period;
+
+        if ($period <= 0) {
+            return 0;
+        }
+
+        return $this->rental_unit === 'hari'
+            ? ($period < 30 ? 1 : (int) ceil($period / 30))
+            : $period;
+    }
+
+    public function getServiceFrequencyPeriodValidationErrors(): array
+    {
+        $rentalMonths = $this->rental_period_months;
+
+        if ($rentalMonths <= 0) {
+            return [];
+        }
+
+        $this->loadMissing([
+            'quotationDetails.masterRental.serviceFrequency',
+            'quotationRentals.masterRental.serviceFrequency',
+        ]);
+
+        $errors = [];
+        $seenRentalFrequencyKeys = [];
+
+        foreach ([$this->quotationDetails, $this->quotationRentals] as $items) {
+            foreach ($items as $item) {
+                $rental = $item->masterRental;
+                $serviceFrequency = $rental?->serviceFrequency;
+                $frequencyMonths = (int) ($serviceFrequency?->frequency_months ?? 0);
+
+                if (! $rental || ! $serviceFrequency || $frequencyMonths <= 1) {
+                    continue;
+                }
+
+                $key = ($rental->id ? 'id:'.$rental->id : 'name:'.$rental->rental_name).'|'.$frequencyMonths;
+
+                if (isset($seenRentalFrequencyKeys[$key])) {
+                    continue;
+                }
+
+                $seenRentalFrequencyKeys[$key] = true;
+
+                if ($rentalMonths % $frequencyMonths === 0) {
+                    continue;
+                }
+
+                $times = max(1, (int) ($serviceFrequency->frequency_times_per_month ?? 1));
+                $errors[] = sprintf(
+                    '%s memiliki frekuensi service %dx per %d bulan, tetapi periode sewa %d bulan. Periode sewa harus kelipatan %d bulan agar jadwal service habis rata.',
+                    $rental->rental_name ?: 'Rental',
+                    $times,
+                    $frequencyMonths,
+                    $rentalMonths,
+                    $frequencyMonths
+                );
+            }
+        }
+
+        return $errors;
+    }
+
+    public function ensureServiceFrequencyPeriodCompatible(): void
+    {
+        $errors = $this->getServiceFrequencyPeriodValidationErrors();
+
+        if ($errors) {
+            throw ValidationException::withMessages([
+                'rental_period' => $errors,
+            ]);
+        }
+    }
+
     public function quotationPics()
     {
         return $this->hasMany(QuotationPic::class);
@@ -368,6 +446,8 @@ class Quotation extends Model
 
     public function approveQuotation($approvedBy, $notes = null)
     {
+        $this->ensureServiceFrequencyPeriodCompatible();
+
         $this->update([
             'status' => 'approved',
             'approved_by' => $approvedBy,
@@ -433,7 +513,8 @@ class Quotation extends Model
     {
         return $this->status === 'approved'
             && !$this->contracts()->exists()
-            && !$this->hasActiveFreeTrials();
+            && !$this->hasActiveFreeTrials()
+            && empty($this->getServiceFrequencyPeriodValidationErrors());
     }
 
     /**
