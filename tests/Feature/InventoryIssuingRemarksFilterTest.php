@@ -68,6 +68,13 @@ class InventoryIssuingRemarksFilterTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('role_permissions', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('role_id')->nullable();
+            $table->foreignId('permission_id')->nullable();
+            $table->timestamps();
+        });
+
         Schema::create('user_access_levels', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->nullable();
@@ -179,14 +186,40 @@ class InventoryIssuingRemarksFilterTest extends TestCase
         $this->assertSame('ISS-BDG', $issuings->first()->issuing_number);
     }
 
-    public function test_warehouse_staff_can_see_inventory_issuings_for_own_branch(): void
+    public function test_operation_gudang_can_see_inventory_issuings_for_own_branch_without_access_level(): void
     {
+        $operationGudangRoleId = \DB::table('roles')->insertGetId([
+            'name' => 'Operation Gudang',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $inventoryIssuingViewPermissionId = \DB::table('permissions')->insertGetId([
+            'name' => 'warehouse.inventory-issuings.view',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        \DB::table('role_permissions')->insert([
+            'role_id' => $operationGudangRoleId,
+            'permission_id' => $inventoryIssuingViewPermissionId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         $staff = User::create([
-            'name' => 'Gudang Staff KLTM',
+            'name' => 'Untung Sinaga',
             'email' => 'warehouse@example.test',
             'password' => 'password',
-            'roles' => 'Warehouse Staff',
+            'roles' => 'Operation Gudang',
             'branch_id' => 1,
+        ]);
+
+        \DB::table('user_roles')->insert([
+            'user_id' => $staff->id,
+            'role_id' => $operationGudangRoleId,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         $otherUser = User::create([
