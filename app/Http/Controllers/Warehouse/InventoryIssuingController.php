@@ -41,12 +41,29 @@ class InventoryIssuingController extends Controller
         return app(BranchWarehouseResolver::class)->resolveActiveForBranch($branchId);
     }
 
+    private function warehouseIssuingBranchScopeIds(User $user): array
+    {
+        if (
+            !$user->branch_id
+            || !(
+                $user->hasRoleStartingWith('Warehouse')
+                || $user->hasRoleStartingWith('Gudang')
+                || $user->canAccessMenuItem('warehouse.inventory-issuings')
+            )
+        ) {
+            return [];
+        }
+
+        return [(int) $user->branch_id];
+    }
+
     public function index(Request $request)
     {
         $query = InventoryIssuing::with(['inventoryRequest', 'branch', 'warehouse.branch', 'requestedBy', 'issuedBy', 'receivedBy', 'createdBy', 'updatedBy']);
         
         // Access Control Logic
         $user = Auth::user();
+        $warehouseIssuingBranchIds = $this->warehouseIssuingBranchScopeIds($user);
         
         // Get user's teams for "Assigned Team" exception
         $userTeamIds = \DB::table('teams')
@@ -62,13 +79,20 @@ class InventoryIssuingController extends Controller
 
         // Apply Access Control with Team Exception
         // 'requested_by' added as marketing field to allow requestors to see the data
-        $query = $this->applyAccessControlFilter($query, $user, 'created_by', 'requested_by', 'branch_id', function($q) use ($userTeamIds, $user) {
+        $query = $this->applyAccessControlFilter($query, $user, 'created_by', 'requested_by', 'branch_id', function($q) use ($userTeamIds, $user, $warehouseIssuingBranchIds) {
             // Check if user is assigned valid team
             if (!empty($userTeamIds)) {
                 $q->orWhereIn('team_id', $userTeamIds);
             }
             // Also allow if user is the receiver/technician directly (just in case logic expands)
             $q->orWhere('received_by', $user->id);
+
+            if (!empty($warehouseIssuingBranchIds)) {
+                $q->orWhereIn('branch_id', $warehouseIssuingBranchIds)
+                    ->orWhereHas('warehouse', function($warehouseQuery) use ($warehouseIssuingBranchIds) {
+                        $warehouseQuery->whereIn('branch_id', $warehouseIssuingBranchIds);
+                    });
+            }
         }, 'warehouse_id');
 
         // Filter by branch (Top-level filter)
@@ -572,6 +596,7 @@ class InventoryIssuingController extends Controller
             $issuing->update([
                 'status' => 'pending', // Status: Un Prepare
                 'team_id' => null,
+                'issued_by' => null,
                 'received_by' => null,
                 'received_at' => null, // Clear received_at as well
                 'issued_at' => null,   // Clear issued_at as well

@@ -939,7 +939,7 @@
                         </td>
                         <td>{{ $issuing->reference_no ?? '-' }}</td>
                         <td>{{ $issuing->requestedBy?->name ?? 'N/A' }}</td>
-                        <td>{{ $issuing->issuedBy?->name ?? '-' }}</td>
+                        <td>{{ $issuing->status !== 'pending' ? ($issuing->issuedBy?->name ?? '-') : '-' }}</td>
                         <td>{{ $issuing->receivedBy?->name ?? '-' }}</td>
                         <td class="max-w-xs truncate">{{ $issuing->remarks ?? '-' }}</td>
                         <td>{{ $issuing->createdBy?->name ?? '-' }}</td>

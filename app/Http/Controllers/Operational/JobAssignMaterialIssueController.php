@@ -3771,7 +3771,7 @@ class JobAssignMaterialIssueController extends Controller
                 'issue_date' => $materialIssue->issue_date ?? now()->toDateString(),
                 'reference_no' => $materialIssue->issue_number,
                 'requested_by' => $materialIssue->requested_by ?? auth()->id(),
-                'issued_by' => $materialIssue->issued_by ?? auth()->id(),
+                'issued_by' => null,
                 'received_by' => null,
                 'status' => 'pending', // Un-prepared status (warehouse1.md: status baru di buat adalah Un-prepared)
                 'remarks' => trim(($materialIssue->description ?: '') . ' ' . ($materialIssue->notes ?: '')) ?: null,
