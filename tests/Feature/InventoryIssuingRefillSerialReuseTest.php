@@ -3,7 +3,10 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Warehouse\InventoryIssuingController;
+use App\Models\InventoryIssuing;
+use App\Models\InventoryIssuingItem;
 use App\Models\User;
+use App\Services\Warehouse\InventoryIssuingService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -63,6 +66,7 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
             $table->id();
             $table->string('issuing_number')->nullable();
             $table->foreignId('warehouse_id')->nullable();
+            $table->foreignId('received_by')->nullable();
             $table->string('status')->nullable();
             $table->timestamps();
             $table->softDeletes();
@@ -74,6 +78,8 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
             $table->foreignId('product_id')->nullable();
             $table->foreignId('serial_number_id')->nullable();
             $table->decimal('quantity_requested', 12, 2)->default(1);
+            $table->decimal('quantity_issued', 12, 2)->default(0);
+            $table->decimal('quantity_received', 12, 2)->default(0);
             $table->string('room_name')->nullable();
             $table->text('notes')->nullable();
             $table->foreignId('created_by')->nullable();
@@ -88,6 +94,8 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
             $table->foreignId('warehouse_id')->nullable();
             $table->string('status')->nullable();
             $table->string('location_type')->nullable();
+            $table->foreignId('location_id')->nullable();
+            $table->foreignId('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -199,6 +207,142 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
         $this->assertStringContainsString('masih dipakai di Inventory Issuing', $payload['message']);
     }
 
+    public function test_batch_serials_move_to_technician_by_issuing_quantity(): void
+    {
+        $this->seedProduct(12, 102, 'Fragrance Lemongrass Mix 50ml', hasSerialNumber: false, isUnit: false);
+        $this->actingAs(User::findOrFail(1));
+
+        DB::table('serial_numbers')->insert([
+            [
+                'id' => 502,
+                'serial_number' => 'RLG0500001',
+                'master_product_id' => 102,
+                'warehouse_id' => 1,
+                'status' => 'ready',
+                'location_type' => 'warehouse',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 503,
+                'serial_number' => 'RLG0500001',
+                'master_product_id' => 102,
+                'warehouse_id' => 1,
+                'status' => 'ready',
+                'location_type' => 'warehouse',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('inventory_issuings')->insert([
+            'id' => 1,
+            'issuing_number' => 'JKT-WI/26-06/0002',
+            'warehouse_id' => 1,
+            'received_by' => 1,
+            'status' => 'sent',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_issuing_items')->insert([
+            'id' => 100,
+            'inventory_issuing_id' => 1,
+            'product_id' => 102,
+            'serial_number_id' => 502,
+            'quantity_requested' => 2,
+            'quantity_issued' => 2,
+            'quantity_received' => 2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $updated = app(InventoryIssuingService::class)->moveSerialNumbersToTechnician(
+            InventoryIssuing::findOrFail(1),
+            1,
+            1
+        );
+
+        $this->assertSame(2, $updated);
+        foreach ([502, 503] as $serialNumberId) {
+            $this->assertDatabaseHas('serial_numbers', [
+                'id' => $serialNumberId,
+                'status' => 'on_hand',
+                'location_type' => 'technician',
+                'location_id' => 1,
+            ]);
+        }
+    }
+
+    public function test_batch_serials_move_to_customer_by_issuing_quantity(): void
+    {
+        $this->seedProduct(12, 102, 'Fragrance Lemongrass Mix 50ml', hasSerialNumber: false, isUnit: false);
+        $this->actingAs(User::findOrFail(1));
+
+        DB::table('serial_numbers')->insert([
+            [
+                'id' => 502,
+                'serial_number' => 'RLG0500001',
+                'master_product_id' => 102,
+                'warehouse_id' => 1,
+                'status' => 'on_hand',
+                'location_type' => 'technician',
+                'location_id' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 503,
+                'serial_number' => 'RLG0500001',
+                'master_product_id' => 102,
+                'warehouse_id' => 1,
+                'status' => 'on_hand',
+                'location_type' => 'technician',
+                'location_id' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('inventory_issuings')->insert([
+            'id' => 1,
+            'issuing_number' => 'JKT-WI/26-06/0002',
+            'warehouse_id' => 1,
+            'received_by' => 1,
+            'status' => 'sent',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_issuing_items')->insert([
+            'id' => 100,
+            'inventory_issuing_id' => 1,
+            'product_id' => 102,
+            'serial_number_id' => 502,
+            'quantity_requested' => 2,
+            'quantity_issued' => 2,
+            'quantity_received' => 2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $updated = app(InventoryIssuingService::class)->moveSerialNumbersToCustomerForItems(
+            InventoryIssuingItem::where('inventory_issuing_id', 1)->get(),
+            77,
+            1
+        );
+
+        $this->assertSame(2, $updated);
+        foreach ([502, 503] as $serialNumberId) {
+            $this->assertDatabaseHas('serial_numbers', [
+                'id' => $serialNumberId,
+                'status' => 'in_use',
+                'location_type' => 'customer',
+                'location_id' => 77,
+            ]);
+        }
+    }
+
     public function test_available_serial_list_keeps_reused_refill_serials_but_excludes_reused_unit_serials(): void
     {
         $this->seedProduct(10, 100, 'Aroma Diffuser Premium', hasSerialNumber: true, isUnit: false);
@@ -285,6 +429,8 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
                 'product_id' => $productId,
                 'serial_number_id' => $serialNumberId,
                 'quantity_requested' => 1,
+                'quantity_issued' => 1,
+                'quantity_received' => 0,
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
@@ -294,6 +440,8 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
                 'product_id' => $productId,
                 'serial_number_id' => null,
                 'quantity_requested' => 1,
+                'quantity_issued' => 1,
+                'quantity_received' => 0,
                 'created_at' => now(),
                 'updated_at' => now(),
             ],

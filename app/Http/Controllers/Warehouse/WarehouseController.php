@@ -499,6 +499,8 @@ class WarehouseController extends Controller
         $formattedMovements = $movements->map(function($movement) use ($productId) {
             $description = $movement->notes ?? '';
             $userName = $movement->creator->name ?? ($movement->updater->name ?? 'System');
+            $displayUserName = $userName;
+            $displayUpdatedAt = $movement->updated_at ?? $movement->created_at;
             
             // Try to get SN info from reference
             if ($movement->reference_type === 'inventory_receiving' && $movement->reference_no) {
@@ -521,8 +523,14 @@ class WarehouseController extends Controller
                     $description = "{$movement->reference_no} - Produk baru, ditambah dari {$userName}.";
                 }
             } elseif ($movement->reference_type === 'inventory_issuing' && $movement->reference_no) {
-                $issuing = \App\Models\InventoryIssuing::where('issuing_number', $movement->reference_no)->first();
+                $issuing = \App\Models\InventoryIssuing::with('receivedBy')
+                    ->where('issuing_number', $movement->reference_no)
+                    ->first();
                 if ($issuing) {
+                    $takenByName = $issuing->receivedBy->name ?? $userName;
+                    $displayUserName = $takenByName;
+                    $displayUpdatedAt = $issuing->received_at ?? $displayUpdatedAt;
+
                     // Get SNs yang di-scan di issuing ini untuk product ini
                     $issuingItems = \App\Models\InventoryIssuingItem::where('inventory_issuing_id', $issuing->id)
                         ->where('product_id', $productId)
@@ -536,9 +544,9 @@ class WarehouseController extends Controller
                     
                     if (!empty($sns)) {
                         $snList = implode(', ', $sns);
-                        $description = "{$movement->reference_no} - Produk dengan nomor SN {$snList}, diambil oleh {$userName}.";
+                        $description = "{$movement->reference_no} - Produk dengan nomor SN {$snList}, diambil oleh {$takenByName}.";
                     } else {
-                        $description = "{$movement->reference_no} - Produk, diambil oleh {$userName}.";
+                        $description = "{$movement->reference_no} - Produk, diambil oleh {$takenByName}.";
                     }
                 } else {
                     // Fallback jika issuing tidak ditemukan
@@ -558,8 +566,8 @@ class WarehouseController extends Controller
                 'date' => $movement->created_at,
                 'adjustment' => $movement->quantity,
                 'description' => $description,
-                'updated_by' => $movement->updater->name ?? $movement->creator->name ?? 'System',
-                'updated_at' => $movement->updated_at ?? $movement->created_at,
+                'updated_by' => $displayUserName,
+                'updated_at' => $displayUpdatedAt,
             ];
         });
         
@@ -578,7 +586,7 @@ class WarehouseController extends Controller
             }
             
             $transferStatus = 'in warehouse';
-            if ($unitOnWall) {
+            if ($unitOnWall || $sn->location_type === 'customer') {
                 $transferStatus = 'unit on wall';
             } elseif ($sn->location_type === 'technician') {
                 $transferStatus = 'with technician';

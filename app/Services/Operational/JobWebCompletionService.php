@@ -331,20 +331,12 @@ class JobWebCompletionService
                 'updated_by' => $userId,
             ]);
 
-            // Move any linked serial numbers to on_hand / technician (mirror :285-299).
-            $serialNumberIds = $issuing->items()
-                ->whereNotNull('serial_number_id')
-                ->pluck('serial_number_id')
-                ->toArray();
-
-            if (!empty($serialNumberIds)) {
-                SerialNumber::whereIn('id', $serialNumberIds)->update([
-                    'status' => 'on_hand',
-                    'location_type' => 'technician',
-                    'location_id' => $issuing->received_by ?? $userId,
-                    'updated_by' => $userId,
-                ]);
-            }
+            // Move any linked serial numbers to on_hand / technician (mirror mobile verification).
+            app(InventoryIssuingService::class)->moveSerialNumbersToTechnician(
+                $issuing,
+                (int) ($issuing->received_by ?? $userId),
+                $userId
+            );
 
             $this->advanceRelatedJobsToBarangDiambil($issuing, $job, $userId);
 

@@ -7,6 +7,7 @@ use App\Models\JobSchedule;
 use App\Models\InventoryIssuing;
 use App\Models\InventoryIssuingItem;
 use App\Services\MobileSyncLogService;
+use App\Services\Warehouse\InventoryIssuingService;
 use App\Services\Warehouse\SerialNumberIssuingLinkService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -283,18 +284,13 @@ class MaterialVerificationController extends Controller
             ]);
 
             // Requirement 1: Update SN status to 'on_hand' and location to 'technician'
-            $serialNumberIds = $inventoryIssuing->items()
-                ->whereNotNull('serial_number_id')
-                ->pluck('serial_number_id')
-                ->toArray();
-            
-            if (!empty($serialNumberIds)) {
-                \App\Models\SerialNumber::whereIn('id', $serialNumberIds)->update([
-                    'status' => 'on_hand',
-                    'location_type' => 'technician',
-                    'location_id' => $inventoryIssuing->received_by ?? auth()->id(),
-                    'updated_by' => auth()->id()
-                ]);
+            $updatedSerials = app(InventoryIssuingService::class)->moveSerialNumbersToTechnician(
+                $inventoryIssuing,
+                (int) ($inventoryIssuing->received_by ?? auth()->id()),
+                auth()->id()
+            );
+
+            if ($updatedSerials > 0) {
                 Log::info("Serial Numbers updated to On Hand for Issuing ID: {$inventoryIssuing->id} via mobile verification");
             }
             

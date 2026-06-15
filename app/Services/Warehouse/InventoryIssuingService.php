@@ -160,24 +160,109 @@ class InventoryIssuingService
      */
     protected function updateSerialNumberLifecycle(InventoryIssuing $issuing)
     {
-        $serialNumberIds = $issuing->items()
-            ->with(['product.productCategory', 'product.productType'])
-            ->whereNotNull('serial_number_id')
-            ->get()
-            ->filter(fn ($item) => $item->product?->requiresUniqueSerialNumber() ?? true)
-            ->pluck('serial_number_id')
-            ->toArray();
-        
-        if (!empty($serialNumberIds)) {
-            SerialNumber::whereIn('id', $serialNumberIds)->update([
-                'status' => 'on_hand',
-                'location_type' => 'technician',
-                'location_id' => $issuing->received_by, // received_by is assigned technician in this context
-                'updated_by' => Auth::id() ?? 1
-            ]);
-            
+        $updated = $this->moveSerialNumbersToTechnician($issuing, (int) $issuing->received_by, Auth::id() ?? 1);
+
+        if ($updated > 0) {
             \Log::info("Serial Numbers updated to On Hand for Issuing ID: {$issuing->id}, Technician ID: {$issuing->received_by}");
         }
+    }
+
+    public function moveSerialNumbersToTechnician(InventoryIssuing $issuing, int $technicianId, ?int $actorId = null): int
+    {
+        $issuing->loadMissing(['items.product.productCategory', 'items.product.productType', 'items.serialNumber']);
+
+        $serialNumberIds = $this->resolveSerialNumberIdsForItems(
+            $issuing->items,
+            ['ready', 'available', 'on_hand']
+        );
+
+        if (empty($serialNumberIds)) {
+            return 0;
+        }
+
+        return SerialNumber::whereIn('id', $serialNumberIds)->update([
+            'status' => 'on_hand',
+            'location_type' => 'technician',
+            'location_id' => $technicianId,
+            'updated_by' => $actorId ?? Auth::id() ?? 1,
+            'updated_at' => now(),
+        ]);
+    }
+
+    public function moveSerialNumbersToCustomerForItems(Collection $items, ?int $customerId, ?int $actorId = null): int
+    {
+        $items->load(['product.productCategory', 'product.productType', 'serialNumber']);
+
+        $serialNumberIds = $this->resolveSerialNumberIdsForItems(
+            $items,
+            ['on_hand', 'ready', 'available', 'in_use']
+        );
+
+        if (empty($serialNumberIds)) {
+            return 0;
+        }
+
+        return SerialNumber::whereIn('id', $serialNumberIds)
+            ->whereIn('status', ['on_hand', 'ready', 'available', 'in_use'])
+            ->update([
+                'status' => 'in_use',
+                'location_type' => 'customer',
+                'location_id' => $customerId,
+                'updated_by' => $actorId ?? Auth::id(),
+                'updated_at' => now(),
+            ]);
+    }
+
+    private function resolveSerialNumberIdsForItems(Collection $items, array $allowedStatuses): array
+    {
+        $resolvedIds = [];
+
+        foreach ($items as $item) {
+            if (!$item->serial_number_id || !$item->serialNumber) {
+                continue;
+            }
+
+            $quantity = $this->resolveSerialQuantity($item);
+            $isUniqueSerial = $item->product?->requiresUniqueSerialNumber() ?? true;
+
+            if ($isUniqueSerial) {
+                $resolvedIds[] = (int) $item->serial_number_id;
+                continue;
+            }
+
+            $query = SerialNumber::query()
+                ->where('master_product_id', $item->product_id)
+                ->where('serial_number', $item->serialNumber->serial_number)
+                ->whereIn('status', $allowedStatuses);
+
+            if (!empty($resolvedIds)) {
+                $query->whereNotIn('id', $resolvedIds);
+            }
+
+            $batchIds = $query
+                ->orderByRaw('CASE WHEN id = ? THEN 0 ELSE 1 END', [(int) $item->serial_number_id])
+                ->orderBy('id')
+                ->limit($quantity)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            $resolvedIds = array_merge($resolvedIds, $batchIds);
+        }
+
+        return array_values(array_unique($resolvedIds));
+    }
+
+    private function resolveSerialQuantity($item): int
+    {
+        foreach (['quantity_received', 'quantity_issued', 'quantity_requested'] as $field) {
+            $quantity = (float) ($item->{$field} ?? 0);
+            if ($quantity > 0) {
+                return max(1, (int) ceil($quantity));
+            }
+        }
+
+        return 1;
     }
 
     /**

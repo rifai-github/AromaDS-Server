@@ -7,7 +7,7 @@ use App\Models\JobSchedule;
 use App\Models\InventoryIssuingItem;
 use App\Models\MaterialIssue;
 use App\Models\MaterialIssueItem;
-use App\Models\SerialNumber;
+use App\Services\Warehouse\InventoryIssuingService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
@@ -221,23 +221,18 @@ class JobMaterialCompletionService
             return;
         }
 
-        $serialNumberIds = $serialNumberQuery->pluck('serial_number_id')
-            ->filter()
-            ->unique()
-            ->all();
+        $items = $serialNumberQuery
+            ->with(['product.productCategory', 'product.productType', 'serialNumber'])
+            ->get();
 
-        if (empty($serialNumberIds)) {
+        if ($items->isEmpty()) {
             return;
         }
 
-        SerialNumber::whereIn('id', $serialNumberIds)
-            ->whereIn('status', ['on_hand', 'ready', 'available'])
-            ->update([
-                'status' => 'in_use',
-                'location_type' => 'customer',
-                'location_id' => $jobSchedule->jobAdvice?->customer_id,
-                'updated_by' => Auth::id(),
-                'updated_at' => now(),
-            ]);
+        app(InventoryIssuingService::class)->moveSerialNumbersToCustomerForItems(
+            $items,
+            $jobSchedule->jobAdvice?->customer_id,
+            Auth::id()
+        );
     }
 }
