@@ -127,6 +127,20 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('{{ $displayRentalName }}', $view);
     }
 
+    public function test_quotation_approval_allows_pending_renewal_jobs_but_contract_generation_keeps_guard(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/Marketing/QuotationController.php'));
+
+        $this->assertStringContainsString('$this->ensureQuotationRenewalCanProceed($quotation, true);', $controller);
+        $this->assertStringContainsString('private function ensureQuotationRenewalCanProceed(Quotation $quotation, bool $allowPendingOperationalWork = false): void', $controller);
+        $this->assertStringContainsString('if ($allowPendingOperationalWork) {', $controller);
+        $this->assertStringContainsString('$blockReason = $contract->getRenewalBlockReason();', $controller);
+        $this->assertMatchesRegularExpression(
+            '/private function generateContractFromQuotation\(Quotation \$quotation\).*?\$this->ensureQuotationRenewalCanProceed\(\$quotation\);/s',
+            $controller
+        );
+    }
+
     public function test_backend_keeps_quotation_room_when_survey_detail_lookup_fails(): void
     {
         $controller = file_get_contents(app_path('Http/Controllers/Marketing/QuotationWizardController.php'));

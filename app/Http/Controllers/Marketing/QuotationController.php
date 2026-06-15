@@ -437,7 +437,7 @@ class QuotationController extends Controller
             ], 403);
         }
 
-        $this->ensureRenewalSourceCanProceed($request->quotation_type, $request->existing_contract_id);
+        $this->ensureRenewalSourceCanProceed($request->quotation_type, $request->existing_contract_id, true);
 
         // MOM10: Auto-generate quotation number if not provided using DocumentNumberService
         $quotationNumber = $request->quotation_number;
@@ -675,7 +675,7 @@ class QuotationController extends Controller
             ], 422);
         }
 
-        $this->ensureRenewalSourceCanProceed($request->quotation_type, $request->existing_contract_id);
+        $this->ensureRenewalSourceCanProceed($request->quotation_type, $request->existing_contract_id, true);
 
         $oldStatus = $quotation->status;
         
@@ -1105,7 +1105,7 @@ class QuotationController extends Controller
             ], 422);
         }
 
-        $this->ensureQuotationRenewalCanProceed($quotation);
+        $this->ensureQuotationRenewalCanProceed($quotation, true);
 
         // Check approval permission
         if (!Auth::user()->canApprove('quotations')) {
@@ -1686,15 +1686,16 @@ class QuotationController extends Controller
         return $contract;
     }
 
-    private function ensureQuotationRenewalCanProceed(Quotation $quotation): void
+    private function ensureQuotationRenewalCanProceed(Quotation $quotation, bool $allowPendingOperationalWork = false): void
     {
         $this->ensureRenewalSourceCanProceed(
             $quotation->quotation_type,
-            $quotation->existing_contract_id
+            $quotation->existing_contract_id,
+            $allowPendingOperationalWork
         );
     }
 
-    private function ensureRenewalSourceCanProceed(?string $quotationType, ?int $existingContractId): void
+    private function ensureRenewalSourceCanProceed(?string $quotationType, ?int $existingContractId, bool $allowPendingOperationalWork = false): void
     {
         if ($quotationType !== 'renewal') {
             return;
@@ -1711,6 +1712,13 @@ class QuotationController extends Controller
             throw ValidationException::withMessages([
                 'existing_contract_id' => 'Contract lama tidak ditemukan.',
             ]);
+        }
+
+        if ($allowPendingOperationalWork) {
+            // Renewal quotations may be prepared/approved while the source
+            // contract still has active jobs. Contract execution remains
+            // guarded by the renewal/contract workflow rules.
+            return;
         }
 
         $blockReason = $contract->getRenewalBlockReason();
