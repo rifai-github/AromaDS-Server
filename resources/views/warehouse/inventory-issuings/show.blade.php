@@ -499,6 +499,8 @@
                                         @foreach($issuing->items as $item)
                                         @php
                                             $requiresSerialNumber = $item->product?->requiresSerialNumber() ?? false;
+                                            $canScanSerialNumber = $requiresSerialNumber || in_array((int) $item->product_id, $scanSerialProductIds ?? [], true);
+                                            $isOptionalSerialNumber = !$requiresSerialNumber && $canScanSerialNumber;
                                         @endphp
                                         <tr>
                                             <td style="padding: 12px; vertical-align: middle;">
@@ -520,16 +522,18 @@
                                                 @endif
                                             </td>
                                             <td style="padding: 12px; vertical-align: middle;">
-                                                @if(!$requiresSerialNumber)
+                                                @if(!$canScanSerialNumber)
                                                 <span class="text-muted" style="font-style: italic;">Tidak wajib SN</span>
                                                 @elseif($item->serialNumber)
                                                 <strong style="font-family: monospace; font-size: 1rem; color: #1e3a8a;">{{ $item->serialNumber->serial_number }}</strong>
+                                                @elseif($isOptionalSerialNumber)
+                                                <span class="text-muted" style="font-style: italic;">Opsional - belum ada SN</span>
                                                 @else
                                                 <span class="text-muted" style="font-style: italic;">Belum ada SN</span>
                                                 @endif
                                             </td>
                                             <td style="padding: 12px; vertical-align: middle;">
-                                                @if(!$requiresSerialNumber)
+                                                @if(!$canScanSerialNumber)
                                                 <span class="badge bg-secondary" style="font-size: 0.85rem; padding: 6px 10px;">Tidak Wajib</span>
                                                 @elseif($item->serialNumber)
                                                 @php
@@ -552,6 +556,8 @@
                                                 <span class="badge bg-{{ $statusClass }}" style="font-size: 0.85rem; padding: 6px 10px;">
                                                     {{ $statusText }}
                                                 </span>
+                                                @elseif($isOptionalSerialNumber)
+                                                <span class="badge bg-info" style="font-size: 0.85rem; padding: 6px 10px;">Opsional</span>
                                                 @else
                                                 <span class="badge bg-warning" style="font-size: 0.85rem; padding: 6px 10px;">Pending</span>
                                                 @endif
@@ -565,7 +571,7 @@
                                             </td>
                                             <td style="padding: 12px; vertical-align: middle; text-align: center;">
                                                 @if($issuing->status === 'pending')
-                                                @if(!$requiresSerialNumber)
+                                                @if(!$canScanSerialNumber)
                                                 <span class="text-muted">-</span>
                                                 @elseif(!$item->serialNumber)
                                                 <button class="btn btn-sm btn-primary" onclick="openScanSNModalForItem({{ $item->id }})" title="Scan QR / Input SN">
@@ -1183,6 +1189,7 @@ function openScanSNModal(preSelectedItemId = null) {
     `;
     
     const items = @json($issuing->items);
+    const scanSerialProductIds = new Set((@json($scanSerialProductIds ?? [])).map(productId => Number(productId)));
     const itemRequiresSerialNumber = (item) => {
         const product = item.product || {};
         return Boolean(
@@ -1191,7 +1198,10 @@ function openScanSNModal(preSelectedItemId = null) {
             product.product_type?.has_serial_number
         );
     };
-    const serialItems = items.filter(itemRequiresSerialNumber);
+    const itemCanScanSerialNumber = (item) => {
+        return itemRequiresSerialNumber(item) || scanSerialProductIds.has(Number(item.product_id));
+    };
+    const serialItems = items.filter(itemCanScanSerialNumber);
     const itemsOptions = serialItems.map(item => 
         `<option value="${item.id}" data-product-id="${item.product_id}" ${preSelectedItemId == item.id ? 'selected' : ''}>${item.product?.name || 'Unknown'} (Qty: ${item.quantity_requested})</option>`
     ).join('');

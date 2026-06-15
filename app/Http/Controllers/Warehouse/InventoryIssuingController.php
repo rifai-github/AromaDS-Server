@@ -314,6 +314,36 @@ class InventoryIssuingController extends Controller
         // Load issuing items with serial numbers
         $issuing->load(['items.serialNumber.warehouse', 'items.product.productType', 'items.product.productCategory']);
 
+        $itemProductIds = $issuing->items
+            ->pluck('product_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $productsWithAvailableSerials = \App\Models\SerialNumber::whereIn('master_product_id', $itemProductIds)
+            ->whereIn('status', ['ready', 'available'])
+            ->where(function ($query) {
+                $query->whereNull('location_type')
+                    ->orWhere('location_type', 'warehouse');
+            })
+            ->when($issuing->warehouse_id, fn ($query) => $query->where('warehouse_id', $issuing->warehouse_id))
+            ->pluck('master_product_id')
+            ->map(fn ($productId) => (int) $productId)
+            ->unique()
+            ->values()
+            ->all();
+
+        $scanSerialProductIds = $issuing->items
+            ->filter(function ($item) use ($productsWithAvailableSerials) {
+                return ($item->product?->requiresSerialNumber() ?? false)
+                    || in_array((int) $item->product_id, $productsWithAvailableSerials, true);
+            })
+            ->pluck('product_id')
+            ->map(fn ($productId) => (int) $productId)
+            ->unique()
+            ->values()
+            ->all();
+
         // Check if can unpost (MOM16 logic)
         // Can unpost if status is 'sent' (Finish) AND work has not started/completed
         $canUnpost = false;
@@ -346,7 +376,7 @@ class InventoryIssuingController extends Controller
             }
         }
 
-        return view('warehouse.inventory-issuings.show', compact('issuing', 'canUnpost'));
+        return view('warehouse.inventory-issuings.show', compact('issuing', 'canUnpost', 'scanSerialProductIds'));
     }
 
     public function edit($id)
@@ -997,14 +1027,6 @@ class InventoryIssuingController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Item tidak sesuai dengan issuing ini.'
-                ], 422);
-            }
-
-            if (!($issuingItem->product?->requiresSerialNumber() ?? false)) {
-                DB::rollBack();
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Item ini tidak membutuhkan Serial Number.'
                 ], 422);
             }
 

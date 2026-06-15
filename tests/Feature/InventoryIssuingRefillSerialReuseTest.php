@@ -158,6 +158,28 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
         ]);
     }
 
+    public function test_optional_product_serial_can_be_linked_when_serial_exists_in_receiving(): void
+    {
+        $this->seedProduct(12, 102, 'Fragrance Lemongrass Mix 100ml', hasSerialNumber: false, isUnit: false);
+        $this->seedIssuingPair(productId: 102, serialNumberId: 502, serialNumber: 'RLG100001');
+        $this->actingAs(User::findOrFail(1));
+
+        $response = app(InventoryIssuingController::class)->scanSerialNumber(Request::create(
+            '/warehouse/inventory-issuings/2/scan-serial-number',
+            'POST',
+            ['issuing_item_id' => 200, 'serial_number' => 'RLG100001']
+        ), 2);
+
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $payload['status']);
+        $this->assertDatabaseHas('inventory_issuing_items', [
+            'id' => 200,
+            'serial_number_id' => 502,
+        ]);
+    }
+
     public function test_unit_serial_still_cannot_be_reused_in_another_prepared_inventory_issuing(): void
     {
         $this->seedProduct(11, 101, 'Premium Diffuser Unit', hasSerialNumber: true, isUnit: true);
