@@ -1482,8 +1482,16 @@ function formatDateWithThreeDigitMonth(dateInput) {
         return 'N/A';
     }
     
-    // Convert to Date object if string
-    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    let date = dateInput instanceof Date ? dateInput : null;
+    if (!date && typeof dateInput === 'string') {
+        const dateOnlyMatch = dateInput.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/);
+        date = dateOnlyMatch
+            ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+            : new Date(dateInput);
+    }
+    if (!date) {
+        date = new Date(dateInput);
+    }
     
     // Validate date
     if (isNaN(date.getTime())) {
@@ -1524,6 +1532,10 @@ function shouldSelectRoomsAfterCreate(type) {
     return ['install', 'install_free'].includes(normalizeJobAdviceType(type));
 }
 
+function getCreateModalJobAdviceType() {
+    return document.getElementById('modal_type')?.value || '';
+}
+
 function getSelectedMarketingUserId() {
     if (typeof $ !== 'undefined' && $.fn.select2) {
         return $('#request_by').val() || document.getElementById('request_by')?.value || null;
@@ -1544,12 +1556,31 @@ function resetCreateRoomSelection() {
     roomRowCounter = 0;
 }
 
+function dateValueForInput(dateInput) {
+    if (!dateInput) return '';
+
+    if (typeof dateInput === 'string') {
+        const match = dateInput.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (match) return match[1];
+    }
+
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (Number.isNaN(date.getTime())) return '';
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+}
+
 function addDaysToDateValue(dateValue, days) {
     if (!dateValue) return '';
-    const date = new Date(`${dateValue}T00:00:00`);
+    const [year, month, day] = dateValue.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
     if (Number.isNaN(date.getTime())) return '';
     date.setDate(date.getDate() + days);
-    return date.toISOString().split('T')[0];
+    return dateValueForInput(date);
 }
 
 function setupJobAdviceDateGuards() {
@@ -2427,6 +2458,11 @@ function loadContractRoomsForJobAdvice(contractSelectElement) {
             }));
         }
 
+        if (shouldSelectRoomsAfterCreate(getCreateModalJobAdviceType())) {
+            resetCreateRoomSelection();
+            return;
+        }
+
         if (contractRooms.length > 0) {
             if (roomsSection) roomsSection.style.display = 'block';
             if (roomsContainer) {
@@ -2549,6 +2585,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 active_sn: cr.active_sn
             }));
         }
+
+        if (shouldSelectRoomsAfterCreate(getCreateModalJobAdviceType())) {
+            resetCreateRoomSelection();
+            return;
+        }
         
         if (contractRooms.length > 0) {
             if (roomsSection) roomsSection.style.display = 'block';
@@ -2652,6 +2693,11 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Store rental products
             rentalProducts = rentalsData.data || rentalsData || [];
+
+            if (shouldSelectRoomsAfterCreate(getCreateModalJobAdviceType())) {
+                resetCreateRoomSelection();
+                return;
+            }
             
             if (quotationRooms.length > 0) {
                 if (roomsSection) roomsSection.style.display = 'block';
@@ -2721,6 +2767,11 @@ document.addEventListener('change', function(e) {
 
 // MOM6 & MOM9: Add room row (updated to handle both contract and quotation rooms)
 function addRoomRow() {
+    if (shouldSelectRoomsAfterCreate(getCreateModalJobAdviceType())) {
+        resetCreateRoomSelection();
+        return;
+    }
+
     roomRowCounter++;
     const rowId = `room-row-${roomRowCounter}`;
     
@@ -2965,11 +3016,11 @@ function openViewModal(id) {
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">Expected Date</label>
-                                <div class="form-input" style="background-color: #f9fafb; color: #374151;">${data.expected_date ? formatDateWithThreeDigitMonth(new Date(data.expected_date)) : 'N/A'}</div>
+                                <div class="form-input" style="background-color: #f9fafb; color: #374151;">${data.expected_date ? formatDateWithThreeDigitMonth(data.expected_date) : 'N/A'}</div>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Remove Date</label>
-                                <div class="form-input" style="background-color: #f9fafb; color: #374151;">${data.remove_date ? formatDateWithThreeDigitMonth(new Date(data.remove_date)) : 'N/A'}</div>
+                                <div class="form-input" style="background-color: #f9fafb; color: #374151;">${data.remove_date ? formatDateWithThreeDigitMonth(data.remove_date) : 'N/A'}</div>
                             </div>
                         </div>
                         <div class="form-row">
@@ -3280,7 +3331,7 @@ function openEditModal(id) {
                             <div class="form-row">
                                 <div class="form-group">
                                     <label class="form-label" for="edit_expected_date">Expected Date</label>
-                                    <input type="date" class="form-input" id="edit_expected_date" name="expected_date" value="${data.expected_date ? new Date(data.expected_date).toISOString().split('T')[0] : ''}" required>
+                                    <input type="date" class="form-input" id="edit_expected_date" name="expected_date" value="${dateValueForInput(data.expected_date)}" required>
                                 </div>
                             </div>
                         </div>
@@ -3290,7 +3341,7 @@ function openEditModal(id) {
                             <div class="form-row">
                                 <div class="form-group">
                                     <label class="form-label" for="edit_remove_date">Remove Date</label>
-                                    <input type="date" class="form-input" id="edit_remove_date" name="remove_date" value="${data.remove_date ? new Date(data.remove_date).toISOString().split('T')[0] : ''}">
+                                    <input type="date" class="form-input" id="edit_remove_date" name="remove_date" value="${dateValueForInput(data.remove_date)}">
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label" for="edit_status">Status</label>
@@ -4014,8 +4065,8 @@ document.addEventListener('DOMContentLoaded', function() {
         endPicker.setDate(next14Days);
         
         console.log('Auto-set filter dates:', {
-            from: today.toISOString().split('T')[0],
-            to: next14Days.toISOString().split('T')[0]
+            from: dateValueForInput(today),
+            to: dateValueForInput(next14Days)
         });
     }
 
