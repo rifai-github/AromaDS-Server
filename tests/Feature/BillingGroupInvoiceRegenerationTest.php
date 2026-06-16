@@ -184,6 +184,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->text('billing_address')->nullable();
             $table->string('pic_finance')->nullable();
             $table->string('email')->nullable();
+            $table->date('ba_date')->nullable();
+            $table->string('period_invoice')->nullable();
             $table->date('invoice_date')->nullable();
             $table->date('due_date')->nullable();
             $table->decimal('subtotal', 12, 2)->default(0);
@@ -301,6 +303,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'contract_number' => $contract->contract_number,
             'customer_id' => $customer->id,
             'billing_group_id' => $billingGroup->id,
+            'ba_date' => '2026-05-04',
+            'period_invoice' => 'Period 1',
             'invoice_date' => '2026-05-04',
             'due_date' => '2026-06-03',
             'invoice_status' => Invoice::STATUS_CANCELLED,
@@ -344,7 +348,9 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'invoice_number' => 'BDG-INV/26-05/0002',
             'invoice_status' => Invoice::STATUS_DRAFT,
             'billing_group_id' => $billingGroup->id,
+            'period_invoice' => 'Period 1',
         ]);
+        $this->assertSame('2026-05-04', $result['invoice']->fresh()->ba_date->toDateString());
         $this->assertDatabaseHas('invoice_rental_details', [
             'invoice_id' => $result['invoice']->id,
             'job_no' => 'BDG-CSR/26-05/0001',

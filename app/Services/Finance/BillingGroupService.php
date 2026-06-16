@@ -254,6 +254,7 @@ class BillingGroupService
                 // Regeneration should reproduce the cancelled invoice snapshot after
                 // the billing period passes the completed-job/BA readiness check,
                 // while still respecting current no-invoice room statuses.
+                $this->copyInvoiceHeaderFromSource($invoice, $sourceCancelledInvoice);
                 $this->copyInvoiceDetailsFromSource($invoice, $sourceCancelledInvoice, $billingGroup, $targetInvoiceDate);
             } else {
                 // Once billing readiness passes, bill every eligible contract room in the group.
@@ -351,6 +352,23 @@ class BillingGroupService
 
         return $sourceInvoice->invoiceRentalDetails()->exists()
             || $sourceInvoice->invoiceDetails()->exists();
+    }
+
+    private function copyInvoiceHeaderFromSource(Invoice $targetInvoice, Invoice $sourceInvoice): void
+    {
+        $updates = [];
+
+        if ($sourceInvoice->ba_date) {
+            $updates['ba_date'] = Carbon::parse($sourceInvoice->ba_date)->toDateString();
+        }
+
+        if ($sourceInvoice->period_invoice) {
+            $updates['period_invoice'] = $sourceInvoice->period_invoice;
+        }
+
+        if ($updates) {
+            $targetInvoice->update($updates);
+        }
     }
 
     private function copyInvoiceDetailsFromSource(
