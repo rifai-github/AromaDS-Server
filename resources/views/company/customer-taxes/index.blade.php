@@ -942,6 +942,72 @@
 // Global variables
 let selectedIdsForRetry = [];
 let successModalTimer = null;
+const customerTaxCodes = @json(($financeTaxCodes ?? collect())->map(function ($taxCode) {
+    return [
+        'code' => $taxCode->code,
+        'description' => $taxCode->description,
+        'customer_status' => $taxCode->customer_status,
+        'zero_tax' => $taxCode->hasZeroTaxPrint(),
+    ];
+})->values());
+const customerTaxDefaultVatRate = Number(@json((float) ($defaultVatSetting->tax_rate ?? 0)));
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;',
+    })[char]);
+}
+
+function formatCustomerTaxRate(rate) {
+    const number = Number(rate || 0);
+    return Number.isFinite(number) ? number.toFixed(2) : '0.00';
+}
+
+function buildCustomerTaxCodeOptions(selectedCode = '') {
+    if (!customerTaxCodes.length) {
+        return '<option value="">Tidak ada kode transaksi aktif</option>';
+    }
+
+    return '<option value="">Pilih Kode Transaksi</option>' + customerTaxCodes.map(taxCode => {
+        const label = taxCode.description || taxCode.customer_status || '';
+        const selected = String(taxCode.code) === String(selectedCode) ? 'selected' : '';
+
+        return `<option value="${escapeHtml(taxCode.code)}" ${selected} data-zero-tax="${taxCode.zero_tax ? '1' : '0'}" data-description="${escapeHtml(label)}">${escapeHtml(taxCode.code)} - ${escapeHtml(label)}</option>`;
+    }).join('');
+}
+
+function syncCustomerTaxCodeFields(prefix = 'create') {
+    const select = document.getElementById(`${prefix}_tax_type`);
+    if (!select) {
+        return;
+    }
+
+    const selectedOption = select.options[select.selectedIndex];
+    const selectedCode = select.value;
+    const rate = selectedCode && selectedOption?.dataset.zeroTax === '1' ? 0 : customerTaxDefaultVatRate;
+    const formattedRate = formatCustomerTaxRate(rate);
+    const ppnCodeInput = document.getElementById(`${prefix}_ppn_code`);
+    const taxRateInput = document.getElementById(`${prefix}_tax_rate`);
+    const taxRateDisplay = document.getElementById(`${prefix}_tax_rate_display`);
+    const description = document.getElementById(`${prefix}_tax_code_description`);
+
+    if (ppnCodeInput) {
+        ppnCodeInput.value = selectedCode;
+    }
+    if (taxRateInput) {
+        taxRateInput.value = formattedRate;
+    }
+    if (taxRateDisplay) {
+        taxRateDisplay.value = `${formattedRate}%`;
+    }
+    if (description) {
+        description.textContent = selectedCode ? (selectedOption?.dataset.description || '') : '';
+    }
+}
 
 // Select All functionality
 document.addEventListener('DOMContentLoaded', function() {
@@ -1065,26 +1131,16 @@ function openCreateModal() {
 
                     <div class="form-group">
                         <label class="form-label">Kode Transaksi PPN *</label>
-                        <select name="ppn_code" class="form-input" required>
-                            <option value="">Pilih Kode Transaksi</option>
-                            <option value="01">01 - Penyerahan BKP/JKP yang PPN dipungut oleh PKP penyerah</option>
-                            <option value="02">02 - Penyerahan kepada pemungut PPN instansi pemerintah</option>
-                            <option value="03">03 - Penyerahan kepada pemungut PPN lainnya</option>
-                            <option value="04">04 - Penyerahan dengan dasar pengenaan nilai lain</option>
-                            <option value="05">05 - Penyerahan dengan PPN dipungut besaran tertentu</option>
-                            <option value="06">06 - Penyerahan lainnya yang PPN dipungut PKP penyerah</option>
-                            <option value="07">07 - Penyerahan yang mendapat fasilitas tidak dipungut</option>
-                            <option value="08">08 - Penyerahan yang mendapat fasilitas dibebaskan</option>
-                            <option value="09">09 - Penyerahan aktiva yang tidak untuk diperjualbelikan</option>
+                        <select name="tax_type" id="create_tax_type" class="form-input" required onchange="syncCustomerTaxCodeFields('create')">
+                            ${buildCustomerTaxCodeOptions()}
                         </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Tax Type / Category *</label>
-                        <input type="text" name="tax_type" class="form-input" placeholder="e.g. PPN 11%, PPh 23" required value="PPN 11%">
+                        <div id="create_tax_code_description" class="text-gray-600 mt-2" style="font-size: 12px; line-height: 1.45; white-space: normal; overflow-wrap: anywhere;"></div>
+                        <input type="hidden" name="ppn_code" id="create_ppn_code">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Tax Rate (%) *</label>
-                        <input type="number" name="tax_rate" class="form-input" placeholder="Enter tax rate" step="0.01" min="0" max="100" required>
+                        <input type="text" id="create_tax_rate_display" class="form-input bg-gray-100 cursor-not-allowed" readonly tabindex="-1" value="${formatCustomerTaxRate(customerTaxDefaultVatRate)}%">
+                        <input type="hidden" name="tax_rate" id="create_tax_rate" value="${formatCustomerTaxRate(customerTaxDefaultVatRate)}">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Effective Date *</label>
@@ -1119,6 +1175,8 @@ function openCreateModal() {
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         <button type="submit" form="form" class="btn btn-primary">Create Tax Setting</button>
     `;
+
+    syncCustomerTaxCodeFields('create');
 }
 
 function openViewModal(id) {
@@ -1308,22 +1366,16 @@ function openEditModal(id) {
                         <div class="grid grid-cols-1 gap-6">
                             <div class="form-group">
                                 <label class="form-label">Kode Transaksi PPN *</label>
-                                <select name="tax_type" class="form-input" required>
-                                    <option value="">Pilih Kode Transaksi</option>
-                                    <option value="01" ${data.data.tax_type === '01' ? 'selected' : ''}>01 - Penyerahan BKP/JKP yang PPN dipungut oleh PKP penyerah</option>
-                                    <option value="02" ${data.data.tax_type === '02' ? 'selected' : ''}>02 - Penyerahan kepada pemungut PPN instansi pemerintah</option>
-                                    <option value="03" ${data.data.tax_type === '03' ? 'selected' : ''}>03 - Penyerahan kepada pemungut PPN lainnya</option>
-                                    <option value="04" ${data.data.tax_type === '04' ? 'selected' : ''}>04 - Penyerahan dengan dasar pengenaan nilai lain</option>
-                                    <option value="05" ${data.data.tax_type === '05' ? 'selected' : ''}>05 - Penyerahan dengan PPN dipungut besaran tertentu</option>
-                                    <option value="06" ${data.data.tax_type === '06' ? 'selected' : ''}>06 - Penyerahan lainnya yang PPN dipungut PKP penyerah</option>
-                                    <option value="07" ${data.data.tax_type === '07' ? 'selected' : ''}>07 - Penyerahan yang mendapat fasilitas tidak dipungut</option>
-                                    <option value="08" ${data.data.tax_type === '08' ? 'selected' : ''}>08 - Penyerahan yang mendapat fasilitas dibebaskan</option>
-                                    <option value="09" ${data.data.tax_type === '09' ? 'selected' : ''}>09 - Penyerahan aktiva yang tidak untuk diperjualbelikan</option>
+                                <select name="tax_type" id="edit_tax_type" class="form-input" required onchange="syncCustomerTaxCodeFields('edit')">
+                                    ${buildCustomerTaxCodeOptions(data.data.tax_type || data.data.ppn_code || '')}
                                 </select>
+                                <div id="edit_tax_code_description" class="text-gray-600 mt-2" style="font-size: 12px; line-height: 1.45; white-space: normal; overflow-wrap: anywhere;"></div>
+                                <input type="hidden" name="ppn_code" id="edit_ppn_code" value="${data.data.ppn_code || data.data.tax_type || ''}">
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Tax Rate (%) *</label>
-                                <input type="number" name="tax_rate" class="form-input" value="${data.data.tax_rate || ''}" placeholder="Enter tax rate" step="0.01" min="0" max="100" required>
+                                <input type="text" id="edit_tax_rate_display" class="form-input bg-gray-100 cursor-not-allowed" readonly tabindex="-1" value="${formatCustomerTaxRate(data.data.tax_rate)}%">
+                                <input type="hidden" name="tax_rate" id="edit_tax_rate" value="${formatCustomerTaxRate(data.data.tax_rate)}">
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Effective Date *</label>
@@ -1354,6 +1406,8 @@ function openEditModal(id) {
                 <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
                 <button type="submit" form="form" class="btn btn-primary">Update Tax Setting</button>
             `;
+
+            syncCustomerTaxCodeFields('edit');
         })
         .catch(error => {
             console.error('Error:', error);
