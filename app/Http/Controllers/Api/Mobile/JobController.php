@@ -1907,7 +1907,7 @@ class JobController extends Controller
                 $irJobExists = \App\Models\JobSchedule::where('job_advice_id', $job->job_advice_id)
                     ->where('room_id', $masterRoom->id)
                     ->whereIn(\DB::raw('lower(type)'), ['install', 'install_free', 'install free', 'ir'])
-                    ->whereNotIn('status', ['completed', 'done_job', 'selesai', 'teknisi_selesai_pengerjaan', 'undone'])
+                    ->whereNotIn('status', ['completed', 'done_job', 'selesai', 'cancelled', 'undone'])
                     ->exists();
                 
                 if ($irJobExists) {
@@ -2009,7 +2009,7 @@ class JobController extends Controller
                 $query->where('room_id', $job->room_id);
             })
             ->whereIn(\DB::raw('LOWER(type)'), ['install', 'install_free', 'install free', 'ir'])
-            ->whereNotIn('status', ['done_job', 'completed', 'selesai', 'teknisi_selesai_pengerjaan', 'cancelled', 'undone'])
+            ->whereNotIn('status', ['done_job', 'completed', 'selesai', 'cancelled', 'undone'])
             ->first();
 
         if ($blockingInstallJob) {
@@ -4222,6 +4222,18 @@ class JobController extends Controller
                     'status' => 'error',
                     'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat diselesaikan ulang dari aplikasi teknisi.'
                 ], 423);
+            }
+
+            if (!$cannotCompleteAllRooms) {
+                $dependencyCheck = $this->checkJobDependency($job);
+                if ($dependencyCheck['is_blocked']) {
+                    \DB::rollBack();
+
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $dependencyCheck['message'],
+                    ], 409);
+                }
             }
 
             $this->syncInstallRoomsFromActiveUnitOnWall($job);

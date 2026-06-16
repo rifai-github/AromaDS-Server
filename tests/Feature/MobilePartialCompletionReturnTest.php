@@ -796,6 +796,95 @@ class MobilePartialCompletionReturnTest extends TestCase
         ]);
     }
 
+    public function test_csr_final_verification_waits_until_ir_is_done_job(): void
+    {
+        DB::table('job_advices')->insert([
+            'id' => 70,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            'id' => 80,
+            'job_advice_id' => 70,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedules')->insert([
+            [
+                'id' => 20,
+                'job_advice_id' => 70,
+                'job_number' => 'JKT-IR/26-06/0001',
+                'type' => 'install',
+                'status' => 'teknisi_selesai_pengerjaan',
+                'ba_date' => null,
+                'ba_number' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 21,
+                'job_advice_id' => 70,
+                'job_number' => 'JKT-CSR/26-06/0001',
+                'type' => 'service_first',
+                'status' => 'in_progress',
+                'ba_date' => now()->toDateString(),
+                'ba_number' => 'BA-CSR-001',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 210,
+            'job_schedule_id' => 21,
+            'job_advice_room_id' => 80,
+            'room_name' => 'Lobby',
+            'room_id' => 800,
+            'status' => 'completed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_photos')->insert([
+            [
+                'job_schedule_id' => 21,
+                'job_schedule_room_id' => 210,
+                'photo_type' => 'Before Work',
+                'photo_path' => 'job-verifications/csr-before.jpg',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'job_schedule_id' => 21,
+                'job_schedule_room_id' => 210,
+                'photo_type' => 'After Work',
+                'photo_path' => 'job-verifications/csr-after.jpg',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $request = Request::create('/api/v1/mobile/jobs/21/verify', 'POST', [
+            'pic_name' => 'Bapak Client',
+            'signature' => 'data:image/png;base64,'.base64_encode('test-signature'),
+        ], [], [
+            'pic_photo' => UploadedFile::fake()->image('pic.jpg'),
+        ]);
+
+        $response = app(JobController::class)->verifyJob($request, 21);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertSame('error', $payload['status']);
+        $this->assertStringContainsString('JKT-IR/26-06/0001', $payload['message']);
+        $this->assertDatabaseHas('job_schedules', [
+            'id' => 21,
+            'status' => 'in_progress',
+        ]);
+    }
+
     public function test_partial_completion_final_verification_waits_until_follow_up_is_suspend_or_dpf(): void
     {
         $this->seedPartialCompletionScenario();
