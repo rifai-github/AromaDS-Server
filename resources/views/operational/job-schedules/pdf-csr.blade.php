@@ -312,6 +312,8 @@
                     ?: (data_get($jobAdviceRoom, 'rental_name') ?: $fallback)));
             };
 
+            $printedRentalKeys = [];
+
             foreach($schedules as $sch) {
                 // Determine Type Code
                 $typeCode = 'S'; // Default Service
@@ -358,11 +360,25 @@
                                 continue;
                             }
 
+                            $roomName = $roomPivot->room->room_name ?? $roomPivot->room_name ?? 'Unknown Room';
+                            $rentalKey = implode('|', [
+                                $sch->id ?? $sch->job_number ?? $jobNumber,
+                                $jobAdviceRoom?->id ?? 'no-advice-room',
+                                $itemName,
+                                $roomName,
+                            ]);
+
+                            if (isset($printedRentalKeys[$rentalKey])) {
+                                continue;
+                            }
+
+                            $printedRentalKeys[$rentalKey] = true;
+
                             $rooms->push([
                                 'reference' => $sch->job_number ?? $jobNumber,
                                 'item' => $itemName,
                                 'qty' => $jobAdviceRoom?->quantity ?? 1,
-                                'name' => $roomPivot->room->room_name ?? $roomPivot->room_name ?? 'Unknown Room',
+                                'name' => $roomName,
                                 'type' => $formatJobType($sch->type ?? $mainJob->type ?? null),
                                 'period' => $sch->period ?? '-'
                             ]);
