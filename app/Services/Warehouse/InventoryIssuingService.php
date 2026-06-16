@@ -227,30 +227,76 @@ class InventoryIssuingService
 
             if ($isUniqueSerial) {
                 $resolvedIds[] = (int) $item->serial_number_id;
+
                 continue;
             }
 
-            $query = SerialNumber::query()
-                ->where('master_product_id', $item->product_id)
-                ->where('serial_number', $item->serialNumber->serial_number)
-                ->whereIn('status', $allowedStatuses);
-
-            if (!empty($resolvedIds)) {
-                $query->whereNotIn('id', $resolvedIds);
-            }
-
-            $batchIds = $query
-                ->orderByRaw('CASE WHEN id = ? THEN 0 ELSE 1 END', [(int) $item->serial_number_id])
-                ->orderBy('id')
-                ->limit($quantity)
-                ->pluck('id')
-                ->map(fn ($id) => (int) $id)
-                ->all();
+            $batchIds = $this->resolveBatchSerialNumberIdsForItem($item, $quantity, $allowedStatuses, $resolvedIds);
 
             $resolvedIds = array_merge($resolvedIds, $batchIds);
         }
 
         return array_values(array_unique($resolvedIds));
+    }
+
+    private function resolveBatchSerialNumberIdsForItem($item, int $quantity, array $allowedStatuses, array $excludedIds): array
+    {
+        $serialNumber = $item->serialNumber?->serial_number;
+        if (!$serialNumber || !$item->product_id) {
+            return [];
+        }
+
+        $candidateIds = SerialNumber::query()
+            ->where('master_product_id', $item->product_id)
+            ->where('serial_number', $serialNumber)
+            ->whereIn('status', ['ready', 'available', 'on_hand', 'in_use'])
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (empty($candidateIds)) {
+            return [];
+        }
+
+        $offset = $this->resolveBatchSerialOffset($item, $serialNumber);
+        $allocatedIds = array_slice($candidateIds, $offset, $quantity);
+
+        $allowedIds = SerialNumber::query()
+            ->whereIn('id', $allocatedIds)
+            ->whereIn('status', $allowedStatuses)
+            ->when(!empty($excludedIds), fn ($query) => $query->whereNotIn('id', $excludedIds))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $allowedIdSet = array_flip($allowedIds);
+
+        return array_values(array_filter(
+            $allocatedIds,
+            fn ($id) => isset($allowedIdSet[(int) $id])
+        ));
+    }
+
+    private function resolveBatchSerialOffset($item, string $serialNumber): int
+    {
+        if (!$item->id || !$item->product_id) {
+            return 0;
+        }
+
+        $previousItems = \App\Models\InventoryIssuingItem::query()
+            ->where('id', '<', $item->id)
+            ->where('product_id', $item->product_id)
+            ->whereNotNull('serial_number_id')
+            ->whereHas('serialNumber', function ($query) use ($serialNumber) {
+                $query->where('serial_number', $serialNumber);
+            })
+            ->whereHas('inventoryIssuing', function ($query) {
+                $query->whereIn('status', ['pending', 'processed', 'sent', 'received']);
+            })
+            ->get();
+
+        return $previousItems->sum(fn ($previousItem) => $this->resolveSerialQuantity($previousItem));
     }
 
     private function resolveSerialQuantity($item): int
