@@ -1540,12 +1540,14 @@ function renderAdjustmentSerialFields(productSelectId, typeSelectId, qtyInputId,
     select.style.display = 'block';
     select.innerHTML = '';
     (product.available_serial_numbers || []).forEach(sn => {
+        const serialNumber = typeof sn === 'string' ? sn : sn.serial_number;
+        const serialId = typeof sn === 'string' ? null : sn.id;
         const option = document.createElement('option');
-        option.value = sn;
-        option.textContent = sn;
+        option.value = serialNumber;
+        option.textContent = serialId ? `${serialNumber} (#${serialId})` : serialNumber;
         select.appendChild(option);
     });
-    help.textContent = 'Pilih SN ready di warehouse yang akan dikeluarkan dari stok.';
+    help.textContent = 'Pilih SN/batch ready di warehouse yang akan dikeluarkan dari stok.';
 }
 
 function showAddItemModal(adjustmentId, warehouseId) {

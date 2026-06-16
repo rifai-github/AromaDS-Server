@@ -2,15 +2,15 @@
 
 namespace App\Models;
 
+use App\Http\Traits\AutoFilterable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Http\Traits\AutoFilterable;
 use Illuminate\Validation\ValidationException;
 
 class StockAdjustment extends Model
 {
-    use HasFactory, SoftDeletes, AutoFilterable;
+    use AutoFilterable, HasFactory, SoftDeletes;
 
     protected $fillable = [
         'adjustment_no',
@@ -22,13 +22,13 @@ class StockAdjustment extends Model
         'approved_at',
         'status',
         'created_by',
-        'updated_by'
+        'updated_by',
     ];
 
     protected $casts = [
         'adjustment_qty' => 'integer',
         'adjustment_date' => 'date',
-        'approved_at' => 'datetime'
+        'approved_at' => 'datetime',
     ];
 
     // Relationships
@@ -168,9 +168,10 @@ class StockAdjustment extends Model
     {
         $increase = $this->items()->where('adjustment_type', 'increase')->sum('adjustment_qty');
         $decrease = $this->items()->where('adjustment_type', 'decrease')->sum('adjustment_qty');
+
         return [
             'increase' => number_format($increase, 0, ',', '.'),
-            'decrease' => number_format($decrease, 0, ',', '.')
+            'decrease' => number_format($decrease, 0, ',', '.'),
         ];
     }
 
@@ -186,7 +187,7 @@ class StockAdjustment extends Model
         $this->update([
             'status' => 'approved',
             'approved_by' => $userId,
-            'approved_at' => now()
+            'approved_at' => now(),
         ]);
 
         foreach ($this->items as $item) {
@@ -227,7 +228,7 @@ class StockAdjustment extends Model
                 'quantity' => $item->adjustment_qty,
                 'reference_no' => $this->adjustment_no,
                 'reference_type' => 'Stock Adjustment',
-                'notes' => $this->reason . ($item->notes ? ' - ' . $item->notes : '') . $serialNotes,
+                'notes' => $this->reason.($item->notes ? ' - '.$item->notes : '').$serialNotes,
                 'created_by' => $userId,
                 'updated_by' => $userId,
             ]);
@@ -250,7 +251,7 @@ class StockAdjustment extends Model
             ]);
         }
 
-        if (($item->adjustment_type === 'decrease' || $product->requiresUniqueSerialNumber())
+        if ($product->requiresUniqueSerialNumber()
             && count($serialNumbers) !== count(array_unique($serialNumbers))) {
             throw ValidationException::withMessages([
                 'serial_numbers' => "Serial number untuk produk {$product->name} tidak boleh duplikat.",
@@ -258,32 +259,33 @@ class StockAdjustment extends Model
         }
 
         if ($item->adjustment_type === 'increase') {
-            $existing = SerialNumber::withTrashed()
-                ->whereIn('serial_number', $serialNumbers)
-                ->when(
-                    ! $product->requiresUniqueSerialNumber(),
-                    fn ($query) => $query->where('master_product_id', $item->master_product_id)
-                )
-                ->pluck('serial_number')
-                ->unique()
-                ->values();
+            if ($product->requiresUniqueSerialNumber()) {
+                $existing = SerialNumber::withTrashed()
+                    ->whereIn('serial_number', $serialNumbers)
+                    ->pluck('serial_number')
+                    ->unique()
+                    ->values();
 
-            if ($existing->isNotEmpty()) {
-                throw ValidationException::withMessages([
-                    'serial_numbers' => 'Serial number sudah terdaftar: '.$existing->implode(', '),
-                ]);
+                if ($existing->isNotEmpty()) {
+                    throw ValidationException::withMessages([
+                        'serial_numbers' => 'Serial number sudah terdaftar: '.$existing->implode(', '),
+                    ]);
+                }
             }
 
             return;
         }
 
-        $available = $this->availableWarehouseSerialNumbersQuery($item, $serialNumbers)
+        $availableCounts = $this->availableWarehouseSerialNumbersQuery($item, $serialNumbers)
             ->pluck('serial_number')
             ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
-            ->unique()
-            ->values();
+            ->countBy();
 
-        $missing = collect($serialNumbers)->diff($available)->values();
+        $missing = collect($serialNumbers)
+            ->countBy()
+            ->filter(fn ($requestedCount, $serialNumber) => ($availableCounts[$serialNumber] ?? 0) < $requestedCount)
+            ->keys()
+            ->values();
         if ($missing->isNotEmpty()) {
             throw ValidationException::withMessages([
                 'serial_numbers' => 'Serial number tidak tersedia di warehouse ini: '.$missing->implode(', '),
@@ -319,22 +321,28 @@ class StockAdjustment extends Model
             return;
         }
 
-        $this->availableWarehouseSerialNumbersQuery($item, $serialNumbers)
-            ->lockForUpdate()
-            ->get()
-            ->each(function (SerialNumber $serialNumber) use ($item, $userId) {
-                $notes = trim(($serialNumber->notes ? $serialNumber->notes."\n" : '')
-                    ."Adjusted out via Stock Adjustment {$this->adjustment_no}. Reason: {$this->reason}"
-                    .($item->notes ? " - {$item->notes}" : ''));
+        collect($serialNumbers)
+            ->countBy()
+            ->each(function (int $count, string $requestedSerialNumber) use ($item, $userId) {
+                $this->availableWarehouseSerialNumbersQuery($item, [$requestedSerialNumber])
+                    ->lockForUpdate()
+                    ->orderBy('id')
+                    ->limit($count)
+                    ->get()
+                    ->each(function (SerialNumber $serialNumber) use ($item, $userId) {
+                        $notes = trim(($serialNumber->notes ? $serialNumber->notes."\n" : '')
+                            ."Adjusted out via Stock Adjustment {$this->adjustment_no}. Reason: {$this->reason}"
+                            .($item->notes ? " - {$item->notes}" : ''));
 
-                $serialNumber->update([
-                    'status' => 'retired',
-                    'location_type' => null,
-                    'location_id' => null,
-                    'warehouse_id' => null,
-                    'notes' => $notes,
-                    'updated_by' => $userId,
-                ]);
+                        $serialNumber->update([
+                            'status' => 'retired',
+                            'location_type' => null,
+                            'location_id' => null,
+                            'warehouse_id' => null,
+                            'notes' => $notes,
+                            'updated_by' => $userId,
+                        ]);
+                    });
             });
     }
 
@@ -376,7 +384,7 @@ class StockAdjustment extends Model
         $this->update([
             'status' => 'rejected',
             'approved_by' => $userId,
-            'approved_at' => now()
+            'approved_at' => now(),
         ]);
     }
 
@@ -384,21 +392,21 @@ class StockAdjustment extends Model
     public static function generateAdjustmentNo($warehouseId)
     {
         $warehouse = Warehouse::with('branch')->find($warehouseId);
-        if (!$warehouse || !$warehouse->branch) {
+        if (! $warehouse || ! $warehouse->branch) {
             $prefix = 'ADJ';
         } else {
             $branchCode = strtoupper(substr($warehouse->branch->name, 0, 3));
-            $prefix = $branchCode . '-ADJ';
+            $prefix = $branchCode.'-ADJ';
         }
 
         $yearMonth = date('y-m'); // 26-01 format
-        
-        $searchPattern = $prefix . '/' . $yearMonth . '/%';
-        
+
+        $searchPattern = $prefix.'/'.$yearMonth.'/%';
+
         $lastAdjustment = self::where('adjustment_no', 'like', $searchPattern)
             ->orderBy('id', 'desc')
             ->first();
-        
+
         if ($lastAdjustment) {
             $parts = explode('/', $lastAdjustment->adjustment_no);
             $lastSequence = (int) end($parts);
@@ -406,7 +414,7 @@ class StockAdjustment extends Model
         } else {
             $sequence = 1;
         }
-        
-        return $prefix . '/' . $yearMonth . '/' . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+
+        return $prefix.'/'.$yearMonth.'/'.str_pad($sequence, 4, '0', STR_PAD_LEFT);
     }
 }

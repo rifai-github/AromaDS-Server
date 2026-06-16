@@ -2,15 +2,15 @@
 
 namespace App\Models;
 
+use App\Traits\HasComprehensiveAuditTrail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Traits\HasComprehensiveAuditTrail;
 
 class MasterProduct extends Model
 {
-    use HasFactory, SoftDeletes, HasComprehensiveAuditTrail, \App\Http\Traits\AutoFilterable;
-    
+    use \App\Http\Traits\AutoFilterable, HasComprehensiveAuditTrail, HasFactory, SoftDeletes;
+
     protected $table = 'master_products';
 
     protected $fillable = [
@@ -45,7 +45,7 @@ class MasterProduct extends Model
         'is_trading', // Trading flag from CSV (FgTrading)
         'is_stock_substitute', // Stock substitute flag from CSV (FgStockSubstitute)
         'created_by',
-        'updated_by'
+        'updated_by',
     ];
 
     protected $casts = [
@@ -77,8 +77,8 @@ class MasterProduct extends Model
     public function suppliers()
     {
         return $this->belongsToMany(Supplier::class, 'product_suppliers', 'product_id', 'supplier_id')
-                    ->withPivot('supplier_product_code', 'supplier_price', 'currency', 'lead_time_days', 'is_preferred', 'is_active', 'notes')
-                    ->withTimestamps();
+            ->withPivot('supplier_product_code', 'supplier_price', 'currency', 'lead_time_days', 'is_preferred', 'is_active', 'notes')
+            ->withTimestamps();
     }
 
     public function warehouseProducts()
@@ -89,8 +89,8 @@ class MasterProduct extends Model
     public function warehouses()
     {
         return $this->belongsToMany(Warehouse::class, 'warehouse_products', 'master_product_id', 'warehouse_id')
-                    ->withPivot('quantity', 'minimum_stock', 'maximum_stock')
-                    ->withTimestamps();
+            ->withPivot('quantity', 'minimum_stock', 'maximum_stock')
+            ->withTimestamps();
     }
 
     public function inventoryMovements()
@@ -177,15 +177,30 @@ class MasterProduct extends Model
         if ($this->productCategory && $this->productCategory->is_unit !== null) {
             return $this->productCategory->is_unit;
         }
+
         return $this->productType ? $this->productType->is_unit : false;
     }
 
     public function requiresSerialNumber(): bool
     {
-        return (bool) (
+        $configuredForSerialNumber = (bool) (
             optional($this->productCategory)->has_serial_number
             || optional($this->productType)->has_serial_number
         );
+
+        if ($configuredForSerialNumber) {
+            return true;
+        }
+
+        if (array_key_exists('serial_numbers_count', $this->attributes)) {
+            return (int) $this->attributes['serial_numbers_count'] > 0;
+        }
+
+        if ($this->relationLoaded('serialNumbers')) {
+            return $this->serialNumbers->isNotEmpty();
+        }
+
+        return $this->exists && $this->serialNumbers()->exists();
     }
 
     public function requiresUniqueSerialNumber(): bool
@@ -237,7 +252,7 @@ class MasterProduct extends Model
 
     public function getUnitPriceFormattedAttribute()
     {
-        return $this->unit_price ? 'Rp ' . number_format($this->unit_price, 2, ',', '.') : '-';
+        return $this->unit_price ? 'Rp '.number_format($this->unit_price, 2, ',', '.') : '-';
     }
 
     public function getTotalStockAttribute()

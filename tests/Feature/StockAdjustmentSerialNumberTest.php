@@ -211,6 +211,96 @@ class StockAdjustmentSerialNumberTest extends TestCase
         $this->assertSame(2, SerialNumber::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->where('status', 'ready')->count());
     }
 
+    public function test_batch_serial_product_can_be_detected_from_existing_serial_rows(): void
+    {
+        [$warehouse, $product] = $this->createWarehouseAndLegacyBatchProduct();
+
+        WarehouseProduct::create([
+            'warehouse_id' => $warehouse->id,
+            'master_product_id' => $product->id,
+            'quantity' => 1,
+        ]);
+
+        SerialNumber::create([
+            'serial_number' => 'RLG1000003',
+            'status' => 'ready',
+            'condition_status' => SerialNumber::CONDITION_NEW,
+            'location_type' => 'warehouse',
+            'location_id' => $warehouse->id,
+            'warehouse_id' => $warehouse->id,
+            'master_product_id' => $product->id,
+        ]);
+
+        $this->assertTrue($product->fresh()->requiresSerialNumber());
+        $this->assertFalse($product->fresh()->requiresUniqueSerialNumber());
+
+        $adjustment = StockAdjustment::create([
+            'adjustment_no' => 'ADJ-BATCH-INC-001',
+            'warehouse_id' => $warehouse->id,
+            'reason' => 'batch stock increase',
+            'adjustment_date' => now()->toDateString(),
+            'status' => 'waiting for approval',
+        ]);
+
+        StockAdjustmentItem::create([
+            'stock_adjustment_id' => $adjustment->id,
+            'master_product_id' => $product->id,
+            'adjustment_qty' => 2,
+            'adjustment_type' => 'increase',
+            'serial_numbers' => ['RLG1000003', 'RLG1000003'],
+        ]);
+
+        $adjustment->approve(1);
+
+        $this->assertSame(3, WarehouseProduct::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->value('quantity'));
+        $this->assertSame(3, SerialNumber::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->where('serial_number', 'RLG1000003')->where('status', 'ready')->count());
+    }
+
+    public function test_batch_decrease_retires_only_requested_duplicate_rows(): void
+    {
+        [$warehouse, $product] = $this->createWarehouseAndLegacyBatchProduct();
+
+        WarehouseProduct::create([
+            'warehouse_id' => $warehouse->id,
+            'master_product_id' => $product->id,
+            'quantity' => 3,
+        ]);
+
+        foreach (range(1, 3) as $index) {
+            SerialNumber::create([
+                'serial_number' => 'RLG1000003',
+                'status' => 'ready',
+                'condition_status' => SerialNumber::CONDITION_NEW,
+                'location_type' => 'warehouse',
+                'location_id' => $warehouse->id,
+                'warehouse_id' => $warehouse->id,
+                'master_product_id' => $product->id,
+            ]);
+        }
+
+        $adjustment = StockAdjustment::create([
+            'adjustment_no' => 'ADJ-BATCH-DEC-001',
+            'warehouse_id' => $warehouse->id,
+            'reason' => 'batch stock decrease',
+            'adjustment_date' => now()->toDateString(),
+            'status' => 'waiting for approval',
+        ]);
+
+        StockAdjustmentItem::create([
+            'stock_adjustment_id' => $adjustment->id,
+            'master_product_id' => $product->id,
+            'adjustment_qty' => 2,
+            'adjustment_type' => 'decrease',
+            'serial_numbers' => ['RLG1000003', 'RLG1000003'],
+        ]);
+
+        $adjustment->approve(1);
+
+        $this->assertSame(1, WarehouseProduct::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->value('quantity'));
+        $this->assertSame(2, SerialNumber::where('master_product_id', $product->id)->where('serial_number', 'RLG1000003')->where('status', 'retired')->count());
+        $this->assertSame(1, SerialNumber::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->where('serial_number', 'RLG1000003')->where('status', 'ready')->count());
+    }
+
     private function createWarehouseAndSerialProduct(): array
     {
         $warehouse = Warehouse::create(['name' => 'Gudang Surabaya', 'is_active' => true]);
@@ -223,6 +313,24 @@ class StockAdjustmentSerialNumberTest extends TestCase
             'product_category_id' => $category->id,
             'name' => 'Diffuser W300 White',
             'sku' => 'DISW300W',
+            'is_active' => true,
+        ]);
+
+        return [$warehouse, $product];
+    }
+
+    private function createWarehouseAndLegacyBatchProduct(): array
+    {
+        $warehouse = Warehouse::create(['name' => 'Gudang DKI Jakarta', 'is_active' => true]);
+        $category = ProductCategory::create([
+            'name' => 'Aroma',
+            'has_serial_number' => false,
+            'is_unit' => false,
+        ]);
+        $product = MasterProduct::create([
+            'product_category_id' => $category->id,
+            'name' => 'Fragrance Lemongrass Mix 100ml',
+            'sku' => 'REFLEMONGRASS100',
             'is_active' => true,
         ]);
 

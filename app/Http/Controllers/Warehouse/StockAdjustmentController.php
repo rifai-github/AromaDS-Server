@@ -3,18 +3,18 @@
 namespace App\Http\Controllers\Warehouse;
 
 use App\Http\Controllers\Controller;
-use App\Models\StockAdjustment;
-use App\Models\Warehouse;
+use App\Http\Traits\AccessControlFilterTrait;
 use App\Models\MasterProduct;
 use App\Models\SerialNumber;
+use App\Models\StockAdjustment;
 use App\Models\User;
+use App\Models\Warehouse;
 use App\Services\Warehouse\BranchWarehouseResolver;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
-use App\Http\Traits\AccessControlFilterTrait;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class StockAdjustmentController extends Controller
 {
@@ -51,8 +51,12 @@ class StockAdjustmentController extends Controller
                 $query->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall']);
             })
             ->orderBy('serial_number')
-            ->pluck('serial_number')
-            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->orderBy('id')
+            ->get(['id', 'serial_number'])
+            ->map(fn (SerialNumber $serialNumber) => [
+                'id' => $serialNumber->id,
+                'serial_number' => strtoupper(trim((string) $serialNumber->serial_number)),
+            ])
             ->values();
     }
 
@@ -90,7 +94,7 @@ class StockAdjustmentController extends Controller
         if ($request->ajax()) {
             return response()->json([
                 'status' => 'success',
-                'data' => $adjustments
+                'data' => $adjustments,
             ]);
         }
 
@@ -105,36 +109,37 @@ class StockAdjustmentController extends Controller
     {
         // If warehouse_id is provided, return products linked to that warehouse
         if ($request->ajax() && $request->has('warehouse_id')) {
-            $products = MasterProduct::whereHas('warehouseProducts', function($query) use ($request) {
+            $products = MasterProduct::whereHas('warehouseProducts', function ($query) use ($request) {
                 $query->where('warehouse_id', $request->warehouse_id);
             })
-            ->select('id', 'name', 'sku', 'packaging_size_id', 'packaging_size', 'product_category_id', 'product_type_id')
-            ->with(['packagingSize:id,name', 'productCategory:id,has_serial_number,is_unit', 'productType:id,has_serial_number,is_unit'])
-            ->orderBy('name')
-            ->get()
-            ->map(function (MasterProduct $product) use ($request) {
-                $requiresSerialNumber = $product->requiresSerialNumber();
+                ->select('id', 'name', 'sku', 'packaging_size_id', 'packaging_size', 'product_category_id', 'product_type_id')
+                ->with(['packagingSize:id,name', 'productCategory:id,has_serial_number,is_unit', 'productType:id,has_serial_number,is_unit'])
+                ->withCount('serialNumbers')
+                ->orderBy('name')
+                ->get()
+                ->map(function (MasterProduct $product) use ($request) {
+                    $requiresSerialNumber = $product->requiresSerialNumber();
 
-                return [
-                    'id' => $product->id,
-                    'name' => $product->name,
-                    'sku' => $product->sku,
-                    'packaging_size' => $product->packagingSize
-                        ? ['id' => $product->packagingSize->id, 'name' => $product->packagingSize->name]
-                        : $product->packaging_size,
-                    'requires_serial_number' => $requiresSerialNumber,
-                    'requires_unique_serial_number' => $product->requiresUniqueSerialNumber(),
-                    'available_serial_numbers' => $requiresSerialNumber
-                        ? $this->getAvailableSerialNumbers((int) $request->warehouse_id, (int) $product->id)
-                        : [],
-                ];
-            });
+                    return [
+                        'id' => $product->id,
+                        'name' => $product->name,
+                        'sku' => $product->sku,
+                        'packaging_size' => $product->packagingSize
+                            ? ['id' => $product->packagingSize->id, 'name' => $product->packagingSize->name]
+                            : $product->packaging_size,
+                        'requires_serial_number' => $requiresSerialNumber,
+                        'requires_unique_serial_number' => $product->requiresUniqueSerialNumber(),
+                        'available_serial_numbers' => $requiresSerialNumber
+                            ? $this->getAvailableSerialNumbers((int) $request->warehouse_id, (int) $product->id)
+                            : [],
+                    ];
+                });
 
             return response()->json([
                 'status' => 'success',
                 'data' => [
-                    'products' => $products
-                ]
+                    'products' => $products,
+                ],
             ]);
         }
 
@@ -148,8 +153,8 @@ class StockAdjustmentController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => [
-                    'warehouses' => $warehouses
-                ]
+                    'warehouses' => $warehouses,
+                ],
             ]);
         }
 
@@ -169,14 +174,14 @@ class StockAdjustmentController extends Controller
         if ($validator->fails()) {
             return response()->json([
                 'status' => 'error',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
         $warehouse = $this->resolveWarehouseFromRequest($request);
         $reason = trim((string) $request->reason);
         $notes = $request->filled('notes') ? trim((string) $request->notes) : null;
-        $lockKey = 'stock-adjustments:create:' . sha1(implode('|', [
+        $lockKey = 'stock-adjustments:create:'.sha1(implode('|', [
             Auth::id(),
             $warehouse->id,
             $request->adjustment_date,
@@ -197,6 +202,7 @@ class StockAdjustmentController extends Controller
                         ->where(function ($query) use ($notes) {
                             if ($notes === null) {
                                 $query->whereNull('notes')->orWhere('notes', '');
+
                                 return;
                             }
 
@@ -209,7 +215,7 @@ class StockAdjustmentController extends Controller
                         return response()->json([
                             'status' => 'success',
                             'message' => 'Stock adjustment already created from this submission',
-                            'data' => $recentDuplicate->load(['warehouse', 'masterProduct', 'createdBy'])
+                            'data' => $recentDuplicate->load(['warehouse', 'masterProduct', 'createdBy']),
                         ]);
                     }
 
@@ -227,19 +233,19 @@ class StockAdjustmentController extends Controller
                     return response()->json([
                         'status' => 'success',
                         'message' => 'Stock adjustment created successfully',
-                        'data' => $adjustment->load(['warehouse', 'masterProduct', 'createdBy'])
+                        'data' => $adjustment->load(['warehouse', 'masterProduct', 'createdBy']),
                     ]);
                 });
             });
         } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Stock adjustment is still being created. Please wait a moment.'
+                'message' => 'Stock adjustment is still being created. Please wait a moment.',
             ], 429);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to create stock adjustment: ' . $e->getMessage()
+                'message' => 'Failed to create stock adjustment: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -253,7 +259,7 @@ class StockAdjustmentController extends Controller
         if (request()->ajax()) {
             return response()->json([
                 'status' => 'success',
-                'data' => $adjustment
+                'data' => $adjustment,
             ]);
         }
 
@@ -276,8 +282,8 @@ class StockAdjustmentController extends Controller
                     'adjustment' => $adjustment,
                     'warehouses' => $warehouses,
                     'products' => $products,
-                    'users' => $users
-                ]
+                    'users' => $users,
+                ],
             ]);
         }
 
@@ -293,13 +299,13 @@ class StockAdjustmentController extends Controller
             'reason' => 'sometimes|required|string|max:500',
             'adjustment_date' => 'sometimes|required|date',
             'notes' => 'sometimes|nullable|string|max:1000',
-            'status' => 'sometimes|required|in:draft,waiting for approval,approved,rejected'
+            'status' => 'sometimes|required|in:draft,waiting for approval,approved,rejected',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'status' => 'error',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -319,13 +325,14 @@ class StockAdjustmentController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Stock adjustment updated successfully',
-                'data' => $adjustment->load(['warehouse', 'items.masterProduct', 'createdBy', 'updatedBy'])
+                'data' => $adjustment->load(['warehouse', 'items.masterProduct', 'createdBy', 'updatedBy']),
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to update stock adjustment: ' . $e->getMessage()
+                'message' => 'Failed to update stock adjustment: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -338,12 +345,12 @@ class StockAdjustmentController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Stock adjustment deleted successfully'
+                'message' => 'Stock adjustment deleted successfully',
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to delete stock adjustment: ' . $e->getMessage()
+                'message' => 'Failed to delete stock adjustment: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -352,7 +359,7 @@ class StockAdjustmentController extends Controller
     {
         $request->validate([
             'ids' => 'required|array',
-            'ids.*' => 'exists:stock_adjustments,id'
+            'ids.*' => 'exists:stock_adjustments,id',
         ]);
 
         try {
@@ -364,13 +371,14 @@ class StockAdjustmentController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => "Successfully deleted {$deletedCount} stock adjustment(s)."
+                'message' => "Successfully deleted {$deletedCount} stock adjustment(s).",
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to bulk delete stock adjustments: ' . $e->getMessage()
+                'message' => 'Failed to bulk delete stock adjustments: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -392,10 +400,11 @@ class StockAdjustmentController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Stock adjustment approved successfully',
-                'data' => $adjustment->load(['warehouse', 'items.masterProduct', 'createdBy', 'approvedBy'])
+                'data' => $adjustment->load(['warehouse', 'items.masterProduct', 'createdBy', 'approvedBy']),
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             DB::rollback();
+
             return response()->json([
                 'status' => 'error',
                 'message' => collect($e->errors())->flatten()->first() ?: 'Serial number validation failed.',
@@ -403,9 +412,10 @@ class StockAdjustmentController extends Controller
             ], 422);
         } catch (\Exception $e) {
             DB::rollback();
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to approve stock adjustment: ' . $e->getMessage()
+                'message' => 'Failed to approve stock adjustment: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -451,7 +461,7 @@ class StockAdjustmentController extends Controller
                     ], 422);
                 }
 
-                if (($request->adjustment_type === 'decrease' || $product->requiresUniqueSerialNumber())
+                if ($product->requiresUniqueSerialNumber()
                     && count($serialNumbers) !== count(array_unique($serialNumbers))) {
                     DB::rollBack();
 
@@ -462,27 +472,31 @@ class StockAdjustmentController extends Controller
                 }
 
                 if ($request->adjustment_type === 'increase') {
-                    $existing = SerialNumber::withTrashed()
-                        ->whereIn('serial_number', $serialNumbers)
-                        ->when(
-                            ! $product->requiresUniqueSerialNumber(),
-                            fn ($query) => $query->where('master_product_id', $product->id)
-                        )
-                        ->pluck('serial_number')
-                        ->unique()
-                        ->values();
+                    if ($product->requiresUniqueSerialNumber()) {
+                        $existing = SerialNumber::withTrashed()
+                            ->whereIn('serial_number', $serialNumbers)
+                            ->pluck('serial_number')
+                            ->unique()
+                            ->values();
 
-                    if ($existing->isNotEmpty()) {
-                        DB::rollBack();
+                        if ($existing->isNotEmpty()) {
+                            DB::rollBack();
 
-                        return response()->json([
-                            'status' => 'error',
-                            'message' => 'Serial number sudah terdaftar: '.$existing->implode(', '),
-                        ], 422);
+                            return response()->json([
+                                'status' => 'error',
+                                'message' => 'Serial number sudah terdaftar: '.$existing->implode(', '),
+                            ], 422);
+                        }
                     }
                 } else {
-                    $available = $this->getAvailableSerialNumbers((int) $stock_adjustment->warehouse_id, (int) $product->id);
-                    $missing = collect($serialNumbers)->diff($available)->values();
+                    $availableCounts = collect($this->getAvailableSerialNumbers((int) $stock_adjustment->warehouse_id, (int) $product->id))
+                        ->pluck('serial_number')
+                        ->countBy();
+                    $missing = collect($serialNumbers)
+                        ->countBy()
+                        ->filter(fn ($requestedCount, $serialNumber) => ($availableCounts[$serialNumber] ?? 0) < $requestedCount)
+                        ->keys()
+                        ->values();
 
                     if ($missing->isNotEmpty()) {
                         DB::rollBack();
@@ -511,10 +525,11 @@ class StockAdjustmentController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Item added successfully',
-                'data' => $item->load('masterProduct')
+                'data' => $item->load('masterProduct'),
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
     }
@@ -525,7 +540,7 @@ class StockAdjustmentController extends Controller
             DB::beginTransaction();
 
             $item = \App\Models\StockAdjustmentItem::findOrFail($itemId);
-            
+
             // Check if adjustment is still editable
             $adjustment = $item->stockAdjustment;
             if ($adjustment->status !== 'draft') {
@@ -538,11 +553,12 @@ class StockAdjustmentController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Item deleted successfully'
+                'message' => 'Item deleted successfully',
             ]);
         } catch (\Exception $e) {
             DB::rollback();
-            return response()->json(['status' => 'error', 'message' => 'Failed to delete item: ' . $e->getMessage()], 500);
+
+            return response()->json(['status' => 'error', 'message' => 'Failed to delete item: '.$e->getMessage()], 500);
         }
     }
 
@@ -557,9 +573,10 @@ class StockAdjustmentController extends Controller
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
+
             return back()->withErrors($validator);
         }
 
@@ -575,7 +592,7 @@ class StockAdjustmentController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Stock adjustment rejected successfully',
-                    'data' => $adjustment->load(['warehouse', 'masterProduct', 'createdBy', 'approvedBy'])
+                    'data' => $adjustment->load(['warehouse', 'masterProduct', 'createdBy', 'approvedBy']),
                 ]);
             }
 
@@ -586,10 +603,11 @@ class StockAdjustmentController extends Controller
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to reject stock adjustment: ' . $e->getMessage()
+                    'message' => 'Failed to reject stock adjustment: '.$e->getMessage(),
                 ], 500);
             }
-            return back()->with('error', 'Failed to reject stock adjustment: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to reject stock adjustment: '.$e->getMessage());
         }
     }
 
@@ -630,8 +648,8 @@ class StockAdjustmentController extends Controller
                 'decrease_adjustments' => $decreaseAdjustments,
                 'recent_adjustments' => $recentAdjustments,
                 'monthly_adjustments' => $monthlyAdjustments,
-                'warehouse_adjustments' => $warehouseAdjustments
-            ]
+                'warehouse_adjustments' => $warehouseAdjustments,
+            ],
         ]);
     }
 }
