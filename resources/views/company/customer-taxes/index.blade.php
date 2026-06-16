@@ -942,14 +942,7 @@
 // Global variables
 let selectedIdsForRetry = [];
 let successModalTimer = null;
-const customerTaxCodes = @json(($financeTaxCodes ?? collect())->map(function ($taxCode) {
-    return [
-        'code' => $taxCode->code,
-        'description' => $taxCode->description,
-        'customer_status' => $taxCode->customer_status,
-        'zero_tax' => $taxCode->hasZeroTaxPrint(),
-    ];
-})->values());
+const customerTaxCodes = @json($financeTaxCodeOptions ?? []);
 const customerTaxDefaultVatRate = Number(@json((float) ($defaultVatSetting->tax_rate ?? 0)));
 
 function escapeHtml(value) {

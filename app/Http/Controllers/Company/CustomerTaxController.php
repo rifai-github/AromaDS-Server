@@ -115,6 +115,14 @@ class CustomerTaxController extends Controller
             ->orderBy('sort_order')
             ->orderBy('code')
             ->get();
+        $financeTaxCodeOptions = $financeTaxCodes->map(function (FinanceTaxCode $taxCode) {
+            return [
+                'code' => $taxCode->code,
+                'description' => $taxCode->description,
+                'customer_status' => $taxCode->customer_status,
+                'zero_tax' => $taxCode->hasZeroTaxPrint(),
+            ];
+        })->values();
 
         $statistics = [
             'total' => CustomerTax::count(),
@@ -137,7 +145,8 @@ class CustomerTaxController extends Controller
             'customers',
             'statistics',
             'defaultVatSetting',
-            'financeTaxCodes'
+            'financeTaxCodes',
+            'financeTaxCodeOptions'
         ));
     }
 
