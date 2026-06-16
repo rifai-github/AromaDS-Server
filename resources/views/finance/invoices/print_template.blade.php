@@ -3,33 +3,43 @@
 <head>
     <title>Invoice {{ $invoice->invoice_number }}</title>
     <style>
-        body { font-family: sans-serif; font-size: 11px; color: #333; }
+        @page { margin: 20px 28px 52px 28px; }
+        body { font-family: sans-serif; font-size: 10px; color: #333; }
         .page-break { page-break-after: always; }
         
-        .header-table { width: 100%; margin-bottom: 20px; border-bottom: 2px solid #214589; padding-bottom: 10px; }
+        .header-table { width: 100%; margin-bottom: 12px; border-bottom: 2px solid #214589; padding-bottom: 8px; }
         .header-table td { vertical-align: top; }
         
-        .logo { width: 150px; }
+        .logo { width: 118px; }
         
-        .title { font-size: 20px; font-weight: bold; color: #214589; text-align: right; }
-        .doc-number { font-size: 14px; font-weight: bold; text-align: right; margin-top: 5px; }
+        .title { font-size: 18px; font-weight: bold; color: #214589; text-align: right; }
+        .doc-number { font-size: 12px; font-weight: bold; text-align: right; margin-top: 4px; }
         
-        .info-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; }
-        .info-table td { padding: 5px; vertical-align: top; }
+        .info-table { width: 100%; margin-bottom: 10px; border-collapse: collapse; }
+        .info-table td { padding: 3px 5px; vertical-align: top; }
         .label { font-weight: bold; width: 120px; color: #555; }
         
-        .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        .items-table th { background-color: #214589; color: white; padding: 8px; text-align: left; }
-        .items-table td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
-        .items-table .total-row td { border: none; font-weight: bold; padding-top: 5px; }
-        .payment-info { margin-top: 32px; line-height: 1.45; }
-        .payment-info-title { font-weight: bold; margin-bottom: 6px; }
+        h3 { margin: 8px 0 6px; font-size: 13px; }
+        .items-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+        .items-table th { background-color: #214589; color: white; padding: 6px; text-align: left; }
+        .items-table td { border: 1px solid #ddd; padding: 5px 6px; vertical-align: top; }
+        .items-table .total-row td { border: none; font-weight: bold; padding-top: 4px; padding-bottom: 2px; }
+        .notes { margin-top: 14px; }
+        .notes p { margin-top: 4px; margin-bottom: 0; font-style: italic; }
+        .payment-info { margin-top: 18px; line-height: 1.35; }
+        .payment-info-title { font-weight: bold; margin-bottom: 4px; }
         .payment-info-row { margin-bottom: 2px; }
+        .signature-table { width: 100%; margin-top: 18px; text-align: center; border-collapse: collapse; page-break-inside: avoid; }
+        .signature-table td { width: 33%; vertical-align: top; }
+        .signature-label { margin: 0 0 34px; }
+        .signature-line { width: 80%; border-top: 1px solid #ccc; margin: 0 auto 5px; }
+        .signature-name { margin: 0 0 2px; }
+        .signature-company { margin: 0; }
         
         .center { text-align: center; }
         .right { text-align: right; }
         
-        .footer { position: fixed; bottom: 30px; left: 0; right: 0; text-align: center; font-size: 10px; color: #888; border-top: 1px solid #eee; padding-top: 10px; }
+        .footer { position: fixed; bottom: 14px; left: 0; right: 0; text-align: center; font-size: 9px; color: #888; border-top: 1px solid #eee; padding-top: 7px; }
         
         @media print {
             .footer { position: fixed; bottom: 0; }
@@ -78,7 +88,8 @@
             : $invoiceSignatoryValue('invoice_authorized_by_position');
 
         $billingGroup = $invoice->billingGroup ?: $invoice->contract?->billingGroup;
-        $rawPaymentAccount = trim((string) ($invoice->virtual_account_number ?: $billingGroup?->virtual_account_number ?: ''));
+        $contractVirtualAccount = trim((string) ($invoice->contract?->virtual_account ?: $invoice->contractById?->virtual_account ?: ''));
+        $rawPaymentAccount = trim((string) ($contractVirtualAccount ?: $invoice->virtual_account_number ?: $billingGroup?->virtual_account_number ?: ''));
         $paymentMethod = trim((string) ($invoice->payment_method ?: $billingGroup?->payment_method ?: ''));
         $paymentBankName = trim((string) ($billingGroup?->bank_name ?: ''));
         $paymentAccountName = '';
@@ -107,6 +118,50 @@
 
         if (!$bankPayment && $paymentAccountNumber === '' && $invoice->customer?->defaultBankPayment) {
             $bankPayment = $invoice->customer->defaultBankPayment;
+        }
+
+        $companyVirtualAccount = null;
+        if (\Illuminate\Support\Facades\Schema::hasTable('company_virtual_accounts') && $invoice->customer) {
+            $companyVirtualAccountQuery = function () use ($invoice) {
+                $customerName = trim((string) ($invoice->customer?->name ?? ''));
+
+                return \App\Models\CompanyVirtualAccount::with('bankPayment.bank')
+                    ->where('is_active', true)
+                    ->where(function ($query) use ($invoice, $customerName) {
+                        $query->where('customer_id', $invoice->customer_id);
+
+                        if ($customerName !== '') {
+                            $query->orWhere('account_name', $customerName)
+                                ->orWhere('account_name', 'like', "%{$customerName}%")
+                                ->orWhere('description', 'like', "%{$customerName}%");
+                        }
+                    })
+                    ->orderByDesc('updated_at')
+                    ->orderByDesc('created_at');
+            };
+
+            if ($contractVirtualAccount !== '') {
+                $companyVirtualAccount = \App\Models\CompanyVirtualAccount::with('bankPayment.bank')
+                    ->where('account_number', $contractVirtualAccount)
+                    ->where('is_active', true)
+                    ->first();
+            }
+
+            if ($bankPayment) {
+                $companyVirtualAccount = $companyVirtualAccount ?: $companyVirtualAccountQuery()
+                    ->where('bank_payment_id', $bankPayment->id)
+                    ->first();
+            }
+
+            $companyVirtualAccount = $companyVirtualAccount ?: $companyVirtualAccountQuery()->first();
+        }
+
+        if ($companyVirtualAccount) {
+            $bankPayment = $companyVirtualAccount->bankPayment ?: $bankPayment;
+            $paymentAccountName = trim((string) ($companyVirtualAccount->account_name ?: $paymentAccountName));
+            $paymentAccountNumber = $contractVirtualAccount !== ''
+                ? $contractVirtualAccount
+                : trim((string) $companyVirtualAccount->account_number);
         }
 
         if ($bankPayment) {
@@ -270,9 +325,9 @@
 
     <!-- Payment Info / Notes -->
     @if($invoice->notes)
-    <div style="margin-top: 30px;">
+    <div class="notes">
         <strong>Notes:</strong><br>
-        <p style="margin-top: 5px; font-style: italic;">{{ $invoice->notes }}</p>
+        <p>{{ $invoice->notes }}</p>
     </div>
     @endif
 
@@ -297,25 +352,23 @@
     @endif
 
     <!-- Signatures -->
-    <table style="width: 100%; margin-top: 50px; text-align: center;">
+    <table class="signature-table">
         <tr>
-            <td style="width: 33%;">
-                <p>Receiver</p>
-                <br><br><br>
-                <hr style="width: 80%; border-top: 1px solid #ccc;">
+            <td>
+                <p class="signature-label">Receiver</p>
+                <div class="signature-line"></div>
             </td>
-            <td style="width: 33%;"></td>
-            <td style="width: 33%;">
-                <p>Authorized By</p>
-                <br><br><br>
-                <hr style="width: 80%; border-top: 1px solid #ccc;">
+            <td></td>
+            <td>
+                <p class="signature-label">Authorized By</p>
+                <div class="signature-line"></div>
                 @if($authorizedName)
-                    <p style="margin-bottom: 2px;">{{ $authorizedName }}</p>
+                    <p class="signature-name">{{ $authorizedName }}</p>
                 @endif
                 @if($authorizedPosition)
-                    <p style="margin-top: 0; margin-bottom: 2px;">{{ $authorizedPosition }}</p>
+                    <p class="signature-name">{{ $authorizedPosition }}</p>
                 @endif
-                <p>{{ $company->name ?? 'Management' }}</p>
+                <p class="signature-company">{{ $company->name ?? 'Management' }}</p>
             </td>
         </tr>
     </table>

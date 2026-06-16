@@ -269,13 +269,39 @@
                 $firstCategory = $categories->first();
 
                 if ($isServiceJobType($jobType)) {
-                    if ($nonUnitCategory) {
-                        return $nonUnitCategory['name'];
+                    $serviceCategory = $categories
+                        ->where('is_unit', false)
+                        ->first(function ($category) {
+                            $name = strtolower((string) ($category['name'] ?? ''));
+
+                            return str_contains($name, 'refill')
+                                || str_contains($name, 'aroma')
+                                || str_contains($name, 'scent')
+                                || str_contains($name, 'fragrance');
+                        });
+
+                    if ($serviceCategory) {
+                        return $serviceCategory['name'];
+                    }
+
+                    $rentalText = strtolower(trim(collect([
+                        data_get($rental, 'category'),
+                        data_get($rental, 'rental_name'),
+                        data_get($jobAdviceRoom, 'rental_name'),
+                    ])->filter()->implode(' ')));
+
+                    if (str_contains($rentalText, 'refill')
+                        || str_contains($rentalText, 'aroma')
+                        || str_contains($rentalText, 'scent')
+                        || str_contains($rentalText, 'fragrance')) {
+                        return 'Refill';
                     }
 
                     if ($unitCategory) {
                         return null;
                     }
+
+                    return $nonUnitCategory ? 'Refill' : null;
                 }
 
                 $category = $unitCategory['name'] ?? $firstCategory['name'] ?? null;
