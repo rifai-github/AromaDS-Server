@@ -338,7 +338,6 @@ class StockAdjustment extends Model
                             'status' => 'retired',
                             'location_type' => null,
                             'location_id' => null,
-                            'warehouse_id' => null,
                             'notes' => $notes,
                             'updated_by' => $userId,
                         ]);

@@ -207,7 +207,7 @@ class StockAdjustmentSerialNumberTest extends TestCase
 
         $this->assertSame(2, WarehouseProduct::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->value('quantity'));
         $this->assertSame('retired', SerialNumber::where('serial_number', 'W300-002')->value('status'));
-        $this->assertNull(SerialNumber::where('serial_number', 'W300-002')->value('warehouse_id'));
+        $this->assertSame($warehouse->id, SerialNumber::where('serial_number', 'W300-002')->value('warehouse_id'));
         $this->assertSame(2, SerialNumber::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->where('status', 'ready')->count());
     }
 
