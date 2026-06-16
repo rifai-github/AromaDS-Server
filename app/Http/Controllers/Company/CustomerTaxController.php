@@ -3,20 +3,22 @@
 namespace App\Http\Controllers\Company;
 
 use App\Http\Controllers\Controller;
-use App\Models\CustomerTax;
+use App\Http\Traits\ColumnFilterTrait;
 use App\Models\Customer;
+use App\Models\CustomerTax;
 use App\Models\FinanceTaxCode;
 use App\Models\TaxSetting;
+use App\Services\Company\CustomerIdentifierUniquenessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-use App\Http\Traits\ColumnFilterTrait;
-
 class CustomerTaxController extends Controller
 {
     use ColumnFilterTrait;
+
+    public function __construct(private CustomerIdentifierUniquenessService $customerIdentifierUniqueness) {}
 
     public function getCustomerTaxInfo($customerId)
     {
@@ -25,11 +27,11 @@ class CustomerTaxController extends Controller
             ->latest()
             ->first();
 
-        if (!$tax) {
+        if (! $tax) {
             // Fallback to Master Customer profile (npwp column)
             $customer = Customer::find($customerId);
-            if ($customer && !empty($customer->npwp)) {
-                $tax = (object)[
+            if ($customer && ! empty($customer->npwp)) {
+                $tax = (object) [
                     'tax_name' => 'NPWP',
                     'tax_number' => $customer->npwp,
                     'tax_address' => $customer->npwp_address ?? $customer->address,
@@ -47,7 +49,7 @@ class CustomerTaxController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $tax
+            'data' => $tax,
         ]);
     }
 
@@ -70,17 +72,17 @@ class CustomerTaxController extends Controller
         ]);
 
         // Filter by customer (legacy or specific usage)
-        if ($request->filled('customer_id') && !$request->has('filter.customer__name')) {
+        if ($request->filled('customer_id') && ! $request->has('filter.customer__name')) {
             $query->where('customer_id', $request->customer_id);
         }
 
         // Filter by tax type (legacy)
-        if ($request->filled('tax_type') && !$request->has('filter.tax_type')) {
+        if ($request->filled('tax_type') && ! $request->has('filter.tax_type')) {
             $query->where('tax_type', $request->tax_type);
         }
 
         // Filter by status (legacy)
-        if ($request->filled('status') && !$request->has('filter.is_active')) {
+        if ($request->filled('status') && ! $request->has('filter.is_active')) {
             $query->where('status', $request->status);
         }
 
@@ -97,16 +99,22 @@ class CustomerTaxController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('tax_number', 'like', "%{$search}%")
-                  ->orWhere('tax_name', 'like', "%{$search}%")
-                  ->orWhere('label', 'like', "%{$search}%")
-                  ->orWhereHas('customer', function ($customerQuery) use ($search) {
-                      $customerQuery->where('name', 'like', "%{$search}%");
-                  });
+                    ->orWhere('tax_name', 'like', "%{$search}%")
+                    ->orWhere('label', 'like', "%{$search}%")
+                    ->orWhereHas('customer', function ($customerQuery) use ($search) {
+                        $customerQuery->where('name', 'like', "%{$search}%");
+                    });
             });
         }
 
         $customerTaxes = $query->orderBy('created_at', 'desc')->paginate(15);
         $customers = Customer::orderBy('name')->get();
+        $defaultVatSetting = TaxSetting::getDefaultPpnSetting();
+        $financeTaxCodes = FinanceTaxCode::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('code')
+            ->get();
 
         $statistics = [
             'total' => CustomerTax::count(),
@@ -120,25 +128,37 @@ class CustomerTaxController extends Controller
                 'success' => true,
                 'customerTaxes' => $customerTaxes->items(),
                 'customers' => $customers,
-                'statistics' => $statistics
+                'statistics' => $statistics,
             ]);
         }
 
-        return view('company.customer-taxes.index', compact('customerTaxes', 'customers', 'statistics'));
+        return view('company.customer-taxes.index', compact(
+            'customerTaxes',
+            'customers',
+            'statistics',
+            'defaultVatSetting',
+            'financeTaxCodes'
+        ));
     }
 
     public function create()
     {
         $customers = Customer::where('status', 'active')->get();
-        
-        return view('company.customer-taxes.create', compact('customers'));
+        $defaultVatSetting = TaxSetting::getDefaultPpnSetting();
+        $financeTaxCodes = FinanceTaxCode::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('code')
+            ->get();
+
+        return view('company.customer-taxes.create', compact('customers', 'defaultVatSetting', 'financeTaxCodes'));
     }
 
     public function store(Request $request)
     {
         // 1. Determine Validation Rules based on Tax Name (Identity Type)
         $taxName = $request->tax_name;
-        
+
         $rules = [
             'customer_id' => 'required|exists:customers,id',
             'label' => 'nullable|string|max:255',
@@ -176,10 +196,10 @@ class CustomerTaxController extends Controller
 
         try {
             DB::beginTransaction();
-            
+
             $taxNumber = $request->tax_number;
             $taxRate = $this->resolveTaxRateForCode($request->tax_type);
-            
+
             // NITKU Logic:
             // 1. If NIK -> auto 000000
             // 2. If NPWP and NITKU empty -> auto 000000
@@ -197,6 +217,10 @@ class CustomerTaxController extends Controller
                 }
             }
 
+            if ($taxName === 'NPWP') {
+                $this->customerIdentifierUniqueness->validateUniqueNpwp($taxNumber, (int) $request->customer_id);
+            }
+
             // 2. Uniqueness Check (22 Digits: TaxNumber + NITKU) for Standard IDs
             if (in_array($taxName, ['NPWP', 'NIK', 'NITKU'])) {
                 // Check in customer_tax_settings
@@ -204,7 +228,7 @@ class CustomerTaxController extends Controller
                     ->where('nitku', $nitku)
                     ->whereNull('deleted_at')
                     ->exists();
-                
+
                 if ($exists) {
                     // Get who owns it
                     $owner = CustomerTax::with('customer')
@@ -212,7 +236,7 @@ class CustomerTaxController extends Controller
                         ->where('nitku', $nitku)
                         ->first();
                     $ownerName = $owner && $owner->customer ? $owner->customer->name : 'Unknown';
-                    
+
                     throw new \Exception("NPWP/NITKU ini sudah ada atas nama customer: $ownerName.");
                 }
             }
@@ -225,16 +249,16 @@ class CustomerTaxController extends Controller
                 ->where(function ($query) use ($request) {
                     $query->where(function ($q) use ($request) {
                         $q->where('effective_date', '<=', $request->effective_date)
-                          ->where(function ($q2) use ($request) {
-                              $q2->whereNull('expiry_date')
-                                 ->orWhere('expiry_date', '>=', $request->effective_date);
-                          });
+                            ->where(function ($q2) use ($request) {
+                                $q2->whereNull('expiry_date')
+                                    ->orWhere('expiry_date', '>=', $request->effective_date);
+                            });
                     })->orWhere(function ($q) use ($request) {
                         $q->where('effective_date', '<=', $request->expiry_date ?? '9999-12-31')
-                          ->where(function ($q2) use ($request) {
-                              $q2->whereNull('expiry_date')
-                                 ->orWhere('expiry_date', '>=', $request->effective_date);
-                          });
+                            ->where(function ($q2) use ($request) {
+                                $q2->whereNull('expiry_date')
+                                    ->orWhere('expiry_date', '>=', $request->effective_date);
+                            });
                     });
                 })
                 ->exists();
@@ -267,18 +291,19 @@ class CustomerTaxController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Customer tax settings created successfully.',
-                    'data' => $customerTax->load(['customer', 'createdBy'])
+                    'data' => $customerTax->load(['customer', 'createdBy']),
                 ]);
             }
 
             return redirect()->route('company.customer-taxes.show', $customerTax)
                 ->with('success', 'Pengaturan pajak pelanggan berhasil dibuat.');
-                
+
         } catch (\Exception $e) {
             DB::rollback();
             if ($request->ajax()) {
                 return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
             }
+
             return back()->withInput()->with('error', $e->getMessage());
         }
     }
@@ -286,15 +311,15 @@ class CustomerTaxController extends Controller
     public function show(CustomerTax $customerTax)
     {
         $customerTax->load(['customer', 'createdBy', 'updatedBy']);
-        
+
         // Return JSON for AJAX requests
         if (request()->ajax()) {
             return response()->json([
                 'status' => 'success',
-                'data' => $customerTax
+                'data' => $customerTax,
             ]);
         }
-        
+
         return view('company.customer-taxes.show', compact('customerTax'));
     }
 
@@ -302,16 +327,16 @@ class CustomerTaxController extends Controller
     {
         $customerTax->load(['customer', 'createdBy', 'updatedBy']);
         $customers = Customer::orderBy('name')->get();
-        
+
         // Return JSON for AJAX requests
         if (request()->ajax()) {
             return response()->json([
                 'status' => 'success',
                 'data' => $customerTax,
-                'customers' => $customers
+                'customers' => $customers,
             ]);
         }
-        
+
         return view('company.customer-taxes.edit', compact('customerTax', 'customers'));
     }
 
@@ -319,7 +344,7 @@ class CustomerTaxController extends Controller
     {
         // 1. Determine Validation Rules
         $taxName = $request->tax_name;
-        
+
         $rules = [
             'customer_id' => 'required|exists:customers,id',
             'tax_name' => 'required|in:NPWP,NIK,NITKU,KITAS/PASSPORT/KTP WNA,OTHER',
@@ -339,12 +364,12 @@ class CustomerTaxController extends Controller
         ];
 
         if ($taxName === 'NIK') {
-             $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'size:16'];
+            $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'size:16'];
         } elseif ($taxName === 'NPWP' || $taxName === 'NITKU') {
-             $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'min:15', 'max:16'];
-             $rules['nitku'] = ['nullable', 'string', 'regex:/^[0-9]+$/', 'size:6'];
+            $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'min:15', 'max:16'];
+            $rules['nitku'] = ['nullable', 'string', 'regex:/^[0-9]+$/', 'size:6'];
         } else {
-             $rules['tax_number'] = ['required', 'string', 'max:30'];
+            $rules['tax_number'] = ['required', 'string', 'max:30'];
         }
 
         $request->validate($rules);
@@ -367,6 +392,10 @@ class CustomerTaxController extends Controller
                 }
             }
 
+            if ($taxName === 'NPWP') {
+                $this->customerIdentifierUniqueness->validateUniqueNpwp($taxNumber, (int) $request->customer_id);
+            }
+
             // 2. Uniqueness Check (ignoring self)
             if (in_array($taxName, ['NPWP', 'NIK', 'NITKU'])) {
                 // Check in customer_taxes
@@ -375,9 +404,9 @@ class CustomerTaxController extends Controller
                     ->where('id', '!=', $customerTax->id)
                     ->whereNull('deleted_at')
                     ->exists();
-                
+
                 if ($exists) {
-                     $owner = CustomerTax::with('customer')
+                    $owner = CustomerTax::with('customer')
                         ->where('tax_number', $taxNumber)
                         ->where('nitku', $nitku)
                         ->first();
@@ -404,10 +433,10 @@ class CustomerTaxController extends Controller
                     ->where(function ($query) use ($request) {
                         $query->where(function ($q) use ($request) {
                             $q->where('effective_date', '<', $request->expiry_date ?? '9999-12-31')
-                              ->where(function ($q2) use ($request) {
-                                  $q2->whereNull('expiry_date')
-                                     ->orWhere('expiry_date', '>', $request->effective_date);
-                              });
+                                ->where(function ($q2) use ($request) {
+                                    $q2->whereNull('expiry_date')
+                                        ->orWhere('expiry_date', '>', $request->effective_date);
+                                });
                         });
                     })
                     ->exists();
@@ -441,18 +470,19 @@ class CustomerTaxController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Customer tax settings updated successfully.',
-                    'data' => $customerTax->load(['customer', 'createdBy', 'updatedBy'])
+                    'data' => $customerTax->load(['customer', 'createdBy', 'updatedBy']),
                 ]);
             }
 
             return redirect()->route('company.customer-taxes.show', $customerTax)
                 ->with('success', 'Pengaturan pajak pelanggan berhasil diperbarui.');
-                
+
         } catch (\Exception $e) {
             DB::rollback();
             if ($request->ajax()) {
                 return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
             }
+
             return back()->withInput()->with('error', $e->getMessage());
         }
     }
@@ -461,15 +491,15 @@ class CustomerTaxController extends Controller
     {
         try {
             $customerTax->delete();
-            
+
             // Return JSON for AJAX requests
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Customer tax setting deleted successfully.'
+                    'message' => 'Customer tax setting deleted successfully.',
                 ]);
             }
-            
+
             return redirect()->route('company.customer-taxes.index')
                 ->with('success', 'Pengaturan pajak pelanggan berhasil dihapus.');
         } catch (\Exception $e) {
@@ -477,11 +507,11 @@ class CustomerTaxController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete customer tax setting: ' . $e->getMessage()
+                    'message' => 'Failed to delete customer tax setting: '.$e->getMessage(),
                 ], 422);
             }
-            
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -497,7 +527,7 @@ class CustomerTaxController extends Controller
             ->where('effective_date', '<=', now())
             ->where(function ($q) {
                 $q->whereNull('expiry_date')
-                  ->orWhere('expiry_date', '>=', now());
+                    ->orWhere('expiry_date', '>=', now());
             });
 
         if ($request->filled('tax_type')) {
@@ -522,7 +552,7 @@ class CustomerTaxController extends Controller
             ->where('effective_date', '<=', now())
             ->where(function ($q) {
                 $q->whereNull('expiry_date')
-                  ->orWhere('expiry_date', '>=', now());
+                    ->orWhere('expiry_date', '>=', now());
             })
             ->orderBy('effective_date', 'desc')
             ->first();
@@ -554,21 +584,21 @@ class CustomerTaxController extends Controller
                     ->where(function ($query) use ($taxData) {
                         $query->where(function ($q) use ($taxData) {
                             $q->where('effective_date', '<=', $taxData['effective_date'])
-                              ->where(function ($q2) use ($taxData) {
-                                  $q2->whereNull('expiry_date')
-                                     ->orWhere('expiry_date', '>=', $taxData['effective_date']);
-                              });
+                                ->where(function ($q2) use ($taxData) {
+                                    $q2->whereNull('expiry_date')
+                                        ->orWhere('expiry_date', '>=', $taxData['effective_date']);
+                                });
                         })->orWhere(function ($q) use ($taxData) {
                             $q->where('effective_date', '<=', $taxData['expiry_date'] ?? '9999-12-31')
-                              ->where(function ($q2) use ($taxData) {
-                                  $q2->whereNull('expiry_date')
-                                     ->orWhere('expiry_date', '>=', $taxData['effective_date']);
-                              });
+                                ->where(function ($q2) use ($taxData) {
+                                    $q2->whereNull('expiry_date')
+                                        ->orWhere('expiry_date', '>=', $taxData['effective_date']);
+                                });
                         });
                     })
                     ->exists();
 
-                if (!$overlapping) {
+                if (! $overlapping) {
                     CustomerTax::create([
                         'customer_id' => $taxData['customer_id'],
                         'tax_type' => $taxData['tax_type'],
@@ -588,7 +618,8 @@ class CustomerTaxController extends Controller
             return back()->with('success', "Berhasil membuat {$createdCount} pengaturan pajak pelanggan.");
         } catch (\Exception $e) {
             DB::rollback();
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -630,7 +661,8 @@ class CustomerTaxController extends Controller
             return back()->with('success', "Berhasil mengimpor {$importedCount} pengaturan pajak pelanggan.");
         } catch (\Exception $e) {
             DB::rollback();
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -657,7 +689,7 @@ class CustomerTaxController extends Controller
     {
         $request->validate([
             'ids' => 'required|array',
-            'ids.*' => 'exists:customer_tax_settings,id'
+            'ids.*' => 'exists:customer_tax_settings,id',
         ]);
 
         try {
@@ -671,7 +703,7 @@ class CustomerTaxController extends Controller
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => "Successfully deleted {$deletedCount} customer tax setting(s)."
+                    'message' => "Successfully deleted {$deletedCount} customer tax setting(s).",
                 ]);
             }
 
@@ -679,16 +711,16 @@ class CustomerTaxController extends Controller
                 ->with('success', "Successfully deleted {$deletedCount} customer tax setting(s).");
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             // Return JSON for AJAX requests
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete customer tax settings: ' . $e->getMessage()
+                    'message' => 'Failed to delete customer tax settings: '.$e->getMessage(),
                 ], 422);
             }
-            
-            return back()->with('error', 'Failed to delete customer tax settings: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to delete customer tax settings: '.$e->getMessage());
         }
     }
 
@@ -696,12 +728,12 @@ class CustomerTaxController extends Controller
     {
         try {
             $newStatus = $customerTax->status === 'active' ? 'inactive' : 'active';
-            
+
             $customerTax->update(['status' => $newStatus]);
 
             return back()->with('success', "Status pengaturan pajak berhasil diubah menjadi {$newStatus}.");
         } catch (\Exception $e) {
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -735,7 +767,7 @@ class CustomerTaxController extends Controller
         try {
             $today = now();
             $customer = Customer::findOrFail($customerId);
-            
+
             $activeTax = CustomerTax::where('customer_id', $customerId)
                 ->where('is_active', true)
                 ->where('effective_date', '<=', $today)
@@ -745,7 +777,7 @@ class CustomerTaxController extends Controller
                 })
                 ->orderBy('effective_date', 'desc')
                 ->first();
-            
+
             if ($activeTax) {
                 return response()->json([
                     'success' => true,
@@ -757,12 +789,12 @@ class CustomerTaxController extends Controller
                         'tax_address' => $activeTax->tax_address,
                         'ppn_code' => $activeTax->ppn_code ?: ($customer->ppn_code ?: '01'),
                         'effective_date' => $activeTax->effective_date,
-                        'end_date' => $activeTax->expiry_date
-                    ]
+                        'end_date' => $activeTax->expiry_date,
+                    ],
                 ]);
             }
 
-            if (!empty($customer->npwp) || !empty($customer->ppn_code)) {
+            if (! empty($customer->npwp) || ! empty($customer->ppn_code)) {
                 return response()->json([
                     'success' => true,
                     'data' => [
@@ -774,19 +806,19 @@ class CustomerTaxController extends Controller
                         'ppn_code' => $customer->ppn_code ?: '01',
                         'effective_date' => null,
                         'end_date' => null,
-                    ]
+                    ],
                 ]);
             }
-            
+
             return response()->json([
                 'success' => false,
-                'message' => 'No active tax number found for this customer'
+                'message' => 'No active tax number found for this customer',
             ], 404);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error: ' . $e->getMessage()
+                'message' => 'Error: '.$e->getMessage(),
             ], 500);
         }
     }

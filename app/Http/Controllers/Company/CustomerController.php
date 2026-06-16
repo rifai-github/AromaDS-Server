@@ -5,30 +5,31 @@ namespace App\Http\Controllers\Company;
 use App\Http\Controllers\Controller;
 use App\Http\Traits\AccessControlFilterTrait;
 use App\Http\Traits\ColumnFilterTrait;
-use App\Models\Customer;
+use App\Models\BankPayment;
 use App\Models\Building;
+use App\Models\City;
 use App\Models\Company;
-use App\Models\CustomerType;
+use App\Models\Customer;
 use App\Models\CustomerCategory;
 use App\Models\CustomerContact;
 use App\Models\CustomerCreditLimit;
 use App\Models\CustomerPaymentTerm;
-use App\Models\Province;
-use App\Models\City;
+use App\Models\CustomerType;
 use App\Models\District;
+use App\Models\Province;
 use App\Models\Subdistrict;
 use App\Models\User;
-use App\Models\BankPayment;
+use App\Services\Company\CustomerIdentifierUniquenessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Authorization;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use App\Models\CustomerTax;
 
 class CustomerController extends Controller
 {
-    use ColumnFilterTrait, AccessControlFilterTrait;
+    use AccessControlFilterTrait, ColumnFilterTrait;
+
+    public function __construct(private CustomerIdentifierUniquenessService $customerIdentifierUniqueness) {}
 
     private function forgetSurveyWizardCustomerCaches(): void
     {
@@ -41,7 +42,7 @@ class CustomerController extends Controller
         // This prevents AutoFilterable (via global scope) from processing them
         $filters = $request->input('filter', []);
         $originalFilters = $filters;
-        
+
         // Check and remove manually handled filters early
         $hasUpdatedAtFilter = false;
         $updatedAtFilterValue = null;
@@ -60,49 +61,49 @@ class CustomerController extends Controller
             }
         }
 
-        if (!$isActiveKey) {
+        if (! $isActiveKey) {
             // No status filter present -> Default to Active
-            $filters['is_active'] = '1'; 
+            $filters['is_active'] = '1';
             $request->merge(['filter' => $filters]); // Merge back to request for consistnecy
         } elseif ($filters[$isActiveKey] === 'all') {
             // "All" selected -> Remove filter to show everything
             unset($filters[$isActiveKey]);
             // Also need to skip auto-filter for this key if it stays in request
-             $requestData = $request->all();
-             $requestData['filter'] = $filters;
-             $request->replace($requestData);
+            $requestData = $request->all();
+            $requestData['filter'] = $filters;
+            $request->replace($requestData);
         }
-        
+
         // Check for updated_at filter (date filter with 3-digit month format)
         foreach (['updated_at', 'updated__at', 'customers.updated_at', 'customers__updated_at'] as $filterKey) {
-            if (isset($filters[$filterKey]) && !empty(trim($filters[$filterKey]))) {
+            if (isset($filters[$filterKey]) && ! empty(trim($filters[$filterKey]))) {
                 $updatedAtFilterValue = trim($filters[$filterKey]);
                 $hasUpdatedAtFilter = true;
                 unset($filters[$filterKey]);
                 break;
             }
         }
-        
+
         // Check for is_active filter (boolean filter for Status)
         foreach (['is_active', 'is__active', 'status'] as $filterKey) {
-            if (isset($filters[$filterKey]) && !empty(trim($filters[$filterKey]))) {
+            if (isset($filters[$filterKey]) && ! empty(trim($filters[$filterKey]))) {
                 $isActiveFilterValue = trim($filters[$filterKey]);
                 $hasIsActiveFilter = true;
                 unset($filters[$filterKey]);
                 break;
             }
         }
-        
+
         // Check for is_pkp filter (boolean filter for PKP)
         foreach (['is_pkp', 'is__pkp', 'pkp'] as $filterKey) {
-            if (isset($filters[$filterKey]) && !empty(trim($filters[$filterKey]))) {
+            if (isset($filters[$filterKey]) && ! empty(trim($filters[$filterKey]))) {
                 $isPkpFilterValue = trim($filters[$filterKey]);
                 $hasIsPkpFilter = true;
                 unset($filters[$filterKey]);
                 break;
             }
         }
-        
+
         // Remove manually handled filters from request BEFORE creating query
         if ($hasUpdatedAtFilter || $hasIsActiveFilter || $hasIsPkpFilter) {
             // Store original request data
@@ -111,7 +112,7 @@ class CustomerController extends Controller
             $requestData['filter'] = $filters;
             // Replace entire request data to ensure global scope sees the change
             $request->replace($requestData);
-            
+
             // Also set a flag to prevent AutoFilterable from processing these filters
             $skipFilters = [];
             if ($hasUpdatedAtFilter) {
@@ -132,60 +133,60 @@ class CustomerController extends Controller
             }
             $request->merge(['_skip_auto_filter' => $skipFilters]);
         }
-        
+
         $query = Customer::withoutGlobalScope('autoFilter')
             ->with(['assignedTo', 'customerCategory', 'customerType', 'province', 'city', 'district', 'subdistrict', 'createdBy', 'updatedBy', 'classification']);
 
         $this->applyAccessControlFilter($query, Auth::user(), 'created_by', 'updated_by', null, null, null);
 
         // Handle updated_at filter (date filter with 3-digit month format)
-        if ($hasUpdatedAtFilter && !empty($updatedAtFilterValue)) {
+        if ($hasUpdatedAtFilter && ! empty($updatedAtFilterValue)) {
             $term = trim($updatedAtFilterValue);
-            
+
             // Filter by updated_at column directly on customers table
             // Get table name from model
-            $tableName = (new Customer())->getTable();
-            
+            $tableName = (new Customer)->getTable();
+
             // Search in multiple date formats to handle various formats including 3-digit month (012, 011)
-            $query->where(function($q) use ($term, $tableName) {
+            $query->where(function ($q) use ($term, $tableName) {
                 // Standard date formats
                 $q->whereRaw("DATE_FORMAT({$tableName}.updated_at, '%d %M %Y') LIKE ?", ["%{$term}%"])
-                  ->orWhereRaw("DATE_FORMAT({$tableName}.updated_at, '%M %Y') LIKE ?", ["%{$term}%"])
-                  ->orWhereRaw("DATE_FORMAT({$tableName}.updated_at, '%M') LIKE ?", ["%{$term}%"])
-                  ->orWhereRaw("DATE_FORMAT({$tableName}.updated_at, '%Y-%m-%d') LIKE ?", ["%{$term}%"])
+                    ->orWhereRaw("DATE_FORMAT({$tableName}.updated_at, '%M %Y') LIKE ?", ["%{$term}%"])
+                    ->orWhereRaw("DATE_FORMAT({$tableName}.updated_at, '%M') LIKE ?", ["%{$term}%"])
+                    ->orWhereRaw("DATE_FORMAT({$tableName}.updated_at, '%Y-%m-%d') LIKE ?", ["%{$term}%"])
                   // Format with 2-digit month: DD/MM/YYYY
-                  ->orWhereRaw("DATE_FORMAT({$tableName}.updated_at, '%d/%m/%Y') LIKE ?", ["%{$term}%"])
+                    ->orWhereRaw("DATE_FORMAT({$tableName}.updated_at, '%d/%m/%Y') LIKE ?", ["%{$term}%"])
                   // Format with 3-digit month (leading zero): DD/0MM/YYYY (e.g., 02/012/2025)
-                  ->orWhereRaw("CONCAT(DATE_FORMAT({$tableName}.updated_at, '%d/'), LPAD(MONTH({$tableName}.updated_at), 3, '0'), DATE_FORMAT({$tableName}.updated_at, '/%Y')) LIKE ?", ["%{$term}%"])
+                    ->orWhereRaw("CONCAT(DATE_FORMAT({$tableName}.updated_at, '%d/'), LPAD(MONTH({$tableName}.updated_at), 3, '0'), DATE_FORMAT({$tableName}.updated_at, '/%Y')) LIKE ?", ["%{$term}%"])
                   // Format with 3-digit month and time: DD/0MM/YYYY HH:MM (e.g., 02/012/2025 10:07)
-                  ->orWhereRaw("CONCAT(DATE_FORMAT({$tableName}.updated_at, '%d/'), LPAD(MONTH({$tableName}.updated_at), 3, '0'), DATE_FORMAT({$tableName}.updated_at, '/%Y %H:%i')) LIKE ?", ["%{$term}%"])
+                    ->orWhereRaw("CONCAT(DATE_FORMAT({$tableName}.updated_at, '%d/'), LPAD(MONTH({$tableName}.updated_at), 3, '0'), DATE_FORMAT({$tableName}.updated_at, '/%Y %H:%i')) LIKE ?", ["%{$term}%"])
                   // Also handle if user types just the month number (012, 011, etc.) - extract month from term if it's 3 digits
-                  ->orWhereRaw("LPAD(MONTH({$tableName}.updated_at), 3, '0') LIKE ?", ["%{$term}%"]);
-                
+                    ->orWhereRaw("LPAD(MONTH({$tableName}.updated_at), 3, '0') LIKE ?", ["%{$term}%"]);
+
                 // If term is 3 digits (like 012, 011), also try to match as month number
                 if (preg_match('/^0?\d{1,3}$/', $term)) {
                     // If term is 3 digits with leading zero (012), extract month (12)
                     if (strlen($term) === 3 && $term[0] === '0') {
-                        $monthNum = (int)substr($term, 1); // Extract 12 from 012
+                        $monthNum = (int) substr($term, 1); // Extract 12 from 012
                         if ($monthNum >= 1 && $monthNum <= 12) {
                             $q->orWhereRaw("MONTH({$tableName}.updated_at) = ?", [$monthNum]);
                         }
                     } elseif (strlen($term) === 2 || (strlen($term) === 3 && $term[0] !== '0')) {
                         // If term is 2 digits or 3 digits without leading zero, try as month number
-                        $monthNum = (int)$term;
+                        $monthNum = (int) $term;
                         if ($monthNum >= 1 && $monthNum <= 12) {
                             $q->orWhereRaw("MONTH({$tableName}.updated_at) = ?", [$monthNum]);
                         }
                     }
                 }
             });
-            
+
         }
-        
+
         // Handle is_active filter (boolean filter for Status)
-        if ($hasIsActiveFilter && !empty($isActiveFilterValue)) {
+        if ($hasIsActiveFilter && ! empty($isActiveFilterValue)) {
             $term = strtolower(trim($isActiveFilterValue));
-            
+
             // Handle various boolean representations
             if (in_array($term, ['yes', 'y', '1', 'true', 'ya', 'active', 'aktif'])) {
                 $query->where('is_active', true);
@@ -201,13 +202,13 @@ class CustomerController extends Controller
                     $query->where('status', 'LIKE', "%{$term}%");
                 }
             }
-            
+
         }
-        
+
         // Handle is_pkp filter (boolean filter for PKP)
-        if ($hasIsPkpFilter && !empty($isPkpFilterValue)) {
+        if ($hasIsPkpFilter && ! empty($isPkpFilterValue)) {
             $term = strtolower(trim($isPkpFilterValue));
-            
+
             // Handle various boolean representations
             if (in_array($term, ['yes', 'y', '1', 'true', 'ya', 'pkp'])) {
                 $query->where('is_pkp', true);
@@ -218,9 +219,9 @@ class CustomerController extends Controller
                 // This handles cases where user types partial matches
                 $query->where('is_pkp', true);
             }
-            
+
         }
-        
+
         // Apply other column filters (excluding manually handled ones)
         // Keep filtered request (without manually handled filters) so applyColumnFilters won't process them
         // But we need to temporarily restore original filters for applyColumnFilters to work correctly
@@ -234,14 +235,14 @@ class CustomerController extends Controller
             5 => ['relation' => 'assignedTo', 'column' => 'name'],
             6 => ['column' => 'status'],
         ]);
-        
+
         // Manually apply AutoFilterable for remaining filters (it will skip manually handled ones via _skip_auto_filter flag)
         // Only process if there are remaining filters (excluding manually handled ones)
-        if (!empty($filters)) {
+        if (! empty($filters)) {
             // Use the scopeFilter from AutoFilterable trait
             $query->filter($filters);
         }
-        
+
         // Restore original filters after processing (for pagination links, etc.)
         if ($hasUpdatedAtFilter || $hasIsActiveFilter || $hasIsPkpFilter) {
             $request->merge(['filter' => $originalFilters]);
@@ -249,7 +250,7 @@ class CustomerController extends Controller
 
         // Filter by name
         if ($request->filled('name')) {
-            $query->where('name', 'like', '%' . $request->name . '%');
+            $query->where('name', 'like', '%'.$request->name.'%');
         }
 
         // Filter by company type
@@ -297,18 +298,18 @@ class CustomerController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('customer_code', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%")
-                  ->orWhere('tax_code', 'like', "%{$search}%")
-                  ->orWhere('nib_number', 'like', "%{$search}%");
+                    ->orWhere('customer_code', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('tax_code', 'like', "%{$search}%")
+                    ->orWhere('nib_number', 'like', "%{$search}%");
             });
         }
 
         // Sort options
         $sortBy = $request->get('sort_by', 'created_at');
         $sortOrder = $request->get('sort_order', 'desc');
-        
+
         $allowedSortFields = ['name', 'email', 'phone', 'status', 'created_at', 'updated_at'];
         if (in_array($sortBy, $allowedSortFields)) {
             $query->orderBy($sortBy, $sortOrder);
@@ -324,7 +325,7 @@ class CustomerController extends Controller
         // Customer Classification options (MOM requirement)
         $classificationMaster = \App\Models\MasterOption::where('name', 'Customer Classification')->first();
         $classificationOptions = $classificationMaster ? \App\Models\OptionDetail::where('master_option_id', $classificationMaster->id)->where('is_active', 1)->orderBy('option_name')->get() : collect();
-        
+
         // New dropdown data for Customer fields
         $ppnCodes = Customer::getPpnCodes();
         $bankPayments = BankPayment::active()->with('bank')->orderBy('account_name')->get();
@@ -342,7 +343,7 @@ class CustomerController extends Controller
                     'last_page' => $customers->lastPage(),
                     'from' => $customers->firstItem(),
                     'to' => $customers->lastItem(),
-                ]
+                ],
             ]);
         }
 
@@ -360,54 +361,54 @@ class CustomerController extends Controller
     {
         // Check permission - allow marketing staff to create customers from pipeline
         $user = Auth::user();
-        
+
         // Check if user has customers.create or customers.view permission
-        $hasPermission = $user->hasPermission('customers.create') || 
+        $hasPermission = $user->hasPermission('customers.create') ||
                         $user->hasPermission('customers.view') ||
-                        $user->hasPermission('company.customers.create') || 
+                        $user->hasPermission('company.customers.create') ||
                         $user->hasPermission('company.customers.view');
-        
+
         // Also allow if user is in marketing module (for pipeline functionality)
-        if (!$hasPermission) {
+        if (! $hasPermission) {
             // Check if user has marketing module access
             $hasPermission = $user->canAccessModule('marketing');
         }
-        
+
         // Or check if user role contains "marketing" (this should allow marketing staff)
-        if (!$hasPermission) {
-            $hasPermission = $user->hasRoleStartingWith('Marketing') || 
+        if (! $hasPermission) {
+            $hasPermission = $user->hasRoleStartingWith('Marketing') ||
                             $user->hasAnyRole(['Marketing', 'Marketing Staff', 'Marketing Manager', 'marketing', 'marketing staff', 'marketing manager']);
         }
-        
+
         // Also check canCreateInModule for marketing module
-        if (!$hasPermission) {
+        if (! $hasPermission) {
             $hasPermission = $user->canCreateInModule('marketing');
         }
-        
+
         // Also check if user has permission through menu access (Akses Menu)
         // Check if user has "Buat" (Create) permission for Customers menu
-        if (!$hasPermission) {
+        if (! $hasPermission) {
             // Try to check menu access permissions in various possible table names
             $menuAccessTables = ['menu_access', 'user_menu_access', 'menu_permissions', 'user_menu_permissions'];
             $menuNames = ['Customers', 'Customer', 'customers', 'customer'];
-            
+
             foreach ($menuAccessTables as $tableName) {
                 if (\Schema::hasTable($tableName)) {
                     foreach ($menuNames as $menuName) {
                         $menuAccess = \DB::table($tableName)
                             ->where('user_id', $user->id)
-                            ->where(function($q) use ($menuName) {
+                            ->where(function ($q) use ($menuName) {
                                 $q->where('menu_name', $menuName)
-                                  ->orWhere('menu_name', 'LIKE', "%{$menuName}%");
+                                    ->orWhere('menu_name', 'LIKE', "%{$menuName}%");
                             })
-                            ->where(function($q) {
+                            ->where(function ($q) {
                                 $q->where('can_create', true)
-                                  ->orWhere('create', true)
-                                  ->orWhere('can_create', 1)
-                                  ->orWhere('create', 1);
+                                    ->orWhere('create', true)
+                                    ->orWhere('can_create', 1)
+                                    ->orWhere('create', 1);
                             })
                             ->first();
-                        
+
                         if ($menuAccess) {
                             $hasPermission = true;
                             break 2; // Break both loops
@@ -416,17 +417,17 @@ class CustomerController extends Controller
                 }
             }
         }
-        
+
         // Also check if user has any marketing-related permission that might allow customer creation
-        if (!$hasPermission) {
+        if (! $hasPermission) {
             $marketingPermissions = [
                 'marketing.create',
                 'marketing.write',
                 'marketing.pipeline.create',
                 'marketing.pipeline.write',
-                'marketing.*'
+                'marketing.*',
             ];
-            
+
             foreach ($marketingPermissions as $perm) {
                 if ($user->hasPermission($perm)) {
                     $hasPermission = true;
@@ -434,19 +435,19 @@ class CustomerController extends Controller
                 }
             }
         }
-        
-        if (!$hasPermission) {
+
+        if (! $hasPermission) {
             \Log::warning('CustomerController: Permission denied for customer creation', [
                 'user_id' => $user->id,
-                'user_name' => $user->name
+                'user_name' => $user->name,
             ]);
-            
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Unauthorized. You do not have the required permission to access this resource.'
+                'message' => 'Unauthorized. You do not have the required permission to access this resource.',
             ], 403);
         }
-        
+
         // Allow simple customer creation from pipeline modal
         $request->validate([
             'name' => 'required|string|max:255',
@@ -470,13 +471,13 @@ class CustomerController extends Controller
             'is_active' => 'nullable|boolean',
             'classification_id' => 'nullable|exists:option_details,id',
         ]);
-        
+
+        $this->customerIdentifierUniqueness->validateUniqueNib($request->nib);
+
         try {
             // Auto-generate customer code if not provided
             $customerCode = $request->customer_code ?: Customer::generateCustomerCode($request->name);
-            
 
-            
             $customer = Customer::create([
                 'customer_code' => $customerCode,
                 'name' => $request->name,
@@ -505,7 +506,7 @@ class CustomerController extends Controller
                 'created_by' => Auth::id(),
                 'updated_by' => Auth::id(),
             ]);
-            
+
             // Sync Multi PIC contacts if provided
             if ($request->has('contact_ids') && is_array($request->contact_ids)) {
                 $syncData = [];
@@ -514,7 +515,7 @@ class CustomerController extends Controller
                 }
                 $customer->contacts()->sync($syncData);
             }
-            
+
             // Link the assigned contact to this customer if one was selected
             if ($request->assigned_to) {
                 $contact = CustomerContact::find($request->assigned_to);
@@ -524,26 +525,26 @@ class CustomerController extends Controller
             }
 
             $this->forgetSurveyWizardCustomerCaches();
-            
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Customer created successfully',
-                'data' => $customer
+                'data' => $customer,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to create customer: ' . $e->getMessage()
+                'message' => 'Failed to create customer: '.$e->getMessage(),
             ], 500);
         }
-        
+
         /* DISABLED - Full manual customer creation flow
         // Manual customer creation is disabled - customers are created automatically from contracts
         return response()->json([
             'status' => 'error',
             'message' => 'Customers are created automatically through the marketing pipeline: Prospect → Survey → Quotation → Contract'
         ], 403);
-        
+
         /* DISABLED - Manual customer creation
         $request->validate([
             'company_type' => 'required|string|in:pt,cv,ud,firma,persero,yayasan,koperasi,perorangan',
@@ -578,6 +579,9 @@ class CustomerController extends Controller
             'notes' => 'nullable|string',
             'assigned_to' => 'nullable|exists:customer_contacts,id' // Changed from users to customer_contacts
         ]);
+
+        $this->customerIdentifierUniqueness->validateUniqueNib($request->nib, $customer->id);
+        $this->customerIdentifierUniqueness->validateUniqueNib($request->nib_number, $customer->id, 'nib_number');
 
         try {
             DB::beginTransaction();
@@ -656,7 +660,7 @@ class CustomerController extends Controller
                 ->with('success', 'Pelanggan berhasil dibuat.');
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             // Return JSON for AJAX requests
             if ($request->ajax()) {
                 return response()->json([
@@ -664,7 +668,7 @@ class CustomerController extends Controller
                     'message' => 'Failed to create customer: ' . $e->getMessage()
                 ], 422);
             }
-            
+
             return back()->withInput()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
         }
         */
@@ -673,7 +677,7 @@ class CustomerController extends Controller
     public function show(Customer $customer)
     {
         $customer->load([
-            'assignedTo', 
+            'assignedTo',
             'customerCategory',
             'customerType',
             'customerContacts', // Load customer contacts (pegawai/staff)
@@ -691,22 +695,22 @@ class CustomerController extends Controller
             'buildingCustomers.district', // Load building with district
             'buildingCustomers.subdistrict', // Load building with subdistrict
             'customerTaxSettings', // Load tax settings
-            'classification' // Added classification
+            'classification', // Added classification
         ]);
-        
+
         // Get city from district relationship (customers table doesn't have city_id)
         if ($customer->district_id && $customer->district) {
             $customer->city = \App\Models\City::find($customer->district->city_id);
         }
-        
+
         // Return JSON for AJAX requests
         if (request()->ajax()) {
             return response()->json([
                 'status' => 'success',
-                'data' => $customer
+                'data' => $customer,
             ]);
         }
-        
+
         // Data for edit modal
         $categories = CustomerType::active()->orderBy('name')->get();
         // Option 14 is Company Types (PT, CV, etc)
@@ -714,23 +718,23 @@ class CustomerController extends Controller
             ->where('is_active', true)
             ->orderBy('option_name')
             ->get();
-            
+
         $ppnCodes = Customer::getPpnCodes();
         $bankPayments = BankPayment::active()->with('bank')->orderBy('account_name')->get();
         $allContacts = CustomerContact::active()->orderBy('name')->get();
         $provinces = Province::orderBy('name')->get();
-        
+
         // Initial location data for edit modal
         $cities = collect();
         $districts = collect();
         $subdistricts = collect();
-        
+
         if ($customer->province_id) {
             $cities = City::where('province_id', $customer->province_id)->orderBy('name')->get();
         }
-        
+
         $currentCityId = $customer->city_id;
-        if (!$currentCityId && $customer->district_id) {
+        if (! $currentCityId && $customer->district_id) {
             $district = District::find($customer->district_id);
             if ($district) {
                 $currentCityId = $district->city_id;
@@ -744,7 +748,7 @@ class CustomerController extends Controller
                 $cities = City::where('province_id', $customer->district->city->province_id)->orderBy('name')->get();
             }
         }
-        
+
         if ($customer->district_id) {
             $subdistricts = Subdistrict::where('district_id', $customer->district_id)->orderBy('name')->get();
         }
@@ -752,14 +756,14 @@ class CustomerController extends Controller
         // Customer Classification options (MOM requirement)
         $classificationMaster = \App\Models\MasterOption::where('name', 'Customer Classification')->first();
         $classificationOptions = $classificationMaster ? \App\Models\OptionDetail::where('master_option_id', $classificationMaster->id)->where('is_active', 1)->orderBy('option_name')->get() : collect();
-        
+
         return view('company.customers.show', compact('customer', 'categories', 'ppnCodes', 'bankPayments', 'allContacts', 'provinces', 'cities', 'districts', 'subdistricts', 'companyTypeOptions', 'classificationOptions'));
     }
 
     public function edit(Customer $customer)
     {
         $customer->load(['assignedTo', 'customerType', 'province', 'district', 'subdistrict', 'createdBy', 'updatedBy', 'contacts', 'defaultBankPayment', 'classification']);
-        
+
         // Get city_id from district if district exists
         $cityId = null;
         if ($customer->district_id) {
@@ -770,25 +774,25 @@ class CustomerController extends Controller
                 $customer->city_from_district = \App\Models\City::find($cityId);
             }
         }
-        
+
         $users = User::orderBy('name')->get();
         $provinces = Province::orderBy('name')->get();
-        
+
         // Load cities for the province
         $cities = City::where('province_id', $customer->province_id)->orderBy('name')->get();
-        
+
         // Load districts for the city (from district relationship)
         $districts = $cityId ? District::where('city_id', $cityId)->orderBy('name')->get() : collect();
-        
+
         // Load subdistricts for the district
         $subdistricts = Subdistrict::where('district_id', $customer->district_id)->orderBy('name')->get();
-        
+
         // Option 14 is Company Types (PT, CV, etc)
         $companyTypeOptions = \App\Models\OptionDetail::where('master_option_id', 14)
             ->where('is_active', true)
             ->orderBy('option_name')
             ->get();
-            
+
         // Customer Classification options (MOM requirement)
         $classificationMaster = \App\Models\MasterOption::where('name', 'Customer Classification')->first();
         $classificationOptions = $classificationMaster ? \App\Models\OptionDetail::where('master_option_id', $classificationMaster->id)->where('is_active', 1)->orderBy('option_name')->get() : collect();
@@ -798,7 +802,7 @@ class CustomerController extends Controller
             // Add city_id to customer data for frontend
             $customerData = $customer->toArray();
             $customerData['city_id'] = $cityId; // Add computed city_id from district
-            
+
             return response()->json([
                 'status' => 'success',
                 'data' => $customerData,
@@ -808,10 +812,10 @@ class CustomerController extends Controller
                 'districts' => $districts,
                 'subdistricts' => $subdistricts,
                 'companyTypeOptions' => $companyTypeOptions,
-                'classificationOptions' => $classificationOptions
+                'classificationOptions' => $classificationOptions,
             ]);
         }
-        
+
         return view('company.customers.edit', compact('customer', 'users', 'provinces', 'cities', 'districts', 'subdistricts', 'companyTypeOptions', 'classificationOptions'));
     }
 
@@ -820,7 +824,7 @@ class CustomerController extends Controller
         $request->validate([
             'company_type' => 'nullable|string|max:100', // From /system/customer-types (hotel, restaurant, mall, etc)
             'customer_category_id' => 'nullable|exists:customer_types,id',
-            'customer_code' => 'nullable|string|max:50|unique:customers,customer_code,' . $customer->id,
+            'customer_code' => 'nullable|string|max:50|unique:customers,customer_code,'.$customer->id,
             'name' => 'required|string|max:255',
             'label_alias' => 'nullable|string|max:255',
             'status' => 'nullable|in:active,inactive',
@@ -840,7 +844,7 @@ class CustomerController extends Controller
             'default_payment' => 'nullable|string|max:50',
             'member_since' => 'nullable|date',
             'balance' => 'nullable|numeric|min:0',
-            'email' => 'nullable|email|max:255|unique:customers,email,' . $customer->id,
+            'email' => 'nullable|email|max:255|unique:customers,email,'.$customer->id,
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string',
             'city' => 'nullable|string|max:100',
@@ -856,13 +860,11 @@ class CustomerController extends Controller
             'annual_revenue' => 'nullable|numeric|min:0',
             'description' => 'nullable|string',
             'notes' => 'nullable|string',
-            'assigned_to' => 'nullable|exists:customer_contacts,id' // Changed from users to customer_contacts
+            'assigned_to' => 'nullable|exists:customer_contacts,id', // Changed from users to customer_contacts
         ]);
 
         try {
             DB::beginTransaction();
-
-
 
             $customer->update([
                 'customer_category_id' => $request->customer_category_id,
@@ -902,9 +904,9 @@ class CustomerController extends Controller
                 'notes' => $request->notes,
                 'assigned_to' => $request->assigned_to,
                 'classification_id' => $request->classification_id,
-                'updated_by' => Auth::id()
+                'updated_by' => Auth::id(),
             ]);
-            
+
             // Sync Multi PIC contacts if provided
             if ($request->has('contact_ids')) {
                 $contactIds = $request->contact_ids ?? [];
@@ -924,7 +926,7 @@ class CustomerController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Customer updated successfully.',
-                    'data' => $customer->load(['customerCategory', 'assignedTo', 'province', 'city', 'district', 'subdistrict', 'createdBy', 'updatedBy'])
+                    'data' => $customer->load(['customerCategory', 'assignedTo', 'province', 'city', 'district', 'subdistrict', 'createdBy', 'updatedBy']),
                 ]);
             }
 
@@ -932,16 +934,16 @@ class CustomerController extends Controller
                 ->with('success', 'Pelanggan berhasil diperbarui.');
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             // Return JSON for AJAX requests
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to update customer: ' . $e->getMessage()
+                    'message' => 'Failed to update customer: '.$e->getMessage(),
                 ], 422);
             }
-            
-            return back()->withInput()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+
+            return back()->withInput()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -951,16 +953,17 @@ class CustomerController extends Controller
             // [Global Soft Delete] Deactivate instead of Delete
             // Check active contracts?
             $activeContracts = $customer->contracts()->where('contract_status', 'active')->exists();
-            
+
             if ($activeContracts) {
                 $errorMessage = 'Cannot deactivate customer with active contracts.';
                 if (request()->ajax() || request()->wantsJson()) {
                     return response()->json([
                         'status' => 'error',
                         'message' => $errorMessage,
-                        'errors' => [$errorMessage]
+                        'errors' => [$errorMessage],
                     ], 422);
                 }
+
                 return back()->with('error', $errorMessage);
             }
 
@@ -970,7 +973,7 @@ class CustomerController extends Controller
             if (request()->ajax() || request()->wantsJson()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Customer successfully deactivated.'
+                    'message' => 'Customer successfully deactivated.',
                 ]);
             }
 
@@ -979,11 +982,12 @@ class CustomerController extends Controller
             if (request()->ajax() || request()->wantsJson()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Error: ' . $e->getMessage(),
-                    'errors' => ['Error: ' . $e->getMessage()]
+                    'message' => 'Error: '.$e->getMessage(),
+                    'errors' => ['Error: '.$e->getMessage()],
                 ], 500);
             }
-            return back()->with('error', 'Error: ' . $e->getMessage());
+
+            return back()->with('error', 'Error: '.$e->getMessage());
         }
     }
 
@@ -1002,14 +1006,14 @@ class CustomerController extends Controller
     {
         $request->validate([
             'credit_limit' => 'required|numeric|min:0',
-            'is_active' => 'boolean'
+            'is_active' => 'boolean',
         ]);
 
         try {
             $customer->creditLimits()->create([
                 'credit_limit' => $request->credit_limit,
                 'is_active' => $request->boolean('is_active'),
-                'created_by' => Auth::id()
+                'created_by' => Auth::id(),
             ]);
 
             // Update customer's current credit limit
@@ -1017,7 +1021,7 @@ class CustomerController extends Controller
 
             return back()->with('success', 'Batas kredit berhasil ditambahkan.');
         } catch (\Exception $e) {
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -1025,7 +1029,7 @@ class CustomerController extends Controller
     {
         $request->validate([
             'credit_limit' => 'required|numeric|min:0',
-            'is_active' => 'boolean'
+            'is_active' => 'boolean',
         ]);
 
         try {
@@ -1036,7 +1040,7 @@ class CustomerController extends Controller
             $creditLimit->update([
                 'credit_limit' => $request->credit_limit,
                 'is_active' => $request->boolean('is_active'),
-                'updated_by' => Auth::id()
+                'updated_by' => Auth::id(),
             ]);
 
             // Update customer's current credit limit if this is the active one
@@ -1046,7 +1050,7 @@ class CustomerController extends Controller
 
             return back()->with('success', 'Batas kredit berhasil diperbarui.');
         } catch (\Exception $e) {
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -1061,7 +1065,7 @@ class CustomerController extends Controller
 
             return back()->with('success', 'Batas kredit berhasil dihapus.');
         } catch (\Exception $e) {
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -1080,14 +1084,14 @@ class CustomerController extends Controller
     {
         $request->validate([
             'payment_terms' => 'required|integer|min:0|max:365',
-            'is_active' => 'boolean'
+            'is_active' => 'boolean',
         ]);
 
         try {
             $customer->paymentTerms()->create([
                 'payment_terms' => $request->payment_terms,
                 'is_active' => $request->boolean('is_active'),
-                'created_by' => Auth::id()
+                'created_by' => Auth::id(),
             ]);
 
             // Update customer's current payment terms
@@ -1095,7 +1099,7 @@ class CustomerController extends Controller
 
             return back()->with('success', 'Syarat pembayaran berhasil ditambahkan.');
         } catch (\Exception $e) {
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -1103,7 +1107,7 @@ class CustomerController extends Controller
     {
         $request->validate([
             'payment_terms' => 'required|integer|min:0|max:365',
-            'is_active' => 'boolean'
+            'is_active' => 'boolean',
         ]);
 
         try {
@@ -1114,7 +1118,7 @@ class CustomerController extends Controller
             $paymentTerm->update([
                 'payment_terms' => $request->payment_terms,
                 'is_active' => $request->boolean('is_active'),
-                'updated_by' => Auth::id()
+                'updated_by' => Auth::id(),
             ]);
 
             // Update customer's current payment terms if this is the active one
@@ -1124,7 +1128,7 @@ class CustomerController extends Controller
 
             return back()->with('success', 'Syarat pembayaran berhasil diperbarui.');
         } catch (\Exception $e) {
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -1139,7 +1143,7 @@ class CustomerController extends Controller
 
             return back()->with('success', 'Syarat pembayaran berhasil dihapus.');
         } catch (\Exception $e) {
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -1175,9 +1179,9 @@ class CustomerController extends Controller
             'search' => 'required|string|min:2',
         ]);
 
-        $customers = Customer::where('name', 'like', '%' . $request->search . '%')
-            ->orWhere('email', 'like', '%' . $request->search . '%')
-            ->orWhere('phone', 'like', '%' . $request->search . '%')
+        $customers = Customer::where('name', 'like', '%'.$request->search.'%')
+            ->orWhere('email', 'like', '%'.$request->search.'%')
+            ->orWhere('phone', 'like', '%'.$request->search.'%')
             ->where('status', 'active')
             ->with(['customerCategory'])
             ->orderBy('name')
@@ -1192,7 +1196,7 @@ class CustomerController extends Controller
     {
         $request->validate([
             'customer_ids' => 'required|array|min:1',
-            'customer_ids.*' => 'exists:customers,id'
+            'customer_ids.*' => 'exists:customers,id',
         ]);
 
         try {
@@ -1203,7 +1207,7 @@ class CustomerController extends Controller
 
             foreach ($request->customer_ids as $customerId) {
                 $customer = Customer::find($customerId);
-                
+
                 if ($customer) {
                     // [Global Soft Delete] Deactivate instead of Delete
                     // Optional: Check active contracts before deactivating?
@@ -1212,8 +1216,9 @@ class CustomerController extends Controller
                     // Validate before deactivation
                     $hasActiveContracts = $customer->contracts()->where('contract_status', 'active')->exists();
                     if ($hasActiveContracts) {
-                         $errors[] = "Customer '{$customer->name}' has active contracts.";
-                         continue;
+                        $errors[] = "Customer '{$customer->name}' has active contracts.";
+
+                        continue;
                     }
 
                     $customer->update(['is_active' => false]);
@@ -1227,12 +1232,12 @@ class CustomerController extends Controller
             $success = true;
             $statusCode = 200;
 
-            if ($deletedCount === 0 && !empty($errors)) {
-                $message = "Gagal menghapus pelanggan.";
+            if ($deletedCount === 0 && ! empty($errors)) {
+                $message = 'Gagal menghapus pelanggan.';
                 $success = false;
                 $statusCode = 422;
-            } elseif (!empty($errors)) {
-                 $message = "Berhasil menghapus {$deletedCount} pelanggan. Beberapa gagal.";
+            } elseif (! empty($errors)) {
+                $message = "Berhasil menghapus {$deletedCount} pelanggan. Beberapa gagal.";
             }
 
             if ($request->ajax() || $request->wantsJson()) {
@@ -1241,22 +1246,22 @@ class CustomerController extends Controller
                     'success' => $success,
                     'message' => $message,
                     'count' => $deletedCount,
-                    'errors' => $errors
+                    'errors' => $errors,
                 ], $statusCode);
             }
 
             return back()->with('success', $message);
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+                    'message' => 'Terjadi kesalahan: '.$e->getMessage(),
                 ], 500);
             }
 
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -1265,7 +1270,7 @@ class CustomerController extends Controller
         $request->validate([
             'customer_ids' => 'required|array|min:1',
             'customer_ids.*' => 'exists:customers,id',
-            'status' => 'required|in:active,inactive'
+            'status' => 'required|in:active,inactive',
         ]);
 
         try {
@@ -1279,7 +1284,8 @@ class CustomerController extends Controller
             return back()->with('success', "Berhasil memperbarui status {$updatedCount} pelanggan.");
         } catch (\Exception $e) {
             DB::rollback();
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -1287,13 +1293,13 @@ class CustomerController extends Controller
     {
         try {
             $newStatus = $customer->status === 'active' ? 'inactive' : 'active';
-            
+
             $customer->update(['status' => $newStatus]);
             $this->forgetSurveyWizardCustomerCaches();
 
             return back()->with('success', "Status pelanggan berhasil diubah menjadi {$newStatus}.");
         } catch (\Exception $e) {
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -1312,7 +1318,7 @@ class CustomerController extends Controller
             'total_customers' => $totalCustomers,
             'active_customers' => $activeCustomers,
             'customers_with_credit_limit' => $customersWithCreditLimit,
-            'customers_by_company_type' => $customersByCompanyType
+            'customers_by_company_type' => $customersByCompanyType,
         ]);
     }
 
@@ -1381,7 +1387,7 @@ class CustomerController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to fetch buildings',
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
             ], 500);
         }
     }
@@ -1399,8 +1405,8 @@ class CustomerController extends Controller
                     ->get(['id', 'name', 'position', 'email', 'phone', 'is_active']);
 
                 $multiPicContacts = CustomerContact::whereHas('customers', function ($query) use ($customerId) {
-                        $query->where('customers.id', $customerId);
-                    })
+                    $query->where('customers.id', $customerId);
+                })
                     ->where('is_active', true)
                     ->get(['id', 'name', 'position', 'email', 'phone', 'is_active']);
 
@@ -1418,7 +1424,7 @@ class CustomerController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to fetch customer contacts',
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
             ], 500);
         }
     }

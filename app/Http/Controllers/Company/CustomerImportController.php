@@ -9,6 +9,7 @@ use App\Models\CustomerType;
 use App\Models\District;
 use App\Models\Province;
 use App\Models\Subdistrict;
+use App\Services\Company\CustomerIdentifierUniquenessService;
 use App\Services\Imports\SpreadsheetImportHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -142,6 +143,15 @@ class CustomerImportController extends Controller
                         $subdistrictId = $this->resolveLookupId(Subdistrict::class, $row['subdistrict'] ?? '', 'subdistrict');
 
                         $isActive = $this->boolFromYn($row['is_active'] ?? 'Y');
+                        $npwp = trim($row['npwp'] ?? '') ?: null;
+
+                        if ($npwp) {
+                            $owner = app(CustomerIdentifierUniquenessService::class)->findCustomerUsingNpwp($npwp);
+
+                            if ($owner) {
+                                throw new \Exception("NPWP ini sudah digunakan oleh customer: {$owner->name}");
+                            }
+                        }
 
                         Customer::create([
                             'customer_code' => Customer::generateCustomerCode($name),
@@ -153,7 +163,7 @@ class CustomerImportController extends Controller
                             'customer_category_id' => $categoryId,
                             'status' => $isActive ? 'active' : 'inactive',
                             'customer_group' => trim($row['customer_group'] ?? '') ?: null,
-                            'npwp' => trim($row['npwp'] ?? '') ?: null,
+                            'npwp' => $npwp,
                             'province_id' => $provinceId,
                             'city_id' => $cityId,
                             'district_id' => $districtId,
