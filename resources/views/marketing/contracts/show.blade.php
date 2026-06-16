@@ -1826,7 +1826,7 @@ try {
 window.finalizeContract = function(contractId) {
     Swal.fire({
         title: 'Finalize Contract?',
-        html: '<p class="mb-0">After finalization, the contract will be <strong>active</strong> and you cannot edit it.</p>',
+        html: '<p class="mb-0">After finalization, the contract will be submitted for approval and you cannot edit it.</p>',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#10b981',
@@ -4586,11 +4586,11 @@ function updateHoldInvoice(contractId, hold) {
 
 function updateContractTarget(contractId, isContract) {
     const message = isContract 
-        ? "Anda yakin ingin mengaktifkan opsi Contract Target untuk kontrak ini?"
-        : "Anda yakin ingin menonaktifkan Target Marketing untuk kontrak ini?";
+        ? "Anda yakin ingin mengaktifkan Contract untuk kontrak ini?"
+        : "Anda yakin ingin menonaktifkan Contract untuk kontrak ini?";
 
     Swal.fire({
-        title: 'Konfirmasi Target Renewal',
+        title: 'Konfirmasi Contract',
         text: message,
         icon: 'question',
         showCancelButton: true,

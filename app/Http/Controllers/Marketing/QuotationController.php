@@ -1489,6 +1489,7 @@ class QuotationController extends Controller
         
         // Map payment terms from quotation to contract enum values
         $paymentTerms = $this->mapPaymentTerms($quotation->terms_of_payment);
+        $initialContractStatus = $isContractTarget ? 'active' : 'draft';
         
         // Get or create customer from prospect or survey
         $customerId = null;
@@ -1538,7 +1539,8 @@ class QuotationController extends Controller
             'contract_value' => $quotation->grand_total ?? 0,
             'payment_terms' => $paymentTerms,
             'contract_terms' => $quotation->terms_conditions,
-            'status' => 'active', // Auto-activate as per BRD
+            'status' => $initialContractStatus,
+            'contract_status' => $initialContractStatus,
             'contract_type' => $quotation->quotation_type ?? 'new',
             'is_contract' => $isContractTarget,
             'marketing_id' => $quotation->marketing_id,
