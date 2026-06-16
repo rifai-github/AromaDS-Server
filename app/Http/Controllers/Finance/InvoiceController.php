@@ -767,21 +767,9 @@ class InvoiceController extends Controller
     private function getDefaultPrintAttachmentIds($files): array
     {
         $selectedIds = [];
-        $hasSystemCsr = false;
 
         foreach ($files as $file) {
-            $id = (string) ($file->id ?? '');
-
-            // Header PRINT keeps one generated CSR; manual combined downloads can still include checked CSR files.
-            if (str_starts_with($id, 'sys-csr-')) {
-                if ($hasSystemCsr) {
-                    continue;
-                }
-
-                $hasSystemCsr = true;
-            }
-
-            $selectedIds[] = $id;
+            $selectedIds[] = (string) ($file->id ?? '');
         }
 
         return $selectedIds;
@@ -1475,7 +1463,8 @@ class InvoiceController extends Controller
                 'invoiceDetails', 
                 'invoiceRentalDetails.masterRental', 
                 'invoiceRentalDetails.jobSchedule.room',
-                'customer', 
+                'customer.defaultBankPayment.bank',
+                'billingGroup',
                 'contract.billingGroup',
                 'contract.branch.invoiceAuthorizedByUser',
                 'contractById.branch.invoiceAuthorizedByUser',

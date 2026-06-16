@@ -158,6 +158,11 @@
                     default => $type ? ucwords(str_replace('_', ' ', $type)) : '-',
                 };
             };
+            $isServiceJobType = function (?string $type): bool {
+                $normalized = strtolower(str_replace([' ', '-'], '_', (string) $type));
+
+                return in_array($normalized, ['service', 'service_first', 'service_routine', 'csr', 'maintenance'], true);
+            };
             $detectRentalMaterialComposition = function ($rental): array {
                 $hasUnit = false;
                 $hasNonUnit = false;
@@ -241,7 +246,7 @@
                     default => true,
                 };
             };
-            $resolveRentalCategory = function ($jobAdviceRoom, $fallback = '-'): string {
+            $resolveRentalCategory = function ($jobAdviceRoom, ?string $jobType = null, $fallback = '-') use ($isServiceJobType): ?string {
                 $rental = $jobAdviceRoom?->rentalProduct;
                 $details = $rental?->rentalDetails ?? collect();
 
@@ -260,7 +265,19 @@
                     ->values();
 
                 $unitCategory = $categories->firstWhere('is_unit', true);
+                $nonUnitCategory = $categories->firstWhere('is_unit', false);
                 $firstCategory = $categories->first();
+
+                if ($isServiceJobType($jobType)) {
+                    if ($nonUnitCategory) {
+                        return $nonUnitCategory['name'];
+                    }
+
+                    if ($unitCategory) {
+                        return null;
+                    }
+                }
+
                 $category = $unitCategory['name'] ?? $firstCategory['name'] ?? null;
 
                 return $category
@@ -309,7 +326,11 @@
                                 continue;
                             }
 
-                            $itemName = $resolveRentalCategory($jobAdviceRoom);
+                            $itemName = $resolveRentalCategory($jobAdviceRoom, $sch->type ?? $mainJob->type ?? null);
+
+                            if ($itemName === null) {
+                                continue;
+                            }
 
                             $rooms->push([
                                 'reference' => $sch->job_number ?? $jobNumber,

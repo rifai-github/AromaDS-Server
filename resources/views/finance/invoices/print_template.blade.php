@@ -22,6 +22,9 @@
         .items-table th { background-color: #214589; color: white; padding: 8px; text-align: left; }
         .items-table td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
         .items-table .total-row td { border: none; font-weight: bold; padding-top: 5px; }
+        .payment-info { margin-top: 32px; line-height: 1.45; }
+        .payment-info-title { font-weight: bold; margin-bottom: 6px; }
+        .payment-info-row { margin-bottom: 2px; }
         
         .center { text-align: center; }
         .right { text-align: right; }
@@ -73,6 +76,57 @@
         $authorizedPosition = filled($branchAuthorizedUser?->position_name)
             ? trim((string) $branchAuthorizedUser->position_name)
             : $invoiceSignatoryValue('invoice_authorized_by_position');
+
+        $billingGroup = $invoice->billingGroup ?: $invoice->contract?->billingGroup;
+        $rawPaymentAccount = trim((string) ($invoice->virtual_account_number ?: $billingGroup?->virtual_account_number ?: ''));
+        $paymentMethod = trim((string) ($invoice->payment_method ?: $billingGroup?->payment_method ?: ''));
+        $paymentBankName = trim((string) ($billingGroup?->bank_name ?: ''));
+        $paymentAccountName = '';
+        $paymentAccountNumber = '';
+
+        if ($rawPaymentAccount !== '') {
+            if (preg_match('/^\s*(?:(.*?)\s*-\s*)?(.*?)\s*\((.*?)\)\s*$/', $rawPaymentAccount, $matches)) {
+                $parsedBankName = trim((string) ($matches[1] ?? ''));
+                $paymentAccountName = trim((string) ($matches[2] ?? ''));
+                $paymentAccountNumber = trim((string) ($matches[3] ?? ''));
+
+                if ($parsedBankName !== '') {
+                    $paymentBankName = $parsedBankName;
+                }
+            } else {
+                $paymentAccountNumber = $rawPaymentAccount;
+            }
+        }
+
+        $bankPayment = null;
+        if ($paymentAccountNumber !== '' && \Illuminate\Support\Facades\Schema::hasTable('bank_payments')) {
+            $bankPayment = \App\Models\BankPayment::with('bank')
+                ->where('account_number', $paymentAccountNumber)
+                ->first();
+        }
+
+        if (!$bankPayment && $paymentAccountNumber === '' && $invoice->customer?->defaultBankPayment) {
+            $bankPayment = $invoice->customer->defaultBankPayment;
+        }
+
+        if ($bankPayment) {
+            $bankNameFromModel = trim((string) ($bankPayment->bank?->bank_name ?: $bankPayment->bank?->name ?: ''));
+            $paymentBankName = $paymentBankName ?: $bankNameFromModel;
+            $paymentAccountName = $paymentAccountName ?: trim((string) $bankPayment->account_name);
+            $paymentAccountNumber = $paymentAccountNumber ?: trim((string) $bankPayment->account_number);
+        }
+
+        $paymentAccountName = $paymentAccountName ?: trim((string) ($company->name ?? ''));
+        $paymentBranchName = trim((string) ($bankPayment?->branch_name ?? ''));
+        $paymentAddress = trim((string) ($bankPayment?->address ?? ''));
+        $displayBankName = trim(preg_replace('/^bank\s+/i', '', $paymentBankName));
+        $isVirtualAccount = str_starts_with(strtolower($paymentMethod), 'va_')
+            || str_contains(strtolower($paymentMethod), 'virtual')
+            || (bool) ($bankPayment?->is_default_va ?? false);
+        $paymentNumberLabel = $isVirtualAccount ? 'Virtual Account Bank' : 'Nomor Rekening Bank';
+        $paymentNumberLabel .= $displayBankName !== '' ? ' ' . $displayBankName : '';
+        $bankBranchLine = trim(($displayBankName !== '' ? 'Bank ' . $displayBankName : 'Bank') . ($paymentBranchName !== '' ? ' ' . $paymentBranchName : ''));
+        $hasPaymentInfo = $paymentAccountNumber !== '' || $paymentBankName !== '' || $paymentBranchName !== '' || $paymentAddress !== '';
     @endphp
 
     <!-- Header -->
@@ -219,6 +273,26 @@
     <div style="margin-top: 30px;">
         <strong>Notes:</strong><br>
         <p style="margin-top: 5px; font-style: italic;">{{ $invoice->notes }}</p>
+    </div>
+    @endif
+
+    @if($hasPaymentInfo)
+    <div class="payment-info">
+        @if($paymentAccountName)
+            <div class="payment-info-title">Payment to : {{ $paymentAccountName }}</div>
+        @endif
+        @if($paymentAccountNumber)
+            <div class="payment-info-row">{{ $paymentNumberLabel }} : {{ $paymentAccountNumber }}</div>
+        @endif
+        @if($paymentBranchName || $paymentBankName)
+            <div class="payment-info-row">{{ $bankBranchLine }}</div>
+        @endif
+        @if($paymentAddress)
+            <div class="payment-info-row">{{ $paymentAddress }}</div>
+        @endif
+        @if($company?->email)
+            <div class="payment-info-row" style="margin-top: 14px;">Email: {{ $company->email }}</div>
+        @endif
     </div>
     @endif
 
