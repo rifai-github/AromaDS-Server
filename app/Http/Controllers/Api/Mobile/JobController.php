@@ -1928,6 +1928,9 @@ class JobController extends Controller
             $jobScheduleRoom = $jobScheduleRooms
                 ->first(fn ($scheduleRoom) => $scheduleRoom->status !== \App\Models\JobScheduleRoom::STATUS_COMPLETED)
                 ?? $jobScheduleRooms->first();
+            $displayRoom = $roomGroup
+                ->first(fn ($adviceRoom) => (int) $adviceRoom->id === (int) ($jobScheduleRoom?->job_advice_room_id ?? 0))
+                ?? $room;
             $roomStatus = (
                 $jobScheduleRooms->isNotEmpty()
                 && $jobScheduleRooms->every(fn ($scheduleRoom) => $scheduleRoom->status === \App\Models\JobScheduleRoom::STATUS_COMPLETED)
@@ -1943,7 +1946,7 @@ class JobController extends Controller
             $displayName = $rentalName !== '-' ? "{$roomName} - {$rentalName}" : $roomName;
 
             return [
-                'id' => $room->id,
+                'id' => $displayRoom->id,
                 'name' => $roomName,
                 'display_name' => $displayName,
                 'rental_name' => $rentalName,
@@ -1951,7 +1954,7 @@ class JobController extends Controller
                 'status_label' => $this->getJobStatusLabel($roomStatus),
                 'is_blocked_by_ir' => $isBlockedByIr,
                 'blocked_by_ir_message' => $blockedByIrMessage,
-                'notes' => $room->notes ?? '',
+                'notes' => $displayRoom->notes ?? '',
                 'job_schedule_id' => $specificJobScheduleId,
                 // Detailed Room Info from MasterRoom
                 'floor' => $masterRoom->room_floor ?? '-',
@@ -2440,41 +2443,8 @@ class JobController extends Controller
                 
                 $jobScheduleRoom->markAsCompleted(Auth::id(), $completionNote);
 
-                // A physical room can contain multiple rental rows. The mobile app
-                // shows it as one room task, so completing the visible room must also
-                // complete sibling rental rows for the same physical room and job.
-                $relatedAdviceRooms = $this->getRelatedAdviceRoomsForPhysicalRoom($jobAdvice, $room);
-                foreach ($relatedAdviceRooms as $relatedAdviceRoom) {
-                    if ((int) $relatedAdviceRoom->id === (int) $room->id) {
-                        continue;
-                    }
-
-                    $relatedMasterRoomId = $this->getJobAdviceRoomPhysicalRoomId($relatedAdviceRoom);
-                    $relatedScheduleRoom = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
-                        ->where('job_advice_room_id', $relatedAdviceRoom->id)
-                        ->lockForUpdate()
-                        ->first();
-
-                    if (!$relatedScheduleRoom) {
-                        $relatedScheduleRoom = $this->ensureMobileRentalScheduleRoom($jobSchedule, $relatedAdviceRoom, $relatedMasterRoomId);
-                        $relatedScheduleRoom = \App\Models\JobScheduleRoom::whereKey($relatedScheduleRoom->id)
-                            ->lockForUpdate()
-                            ->first();
-                    }
-
-                    if ($relatedScheduleRoom) {
-                        $this->ensurePhysicalRoomPhotosForScheduleRoom($jobSchedule, $relatedScheduleRoom);
-                    }
-
-                    if ($relatedScheduleRoom && $relatedScheduleRoom->status !== \App\Models\JobScheduleRoom::STATUS_COMPLETED) {
-                        $relatedScheduleRoom->markAsCompleted(Auth::id(), $completionNote);
-                    }
-
-                    if ($relatedAdviceRoom->status !== 'completed') {
-                        $relatedAdviceRoom->status = 'completed';
-                        $relatedAdviceRoom->save();
-                    }
-                }
+                // One physical room can contain multiple rental rows. Completing one
+                // scanned rental must not close the other rentals in the same room.
             } else {
                 \Log::warning("JobScheduleRoom not found for room {$roomId} and job schedule " . ($jobSchedule ? $jobSchedule->id : 'null'));
             }

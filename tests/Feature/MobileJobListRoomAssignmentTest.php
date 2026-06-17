@@ -320,6 +320,32 @@ class MobileJobListRoomAssignmentTest extends TestCase
         $this->assertCount(1, $roomsPayload['data']);
         $this->assertSame('Ruang Delima', $roomsPayload['data'][0]['name']);
         $this->assertSame('ADS XL Unit Only, Rental-5', $roomsPayload['data'][0]['rental_name']);
+        $this->assertSame(90, $roomsPayload['data'][0]['id']);
+        $this->assertDatabaseHas('job_schedule_rooms', [
+            'job_schedule_id' => 43,
+            'job_advice_room_id' => 90,
+        ]);
+        $this->assertDatabaseHas('job_schedule_rooms', [
+            'job_schedule_id' => 43,
+            'job_advice_room_id' => 91,
+            'status' => 'pending',
+        ]);
+
+        DB::table('job_schedule_rooms')
+            ->where('job_schedule_id', 43)
+            ->where('job_advice_room_id', 90)
+            ->update(['status' => 'completed', 'updated_at' => now()]);
+        DB::table('job_advice_rooms')
+            ->where('id', 90)
+            ->update(['status' => 'completed', 'updated_at' => now()]);
+
+        $roomsResponse = app(JobController::class)->getJobRooms(43);
+        $roomsPayload = $roomsResponse->getData(true);
+
+        $this->assertSame('success', $roomsPayload['status']);
+        $this->assertCount(1, $roomsPayload['data']);
+        $this->assertSame('pending', $roomsPayload['data'][0]['status']);
+        $this->assertSame(91, $roomsPayload['data'][0]['id']);
     }
 
     public function test_mobile_job_rooms_keep_materials_after_team_reassignment(): void
