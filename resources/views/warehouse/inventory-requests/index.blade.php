@@ -884,10 +884,19 @@
                         <p class="text-blue-100 text-sm mt-1">Manage inventory requests from branches</p>
                     </div>
                 </div>
-                <button class="btn btn-primary shadow-md hover:shadow-lg transition-all duration-200 whitespace-nowrap" onclick="openCreateModal()">
-                    <i class="fas fa-plus me-2"></i>
-                    <span>Add New Request</span>
-                </button>
+                <div class="flex flex-row justify-end items-center gap-2">
+                    @if(auth()->user() && auth()->user()->hasPermission('warehouse.inventory-requests.create'))
+                    <button class="btn btn-secondary shadow-md hover:shadow-lg transition-all duration-200 whitespace-nowrap" onclick="openImportModal()">
+                        <i class="fas fa-file-import"></i>
+                        <span class="hidden md:inline">Import Excel/CSV</span>
+                        <span class="md:hidden">Import</span>
+                    </button>
+                    @endif
+                    <button class="btn btn-primary shadow-md hover:shadow-lg transition-all duration-200 whitespace-nowrap" onclick="openCreateModal()">
+                        <i class="fas fa-plus me-2"></i>
+                        <span>Add New Request</span>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -1280,6 +1289,151 @@ function closeModal() {
     document.body.style.overflow = 'auto';
     document.getElementById('modalBody').innerHTML = '';
     document.getElementById('modalFooter').innerHTML = '';
+}
+
+// ===== Import Excel/CSV functions =====
+function openImportModal() {
+    openModal('Import Inventory Request dari Excel/CSV');
+    document.getElementById('modalBody').innerHTML = `
+        <form id="inventoryRequestImportForm" onsubmit="inventoryRequestPreviewImport(event)">
+            <div class="form-group">
+                <label class="form-label">Pilih File Excel / CSV *</label>
+                <input type="file" name="file" id="inventoryRequestImportFile" class="form-input" accept=".csv,.txt,.xlsx,.xls" required onchange="inventoryRequestHandleFileSelect(event)">
+                <small class="text-muted">Format: .xlsx, .xls, atau .csv. Maksimum 10MB.</small>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 my-3">
+                <div class="font-semibold text-blue-900 mb-1">Unduh contoh format:</div>
+                <a href="/warehouse/inventory-requests/import-template?format=xlsx" class="text-blue-700 underline mr-3">Template Excel (.xlsx)</a>
+                <a href="/warehouse/inventory-requests/import-template?format=csv" class="text-blue-700 underline">Template CSV</a>
+            </div>
+            <div id="inventoryRequestPreviewSection" style="display:none;">
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 my-3">
+                    <div class="font-semibold mb-2">Hasil Preview:</div>
+                    <div id="inventoryRequestPreviewContent"></div>
+                </div>
+            </div>
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <div class="font-semibold text-yellow-900 mb-1">Ketentuan kolom:</div>
+                <ul class="text-sm text-yellow-800 space-y-1 list-disc list-inside">
+                    <li><strong>Wajib:</strong> required_date, reason, quantity, dan salah satu dari product_sku / product_name</li>
+                    <li><strong>Branch:</strong> isi branch_code atau branch_name. Jika kosong, sistem memakai branch utama user.</li>
+                    <li><strong>request_group:</strong> baris dengan nilai yang sama akan dibuat menjadi satu Inventory Request.</li>
+                    <li>Request hasil import dibuat sebagai <strong>draft</strong> seperti create manual.</li>
+                </ul>
+            </div>
+        </form>
+    `;
+    document.getElementById('modalFooter').innerHTML = `
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Batal</button>
+        <button type="button" class="btn btn-info" onclick="inventoryRequestPreviewImport(event)" id="inventoryRequestPreviewBtn" disabled>Preview</button>
+        <button type="button" class="btn btn-primary" onclick="inventoryRequestConfirmImport()" id="inventoryRequestConfirmBtn" style="display:none;">Mulai Import</button>
+    `;
+}
+
+function inventoryRequestHandleFileSelect(event) {
+    const btn = document.getElementById('inventoryRequestPreviewBtn');
+    btn.disabled = !(event.target.files && event.target.files.length > 0);
+    document.getElementById('inventoryRequestPreviewSection').style.display = 'none';
+    document.getElementById('inventoryRequestConfirmBtn').style.display = 'none';
+}
+
+function inventoryRequestPreviewImport(event) {
+    if (event) event.preventDefault();
+    const form = document.getElementById('inventoryRequestImportForm');
+    const formData = new FormData(form);
+    const previewBtn = document.getElementById('inventoryRequestPreviewBtn');
+    const section = document.getElementById('inventoryRequestPreviewSection');
+    const content = document.getElementById('inventoryRequestPreviewContent');
+
+    if (!formData.get('file') || !formData.get('file').name) {
+        alert('Silakan pilih file terlebih dahulu.');
+        return;
+    }
+
+    previewBtn.disabled = true;
+    previewBtn.textContent = 'Memuat...';
+    section.style.display = 'block';
+    content.innerHTML = '<div class="text-center py-3 text-sm text-gray-500">Menganalisis file...</div>';
+
+    fetch('/warehouse/inventory-requests/import-preview', {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        },
+        body: formData
+    })
+    .then(r => r.json())
+    .then(result => {
+        previewBtn.disabled = false;
+        previewBtn.textContent = 'Preview';
+        if (result.status !== 'success') {
+            content.innerHTML = '<div class="text-red-600 text-sm">' + (result.message || 'Gagal membaca file.') + '</div>';
+            return;
+        }
+
+        const p = result.preview;
+        let html = '<div class="text-sm space-y-1">';
+        html += '<div>Total baris item: <strong>' + p.total_rows + '</strong></div>';
+        html += '<div>Request akan dibuat: <strong class="text-green-700">' + p.new + '</strong></div>';
+        if (p.errors && p.errors.length) {
+            html += '<div class="mt-2 text-red-600"><strong>' + p.errors.length + ' peringatan:</strong><ul class="list-disc list-inside">';
+            p.errors.slice(0, 10).forEach(e => { html += '<li>' + e + '</li>'; });
+            if (p.errors.length > 10) html += '<li>...dan ' + (p.errors.length - 10) + ' lainnya</li>';
+            html += '</ul></div>';
+        }
+        html += '</div>';
+        content.innerHTML = html;
+        document.getElementById('inventoryRequestConfirmBtn').style.display = (p.new > 0) ? 'inline-flex' : 'none';
+    })
+    .catch(() => {
+        previewBtn.disabled = false;
+        previewBtn.textContent = 'Preview';
+        content.innerHTML = '<div class="text-red-600 text-sm">Terjadi kesalahan saat memproses file.</div>';
+    });
+}
+
+function inventoryRequestConfirmImport() {
+    const form = document.getElementById('inventoryRequestImportForm');
+    const formData = new FormData(form);
+    const confirmBtn = document.getElementById('inventoryRequestConfirmBtn');
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Mengimpor...';
+
+    fetch('/warehouse/inventory-requests/import', {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        },
+        body: formData
+    })
+    .then(r => r.json())
+    .then(result => {
+        const content = document.getElementById('inventoryRequestPreviewContent');
+        const s = result.stats || {};
+        let html = '<div class="text-sm space-y-1"><div class="font-semibold text-green-700">' + (result.message || 'Import selesai') + '</div>';
+        if (typeof s.success !== 'undefined') {
+            html += '<div>Baris berhasil: <strong>' + s.success + '</strong></div>';
+        }
+        if (s.errors && s.errors.length) {
+            html += '<div class="mt-2 text-red-600"><strong>Baris gagal:</strong><ul class="list-disc list-inside">';
+            s.errors.slice(0, 20).forEach(e => { html += '<li>Baris ' + e.row + ': ' + e.error + '</li>'; });
+            if (s.errors.length > 20) html += '<li>...dan ' + (s.errors.length - 20) + ' lainnya</li>';
+            html += '</ul></div>';
+        }
+        html += '</div>';
+        content.innerHTML = html;
+        confirmBtn.style.display = 'none';
+        setTimeout(() => { window.location.reload(); }, 1800);
+    })
+    .catch(() => {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Mulai Import';
+        alert('Terjadi kesalahan saat mengimpor.');
+    });
 }
 
 // CRUD Modal functions

@@ -109,6 +109,7 @@ use App\Http\Controllers\Warehouse\InventoryController;
 use App\Http\Controllers\Warehouse\InventoryIssuingController;
 use App\Http\Controllers\Warehouse\InventoryReceivingController;
 use App\Http\Controllers\Warehouse\InventoryRequestController;
+use App\Http\Controllers\Warehouse\InventoryRequestImportController;
 use App\Http\Controllers\Warehouse\MasterProductController;
 use App\Http\Controllers\Warehouse\MasterRentalController;
 use App\Http\Controllers\Warehouse\MasterRentalImportController;
@@ -1119,6 +1120,9 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('inventory-receivings/{inventoryReceiving}/update-item-quantity', [InventoryReceivingController::class, 'updateItemQuantity'])->name('inventory-receivings.update-item-quantity')->middleware('permission:warehouse.inventory-receivings.update');
         Route::post('inventory-receivings/{inventoryReceiving}/delete-serial-number', [InventoryReceivingController::class, 'deleteSerialNumber'])->name('inventory-receivings.delete-serial-number')->middleware('permission:warehouse.inventory-receivings.delete');
         Route::get('inventory-receivings/modal-data', [InventoryReceivingController::class, 'getModalData'])->name('inventory-receivings.modal-data')->middleware('permission:warehouse.inventory-receivings.view');
+        Route::get('inventory-requests/import-template', [InventoryRequestImportController::class, 'template'])->name('inventory-requests.import-template')->middleware('permission:warehouse.inventory-requests.create');
+        Route::post('inventory-requests/import-preview', [InventoryRequestImportController::class, 'preview'])->name('inventory-requests.import-preview')->middleware('permission:warehouse.inventory-requests.create');
+        Route::post('inventory-requests/import', [InventoryRequestImportController::class, 'import'])->name('inventory-requests.import')->middleware('permission:warehouse.inventory-requests.create');
         Route::resource('inventory-requests', InventoryRequestController::class)->middleware('permission:warehouse.inventory-requests.view');
         Route::post('inventory-requests/{inventoryRequest}/approve', [InventoryRequestController::class, 'approve'])->name('inventory-requests.approve')->middleware('permission:warehouse.inventory-requests.update');
         Route::post('inventory-requests/{inventoryRequest}/reject', [InventoryRequestController::class, 'reject'])->name('inventory-requests.reject')->middleware('permission:warehouse.inventory-requests.update');
