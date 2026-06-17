@@ -785,6 +785,7 @@ $(document).ready(function() {
         "responsive": false, 
         "lengthChange": true, 
         "autoWidth": false,
+        "stateSave": false,
         "pageLength": 10,
         "order": [[ 1, "asc" ]], // Order by Product Name
         "orderCellsTop": true,   // IMPORTANT: Tells DT that top row is for sorting
@@ -842,6 +843,7 @@ $(document).ready(function() {
         "responsive": false, 
         "lengthChange": true, 
         "autoWidth": false,
+        "stateSave": false,
         "pageLength": 10,
         "order": [[ 0, "desc" ]], 
         "orderCellsTop": true,
