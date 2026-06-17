@@ -121,7 +121,11 @@ class QuotationWizardController extends Controller
             || str_contains($variant, 'test')
             || preg_match('/^ta\d*/i', (string) $product->sku);
 
-        $looksLikeAroma = str_contains($categoryName, 'refill')
+        $looksLikeAroma = str_contains($name, 'fragrance')
+            || str_contains($name, 'aroma')
+            || str_contains($name, 'refill')
+            || str_contains($name, 'scent')
+            || str_contains($categoryName, 'refill')
             || str_contains($categoryName, 'aroma')
             || str_contains($categoryName, 'fragrance')
             || str_contains($categoryName, 'scent')
@@ -1894,29 +1898,6 @@ class QuotationWizardController extends Controller
                 ->where('brand_line', '!=', '')
                 ->whereNotNull('variant_name')
                 ->where('variant_name', '!=', '')
-                ->where(function ($query) {
-                    $query->whereHas('productCategory', function ($categoryQuery) {
-                        $categoryQuery->where('is_unit', false)
-                            ->where(function ($nameQuery) {
-                                $nameQuery->where('name', 'LIKE', '%Refill%')
-                                    ->orWhere('name', 'LIKE', '%Aroma%')
-                                    ->orWhere('name', 'LIKE', '%Fragrance%')
-                                    ->orWhere('name', 'LIKE', '%Scent%')
-                                    ->orWhere('name', 'LIKE', '%Luxo%')
-                                    ->orWhere('name', 'LIKE', '%Artisan%')
-                                    ->orWhere('name', 'LIKE', '%Signature%');
-                            });
-                    })->orWhereHas('productType', function ($typeQuery) {
-                        $typeQuery->where('is_unit', false)
-                            ->where(function ($nameQuery) {
-                                $nameQuery->where('name', 'LIKE', '%Aroma%')
-                                    ->orWhere('name', 'LIKE', '%Fragrance%')
-                                    ->orWhere('name', 'LIKE', '%Scent%')
-                                    ->orWhere('name', 'LIKE', '%Variant%')
-                                    ->orWhere('name', 'LIKE', '%Refill%');
-                            });
-                    });
-                })
                 ->get();
 
             $aromaProducts = $products
