@@ -2559,13 +2559,15 @@ class JobAssignMaterialIssueController extends Controller
                         continue;
                     }
 
-                    // Auto-approve if status is pending (for auto-created material issues)
-                    if ($materialIssue->status === 'pending') {
+                    // Auto-approve if status is pending, or re-check a previously out-of-stock
+                    // issue after the user has corrected package/quantity selections.
+                    if (in_array($materialIssue->status, ['pending', 'out_of_stock', 'out of stock'], true)) {
+                        $previousStatus = $materialIssue->status;
                         $materialIssue->update([
                             'status' => 'approved',
                             'updated_by' => Auth::id()
                         ]);
-                        \Log::info("Material issue {$materialIssue->issue_number} auto-approved from pending status.");
+                        \Log::info("Material issue {$materialIssue->issue_number} auto-approved from {$previousStatus} status.");
                         
                         // MOM9: Auto-update job schedule status to "barang_dipersiapkan" when material issue is approved/submitted
                         $jobAssignSchedule = $jobAssignMaterialIssue->jobAssignSchedule;
@@ -3485,6 +3487,33 @@ class JobAssignMaterialIssueController extends Controller
         $warnings = [];
         $alternatives = [];
         $canFulfillAll = true;
+        $productIds = $materialIssueItems
+            ->pluck('product_id')
+            ->filter()
+            ->unique()
+            ->values();
+        $stockByProductId = $productIds->isEmpty()
+            ? collect()
+            : \App\Models\WarehouseProduct::where('warehouse_id', $warehouse->id)
+                ->whereIn('master_product_id', $productIds)
+                ->get()
+                ->keyBy('master_product_id');
+        $requiredByProductId = $materialIssueItems
+            ->filter(fn ($item) => $item->product_id && (float) ($item->quantity ?? 0) > 0)
+            ->groupBy('product_id')
+            ->map(fn ($items) => $items->sum(fn ($item) => (float) ($item->quantity ?? 0)));
+        $insufficientProductIds = [];
+
+        foreach ($requiredByProductId as $productId => $totalNeeded) {
+            $stockAvailable = (float) ($stockByProductId->get($productId)?->quantity ?? 0);
+            if ($stockAvailable < (float) $totalNeeded) {
+                $canFulfillAll = false;
+                $insufficientProductIds[(int) $productId] = [
+                    'stock_available' => $stockAvailable,
+                    'total_needed' => (float) $totalNeeded,
+                ];
+            }
+        }
         
         foreach ($materialIssueItems as $item) {
             $product = $item->product;
@@ -3493,10 +3522,9 @@ class JobAssignMaterialIssueController extends Controller
             $qtyNeeded = $item->quantity ?? 0;
             
             // Get stock
-            $warehouseProduct = \App\Models\WarehouseProduct::where('warehouse_id', $warehouse->id)
-                ->where('master_product_id', $product->id)
-                ->first();
-            $stockAvailable = $warehouseProduct ? $warehouseProduct->quantity : 0;
+            $stockAvailable = (float) ($stockByProductId->get($product->id)?->quantity ?? 0);
+            $totalNeededForProduct = (float) ($requiredByProductId->get($product->id, $qtyNeeded) ?? $qtyNeeded);
+            $productCanFulfill = !isset($insufficientProductIds[(int) $product->id]);
             
             $itemData = [
                 'room_name' => $item->room_name,
@@ -3506,15 +3534,14 @@ class JobAssignMaterialIssueController extends Controller
                 'packaging_size' => $product->packagingSize->name ?? 'Unit',
                 'qty_needed' => $qtyNeeded,
                 'stock_available' => $stockAvailable,
-                'can_fulfill' => $stockAvailable >= $qtyNeeded
+                'total_qty_needed' => $totalNeededForProduct,
+                'can_fulfill' => $productCanFulfill
             ];
             
             $items[] = $itemData;
             
             // Check if stock insufficient
-            if ($stockAvailable < $qtyNeeded) {
-                $canFulfillAll = false;
-                
+            if (!$productCanFulfill) {
                 // Check if this is aroma type (need alternative package size)
                 $productTypeName = $product->productType->name ?? null;
                 $isAromaType = $productTypeName && (
@@ -3565,7 +3592,7 @@ class JobAssignMaterialIssueController extends Controller
                             
                             // Calculate: berapa item alternative yang dibutuhkan untuk replace 1 item current
                             $itemsNeeded = ceil($currentSizeML / $altSizeML);
-                            $totalItemsNeeded = $itemsNeeded * $qtyNeeded;
+                            $totalItemsNeeded = $itemsNeeded * $totalNeededForProduct;
                             
                             if ($altStock >= $totalItemsNeeded) {
                                 $alternativeSuggestions[] = [
@@ -3575,7 +3602,7 @@ class JobAssignMaterialIssueController extends Controller
                                     'size_ml' => $altSizeML,
                                     'items_needed' => $totalItemsNeeded,
                                     'stock_available' => $altStock,
-                                    'calculation' => "{$qtyNeeded} × {$currentPackagingSize->name} = {$totalItemsNeeded} × {$altProduct->packagingSize->name}"
+                                    'calculation' => "{$totalNeededForProduct} × {$currentPackagingSize->name} = {$totalItemsNeeded} × {$altProduct->packagingSize->name}"
                                 ];
                             }
                         }
@@ -3585,7 +3612,7 @@ class JobAssignMaterialIssueController extends Controller
                                 'original_product' => $product->name,
                                 'original_packaging' => $currentPackagingSize->name,
                                 'room_name' => $item->room_name,
-                                'qty_needed' => $qtyNeeded,
+                                'qty_needed' => $totalNeededForProduct,
                                 'stock_available' => $stockAvailable,
                                 'suggestions' => $alternativeSuggestions
                             ];
@@ -3594,7 +3621,7 @@ class JobAssignMaterialIssueController extends Controller
                 }
                 
                 $packagingSizeName = $product->packagingSize ? $product->packagingSize->name : 'Unit';
-                $warnings[] = "❌ Stock tidak cukup: {$product->name} ({$packagingSizeName}) di {$item->room_name}. Butuh: {$qtyNeeded}, Stock: {$stockAvailable}";
+                $warnings[] = "❌ Stock tidak cukup: {$product->name} ({$packagingSizeName}) di {$item->room_name}. Total butuh: {$totalNeededForProduct}, Stock: {$stockAvailable}";
             }
         }
         
@@ -5218,6 +5245,7 @@ class JobAssignMaterialIssueController extends Controller
             ]);
 
             $item = \App\Models\MaterialIssueItem::findOrFail($itemId);
+            $oldQuantity = (float) ($item->quantity ?? 0);
             $item->quantity = $request->quantity;
             $item->updated_by = auth()->id();
             $item->save();
@@ -5234,6 +5262,17 @@ class JobAssignMaterialIssueController extends Controller
                 $stock = \App\Models\WarehouseProduct::where('warehouse_id', $warehouseId)
                     ->where('master_product_id', $item->product_id)
                     ->value('quantity') ?? 0;
+            }
+
+            if ($materialIssue
+                && abs($oldQuantity - (float) $request->quantity) > 0.0001
+                && in_array($materialIssue->status, ['approved', 'out_of_stock', 'out of stock'], true)
+            ) {
+                $materialIssue->update([
+                    'status' => 'pending',
+                    'updated_by' => auth()->id(),
+                ]);
+                $materialIssue->refresh();
             }
 
             $status = $materialIssue?->status ?? 'pending';
@@ -5432,4 +5471,3 @@ class JobAssignMaterialIssueController extends Controller
         }
     }
 }
-
