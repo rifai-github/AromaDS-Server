@@ -600,6 +600,14 @@
                                     : ($canDoneFromStatus ? 'Selesaikan pekerjaan' : 'Done Job hanya bisa setelah On Progress Teknisi');
                             @endphp
                             @php
+                                $currentUser = auth()->user();
+                                $canUseWebFallbackActions = $currentUser && (
+                                    $currentUser->hasPermission('operational.job-schedules-complete-ba.update') ||
+                                    $currentUser->hasPermission('operational.job-schedules.update') ||
+                                    $currentUser->hasRole('Admin') ||
+                                    $currentUser->hasRole('super_admin') ||
+                                    $currentUser->hasRoleStartingWith('Management')
+                                );
                                 $arrivedAllowed = in_array($jobSchedule->status, ['barang_diambil','barang_dipersiapkan','assign_material','assign_team','scheduled','new_job','meninggalkan_lokasi'], true);
                                 $startAllowed = in_array($jobSchedule->status, ['teknisi_tiba_dilokasi','barang_diambil'], true);
                                 $leaveAllowed = in_array($jobSchedule->status, ['teknisi_tiba_dilokasi','in_progress','teknisi_sedang_pengerjaan','teknisi_selesai_pengerjaan'], true);
@@ -609,33 +617,33 @@
                                 $verifyMaterialAllowed = $isMaterialJob && in_array($jobSchedule->status, ['barang_dipersiapkan','barang_siap_diambil','assign_material'], true);
                             @endphp
                             {{-- Phase 3 web fallback: material confirm / verify --}}
-                            @if($confirmMaterialAllowed)
+                            @if($canUseWebFallbackActions && $confirmMaterialAllowed)
                             <button type="button" class="btn btn-outline-secondary btn-sm" onclick="webMaterialAction('confirm-materials','Konfirmasi material yang akan diambil teknisi?')" title="Konfirmasi Material dari web">
                                 <i class="fas fa-clipboard-check"></i> Konfirmasi Material
                             </button>
                             @endif
-                            @if($verifyMaterialAllowed)
+                            @if($canUseWebFallbackActions && $verifyMaterialAllowed)
                             <button type="button" class="btn btn-outline-dark btn-sm" onclick="webMaterialAction('verify-materials','Verifikasi pengambilan barang (Barang Diambil)?')" title="Verifikasi Ambil Barang dari web">
                                 <i class="fas fa-box-open"></i> Ambil Barang
                             </button>
                             @endif
                             {{-- Phase 2 web fallback: technician location lifecycle --}}
-                            @if($arrivedAllowed)
+                            @if($canUseWebFallbackActions && $arrivedAllowed)
                             <button type="button" class="btn btn-info btn-sm" onclick="webLifecycleAction('arrived','Catat kedatangan teknisi (Tiba di Lokasi)?')" title="Catat Tiba di Lokasi dari web">
                                 <i class="fas fa-map-marker-alt"></i> Tiba di Lokasi
                             </button>
                             @endif
-                            @if($startAllowed)
+                            @if($canUseWebFallbackActions && $startAllowed)
                             <button type="button" class="btn btn-primary btn-sm" onclick="webLifecycleAction('start-work','Mulai pekerjaan (On Progress Teknisi)?')" title="Mulai Kerja dari web">
                                 <i class="fas fa-play"></i> Mulai Kerja
                             </button>
                             @endif
-                            @if($leaveAllowed)
+                            @if($canUseWebFallbackActions && $leaveAllowed)
                             <button type="button" class="btn btn-warning btn-sm" onclick="webLifecycleAction('leave-location','Tandai teknisi meninggalkan lokasi sementara?')" title="Tinggalkan Lokasi dari web">
                                 <i class="fas fa-sign-out-alt"></i> Tinggalkan Lokasi
                             </button>
                             @endif
-                            @if(!in_array($jobSchedule->status, ['completed', 'done_job', 'cancelled', 'suspend', 'dpf']))
+                            @if($canUseWebFallbackActions && !in_array($jobSchedule->status, ['completed', 'done_job', 'cancelled', 'suspend', 'dpf']))
                             <button type="button" id="headerDoneButton" class="btn btn-success btn-sm" data-can-done-from-status="{{ $canDoneFromStatus ? '1' : '0' }}" {{ $doneButtonDisabled ? 'disabled' : '' }}
                                 style="{{ $doneButtonDisabled ? 'background-color: #6c757d; border-color: #6c757d; cursor: not-allowed; opacity: 1;' : '' }}"
                                 title="{{ $doneButtonTitle }}" onclick="openDoneJobBaModal()">
