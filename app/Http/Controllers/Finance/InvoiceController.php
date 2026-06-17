@@ -566,13 +566,16 @@ class InvoiceController extends Controller
         $regenerationContext = $this->resolveInvoiceRegenerationContext($invoice);
 
         $invoice->load([
-            'invoiceDetails', 
-            'invoiceRentalDetails.masterRental', 
+            'invoiceDetails.updater', 
+            'invoiceRentalDetails.masterRental',
+            'invoiceRentalDetails.updater',
+            'invoiceRentalDetails.jobSchedule.room',
             'invoiceFiles.creator', 
             'invoiceActivities.creator', 
             'bankReceipts.creator',
             'contract.billingGroup', 
             'customer',
+            'updater',
             'invoiceFollowUps' => function($query) {
                 $query->with('creator')
                       ->orderBy('follow_up_date', 'desc')

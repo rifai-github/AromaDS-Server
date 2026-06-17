@@ -538,6 +538,34 @@
 
                 <!-- Tab 2: DETAIL -->
                 <div class="tab-pane fade" id="detail" role="tabpanel">
+                    @php
+                        $invoiceDetailRows = $invoice->invoiceDetails
+                            ->map(function ($detail) use ($invoice) {
+                                return [
+                                    'reference_no' => trim((string) (\Illuminate\Support\Str::of($detail->description ?? '')->explode('|')->last() ?? '')) ?: ($invoice->contract_number ?? '-'),
+                                    'item_name' => $detail->description ?? '-',
+                                    'unit_price' => $detail->unit_price,
+                                    'quantity' => $detail->quantity,
+                                    'total_price' => $detail->total_price,
+                                    'updated_at' => $detail->updated_at,
+                                    'updated_by' => $detail->updater->name ?? $invoice->updater->name ?? '-',
+                                ];
+                            })
+                            ->concat($invoice->invoiceRentalDetails->map(function ($rental) use ($invoice) {
+                                $roomName = $rental->room_name ?: ($rental->jobSchedule->room->room_name ?? null);
+                                $rentalName = $rental->rental_name ?? $rental->masterRental->rental_name ?? 'Rental';
+
+                                return [
+                                    'reference_no' => $rental->job_no ?? $invoice->contract_number ?? '-',
+                                    'item_name' => $roomName ? "{$rentalName} - {$roomName}" : $rentalName,
+                                    'unit_price' => $rental->unit_price,
+                                    'quantity' => $rental->quantity,
+                                    'total_price' => $rental->total_price,
+                                    'updated_at' => $rental->updated_at,
+                                    'updated_by' => $rental->updater->name ?? $invoice->updater->name ?? '-',
+                                ];
+                            }));
+                    @endphp
                     <div class="table-responsive">
                         <table class="table table-hover align-middle">
                             <thead>
@@ -554,17 +582,17 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                @forelse($invoice->invoiceDetails as $detail)
+                                @forelse($invoiceDetailRows as $detail)
                                 <tr>
                                     <td><input type="checkbox"></td>
                                     <td>{{ $invoice->invoice_number }}</td>
-                                    <td>{{ trim((string) (\Illuminate\Support\Str::of($detail->description ?? '')->explode('|')->last() ?? '')) ?: ($invoice->contract_number ?? '-') }}</td>
-                                    <td>{{ $detail->description ?? '-' }}</td>
-                                    <td class="text-end">Rp {{ number_format($detail->unit_price, 0, ',', '.') }}</td>
-                                    <td class="text-center">{{ number_format($detail->quantity, 0) }}</td>
-                                    <td class="text-end fw-bold">Rp {{ number_format($detail->total_price, 0, ',', '.') }}</td>
-                                    <td>{{ $detail->updated_at->format('d/M/Y - H:i') }}</td>
-                                    <td>{{ $detail->updater->name ?? $invoice->updater->name ?? '-' }}</td>
+                                    <td>{{ $detail['reference_no'] }}</td>
+                                    <td>{{ $detail['item_name'] }}</td>
+                                    <td class="text-end">Rp {{ number_format($detail['unit_price'], 0, ',', '.') }}</td>
+                                    <td class="text-center">{{ number_format($detail['quantity'], 0) }}</td>
+                                    <td class="text-end fw-bold">Rp {{ number_format($detail['total_price'], 0, ',', '.') }}</td>
+                                    <td>{{ $detail['updated_at']?->format('d/M/Y - H:i') ?? '-' }}</td>
+                                    <td>{{ $detail['updated_by'] }}</td>
                                 </tr>
                                 @empty
                                 <tr>
