@@ -863,6 +863,9 @@ class CustomerController extends Controller
             'assigned_to' => 'nullable|exists:customer_contacts,id', // Changed from users to customer_contacts
         ]);
 
+        $this->customerIdentifierUniqueness->validateUniqueNib($request->nib, $customer->id);
+        $this->customerIdentifierUniqueness->validateUniqueNib($request->nib_number, $customer->id, 'nib_number');
+
         try {
             DB::beginTransaction();
 
