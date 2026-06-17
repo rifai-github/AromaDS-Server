@@ -163,6 +163,7 @@ class ProductStructureController extends Controller
                     'unit' => $category->unit,
                     'has_serial_number' => $category->effective_has_serial_number,
                     'raw_has_serial_number' => $category->has_serial_number,
+                    'mandatory_serial_policy' => ProductCategory::hasMandatorySerialPolicy($category->code, $category->name),
                     'is_unit' => $category->is_unit,
                     'is_active' => $category->is_active,
                     'products_count' => $productsCount,

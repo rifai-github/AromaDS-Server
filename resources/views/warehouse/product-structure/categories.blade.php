@@ -946,6 +946,7 @@
                             <label class="form-check-label" for="has_serial_number">
                                 Has Serial Number
                             </label>
+                            <small id="has_serial_number_help" class="form-text text-muted"></small>
                         </div>
                     </div>
                     <div class="col-md-6">
@@ -1049,6 +1050,34 @@ const iconList = [
     'fas fa-star', 'fas fa-moon', 'fas fa-sun', 'fas fa-cloud-sun'
 ];
 
+function isMandatorySerialPolicy(code, name) {
+    const normalizedCode = (code || '').trim().toUpperCase();
+    const normalizedName = (name || '').trim().toLowerCase();
+
+    return ['AROMA', 'DIS'].includes(normalizedCode) || ['aroma', 'dispenser'].includes(normalizedName);
+}
+
+function updateHasSerialNumberLock(forcedMandatory = null) {
+    const checkbox = document.getElementById('has_serial_number');
+    const help = document.getElementById('has_serial_number_help');
+    const mandatory = forcedMandatory ?? isMandatorySerialPolicy(
+        document.getElementById('code').value,
+        document.getElementById('name').value
+    );
+
+    checkbox.disabled = mandatory;
+    if (mandatory) {
+        checkbox.checked = true;
+    }
+    help.textContent = mandatory
+        ? 'Aroma dan Dispenser wajib Has SN untuk menjaga alur serial/batch stock.'
+        : '';
+}
+
+['code', 'name'].forEach(id => {
+    document.getElementById(id).addEventListener('input', () => updateHasSerialNumberLock());
+});
+
 function openAddModal() {
     currentCategoryId = null;
     document.getElementById('modalTitle').textContent = 'Add Product Category';
@@ -1061,6 +1090,7 @@ function openAddModal() {
     document.getElementById('unit').value = '';
     document.getElementById('has_serial_number').checked = false;
     document.getElementById('is_unit').checked = false;
+    updateHasSerialNumberLock(false);
     document.getElementById('categoryModal').classList.add('show');
     document.body.style.overflow = 'hidden';
 }
@@ -1271,7 +1301,10 @@ function editCategory(id) {
                 // Technical fields
                 document.getElementById('sku_prefix').value = category.sku_prefix || '';
                 document.getElementById('unit').value = category.unit || '';
-                document.getElementById('has_serial_number').checked = category.has_serial_number || false;
+                document.getElementById('has_serial_number').checked = category.mandatory_serial_policy
+                    ? true
+                    : (category.raw_has_serial_number ?? category.has_serial_number ?? false);
+                updateHasSerialNumberLock(category.mandatory_serial_policy || false);
                 document.getElementById('is_unit').checked = category.is_unit || false;
                 
                 // Update modal title and form action
@@ -1415,11 +1448,14 @@ function submitCategoryForm(e) {
     const form = document.getElementById('categoryForm');
     const formData = new FormData(form);
     const data = Object.fromEntries(formData);
+    const code = data.code?.trim() || '';
+    const name = data.name?.trim() || '';
+    const mandatorySerialPolicy = isMandatorySerialPolicy(code, name);
     
     // Process form data
     const processedData = {
-        code: data.code?.trim() || '',
-        name: data.name?.trim() || '',
+        code,
+        name,
         description: data.description?.trim() || null,
         parent_id: data.parent_id || null,
         sort_order: parseInt(data.sort_order) || 0,
@@ -1429,7 +1465,7 @@ function submitCategoryForm(e) {
         // Technical fields (Product Type merged)
         sku_prefix: data.sku_prefix?.trim() || null,
         unit: data.unit?.trim() || null,
-        has_serial_number: data.has_serial_number === 'on' || data.has_serial_number === 'true' || data.has_serial_number === true,
+        has_serial_number: mandatorySerialPolicy || data.has_serial_number === 'on' || data.has_serial_number === 'true' || data.has_serial_number === true,
         is_unit: data.is_unit === 'on' || data.is_unit === 'true' || data.is_unit === true
     };
     
