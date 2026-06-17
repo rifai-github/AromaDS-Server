@@ -972,7 +972,7 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
     {
         DB::table('product_categories')->insert([
             'id' => 11,
-            'name' => 'Aroma',
+            'name' => 'Consumable',
             'has_serial_number' => false,
             'is_unit' => false,
             'created_at' => now(),

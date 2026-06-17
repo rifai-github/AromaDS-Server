@@ -27,7 +27,14 @@ class ProductStructureController extends Controller
     // Product Categories Management
     public function categories(Request $request)
     {
-        $query = ProductCategory::with(['parent', 'children', 'createdBy', 'updatedBy']);
+        $query = ProductCategory::with(['parent', 'children', 'createdBy', 'updatedBy'])
+            ->withCount('masterProducts')
+            ->withExists([
+                'masterProducts as serial_required_products_exists' => function ($query) {
+                    $query->whereHas('serialNumbers')
+                        ->orWhereHas('productType', fn ($typeQuery) => $typeQuery->where('has_serial_number', true));
+                },
+            ]);
 
         // Apply column filters
         $this->applyColumnFilters($query, 'productCategoriesTable', [
@@ -80,6 +87,15 @@ class ProductStructureController extends Controller
         return view('warehouse.product-structure.categories', compact('categories', 'parentCategories', 'unitOptions'));
     }
 
+    private function normalizeSerialPolicyData(array $data): array
+    {
+        if (ProductCategory::hasMandatorySerialPolicy($data['code'] ?? null, $data['name'] ?? null)) {
+            $data['has_serial_number'] = true;
+        }
+
+        return $data;
+    }
+
     private function getUnitOptions()
     {
         return OptionDetail::where('master_option_id', 46)
@@ -119,10 +135,17 @@ class ProductStructureController extends Controller
                 ], 404);
             }
             
-            $category->load(['parent', 'children', 'createdBy', 'updatedBy']);
+            $category->load(['parent', 'children', 'createdBy', 'updatedBy'])
+                ->loadCount('masterProducts')
+                ->loadExists([
+                    'masterProducts as serial_required_products_exists' => function ($query) {
+                        $query->whereHas('serialNumbers')
+                            ->orWhereHas('productType', fn ($typeQuery) => $typeQuery->where('has_serial_number', true));
+                    },
+                ]);
             
             // Count products in this category
-            $productsCount = MasterProduct::where('product_category_id', $category->id)->count();
+            $productsCount = $category->master_products_count;
             
             return response()->json([
                 'status' => 'success',
@@ -138,7 +161,8 @@ class ProductStructureController extends Controller
                     'color' => $category->color,
                     'sku_prefix' => $category->sku_prefix,
                     'unit' => $category->unit,
-                    'has_serial_number' => $category->has_serial_number,
+                    'has_serial_number' => $category->effective_has_serial_number,
+                    'raw_has_serial_number' => $category->has_serial_number,
                     'is_unit' => $category->is_unit,
                     'is_active' => $category->is_active,
                     'products_count' => $productsCount,
@@ -207,7 +231,7 @@ class ProductStructureController extends Controller
                 'updated_by' => Auth::id()
             ];
 
-            $category = ProductCategory::create($data);
+            $category = ProductCategory::create($this->normalizeSerialPolicyData($data));
 
             DB::commit();
 
@@ -293,7 +317,7 @@ class ProductStructureController extends Controller
                 'updated_by' => Auth::id()
             ];
 
-            $category->update($data);
+            $category->update($this->normalizeSerialPolicyData($data));
 
             DB::commit();
 

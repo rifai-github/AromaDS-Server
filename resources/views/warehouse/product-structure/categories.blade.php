@@ -764,12 +764,12 @@
                                     </td>
                                     <td>{{ $category->sort_order }}</td>
                                     <td>
-                                        <span class="badge badge-info">{{ $category->masterProducts()->count() }}</span>
+                                        <span class="badge badge-info">{{ $category->master_products_count }}</span>
                                     </td>
                                     <td>{{ $category->sku_prefix ?? '-' }}</td>
                                     <td>{{ $category->unit ?? '-' }}</td>
                                     <td>
-                                        @if($category->has_serial_number)
+                                        @if($category->effective_has_serial_number)
                                             <span class="badge badge-success">Yes</span>
                                         @else
                                             <span class="badge badge-secondary">No</span>

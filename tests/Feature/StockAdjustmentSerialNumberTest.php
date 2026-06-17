@@ -32,6 +32,7 @@ class StockAdjustmentSerialNumberTest extends TestCase
 
         Schema::create('product_categories', function (Blueprint $table) {
             $table->id();
+            $table->string('code')->nullable();
             $table->string('name')->nullable();
             $table->boolean('has_serial_number')->default(false);
             $table->boolean('is_unit')->default(false);
@@ -254,6 +255,41 @@ class StockAdjustmentSerialNumberTest extends TestCase
 
         $this->assertSame(3, WarehouseProduct::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->value('quantity'));
         $this->assertSame(3, SerialNumber::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->where('serial_number', 'RLG1000003')->where('status', 'ready')->count());
+    }
+
+    public function test_aroma_and_dispenser_categories_are_mandatory_serial_policy_even_when_flag_is_false(): void
+    {
+        $aroma = ProductCategory::create([
+            'code' => 'AROMA',
+            'name' => 'Aroma',
+            'has_serial_number' => false,
+            'is_unit' => false,
+        ]);
+        $dispenser = ProductCategory::create([
+            'code' => 'DIS',
+            'name' => 'Dispenser',
+            'has_serial_number' => false,
+            'is_unit' => true,
+        ]);
+
+        $aromaProduct = MasterProduct::create([
+            'product_category_id' => $aroma->id,
+            'name' => 'Fragrance Lemongrass Mix 100ml',
+            'sku' => 'REFLEMONGRASS100',
+            'is_active' => true,
+        ]);
+        $dispenserProduct = MasterProduct::create([
+            'product_category_id' => $dispenser->id,
+            'name' => 'PURE Dispenser 7200',
+            'sku' => 'DIS7200',
+            'is_active' => true,
+        ]);
+
+        $this->assertTrue($aroma->fresh()->effective_has_serial_number);
+        $this->assertTrue($dispenser->fresh()->effective_has_serial_number);
+        $this->assertTrue($aromaProduct->fresh()->requiresSerialNumber());
+        $this->assertTrue($dispenserProduct->fresh()->requiresSerialNumber());
+        $this->assertTrue($dispenserProduct->fresh()->requiresUniqueSerialNumber());
     }
 
     public function test_batch_decrease_retires_only_requested_duplicate_rows(): void

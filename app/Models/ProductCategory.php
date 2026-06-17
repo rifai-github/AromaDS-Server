@@ -145,6 +145,42 @@ class ProductCategory extends Model
         return $indent . $this->name;
     }
 
+    public function requiresSerialNumber(): bool
+    {
+        if ((bool) $this->has_serial_number) {
+            return true;
+        }
+
+        return self::hasMandatorySerialPolicy($this->code, $this->name);
+    }
+
+    public static function hasMandatorySerialPolicy(?string $code, ?string $name): bool
+    {
+        $normalizedCode = strtoupper(trim((string) $code));
+        $normalizedName = strtolower(trim((string) $name));
+
+        return in_array($normalizedCode, ['AROMA', 'DIS'], true)
+            || in_array($normalizedName, ['aroma', 'dispenser'], true);
+    }
+
+    public function getEffectiveHasSerialNumberAttribute(): bool
+    {
+        if ($this->requiresSerialNumber()) {
+            return true;
+        }
+
+        if (array_key_exists('serial_required_products_exists', $this->attributes)) {
+            return (bool) $this->attributes['serial_required_products_exists'];
+        }
+
+        return $this->masterProducts()
+            ->where(function ($query) {
+                $query->whereHas('serialNumbers')
+                    ->orWhereHas('productType', fn ($typeQuery) => $typeQuery->where('has_serial_number', true));
+            })
+            ->exists();
+    }
+
     public function hasChildren()
     {
         return $this->children()->exists();

@@ -184,7 +184,7 @@ class MasterProduct extends Model
     public function requiresSerialNumber(): bool
     {
         $configuredForSerialNumber = (bool) (
-            optional($this->productCategory)->has_serial_number
+            optional($this->productCategory)->requiresSerialNumber()
             || optional($this->productType)->has_serial_number
         );
 
