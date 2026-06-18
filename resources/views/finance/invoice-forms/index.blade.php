@@ -97,7 +97,7 @@
                     <i class="fas fa-check-circle text-green-600"></i>
                 </div>
                 <div class="stat-content">
-                    <div class="stat-number">{{ $invoiceForms->where('status', 'approved')->count() ?? 0 }}</div>
+                    <div class="stat-number">{{ $invoiceFormStats['approved'] ?? 0 }}</div>
                     <div class="stat-label">Approved</div>
                 </div>
             </div>
@@ -106,7 +106,7 @@
                     <i class="fas fa-clock text-yellow-600"></i>
                 </div>
                 <div class="stat-content">
-                    <div class="stat-number">{{ $invoiceForms->where('status', 'draft')->count() ?? 0 }}</div>
+                    <div class="stat-number">{{ $invoiceFormStats['draft'] ?? 0 }}</div>
                     <div class="stat-label">Draft</div>
                 </div>
             </div>
@@ -115,7 +115,7 @@
                     <i class="fas fa-times-circle text-red-600"></i>
                 </div>
                 <div class="stat-content">
-                    <div class="stat-number">{{ $invoiceForms->where('status', 'rejected')->count() ?? 0 }}</div>
+                    <div class="stat-number">{{ $invoiceFormStats['rejected'] ?? 0 }}</div>
                     <div class="stat-label">Rejected</div>
                 </div>
             </div>

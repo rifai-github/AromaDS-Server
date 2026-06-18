@@ -67,6 +67,17 @@ class InvoiceFormController extends Controller
             $query->where('invoice_date', '<=', $request->date_to);
         }
 
+        // Status counts across the full (filtered) result set — not just the current page
+        $statusCounts = (clone $query)
+            ->select('status', DB::raw('COUNT(*) as total'))
+            ->groupBy('status')
+            ->pluck('total', 'status');
+        $invoiceFormStats = [
+            'approved' => (int) ($statusCounts['approved'] ?? 0),
+            'draft'    => (int) ($statusCounts['draft'] ?? 0),
+            'rejected' => (int) ($statusCounts['rejected'] ?? 0),
+        ];
+
         $invoiceForms = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get filter options - optimized queries
@@ -79,7 +90,7 @@ class InvoiceFormController extends Controller
         $customers = Customer::select('id', 'company_name')->get();
         $users = User::select('id', 'name')->get();
 
-        return view('finance.invoice-forms.index', compact('invoiceForms', 'contracts', 'customers', 'users'));
+        return view('finance.invoice-forms.index', compact('invoiceForms', 'invoiceFormStats', 'contracts', 'customers', 'users'));
     }
 
     public function create()
