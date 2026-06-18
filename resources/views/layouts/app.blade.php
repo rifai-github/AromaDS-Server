@@ -1177,7 +1177,11 @@
     
     <!-- SweetAlert2 CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
-    
+
+    <!-- Flatpickr (standardized datepicker) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/airbnb.css">
+
     @stack('styles')
 </head>
 <body class="bg-[#dbecfd] min-h-screen">
@@ -4703,5 +4707,47 @@
     </script>
     <!-- SweetAlert2 -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <!-- Flatpickr (standardized datepicker) -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/id.js"></script>
+    <script>
+    (function () {
+        // Standardized datepicker auto-init.
+        // Upgrades native date / datetime-local inputs to flatpickr with a
+        // consistent d/M/Y display while still submitting Y-m-d (Y-m-d H:i) to the server.
+        if (typeof flatpickr === 'undefined') { return; }
+
+        try { flatpickr.localize(flatpickr.l10ns.id); } catch (e) {}
+
+        window.initFlatpickr = function (root) {
+            root = root || document;
+            var inputs = root.querySelectorAll('input[type="date"], input[type="datetime-local"]');
+            inputs.forEach(function (el) {
+                // Skip if already initialized or explicitly opted out
+                if (el._flatpickr || el.hasAttribute('data-no-flatpickr')) { return; }
+
+                var isDateTime = (el.getAttribute('type') === 'datetime-local')
+                    || el.hasAttribute('data-enable-time');
+
+                // Switch type to text so the native picker doesn't double up with flatpickr
+                el.setAttribute('type', 'text');
+
+                flatpickr(el, {
+                    altInput: true,
+                    altFormat: isDateTime ? 'd/M/Y H:i' : 'd/M/Y',
+                    dateFormat: isDateTime ? 'Y-m-d H:i' : 'Y-m-d',
+                    enableTime: isDateTime,
+                    time_24hr: true,
+                    allowInput: true,
+                });
+            });
+        };
+
+        document.addEventListener('DOMContentLoaded', function () {
+            window.initFlatpickr(document);
+        });
+    })();
+    </script>
 </body>
 </html>
