@@ -4746,6 +4746,38 @@
 
         document.addEventListener('DOMContentLoaded', function () {
             window.initFlatpickr(document);
+
+            // Catch date inputs injected dynamically (AJAX-loaded modals, cloned rows, etc.)
+            // The altInput flatpickr creates is type=text, so it never re-matches the
+            // date/datetime selector -> no init loop.
+            if (typeof MutationObserver !== 'undefined') {
+                var scheduled = false;
+                var observer = new MutationObserver(function (mutations) {
+                    var hasNewDate = false;
+                    for (var i = 0; i < mutations.length; i++) {
+                        var added = mutations[i].addedNodes;
+                        for (var j = 0; j < added.length; j++) {
+                            var node = added[j];
+                            if (node.nodeType !== 1) { continue; } // elements only
+                            if ((node.matches && node.matches('input[type="date"], input[type="datetime-local"]')) ||
+                                (node.querySelector && node.querySelector('input[type="date"], input[type="datetime-local"]'))) {
+                                hasNewDate = true;
+                                break;
+                            }
+                        }
+                        if (hasNewDate) { break; }
+                    }
+                    if (hasNewDate && !scheduled) {
+                        scheduled = true;
+                        // Defer so a whole modal subtree finishes inserting before we init
+                        setTimeout(function () {
+                            scheduled = false;
+                            window.initFlatpickr(document);
+                        }, 50);
+                    }
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+            }
         });
     })();
     </script>
