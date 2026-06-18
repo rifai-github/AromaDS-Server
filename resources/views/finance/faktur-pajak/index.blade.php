@@ -820,62 +820,11 @@
         </div>
         
         <!-- Pagination Controls -->
-        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
-            <div class="pagination-controls">
-                @if(isset($fakturPajaks) && $fakturPajaks->currentPage() > 1)
-                    <a href="{{ $fakturPajaks->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @endif
-                
-                @if(isset($fakturPajaks) && $fakturPajaks->hasPages())
-                    @php
-                        $start = max(1, $fakturPajaks->currentPage() - 2);
-                        $end = min($fakturPajaks->lastPage(), $fakturPajaks->currentPage() + 2);
-                    @endphp
-                    
-                    <div class="flex items-center gap-2">
-                        @if($start > 1)
-                            <a href="{{ $fakturPajaks->url(1) }}" class="page-number">1</a>
-                            @if($start > 2)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                        @endif
-                        
-                        @for($i = $start; $i <= $end; $i++)
-                            @if($i == $fakturPajaks->currentPage())
-                                <span class="page-number active">{{ $i }}</span>
-                            @else
-                                <a href="{{ $fakturPajaks->url($i) }}" class="page-number">{{ $i }}</a>
-                            @endif
-                        @endfor
-                        
-                        @if($end < $fakturPajaks->lastPage())
-                            @if($end < $fakturPajaks->lastPage() - 1)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                            <a href="{{ $fakturPajaks->url($fakturPajaks->lastPage()) }}" class="page-number">{{ $fakturPajaks->lastPage() }}</a>
-                        @endif
-                    </div>
-                @else
-                    <span class="page-number active">1</span>
-                @endif
-                
-                @if(isset($fakturPajaks) && $fakturPajaks->hasMorePages())
-                    <a href="{{ $fakturPajaks->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-                
-                <div class="page-dropdown-container">
-                    <span class="text-sm text-gray-700">Page</span>
-                    <select class="bg-gray-100 rounded-lg px-3 py-1 text-sm border border-gray-300 focus:outline-none focus:border-[#214589]">
-                        <option>{{ $fakturPajaks->currentPage() ?? 1 }}</option>
-                    </select>
-                    <span class="text-sm text-gray-700">of <span class="inline">{{ $fakturPajaks->lastPage() ?? 1 }}</span></span>
-                </div>
-            </div>
+        @if($fakturPajaks->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $fakturPajaks->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 

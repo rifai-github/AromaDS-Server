@@ -933,27 +933,7 @@
                     of {{ $achievements->total() }} entries
                 </span>
             </div>
-            <div class="pagination-controls">
-                @if($achievements->onFirstPage())
-                    <span class="btn" disabled>Previous</span>
-                @else
-                    <a href="{{ $achievements->previousPageUrl() }}" class="btn">Previous</a>
-                @endif
-
-                @foreach($achievements->getUrlRange(1, $achievements->lastPage()) as $page => $url)
-                    @if($page == $achievements->currentPage())
-                        <span class="btn active">{{ $page }}</span>
-                    @else
-                        <a href="{{ $url }}" class="btn">{{ $page }}</a>
-                    @endif
-                @endforeach
-
-                @if($achievements->hasMorePages())
-                    <a href="{{ $achievements->nextPageUrl() }}" class="btn">Next</a>
-                @else
-                    <span class="btn" disabled>Next</span>
-                @endif
-            </div>
+            {{ $achievements->withQueryString()->links() }}
         </div>
         @endif
     </div>

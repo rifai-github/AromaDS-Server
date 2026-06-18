@@ -485,62 +485,11 @@
         </div>
         
         <!-- Pagination Controls -->
-        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
-            <div class="pagination-controls">
-                @if($commissions->currentPage() > 1)
-                    <a href="{{ $commissions->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @endif
-                
-                @if($commissions->lastPage() > 0)
-                    @php
-                        $start = max(1, $commissions->currentPage() - 2);
-                        $end = min($commissions->lastPage(), $commissions->currentPage() + 2);
-                    @endphp
-                    
-                    <div class="flex items-center gap-2">
-                        @if($start > 1)
-                            <a href="{{ $commissions->url(1) }}" class="page-number">1</a>
-                            @if($start > 2)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                        @endif
-                        
-                        @for($i = $start; $i <= $end; $i++)
-                            @if($i == $commissions->currentPage())
-                                <span class="page-number active">{{ $i }}</span>
-                            @else
-                                <a href="{{ $commissions->url($i) }}" class="page-number">{{ $i }}</a>
-                            @endif
-                        @endfor
-                        
-                        @if($end < $commissions->lastPage())
-                            @if($end < $commissions->lastPage() - 1)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                            <a href="{{ $commissions->url($commissions->lastPage()) }}" class="page-number">{{ $commissions->lastPage() }}</a>
-                        @endif
-                    </div>
-                @else
-                    <span class="page-number active">1</span>
-                @endif
-                
-                @if($commissions->currentPage() < $commissions->lastPage())
-                    <a href="{{ $commissions->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-                
-                <div class="page-dropdown-container">
-                    <span class="text-sm text-gray-700">Page</span>
-                    <select class="bg-gray-100 rounded-lg px-3 py-1 text-sm border border-gray-300 focus:outline-none focus:border-[#214589]">
-                        <option>{{ $commissions->currentPage() }}</option>
-                    </select>
-                    <span class="text-sm text-gray-700">of <span class="inline">{{ $commissions->lastPage() }}</span></span>
-                </div>
-            </div>
+        @if($commissions->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $commissions->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 

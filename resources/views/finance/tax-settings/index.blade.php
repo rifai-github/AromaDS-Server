@@ -837,62 +837,11 @@
         </div>
         
         <!-- Pagination Controls -->
-        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
-            <div class="pagination-controls">
-                @if(isset($taxSettings) && $taxSettings->currentPage() > 1)
-                    <a href="{{ $taxSettings->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @endif
-                
-                @if(isset($taxSettings) && $taxSettings->hasPages())
-                    @php
-                        $start = max(1, $taxSettings->currentPage() - 2);
-                        $end = min($taxSettings->lastPage(), $taxSettings->currentPage() + 2);
-                    @endphp
-                    
-                    <div class="flex items-center gap-2">
-                        @if($start > 1)
-                            <a href="{{ $taxSettings->url(1) }}" class="page-number">1</a>
-                            @if($start > 2)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                        @endif
-                        
-                        @for($i = $start; $i <= $end; $i++)
-                            @if($i == $taxSettings->currentPage())
-                                <span class="page-number active">{{ $i }}</span>
-                            @else
-                                <a href="{{ $taxSettings->url($i) }}" class="page-number">{{ $i }}</a>
-                            @endif
-                        @endfor
-                        
-                        @if($end < $taxSettings->lastPage())
-                            @if($end < $taxSettings->lastPage() - 1)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                            <a href="{{ $taxSettings->url($taxSettings->lastPage()) }}" class="page-number">{{ $taxSettings->lastPage() }}</a>
-                        @endif
-                    </div>
-                @else
-                    <span class="page-number active">1</span>
-                @endif
-                
-                @if(isset($taxSettings) && $taxSettings->hasMorePages())
-                    <a href="{{ $taxSettings->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-                
-                <div class="page-dropdown-container">
-                    <span class="text-sm text-gray-700">Page</span>
-                    <select class="bg-gray-100 rounded-lg px-3 py-1 text-sm border border-gray-300 focus:outline-none focus:border-[#214589]">
-                        <option>{{ $taxSettings->currentPage() ?? 1 }}</option>
-                    </select>
-                    <span class="text-sm text-gray-700">of <span class="inline">{{ $taxSettings->lastPage() ?? 1 }}</span></span>
-                </div>
-            </div>
+        @if($taxSettings->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $taxSettings->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 

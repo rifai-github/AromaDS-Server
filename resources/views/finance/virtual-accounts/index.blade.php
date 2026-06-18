@@ -818,62 +818,11 @@
         </div>
         
         <!-- Pagination Controls -->
-        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
-            <div class="pagination-controls">
-                @if($virtualAccounts->currentPage() > 1)
-                    <a href="{{ $virtualAccounts->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @endif
-                
-                @if($virtualAccounts->lastPage() > 0)
-                    @php
-                        $start = max(1, $virtualAccounts->currentPage() - 2);
-                        $end = min($virtualAccounts->lastPage(), $virtualAccounts->currentPage() + 2);
-                    @endphp
-                    
-                    <div class="flex items-center gap-2">
-                        @if($start > 1)
-                            <a href="{{ $virtualAccounts->url(1) }}" class="page-number">1</a>
-                            @if($start > 2)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                        @endif
-                        
-                        @for($i = $start; $i <= $end; $i++)
-                            @if($i == $virtualAccounts->currentPage())
-                                <span class="page-number active">{{ $i }}</span>
-                            @else
-                                <a href="{{ $virtualAccounts->url($i) }}" class="page-number">{{ $i }}</a>
-                            @endif
-                        @endfor
-                        
-                        @if($end < $virtualAccounts->lastPage())
-                            @if($end < $virtualAccounts->lastPage() - 1)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                            <a href="{{ $virtualAccounts->url($virtualAccounts->lastPage()) }}" class="page-number">{{ $virtualAccounts->lastPage() }}</a>
-                        @endif
-                    </div>
-                @else
-                    <span class="page-number active">1</span>
-                @endif
-                
-                @if($virtualAccounts->currentPage() < $virtualAccounts->lastPage())
-                    <a href="{{ $virtualAccounts->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-                
-                <div class="page-dropdown-container">
-                    <span class="text-sm text-gray-700">Page</span>
-                    <select class="bg-gray-100 rounded-lg px-3 py-1 text-sm border border-gray-300 focus:outline-none focus:border-[#214589]">
-                        <option>{{ $virtualAccounts->currentPage() }}</option>
-                    </select>
-                    <span class="text-sm text-gray-700">of <span class="inline">{{ $virtualAccounts->lastPage() }}</span></span>
-                </div>
-            </div>
+        @if($virtualAccounts->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $virtualAccounts->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 
