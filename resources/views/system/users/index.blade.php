@@ -483,61 +483,12 @@
             </table>
         </div>
 
-        <!-- Footer Bar from Pipeline Style -->
-        <div class="flex flex-row justify-center items-center w-full bg-white rounded-b-[10px] p-4 border-t">
-            <div class="pagination-controls">
-                @if($users->onFirstPage())
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @else
-                    <a href="{{ $users->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @endif
-
-                <div class="flex items-center gap-2">
-                    @php
-                        $start = max(1, $users->currentPage() - 2);
-                        $end = min($users->lastPage(), $users->currentPage() + 2);
-                    @endphp
-
-                    @if($start > 1)
-                        <a href="{{ $users->url(1) }}" class="page-number">1</a>
-                        @if($start > 2)
-                            <span class="text-sm text-gray-500">...</span>
-                        @endif
-                    @endif
-
-                    @for($i = $start; $i <= $end; $i++)
-                        @if($i == $users->currentPage())
-                            <span class="page-number active">{{ $i }}</span>
-                        @else
-                            <a href="{{ $users->url($i) }}" class="page-number">{{ $i }}</a>
-                        @endif
-                    @endfor
-
-                    @if($end < $users->lastPage())
-                        @if($end < $users->lastPage() - 1)
-                            <span class="text-sm text-gray-500">...</span>
-                        @endif
-                        <a href="{{ $users->url($users->lastPage()) }}" class="page-number">{{ $users->lastPage() }}</a>
-                    @endif
-                </div>
-
-                @if($users->hasMorePages())
-                    <a href="{{ $users->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-
-                <div class="page-dropdown-container">
-                    <span class="text-sm text-gray-700">Page</span>
-                    <select class="bg-gray-100 rounded-lg px-3 py-1 text-sm border border-gray-300 focus:outline-none focus:border-[#214589]" onchange="window.location.href = this.value">
-                        @for($i = 1; $i <= $users->lastPage(); $i++)
-                            <option value="{{ $users->url($i) }}" {{ $i == $users->currentPage() ? 'selected' : '' }}>{{ $i }}</option>
-                        @endfor
-                    </select>
-                    <span class="text-sm text-gray-700">of <span class="inline">{{ $users->lastPage() }}</span></span>
-                </div>
-            </div>
+        <!-- Pagination Controls -->
+        @if($users->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $users->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 

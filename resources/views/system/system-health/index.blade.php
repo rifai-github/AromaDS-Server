@@ -428,62 +428,11 @@
         </div>
         
         <!-- Pagination Controls -->
-        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
-            <div class="pagination-controls">
-                @if(isset($systemHealths) && $systemHealths->currentPage() > 1)
-                    <a href="{{ $systemHealths->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @endif
-                
-                @if(isset($systemHealths) && $systemHealths->lastPage() > 0)
-                    @php
-                        $start = max(1, $systemHealths->currentPage() - 2);
-                        $end = min($systemHealths->lastPage(), $systemHealths->currentPage() + 2);
-                    @endphp
-                    
-                    <div class="flex items-center gap-2">
-                        @if($start > 1)
-                            <a href="{{ $systemHealths->url(1) }}" class="page-number">1</a>
-                            @if($start > 2)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                        @endif
-                        
-                        @for($i = $start; $i <= $end; $i++)
-                            @if($i == $systemHealths->currentPage())
-                                <span class="page-number active">{{ $i }}</span>
-                            @else
-                                <a href="{{ $systemHealths->url($i) }}" class="page-number">{{ $i }}</a>
-                            @endif
-                        @endfor
-                        
-                        @if($end < $systemHealths->lastPage())
-                            @if($end < $systemHealths->lastPage() - 1)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                            <a href="{{ $systemHealths->url($systemHealths->lastPage()) }}" class="page-number">{{ $systemHealths->lastPage() }}</a>
-                        @endif
-                    </div>
-                @else
-                    <span class="page-number active">1</span>
-                @endif
-                
-                @if(isset($systemHealths) && $systemHealths->currentPage() < $systemHealths->lastPage())
-                    <a href="{{ $systemHealths->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-                
-                <div class="page-dropdown-container">
-                    <span class="text-sm text-gray-700">Page</span>
-                    <select class="bg-gray-100 rounded-lg px-3 py-1 text-sm border border-gray-300 focus:outline-none focus:border-[#214589]">
-                        <option>{{ $systemHealths->currentPage() ?? 1 }}</option>
-                    </select>
-                    <span class="text-sm text-gray-700">of <span class="inline">{{ $systemHealths->lastPage() ?? 1 }}</span></span>
-                </div>
-            </div>
+        @if($systemHealths->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $systemHealths->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 
