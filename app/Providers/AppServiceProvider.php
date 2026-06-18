@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Pagination\Paginator;
 use App\Models\User;
 use App\Observers\UserObserver;
 
@@ -28,5 +29,9 @@ class AppServiceProvider extends ServiceProvider
         if (class_exists(User::class) && class_exists(UserObserver::class)) {
             User::observe(UserObserver::class);
         }
+
+        // Standardize pagination rendering across all views
+        Paginator::defaultView('pagination.custom');
+        Paginator::defaultSimpleView('pagination.custom');
     }
 }

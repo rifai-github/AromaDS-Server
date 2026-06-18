@@ -45,9 +45,19 @@ class SalesActivityController extends Controller
             $query->where('activity', 'like', '%' . $request->activity . '%');
         }
 
-        $activities = $query->orderBy('activity_date', 'desc')->paginate(15);
+        $activities = $query->orderBy('activity_date', 'desc')->paginate(15)->withQueryString();
 
-        return view('marketing.sales-activities.index', compact('activities'));
+        // Prepare pagination data for view
+        $pagination = [
+            'current_page' => $activities->currentPage(),
+            'last_page' => $activities->lastPage(),
+            'per_page' => $activities->perPage(),
+            'total' => $activities->total(),
+            'from' => $activities->firstItem(),
+            'to' => $activities->lastItem(),
+        ];
+
+        return view('marketing.sales-activities.index', compact('activities', 'pagination'));
     }
 
     public function create()

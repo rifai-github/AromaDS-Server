@@ -536,9 +536,10 @@
                 <div class="pagination-wrapper">
                     <div class="pagination-info">
                         <span class="info-text">
-                            Showing {{ $positionRoles->count() }} entries
+                            Showing {{ $positionRoles->firstItem() }}-{{ $positionRoles->lastItem() }} of {{ $positionRoles->total() }} entries
                         </span>
                     </div>
+                    {{ $positionRoles->links() }}
                 </div>
                 @endif
             </div>
