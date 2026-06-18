@@ -111,11 +111,16 @@ class DashboardController extends Controller
                 'this_week' => JobSchedule::whereBetween('schedule_date', [$startOfWeek->copy()->startOfDay(), $endOfWeek->copy()->endOfDay()])->count(),
             ];
 
+            // One row per job_number (a job spans multiple room rows; the dashboard has no
+            // room column, so without de-duping the same job appears as identical rows).
             $jobsInProgress = JobSchedule::with(['building', 'assignedTechnician.department', 'jobAssignments.team'])
                 ->whereNotIn('status', ['completed', 'done_job', 'cancelled'])
                 ->orderBy('updated_at', 'desc')
-                ->limit(10)
-                ->get();
+                ->limit(40)
+                ->get()
+                ->unique(fn ($job) => $job->job_number ?: 'id-' . $job->id)
+                ->take(10)
+                ->values();
 
             $todaysJobs = JobSchedule::with(['building', 'assignedTechnician.department', 'jobAssignments.team'])
                 ->whereDate('schedule_date', $today)
