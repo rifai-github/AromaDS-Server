@@ -308,54 +308,11 @@
         </div>
         
         <!-- Pagination Controls -->
-        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
-            <div class="pagination-controls">
-                @if(isset($histories) && $histories->currentPage() > 1)
-                    <a href="{{ $histories->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @endif
-                
-                @if(isset($histories) && $histories->lastPage() > 0)
-                    @php
-                        $start = max(1, $histories->currentPage() - 2);
-                        $end = min($histories->lastPage(), $histories->currentPage() + 2);
-                    @endphp
-                    
-                    <div class="flex items-center gap-2">
-                        @if($start > 1)
-                            <a href="{{ $histories->url(1) }}" class="page-number">1</a>
-                            @if($start > 2)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                        @endif
-                        
-                        @for($i = $start; $i <= $end; $i++)
-                            @if($i == $histories->currentPage())
-                                <span class="page-number active">{{ $i }}</span>
-                            @else
-                                <a href="{{ $histories->url($i) }}" class="page-number">{{ $i }}</a>
-                            @endif
-                        @endfor
-                        
-                        @if($end < $histories->lastPage())
-                            @if($end < $histories->lastPage() - 1)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                            <a href="{{ $histories->url($histories->lastPage()) }}" class="page-number">{{ $histories->lastPage() }}</a>
-                        @endif
-                    </div>
-                @else
-                    <span class="page-number active">1</span>
-                @endif
-                
-                @if(isset($histories) && $histories->currentPage() < $histories->lastPage())
-                    <a href="{{ $histories->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-            </div>
+        @if($histories->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $histories->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 

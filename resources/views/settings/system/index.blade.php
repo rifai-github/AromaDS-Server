@@ -437,26 +437,8 @@
 
             <!-- Pagination -->
             @if($settings->hasPages())
-            <div class="pagination">
-                @if($settings->onFirstPage())
-                    <span class="disabled">Previous</span>
-                @else
-                    <a href="{{ $settings->previousPageUrl() }}">Previous</a>
-                @endif
-
-                @foreach($settings->getUrlRange(1, $settings->lastPage()) as $page => $url)
-                    @if($page == $settings->currentPage())
-                        <span class="active">{{ $page }}</span>
-                    @else
-                        <a href="{{ $url }}">{{ $page }}</a>
-                    @endif
-                @endforeach
-
-                @if($settings->hasMorePages())
-                    <a href="{{ $settings->nextPageUrl() }}">Next</a>
-                @else
-                    <span class="disabled">Next</span>
-                @endif
+            <div class="flex flex-row justify-center items-center w-full p-4">
+                {{ $settings->withQueryString()->links() }}
             </div>
             @endif
         </div>

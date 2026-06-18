@@ -1006,68 +1006,11 @@
         </div>
         
         <!-- Pagination Controls -->
-        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
-            <div class="pagination-controls">
-                @if(isset($reports) && $reports->currentPage() > 1)
-                    <a href="{{ $reports->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @endif
-                
-                @if(isset($reports) && $reports->hasPages())
-                    @php
-                        $start = max(1, $reports->currentPage() - 2);
-                        $end = min($reports->lastPage(), $reports->currentPage() + 2);
-                    @endphp
-                    
-                    <div class="flex items-center gap-2">
-                        @if($start > 1)
-                            <a href="{{ $reports->url(1) }}" class="page-number">1</a>
-                            @if($start > 2)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                        @endif
-                        
-                        @for($i = $start; $i <= $end; $i++)
-                            @if($i == $reports->currentPage())
-                                <span class="page-number active">{{ $i }}</span>
-                            @else
-                                <a href="{{ $reports->url($i) }}" class="page-number">{{ $i }}</a>
-                            @endif
-                        @endfor
-                        
-                        @if($end < $reports->lastPage())
-                            @if($end < $reports->lastPage() - 1)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                            <a href="{{ $reports->url($reports->lastPage()) }}" class="page-number">{{ $reports->lastPage() }}</a>
-                        @endif
-                    </div>
-                @else
-                    <span class="page-number active">1</span>
-                @endif
-                
-                @if(isset($reports) && $reports->hasMorePages())
-                    <a href="{{ $reports->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-                
-                <div class="page-dropdown-container">
-                    <span class="text-sm text-gray-700">Page</span>
-                    <select class="bg-gray-100 rounded-lg px-3 py-1 text-sm border border-gray-300 focus:outline-none focus:border-[#214589]" onchange="window.location.href = this.value">
-                        @if(isset($reports))
-                            @for($i = 1; $i <= $reports->lastPage(); $i++)
-                                <option value="{{ $reports->url($i) }}" {{ $reports->currentPage() == $i ? 'selected' : '' }}>{{ $i }}</option>
-                            @endfor
-                        @else
-                            <option>1</option>
-                        @endif
-                    </select>
-                    <span class="text-sm text-gray-700">of <span class="inline">{{ isset($reports) ? $reports->lastPage() : 1 }}</span></span>
-                </div>
-            </div>
+        @if($reports->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $reports->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 

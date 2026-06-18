@@ -308,54 +308,11 @@
         </div>
         
         <!-- Pagination Controls -->
-        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
-            <div class="pagination-controls">
-                @if(isset($templates) && $templates->currentPage() > 1)
-                    <a href="{{ $templates->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @endif
-                
-                @if(isset($templates) && $templates->lastPage() > 0)
-                    @php
-                        $start = max(1, $templates->currentPage() - 2);
-                        $end = min($templates->lastPage(), $templates->currentPage() + 2);
-                    @endphp
-                    
-                    <div class="flex items-center gap-2">
-                        @if($start > 1)
-                            <a href="{{ $templates->url(1) }}" class="page-number">1</a>
-                            @if($start > 2)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                        @endif
-                        
-                        @for($i = $start; $i <= $end; $i++)
-                            @if($i == $templates->currentPage())
-                                <span class="page-number active">{{ $i }}</span>
-                            @else
-                                <a href="{{ $templates->url($i) }}" class="page-number">{{ $i }}</a>
-                            @endif
-                        @endfor
-                        
-                        @if($end < $templates->lastPage())
-                            @if($end < $templates->lastPage() - 1)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                            <a href="{{ $templates->url($templates->lastPage()) }}" class="page-number">{{ $templates->lastPage() }}</a>
-                        @endif
-                    </div>
-                @else
-                    <span class="page-number active">1</span>
-                @endif
-                
-                @if(isset($templates) && $templates->currentPage() < $templates->lastPage())
-                    <a href="{{ $templates->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-            </div>
+        @if($templates->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $templates->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 

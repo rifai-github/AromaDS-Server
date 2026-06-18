@@ -306,54 +306,11 @@
         </div>
         
         <!-- Pagination Controls -->
-        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
-            <div class="pagination-controls">
-                @if(isset($dashboards) && $dashboards->currentPage() > 1)
-                    <a href="{{ $dashboards->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @endif
-                
-                @if(isset($dashboards) && $dashboards->lastPage() > 0)
-                    @php
-                        $start = max(1, $dashboards->currentPage() - 2);
-                        $end = min($dashboards->lastPage(), $dashboards->currentPage() + 2);
-                    @endphp
-                    
-                    <div class="flex items-center gap-2">
-                        @if($start > 1)
-                            <a href="{{ $dashboards->url(1) }}" class="page-number">1</a>
-                            @if($start > 2)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                        @endif
-                        
-                        @for($i = $start; $i <= $end; $i++)
-                            @if($i == $dashboards->currentPage())
-                                <span class="page-number active">{{ $i }}</span>
-                            @else
-                                <a href="{{ $dashboards->url($i) }}" class="page-number">{{ $i }}</a>
-                            @endif
-                        @endfor
-                        
-                        @if($end < $dashboards->lastPage())
-                            @if($end < $dashboards->lastPage() - 1)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                            <a href="{{ $dashboards->url($dashboards->lastPage()) }}" class="page-number">{{ $dashboards->lastPage() }}</a>
-                        @endif
-                    </div>
-                @else
-                    <span class="page-number active">1</span>
-                @endif
-                
-                @if(isset($dashboards) && $dashboards->currentPage() < $dashboards->lastPage())
-                    <a href="{{ $dashboards->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-            </div>
+        @if($dashboards->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $dashboards->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 

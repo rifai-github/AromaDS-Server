@@ -310,54 +310,11 @@
         </div>
         
         <!-- Pagination Controls -->
-        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
-            <div class="pagination-controls">
-                @if(isset($kpis) && $kpis->currentPage() > 1)
-                    <a href="{{ $kpis->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @endif
-                
-                @if(isset($kpis) && $kpis->lastPage() > 0)
-                    @php
-                        $start = max(1, $kpis->currentPage() - 2);
-                        $end = min($kpis->lastPage(), $kpis->currentPage() + 2);
-                    @endphp
-                    
-                    <div class="flex items-center gap-2">
-                        @if($start > 1)
-                            <a href="{{ $kpis->url(1) }}" class="page-number">1</a>
-                            @if($start > 2)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                        @endif
-                        
-                        @for($i = $start; $i <= $end; $i++)
-                            @if($i == $kpis->currentPage())
-                                <span class="page-number active">{{ $i }}</span>
-                            @else
-                                <a href="{{ $kpis->url($i) }}" class="page-number">{{ $i }}</a>
-                            @endif
-                        @endfor
-                        
-                        @if($end < $kpis->lastPage())
-                            @if($end < $kpis->lastPage() - 1)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                            <a href="{{ $kpis->url($kpis->lastPage()) }}" class="page-number">{{ $kpis->lastPage() }}</a>
-                        @endif
-                    </div>
-                @else
-                    <span class="page-number active">1</span>
-                @endif
-                
-                @if(isset($kpis) && $kpis->currentPage() < $kpis->lastPage())
-                    <a href="{{ $kpis->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-            </div>
+        @if($kpis->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $kpis->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 

@@ -1163,62 +1163,11 @@
         </div>
         
         <!-- Pagination Controls -->
-        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
-            <div class="pagination-controls">
-                @if(isset($jobAdvices) && $jobAdvices->currentPage() > 1)
-                    <a href="{{ $jobAdvices->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @endif
-                
-                @if(isset($jobAdvices) && $jobAdvices->lastPage() > 0)
-                    @php
-                        $start = max(1, $jobAdvices->currentPage() - 2);
-                        $end = min($jobAdvices->lastPage(), $jobAdvices->currentPage() + 2);
-                    @endphp
-                    
-                    <div class="flex items-center gap-2">
-                        @if($start > 1)
-                            <a href="{{ $jobAdvices->url(1) }}" class="page-number">1</a>
-                            @if($start > 2)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                        @endif
-                        
-                        @for($i = $start; $i <= $end; $i++)
-                            @if($i == $jobAdvices->currentPage())
-                                <span class="page-number active">{{ $i }}</span>
-                            @else
-                                <a href="{{ $jobAdvices->url($i) }}" class="page-number">{{ $i }}</a>
-                            @endif
-                        @endfor
-                        
-                        @if($end < $jobAdvices->lastPage())
-                            @if($end < $jobAdvices->lastPage() - 1)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                            <a href="{{ $jobAdvices->url($jobAdvices->lastPage()) }}" class="page-number">{{ $jobAdvices->lastPage() }}</a>
-                        @endif
-                    </div>
-                @else
-                    <span class="page-number active">1</span>
-                @endif
-                
-                @if(isset($jobAdvices) && $jobAdvices->currentPage() < $jobAdvices->lastPage())
-                    <a href="{{ $jobAdvices->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-                
-                <div class="page-dropdown-container">
-                    <span class="text-sm text-gray-700">Page</span>
-                    <select class="bg-gray-100 rounded-lg px-3 py-1 text-sm border border-gray-300 focus:outline-none focus:border-[#214589]">
-                        <option>{{ $jobAdvices->currentPage() ?? 1 }}</option>
-                    </select>
-                    <span class="text-sm text-gray-700">of <span class="inline">{{ $jobAdvices->lastPage() ?? 1 }}</span></span>
-                </div>
-            </div>
+        @if($jobAdvices->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $jobAdvices->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 

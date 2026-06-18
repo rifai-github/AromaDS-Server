@@ -821,38 +821,8 @@
         
         <!-- Pagination -->
         @if($emergencyContacts->hasPages())
-            <div class="pagination-controls">
-                @if($emergencyContacts->onFirstPage())
-                    <span class="pagination-btn disabled">
-                        <i class="fas fa-chevron-left"></i>
-                        Previous
-                    </span>
-                @else
-                    <a href="{{ $emergencyContacts->previousPageUrl() }}" class="pagination-btn">
-                        <i class="fas fa-chevron-left"></i>
-                        Previous
-                    </a>
-                @endif
-                
-                @foreach($emergencyContacts->getUrlRange(1, $emergencyContacts->lastPage()) as $page => $url)
-                    @if($page == $emergencyContacts->currentPage())
-                        <span class="page-number active">{{ $page }}</span>
-                    @else
-                        <a href="{{ $url }}" class="page-number">{{ $page }}</a>
-                    @endif
-                @endforeach
-                
-                @if($emergencyContacts->hasMorePages())
-                    <a href="{{ $emergencyContacts->nextPageUrl() }}" class="pagination-btn">
-                        Next
-                        <i class="fas fa-chevron-right"></i>
-                    </a>
-                @else
-                    <span class="pagination-btn disabled">
-                        Next
-                        <i class="fas fa-chevron-right"></i>
-                    </span>
-                @endif
+            <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+                {{ $emergencyContacts->withQueryString()->links() }}
             </div>
         @endif
     </div>
