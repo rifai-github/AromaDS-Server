@@ -904,21 +904,7 @@
                         <td>{{ $customer->customerType->name ?? '-' }}</td>
                         <td>{{ $customer->email ?? '-' }}</td>
                         <td>{{ $customer->phone ?? '-' }}</td>
-                        <td>
-                            @if($customer->contacts && $customer->contacts->count() > 0)
-                                @foreach($customer->contacts as $contact)
-                                    <div class="flex items-center gap-1 mb-1 last:mb-0">
-                                        <i class="fas fa-user-circle text-gray-400 text-xs"></i>
-                                        <span>{{ ($contact->salutation ? $contact->salutation . ' ' : '') . $contact->name }}</span>
-                                        @if($contact->pivot && $contact->pivot->is_primary)
-                                            <span class="text-[10px] bg-green-100 text-green-700 px-1 rounded">Primary</span>
-                                        @endif
-                                    </div>
-                                @endforeach
-                            @else
-                                {{ $customer->assignedTo->name ?? '-' }}
-                            @endif
-                        </td>
+                        <td>{{ $customer->assignedTo->name ?? '-' }}</td>
                         <td>
                             <span class="px-2 py-1 text-xs rounded-full {{ $customer->is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
                                 {{ $customer->is_active ? 'Active' : 'Inactive' }}
