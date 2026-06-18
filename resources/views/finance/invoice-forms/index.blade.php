@@ -257,7 +257,7 @@
                         <select id="contract_number" name="contract_number" class="form-select">
                             <option value="">Select Contract</option>
                             @foreach($contracts ?? [] as $contract)
-                                <option value="{{ $contract->contract_number }}">{{ $contract->contract_number }} - {{ $contract->customer->company_name ?? 'N/A' }}</option>
+                                <option value="{{ $contract->contract_number }}">{{ $contract->contract_number }} - {{ $contract->customer->name ?? 'N/A' }}</option>
                             @endforeach
                         </select>
                     </div>

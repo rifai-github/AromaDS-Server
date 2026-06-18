@@ -84,10 +84,10 @@ class InvoiceFormController extends Controller
         $contracts = $this->applyContractAccessControlFilter(
             Contract::select('id', 'contract_number', 'customer_id', 'created_by', 'marketing_id')
             ->where('contract_status', 'active')
-            ->with('customer:id,company_name'),
+            ->with('customer:id,name'),
             Auth::user()
         )->get();
-        $customers = Customer::select('id', 'company_name')->get();
+        $customers = Customer::select('id', 'name')->get();
         $users = User::select('id', 'name')->get();
 
         return view('finance.invoice-forms.index', compact('invoiceForms', 'invoiceFormStats', 'contracts', 'customers', 'users'));
@@ -98,10 +98,10 @@ class InvoiceFormController extends Controller
         $contracts = $this->applyContractAccessControlFilter(
             Contract::select('id', 'contract_number', 'customer_id', 'created_by', 'marketing_id')
             ->where('contract_status', 'active')
-            ->with('customer:id,company_name'),
+            ->with('customer:id,name'),
             Auth::user()
         )->get();
-        $customers = Customer::select('id', 'company_name')->get();
+        $customers = Customer::select('id', 'name')->get();
         $users = User::select('id', 'name')->get();
 
         return view('finance.invoice-forms.create', compact('contracts', 'customers', 'users'));
@@ -225,10 +225,10 @@ class InvoiceFormController extends Controller
         $contracts = $this->applyContractAccessControlFilter(
             Contract::select('id', 'contract_number', 'customer_id', 'created_by', 'marketing_id')
             ->where('contract_status', 'active')
-            ->with('customer:id,company_name'),
+            ->with('customer:id,name'),
             Auth::user()
         )->get();
-        $customers = Customer::select('id', 'company_name')->get();
+        $customers = Customer::select('id', 'name')->get();
         $users = User::select('id', 'name')->get();
 
         return view('finance.invoice-forms.edit', compact('invoiceForm', 'contracts', 'customers', 'users'));
