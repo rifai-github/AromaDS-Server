@@ -962,19 +962,6 @@
                         </div>
                     </div>
 
-                     <!-- 5. Pagination -->
-                     <div class="flex items-center gap-2">
-                        <span class="text-xs font-bold text-gray-700 whitespace-nowrap">Show:</span>
-                        <select id="perPageSelector" class="px-2 py-1 border border-gray-300 rounded text-xs" onchange="updatePerPage(this.value)">
-                            <option value="10" {{ request('per_page') == 10 ? 'selected' : '' }}>10</option>
-                            <option value="25" {{ request('per_page') == 25 || !request('per_page') ? 'selected' : '' }}>25</option>
-                            <option value="50" {{ request('per_page') == 50 ? 'selected' : '' }}>50</option>
-                            <option value="100" {{ request('per_page') == 100 ? 'selected' : '' }}>100</option>
-                            <option value="250" {{ request('per_page') == 250 ? 'selected' : '' }}>250</option>
-                            <option value="500" {{ request('per_page') == 500 ? 'selected' : '' }}>500</option>
-                            <option value="1000" {{ request('per_page') == 1000 ? 'selected' : '' }}>1000</option>
-                        </select>
-                    </div>
                 </div>
             </div>
         </div>

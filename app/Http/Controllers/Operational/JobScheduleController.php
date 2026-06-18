@@ -589,8 +589,7 @@ class JobScheduleController extends Controller
              $query->with(['jobAssignSchedules.team'])->orderBy('created_at', 'desc');
         }
         
-        $perPage = $request->input('per_page', 25);
-        $jobSchedules = $query->paginate($perPage)->appends($request->query());
+        $jobSchedules = $query->paginateStd(25);
 
         // Fix for Fragmented Data: aggregate rooms from sibling JobSchedules
         // with a single batched lookup per page to avoid N+1 queries.

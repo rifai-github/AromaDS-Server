@@ -94,8 +94,7 @@ class AuditTrailController extends Controller
             'created_at' => ['column' => 'created_at', 'type' => 'date'],
         ]);
 
-        $perPage = $request->input('per_page', 10);
-        $auditTrails = $query->orderBy('created_at', 'desc')->paginate($perPage);
+        $auditTrails = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $users = Cache::remember('audit-trail:index:users', 300, function () {
             return User::select('id', 'name', 'email')->orderBy('name')->get();
         }); // For filter dropdown

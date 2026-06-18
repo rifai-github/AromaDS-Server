@@ -842,18 +842,6 @@
         
         <div class="flex flex-row justify-between items-center w-full bg-white rounded-t-[10px] p-4">
             <div></div> <!-- Spacer since title is removed -->
-            
-            <!-- Show Entries Dropdown -->
-            <div class="flex items-center gap-2">
-                <span class="text-sm font-medium text-gray-700">Show</span>
-                <select id="perPage" onchange="applyFilters()" class="border border-gray-300 rounded text-sm p-1 focus:outline-none focus:border-[#214589]">
-                    <option value="10" {{ request('per_page') == 10 ? 'selected' : '' }}>10</option>
-                    <option value="25" {{ request('per_page') == 25 ? 'selected' : '' }}>25</option>
-                    <option value="50" {{ request('per_page') == 50 ? 'selected' : '' }}>50</option>
-                    <option value="100" {{ request('per_page') == 100 ? 'selected' : '' }}>100</option>
-                </select>
-                <span class="text-sm font-medium text-gray-700">entries</span>
-            </div>
         </div>
         
         <!-- Filter Row - Responsive -->

@@ -827,12 +827,6 @@ class JobAssignMaterialIssueController extends Controller
 
 
 
-        // Pagination size
-        $perPage = $request->input('per_page', 10);
-        if (!in_array($perPage, [10, 25, 50, 100])) {
-            $perPage = 10;
-        }
-
         $sort = $request->get('sort', 'issue_date');
         $direction = $request->get('direction') === 'asc' ? 'asc' : 'desc';
 
@@ -857,8 +851,7 @@ class JobAssignMaterialIssueController extends Controller
         $materialIssues = $query
             ->orderBy('created_at', 'desc')
             ->orderBy('id', 'desc')
-            ->paginate($perPage)
-            ->withQueryString();
+            ->paginateStd(25);
 
         $teams = Cache::remember('job-assign-material-issues:index:teams', now()->addMinutes(10), function () {
             return Team::query()
