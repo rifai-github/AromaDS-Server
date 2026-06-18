@@ -1159,6 +1159,8 @@ class JobController extends Controller
             ], 404);
         }
 
+        if ($deny = $this->denyIfNotAssigned($job)) return $deny;
+
         // Get job assign schedule first
         $jobAssignSchedule = DB::table('job_assign_schedules')
             ->where('job_schedule_id', $jobScheduleId)
@@ -1313,13 +1315,15 @@ class JobController extends Controller
     public function confirmMaterials(Request $request, $jobScheduleId)
     {
         $job = JobSchedule::find($jobScheduleId);
-        
+
         if (!$job) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Job not found'
             ], 404);
         }
+
+        if ($deny = $this->denyIfNotAssigned($job)) return $deny;
 
         if ($job->status === 'undone') {
             return response()->json([
@@ -2051,13 +2055,15 @@ class JobController extends Controller
     public function startWork(Request $request, $jobScheduleId)
     {
         $job = JobSchedule::find($jobScheduleId);
-        
+
         if (!$job) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Job not found'
             ], 404);
         }
+
+        if ($deny = $this->denyIfNotAssigned($job)) return $deny;
 
         if ($job->status === 'undone') {
             return response()->json([
@@ -3528,7 +3534,7 @@ class JobController extends Controller
             'photo' => 'required|image|max:5120', // Max 5MB
             'type' => 'required|in:before,after,progress',
         ]);
-        
+
         $job = JobSchedule::find($jobScheduleId);
         if (!$job) {
             return response()->json([
@@ -3536,6 +3542,7 @@ class JobController extends Controller
                 'message' => 'Job not found'
             ], 404);
         }
+        if ($deny = $this->denyIfNotAssigned($job)) return $deny;
 
         if ($job->status === 'undone') {
             return response()->json([
@@ -3584,7 +3591,7 @@ class JobController extends Controller
             'pic_name' => 'required|string',
             'pic_phone' => 'nullable|string',
         ]);
-        
+
         $job = JobSchedule::find($jobScheduleId);
         if (!$job) {
             return response()->json([
@@ -3592,6 +3599,7 @@ class JobController extends Controller
                 'message' => 'Job not found'
             ], 404);
         }
+        if ($deny = $this->denyIfNotAssigned($job)) return $deny;
 
         if ($job->status === 'undone') {
             return response()->json([
@@ -4086,7 +4094,7 @@ class JobController extends Controller
             ]);
             
             $job = JobSchedule::whereKey($jobScheduleId)->lockForUpdate()->first();
-            
+
             if (!$job) {
                 \DB::rollBack();
 
@@ -4094,6 +4102,11 @@ class JobController extends Controller
                     'status' => 'error',
                     'message' => 'Job not found'
                 ], 404);
+            }
+
+            if ($deny = $this->denyIfNotAssigned($job)) {
+                \DB::rollBack();
+                return $deny;
             }
 
             if ($job->status === 'undone') {
@@ -4175,7 +4188,7 @@ class JobController extends Controller
             \DB::beginTransaction();
             
             $job = JobSchedule::whereKey($jobScheduleId)->lockForUpdate()->first();
-            
+
             if (!$job) {
                 \DB::rollBack();
 
@@ -4183,6 +4196,11 @@ class JobController extends Controller
                     'status' => 'error',
                     'message' => 'Job not found'
                 ], 404);
+            }
+
+            if ($deny = $this->denyIfNotAssigned($job)) {
+                \DB::rollBack();
+                return $deny;
             }
 
             if ($job->status === 'undone') {
@@ -4807,6 +4825,43 @@ class JobController extends Controller
         });
     }
 
+    /**
+     * Whether the authenticated user's team(s) are assigned to this job schedule.
+     * Mirrors the team-assignment visibility used by the job list, applied to a single job.
+     */
+    private function userCanAccessJob($job, int $userId): bool
+    {
+        if (!$job) {
+            return false;
+        }
+
+        $userTeamIds = $this->getUserTeamIds($userId);
+        if (empty($userTeamIds)) {
+            return false;
+        }
+
+        $query = JobSchedule::where('id', $job->id);
+        $this->applyMobileTeamAssignmentVisibility($query, $userTeamIds);
+
+        return $query->exists();
+    }
+
+    /**
+     * Returns a 403 JsonResponse if the current user's team is not assigned to $job,
+     * or null if access is allowed. Usage: if ($deny = $this->denyIfNotAssigned($job)) return $deny;
+     */
+    private function denyIfNotAssigned($job)
+    {
+        if ($this->userCanAccessJob($job, (int) auth()->id())) {
+            return null;
+        }
+
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Anda tidak memiliki akses ke job ini.'
+        ], 403);
+    }
+
     private function getLocationName(string $table, $id): string
     {
         if (!$id) {
@@ -4901,8 +4956,9 @@ class JobController extends Controller
             'longitude' => 'required|numeric|between:-180,180',
             'device_info' => 'nullable|string',
         ]);
-        
+
         $job = JobSchedule::findOrFail($id);
+        if ($deny = $this->denyIfNotAssigned($job)) return $deny;
 
         if ($job->status === 'undone') {
             return response()->json([
@@ -4997,6 +5053,7 @@ class JobController extends Controller
         ]);
 
         $job = JobSchedule::findOrFail($id);
+        if ($deny = $this->denyIfNotAssigned($job)) return $deny;
         if ($job->status === 'undone') {
             return response()->json([
                 'status' => 'error',
@@ -5143,6 +5200,7 @@ class JobController extends Controller
         ]);
         
         $job = JobSchedule::with(['building', 'jobAdvice.customer'])->findOrFail($id);
+        if ($deny = $this->denyIfNotAssigned($job)) return $deny;
         // Normalize serial number: uppercase and trim (SN disimpan dalam UPPERCASE di database)
         $serialNumberInput = trim(strtoupper($request->serial_number));
         $selectedRoomName = $request->room_name ? trim($request->room_name) : null;
@@ -5709,7 +5767,9 @@ class JobController extends Controller
             'room',
             'jobAssignSchedules.team'
         ])->findOrFail($id);
-        
+
+        if ($deny = $this->denyIfNotAssigned($job)) return $deny;
+
         if (!$job->jobAdvice) {
             return response()->json([
                 'status' => 'error',
