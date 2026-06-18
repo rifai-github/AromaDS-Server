@@ -350,61 +350,12 @@
             </table>
         </div>
 
-        <!-- Footer Bar Identik Master User -->
-        <div class="flex flex-row justify-center items-center w-full bg-white rounded-b-[10px] p-4 border-t">
-            <div class="pagination-controls">
-                @if($bankPayments->onFirstPage())
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @else
-                    <a href="{{ $bankPayments->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @endif
-
-                <div class="flex items-center gap-2">
-                    @php
-                        $start = max(1, $bankPayments->currentPage() - 2);
-                        $end = min($bankPayments->lastPage(), $bankPayments->currentPage() + 2);
-                    @endphp
-
-                    @if($start > 1)
-                        <a href="{{ $bankPayments->url(1) }}" class="page-number">1</a>
-                        @if($start > 2)
-                            <span class="text-sm text-gray-500">...</span>
-                        @endif
-                    @endif
-
-                    @for($i = $start; $i <= $end; $i++)
-                        @if($i == $bankPayments->currentPage())
-                            <span class="page-number active">{{ $i }}</span>
-                        @else
-                            <a href="{{ $bankPayments->url($i) }}" class="page-number">{{ $i }}</a>
-                        @endif
-                    @endfor
-
-                    @if($end < $bankPayments->lastPage())
-                        @if($end < $bankPayments->lastPage() - 1)
-                            <span class="text-sm text-gray-500">...</span>
-                        @endif
-                        <a href="{{ $bankPayments->url($bankPayments->lastPage()) }}" class="page-number">{{ $bankPayments->lastPage() }}</a>
-                    @endif
-                </div>
-
-                @if($bankPayments->hasMorePages())
-                    <a href="{{ $bankPayments->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-
-                <div class="page-dropdown-container">
-                    <span class="text-sm text-gray-700">Page</span>
-                    <select class="bg-gray-100 rounded-lg px-3 py-1 text-sm border border-gray-300 focus:outline-none focus:border-[#214589]" onchange="window.location.href = this.value">
-                        @for($i = 1; $i <= $bankPayments->lastPage(); $i++)
-                            <option value="{{ $bankPayments->url($i) }}" {{ $i == $bankPayments->currentPage() ? 'selected' : '' }}>{{ $i }}</option>
-                        @endfor
-                    </select>
-                    <span class="text-sm text-gray-700">of <span class="inline">{{ $bankPayments->lastPage() }}</span></span>
-                </div>
-            </div>
+        <!-- Pagination Controls -->
+        @if($bankPayments->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $bankPayments->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 
