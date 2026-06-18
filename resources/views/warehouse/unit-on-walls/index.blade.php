@@ -796,62 +796,11 @@
         </div>
         
         <!-- Pagination Controls -->
-        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
-            <div class="pagination-controls">
-                @if(isset($units) && $units->currentPage() > 1)
-                    <a href="{{ $units->previousPageUrl() }}" class="btn btn-secondary btn-sm">Previous</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Previous</button>
-                @endif
-                
-                @if(isset($units) && $units->hasPages())
-                    @php
-                        $start = max(1, $units->currentPage() - 2);
-                        $end = min($units->lastPage(), $units->currentPage() + 2);
-                    @endphp
-                    
-                    <div class="flex items-center gap-2">
-                        @if($start > 1)
-                            <a href="{{ $units->url(1) }}" class="page-number">1</a>
-                            @if($start > 2)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                        @endif
-                        
-                        @for($i = $start; $i <= $end; $i++)
-                            @if($i == $units->currentPage())
-                                <span class="page-number active">{{ $i }}</span>
-                            @else
-                                <a href="{{ $units->url($i) }}" class="page-number">{{ $i }}</a>
-                            @endif
-                        @endfor
-                        
-                        @if($end < $units->lastPage())
-                            @if($end < $units->lastPage() - 1)
-                                <span class="text-sm text-gray-500">...</span>
-                            @endif
-                            <a href="{{ $units->url($units->lastPage()) }}" class="page-number">{{ $units->lastPage() }}</a>
-                        @endif
-                    </div>
-                @else
-                    <span class="page-number active">1</span>
-                @endif
-                
-                @if(isset($units) && $units->hasMorePages())
-                    <a href="{{ $units->nextPageUrl() }}" class="btn btn-secondary btn-sm">Next</a>
-                @else
-                    <button class="btn btn-secondary btn-sm" disabled>Next</button>
-                @endif
-                
-                <div class="page-dropdown-container">
-                    <span class="text-sm text-gray-700">Page</span>
-                    <select class="bg-gray-100 rounded-lg px-3 py-1 text-sm border border-gray-300 focus:outline-none focus:border-[#214589]">
-                        <option>{{ $units->currentPage() ?? 1 }}</option>
-                    </select>
-                    <span class="text-sm text-gray-700">of <span class="inline">{{ $units->lastPage() ?? 1 }}</span></span>
-                </div>
-            </div>
+        @if($units->hasPages())
+        <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
+            {{ $units->withQueryString()->links() }}
         </div>
+        @endif
     </div>
 </div>
 
