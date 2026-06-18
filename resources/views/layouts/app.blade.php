@@ -2977,6 +2977,12 @@
                     return;
                 }
 
+                // Skip flatpickr's internal month dropdown / any select inside a flatpickr calendar
+                if ($select.hasClass('flatpickr-monthDropdown-months')
+                    || $select.closest('.flatpickr-calendar').length) {
+                    return;
+                }
+
                 // Skip master_building_status (should not use Select2)
                 if ($select.attr('id') === 'master_building_status') {
                     return;
