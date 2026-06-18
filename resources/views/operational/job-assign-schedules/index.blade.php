@@ -987,7 +987,7 @@
         </div>
         
         <!-- Pagination Controls -->
-        @if(isset($schedules) && $schedules->hasPages())
+        @if(isset($schedules) && $schedules->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
             {{ $schedules->withQueryString()->links() }}
         </div>

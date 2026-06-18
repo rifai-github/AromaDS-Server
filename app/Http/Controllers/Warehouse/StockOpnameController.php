@@ -178,7 +178,7 @@ class StockOpnameController extends Controller
         ];
         $this->applyColumnFilters($query, 'stock_opnames', $columnMap);
 
-        $stockOpnames = $query->orderBy('created_at', 'desc')->paginate(15);
+        $stockOpnames = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         if ($request->ajax()) {
             return response()->json([

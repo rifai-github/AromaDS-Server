@@ -144,7 +144,7 @@ class AuditTrailController extends Controller
             $query->whereDate('login_at', '<=', $request->end_date);
         }
 
-        $loginHistories = $query->orderBy('login_at', 'desc')->paginate(20);
+        $loginHistories = $query->orderBy('login_at', 'desc')->paginateStd(25);
         $users = Cache::remember('audit-trail:login-history:users', 300, function () {
             return User::select('id', 'name', 'email')->orderBy('name')->get();
         }); // For filter dropdown

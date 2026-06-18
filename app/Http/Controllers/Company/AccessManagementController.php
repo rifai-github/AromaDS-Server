@@ -12,7 +12,7 @@ class AccessManagementController extends Controller
     {
         $accesses = AccessManagement::with(['creator', 'updater'])
             ->orderBy('created_at', 'desc')
-            ->paginate(10);
+            ->paginateStd(25);
         return view('company.access-management.index', compact('accesses'));
     }
 

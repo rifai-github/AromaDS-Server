@@ -44,7 +44,7 @@ class CustomerInteractionController extends Controller
             $query->whereDate('interaction_date', '<=', $request->date_to);
         }
 
-        $interactions = $query->orderBy('interaction_date', 'desc')->paginate(15);
+        $interactions = $query->orderBy('interaction_date', 'desc')->paginateStd(25);
 
         // Calculate pagination data
         $pagination = [

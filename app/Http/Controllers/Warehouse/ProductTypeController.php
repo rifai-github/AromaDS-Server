@@ -84,7 +84,7 @@ class ProductTypeController extends Controller
             $query->orderBy('created_at', 'desc');
         }
 
-        $productTypes = $query->paginate(15);
+        $productTypes = $query->paginateStd(25);
 
         // Return JSON for AJAX requests
         if ($request->ajax()) {
@@ -501,7 +501,7 @@ class ProductTypeController extends Controller
     // Product Type Attributes
     public function attributesIndex(ProductType $productType)
     {
-        $attributes = $productType->productTypeAttributes()->orderBy('created_at')->paginate(15);
+        $attributes = $productType->productTypeAttributes()->orderBy('created_at')->paginateStd(25);
         
         return view('warehouse.product-types.attributes.index', compact('productType', 'attributes'));
     }

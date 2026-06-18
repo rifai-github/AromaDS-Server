@@ -74,7 +74,7 @@ class SerialNumberController extends Controller
         // Apply AutoFilterable
         $query->filter($request->all());
 
-        $serialNumbers = $query->orderBy('updated_at', 'desc')->paginate(15)->withQueryString();
+        $serialNumbers = $query->orderBy('updated_at', 'desc')->paginateStd(25)->withQueryString();
 
         // Return JSON for AJAX requests
         if ($request->ajax()) {

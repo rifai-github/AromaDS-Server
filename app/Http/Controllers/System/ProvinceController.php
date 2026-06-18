@@ -33,7 +33,7 @@ class ProvinceController extends Controller
             $query->where('country', 'like', '%' . $request->country . '%');
         }
 
-        $provinces = $query->orderBy('name')->paginate(15);
+        $provinces = $query->orderBy('name')->paginateStd(25);
         
         // Get total counts for display
         $totalProvinces = Province::count();

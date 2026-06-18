@@ -60,7 +60,7 @@ class UnitOnWallController extends Controller
             $query->whereDate('install_date', '<=', $request->end_date);
         }
 
-        $units = $query->orderBy('install_date', 'desc')->paginate(15);
+        $units = $query->orderBy('install_date', 'desc')->paginateStd(25);
 
         return view('operational.unit-on-walls.index', compact('units'));
     }

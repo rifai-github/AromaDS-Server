@@ -40,7 +40,7 @@ class MaintenanceLogController extends Controller
             $query->whereDate('end_time', '<=', $request->date_to);
         }
 
-        $maintenanceLogs = $query->orderBy('start_time', 'desc')->paginate(25);
+        $maintenanceLogs = $query->orderBy('start_time', 'desc')->paginateStd(25);
 
         // Get filter options
         $types = MaintenanceLog::getTypes();

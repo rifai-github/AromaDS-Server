@@ -51,7 +51,7 @@ class TaxReportController extends Controller
         $sortDirection = $request->get('sort_direction', 'desc');
         $query->orderBy($sortField, $sortDirection);
 
-        $taxReports = $query->paginate(15)->withQueryString();
+        $taxReports = $query->paginateStd(25)->withQueryString();
 
         // Get filter options
         $reportTypes = ['monthly', 'quarterly', 'annual', 'custom'];

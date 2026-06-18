@@ -41,7 +41,7 @@ class ExtraServiceController extends Controller
             $query->where('with_invoice', $request->with_invoice);
         }
 
-        $services = $query->orderBy('created_at', 'desc')->paginate(15);
+        $services = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         if ($request->expectsJson() || $request->ajax()) {
             return response()->json([

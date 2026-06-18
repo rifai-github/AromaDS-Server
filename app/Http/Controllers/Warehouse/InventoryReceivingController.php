@@ -346,7 +346,7 @@ class InventoryReceivingController extends Controller
             });
         }
 
-        $receivings = $query->orderBy('created_at', 'desc')->paginate(5);
+        $receivings = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get dropdown data
         $branches = \App\Models\Branch::where('is_active', true)->orderBy('name')->get();

@@ -1566,7 +1566,7 @@
         </div>
         
         <!-- Pagination Controls -->
-        @if(isset($materialIssues) && $materialIssues->hasPages())
+        @if(isset($materialIssues) && $materialIssues->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
             {{ $materialIssues->withQueryString()->links() }}
         </div>

@@ -47,7 +47,7 @@ class OperationalReportController extends Controller
             $query->whereBetween('schedule_date', [$request->start_date, $request->end_date]);
         }
 
-        $jobs = $query->orderBy('schedule_date', 'desc')->paginate(15);
+        $jobs = $query->orderBy('schedule_date', 'desc')->paginateStd(25);
         $teams = $this->getCachedTeams();
 
         $jobStatusCounts = Cache::remember('reports:operational:job-status-counts:v1', now()->addMinutes(2), function () {
@@ -89,7 +89,7 @@ class OperationalReportController extends Controller
             $query->where('room_type', $request->room_type);
         }
 
-        $assignments = $query->orderBy('schedule_date', 'desc')->paginate(15);
+        $assignments = $query->orderBy('schedule_date', 'desc')->paginateStd(25);
 
         $statistics = [
             'total' => JobAssignSchedule::count(),
@@ -126,7 +126,7 @@ class OperationalReportController extends Controller
             $query->whereBetween('job_date', [$request->start_date, $request->end_date]);
         }
 
-        $materials = $query->orderBy('job_date', 'desc')->paginate(15);
+        $materials = $query->orderBy('job_date', 'desc')->paginateStd(25);
 
         $statistics = [
             'total' => JobAssignMaterialIssue::count(),

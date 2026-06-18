@@ -46,7 +46,7 @@ class UserSessionController extends Controller
             $query->where('ip_address', 'like', "%{$request->ip_address}%");
         }
 
-        $userSessions = $query->orderBy('last_activity', 'desc')->paginate(25);
+        $userSessions = $query->orderBy('last_activity', 'desc')->paginateStd(25);
 
         // Get filter options
         $users = User::where('is_active', true)->get();

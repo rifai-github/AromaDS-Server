@@ -41,7 +41,7 @@ class SystemSettingController extends Controller
 
         $settings = $query->with(['creator', 'updater'])
             ->orderBy($keyColumn)
-            ->paginate(15);
+            ->paginateStd(25);
 
         return view('settings.system.index', compact('settings'));
     }

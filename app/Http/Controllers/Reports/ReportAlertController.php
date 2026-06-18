@@ -156,7 +156,7 @@ class ReportAlertController extends Controller
                   ->orWhere('condition_field', 'like', "%{$search}%");
             });
 
-        $alerts = $query->paginate(15);
+        $alerts = $query->paginateStd(25);
 
         return response()->json([
             'status' => 'success',

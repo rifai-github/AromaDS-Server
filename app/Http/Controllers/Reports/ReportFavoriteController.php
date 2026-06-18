@@ -102,7 +102,7 @@ class ReportFavoriteController extends Controller
                 });
             });
 
-        $favorites = $query->paginate(15);
+        $favorites = $query->paginateStd(25);
 
         return response()->json([
             'status' => 'success',

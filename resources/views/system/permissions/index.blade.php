@@ -261,7 +261,7 @@
         </div>
         
         <!-- Pagination Controls -->
-        @if($permissions->hasPages())
+        @if($permissions->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
             {{ $permissions->withQueryString()->links() }}
         </div>

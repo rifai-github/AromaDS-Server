@@ -88,7 +88,7 @@ class ComplaintController extends Controller
             $query->highPriority();
         }
 
-        $complaints = $query->orderBy('created_at', 'desc')->paginate(15);
+        $complaints = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         if ($request->expectsJson() || $request->ajax()) {
             return response()->json([

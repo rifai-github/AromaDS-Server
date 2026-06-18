@@ -74,7 +74,7 @@ class SupplierController extends Controller
             $query->orderBy('name', 'asc');
         }
 
-        $suppliers = $query->paginate(15);
+        $suppliers = $query->paginateStd(25);
         $companies = Company::where('status', 'active')->orderBy('name')->get();
         $categories = SupplierCategory::active()->orderBy('name')->get();
 
@@ -264,7 +264,7 @@ class SupplierController extends Controller
         $creditLimits = $supplier->creditLimits()
             ->with('createdBy')
             ->orderBy('created_at', 'desc')
-            ->paginate(15);
+            ->paginateStd(25);
 
         return view('company.suppliers.credit-limits', compact('supplier', 'creditLimits'));
     }
@@ -342,7 +342,7 @@ class SupplierController extends Controller
         $paymentTerms = $supplier->paymentTerms()
             ->with('createdBy')
             ->orderBy('created_at', 'desc')
-            ->paginate(15);
+            ->paginateStd(25);
 
         return view('company.suppliers.payment-terms', compact('supplier', 'paymentTerms'));
     }

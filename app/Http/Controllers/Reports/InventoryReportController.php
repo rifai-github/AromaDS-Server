@@ -87,7 +87,7 @@ class InventoryReportController extends Controller
             });
         }
 
-        $items = $query->orderBy('item_name')->paginate(15);
+        $items = $query->orderBy('item_name')->paginateStd(25);
         $categories = MasterRentalCategory::orderBy('category_name')->get();
         $brands = MasterRentalBrand::orderBy('brand_name')->get();
         $suppliers = MasterRentalSupplier::orderBy('supplier_name')->get();
@@ -267,7 +267,7 @@ class InventoryReportController extends Controller
             $query->whereBetween('job_date', [$request->start_date, $request->end_date]);
         }
 
-        $issues = $query->orderBy('job_date', 'desc')->paginate(15);
+        $issues = $query->orderBy('job_date', 'desc')->paginateStd(25);
 
         $statistics = [
             'total' => JobAssignMaterialIssue::count(),
@@ -303,7 +303,7 @@ class InventoryReportController extends Controller
             $query->whereBetween('job_date', [$request->start_date, $request->end_date]);
         }
 
-        $movements = $query->orderBy('job_date', 'desc')->paginate(15);
+        $movements = $query->orderBy('job_date', 'desc')->paginateStd(25);
 
         // Group by item for summary
         $itemMovements = $query->get()->groupBy('item_name')->map(function ($itemIssues, $itemName) {
@@ -350,7 +350,7 @@ class InventoryReportController extends Controller
             $query->where('supplier_id', $request->supplier_id);
         }
 
-        $lowStockItems = $query->orderBy('stock_quantity')->paginate(15);
+        $lowStockItems = $query->orderBy('stock_quantity')->paginateStd(25);
         $categories = MasterRentalCategory::orderBy('category_name')->get();
         $brands = MasterRentalBrand::orderBy('brand_name')->get();
         $suppliers = MasterRentalSupplier::orderBy('supplier_name')->get();

@@ -841,7 +841,7 @@
         </div>
         
         <!-- Pagination Controls -->
-        @if($adjustments->hasPages())
+        @if($adjustments->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
             {{ $adjustments->withQueryString()->links() }}
         </div>

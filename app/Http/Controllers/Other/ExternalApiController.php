@@ -25,7 +25,7 @@ class ExternalApiController extends Controller
             $query->where('is_active', $request->status === 'active');
         }
 
-        $apis = $query->orderBy('created_at', 'desc')->paginate(15);
+        $apis = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Calculate pagination data
         $pagination = [

@@ -70,7 +70,7 @@ class CompanyVirtualAccountController extends Controller
             });
         }
 
-        $virtualAccounts = $query->orderBy('created_at', 'desc')->paginate(15);
+        $virtualAccounts = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $companies = Company::orderBy('name')->get(); 
         $customers = \App\Models\Customer::orderBy('name')->where('is_active', true)->get();
         // Only show ACTIVE bank payments in the dropdown

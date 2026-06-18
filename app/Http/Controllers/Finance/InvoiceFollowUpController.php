@@ -88,7 +88,7 @@ class InvoiceFollowUpController extends Controller
             });
         }
 
-        $followUps = $query->orderBy('follow_up_date', 'desc')->paginate(15);
+        $followUps = $query->orderBy('follow_up_date', 'desc')->paginateStd(25);
 
         // Get filter options - optimized queries
         $invoices = Invoice::select('id', 'invoice_number', 'customer_id')

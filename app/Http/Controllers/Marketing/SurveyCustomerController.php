@@ -222,7 +222,7 @@ class SurveyCustomerController extends Controller
 
         $surveys = $query->with(['customer', 'building', 'surveyor', 'marketing'])
                         ->orderBy('survey_date', 'desc')
-                        ->paginate(20);
+                        ->paginateStd(25);
 
         return response()->json([
             'status' => 'success',

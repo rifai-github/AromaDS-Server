@@ -77,7 +77,7 @@ class BankReceiptController extends Controller
         $sortOrder = $request->get('sort_order', 'desc');
         $query->orderBy($sortBy, $sortOrder);
 
-        $bankReceipts = $query->paginate(15);
+        $bankReceipts = $query->paginateStd(25);
 
         // Get data for filters - optimized queries
         $customers = Customer::select('id', 'name')->where('is_active', true)->orderBy('name')->get();

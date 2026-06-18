@@ -19,7 +19,7 @@ class CommissionTransferController extends Controller
     {
         $transfers = CommissionTransfer::with(['fromUser', 'toUser', 'contract', 'approvedBy', 'commissionCalculation', 'createdBy', 'updatedBy'])
             ->orderBy('created_at', 'desc')
-            ->paginate(20);
+            ->paginateStd(25);
 
         if (request()->expectsJson() || request()->is('api/*')) {
             return response()->json([

@@ -68,7 +68,7 @@ class CustomerReportController extends Controller
             $query->whereBetween('created_at', [$request->start_date, $request->end_date]);
         }
 
-        $customers = $query->orderBy('customer_name')->paginate(15);
+        $customers = $query->orderBy('customer_name')->paginateStd(25);
 
         $statistics = [
             'total' => Customer::count(),
@@ -265,7 +265,7 @@ class CustomerReportController extends Controller
             });
         }
 
-        $customers = $query->orderBy('nama_gedung')->paginate(15);
+        $customers = $query->orderBy('nama_gedung')->paginateStd(25);
 
         // Calculate building statistics
         $buildingStats = $customers->getCollection()->map(function ($building) {

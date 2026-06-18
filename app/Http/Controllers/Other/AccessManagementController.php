@@ -44,7 +44,7 @@ class AccessManagementController extends Controller
             $query->whereDate('granted_date', '<=', $request->end_date);
         }
 
-        $accessManagements = $query->orderBy('granted_date', 'desc')->paginate(15);
+        $accessManagements = $query->orderBy('granted_date', 'desc')->paginateStd(25);
 
         return view('other.access-managements.index', compact('accessManagements'));
     }

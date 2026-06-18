@@ -44,7 +44,7 @@ class BranchController extends Controller
             $query->orderBy('name', 'asc');
         }
 
-        $branches = $query->paginate(15);
+        $branches = $query->paginateStd(25);
         $companies = Company::where('is_active', true)->orderBy('name')->get();
         $provinces = Province::orderBy('province_name')->get();
         $invoiceSignatoryUsers = User::where('is_active', true)
@@ -527,7 +527,7 @@ class BranchController extends Controller
         $warehouses = $branch->warehouses()
             ->with('warehouse')
             ->orderBy('created_at', 'desc')
-            ->paginate(15);
+            ->paginateStd(25);
 
         return view('company.branches.warehouses', compact('branch', 'warehouses'));
     }
@@ -1049,7 +1049,7 @@ class BranchController extends Controller
             ->with(['user', 'assignedBy'])
             ->orderBy('is_primary', 'desc')
             ->orderBy('position')
-            ->paginate(15);
+            ->paginateStd(25);
 
         $users = \App\Models\User::where('is_active', true)
             ->orderBy('name')

@@ -123,7 +123,7 @@ class MasterRentalController extends Controller
             $query->orderBy('created_at', 'desc');
         }
 
-        $rentals = $query->paginate(15);
+        $rentals = $query->paginateStd(25);
 
         // Return JSON for AJAX requests or API requests
         if ($request->ajax() || request()->expectsJson() || request()->is('api/*')) {
@@ -633,7 +633,7 @@ class MasterRentalController extends Controller
     // Rental Details
     public function detailsIndex(MasterRental $masterRental)
     {
-        $details = $masterRental->details()->with('product')->orderBy('created_at')->paginate(15);
+        $details = $masterRental->details()->with('product')->orderBy('created_at')->paginateStd(25);
         
         return view('warehouse.master-rentals.details.index', compact('masterRental', 'details'));
     }
@@ -1047,7 +1047,7 @@ class MasterRentalController extends Controller
     // Rental Prices
     public function pricesIndex(MasterRental $masterRental)
     {
-        $prices = $masterRental->prices()->with('branch')->orderBy('created_at')->paginate(15);
+        $prices = $masterRental->prices()->with('branch')->orderBy('created_at')->paginateStd(25);
         
         return view('warehouse.master-rentals.prices.index', compact('masterRental', 'prices'));
     }

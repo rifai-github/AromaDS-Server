@@ -43,7 +43,7 @@ class IotDeviceController extends Controller
             $query->where('room_id', $request->room);
         }
 
-        $devices = $query->orderBy('created_at', 'desc')->paginate(15);
+        $devices = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Calculate pagination data
         $pagination = [

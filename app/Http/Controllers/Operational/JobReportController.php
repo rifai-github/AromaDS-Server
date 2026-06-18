@@ -59,7 +59,7 @@ class JobReportController extends Controller
             $query->whereDate('created_at', '<=', $request->date_to);
         }
 
-        $jobReports = $query->orderBy('created_at', 'desc')->paginate(25);
+        $jobReports = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $technicians = User::where('is_active', true)->where('roles', 'technician')->get();
         $jobSchedules = JobSchedule::where('status', 'in_progress')->get();
 

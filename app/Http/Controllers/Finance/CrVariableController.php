@@ -17,7 +17,7 @@ class CrVariableController extends Controller
         $crVariables = CrVariable::with(['createdBy', 'updatedBy'])
             ->orderBy('is_default', 'desc')
             ->orderBy('created_at', 'desc')
-            ->paginate(20);
+            ->paginateStd(25);
 
         if (request()->expectsJson() || request()->is('api/*')) {
             return response()->json([

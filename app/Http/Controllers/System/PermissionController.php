@@ -33,7 +33,7 @@ class PermissionController extends Controller
             $query->where('action', $request->action);
         }
 
-        $permissions = $query->orderBy('module')->orderBy('action')->paginate(25);
+        $permissions = $query->orderBy('module')->orderBy('action')->paginateStd(25);
 
         $modules = Permission::distinct()->pluck('module');
         $actions = Permission::distinct()->pluck('action');

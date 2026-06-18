@@ -126,7 +126,7 @@ class LostUnitReportController extends Controller
             $query->whereDate('created_at', '<=', $request->end_date);
         }
 
-        $reports = $query->orderBy('created_at', 'desc')->paginate(15)->withQueryString();
+        $reports = $query->orderBy('created_at', 'desc')->paginateStd(25)->withQueryString();
 
         return view('marketing.lost-unit-reports.index', compact('reports'));
     }

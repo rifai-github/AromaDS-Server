@@ -37,7 +37,7 @@ class FinanceLogController extends Controller
             })->orWhere('notes', 'like', '%' . $search . '%');
         }
 
-        $logs = $query->orderBy('created_at', 'desc')->paginate(15);
+        $logs = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get filter options
         $users = User::where('is_active', true)->get();

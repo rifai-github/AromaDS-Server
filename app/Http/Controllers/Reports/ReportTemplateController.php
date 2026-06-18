@@ -33,7 +33,7 @@ class ReportTemplateController extends Controller
             $query->where('is_active', $request->is_active);
         }
 
-        $templates = $query->orderBy('created_at', 'desc')->paginate(25);
+        $templates = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         return view('reports.template.index', compact('templates'));
     }

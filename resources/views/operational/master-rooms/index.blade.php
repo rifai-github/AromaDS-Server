@@ -631,7 +631,7 @@
         </div>
         
         <!-- Pagination Controls -->
-        @if(isset($rooms) && $rooms->hasPages())
+        @if(isset($rooms) && $rooms->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
             {{ $rooms->withQueryString()->links() }}
         </div>

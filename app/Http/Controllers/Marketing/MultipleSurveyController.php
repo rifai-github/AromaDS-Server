@@ -226,7 +226,7 @@ class MultipleSurveyController extends Controller
 
         $surveys = $query->with(['building', 'customer', 'surveyor', 'marketing'])
                         ->orderBy('survey_date', 'desc')
-                        ->paginate(20);
+                        ->paginateStd(25);
 
         return response()->json([
             'status' => 'success',

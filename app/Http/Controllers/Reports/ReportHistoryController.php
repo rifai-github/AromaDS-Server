@@ -130,7 +130,7 @@ class ReportHistoryController extends Controller
                 });
             });
 
-        $history = $query->orderBy('created_at', 'desc')->paginate(15);
+        $history = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         return response()->json([
             'status' => 'success',

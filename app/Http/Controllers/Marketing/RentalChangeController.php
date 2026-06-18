@@ -65,7 +65,7 @@ class RentalChangeController extends Controller
             $query->where('has_active_jobs', $request->has_active_jobs);
         }
 
-        $rentalChanges = $query->orderBy('created_at', 'desc')->paginate(15);
+        $rentalChanges = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         if ($request->expectsJson() || $request->ajax()) {
             return response()->json([

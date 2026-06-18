@@ -19,7 +19,7 @@ class MaintenanceController extends Controller
     {
         $schedules = MaintenanceSchedule::with(['assignedTo', 'createdBy'])
             ->orderBy('scheduled_date', 'desc')
-            ->paginate(20);
+            ->paginateStd(25);
 
         return view('maintenance.index', compact('schedules'));
     }
@@ -168,7 +168,7 @@ class MaintenanceController extends Controller
         $records = $maintenance->maintenanceRecords()
             ->with(['performedBy', 'unit', 'room', 'building'])
             ->orderBy('created_at', 'desc')
-            ->paginate(20);
+            ->paginateStd(25);
 
         return view('maintenance.records', compact('maintenance', 'records'));
     }

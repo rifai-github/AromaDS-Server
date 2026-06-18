@@ -42,7 +42,7 @@ class PositionRoleController extends Controller
             }
         }
 
-        $positionRoles = $query->paginate(15)->withQueryString();
+        $positionRoles = $query->paginateStd(25)->withQueryString();
 
         // For modal dropdowns - get unique departments from position roles
         $departments = collect();

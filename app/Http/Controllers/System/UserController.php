@@ -104,7 +104,7 @@ class UserController extends Controller
             'phone' => ['column' => 'phone'],
         ]);
 
-        $users = $query->orderBy('created_at', 'desc')->paginate(25);
+        $users = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $departments = Cache::remember('user:index:departments', 300, function () {
             return Department::select('id', 'name')->orderBy('name')->get();
         });

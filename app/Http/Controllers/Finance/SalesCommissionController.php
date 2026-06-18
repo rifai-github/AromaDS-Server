@@ -44,7 +44,7 @@ class SalesCommissionController extends Controller
             });
         }
 
-        $commissions = $query->orderBy('calculated_date', 'desc')->paginate(15);
+        $commissions = $query->orderBy('calculated_date', 'desc')->paginateStd(25);
 
         // Get filter options
         $users = User::where('is_active', true)->get();

@@ -36,7 +36,7 @@ class ThemeSettingController extends Controller
             $query->where('main_theme', $request->main_theme);
         }
 
-        $theme_settings = $query->orderBy('created_at', 'desc')->paginate(25);
+        $theme_settings = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $users = User::all();
 
         return view('settings.theme.index', compact('theme_settings', 'users'))->with('themes', $theme_settings);

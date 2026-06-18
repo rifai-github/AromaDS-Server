@@ -335,7 +335,7 @@ class JobAdviceController extends Controller
             ]);
         }
 
-        $jobAdvices = $query->orderBy('created_at', 'desc')->paginate(15);
+        $jobAdvices = $query->orderBy('created_at', 'desc')->paginateStd(25);
         
         // MOM9: Load approved quotations for Install Free flow (for modal dropdown)
         $quotations = \App\Models\Quotation::with('customer', 'prospect')

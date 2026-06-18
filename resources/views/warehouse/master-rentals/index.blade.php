@@ -957,7 +957,7 @@
         </div>
         
         <!-- Pagination Controls -->
-        @if($rentals->hasPages())
+        @if($rentals->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
             {{ $rentals->withQueryString()->links() }}
         </div>

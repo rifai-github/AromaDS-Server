@@ -436,7 +436,7 @@
             </div>
 
             <!-- Pagination -->
-            @if($settings->hasPages())
+            @if($settings->total() > 0)
             <div class="flex flex-row justify-center items-center w-full p-4">
                 {{ $settings->withQueryString()->links() }}
             </div>

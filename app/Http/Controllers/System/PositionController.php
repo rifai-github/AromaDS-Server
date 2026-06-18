@@ -26,7 +26,7 @@ class PositionController extends Controller
                 ->with(['createdBy', 'updatedBy']);
             $query->filter($request->all());
             
-            $positions = $query->orderBy('option_name')->paginate(15);
+            $positions = $query->orderBy('option_name')->paginateStd(25);
         }
         
         return view('system.positions.index', compact('positions'));

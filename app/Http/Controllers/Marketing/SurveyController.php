@@ -144,7 +144,7 @@ class SurveyController extends Controller
                   ->orderBy('surveys.created_at', 'desc');
         }
 
-        $surveys = $query->paginate(25);
+        $surveys = $query->paginateStd(25);
         $surveyors = User::where('department_name', 'Marketing')
             ->where('is_active', true)
             ->orderBy('name')

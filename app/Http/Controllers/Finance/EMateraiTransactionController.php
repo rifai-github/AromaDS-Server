@@ -45,7 +45,7 @@ class EMateraiTransactionController extends Controller
         $sortDirection = $request->get('sort_direction', 'desc');
         $query->orderBy($sortField, $sortDirection);
 
-        $eMateraiTransactions = $query->paginate(15)->withQueryString();
+        $eMateraiTransactions = $query->paginateStd(25)->withQueryString();
 
         // Get filter options
         $statuses = ['pending', 'applied', 'failed', 'cancelled'];

@@ -151,7 +151,7 @@ class MasterProductController extends Controller
             $query->orderBy('created_at', 'desc');
         }
 
-        $products = $query->paginate(15);
+        $products = $query->paginateStd(25);
         
         $productTypes = ProductType::orderBy('name')->get();
         $packagingSizes = \App\Models\PackagingSize::active()->ordered()->get();

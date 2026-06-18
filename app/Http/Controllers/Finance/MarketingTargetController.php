@@ -26,7 +26,7 @@ class MarketingTargetController extends Controller
     {
         $marketingTargets = MarketingTarget::with(['user', 'achievementPeriod', 'createdBy', 'updatedBy'])
             ->orderBy('created_at', 'desc')
-            ->paginate(20);
+            ->paginateStd(25);
 
         if (request()->expectsJson() || request()->is('api/*')) {
             return response()->json([

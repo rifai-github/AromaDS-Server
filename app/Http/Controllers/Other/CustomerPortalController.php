@@ -31,7 +31,7 @@ class CustomerPortalController extends Controller
             $query->where('is_active', $request->status === 'active');
         }
 
-        $portals = $query->orderBy('created_at', 'desc')->paginate(15);
+        $portals = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Calculate pagination data
         $pagination = [

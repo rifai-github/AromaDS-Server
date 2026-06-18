@@ -60,7 +60,7 @@ class MasterCorporateController extends Controller
 
         $masterCorporates = $query->groupBy('code', 'customer_id', 'created_by')
             ->orderBy('created_at', 'desc')
-            ->paginate(10);
+            ->paginateStd(25);
         
         // Stats
         // Stats

@@ -42,7 +42,7 @@ class ContractRemovalController extends Controller
             $query->where('has_active_jobs', $request->has_active_jobs);
         }
 
-        $removals = $query->orderBy('created_at', 'desc')->paginate(15);
+        $removals = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         if ($request->expectsJson() || $request->ajax()) {
             return response()->json([

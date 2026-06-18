@@ -25,7 +25,7 @@ class PaymentMethodController extends Controller
                 ->orWhere('code', 'like', '%' . $search . '%');
         }
 
-        $paymentMethods = $query->with(['createdBy', 'updatedBy'])->orderBy('name')->paginate(15);
+        $paymentMethods = $query->with(['createdBy', 'updatedBy'])->orderBy('name')->paginateStd(25);
 
         return view('finance.payment-methods.index', compact('paymentMethods'));
     }

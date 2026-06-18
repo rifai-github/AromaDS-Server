@@ -161,7 +161,7 @@ class InvoiceController extends Controller
             $query->where('payment_method', $request->payment_method);
         }
 
-        $invoices = $query->orderBy('created_at', 'desc')->paginate(15);
+        $invoices = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get filter options - optimized queries
         $contracts = Contract::select('contract_number', 'customer_id')->with('customer:id,name')->get();

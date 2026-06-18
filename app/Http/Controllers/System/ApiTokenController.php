@@ -57,7 +57,7 @@ class ApiTokenController extends Controller
             $query->whereJsonContains('abilities', $request->ability);
         }
 
-        $apiTokens = $query->orderBy('created_at', 'desc')->paginate(25);
+        $apiTokens = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get filter options
         $users = User::where('is_active', true)->get();

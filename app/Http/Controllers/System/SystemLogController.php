@@ -40,7 +40,7 @@ class SystemLogController extends Controller
             $query->whereTime('created_at', '<=', $request->time_to);
         }
 
-        $systemLogs = $query->orderBy('created_at', 'desc')->paginate(25);
+        $systemLogs = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get filter options
         $levels = SystemLog::getLevels();

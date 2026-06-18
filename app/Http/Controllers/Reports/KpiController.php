@@ -35,7 +35,7 @@ class KpiController extends Controller
             $query->where('is_active', $request->is_active);
         }
 
-        $kpis = $query->orderBy('created_at', 'desc')->paginate(25);
+        $kpis = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         return view('reports.kpi.index', compact('kpis'));
     }
@@ -299,7 +299,7 @@ class KpiController extends Controller
             $query->whereDate('period_end', '<=', $request->date_to);
         }
 
-        $values = $query->orderBy('created_at', 'desc')->paginate(25);
+        $values = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         if ($request->ajax()) {
             return response()->json($values);

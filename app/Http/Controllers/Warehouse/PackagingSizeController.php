@@ -66,7 +66,7 @@ class PackagingSizeController extends Controller
             $query->orderBy('sort_order')->orderBy('name');
         }
 
-        $packagingSizes = $query->paginate(15);
+        $packagingSizes = $query->paginateStd(25);
 
         return view('warehouse.packaging-sizes.index', compact('packagingSizes'));
     }

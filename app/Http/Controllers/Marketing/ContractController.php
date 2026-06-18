@@ -224,7 +224,7 @@ class ContractController extends Controller
                 ->orderBy('created_at', 'desc');
         }
 
-        $contracts = $query->paginate(15);
+        $contracts = $query->paginateStd(25);
 
         // Return JSON for AJAX requests
         if ($request->expectsJson() || $request->ajax()) {

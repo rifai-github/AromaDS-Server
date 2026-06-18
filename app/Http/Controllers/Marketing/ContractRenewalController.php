@@ -53,7 +53,7 @@ class ContractRenewalController extends Controller
             $query->expiringIn($request->expiring_in_days);
         }
 
-        $renewals = $query->orderBy('created_at', 'desc')->paginate(15);
+        $renewals = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         if ($request->expectsJson() || $request->ajax()) {
             return response()->json(['status' => 'success', 'data' => $renewals]);

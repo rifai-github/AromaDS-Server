@@ -25,7 +25,7 @@ class BankPaymentController extends Controller
         if ($request->ajax() || $request->expectsJson()) {
             $bankPayments = $query->orderBy('created_at', 'desc')->get();
         } else {
-            $bankPayments = $query->orderBy('created_at', 'desc')->paginate(15);
+            $bankPayments = $query->orderBy('created_at', 'desc')->paginateStd(25);
         }
 
         // Get banks for create form

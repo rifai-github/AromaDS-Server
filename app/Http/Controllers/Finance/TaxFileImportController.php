@@ -59,7 +59,7 @@ class TaxFileImportController extends Controller
             $query->where('import_date', '<=', $request->date_to);
         }
 
-        $imports = $query->orderBy('created_at', 'desc')->paginate(15);
+        $imports = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get banks for filter dropdown
         $banks = Bank::where('is_active', true)->orderBy('bank_name')->get();

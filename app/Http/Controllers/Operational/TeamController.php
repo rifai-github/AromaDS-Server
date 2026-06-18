@@ -74,7 +74,7 @@ class TeamController extends Controller
             ]);
         }
 
-        $teams = $query->orderBy('created_at', 'desc')->paginate(25);
+        $teams = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $branches = Cache::remember('team:index:branches', 300, function () {
             return Branch::select('id', 'name')->orderBy('name')->get();
         });

@@ -31,7 +31,7 @@ class DashboardController extends Controller
             $query->where('is_active', $request->is_active);
         }
 
-        $dashboards = $query->orderBy('created_at', 'desc')->paginate(25);
+        $dashboards = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         return view('reports.dashboard.index', compact('dashboards'));
     }

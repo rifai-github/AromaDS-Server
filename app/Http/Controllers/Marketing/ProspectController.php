@@ -51,7 +51,7 @@ class ProspectController extends Controller
         $user = auth()->user();
         $query = $this->applyAccessControlFilter($query, $user, 'assigned_to', 'assigned_to', 'assignedTo.branch_id');
 
-        $prospects = $query->orderBy('created_at', 'desc')->paginate(10);
+        $prospects = $query->orderBy('created_at', 'desc')->paginateStd(25);
         
         // Prepare pagination data for view
         $pagination = [
@@ -73,7 +73,7 @@ class ProspectController extends Controller
         // Get pipeline data with pagination (using prospects for now)
         $pipeline = Prospect::with(['assignedTo'])
             ->orderBy('created_at', 'desc')
-            ->paginate(10);
+            ->paginateStd(25);
         
         // Prepare pagination data for view
         $pagination = [

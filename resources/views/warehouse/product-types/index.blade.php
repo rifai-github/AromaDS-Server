@@ -867,7 +867,7 @@
         </div>
         
         <!-- Pagination Controls -->
-        @if($productTypes->hasPages())
+        @if($productTypes->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
             {{ $productTypes->withQueryString()->links() }}
         </div>

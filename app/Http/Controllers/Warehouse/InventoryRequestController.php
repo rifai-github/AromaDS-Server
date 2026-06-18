@@ -233,7 +233,7 @@ class InventoryRequestController extends Controller
 
         $query->orderBy('created_at', 'desc');
 
-        $requests = $query->paginate(15);
+        $requests = $query->paginateStd(25);
         
         // Get dropdown data
         $warehouses = Warehouse::where('is_active', true)->orderBy('name')->get();

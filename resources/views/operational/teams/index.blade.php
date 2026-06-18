@@ -805,7 +805,7 @@
         </div>
         
         <!-- Pagination Controls -->
-        @if(isset($teams) && $teams->hasPages())
+        @if(isset($teams) && $teams->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
             {{ $teams->withQueryString()->links() }}
         </div>

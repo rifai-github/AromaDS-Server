@@ -144,7 +144,7 @@ class MasterRoomController extends Controller
             ]);
         }
 
-        $rooms = $query->orderBy('created_at', 'desc')->paginate(15);
+        $rooms = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         if ($request->expectsJson()) {
             return response()->json([

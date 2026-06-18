@@ -48,7 +48,7 @@ class MasterOptionController extends Controller
         }
 
         // AutoFilterable trait will automatically apply filters from 'filter[column]' parameters
-        $masterOptions = $query->orderBy('name')->paginate(15);
+        $masterOptions = $query->orderBy('name')->paginateStd(25);
 
         return view('other.master-options.index', compact('masterOptions'));
     }

@@ -820,7 +820,7 @@ use App\Models\User;
         </div>
         
         <!-- Pagination Controls -->
-        @if($departments->hasPages())
+        @if($departments->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
             {{ $departments->withQueryString()->links() }}
         </div>

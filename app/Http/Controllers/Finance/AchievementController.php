@@ -45,7 +45,7 @@ class AchievementController extends Controller
             $query->whereBetween('achievement_date', [$request->start_date, $request->end_date]);
         }
 
-        $achievements = $query->paginate(20);
+        $achievements = $query->paginateStd(25);
         $users = User::where('is_active', true)->get();
         $periods = AchievementPeriod::orderBy('start_date', 'desc')->get();
 

@@ -48,7 +48,7 @@ class RentalManagementController extends Controller
             $query->orderBy('sort_order')->orderBy('name');
         }
 
-        $frequencies = $query->paginate(15);
+        $frequencies = $query->paginateStd(25);
 
         return view('warehouse.rental-management.service-frequencies', compact('frequencies'));
     }

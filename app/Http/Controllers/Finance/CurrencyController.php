@@ -25,7 +25,7 @@ class CurrencyController extends Controller
                 ->orWhere('code', 'like', '%' . $search . '%');
         }
 
-        $currencies = $query->orderBy('code')->paginate(15);
+        $currencies = $query->orderBy('code')->paginateStd(25);
 
         return view('finance.currencies.index', compact('currencies'));
     }

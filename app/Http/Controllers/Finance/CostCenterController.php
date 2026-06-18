@@ -27,7 +27,7 @@ class CostCenterController extends Controller
                 ->orWhere('description', 'like', '%' . $search . '%');
         }
 
-        $costCenters = $query->orderBy('code')->paginate(15);
+        $costCenters = $query->orderBy('code')->paginateStd(25);
 
         return view('finance.cost-centers.index', compact('costCenters'));
     }

@@ -279,7 +279,7 @@ class QuotationController extends Controller
                   ->orderBy('quotations.created_at', 'desc');
         }
 
-        $quotations = $query->paginate(15);
+        $quotations = $query->paginateStd(25);
 
         // Data for dropdowns
         $prospects = $this->applyAccessControlFilter(
@@ -1326,7 +1326,7 @@ class QuotationController extends Controller
                 $query->where('marketing_id', $request->marketing_id);
             }
 
-            $quotations = $query->orderBy('created_at', 'desc')->paginate(15);
+            $quotations = $query->orderBy('created_at', 'desc')->paginateStd(25);
             \Log::info('Found ' . $quotations->count() . ' pending quotations');
 
             return response()->json([

@@ -35,7 +35,7 @@ class AnalyticsController extends Controller
             $query->whereDate('created_at', '<=', $request->date_to);
         }
 
-        $events = $query->orderBy('created_at', 'desc')->paginate(25);
+        $events = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         return view('reports.analytics.index', compact('events'));
     }
@@ -57,7 +57,7 @@ class AnalyticsController extends Controller
             $query->whereDate('metric_date', '<=', $request->date_to);
         }
 
-        $metrics = $query->orderBy('metric_date', 'desc')->paginate(25);
+        $metrics = $query->orderBy('metric_date', 'desc')->paginateStd(25);
 
         return view('reports.analytics.metrics', compact('metrics'));
     }

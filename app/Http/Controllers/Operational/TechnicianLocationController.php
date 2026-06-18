@@ -60,7 +60,7 @@ class TechnicianLocationController extends Controller
             $query->recent();
         }
 
-        $locations = $query->orderBy('timestamp', 'desc')->paginate(50);
+        $locations = $query->orderBy('timestamp', 'desc')->paginateStd(25);
         $technicians = User::where('is_active', true)->where('roles', 'technician')->get();
 
         return view('operational.technician-locations.index', compact('locations', 'technicians'));

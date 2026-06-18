@@ -38,7 +38,7 @@ class WorkingHoursController extends Controller
             $query->where('is_active', $request->status === 'active');
         }
 
-        $workingHours = $query->orderBy('user_id')->orderBy('day_of_week')->paginate(25);
+        $workingHours = $query->orderBy('user_id')->orderBy('day_of_week')->paginateStd(25);
 
         // Get filter options
         $users = User::where('is_active', true)->get();

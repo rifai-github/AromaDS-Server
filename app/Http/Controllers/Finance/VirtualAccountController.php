@@ -39,7 +39,7 @@ class VirtualAccountController extends Controller
             $query->where('va_number', 'like', '%' . $request->va_number . '%');
         }
 
-        $virtualAccounts = $query->orderBy('created_at', 'desc')->paginate(15);
+        $virtualAccounts = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         return view('finance.virtual-accounts.index', compact('virtualAccounts'));
     }

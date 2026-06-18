@@ -66,7 +66,7 @@ class CustomerContactController extends Controller
             // 8 => Actions (skip)
         ]);
 
-        $customerContacts = $query->orderBy('created_at', 'desc')->paginate(20);
+        $customerContacts = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         $customers = $this->accessibleCustomerLookupQuery()
             ->orderBy('name')

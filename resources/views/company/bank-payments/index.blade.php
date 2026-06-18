@@ -351,7 +351,7 @@
         </div>
 
         <!-- Pagination Controls -->
-        @if($bankPayments->hasPages())
+        @if($bankPayments->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
             {{ $bankPayments->withQueryString()->links() }}
         </div>

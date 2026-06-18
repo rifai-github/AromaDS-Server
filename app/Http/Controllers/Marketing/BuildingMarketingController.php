@@ -203,7 +203,7 @@ class BuildingMarketingController extends Controller
                 break;
         }
 
-        $buildings = $query->orderBy('nama_gedung')->paginate(20);
+        $buildings = $query->orderBy('nama_gedung')->paginateStd(25);
 
         return response()->json([
             'status' => 'success',

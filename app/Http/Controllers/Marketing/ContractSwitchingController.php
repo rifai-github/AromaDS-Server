@@ -48,7 +48,7 @@ class ContractSwitchingController extends Controller
             $query->where('status', $status);
         }
 
-        $assigned = $query->paginate(15)->withQueryString(); // Use 'assigned' to match view variable
+        $assigned = $query->paginateStd(25)->withQueryString(); // Use 'assigned' to match view variable
 
         // Stats for dashboard
         $allData = ContractSwitching::all();

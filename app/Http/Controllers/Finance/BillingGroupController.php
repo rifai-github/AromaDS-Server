@@ -70,7 +70,7 @@ class BillingGroupController extends Controller
             });
         }
 
-        $billingGroups = $query->orderBy('billing_start_date', 'desc')->paginate(15);
+        $billingGroups = $query->orderBy('billing_start_date', 'desc')->paginateStd(25);
 
         // Get filter options - optimized queries
         $contracts = $this->applyContractAccessControlFilter(

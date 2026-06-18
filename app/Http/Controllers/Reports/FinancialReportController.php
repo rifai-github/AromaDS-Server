@@ -56,7 +56,7 @@ class FinancialReportController extends Controller
             $query->where('total_amount', '<=', $request->max_amount);
         }
 
-        $quotations = $query->orderBy('quotation_date', 'desc')->paginate(15);
+        $quotations = $query->orderBy('quotation_date', 'desc')->paginateStd(25);
 
         $statistics = $this->getCachedQuotationStatistics();
 
@@ -94,7 +94,7 @@ class FinancialReportController extends Controller
             $query->where('contract_value', '<=', $request->max_amount);
         }
 
-        $contracts = $query->orderBy('contract_date', 'desc')->paginate(15);
+        $contracts = $query->orderBy('contract_date', 'desc')->paginateStd(25);
 
         $statistics = $this->getCachedContractStatistics();
 
@@ -132,7 +132,7 @@ class FinancialReportController extends Controller
             $query->where('total_amount', '<=', $request->max_amount);
         }
 
-        $invoices = $query->orderBy('invoice_date', 'desc')->paginate(15);
+        $invoices = $query->orderBy('invoice_date', 'desc')->paginateStd(25);
 
         $statistics = $this->getCachedInvoiceStatistics();
 
@@ -170,7 +170,7 @@ class FinancialReportController extends Controller
             $query->where('amount', '<=', $request->max_amount);
         }
 
-        $payments = $query->orderBy('payment_date', 'desc')->paginate(15);
+        $payments = $query->orderBy('payment_date', 'desc')->paginateStd(25);
 
         $statistics = $this->getCachedPaymentStatistics();
 

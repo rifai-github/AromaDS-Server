@@ -16,7 +16,7 @@ class HakAksesController extends Controller
     {
         $accessList = AccessManagement::with(['user', 'department'])
             ->orderBy('created_at', 'desc')
-            ->paginate(15);
+            ->paginateStd(25);
 
         return view('other.hak-akses.index', compact('accessList'));
     }

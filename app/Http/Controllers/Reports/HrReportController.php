@@ -199,7 +199,7 @@ class HrReportController extends Controller
             $query->whereBetween('schedule_date', [$request->start_date, $request->end_date]);
         }
 
-        $assignments = $query->orderBy('schedule_date', 'desc')->paginate(15);
+        $assignments = $query->orderBy('schedule_date', 'desc')->paginateStd(25);
 
         $statistics = [
             'total' => JobAssignSchedule::count(),
@@ -235,7 +235,7 @@ class HrReportController extends Controller
             $query->whereBetween('job_date', [$request->start_date, $request->end_date]);
         }
 
-        $issues = $query->orderBy('job_date', 'desc')->paginate(15);
+        $issues = $query->orderBy('job_date', 'desc')->paginateStd(25);
 
         $statistics = [
             'total' => JobAssignMaterialIssue::count(),

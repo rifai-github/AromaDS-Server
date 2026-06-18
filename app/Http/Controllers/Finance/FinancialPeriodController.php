@@ -29,7 +29,7 @@ class FinancialPeriodController extends Controller
             $query->where('period_name', 'like', '%' . $search . '%');
         }
 
-        $periods = $query->orderBy('start_date', 'desc')->paginate(15);
+        $periods = $query->orderBy('start_date', 'desc')->paginateStd(25);
 
         // Get filter options
         $statuses = ['open', 'closed', 'locked'];

@@ -35,7 +35,7 @@ class ThemeController extends Controller
         $themes = $query->with(['creator', 'updater'])
             ->orderBy('is_default', 'desc')
             ->orderBy('theme_name')
-            ->paginate(15);
+            ->paginateStd(25);
 
         return view('settings.theme.index', compact('themes'));
     }

@@ -35,7 +35,7 @@ class PasswordHistoryController extends Controller
             $query->whereDate('created_at', '<=', $request->date_to);
         }
 
-        $passwordHistories = $query->orderBy('created_at', 'desc')->paginate(25);
+        $passwordHistories = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get filter options
         $users = User::where('is_active', true)->get();

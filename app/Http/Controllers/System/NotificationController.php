@@ -48,7 +48,7 @@ class NotificationController extends Controller
             $query->whereDate('created_at', '<=', $request->date_to);
         }
 
-        $notifications = $query->orderBy('created_at', 'desc')->paginate(25);
+        $notifications = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $users = User::all();
 
         return view('system.notifications.index', compact('notifications', 'users'));

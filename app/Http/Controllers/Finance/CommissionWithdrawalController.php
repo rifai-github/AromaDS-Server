@@ -40,7 +40,7 @@ class CommissionWithdrawalController extends Controller
             });
         }
 
-        $withdrawals = $query->orderBy('requested_date', 'desc')->paginate(15);
+        $withdrawals = $query->orderBy('requested_date', 'desc')->paginateStd(25);
 
         // Get filter options
         $users = User::where('is_active', true)->get();

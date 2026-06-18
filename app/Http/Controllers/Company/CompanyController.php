@@ -50,7 +50,7 @@ class CompanyController extends Controller
         }
 
         // Use cursor pagination for better performance with large datasets
-        $companies = $query->paginate(15);
+        $companies = $query->paginateStd(25);
         
         // Cache frequently accessed data
         $provinces = cache()->remember('provinces_list', 3600, function () {
@@ -709,7 +709,7 @@ class CompanyController extends Controller
         $documents = $company->documents()
             ->with('createdBy')
             ->orderBy('created_at', 'desc')
-            ->paginate(15);
+            ->paginateStd(25);
 
         return view('company.companies.documents', compact('company', 'documents'));
     }
@@ -769,7 +769,7 @@ class CompanyController extends Controller
         $notes = $company->notes()
             ->with('createdBy')
             ->orderBy('created_at', 'desc')
-            ->paginate(15);
+            ->paginateStd(25);
 
         return view('company.companies.notes', compact('company', 'notes'));
     }
@@ -893,7 +893,7 @@ class CompanyController extends Controller
         $relationships = $company->relationships()
             ->with(['relatedCompany', 'createdBy'])
             ->orderBy('created_at', 'desc')
-            ->paginate(15);
+            ->paginateStd(25);
 
         $relatedCompanies = Company::where('id', '!=', $company->id)
             ->where('status', 'active')
@@ -985,7 +985,7 @@ class CompanyController extends Controller
         $activities = $company->activities()
             ->with('createdBy')
             ->orderBy('activity_date', 'desc')
-            ->paginate(15);
+            ->paginateStd(25);
 
         return view('company.companies.activities', compact('company', 'activities'));
     }
@@ -1078,7 +1078,7 @@ class CompanyController extends Controller
         $communications = $company->communications()
             ->with('createdBy')
             ->orderBy('communication_date', 'desc')
-            ->paginate(15);
+            ->paginateStd(25);
 
         return view('company.companies.communications', compact('company', 'communications'));
     }

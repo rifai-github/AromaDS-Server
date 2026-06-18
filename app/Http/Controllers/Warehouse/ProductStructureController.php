@@ -80,7 +80,7 @@ class ProductStructureController extends Controller
             $query->orderBy('sort_order')->orderBy('name');
         }
 
-        $categories = $query->paginate(15);
+        $categories = $query->paginateStd(25);
         $parentCategories = ProductCategory::whereNull('parent_id')->orderBy('name')->get();
         $unitOptions = $this->getUnitOptions();
 

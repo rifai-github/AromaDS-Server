@@ -52,9 +52,9 @@ class RoleController extends Controller
         // Handle sorting for relation columns if needed
         if (strpos($sort, '.') !== false) {
             // Simplified sorting for basic usage
-            $roles = $query->paginate(25);
+            $roles = $query->paginateStd(25);
         } else {
-            $roles = $query->orderBy($sort, $direction)->paginate(25);
+            $roles = $query->orderBy($sort, $direction)->paginateStd(25);
         }
 
         // Get filter options

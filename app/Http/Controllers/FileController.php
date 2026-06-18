@@ -36,7 +36,7 @@ class FileController extends Controller
             $query->where('original_name', 'like', "%{$search}%");
         }
 
-        $files = $query->orderBy('created_at', 'desc')->paginate(20);
+        $files = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         if ($request->expectsJson()) {
             return response()->json([

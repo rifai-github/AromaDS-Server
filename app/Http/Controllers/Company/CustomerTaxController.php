@@ -107,7 +107,7 @@ class CustomerTaxController extends Controller
             });
         }
 
-        $customerTaxes = $query->orderBy('created_at', 'desc')->paginate(15);
+        $customerTaxes = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $customers = Customer::orderBy('name')->get();
         $defaultVatSetting = TaxSetting::getDefaultPpnSetting();
         $financeTaxCodes = FinanceTaxCode::query()

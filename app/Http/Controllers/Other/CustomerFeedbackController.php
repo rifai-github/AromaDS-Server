@@ -42,7 +42,7 @@ class CustomerFeedbackController extends Controller
             $query->whereDate('created_at', '<=', $request->date_to);
         }
 
-        $feedbacks = $query->orderBy('created_at', 'desc')->paginate(15);
+        $feedbacks = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Calculate pagination data
         $pagination = [

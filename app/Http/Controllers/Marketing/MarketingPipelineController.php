@@ -117,7 +117,7 @@ class MarketingPipelineController extends Controller
             $query->orderBy('marketing_pipelines.created_at', 'desc');
         }
 
-        $pipelines = $query->paginate(20);
+        $pipelines = $query->paginateStd(25);
 
         // Get filter options - Get all active users for reference
         $users = User::where('is_active', true)

@@ -22,7 +22,7 @@ class BankController extends Controller
         $query->filter($request->all());
 
         // Sort and paginate
-        $banks = $query->orderBy('bank_name', 'asc')->paginate(25);
+        $banks = $query->orderBy('bank_name', 'asc')->paginateStd(25);
 
         // Check if this is an API request
         if (request()->expectsJson() || request()->is('api/*')) {

@@ -87,7 +87,7 @@ class DepartmentController extends Controller
         }
         */
 
-        $departments = $query->orderBy('name')->paginate(15);
+        $departments = $query->orderBy('name')->paginateStd(25);
         $allDepartments = Cache::remember('department:index:active', 300, function () {
             return Department::where('is_active', true)
                 ->select('id', 'name')

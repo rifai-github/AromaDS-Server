@@ -434,7 +434,7 @@
             </div>
 
             <!-- Pagination -->
-            @if($themes->hasPages())
+            @if($themes->total() > 0)
             <div class="flex flex-row justify-center items-center w-full p-4">
                 {{ $themes->withQueryString()->links() }}
             </div>

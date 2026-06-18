@@ -22,7 +22,7 @@ class EmergencyContactController extends Controller
         $emergencyContacts = EmergencyContact::where('user_id', $user->id)
             ->orderBy('contact_type', 'asc')
             ->orderBy('created_at', 'desc')
-            ->paginate(10);
+            ->paginateStd(25);
 
         return view('emergency-contacts.index', compact('emergencyContacts'));
     }
@@ -179,7 +179,7 @@ class EmergencyContactController extends Controller
         $emergencyLogs = EmergencyLog::where('user_id', $user->id)
             ->with(['emergencyContact', 'emergencyNotifications'])
             ->orderBy('triggered_at', 'desc')
-            ->paginate(10);
+            ->paginateStd(25);
 
         return view('emergency-contacts.emergency-logs', compact('emergencyLogs'));
     }

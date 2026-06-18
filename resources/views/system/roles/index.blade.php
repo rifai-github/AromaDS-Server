@@ -921,7 +921,7 @@
         </div>
         
         <!-- Pagination Controls -->
-        @if($roles->hasPages())
+        @if($roles->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
             {{ $roles->withQueryString()->links() }}
         </div>

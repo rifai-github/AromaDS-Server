@@ -317,7 +317,7 @@ class CustomerController extends Controller
             $query->orderBy('created_at', 'desc');
         }
 
-        $customers = $query->paginate(15);
+        $customers = $query->paginateStd(25);
         $categories = CustomerCategory::active()->orderBy('name')->get();
         $users = User::orderBy('name')->get();
         $provinces = Province::orderBy('name')->get();
@@ -1000,7 +1000,7 @@ class CustomerController extends Controller
         $creditLimits = $customer->creditLimits()
             ->with('createdBy')
             ->orderBy('created_at', 'desc')
-            ->paginate(15);
+            ->paginateStd(25);
 
         return view('company.customers.credit-limits', compact('customer', 'creditLimits'));
     }
@@ -1078,7 +1078,7 @@ class CustomerController extends Controller
         $paymentTerms = $customer->paymentTerms()
             ->with('createdBy')
             ->orderBy('created_at', 'desc')
-            ->paginate(15);
+            ->paginateStd(25);
 
         return view('company.customers.payment-terms', compact('customer', 'paymentTerms'));
     }

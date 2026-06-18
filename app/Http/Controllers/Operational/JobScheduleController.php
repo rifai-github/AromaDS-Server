@@ -5909,7 +5909,7 @@ class JobScheduleController extends Controller
             $query->where('is_active', $request->is_active);
         }
 
-        $periodicJobs = $query->orderBy('next_job_date', 'asc')->paginate(25);
+        $periodicJobs = $query->orderBy('next_job_date', 'asc')->paginateStd(25);
 
         return response()->json([
             'status' => 'success',

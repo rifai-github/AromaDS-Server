@@ -30,7 +30,7 @@ class SystemHealthController extends Controller
             $query->where('status', $request->status);
         }
 
-        $systemHealths = $query->orderBy('created_at', 'desc')->paginate(25);
+        $systemHealths = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get filter options
         $components = SystemHealth::getComponents();

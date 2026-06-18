@@ -44,7 +44,7 @@ class FreeTrialController extends Controller
             $query->whereDate('trial_start_date', '<=', $request->date_to);
         }
 
-        $freeTrials = $query->orderBy('requested_at', 'desc')->paginate(15);
+        $freeTrials = $query->orderBy('requested_at', 'desc')->paginateStd(25);
 
         return view('marketing.free-trials.index', compact('freeTrials'));
     }

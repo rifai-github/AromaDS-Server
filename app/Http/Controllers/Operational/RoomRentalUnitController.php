@@ -51,7 +51,7 @@ class RoomRentalUnitController extends Controller
             $query->whereDate('expected_install_date', '<=', $request->end_date);
         }
 
-        $rentalUnits = $query->orderBy('expected_install_date', 'desc')->paginate(15);
+        $rentalUnits = $query->orderBy('expected_install_date', 'desc')->paginateStd(25);
 
         // Data for modal dropdowns
         $customers = Customer::where('is_active', true)->get();

@@ -52,7 +52,7 @@ class MasterPriceSlabController extends Controller
             $query->orderBy('created_at', 'desc');
         }
 
-        $priceSlabs = $query->paginate(15);
+        $priceSlabs = $query->paginateStd(25);
         $rentals = MasterRental::orderBy('rental_name')->get();
 
         $statistics = [

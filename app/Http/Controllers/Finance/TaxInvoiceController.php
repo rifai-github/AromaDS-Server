@@ -73,7 +73,7 @@ class TaxInvoiceController extends Controller
         $sortDirection = $request->get('sort_direction', 'desc');
         $query->orderBy($sortField, $sortDirection);
 
-        $taxInvoices = $query->paginate(15)->withQueryString();
+        $taxInvoices = $query->paginateStd(25)->withQueryString();
 
         // Get filter options
         $customers = Customer::where('is_active', true)->get();

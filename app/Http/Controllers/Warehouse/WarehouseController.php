@@ -105,7 +105,7 @@ class WarehouseController extends Controller
             });
         }
 
-        $warehouses = $query->orderBy('created_at', 'desc')->paginate(15);
+        $warehouses = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         $branches = Branch::all();
         $users = User::all();

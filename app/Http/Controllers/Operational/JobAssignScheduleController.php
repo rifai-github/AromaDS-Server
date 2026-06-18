@@ -132,7 +132,7 @@ class JobAssignScheduleController extends Controller
             $query->where('assigned_date', '<=', $request->assigned_date_to);
         }
 
-        $schedules = $query->orderBy('created_at', 'desc')->paginate(15);
+        $schedules = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $buildings = $this->getJobAssignScheduleBuildings();
         $teams = $this->getJobAssignScheduleTeams();
         $customers = $this->getJobAssignScheduleCustomers();

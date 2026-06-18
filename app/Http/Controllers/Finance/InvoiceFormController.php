@@ -67,7 +67,7 @@ class InvoiceFormController extends Controller
             $query->where('invoice_date', '<=', $request->date_to);
         }
 
-        $invoiceForms = $query->orderBy('created_at', 'desc')->paginate(25);
+        $invoiceForms = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get filter options - optimized queries
         $contracts = $this->applyContractAccessControlFilter(

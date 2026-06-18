@@ -16,7 +16,7 @@ class MarketingLevelController extends Controller
     {
         $marketingLevels = MarketingLevel::with(['createdBy', 'updatedBy'])
             ->ordered()
-            ->paginate(20);
+            ->paginateStd(25);
 
         if (request()->expectsJson() || request()->is('api/*')) {
             return response()->json([

@@ -428,7 +428,7 @@
         </div>
         
         <!-- Pagination Controls -->
-        @if($systemHealths->hasPages())
+        @if($systemHealths->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
             {{ $systemHealths->withQueryString()->links() }}
         </div>

@@ -155,7 +155,7 @@ class ContractTerminationController extends Controller
             $query->whereDate('created_at', '<=', $request->date_to);
         }
 
-        $terminations = $query->orderBy('created_at', 'desc')->paginate(15)->withQueryString();
+        $terminations = $query->orderBy('created_at', 'desc')->paginateStd(25)->withQueryString();
 
         // Validasi Manual Cleanup: Cek apakah pengerjaan sudah berjalan
         foreach ($terminations as $t) {

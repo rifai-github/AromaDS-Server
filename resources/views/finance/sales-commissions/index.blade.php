@@ -485,7 +485,7 @@
         </div>
         
         <!-- Pagination Controls -->
-        @if($commissions->hasPages())
+        @if($commissions->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px] border-t">
             {{ $commissions->withQueryString()->links() }}
         </div>

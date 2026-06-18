@@ -64,7 +64,7 @@ class AuditLogController extends Controller
             $query->where('ip_address', 'like', "%{$request->ip_address}%");
         }
 
-        $auditLogs = $query->orderBy('created_at', 'desc')->paginate(25);
+        $auditLogs = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get filter options
         $users = Cache::remember('audit-log:index:users', 300, function () {

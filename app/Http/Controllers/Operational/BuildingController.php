@@ -150,7 +150,7 @@ class BuildingController extends Controller
             
             // Execute query
             try {
-                $buildings = $query->orderBy('created_at', 'desc')->paginate(25);
+                $buildings = $query->orderBy('created_at', 'desc')->paginateStd(25);
             } catch (\Exception $e) {
                 Log::error('Error executing buildings query', [
                     'error' => $e->getMessage(),
@@ -159,7 +159,7 @@ class BuildingController extends Controller
                 // Fallback: simple query without filters
                 $fallbackQuery = Building::orderBy('created_at', 'desc');
                 $this->applyBuildingBranchVisibility($fallbackQuery);
-                $buildings = $fallbackQuery->paginate(25);
+                $buildings = $fallbackQuery->paginateStd(25);
             }
             
             // Step 2: Load dropdowns with empty fallback and optimized queries

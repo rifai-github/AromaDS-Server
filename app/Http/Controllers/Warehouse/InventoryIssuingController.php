@@ -195,7 +195,7 @@ class InventoryIssuingController extends Controller
             }
         }
         
-        $issuings = $query->orderBy('created_at', 'desc')->paginate(15);
+        $issuings = $query->orderBy('created_at', 'desc')->paginateStd(25);
         
         // Pass filter values back to view
         $branches = \App\Models\Branch::where('is_active', true)->orderBy('name')->get();

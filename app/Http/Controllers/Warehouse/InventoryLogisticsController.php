@@ -42,7 +42,7 @@ class InventoryLogisticsController extends Controller
             $query->whereDate('created_at', '<=', $request->end_date);
         }
 
-        $trackings = $query->orderBy('created_at', 'desc')->paginate(15);
+        $trackings = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $warehouses = Warehouse::where('is_active', true)->orderBy('name')->get();
         $branches = Branch::where('is_active', true)->orderBy('name')->get();
         $inventoryRequests = \App\Models\InventoryRequest::where('status', 'approved')->orderBy('request_number')->get();
@@ -196,7 +196,7 @@ class InventoryLogisticsController extends Controller
             $query->whereDate('created_at', '<=', $request->end_date);
         }
 
-        $beritaAcaras = $query->orderBy('created_at', 'desc')->paginate(15);
+        $beritaAcaras = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $logisticsTrackings = LogisticsTracking::where('status', 'delivered')->orderBy('tracking_number')->get();
         $inventoryReceivings = \App\Models\InventoryReceiving::where('status', 'received')->orderBy('receiving_number')->get();
 
@@ -315,7 +315,7 @@ class InventoryLogisticsController extends Controller
             $query->whereDate('created_at', '<=', $request->end_date);
         }
 
-        $purchasingRequests = $query->orderBy('created_at', 'desc')->paginate(15);
+        $purchasingRequests = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $logisticsTrackings = LogisticsTracking::where('status', 'delivered')->orderBy('tracking_number')->get();
 
         return view('warehouse.inventory-logistics.purchasing-requests', compact('purchasingRequests', 'logisticsTrackings'));

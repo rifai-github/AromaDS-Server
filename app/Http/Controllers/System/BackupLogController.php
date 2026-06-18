@@ -38,7 +38,7 @@ class BackupLogController extends Controller
             $query->whereDate('created_at', '<=', $request->date_to);
         }
 
-        $backupLogs = $query->orderBy('created_at', 'desc')->paginate(25);
+        $backupLogs = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get filter options
         $types = BackupLog::getTypes();

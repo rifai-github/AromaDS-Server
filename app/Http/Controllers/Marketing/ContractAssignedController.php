@@ -57,7 +57,7 @@ class ContractAssignedController extends Controller
             $query->where('status', $status);
         }
 
-        $assigned = $query->orderBy('created_at', 'desc')->paginate(15)->withQueryString();
+        $assigned = $query->orderBy('created_at', 'desc')->paginateStd(25)->withQueryString();
 
         // Calculate stats
         $statsQuery = $this->applyContractAssignedAccessFilter(ContractAssigned::query());

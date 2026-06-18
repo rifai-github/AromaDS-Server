@@ -67,7 +67,7 @@ class TaxSettingController extends Controller
 
         $query->orderBy($sortField, $sortDirection);
 
-        $taxSettings = $query->paginate(15)->withQueryString();
+        $taxSettings = $query->paginateStd(25)->withQueryString();
 
         return view('finance.tax-settings.index', compact('taxSettings'));
     }

@@ -17,7 +17,7 @@ class AchievementPeriodController extends Controller
         $achievementPeriods = AchievementPeriod::filter($request->all())
             ->with(['createdBy', 'updatedBy'])
             ->orderBy('start_date', 'desc')
-            ->paginate(20);
+            ->paginateStd(25);
 
         return view('finance.achievement-periods.index', compact('achievementPeriods'));
     }

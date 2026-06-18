@@ -98,7 +98,7 @@ class UnitOnWallController extends Controller
             });
         }
 
-        $units = $query->orderBy('created_at', 'desc')->paginate(15);
+        $units = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         if ($request->ajax()) {
             return response()->json([

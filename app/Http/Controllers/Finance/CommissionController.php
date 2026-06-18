@@ -77,7 +77,7 @@ class CommissionController extends Controller
             $query->whereBetween('calculation_date', [$request->start_date, $request->end_date]);
         }
 
-        $commissions = $query->paginate(20);
+        $commissions = $query->paginateStd(25);
         $users = User::where('is_active', true)->get();
         $periods = AchievementPeriod::orderBy('start_date', 'desc')->get();
 

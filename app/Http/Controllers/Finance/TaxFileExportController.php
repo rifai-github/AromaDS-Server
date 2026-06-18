@@ -72,7 +72,7 @@ class TaxFileExportController extends Controller
             $query->where('created_by', $request->created_by);
         }
 
-        $exports = $query->orderBy('created_at', 'desc')->paginate(15);
+        $exports = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         $statistics = [
             'total' => TaxFileExport::count(),

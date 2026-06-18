@@ -88,7 +88,7 @@ class StockAdjustmentController extends Controller
         // Apply AutoFilterable
         $query->filter($request->all());
 
-        $adjustments = $query->orderBy('created_at', 'desc')->paginate(15);
+        $adjustments = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Return JSON for AJAX requests
         if ($request->ajax()) {

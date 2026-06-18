@@ -1117,7 +1117,7 @@
         </div>
         
         <!-- Pagination Controls -->
-        @if(isset($jobReports) && $jobReports->hasPages())
+        @if(isset($jobReports) && $jobReports->total() > 0)
         <div class="flex flex-row justify-center items-center w-full p-4 bg-white rounded-b-[10px]">
             {{ $jobReports->withQueryString()->links() }}
         </div>

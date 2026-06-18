@@ -48,7 +48,7 @@ class VirtualAccountExportController extends Controller
             $query->byDateRange($request->date_from, $request->date_to);
         }
 
-        $exports = $query->orderBy('created_at', 'desc')->paginate(20);
+        $exports = $query->orderBy('created_at', 'desc')->paginateStd(25);
         $banks = Bank::where('is_active', true)->orderBy('bank_name')->get();
 
         return view('finance.virtual-account-exports.index', compact('exports', 'banks'));

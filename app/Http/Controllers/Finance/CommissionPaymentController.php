@@ -19,7 +19,7 @@ class CommissionPaymentController extends Controller
         $payments = CommissionPayment::with(['user', 'commissionCalculation', 'processedBy', 'createdBy', 'updatedBy'])
             ->filter($request->all())
             ->orderBy('payment_date', 'desc')
-            ->paginate(20);
+            ->paginateStd(25);
 
         $users = User::all();
 

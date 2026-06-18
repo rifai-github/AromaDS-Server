@@ -36,7 +36,7 @@ class FakturPajakController extends Controller
             'updated_at' => ['column' => 'updated_at', 'type' => 'date'],
         ]);
 
-        $fakturPajaks = $query->orderBy('faktur_date', 'desc')->paginate(15);
+        $fakturPajaks = $query->orderBy('faktur_date', 'desc')->paginateStd(25);
 
         // Get filter options - optimized queries
         $invoices = Invoice::select('id', 'invoice_number', 'customer_id', 'grand_total', 'tax_amount')

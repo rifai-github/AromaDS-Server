@@ -45,7 +45,7 @@ class ReportController extends Controller
             $query->where('is_active', $request->is_active);
         }
 
-        $reports = $query->orderBy('created_at', 'desc')->paginate(25);
+        $reports = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         return view('reports.index', compact('reports'));
     }

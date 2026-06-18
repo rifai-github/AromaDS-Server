@@ -44,7 +44,7 @@ class ApprovalController extends Controller
             $query->whereDate('requested_at', '<=', $request->date_to);
         }
 
-        $approvals = $query->orderBy('requested_at', 'desc')->paginate(15);
+        $approvals = $query->orderBy('requested_at', 'desc')->paginateStd(25);
 
         return view('marketing.approvals.index', compact('approvals'));
     }

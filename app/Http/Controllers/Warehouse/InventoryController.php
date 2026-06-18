@@ -58,7 +58,7 @@ class InventoryController extends Controller
             $query->where('transfer_date', '<=', $request->date_to);
         }
 
-        $paginatedTransfers = $query->paginate(10);
+        $paginatedTransfers = $query->paginateStd(25);
 
         return view('warehouse.inventory-transfers.index', compact('paginatedTransfers'));
     }
@@ -91,7 +91,7 @@ class InventoryController extends Controller
             $query->where('reference_no', 'like', '%' . $request->reference_no . '%');
         }
 
-        $issuings = $query->orderBy('issue_date', 'desc')->paginate(15);
+        $issuings = $query->orderBy('issue_date', 'desc')->paginateStd(25);
 
         return view('warehouse.inventory.issuing.index', compact('issuings'));
     }
@@ -231,7 +231,7 @@ class InventoryController extends Controller
             $query->where('reference_no', 'like', '%' . $request->reference_no . '%');
         }
 
-        $receivings = $query->orderBy('receive_date', 'desc')->paginate(15);
+        $receivings = $query->orderBy('receive_date', 'desc')->paginateStd(25);
 
         return view('warehouse.inventory.receiving.index', compact('receivings'));
     }
@@ -362,7 +362,7 @@ class InventoryController extends Controller
             $query->where('status', $request->status);
         }
 
-        $requests = $query->orderBy('needed_date', 'desc')->paginate(15);
+        $requests = $query->orderBy('needed_date', 'desc')->paginateStd(25);
 
         return view('warehouse.inventory.request.index', compact('requests'));
     }

@@ -245,7 +245,7 @@ class TechnicianPackageController extends Controller
             $query->whereDate('created_at', '<=', $dateTo);
         }
 
-        $packages = $query->orderBy('created_at', 'desc')->paginate(20);
+        $packages = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         return response()->json([
             'status' => 'success',
