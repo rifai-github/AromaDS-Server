@@ -2966,21 +2966,23 @@
         function initializeSelect2(container) {
             const $container = $(container || document);
             
-            // Find all select elements that are not yet initialized with Select2
-            $container.find('select.form-input, select.form-control, .modal-body select, .modal-container select').each(function() {
+            // Find ALL select elements (standardized: every dropdown is searchable)
+            $container.find('select').each(function() {
                 const $select = $(this);
-                
-                // Skip if already initialized or has specific class to skip
-                if ($select.hasClass('select2-hidden-accessible') || $select.hasClass('no-select2')) {
+
+                // Skip if already initialized or explicitly opted out
+                if ($select.hasClass('select2-hidden-accessible')
+                    || $select.hasClass('no-select2')
+                    || this.hasAttribute('data-no-select2')) {
                     return;
                 }
-                
+
                 // Skip master_building_status (should not use Select2)
                 if ($select.attr('id') === 'master_building_status') {
                     return;
                 }
-                
-                // Skip very small selects (like pagination)
+
+                // Skip very small selects (like pagination) outside modals
                 if ($select.find('option').length <= 3 && !$select.closest('.modal-body, .modal-container').length) {
                     return;
                 }
@@ -2998,7 +3000,7 @@
                     allowClear: !$select.prop('required'),
                     dropdownParent: dropdownParent,
                     width: '100%',
-                    minimumResultsForSearch: 0 // Always show search
+                    minimumResultsForSearch: 10 // Show search box only when there are >= 10 options
                 });
             });
         }
