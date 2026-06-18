@@ -848,7 +848,7 @@
                         <th data-column="quotation.branch.code" data-relation="quotation" style="width: 80px;">Branch</th>
                         <th data-column="quotation.branch.name" data-relation="quotation" style="width: 110px;">Branch Name</th>
                         <th data-column="po_number" style="width: 120px;">Cust PO No</th>
-                        <th data-column="quotation.marketing.nik" data-relation="quotation" style="width: 90px;">Sales Code</th>
+                        <th data-column="marketing.nik" data-relation="marketing" style="width: 90px;">Sales Code</th>
                         <th data-column="marketing.name" data-relation="marketing" style="width: 140px;">Sales Name</th>
                         <th data-column="customer.customer_code" style="width: 100px;">Customer Code</th>
                         <th data-column="customer.name" style="width: 240px;">Customer Name</th>
@@ -993,11 +993,11 @@
                         </td>
                         <!-- Sales Code (NIK marketing) -->
                         <td class="w-[90px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->marketing->nik ?? $contract->marketing->nik ?? '-' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->marketing->nik ?? $contract->quotation->marketing->nik ?? '-' }}</p>
                         </td>
                         <!-- Sales Name (marketing) -->
                         <td class="w-[140px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->marketing->name ?? $contract->marketing->name ?? 'N/A' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->marketing->name ?? $contract->quotation->marketing->name ?? 'N/A' }}</p>
                         </td>
                         <!-- Customer Code -->
                         <td class="w-[100px] p-2">
