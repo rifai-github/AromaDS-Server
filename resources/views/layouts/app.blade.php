@@ -4788,5 +4788,82 @@
         });
     })();
     </script>
+
+    <!-- Standardized currency input (thousand separator on display, raw number on submit) -->
+    <script>
+    (function () {
+        // Format an integer-ish string with Indonesian thousand separators (dots).
+        function formatThousands(raw) {
+            raw = (raw || '').toString().replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+            if (raw === '') return '';
+            return raw.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        }
+        // Raw digits only (what we submit to the server).
+        function rawDigits(value) {
+            return (value || '').toString().replace(/\D/g, '');
+        }
+
+        window.initCurrencyInputs = function (root) {
+            root = root || document;
+            var inputs = root.querySelectorAll('input.currency-input, input[data-currency]');
+            inputs.forEach(function (el) {
+                if (el.dataset.currencyBound === '1') return;
+                el.dataset.currencyBound = '1';
+                el.setAttribute('inputmode', 'numeric');
+
+                // Format any value already present (edit forms).
+                if (el.value) el.value = formatThousands(el.value);
+
+                el.addEventListener('input', function () {
+                    var start = el.selectionStart;
+                    var before = el.value;
+                    el.value = formatThousands(el.value);
+                    // keep caret roughly in place when separators shift
+                    var diff = el.value.length - before.length;
+                    try { el.setSelectionRange(start + diff, start + diff); } catch (e) {}
+                });
+
+                // On submit, replace the displayed value with the raw number so the
+                // server receives a plain integer (no controller/validation changes needed).
+                if (el.form && el.form.dataset.currencyHooked !== '1') {
+                    el.form.dataset.currencyHooked = '1';
+                    el.form.addEventListener('submit', function () {
+                        el.form.querySelectorAll('input.currency-input, input[data-currency]').forEach(function (ci) {
+                            ci.value = rawDigits(ci.value);
+                        });
+                    });
+                }
+            });
+        };
+
+        document.addEventListener('DOMContentLoaded', function () {
+            window.initCurrencyInputs(document);
+
+            if (typeof MutationObserver !== 'undefined') {
+                var scheduled = false;
+                var obs = new MutationObserver(function (mutations) {
+                    var found = false;
+                    for (var i = 0; i < mutations.length; i++) {
+                        var added = mutations[i].addedNodes;
+                        for (var j = 0; j < added.length; j++) {
+                            var n = added[j];
+                            if (n.nodeType !== 1) continue;
+                            if ((n.matches && n.matches('input.currency-input, input[data-currency]')) ||
+                                (n.querySelector && n.querySelector('input.currency-input, input[data-currency]'))) {
+                                found = true; break;
+                            }
+                        }
+                        if (found) break;
+                    }
+                    if (found && !scheduled) {
+                        scheduled = true;
+                        setTimeout(function () { scheduled = false; window.initCurrencyInputs(document); }, 50);
+                    }
+                });
+                obs.observe(document.body, { childList: true, subtree: true });
+            }
+        });
+    })();
+    </script>
 </body>
 </html>
