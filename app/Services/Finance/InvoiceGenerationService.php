@@ -486,19 +486,24 @@ class InvoiceGenerationService
     {
         $completedJobs = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
 
+        // Rental is priced per month, so a multi-month billing period must bill
+        // monthly_price x number of months in the period (MoM 17 Jun 2026:
+        // "harga per bulan dikalikan jumlah bulan").
+        $billingMonths = $this->billingMonthsForPeriod($periodStart, $periodEnd);
+
         // Track what we have already billed for this period to avoid duplicates (e.g. IR & CSR in same month)
         $billedRentals = [];
 
         foreach ($completedJobs as $jobSchedule) {
             // Get rental details for this job
             $rentalDetails = $this->getRentalDetailsForJob($jobSchedule);
-            
+
             foreach ($rentalDetails as $rental) {
                 // Create a unique key for this rental: room + rental product
                 $billingKey = $this->invoiceRentalBillingKey($rental);
-                
+
                 if (!in_array($billingKey, $billedRentals)) {
-                    $this->createInvoiceDetail($invoice, $jobSchedule, $rental);
+                    $this->createInvoiceDetail($invoice, $jobSchedule, $rental, $billingMonths);
                     $billedRentals[] = $billingKey;
                 } else {
                     Log::debug("Skipping duplicate billing for rental unit in invoice {$invoice->invoice_number}", [
@@ -1025,20 +1030,61 @@ class InvoiceGenerationService
     /**
      * Create invoice detail for a job and rental
      */
-    private function createInvoiceDetail(Invoice $invoice, JobSchedule $jobSchedule, array $rental): void
+    /**
+     * Number of whole months covered by a billing period (inclusive).
+     * 1 Jan - 31 Mar => 3 months; a sub-month remainder rounds up so partial
+     * final periods still bill at least one month.
+     */
+    private function billingMonthsForPeriod(Carbon $periodStart, Carbon $periodEnd): int
+    {
+        $start = $periodStart->copy()->startOfDay();
+        $end = $periodEnd->copy()->startOfDay();
+
+        if ($end->lte($start)) {
+            return 1;
+        }
+
+        // diffInMonths counts whole months; add one when there is a leftover
+        // tail (e.g. exactly to end-of-period day) so 1 Jan-31 Mar = 3, not 2.
+        // Cast to int first: this Carbon version returns a fractional month diff.
+        $months = (int) $start->diffInMonths($end);
+        $anchor = $start->copy()->addMonths($months);
+        if ($anchor->lt($end)) {
+            $months++;
+        }
+
+        return max(1, $months);
+    }
+
+    private function createInvoiceDetail(Invoice $invoice, JobSchedule $jobSchedule, array $rental, int $billingMonths = 1): void
     {
         // NEW: We only create rental-specific detail to avoid duplication in printing.
-        // invoiceRentalDetails represents the breakdown. 
+        // invoiceRentalDetails represents the breakdown.
         // Standard invoiceDetails is for generic items (non-job etc.)
+        $billingMonths = max(1, $billingMonths);
+
+        // Rental price is stored per month. For a multi-month billing period the
+        // line total must be unit_price x quantity x months. unit_price is kept
+        // per month for transparency; the month count is annotated on the name.
+        $quantity = $rental['quantity'] ?? 1;
+        $unitPrice = $rental['unit_price'] ?? 0;
+        $baseTotal = $rental['total_price'] ?? ($quantity * $unitPrice);
+        $totalPrice = $baseTotal * $billingMonths;
+
+        $rentalName = $rental['rental_name'] ?? 'Service';
+        if ($billingMonths > 1) {
+            $rentalName .= " ({$billingMonths} bulan)";
+        }
+
         $payload = [
             'master_rental_id' => $rental['master_rental_id'],
             'job_no' => $jobSchedule->job_number,
             'building_name' => $jobSchedule->building->building_name ?? $jobSchedule->building_name ?? '',
             'room_name' => $rental['room_name'] ?: ($jobSchedule->room->room_name ?? $jobSchedule->room_name ?? ''),
-            'rental_name' => $rental['rental_name'] ?? 'Service',
-            'quantity' => $rental['quantity'],
-            'unit_price' => $rental['unit_price'],
-            'total_price' => $rental['total_price'],
+            'rental_name' => $rentalName,
+            'quantity' => $quantity,
+            'unit_price' => $unitPrice,
+            'total_price' => $totalPrice,
             'created_by' => auth()->id()
         ];
 
