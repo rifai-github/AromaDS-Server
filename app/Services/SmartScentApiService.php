@@ -15,8 +15,8 @@ class SmartScentApiService
 
     public function __construct()
     {
-        $this->clientId = env('SMART_SCENT_CLIENT_ID', '9F3C7A8D2E5B49F1A4C6839BE72D1C0E');
-        $this->clientSecret = env('SMART_SCENT_CLIENT_SECRET', 'B7D6F2C491AB6E3F0D1984A63C5E8A27');
+        $this->clientId = env('SMART_SCENT_CLIENT_ID');
+        $this->clientSecret = env('SMART_SCENT_CLIENT_SECRET');
         
         // Get access token from cache or refresh
         $this->accessToken = $this->getAccessToken();

@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Cache;
 
 // Step 1: Redirect to Smart Scent authorization page
 Route::get('/smartscent/auth', function () {
-    $clientId = env('SMART_SCENT_CLIENT_ID', '9F3C7A8D2E5B49F1A4C6839BE72D1C0E');
+    $clientId = env('SMART_SCENT_CLIENT_ID');
     $redirectUri = url('/smartscent/callback');
     
     $authUrl = "http://udb3.uarm.lbslm.com/oauth2/authorize.do?" . http_build_query([
@@ -39,9 +39,9 @@ Route::get('/smartscent/callback', function (Request $request) {
         ], 400);
     }
     
-    $clientId = env('SMART_SCENT_CLIENT_ID', '9F3C7A8D2E5B49F1A4C6839BE72D1C0E');
-    $clientSecret = env('SMART_SCENT_CLIENT_SECRET', 'B7D6F2C491AB6E3F0D1984A63C5E8A27');
-    
+    $clientId = env('SMART_SCENT_CLIENT_ID');
+    $clientSecret = env('SMART_SCENT_CLIENT_SECRET');
+
     try {
         $response = Http::get('http://udb3.uarm.lbslm.com/oauth/token.do', [
             'grant_type' => 'authorization_code',
