@@ -367,7 +367,8 @@ class QuotationWizardController extends Controller
                 $productsQuery->whereIn('id', $corporateRentals);
             }
 
-            $products = $productsQuery->select('id', 'rental_code', 'rental_name', 'daily_price', 'monthly_price', 'unit')
+            $products = $productsQuery->with('serviceFrequency:id,frequency_months')
+                ->select('id', 'rental_code', 'rental_name', 'daily_price', 'monthly_price', 'unit', 'service_frequency_id')
                 ->orderBy('rental_name')
                 ->limit(50)
                 ->get();
@@ -407,6 +408,10 @@ class QuotationWizardController extends Controller
                     }
                 }
                 
+                // Service frequency (months) drives the rental-period compatibility
+                // check in the wizard UI. 0/1 means no multi-month constraint.
+                $frequencyMonths = (int) ($product->serviceFrequency?->frequency_months ?? 0);
+
                 return [
                     'id' => $product->id,
                     'text' => $product->rental_name . ' (' . $product->rental_code . ')',
@@ -415,7 +420,8 @@ class QuotationWizardController extends Controller
                     'daily_price' => $dailyPrice,
                     'monthly_price' => $monthlyPrice,
                     'unit' => $product->unit,
-                    'is_corporate_price' => $isCorporatePrice
+                    'is_corporate_price' => $isCorporatePrice,
+                    'frequency_months' => $frequencyMonths,
                 ];
             });
 

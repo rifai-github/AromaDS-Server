@@ -78,6 +78,13 @@
     color: #6c757d !important;
 }
 
+/* Flag a rental product whose service frequency no longer fits the rental period */
+.rental-product-incompatible {
+    border: 1px solid #dc2626 !important;
+    border-radius: 8px;
+    background: #fef2f2;
+}
+
 /* ===== SELECT2 STYLES ===== */
 .select2-container--default .select2-selection--single.is-invalid {
     border-color: #dc3545 !important;
@@ -5312,6 +5319,19 @@ $(document).ready(function() {
         }
     }
 
+    // Mirror of Quotation::rental_period_months (server): convert the rental
+    // period to whole months so the UI compatibility check matches backend
+    // validation. Days: <30 => 1 month, otherwise ceil(days/30).
+    function getRentalPeriodMonths() {
+        const period = parseInt($('#rental_period').val()) || 0;
+        if (period <= 0) return 0;
+        const unit = $('#rental_unit').val();
+        if (unit === 'hari') {
+            return period < 30 ? 1 : Math.ceil(period / 30);
+        }
+        return period;
+    }
+
     function initializeProductSelect2(surveyId, uniqueId) {
         const productSelect = $(`#rental-config-${uniqueId} .rental-product-select`);
         
@@ -5339,20 +5359,44 @@ $(document).ready(function() {
                     };
                 },
                 processResults: function (data, params) {
+                    const rentalMonths = getRentalPeriodMonths();
                     return {
-                        results: data.map(product => ({ 
-                            id: product.id, 
-                            text: product.text,
-                            name: product.name,
-                            code: product.code,
-                            daily_price: product.daily_price,
-                            monthly_price: product.monthly_price,
-                            unit: product.unit,
-                            is_corporate_price: product.is_corporate_price // Pass flag to selection
-                        }))
+                        results: data.map(product => {
+                            const frequencyMonths = parseInt(product.frequency_months) || 0;
+                            // Disable products whose service frequency does not divide
+                            // the rental period evenly (MoM 17 Jun 2026). No rental
+                            // period set yet => no filter.
+                            const incompatible = rentalMonths > 0
+                                && frequencyMonths > 1
+                                && (rentalMonths % frequencyMonths !== 0);
+                            return {
+                                id: product.id,
+                                text: product.text,
+                                name: product.name,
+                                code: product.code,
+                                daily_price: product.daily_price,
+                                monthly_price: product.monthly_price,
+                                unit: product.unit,
+                                is_corporate_price: product.is_corporate_price, // Pass flag to selection
+                                frequency_months: frequencyMonths,
+                                disabled: incompatible
+                            };
+                        })
                     };
                 },
                 cache: true
+            },
+            templateResult: function (product) {
+                if (!product.id) return product.text;
+                if (product.disabled && product.frequency_months > 1) {
+                    const rentalMonths = getRentalPeriodMonths();
+                    return $(
+                        '<span style="opacity:.55;">' + product.text +
+                        ' <small style="color:#dc2626;">(service per ' + product.frequency_months +
+                        ' bln — tidak sesuai periode sewa ' + rentalMonths + ' bln)</small></span>'
+                    );
+                }
+                return product.text;
             }
         }).on('select2:select', function (e) {
             if (!e.params || !e.params.data) {
@@ -6389,8 +6433,42 @@ $(document).ready(function() {
     // Handler for rental period change
     $('#rental_period, #rental_unit, #term_of_payment').on('change', function() {
         checkRentalPeriodCompatibility();
+        checkSelectedRentalProductsCompatibility();
         updateNextButtonState();
     });
+
+    // Warn (and visually flag) when an already-selected rental product no longer
+    // fits the rental period after it changes. The dropdown itself disables
+    // incompatible options on open; this covers products picked beforehand.
+    // Backend still rejects an incompatible combination on submit.
+    function checkSelectedRentalProductsCompatibility() {
+        const rentalMonths = getRentalPeriodMonths();
+        if (rentalMonths <= 0) return;
+
+        let incompatibleNames = [];
+        $('.rental-product-select').each(function () {
+            const $sel = $(this);
+            const data = $sel.select2('data')[0];
+            if (!data || !data.id) return;
+            const freq = parseInt(data.frequency_months) || 0;
+            const bad = freq > 1 && (rentalMonths % freq !== 0);
+            $sel.closest('.rental-configuration')
+                .toggleClass('rental-product-incompatible', bad);
+            if (bad) incompatibleNames.push((data.name || data.text) + ' (service per ' + freq + ' bln)');
+        });
+
+        if (incompatibleNames.length && typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Periode service tidak sesuai',
+                html: 'Produk berikut memiliki frekuensi service yang tidak habis membagi periode sewa <strong>' +
+                    rentalMonths + ' bulan</strong>:<br><br>' +
+                    incompatibleNames.map(n => '• ' + n).join('<br>') +
+                    '<br><br>Silakan ganti produk atau sesuaikan periode sewa.',
+                confirmButtonColor: '#dc2626'
+            });
+        }
+    }
 
     window.termOfPaymentOptions = @json($termOfPaymentOptions->values());
 
