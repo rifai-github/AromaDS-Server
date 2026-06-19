@@ -105,18 +105,18 @@ Official, client-approved status labels and document codes. Load-bearing busines
 | | Subsequent service periods | `Service` | CSR |
 | | Remove | `Remove` | RV |
 | **Unit Only** | First install | `Install (IR)` | IR |
-| | **Install, subsequent periods** | **`Job Check`** | **IR** |
+| | Subsequent service periods | `Service` / `Service Pertama (CSR)` / `Service Routine` | IR |
 | | Remove | `Remove` | RV |
 | **Refill Only** | First service | `Service Pertama (CSR)` | CSR |
 | | Subsequent service periods | `Service` | CSR |
 
 Implementation facts to preserve:
 
-- **`Job Check` is a DERIVED display label, not a stored `type`.** No `check` type exists in the data. It is computed in `JobSchedule::getDisplayTypeAttribute()` (`app/Models/JobSchedule.php`): a job displays `Job Check` only when `type` ∈ (`service`, `service_first`, `service_routine`) **AND** `material_checked` is true **AND** every room resolves to `unit_only` (`hasOnlyRentalFlow(['unit_only'])`). A single `refill_only` room breaks it and the label falls back to `Service` / `Service Routine`.
-- The label string is exactly **`Job Check`** (no `(CHK)` suffix). Frontend `isCheckJobType()` in `resources/views/operational/job-schedules/index.blade.php` matches on the substring `check`/`chk`, so the label MUST keep the word "check".
+- **`Job Check` was REMOVED (MoM 17 Jun 2026: "Job Check tidak digunakan").** Unit-only periodic services display their plain service label (`Service` / `Service Pertama (CSR)` / `Service Routine`) in `JobSchedule::getDisplayTypeAttribute()`. No `check` type and no derived `Job Check` label.
+- **Material-flow bypass is separate and preserved.** Unit-only periodic services and remove jobs still skip material assign, now via `JobSchedule::skips_material_assignment` accessor + server-side `JobScheduleController::jobScheduleSkipsMaterialAssignment()`. The list UI reads `data-skips-material` (not the old `isCheckJobType()` label substring). Do not re-couple material bypass to a display label.
 - `service` = ad-hoc/manual service; `service_routine` = auto-generated from a contract's periodic schedule (`ServiceSchedulingService` / `PeriodicJob`). Both render the `customer_service_report` (CSR) document.
-- Unit-only periodic jobs keep the **IR** document-number prefix even though their stored `type` is `service_routine` and label is `Job Check` — prefix and type intentionally differ; do not "fix" the prefix.
-- Locked by `tests/Unit/JobScheduleDisplayTypeTest.php`. If you must touch the logic, update that test and confirm it passes.
+- Unit-only periodic jobs keep the **IR** document-number prefix even though their stored `type` is `service_routine` — prefix and type intentionally differ; do not "fix" the prefix.
+- Locked by `tests/Unit/JobScheduleDisplayTypeTest.php` and `tests/Feature/JobScheduleCheckMaterialBypassTest.php`. If you touch the logic, update those tests and confirm they pass.
 
 ## API Patterns In This Codebase
 

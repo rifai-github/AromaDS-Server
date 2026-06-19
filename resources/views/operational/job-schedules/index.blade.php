@@ -1230,7 +1230,8 @@
                                 data-status="{{ $job->status }}"
                                 data-type="{{ $job->type }}"
                                 data-display-type="{{ $job->display_type ?? ($job->type ? ucfirst($job->type) : '-') }}"
-                                onchange="updateProposeTeamButton()" 
+                                data-skips-material="{{ $job->skips_material_assignment ? '1' : '0' }}"
+                                onchange="updateProposeTeamButton()"
                                 onclick="event.stopPropagation()"
                                 {{ $isDisabled ? 'disabled' : '' }}>
                         </td>
@@ -2496,10 +2497,15 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
     }
 
     function openMaterialAction(jobScheduleId, type = '', displayType = '') {
-        if (skipsMaterialAssignment(type, displayType)) {
+        // Pull the backend skip-material flag from the row when available so the
+        // check stays correct after the "Job Check" label was dropped.
+        const rowCheckbox = document.querySelector(`.row-checkbox[data-job-id="${jobScheduleId}"], .row-checkbox[value="${jobScheduleId}"]`);
+        const skipsMaterialFlag = rowCheckbox ? rowCheckbox.getAttribute('data-skips-material') : null;
+
+        if (skipsMaterialAssignment(type, displayType, skipsMaterialFlag)) {
             Swal.fire({
                 title: 'Aksi Tidak Sesuai',
-                text: 'Job Check/Remove tidak menggunakan alur material. Silakan gunakan Assign Team atau Unassign Team sesuai kebutuhan.',
+                text: 'Service unit-only/Remove tidak menggunakan alur material. Silakan gunakan Assign Team atau Unassign Team sesuai kebutuhan.',
                 icon: 'warning',
                 confirmButtonColor: '#214589'
             });
@@ -3354,7 +3360,15 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
             || normalizedDisplayType.includes('chk');
     }
 
-    function skipsMaterialAssignment(type, displayType = '') {
+    function skipsMaterialAssignment(type, displayType = '', skipsMaterialFlag = null) {
+        // Prefer the backend-provided flag (data-skips-material). It is the
+        // source of truth now that the "Job Check" display label was dropped
+        // (MoM 17 Jun 2026); the label-substring check below is only a fallback
+        // for callers that don't carry the flag.
+        if (skipsMaterialFlag === '1' || skipsMaterialFlag === true) return true;
+        if (skipsMaterialFlag === '0' || skipsMaterialFlag === false) {
+            return isRemoveJobType(type);
+        }
         return isRemoveJobType(type) || isCheckJobType(type, displayType);
     }
 
@@ -3362,7 +3376,8 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         return Array.from(document.querySelectorAll('.row-checkbox:checked'))
             .map(cb => ({
                 type: cb.getAttribute('data-type') || '',
-                displayType: cb.getAttribute('data-display-type') || ''
+                displayType: cb.getAttribute('data-display-type') || '',
+                skipsMaterial: cb.getAttribute('data-skips-material')
             }))
             .filter(Boolean);
     }
@@ -3417,7 +3432,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         }
 
         const selectedJobTypes = getSelectedJobTypes();
-        const hasSelectedMateriallessJob = selectedJobTypes.some(item => skipsMaterialAssignment(item.type, item.displayType));
+        const hasSelectedMateriallessJob = selectedJobTypes.some(item => skipsMaterialAssignment(item.type, item.displayType, item.skipsMaterial));
 
         if (['material_assign', 'unpost_issue', 'unassign_material'].includes(actionType) && hasSelectedMateriallessJob) {
             const actionLabels = {
@@ -3428,7 +3443,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
 
             Swal.fire({
                 title: 'Aksi Tidak Sesuai',
-                text: `Job Check/Remove tidak menggunakan alur material, sehingga ${actionLabels[actionType]} tidak dapat dilakukan. Silakan gunakan Assign Team atau Unassign Team sesuai kebutuhan.`,
+                text: `Service unit-only/Remove tidak menggunakan alur material, sehingga ${actionLabels[actionType]} tidak dapat dilakukan. Silakan gunakan Assign Team atau Unassign Team sesuai kebutuhan.`,
                 icon: 'warning',
                 confirmButtonColor: '#214589'
             });

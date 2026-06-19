@@ -1940,7 +1940,7 @@ class JobScheduleController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => "Berhasil memproses {$successCount} job. "
-                    . ($skippedNoMaterialFlowCount > 0 ? "({$skippedNoMaterialFlowCount} job Check/Remove dilewati karena tidak perlu material assign) " : "")
+                    . ($skippedNoMaterialFlowCount > 0 ? "({$skippedNoMaterialFlowCount} job tanpa alur material dilewati karena tidak perlu material assign) " : "")
                     . (($skippedCount - $skippedNoMaterialFlowCount) > 0 ? "(" . ($skippedCount - $skippedNoMaterialFlowCount) . " job dilewati karena status tidak sesuai)" : ""),
                 'success' => true
             ]);

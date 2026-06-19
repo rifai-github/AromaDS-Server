@@ -19,11 +19,29 @@ class JobScheduleDisplayTypeTest extends TestCase
         $this->assertSame('Service Pertama (CSR)', $job->display_type);
     }
 
-    public function test_done_unit_only_service_displays_as_check(): void
+    public function test_done_unit_only_service_displays_as_plain_service(): void
     {
+        // MoM 17 Jun 2026: "Job Check tidak digunakan". A unit-only periodic
+        // service now shows its plain service label instead of "Job Check".
         $job = $this->makeMaterialCheckedService('service_first', ['unit_only']);
 
-        $this->assertSame('Job Check', $job->display_type);
+        $this->assertSame('Service Pertama (CSR)', $job->display_type);
+    }
+
+    public function test_unit_only_service_still_skips_material_assignment(): void
+    {
+        // Dropping the "Job Check" label must NOT change the material-flow
+        // bypass for unit-only services.
+        $job = $this->makeMaterialCheckedService('service_first', ['unit_only']);
+
+        $this->assertTrue($job->skips_material_assignment);
+    }
+
+    public function test_unit_refill_service_does_not_skip_material_assignment(): void
+    {
+        $job = $this->makeMaterialCheckedService('service_first', ['unit_refill']);
+
+        $this->assertFalse($job->skips_material_assignment);
     }
 
     public function test_refill_only_service_still_displays_as_service(): void

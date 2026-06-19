@@ -59,7 +59,7 @@ class JobScheduleCheckMaterialBypassTest extends TestCase
         $this->assertStringContainsString('data-display-type="{{ $job->display_type', $view);
         $this->assertStringContainsString('function isCheckJobType(type, displayType = \'\')', $view);
         $this->assertStringContainsString('function openMaterialAction(jobScheduleId, type = \'\', displayType = \'\')', $view);
-        $this->assertStringContainsString('Job Check/Remove tidak menggunakan alur material', $view);
+        $this->assertStringContainsString('tidak menggunakan alur material', $view);
         $this->assertStringContainsString('materialAssignOption.disabled = false', $view);
         $this->assertStringContainsString('const groupedRoomMap = new Map();', $view);
         $this->assertStringContainsString('related_room_ids', $view);

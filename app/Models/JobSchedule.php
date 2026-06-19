@@ -493,27 +493,48 @@ class JobSchedule extends Model
      */
     public function getDisplayTypeAttribute()
     {
+        // MoM 17 Jun 2026: "Job Check tidak digunakan". Periodic unit-only
+        // services display their plain service label; the previous derived
+        // "Job Check" label is dropped. Material-flow bypass for unit-only jobs
+        // is unaffected — it is decided by jobScheduleRepresentsUnitOnlyCheck()
+        // (type + rental_type), not by this display label.
         $typeLabels = [
             'install' => 'Install (IR)',
             'install_free' => 'Install Free',
             'service' => 'Service',
             'service_first' => 'Service Pertama (CSR)',
             'service_routine' => 'Service Routine',
-            'check' => 'Job Check',
+            'check' => 'Service',
             'remove' => 'Remove',
             'remove_free' => 'Remove Free',
             'maintenance' => 'Maintenance',
         ];
-        
+
         $type = strtolower($this->type ?? '');
-        if (in_array($type, ['service', 'service_first', 'service_routine'], true)
-            && $this->material_checked
-            && $this->hasOnlyRentalFlow(['unit_only'])
-        ) {
-            return 'Job Check';
-        }
-        
+
         return $typeLabels[$type] ?? ucfirst(str_replace('_', ' ', $this->type ?? '-'));
+    }
+
+    /**
+     * Whether this job skips the material-assign flow (can assign team directly).
+     *
+     * Remove jobs and unit-only periodic services have no material to prepare.
+     * The job-schedule list UI previously inferred this from the "Job Check"
+     * display label; since that label was dropped (MoM 17 Jun 2026) the UI now
+     * reads this explicit flag instead. The unit-only condition mirrors the one
+     * that used to derive the "Job Check" label, so behaviour is unchanged.
+     */
+    public function getSkipsMaterialAssignmentAttribute(): bool
+    {
+        $type = strtolower(trim((string) ($this->type ?? '')));
+
+        if (in_array($type, ['remove', 'remove_free', 'remove free', 'removal', 'check'], true)) {
+            return true;
+        }
+
+        return in_array($type, ['service', 'service_first', 'service_routine'], true)
+            && $this->material_checked
+            && $this->hasOnlyRentalFlow(['unit_only']);
     }
 
     private function hasOnlyRentalFlow(array $allowedRentalTypes): bool
