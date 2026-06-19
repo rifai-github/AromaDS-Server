@@ -420,6 +420,43 @@ class StockAdjustmentController extends Controller
         }
     }
 
+    public function rollback(Request $request, StockAdjustment $stock_adjustment)
+    {
+        $adjustment = $stock_adjustment;
+        if ($adjustment->status !== 'approved') {
+            return response()->json(['status' => 'error', 'message' => 'Hanya stock adjustment yang sudah approved yang bisa di-rollback.'], 400);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $adjustment->rollback(Auth::id());
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Stock adjustment berhasil di-rollback ke draft',
+                'data' => $adjustment->load(['warehouse', 'items.masterProduct', 'createdBy', 'updatedBy', 'approvedBy']),
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollback();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => collect($e->errors())->flatten()->first() ?: 'Rollback gagal divalidasi.',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            DB::rollback();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to rollback stock adjustment: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function addItem(Request $request, StockAdjustment $stock_adjustment)
     {
         $validator = Validator::make($request->all(), [

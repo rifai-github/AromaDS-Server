@@ -105,6 +105,12 @@
                                 </button>
                             </div>
                             @endif
+
+                            @if($adjustment->status === 'approved' && auth()->user()->hasPermission('warehouse.stock-adjustments.rollback'))
+                            <button type="button" class="btn btn-warning btn-sm" onclick="rollbackAdjustment()">
+                                <i class="fas fa-undo"></i> Rollback to Draft
+                            </button>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -427,6 +433,27 @@
             if (!confirmed) return;
 
             fetch(`/warehouse/stock-adjustments/${adjustmentId}/approve`, {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}' }
+            })
+            .then(r => r.json())
+            .then(res => {
+                if(res.status === 'success') location.reload();
+                else showErrorDialog('Gagal', res.message);
+            });
+        });
+    }
+
+    function rollbackAdjustment() {
+        showConfirmDialog(
+            'Rollback ke Draft?',
+            'Efek stok, serial number, dan inventory movement dari adjustment ini akan dibatalkan, dan status dikembalikan ke draft. Serial number hasil increase harus masih ready di warehouse.',
+            'Ya, rollback',
+            'Batal'
+        ).then((confirmed) => {
+            if (!confirmed) return;
+
+            fetch(`/warehouse/stock-adjustments/${adjustmentId}/rollback`, {
                 method: 'POST',
                 headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}' }
             })

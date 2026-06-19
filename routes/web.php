@@ -1232,6 +1232,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::delete('stock-adjustments/items/{item}', [StockAdjustmentController::class, 'destroyItem'])->name('stock-adjustments.destroy-item')->middleware('permission:warehouse.stock-adjustments.update');
         Route::post('stock-adjustments/{stock_adjustment}/approve', [StockAdjustmentController::class, 'approve'])->name('stock-adjustments.approve')->middleware('permission:warehouse.stock-adjustments.update');
         Route::post('stock-adjustments/{stock_adjustment}/reject', [StockAdjustmentController::class, 'reject'])->name('stock-adjustments.reject')->middleware('permission:warehouse.stock-adjustments.update');
+        Route::post('stock-adjustments/{stock_adjustment}/rollback', [StockAdjustmentController::class, 'rollback'])->name('stock-adjustments.rollback')->middleware('permission:warehouse.stock-adjustments.rollback');
         Route::get('stock-adjustments/dashboard', [StockAdjustmentController::class, 'dashboard'])->name('stock-adjustments.dashboard')->middleware('permission:warehouse.stock-adjustments.view');
         Route::get('serial-numbers/import-template', [SerialNumberImportController::class, 'template'])->name('serial-numbers.import-template')->middleware('permission:warehouse.serial-numbers.create');
         Route::post('serial-numbers/import-preview', [SerialNumberImportController::class, 'preview'])->name('serial-numbers.import-preview')->middleware('permission:warehouse.serial-numbers.create');

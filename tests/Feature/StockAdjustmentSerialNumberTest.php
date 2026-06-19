@@ -337,6 +337,143 @@ class StockAdjustmentSerialNumberTest extends TestCase
         $this->assertSame(1, SerialNumber::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->where('serial_number', 'RLG1000003')->where('status', 'ready')->count());
     }
 
+    public function test_rollback_of_increase_deletes_serial_numbers_and_reverses_stock(): void
+    {
+        [$warehouse, $product] = $this->createWarehouseAndSerialProduct();
+
+        $adjustment = StockAdjustment::create([
+            'adjustment_no' => 'ADJ-RB-INC-001',
+            'warehouse_id' => $warehouse->id,
+            'reason' => 'increase to be rolled back',
+            'adjustment_date' => now()->toDateString(),
+            'status' => 'waiting for approval',
+        ]);
+
+        StockAdjustmentItem::create([
+            'stock_adjustment_id' => $adjustment->id,
+            'master_product_id' => $product->id,
+            'adjustment_qty' => 2,
+            'adjustment_type' => 'increase',
+            'serial_numbers' => ['W300-RB-001', 'W300-RB-002'],
+        ]);
+
+        $adjustment->approve(1);
+        $this->assertSame(2, WarehouseProduct::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->value('quantity'));
+
+        $adjustment->fresh()->rollback(1);
+
+        $this->assertSame('draft', $adjustment->fresh()->status);
+        $this->assertNull($adjustment->fresh()->approved_by);
+        $this->assertSame(0, WarehouseProduct::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->value('quantity'));
+        $this->assertSame(0, SerialNumber::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->count());
+        $this->assertSame(0, InventoryMovement::where('reference_no', 'ADJ-RB-INC-001')->count());
+    }
+
+    public function test_rollback_of_decrease_restores_serial_numbers_and_stock(): void
+    {
+        [$warehouse, $product] = $this->createWarehouseAndSerialProduct();
+
+        WarehouseProduct::create([
+            'warehouse_id' => $warehouse->id,
+            'master_product_id' => $product->id,
+            'quantity' => 2,
+        ]);
+
+        foreach (['W300-D-001', 'W300-D-002'] as $serialNumber) {
+            SerialNumber::create([
+                'serial_number' => $serialNumber,
+                'status' => 'ready',
+                'condition_status' => SerialNumber::CONDITION_NEW,
+                'location_type' => 'warehouse',
+                'location_id' => $warehouse->id,
+                'warehouse_id' => $warehouse->id,
+                'master_product_id' => $product->id,
+            ]);
+        }
+
+        $adjustment = StockAdjustment::create([
+            'adjustment_no' => 'ADJ-RB-DEC-001',
+            'warehouse_id' => $warehouse->id,
+            'reason' => 'decrease to be rolled back',
+            'adjustment_date' => now()->toDateString(),
+            'status' => 'waiting for approval',
+        ]);
+
+        StockAdjustmentItem::create([
+            'stock_adjustment_id' => $adjustment->id,
+            'master_product_id' => $product->id,
+            'adjustment_qty' => 1,
+            'adjustment_type' => 'decrease',
+            'serial_numbers' => ['W300-D-002'],
+        ]);
+
+        $adjustment->approve(1);
+        $this->assertSame('retired', SerialNumber::where('serial_number', 'W300-D-002')->value('status'));
+        $this->assertSame(1, WarehouseProduct::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->value('quantity'));
+
+        $adjustment->fresh()->rollback(1);
+
+        $this->assertSame('draft', $adjustment->fresh()->status);
+        $this->assertSame(2, WarehouseProduct::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->value('quantity'));
+        $this->assertSame('ready', SerialNumber::where('serial_number', 'W300-D-002')->value('status'));
+        $this->assertSame('warehouse', SerialNumber::where('serial_number', 'W300-D-002')->value('location_type'));
+        $this->assertSame(0, InventoryMovement::where('reference_no', 'ADJ-RB-DEC-001')->count());
+    }
+
+    public function test_rollback_of_increase_is_blocked_when_serial_number_no_longer_ready(): void
+    {
+        [$warehouse, $product] = $this->createWarehouseAndSerialProduct();
+
+        $adjustment = StockAdjustment::create([
+            'adjustment_no' => 'ADJ-RB-BLK-001',
+            'warehouse_id' => $warehouse->id,
+            'reason' => 'increase then consumed',
+            'adjustment_date' => now()->toDateString(),
+            'status' => 'waiting for approval',
+        ]);
+
+        StockAdjustmentItem::create([
+            'stock_adjustment_id' => $adjustment->id,
+            'master_product_id' => $product->id,
+            'adjustment_qty' => 1,
+            'adjustment_type' => 'increase',
+            'serial_numbers' => ['W300-BLK-001'],
+        ]);
+
+        $adjustment->approve(1);
+
+        // Simulate the created SN being consumed (e.g. issued out).
+        SerialNumber::where('serial_number', 'W300-BLK-001')->update(['status' => 'issued']);
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+
+        try {
+            $adjustment->fresh()->rollback(1);
+        } finally {
+            // Nothing should have changed: still approved, SN still present, movement intact.
+            $this->assertSame('approved', $adjustment->fresh()->status);
+            $this->assertSame(1, SerialNumber::where('serial_number', 'W300-BLK-001')->count());
+            $this->assertSame(1, InventoryMovement::where('reference_no', 'ADJ-RB-BLK-001')->count());
+        }
+    }
+
+    public function test_rollback_is_blocked_when_not_approved(): void
+    {
+        [$warehouse, $product] = $this->createWarehouseAndSerialProduct();
+
+        $adjustment = StockAdjustment::create([
+            'adjustment_no' => 'ADJ-RB-DRAFT-001',
+            'warehouse_id' => $warehouse->id,
+            'reason' => 'still draft',
+            'adjustment_date' => now()->toDateString(),
+            'status' => 'draft',
+        ]);
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+
+        $adjustment->rollback(1);
+    }
+
     private function createWarehouseAndSerialProduct(): array
     {
         $warehouse = Warehouse::create(['name' => 'Gudang Surabaya', 'is_active' => true]);

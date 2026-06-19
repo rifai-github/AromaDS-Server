@@ -387,6 +387,202 @@ class StockAdjustment extends Model
         ]);
     }
 
+    /**
+     * Roll back an approved adjustment back to draft, reversing every effect
+     * that approve() applied: warehouse stock, serial numbers, and the
+     * InventoryMovement rows it generated.
+     *
+     * For increase items the created serial numbers must still be `ready` in
+     * this warehouse (not consumed) — otherwise the rollback is blocked. For
+     * decrease items the retired serial numbers are restored to `ready`.
+     */
+    public function rollback($userId)
+    {
+        if ($this->status !== 'approved') {
+            throw ValidationException::withMessages([
+                'status' => 'Hanya stock adjustment yang sudah approved yang bisa di-rollback.',
+            ]);
+        }
+
+        $this->loadMissing(['items.masterProduct.productCategory', 'items.masterProduct.productType']);
+
+        // Validate every item first so nothing is changed when any check fails.
+        foreach ($this->items as $item) {
+            $this->validateRollbackForItem($item);
+        }
+
+        foreach ($this->items as $item) {
+            $warehouseProduct = WarehouseProduct::where('warehouse_id', $this->warehouse_id)
+                ->where('master_product_id', $item->master_product_id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($item->adjustment_type === 'increase') {
+                // Reverse the stock that approve() added.
+                $warehouseProduct?->decrement('quantity', $item->adjustment_qty);
+                $this->removeIncreaseSerialNumbersForItem($item);
+            } else {
+                // Reverse the stock that approve() removed and bring SN back.
+                $warehouseProduct?->increment('quantity', $item->adjustment_qty);
+                $this->restoreDecreaseSerialNumbersForItem($item, $userId);
+            }
+        }
+
+        // Remove the inventory movements this adjustment created.
+        InventoryMovement::where('reference_type', 'Stock Adjustment')
+            ->where('reference_no', $this->adjustment_no)
+            ->delete();
+
+        $this->update([
+            'status' => 'draft',
+            'approved_by' => null,
+            'approved_at' => null,
+            'updated_by' => $userId,
+        ]);
+    }
+
+    private function validateRollbackForItem(StockAdjustmentItem $item): void
+    {
+        $product = $item->masterProduct;
+        $serialNumbers = $this->normalizeSerialNumbers($item->serial_numbers ?? []);
+
+        if ($item->adjustment_type === 'increase') {
+            // Blocking stock < 0: the quantity added on approve must still be there.
+            $currentQty = (int) (WarehouseProduct::where('warehouse_id', $this->warehouse_id)
+                ->where('master_product_id', $item->master_product_id)
+                ->value('quantity') ?? 0);
+
+            if ($currentQty - (int) $item->adjustment_qty < 0) {
+                throw ValidationException::withMessages([
+                    'rollback' => "Tidak bisa rollback: stok {$product?->name} sudah terpakai sehingga rollback akan membuat stok minus.",
+                ]);
+            }
+
+            if (! $product?->requiresSerialNumber()) {
+                return;
+            }
+
+            // Every created SN must still be ready in this warehouse (not consumed).
+            $available = $this->createdIncreaseSerialNumbersQuery($item, $serialNumbers)
+                ->pluck('serial_number')
+                ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+                ->countBy();
+
+            $missing = collect($serialNumbers)
+                ->countBy()
+                ->filter(fn ($requestedCount, $serialNumber) => ($available[$serialNumber] ?? 0) < $requestedCount)
+                ->keys()
+                ->values();
+
+            if ($missing->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'rollback' => 'Tidak bisa rollback: serial number berikut sudah tidak ready di warehouse (kemungkinan sudah dipakai/dipindah): '.$missing->implode(', '),
+                ]);
+            }
+
+            return;
+        }
+
+        // Decrease: the retired serial numbers must still exist to be restored.
+        if (! $product?->requiresSerialNumber()) {
+            return;
+        }
+
+        $restorable = $this->retiredDecreaseSerialNumbersQuery($item, $serialNumbers)
+            ->pluck('serial_number')
+            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->countBy();
+
+        $missing = collect($serialNumbers)
+            ->countBy()
+            ->filter(fn ($requestedCount, $serialNumber) => ($restorable[$serialNumber] ?? 0) < $requestedCount)
+            ->keys()
+            ->values();
+
+        if ($missing->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'rollback' => 'Tidak bisa rollback: serial number berikut tidak ditemukan dalam kondisi retired untuk dikembalikan: '.$missing->implode(', '),
+            ]);
+        }
+    }
+
+    private function removeIncreaseSerialNumbersForItem(StockAdjustmentItem $item): void
+    {
+        if (! $item->masterProduct?->requiresSerialNumber()) {
+            return;
+        }
+
+        $serialNumbers = $this->normalizeSerialNumbers($item->serial_numbers ?? []);
+
+        collect($serialNumbers)
+            ->countBy()
+            ->each(function (int $count, string $requestedSerialNumber) use ($item) {
+                $this->createdIncreaseSerialNumbersQuery($item, [$requestedSerialNumber])
+                    ->lockForUpdate()
+                    ->orderByDesc('id')
+                    ->limit($count)
+                    ->get()
+                    ->each(fn (SerialNumber $serialNumber) => $serialNumber->delete());
+            });
+    }
+
+    private function restoreDecreaseSerialNumbersForItem(StockAdjustmentItem $item, int $userId): void
+    {
+        if (! $item->masterProduct?->requiresSerialNumber()) {
+            return;
+        }
+
+        $serialNumbers = $this->normalizeSerialNumbers($item->serial_numbers ?? []);
+
+        collect($serialNumbers)
+            ->countBy()
+            ->each(function (int $count, string $requestedSerialNumber) use ($item, $userId) {
+                $this->retiredDecreaseSerialNumbersQuery($item, [$requestedSerialNumber])
+                    ->lockForUpdate()
+                    ->orderBy('id')
+                    ->limit($count)
+                    ->get()
+                    ->each(function (SerialNumber $serialNumber) use ($userId) {
+                        $notes = trim(($serialNumber->notes ? $serialNumber->notes."\n" : '')
+                            ."Restored to warehouse via rollback of Stock Adjustment {$this->adjustment_no}.");
+
+                        $serialNumber->update([
+                            'status' => 'ready',
+                            'location_type' => 'warehouse',
+                            'location_id' => $this->warehouse_id,
+                            'notes' => $notes,
+                            'updated_by' => $userId,
+                        ]);
+                    });
+            });
+    }
+
+    private function createdIncreaseSerialNumbersQuery(StockAdjustmentItem $item, array $serialNumbers)
+    {
+        return SerialNumber::query()
+            ->where('warehouse_id', $this->warehouse_id)
+            ->where('master_product_id', $item->master_product_id)
+            ->whereIn('serial_number', $serialNumbers)
+            ->where('status', 'ready')
+            ->where(function ($query) {
+                $query->whereNull('location_type')
+                    ->orWhere('location_type', 'warehouse');
+            })
+            ->where('notes', 'like', "Created from Stock Adjustment {$this->adjustment_no}%")
+            ->whereDoesntHave('unitOnWalls', function ($query) {
+                $query->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall']);
+            });
+    }
+
+    private function retiredDecreaseSerialNumbersQuery(StockAdjustmentItem $item, array $serialNumbers)
+    {
+        return SerialNumber::query()
+            ->where('master_product_id', $item->master_product_id)
+            ->whereIn('serial_number', $serialNumbers)
+            ->where('status', 'retired')
+            ->where('notes', 'like', "%Adjusted out via Stock Adjustment {$this->adjustment_no}.%");
+    }
+
     // Auto-generate adjustment number
     public static function generateAdjustmentNo($warehouseId)
     {
