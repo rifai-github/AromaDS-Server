@@ -17,8 +17,8 @@ class BrandVariantController extends Controller
 
     public function index(Request $request)
     {
-        // Get Brand Lines options (Master Option ID 42)
-        $brandLinesOption = MasterOption::find(42);
+        // Get Brand Lines options
+        $brandLinesOption = MasterOption::where('name', 'Brand Lines')->first();
         $brandLines = $brandLinesOption ? $brandLinesOption->optionDetails : collect([]);
         
         $query = BrandVariant::with(['brandLine', 'createdBy', 'updatedBy']);

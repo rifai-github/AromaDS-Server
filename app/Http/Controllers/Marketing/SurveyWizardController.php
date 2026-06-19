@@ -2159,7 +2159,7 @@ class SurveyWizardController extends Controller
         $salutations = Cache::remember('survey-wizard:salutations', now()->addMinutes(10), function () {
             $salutationOption = MasterOption::with(['optionDetails' => function ($query) {
                 $query->where('is_active', true)->orderBy('option_name');
-            }])->find(13);
+            }])->where('name', 'Salutation')->first();
 
             return $salutationOption ? $salutationOption->optionDetails : collect();
         });
@@ -2176,15 +2176,16 @@ class SurveyWizardController extends Controller
         $addressTypes = Cache::remember('survey-wizard:address-types', now()->addMinutes(10), function () {
             $addressTypeOption = MasterOption::with(['optionDetails' => function ($query) {
                 $query->where('is_active', true)->orderBy('option_name');
-            }])->find(10);
+            }])->where('name', 'Address Type')->first();
 
             return $addressTypeOption ? $addressTypeOption->optionDetails : collect();
         });
 
+        // "Jenis Customer" field — uses the Customer Type master option.
         $companyOptions = Cache::remember('survey-wizard:company-options', now()->addMinutes(10), function () {
             $companyOption = MasterOption::with(['optionDetails' => function ($query) {
                 $query->where('is_active', true)->orderBy('option_name');
-            }])->find(14);
+            }])->where('name', 'Customer Type')->first();
 
             return $companyOption ? $companyOption->optionDetails : collect();
         });
