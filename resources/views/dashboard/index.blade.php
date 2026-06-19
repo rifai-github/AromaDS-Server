@@ -585,7 +585,7 @@
                     <div class="list-item">
                         <div class="list-icon green"><i class="fas fa-clipboard-list"></i></div>
                         <div class="list-content">
-                            <div class="list-title">{{ $survey->customer->customer_name ?? 'N/A' }}</div>
+                            <div class="list-title">{{ $survey->customer->name ?? 'N/A' }}</div>
                             <div class="list-subtitle">
                                 {{ $survey->survey_date ? \Carbon\Carbon::parse($survey->survey_date)->format('d/M/Y') : 'Not scheduled' }}
                                 · <span class="status-badge {{ $survey->status }}">{{ $survey->status }}</span>
@@ -647,7 +647,7 @@
                         <div class="list-content">
                             <div class="list-title">{{ $quotation->quotation_number ?? 'N/A' }}</div>
                             <div class="list-subtitle">
-                                {{ $quotation->customer->customer_name ?? 'N/A' }}
+                                {{ $quotation->customer->name ?? 'N/A' }}
                                 · <span class="status-badge {{ $quotation->status }}">{{ $quotation->status }}</span>
                             </div>
                         </div>
@@ -747,7 +747,7 @@
                         <div class="list-content">
                             <div class="list-title">{{ $contract->contract_number ?? 'N/A' }}</div>
                             <div class="list-subtitle">
-                                {{ $contract->customer->customer_name ?? 'N/A' }}
+                                {{ $contract->customer->name ?? 'N/A' }}
                                 · <span class="status-badge {{ $contract->status }}">{{ $contract->status }}</span>
                             </div>
                         </div>
@@ -775,7 +775,7 @@
                         <div class="list-content">
                             <div class="list-title">{{ $invoice->invoice_number ?? 'N/A' }}</div>
                             <div class="list-subtitle">
-                                {{ $invoice->customer->customer_name ?? 'N/A' }}
+                                {{ $invoice->customer->name ?? 'N/A' }}
                                 · {{ $invoice->created_at->format('d/M/Y') }}
                             </div>
                         </div>

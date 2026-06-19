@@ -102,7 +102,7 @@ class TaxFileExportController extends Controller
                     'id' => $invoice->id,
                     'invoice_number' => $invoice->invoice_number,
                     'invoice_date' => $invoice->invoice_date ?  $invoice->invoice_date->format('Y-m-d') : null,
-                    'customer_name' => $invoice->customer ? $invoice->customer->customer_name : null,
+                    'customer_name' => $invoice->customer ? $invoice->customer->name : null,
                     'formatted_total_amount' => $invoice->formatted_total_amount ?? null,
                 ];
             });

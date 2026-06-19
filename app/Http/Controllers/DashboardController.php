@@ -319,7 +319,7 @@ class DashboardController extends Controller
             $activities[] = [
                 'type' => 'survey',
                 'icon' => 'fas fa-clipboard-check',
-                'description' => "Survey for " . ($survey->customer->customer_name ?? 'N/A'),
+                'description' => "Survey for " . ($survey->customer->name ?? 'N/A'),
                 'status' => $survey->status,
                 'time_ago' => $survey->updated_at->diffForHumans(),
                 'color' => 'green',
@@ -337,7 +337,7 @@ class DashboardController extends Controller
             $activities[] = [
                 'type' => 'contract',
                 'icon' => 'fas fa-file-contract',
-                'description' => "Contract {$contract->contract_number} - " . ($contract->customer->customer_name ?? 'N/A'),
+                'description' => "Contract {$contract->contract_number} - " . ($contract->customer->name ?? 'N/A'),
                 'status' => $contract->status,
                 'time_ago' => $contract->updated_at->diffForHumans(),
                 'color' => 'purple',
