@@ -4412,7 +4412,7 @@ class JobController extends Controller
                             'unit_serial_number' => $jobReport->unit_serial_number ?: $scannedData->mac,
                             'device_snapshot' => $jobReport->device_snapshot ?: $scannedData->device_snapshot,
                             'device_online_status' => $jobReport->device_online_status ?: ($snapshot['online'] ?? null),
-                            'device_liquid_level' => $jobReport->device_liquid_level ?: ($snapshot['liquidLevel'] ?? null),
+                            'device_liquid_level' => $jobReport->device_liquid_level ?: $this->normalizeLiquidLevel($snapshot['liquidLevel'] ?? null),
                             'device_fan_level' => $jobReport->device_fan_level ?: ($snapshot['fanLevel'] ?? null),
                             'qr_scan_at' => $jobReport->qr_scan_at ?: $scannedData->scanned_at,
                         ]);
@@ -4760,6 +4760,34 @@ class JobController extends Controller
         if ($level == 2) return '>10%';
         if ($level == 3) return '<=10%';
         return $level . '%';
+    }
+
+    /**
+     * device_liquid_level is an int column storing the device-API code
+     * (0=No liquid, 1=>25%, 2=>10%, 3=<=10%). The mobile refill dialog
+     * instead stores category strings ('0', '<=10', '>10', '50', '100')
+     * in device_snapshot.liquidLevel. Map those back to the int code so
+     * they can be saved without a SQL type error; pass numeric values
+     * (and unrecognized strings) through intval().
+     */
+    private function normalizeLiquidLevel($level)
+    {
+        if ($level === null || $level === '') {
+            return null;
+        }
+        if (is_numeric($level)) {
+            return (int) $level;
+        }
+
+        $map = [
+            '0' => 0,
+            '<=10' => 3,
+            '>10' => 2,
+            '50' => 1,
+            '100' => 1,
+        ];
+
+        return $map[$level] ?? 0;
     }
     
     /**
