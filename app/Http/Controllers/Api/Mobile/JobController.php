@@ -4775,10 +4775,10 @@ class JobController extends Controller
         if ($level === null || $level === '') {
             return null;
         }
-        if (is_numeric($level)) {
-            return (int) $level;
-        }
 
+        // Mobile refill dialog category strings take precedence over a
+        // plain numeric cast, since '50'/'100' there mean ">25%" (code 1),
+        // not the literal numbers 50/100.
         $map = [
             '0' => 0,
             '<=10' => 3,
@@ -4786,8 +4786,15 @@ class JobController extends Controller
             '50' => 1,
             '100' => 1,
         ];
+        if (is_string($level) && array_key_exists($level, $map)) {
+            return $map[$level];
+        }
 
-        return $map[$level] ?? 0;
+        if (is_numeric($level)) {
+            return (int) $level;
+        }
+
+        return 0;
     }
     
     /**
