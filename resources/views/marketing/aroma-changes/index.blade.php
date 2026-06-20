@@ -1092,53 +1092,106 @@ function normalizeAromaName(value) {
     return (value || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// Grade order client-confirmed: Luxo (1, lowest) < Artisan (2) < Signature (3, highest).
+// Keep in sync with AromaChange::BRAND_LINE_GRADE on the backend.
+const BRAND_LINE_GRADE = { luxo: 1, artisan: 2, signature: 3 };
+
+function brandLineGrade(brandLine) {
+    const key = normalizeBrandLine(brandLine);
+    return BRAND_LINE_GRADE[key] ?? null;
+}
+
+let currentAromaGrade = null;
+
 function populateAromaOptions(products, currentBrandLine = '', currentAromaName = '', currentProductId = '') {
     const select = $('#aromaSelect');
     select.empty().append('<option value="">Select new aroma...</option>');
 
-    const normalizedCurrentBrandLine = normalizeBrandLine(currentBrandLine);
+    currentAromaGrade = brandLineGrade(currentBrandLine);
+
     const normalizedCurrentAromaName = normalizeAromaName(currentAromaName);
     const currentProductIdText = currentProductId ? currentProductId.toString() : '';
-    const filteredProducts = normalizedCurrentBrandLine
-        ? products.filter(product => normalizeBrandLine(product.brand_line) === normalizedCurrentBrandLine)
-        : products;
-    const availableProducts = filteredProducts.filter(product => {
+
+    // Show every grade (Luxo/Artisan/Signature), not just the current one — the technician
+    // can switch to any variant; the up/down-grade approval rule is enforced server-side.
+    const availableProducts = products.filter(product => {
         const sameProduct = currentProductIdText && product.id?.toString() === currentProductIdText;
         const sameAroma = normalizedCurrentAromaName && normalizeAromaName(product.display_name || product.name) === normalizedCurrentAromaName;
 
         return !sameProduct && !sameAroma;
     });
 
-    if (products.length > 0) {
-        availableProducts.forEach(product => {
-            const displayName = product.display_name || product.name;
-            const optionText = product.brand_line ? `${displayName} (${product.brand_line})` : displayName;
-
-            select.append($('<option>', {
-                value: product.id,
-                'data-name': displayName || '',
-                'data-product-name': product.product_name || product.name || '',
-                'data-sku': product.sku || '',
-                'data-variant': product.variant || '',
-                'data-brand-line': product.brand_line || '',
-                'data-display-name': displayName,
-                text: optionText
-            }));
-        });
-
-        if (filteredProducts.length === 0) {
-            select.append('<option value="">No aroma products found for this brand line</option>');
-        } else if (availableProducts.length === 0) {
-            select.append('<option value="">No other aroma products found for this brand line</option>');
-        }
-
+    if (products.length === 0) {
+        select.append('<option value="">No aroma products found</option>');
         initSelect2For(select);
         return;
     }
 
-    select.append('<option value="">No aroma products found</option>');
+    if (availableProducts.length === 0) {
+        select.append('<option value="">No other aroma products found</option>');
+        initSelect2For(select);
+        return;
+    }
+
+    const groups = {};
+    availableProducts.forEach(product => {
+        const groupLabel = product.brand_line || 'Other';
+        groups[groupLabel] = groups[groupLabel] || [];
+        groups[groupLabel].push(product);
+    });
+
+    Object.keys(groups)
+        .sort((a, b) => (brandLineGrade(a) ?? 99) - (brandLineGrade(b) ?? 99))
+        .forEach(groupLabel => {
+            const grade = brandLineGrade(groupLabel);
+            const gradeNote = currentAromaGrade && grade
+                ? (grade > currentAromaGrade ? ' ↑ perlu approval' : (grade < currentAromaGrade ? ' ↓ turun grade' : ''))
+                : '';
+            const optgroup = $('<optgroup>', { label: groupLabel + gradeNote });
+
+            groups[groupLabel].forEach(product => {
+                const displayName = product.display_name || product.name;
+
+                optgroup.append($('<option>', {
+                    value: product.id,
+                    'data-name': displayName || '',
+                    'data-product-name': product.product_name || product.name || '',
+                    'data-sku': product.sku || '',
+                    'data-variant': product.variant || '',
+                    'data-brand-line': product.brand_line || '',
+                    'data-brand-line-grade': grade ?? '',
+                    'data-display-name': displayName,
+                    text: displayName
+                }));
+            });
+
+            select.append(optgroup);
+        });
+
     initSelect2For(select);
 }
+
+// Show a warning when the selected new aroma is a higher grade than the current one,
+// mirroring the server-side rule: grade naik = perlu approval atasan, turun/sama = auto.
+$(document).on('change', '#aromaSelect', function() {
+    const selected = $(this).find('option:selected');
+    const newGrade = selected.data('brand-line-grade');
+    const warningId = 'aromaGradeWarning';
+    $('#' + warningId).remove();
+
+    if (!currentAromaGrade || !newGrade) {
+        return;
+    }
+
+    if (newGrade > currentAromaGrade) {
+        $('<div>', {
+            id: warningId,
+            class: 'text-muted',
+            style: 'color: #d97706; margin-top: 6px;',
+            html: '<i class="fas fa-exclamation-triangle"></i> Naik grade ke <strong>' + escapeHtml(selected.data('brand-line') || '') + '</strong> — request ini akan menunggu approval atasan sebelum diterapkan.'
+        }).insertAfter($(this).next('.select2-container'));
+    }
+});
 
 function populateContractOptions(contracts) {
     const select = $('#contractSelect');

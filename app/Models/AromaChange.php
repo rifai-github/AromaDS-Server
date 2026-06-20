@@ -72,6 +72,27 @@ class AromaChange extends Model
     const STATUS_COMPLETED = 'completed';
     const STATUS_CANCELLED = 'cancelled';
 
+    /**
+     * Grade order for brand line, client-confirmed: Luxo (1, lowest) < Artisan (2) < Signature (3, highest).
+     * Switching to an equal or lower grade is auto-approved; switching up requires manager approval.
+     */
+    const BRAND_LINE_GRADE = [
+        'luxo' => 1,
+        'artisan' => 2,
+        'signature' => 3,
+    ];
+
+    /**
+     * Resolve the numeric grade for a brand line name. Returns null when the brand line
+     * is unrecognized (unknown brand lines are treated as requiring approval, not auto-approved).
+     */
+    public static function brandLineGrade(?string $brandLine): ?int
+    {
+        $key = strtolower(trim((string) $brandLine));
+
+        return self::BRAND_LINE_GRADE[$key] ?? null;
+    }
+
     // Relationships
     public function contract()
     {

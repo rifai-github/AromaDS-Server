@@ -216,6 +216,7 @@ class AromaChangeController extends Controller
                     'variant' => $product->variant_name,
                     'variant_name' => $product->variant_name,
                     'brand_line' => $product->brand_line,
+                    'brand_line_grade' => AromaChange::brandLineGrade($product->brand_line),
                     'category' => $product->productCategory?->name,
                     'packaging_size' => $product->packagingSize?->name,
                     'display_name' => $displayName,
@@ -223,7 +224,7 @@ class AromaChangeController extends Controller
                     'product_type' => 'Aroma/Variant'
                 ];
             })
-            ->sortBy(fn ($product) => strtolower(($product['brand_line'] ?? '') . '|' . ($product['display_name'] ?? '')))
+            ->sortBy(fn ($product) => sprintf('%02d|%s', $product['brand_line_grade'] ?? 99, strtolower($product['display_name'] ?? '')))
             ->values();
 
         return response()->json($aromaProducts);
@@ -336,11 +337,7 @@ class AromaChangeController extends Controller
             // Temp disable FK checks to allow unit_id=0 if units table is empty
             DB::statement('SET FOREIGN_KEY_CHECKS=0;');
 
-            // MOM13: Check Brand Line for Auto-Approval
-            $isAutoApproved = false;
-            $approvalNotes = null;
-            
-            // Resolve Previous Master Product to check Brand Line
+            // Resolve Previous Master Product to check Brand Line / Grade
             if (!$previousMasterProduct && ($previousAromaCode || $previousAromaName)) {
                 // Try to find exact match
                 $query = MasterProduct::query();
@@ -354,20 +351,11 @@ class AromaChangeController extends Controller
                 $previousMasterProduct = $query->first();
             }
 
-            $this->ensureSameAromaBrandLine($previousMasterProduct, $masterProduct);
             $this->ensureDifferentAromaProduct($previousMasterProduct, $masterProduct);
-            
-            // Compare Brand Lines
-            if ($masterProduct && $previousMasterProduct) {
-                $newBrandLine = $masterProduct->brand_line;
-                $prevBrandLine = $previousMasterProduct->brand_line;
-                
-                if ($newBrandLine && $prevBrandLine && strtolower(trim($newBrandLine)) === strtolower(trim($prevBrandLine))) {
-                    $isAutoApproved = true;
-                    $approvalNotes = "Auto-approved: Same Brand Line ({$newBrandLine})";
-                    Log::info("Aroma Change Auto-Approved: Same Brand Line ({$newBrandLine})");
-                }
-            }
+
+            // Grade-based approval (client rule): grade turun atau sama = auto-approved,
+            // grade naik (Luxo -> Artisan/Signature, Artisan -> Signature) = perlu approval atasan.
+            [$initialStatus, $isAutoApproved, $approvalNotes] = $this->resolveGradeApprovalDecision($previousMasterProduct, $masterProduct);
 
             // Create aroma change record
             $aromaChange = AromaChange::create([
@@ -398,13 +386,14 @@ class AromaChangeController extends Controller
                 'change_description' => $request->change_description,
                 'change_notes' => $request->change_notes,
                 'effective_schedule_id' => $request->effective_schedule_id,
-                
-                // Status (Auto-Approve Logic)
-                'status' => $isAutoApproved ? AromaChange::STATUS_APPROVED : AromaChange::STATUS_DRAFT,
+
+                // Status (Grade-based Approval Logic)
+                'status' => $initialStatus,
                 'approval_notes' => $approvalNotes,
                 'approved_by' => $isAutoApproved ? Auth::id() : null,
                 'approved_at' => $isAutoApproved ? now() : null,
-                
+                'requested_at' => $initialStatus === AromaChange::STATUS_PENDING ? now() : null,
+
                 // User tracking
                 'requested_by' => Auth::id(),
                 'created_by' => Auth::id()
@@ -550,8 +539,9 @@ class AromaChangeController extends Controller
             $newProductCategoryId = $masterProduct ? $masterProduct->product_category_id : null;
 
             $previousMasterProduct = $this->resolvePreviousAromaProductForChange($aromaChange);
-            $this->ensureSameAromaBrandLine($previousMasterProduct, $masterProduct);
             $this->ensureDifferentAromaProduct($previousMasterProduct, $masterProduct);
+
+            [$initialStatus, $isAutoApproved, $approvalNotes] = $this->resolveGradeApprovalDecision($previousMasterProduct, $masterProduct);
 
             $aromaChange->update([
                 'new_aroma_code' => $masterProduct ? $this->aromaProductCode($masterProduct) : $request->new_aroma_code,
@@ -562,6 +552,11 @@ class AromaChangeController extends Controller
                 'change_reason' => $request->input('change_reason'),
                 'change_description' => $request->change_description,
                 'change_notes' => $request->change_notes,
+                'status' => $initialStatus,
+                'approval_notes' => $approvalNotes,
+                'approved_by' => $isAutoApproved ? Auth::id() : null,
+                'approved_at' => $isAutoApproved ? now() : null,
+                'requested_at' => $initialStatus === AromaChange::STATUS_PENDING ? now() : null,
                 'updated_by' => Auth::id()
             ]);
 
@@ -658,6 +653,13 @@ class AromaChangeController extends Controller
      */
     public function approve(Request $request, AromaChange $aromaChange)
     {
+        if (! Auth::user()->hasPermission('marketing.aroma-changes.approve') && ! Auth::user()->canApprove('aroma-changes')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Anda tidak memiliki izin untuk approve pergantian aroma ini.'
+            ], 403);
+        }
+
         // Only allow if status is pending
         if ($aromaChange->status !== AromaChange::STATUS_PENDING) {
             return response()->json([
@@ -1023,26 +1025,42 @@ class AromaChangeController extends Controller
         return $query->first();
     }
 
-    private function ensureSameAromaBrandLine(?MasterProduct $previousProduct, ?MasterProduct $newProduct): void
+    /**
+     * Grade-based approval decision (client rule, MOM):
+     * - Grade turun atau tetap (Signature->Artisan, Artisan->Luxo, sama grade) = auto-approved.
+     * - Grade naik (Luxo->Artisan, Luxo->Signature, Artisan->Signature) = perlu approval atasan (status pending).
+     * - Brand line lama/baru tidak dikenali = perlu approval (fail-safe, tidak auto-approve hal yang tidak pasti).
+     *
+     * @return array{0: string, 1: bool, 2: ?string} [status, isAutoApproved, approvalNotes]
+     */
+    private function resolveGradeApprovalDecision(?MasterProduct $previousProduct, ?MasterProduct $newProduct): array
     {
-        if (!$previousProduct || !$newProduct) {
-            throw new \InvalidArgumentException('Aroma lama atau aroma baru tidak valid. Pergantian aroma tidak bisa diproses.');
+        $previousGrade = AromaChange::brandLineGrade($previousProduct?->brand_line);
+        $newGrade = AromaChange::brandLineGrade($newProduct?->brand_line);
+
+        if ($previousGrade === null || $newGrade === null) {
+            return [
+                AromaChange::STATUS_PENDING,
+                false,
+                'Menunggu approval: brand line tidak dikenali (' . ($previousProduct?->brand_line ?: '-') . ' -> ' . ($newProduct?->brand_line ?: '-') . ')',
+            ];
         }
 
-        $previousBrandLine = $this->normalizeBrandLine($previousProduct->brand_line);
-        $newBrandLine = $this->normalizeBrandLine($newProduct->brand_line);
-
-        if (!$previousBrandLine || !$newBrandLine) {
-            throw new \InvalidArgumentException('Brand line aroma lama atau aroma baru belum lengkap. Pergantian aroma tidak bisa diproses.');
+        if ($newGrade > $previousGrade) {
+            return [
+                AromaChange::STATUS_PENDING,
+                false,
+                sprintf('Menunggu approval: naik grade dari %s ke %s', $previousProduct->brand_line, $newProduct->brand_line),
+            ];
         }
 
-        if ($previousBrandLine !== $newBrandLine) {
-            throw new \InvalidArgumentException(sprintf(
-                'Aroma tidak boleh pindah brand line dari %s ke %s.',
-                $previousProduct->brand_line ?: '-',
-                $newProduct->brand_line ?: '-'
-            ));
-        }
+        $approvalNotes = $newGrade < $previousGrade
+            ? sprintf('Auto-approved: turun grade dari %s ke %s', $previousProduct->brand_line, $newProduct->brand_line)
+            : sprintf('Auto-approved: grade sama (%s)', $newProduct->brand_line);
+
+        Log::info('Aroma Change Auto-Approved: ' . $approvalNotes);
+
+        return [AromaChange::STATUS_APPROVED, true, $approvalNotes];
     }
 
     private function ensureDifferentAromaProduct(?MasterProduct $previousProduct, ?MasterProduct $newProduct): void
