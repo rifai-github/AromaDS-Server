@@ -65,11 +65,17 @@
 
                 foreach ($unitsOnWall as $unit) {
                     // 1. Update Warehouse Product Stock
+                    $unitMasterProduct = MasterProduct::find($unit->product_id);
                     $warehouseProduct = WarehouseProduct::firstOrCreate(
                         ['warehouse_id' => $warehouse->id, 'master_product_id' => $unit->product_id],
-                        ['quantity' => 0, 'created_by' => auth()->id()]
+                        [
+                            'quantity' => 0,
+                            'minimum_stock' => $unitMasterProduct->minimum_stock ?? 0,
+                            'maximum_stock' => $unitMasterProduct->maximum_stock ?? 0,
+                            'created_by' => auth()->id(),
+                        ]
                     );
-                    
+
                     $warehouseProduct->increment('quantity', 1);
 
                     // 2. Create Inventory Movement

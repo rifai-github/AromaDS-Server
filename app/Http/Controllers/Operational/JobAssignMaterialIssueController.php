@@ -3674,8 +3674,8 @@ class JobAssignMaterialIssueController extends Controller
                         'warehouse_id' => $warehouse->id,
                         'master_product_id' => $product->id,
                         'quantity' => 0,
-                        'minimum_stock' => 0,
-                        'maximum_stock' => 1000,
+                        'minimum_stock' => $product->minimum_stock ?? 0,
+                        'maximum_stock' => $product->maximum_stock ?? 0,
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id(),
                     ]);
@@ -4011,12 +4011,13 @@ class JobAssignMaterialIssueController extends Controller
 
                 if (!$warehouseProduct) {
                     // Create new warehouse product record if not exists
+                    $masterProduct = \App\Models\MasterProduct::find($item->product_id);
                     $warehouseProduct = \App\Models\WarehouseProduct::create([
                         'warehouse_id' => $materialIssue->warehouse_id,
                         'master_product_id' => $item->product_id,
                         'quantity' => 0,
-                        'minimum_stock' => 0,
-                        'maximum_stock' => 1000, 
+                        'minimum_stock' => $masterProduct->minimum_stock ?? 0,
+                        'maximum_stock' => $masterProduct->maximum_stock ?? 0,
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id(),
                     ]);

@@ -540,6 +540,7 @@ class SerialNumberController extends Controller
             $deductedSourceStock = true;
         }
 
+        $masterProduct = MasterProduct::find($productId);
         $targetStock = WarehouseProduct::firstOrCreate(
             [
                 'warehouse_id' => $targetWarehouse->id,
@@ -547,8 +548,8 @@ class SerialNumberController extends Controller
             ],
             [
                 'quantity' => 0,
-                'minimum_stock' => 0,
-                'maximum_stock' => 0,
+                'minimum_stock' => $sourceStock->minimum_stock ?? $masterProduct->minimum_stock ?? 0,
+                'maximum_stock' => $sourceStock->maximum_stock ?? $masterProduct->maximum_stock ?? 0,
                 'created_by' => $actorId,
                 'updated_by' => $actorId,
             ]

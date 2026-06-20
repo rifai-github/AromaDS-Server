@@ -10,6 +10,7 @@ use App\Models\JobScheduleRoom;
 use App\Models\JobScheduleRoomAssignment;
 use App\Models\MaterialIssue;
 use App\Models\MaterialIssueItem;
+use App\Models\MasterProduct;
 use App\Models\SerialNumber;
 use App\Models\WarehouseProduct;
 use Illuminate\Support\Collection;
@@ -369,6 +370,7 @@ class InventoryIssuingService
                 continue;
             }
 
+            $rollbackMasterProduct = MasterProduct::find($movement->master_product_id);
             $warehouseProduct = WarehouseProduct::firstOrCreate(
                 [
                     'warehouse_id' => $movement->warehouse_id,
@@ -376,8 +378,8 @@ class InventoryIssuingService
                 ],
                 [
                     'quantity' => 0,
-                    'minimum_stock' => 0,
-                    'maximum_stock' => 1000,
+                    'minimum_stock' => $rollbackMasterProduct->minimum_stock ?? 0,
+                    'maximum_stock' => $rollbackMasterProduct->maximum_stock ?? 0,
                     'created_by' => Auth::id() ?? 1,
                     'updated_by' => Auth::id() ?? 1,
                 ]

@@ -548,6 +548,13 @@ class MasterProductController extends Controller
                 'updated_by' => Auth::id(),
             ]);
 
+            // Keep every warehouse's min/max stock in sync with the master product's standard.
+            $masterProduct->warehouseProducts()->update([
+                'minimum_stock' => $masterProduct->minimum_stock,
+                'maximum_stock' => $masterProduct->maximum_stock,
+                'updated_by' => Auth::id(),
+            ]);
+
             if ($request->hasFile('product_photo')) {
                 $file = $request->file('product_photo');
                 if ($masterProduct->product_photo && file_exists(public_path($masterProduct->product_photo))) {

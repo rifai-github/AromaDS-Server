@@ -97,12 +97,13 @@ class BackfillCatalystProductWarehouses extends Command
                 ->first();
 
             if (!$existing) {
+                $masterProduct = DB::table('master_products')->where('id', $masterProductId)->first();
                 DB::table('warehouse_products')->insert([
                     'warehouse_id' => $warehouseId,
                     'master_product_id' => $masterProductId,
                     'quantity' => 0,
-                    'minimum_stock' => 0,
-                    'maximum_stock' => 0,
+                    'minimum_stock' => $masterProduct->minimum_stock ?? 0,
+                    'maximum_stock' => $masterProduct->maximum_stock ?? 0,
                     'created_by' => auth()->id(),
                     'updated_by' => auth()->id(),
                     'created_at' => now(),

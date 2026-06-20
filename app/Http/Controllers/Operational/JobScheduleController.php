@@ -1447,10 +1447,13 @@ class JobScheduleController extends Controller
                 ->first();
                 
             if (!$whProduct) {
+                $masterProduct = \App\Models\MasterProduct::find($item->product_id);
                 $whProduct = \App\Models\WarehouseProduct::create([
                     'warehouse_id' => $materialIssue->warehouse_id,
                     'master_product_id' => $item->product_id,
                     'quantity' => 0,
+                    'minimum_stock' => $masterProduct->minimum_stock ?? 0,
+                    'maximum_stock' => $masterProduct->maximum_stock ?? 0,
                     'created_by' => Auth::id(),
                     'updated_by' => Auth::id()
                 ]);
@@ -5320,8 +5323,8 @@ class JobScheduleController extends Controller
                             'warehouse_id' => $warehouse->id,
                             'master_product_id' => $product->id,
                             'quantity' => 0,
-                            'minimum_stock' => 0,
-                            'maximum_stock' => 1000,
+                            'minimum_stock' => $product->minimum_stock ?? 0,
+                            'maximum_stock' => $product->maximum_stock ?? 0,
                             'created_by' => Auth::id(),
                             'updated_by' => Auth::id(),
                         ]);
@@ -10200,11 +10203,17 @@ class JobScheduleController extends Controller
 
                 foreach ($unitsOnWall as $unit) {
                     // 1. Update Warehouse Product Stock
+                    $unitMasterProduct = MasterProduct::find($unit->product_id);
                     $warehouseProduct = WarehouseProduct::firstOrCreate(
                         ['warehouse_id' => $warehouse->id, 'master_product_id' => $unit->product_id],
-                        ['quantity' => 0, 'created_by' => auth()->id()]
+                        [
+                            'quantity' => 0,
+                            'minimum_stock' => $unitMasterProduct->minimum_stock ?? 0,
+                            'maximum_stock' => $unitMasterProduct->maximum_stock ?? 0,
+                            'created_by' => auth()->id(),
+                        ]
                     );
-                    
+
                     $warehouseProduct->increment('quantity', 1);
 
                     // 2. Create Inventory Movement

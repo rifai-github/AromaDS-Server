@@ -199,8 +199,8 @@ class StockAdjustment extends Model
                 ],
                 [
                     'quantity' => 0,
-                    'minimum_stock' => 0,
-                    'maximum_stock' => 0,
+                    'minimum_stock' => $item->masterProduct->minimum_stock ?? 0,
+                    'maximum_stock' => $item->masterProduct->maximum_stock ?? 0,
                     'created_by' => $userId,
                 ]
             );

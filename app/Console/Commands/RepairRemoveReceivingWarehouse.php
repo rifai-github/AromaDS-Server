@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\InventoryMovement;
 use App\Models\InventoryReceiving;
+use App\Models\MasterProduct;
 use App\Models\SerialNumber;
 use App\Models\Warehouse;
 use App\Models\WarehouseProduct;
@@ -240,12 +241,13 @@ class RepairRemoveReceivingWarehouse extends Command
             ->lockForUpdate()
             ->firstOrFail();
 
+        $masterProduct = MasterProduct::find($productId);
         $targetStock = WarehouseProduct::firstOrCreate(
             ['warehouse_id' => $targetWarehouseId, 'master_product_id' => $productId],
             [
                 'quantity' => 0,
-                'minimum_stock' => 0,
-                'maximum_stock' => 0,
+                'minimum_stock' => $sourceStock->minimum_stock ?? $masterProduct->minimum_stock ?? 0,
+                'maximum_stock' => $sourceStock->maximum_stock ?? $masterProduct->maximum_stock ?? 0,
                 'created_by' => auth()->id(),
                 'updated_by' => auth()->id(),
             ]

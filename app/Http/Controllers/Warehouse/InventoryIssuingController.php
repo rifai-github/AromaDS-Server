@@ -1864,6 +1864,7 @@ public function getUserTeams($userId)
             // Stock is only posted once WI is Ready (processed). Pending WI edits only
             // change the preparation document; Ready WI edits must rebalance stock.
             if ($issuing->status === 'processed') {
+                $oldMasterProduct = \App\Models\MasterProduct::find($oldProductId);
                 $oldWarehouseStock = \App\Models\WarehouseProduct::firstOrCreate(
                     [
                         'warehouse_id' => $issuing->warehouse_id,
@@ -1871,6 +1872,8 @@ public function getUserTeams($userId)
                     ],
                     [
                         'quantity' => 0,
+                        'minimum_stock' => $oldMasterProduct->minimum_stock ?? 0,
+                        'maximum_stock' => $oldMasterProduct->maximum_stock ?? 0,
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id(),
                     ]

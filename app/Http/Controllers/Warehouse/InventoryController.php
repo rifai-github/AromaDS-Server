@@ -906,12 +906,13 @@ class InventoryController extends Controller
                 $toWarehouseProduct->save();
             } else {
                 // Create new warehouse product if doesn't exist
+                $masterProduct = MasterProduct::find($item->master_product_id);
                 WarehouseProduct::create([
                     'warehouse_id' => $transfer->to_warehouse_id,
                     'master_product_id' => $item->master_product_id,
                     'quantity' => $item->quantity,
-                    'minimum_stock' => 0,
-                    'maximum_stock' => 0,
+                    'minimum_stock' => $fromWarehouseProduct->minimum_stock ?? $masterProduct->minimum_stock ?? 0,
+                    'maximum_stock' => $fromWarehouseProduct->maximum_stock ?? $masterProduct->maximum_stock ?? 0,
                     'created_by' => Auth::id(),
                     'updated_by' => Auth::id()
                 ]);

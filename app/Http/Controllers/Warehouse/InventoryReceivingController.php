@@ -762,6 +762,7 @@ class InventoryReceivingController extends Controller
                 }
 
                 // Find or create warehouse_product record
+                $masterProduct = \App\Models\MasterProduct::find($item->master_product_id);
                 $warehouseProduct = \App\Models\WarehouseProduct::firstOrCreate(
                     [
                         'warehouse_id' => $warehouseId,
@@ -769,8 +770,8 @@ class InventoryReceivingController extends Controller
                     ],
                     [
                         'quantity' => 0,
-                        'minimum_stock' => 0,
-                        'maximum_stock' => 0,
+                        'minimum_stock' => $masterProduct->minimum_stock ?? 0,
+                        'maximum_stock' => $masterProduct->maximum_stock ?? 0,
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id(),
                     ]
@@ -973,6 +974,7 @@ class InventoryReceivingController extends Controller
                 }
 
                 // Find or create warehouse_product record
+                $masterProduct = \App\Models\MasterProduct::find($item->master_product_id);
                 $warehouseProduct = \App\Models\WarehouseProduct::firstOrCreate(
                     [
                         'warehouse_id' => $warehouse->id,
@@ -980,8 +982,8 @@ class InventoryReceivingController extends Controller
                     ],
                     [
                         'quantity' => 0,
-                        'minimum_stock' => 0,
-                        'maximum_stock' => 0,
+                        'minimum_stock' => $masterProduct->minimum_stock ?? 0,
+                        'maximum_stock' => $masterProduct->maximum_stock ?? 0,
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id(),
                     ]
