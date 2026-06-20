@@ -390,6 +390,35 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             ->all());
     }
 
+    public function test_quarterly_rental_generates_4_services_3_months_apart(): void
+    {
+        // Regression test: rental_service_frequencies.name is a free-text Indonesian
+        // label (e.g. "Freq 1x per 3 bulan"), not 'quarterly'/'monthly'/etc. A rental
+        // with frequency_months=3 over a 12-month contract must generate exactly 4
+        // services spaced 3 months apart - not 12 monthly ones.
+        $this->seedQuarterlyRentalFirstService();
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'generateAllRemainingServices');
+        $method->setAccessible(true);
+        $method->invoke(
+            new JobScheduleController(),
+            JobSchedule::findOrFail(40),
+            JobAdvice::findOrFail(5)
+        );
+
+        $services = JobSchedule::where('job_advice_id', 5)
+            ->whereIn('type', ['service', 'service_first', 'service_routine'])
+            ->orderBy('period')
+            ->get(['period', 'schedule_date']);
+
+        $this->assertSame([1, 2, 3, 4], $services->pluck('period')->map(fn ($p) => (int) $p)->values()->all());
+
+        $dates = $services->pluck('schedule_date')->map(fn ($d) => \Carbon\Carbon::parse($d));
+        $this->assertSame(3, (int) $dates[0]->diffInMonths($dates[1]));
+        $this->assertSame(3, (int) $dates[1]->diffInMonths($dates[2]));
+        $this->assertSame(3, (int) $dates[2]->diffInMonths($dates[3]));
+    }
+
     public function test_done_refill_routine_first_service_fans_out_remaining_services(): void
     {
         $this->seedRefillOnlyFirstService();
@@ -839,6 +868,110 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
         DB::table('job_schedule_room_rentals')->insert([
             'job_schedule_room_id' => 30,
             'job_advice_room_id' => 2,
+            'is_primary' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function seedQuarterlyRentalFirstService(): void
+    {
+        DB::table('contracts')->insert([
+            'id' => 5,
+            'contract_number' => 'SBY-CA/26-06/0099',
+            'start_date' => '2026-06-20',
+            'end_date' => '2027-06-19',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('buildings')->insert([
+            'id' => 5,
+            'building_name' => 'Gedung PB Games',
+            'name' => 'Gedung PB Games',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rooms')->insert([
+            'id' => 5,
+            'building_id' => 5,
+            'room_name' => 'Ruang Games',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contract_rooms')->insert(['id' => 5, 'contract_id' => 5, 'room_id' => 5, 'created_at' => now(), 'updated_at' => now()]);
+        // Real seed data uses an Indonesian free-text name, not a 'quarterly' keyword.
+        DB::table('rental_service_frequencies')->insert([
+            'id' => 5,
+            'name' => 'Freq 1x per 3 bulan',
+            'frequency_times_per_month' => 1,
+            'frequency_months' => 3,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rentals')->insert([
+            'id' => 5,
+            'rental_name' => 'Rental 1x svc per 3 bulan',
+            'rental_type' => 'unit_refill',
+            'service_frequency_id' => 5,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_advices')->insert([
+            'id' => 5,
+            'job_advice_number' => 'SBY-JA/26-06/0099',
+            'type' => 'install',
+            'company_name' => 'PB Games',
+            'contract_id' => 5,
+            'expected_date' => '2026-06-20',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_advice_rooms')->insert([
+            'id' => 5,
+            'job_advice_id' => 5,
+            'contract_room_id' => 5,
+            'rental_product_id' => 5,
+            'room_name' => 'Ruang Games',
+            'rental_name' => 'Rental 1x svc per 3 bulan',
+            'service_job_schedule_id' => 40,
+            'rental_has_service' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedules')->insert([
+            'id' => 40,
+            'job_number' => 'SBY-CSR/26-06/0099',
+            'type' => 'service_first',
+            'status' => 'done_job',
+            'job_advice_id' => 5,
+            'building_id' => 5,
+            'building_name' => 'Gedung PB Games',
+            'room_id' => 5,
+            'room_name' => 'Ruang Games',
+            'company_name' => 'PB Games',
+            'contract_number' => 'SBY-CA/26-06/0099',
+            'schedule_date' => '2026-06-20',
+            'expected_date' => '2026-06-20',
+            'ba_date' => '2026-06-20',
+            'period' => 1,
+            'service_frequency' => 1,
+            'service_period_type' => 'Freq 1x per 3 bulan',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 40,
+            'job_schedule_id' => 40,
+            'job_advice_room_id' => 5,
+            'room_name' => 'Ruang Games',
+            'room_id' => 5,
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_room_rentals')->insert([
+            'job_schedule_room_id' => 40,
+            'job_advice_room_id' => 5,
             'is_primary' => true,
             'created_at' => now(),
             'updated_at' => now(),

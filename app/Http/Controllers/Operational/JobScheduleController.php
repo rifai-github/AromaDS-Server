@@ -7947,12 +7947,16 @@ class JobScheduleController extends Controller
                 return;
             }
 
-            // Get service frequency info
+            // Get service frequency info. Read frequency_months / frequency_times_per_month
+            // directly from RentalServiceFrequency - do NOT re-derive from a string period
+            // type, since seeded frequency names (e.g. "Freq 1x per 3 bulan") never match the
+            // 'monthly'/'quarterly'/... keys below and silently fell back to monthly (bug: a
+            // 3-month rental generated 12 monthly services instead of 4 quarterly ones).
             $serviceFrequencyObj = $serviceRental?->serviceFrequency;
-            $serviceFrequency = $completedFirstService->service_frequency
-                ?? $serviceFrequencyObj?->frequency_times_per_month
-                ?? $serviceFrequencyObj?->frequency_months
-                ?? null;
+            $serviceFrequency = (int) ($serviceFrequencyObj?->frequency_times_per_month ?? 1);
+            $frequencyMonths = max(1, (int) ($serviceFrequencyObj?->frequency_months ?? 1));
+            // Informational only now (display/debugging) - scheduling math above uses
+            // $frequencyMonths/$serviceFrequency directly, not this string.
             $servicePeriodType = $completedFirstService->service_period_type
                 ?? $serviceFrequencyObj?->name
                 ?? 'monthly';
@@ -7977,15 +7981,6 @@ class JobScheduleController extends Controller
                 \Log::info("All {$totalServices} service periods already exist for service rental rows. Skipping.");
                 return;
             }
-            
-            $frequencyMonths = match($servicePeriodType) {
-                'monthly' => 1,
-                'bi_monthly' => 2,
-                'quarterly' => 3,
-                'semi_annually' => 6,
-                'annually' => 12,
-                default => 1
-            };
             
             // Base date is the first service date
             $baseDate = \Carbon\Carbon::parse($completedFirstService->schedule_date);
@@ -8371,13 +8366,20 @@ class JobScheduleController extends Controller
             return 0;
         }
 
-        $frequencyTimesPerMonth = (int) ($rental->serviceFrequency->frequency_times_per_month ?? 1);
-        $frequencyTimesPerMonth = max(1, $frequencyTimesPerMonth);
+        $frequencyTimesPerMonth = max(1, (int) ($rental->serviceFrequency->frequency_times_per_month ?? 1));
+        // Multi-month interval (e.g. "1x per 3 bulan" = frequency_months 3): a service
+        // happens every N months, not every month. Without dividing by this, a 12-month
+        // contract always produced 12 services regardless of the rental's interval (bug:
+        // quarterly/4-monthly rentals generated monthly services instead of 4x/3x a year).
+        $frequencyMonths = max(1, (int) ($rental->serviceFrequency->frequency_months ?? 1));
         $startDate = \Carbon\Carbon::parse($jobAdvice->contract->start_date);
         $endDate = \Carbon\Carbon::parse($jobAdvice->contract->end_date);
-        $rentalPeriodMonths = $startDate->diffInMonths($endDate) + 1;
+        // Cast to int: this Carbon version's diffInMonths() returns a fractional
+        // month count (e.g. 11.97 for a 1-day-short year), which would otherwise
+        // push ceil() to the wrong period count.
+        $rentalPeriodMonths = (int) $startDate->diffInMonths($endDate) + 1;
 
-        return $frequencyTimesPerMonth * $rentalPeriodMonths;
+        return $frequencyTimesPerMonth * (int) ceil($rentalPeriodMonths / $frequencyMonths);
     }
 
     private function calculateScheduleDateForPeriod($baseDate, int $period, $serviceFrequency): \Carbon\Carbon
