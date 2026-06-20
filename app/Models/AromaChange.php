@@ -337,16 +337,24 @@ class AromaChange extends Model
         ]);
         
         // Handle Scheduled Change (Advanced)
+        // NOTE: QuotationRoom is the source of truth for ALL future material generation
+        // (see JobAssignMaterialIssueController::aroma_product_id usage), so it must always
+        // be updated below regardless of the effective date. Only the *retroactive* sync of
+        // already-existing MaterialIssue/MaterialIssueItem rows is gated by the effective
+        // date below — we must not rewrite material already issued for periods before it.
+        $effectiveDate = null;
         if ($this->effective_schedule_id) {
             $schedule = \App\Models\JobSchedule::find($this->effective_schedule_id);
             if ($schedule) {
-                // Find all future schedules for this room starting from the effective date
+                $effectiveDate = $schedule->schedule_date;
+
+                // Find all schedules for this room from the effective date onwards
                 // Logic: Same Contract, Same Room, Date >= Effective Date
                 $futureSchedules = \App\Models\JobSchedule::whereHas('jobAdvice', function($q) {
                         $q->where('contract_id', $this->contract_id);
                     })
                     ->where('room_id', $this->room_id)
-                    ->whereDate('schedule_date', '>=', $schedule->schedule_date)
+                    ->whereDate('schedule_date', '>=', $effectiveDate)
                     ->whereIn('status', ['scheduled', 'new_job', 'assign_team', 'assign_material'])
                     ->get();
 
@@ -354,7 +362,7 @@ class AromaChange extends Model
                     // Update the JobSchedule remark or specific field with new aroma
                     // Since JobSchedule doesn't have aroma_id, we append to internal_notes or notes
                     $newNote = "[Aroma Change Applied] New Aroma: {$this->new_aroma_name} (Code: {$this->new_aroma_code})";
-                    
+
                     // If we want to be more robust, we would need a pivot table or dedicated field on JobSchedule.
                     // For now, appending to notes is the safest minimally invasive change.
                     $currentNotes = $jobSchedule->internal_notes ?? '';
@@ -363,38 +371,9 @@ class AromaChange extends Model
                             'internal_notes' => trim($currentNotes . "\n" . $newNote)
                         ]);
                     }
-                    
-                    // UPDATE: Also update job_materials if they are pre-assigned?
-                    // Complex. For now, we assume the technician reads the note or the Work Order changes.
                 }
-                
-                \Log::info("Scheduled Aroma Change applied to " . $futureSchedules->count() . " schedules starting " . $schedule->schedule_date);
-                
-                // We DO NOT update ContractRoom/QuotationRoom immediately if it's a future scheduled change.
-                // However, user expects "Effective From" to mean "From this date onwards".
-                // If effective date is TODAY or PAST, we should update ContractRoom.
-                // If effective date is FUTURE, should we leave ContractRoom as is?
-                // DECISION: If effective date is future, we ONLY update schedules.
-                // If effective date is <= Today, we update ContractRoom too.
-                
-                if ($schedule->schedule_date->gt(now())) {
-                    return; // Exit early, do not update ContractRoom yet
-                }
-            }
-        }
-        
-        // Update ContractRoom with new aroma (MOM6 Requirement)
-        if ($this->contract_room_id) {
-            $contractRoom = ContractRoom::find($this->contract_room_id);
-            if ($contractRoom) {
-                // Store old aroma in history before changing
-                $contractRoom->update([
-                    'aroma_code' => $this->new_aroma_code ?: $this->new_aroma_name,
-                    'aroma_name' => $this->new_aroma_name,
-                    // Add other aroma-related fields if exist
-                ]);
-                
-                \Log::info("ContractRoom aroma updated: Room ID {$contractRoom->id}, New Aroma: {$this->new_aroma_code}");
+
+                \Log::info("Scheduled Aroma Change applied to " . $futureSchedules->count() . " schedules starting " . $effectiveDate);
             }
         }
 
@@ -426,9 +405,16 @@ class AromaChange extends Model
             $newProdId = $resolvedNewProductId ?: $this->new_product_id ?: $this->new_product_type_id;
 
             if ($oldProdId && $newProdId && $oldProdId != $newProdId) {
-                // Find active MaterialIssues for this contract
+                // Find active MaterialIssues for this contract.
+                // If an effective date was set, only resync issues for job schedules on/after
+                // that date — material already issued for earlier periods must stay untouched.
                 $materialIssues = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule.jobSchedule.jobAdvice', function($q) {
                         $q->where('contract_id', $this->contract_id);
+                    })
+                    ->when($effectiveDate, function ($query) use ($effectiveDate) {
+                        $query->whereHas('jobAssignMaterialIssues.jobAssignSchedule.jobSchedule', function ($q) use ($effectiveDate) {
+                            $q->whereDate('schedule_date', '>=', $effectiveDate);
+                        });
                     })
                     ->whereIn('status', ['pending', 'approved', 'issued']) // Include 'issued' for visible sync
                     ->get();
