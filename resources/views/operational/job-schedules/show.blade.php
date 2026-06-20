@@ -615,16 +615,17 @@
                                 $isMaterialJob = !in_array(strtolower($jobSchedule->type), ['remove','remove_free','remove free'], true);
                                 $confirmMaterialAllowed = $isMaterialJob && $jobSchedule->status === 'barang_siap_diambil';
                                 $verifyMaterialAllowed = $isMaterialJob && in_array($jobSchedule->status, ['barang_dipersiapkan','barang_siap_diambil','assign_material'], true);
+                                $photoUploadAllowed = $canDoneFromStatus && $anyPendingRoom;
                             @endphp
                             {{-- Phase 3 web fallback: material confirm / verify --}}
                             @if($canUseWebFallbackActions && $confirmMaterialAllowed)
                             <button type="button" class="btn btn-outline-secondary btn-sm" onclick="webMaterialAction('confirm-materials','Konfirmasi material yang akan diambil teknisi?')" title="Konfirmasi Material dari web">
-                                <i class="fas fa-clipboard-check"></i> Konfirmasi Material
+                                <i class="fas fa-clipboard-check"></i> Lihat Barang & Konfirmasi
                             </button>
                             @endif
                             @if($canUseWebFallbackActions && $verifyMaterialAllowed)
                             <button type="button" class="btn btn-outline-dark btn-sm" onclick="webMaterialAction('verify-materials','Verifikasi pengambilan barang (Barang Diambil)?')" title="Verifikasi Ambil Barang dari web">
-                                <i class="fas fa-box-open"></i> Ambil Barang
+                                <i class="fas fa-box-open"></i> Lihat Barang & Ambil
                             </button>
                             @endif
                             {{-- Phase 2 web fallback: technician location lifecycle --}}
@@ -643,11 +644,16 @@
                                 <i class="fas fa-sign-out-alt"></i> Tinggalkan Lokasi
                             </button>
                             @endif
+                            @if($canUseWebFallbackActions && $photoUploadAllowed)
+                            <button type="button" class="btn btn-outline-light btn-sm" onclick="scrollToRoomCompletion()" title="Upload foto pengerjaan per ruangan">
+                                <i class="fas fa-camera"></i> Upload Foto
+                            </button>
+                            @endif
                             @if($canUseWebFallbackActions && !in_array($jobSchedule->status, ['completed', 'done_job', 'cancelled', 'suspend', 'dpf']))
                             <button type="button" id="headerDoneButton" class="btn btn-success btn-sm" data-can-done-from-status="{{ $canDoneFromStatus ? '1' : '0' }}" {{ $doneButtonDisabled ? 'disabled' : '' }}
                                 style="{{ $doneButtonDisabled ? 'background-color: #6c757d; border-color: #6c757d; cursor: not-allowed; opacity: 1;' : '' }}"
                                 title="{{ $doneButtonTitle }}" onclick="openDoneJobBaModal()">
-                                <i class="fas fa-check-circle"></i> Done Job
+                                <i class="fas fa-file-signature"></i> Konfirmasi Pekerjaan
                             </button>
                             @endif
                             @if($jobSchedule->status === 'done_job' || $jobSchedule->status === 'completed')
@@ -1118,8 +1124,8 @@
                                                     <button type="button" class="btn btn-xs badge badge-success ms-1 btn-complete-room border-0" 
                                                             onclick="completeRoomManual({{ $jobScheduleRoom->id }})"
                                                             style="cursor: pointer; font-size: 0.75rem; font-weight: 500; vertical-align: middle;"
-                                                            title="Selesaikan ruangan ini">
-                                                        <i class="fas fa-check"></i> Done
+                                                            title="Upload foto before/after lalu selesaikan ruangan ini">
+                                                        <i class="fas fa-camera"></i> Upload Foto & Done
                                                     </button>
                                                 @elseif($jobScheduleRoom->status !== 'completed' && $jobSchedule->id == ($roomJobSchedule->id ?? null))
                                                     <span class="badge badge-secondary ms-1" title="Room baru bisa di-Done setelah job masuk On Progress Teknisi">
@@ -1329,6 +1335,61 @@
                                     </tbody>
                                 </table>
                             </div>
+                            @if(($inventoryIssuings ?? collect())->isNotEmpty())
+                            <div class="px-3 pb-3">
+                                <h6 class="mt-3 mb-2" style="color:#1e3a8a;font-weight:700;">
+                                    <i class="fas fa-dolly me-1"></i>Inventory Issuing Detail
+                                </h6>
+                                <div class="table-responsive" style="overflow-x:auto; max-width:100%;">
+                                    <table class="table table-bordered table-sm mb-0" style="min-width: 1200px; white-space: nowrap;">
+                                        <thead>
+                                            <tr>
+                                                <th>Issuing No</th>
+                                                <th>Reference No</th>
+                                                <th>Issuing Status</th>
+                                                <th>Product Category</th>
+                                                <th>Product Name</th>
+                                                <th>Package Size</th>
+                                                <th class="text-end">Qty Requested</th>
+                                                <th class="text-end">Qty Issued</th>
+                                                <th class="text-end">Qty Received</th>
+                                                <th>Serial Number</th>
+                                                <th>Warehouse</th>
+                                                <th>Team</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach($inventoryIssuings as $issuing)
+                                                @forelse($issuing->items as $issuingItem)
+                                                <tr>
+                                                    <td>{{ $issuing->issuing_number ?? 'ISU-' . $issuing->id }}</td>
+                                                    <td>{{ $issuing->reference_no ?? '-' }}</td>
+                                                    <td>
+                                                        <span class="status-badge status-{{ $issuing->status }}">
+                                                            {{ ucfirst(str_replace('_', ' ', $issuing->status ?? '-')) }}
+                                                        </span>
+                                                    </td>
+                                                    <td>{{ $issuingItem->product?->productCategory?->name ?? '-' }}</td>
+                                                    <td>{{ $issuingItem->product?->name ?? '-' }}</td>
+                                                    <td>{{ $issuingItem->product?->packagingSize?->name ?? $issuingItem->product?->packaging_size ?? '-' }}</td>
+                                                    <td class="text-end">{{ $issuingItem->quantity_requested ?? 0 }}</td>
+                                                    <td class="text-end">{{ $issuingItem->quantity_issued ?? 0 }}</td>
+                                                    <td class="text-end">{{ $issuingItem->quantity_received ?? 0 }}</td>
+                                                    <td>{{ $issuingItem->serialNumber?->serial_number ?? '-' }}</td>
+                                                    <td>{{ $issuing->warehouse?->name ?? '-' }}</td>
+                                                    <td>{{ $issuing->team?->team_code ?? $issuing->team?->team_name ?? '-' }}</td>
+                                                </tr>
+                                                @empty
+                                                <tr>
+                                                    <td colspan="12" class="text-center text-muted">No inventory issuing items found.</td>
+                                                </tr>
+                                                @endforelse
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -2094,12 +2155,12 @@
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header" style="background:#1e3a8a;color:#fff;">
-                <h5 class="modal-title"><i class="fas fa-file-signature me-2"></i>Selesaikan Job — Berita Acara</h5>
+                <h5 class="modal-title"><i class="fas fa-file-signature me-2"></i>Konfirmasi Pekerjaan - PIC & TTD</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <p style="font-size:13px;color:#6b7280;">
-                    Gunakan form ini bila aplikasi teknisi tidak dapat dipakai. Pastikan semua ruangan sudah berstatus selesai (lengkap dengan foto before/after) sebelum membuat BA.
+                    Pastikan semua ruangan sudah selesai dengan foto before/after sebelum menyimpan PIC, tanda tangan, dan BA.
                 </p>
                 <form id="doneJobBaForm" enctype="multipart/form-data">
                     @csrf
@@ -2747,7 +2808,7 @@ function checkHeaderDoneButton() {
             });
             
             // Optional: If this view just finished all rooms, tell the user they can now click Done Job
-            toast('Info', 'Semua ruangan telah selesai. Silakan klik "Done Job" di header untuk menyelesaikan pekerjaan.', 'info');
+            toast('Info', 'Semua ruangan telah selesai. Silakan klik "Konfirmasi Pekerjaan" di header untuk menyimpan PIC, tanda tangan, dan BA.', 'info');
         }
     }
 }
@@ -2881,6 +2942,81 @@ function saveBaDateInline(dateStr) {
 
 <!-- Web fallback: Done Job with Berita Acara -->
 <script>
+const webIssuedMaterialRows = @json($webIssuedMaterialRows ?? []);
+
+function escapeHtml(value) {
+    return String(value ?? '-')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function renderIssuedMaterialsTable() {
+    if (!webIssuedMaterialRows.length) {
+        return `
+            <div class="alert alert-warning text-start mb-0">
+                <i class="fas fa-exclamation-triangle me-1"></i>
+                Detail barang issued belum tersedia untuk job ini.
+            </div>
+        `;
+    }
+
+    const rows = webIssuedMaterialRows.map((row) => `
+        <tr>
+            <td>${escapeHtml(row.issuing_number)}</td>
+            <td>${escapeHtml(row.issuing_status)}</td>
+            <td>${escapeHtml(row.product_category)}</td>
+            <td>${escapeHtml(row.product_name)}</td>
+            <td>${escapeHtml(row.package_size)}</td>
+            <td class="text-end">${escapeHtml(row.quantity_requested ?? 0)}</td>
+            <td class="text-end">${escapeHtml(row.quantity_issued ?? 0)}</td>
+            <td>${escapeHtml(row.serial_number)}</td>
+            <td>${escapeHtml(row.warehouse)}</td>
+            <td>${escapeHtml(row.team)}</td>
+        </tr>
+    `).join('');
+
+    return `
+        <div class="table-responsive" style="max-height: 360px; overflow:auto; text-align:left;">
+            <table class="table table-sm table-bordered align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Issuing No</th>
+                        <th>Status</th>
+                        <th>Category</th>
+                        <th>Product</th>
+                        <th>Package</th>
+                        <th class="text-end">Req</th>
+                        <th class="text-end">Issued</th>
+                        <th>SN</th>
+                        <th>Warehouse</th>
+                        <th>Team</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
+    `;
+}
+
+function scrollToRoomCompletion() {
+    const rentalTab = document.getElementById('rental-team-tab');
+    if (rentalTab && window.bootstrap) {
+        new bootstrap.Tab(rentalTab).show();
+    }
+
+    setTimeout(() => {
+        const target = document.querySelector('.btn-complete-room');
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            target.classList.add('btn-warning');
+            setTimeout(() => target.classList.remove('btn-warning'), 1600);
+        }
+    }, 250);
+}
+
 // Phase 2: technician location lifecycle actions from the dashboard
 function webLifecycleAction(action, confirmText) {
     const routes = {
@@ -2902,7 +3038,10 @@ function webLifecycleAction(action, confirmText) {
             method: 'POST',
             headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
             success: function(data) {
-                Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message, timer: 1500, showConfirmButton: false })
+                const html = action === 'start-work'
+                    ? `${escapeHtml(data.message)}<br><small>Upload foto pengerjaan tersedia pada tombol <b>Upload Foto & Done</b> di tiap ruangan.</small>`
+                    : escapeHtml(data.message);
+                Swal.fire({ icon: 'success', title: 'Berhasil', html, timer: 2200, showConfirmButton: false })
                     .then(() => window.location.reload());
             },
             error: function(xhr) {
@@ -2920,8 +3059,12 @@ function webMaterialAction(action, confirmText) {
         'verify-materials': `{{ route('operational.job-schedules.verify-materials', $jobSchedule->id) }}`,
     };
     Swal.fire({
-        title: 'Konfirmasi',
-        text: confirmText,
+        title: action === 'confirm-materials' ? 'Konfirmasi Barang' : 'Ambil Barang',
+        html: `
+            <p class="text-start" style="font-size:13px;color:#6b7280;">${escapeHtml(confirmText)}</p>
+            ${renderIssuedMaterialsTable()}
+        `,
+        width: 1100,
         icon: 'question',
         showCancelButton: true,
         confirmButtonText: 'Ya, lanjutkan',

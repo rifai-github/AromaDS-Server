@@ -2478,6 +2478,46 @@ class JobScheduleController extends Controller
         $materialIssueItems->each(function ($item) use ($materialCompletionService, $jobSchedule) {
             $item->effective_usage_status = $materialCompletionService->getEffectiveItemStatus($item, $jobSchedule);
         });
+
+        $materialIssueNumbers = $materialIssueItems
+            ->pluck('materialIssue.issue_number')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $inventoryIssuings = $materialIssueNumbers->isNotEmpty()
+            ? \App\Models\InventoryIssuing::whereIn('reference_no', $materialIssueNumbers->all())
+                ->with([
+                    'items.product.productCategory',
+                    'items.product.packagingSize',
+                    'items.serialNumber',
+                    'warehouse',
+                    'team',
+                ])
+                ->orderBy('id')
+                ->get()
+            : collect();
+
+        $webIssuedMaterialRows = $inventoryIssuings
+            ->flatMap(function ($issuing) {
+                return $issuing->items->map(function ($item) use ($issuing) {
+                    return [
+                        'issuing_number' => $issuing->issuing_number ?? ('ISU-' . $issuing->id),
+                        'reference_no' => $issuing->reference_no,
+                        'issuing_status' => $issuing->status,
+                        'product_category' => $item->product?->productCategory?->name,
+                        'product_name' => $item->product?->name,
+                        'package_size' => $item->product?->packagingSize?->name ?? $item->product?->packaging_size,
+                        'quantity_requested' => $item->quantity_requested,
+                        'quantity_issued' => $item->quantity_issued,
+                        'quantity_received' => $item->quantity_received,
+                        'serial_number' => $item->serialNumber?->serial_number,
+                        'warehouse' => $issuing->warehouse?->name,
+                        'team' => $issuing->team?->team_code ?? $issuing->team?->team_name,
+                    ];
+                });
+            })
+            ->values();
         
         // Get serial numbers for materials in this job schedule
         // For remove job: Get serial numbers from Unit On Wall (units to be removed)
@@ -2955,7 +2995,9 @@ class JobScheduleController extends Controller
             'hasActiveInvoice',
             'allJobReportsPerJS',
             'unitDetails',
-            'mobileSyncLogs'
+            'mobileSyncLogs',
+            'inventoryIssuings',
+            'webIssuedMaterialRows'
         ));
     }
 
