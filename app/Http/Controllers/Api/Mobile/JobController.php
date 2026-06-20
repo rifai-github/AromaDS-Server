@@ -2807,14 +2807,30 @@ class JobController extends Controller
             return false;
         }
 
+        // Unit replacement jobs have no consumable material to prepare either.
         $type = strtolower(trim(str_replace('-', '_', (string) ($job->type ?? ''))));
-        if (in_array($type, ['remove', 'remove_free', 'remove free', 'check', 'ganti_unit'], true)) {
+        if ($type === 'ganti_unit') {
             return true;
         }
 
-        $isPeriodOne = $job->period === null || (is_numeric($job->period) && (int) $job->period === 1);
+        // Remove/check jobs and unit-only periodic services never have material to
+        // prepare, so they may go straight to Assign Team / arrived-at-location.
+        // This mirrors JobScheduleController::jobScheduleSkipsMaterialAssignment()
+        // (the web-side Assign Team gate) via JobSchedule::canBypassMaterialAssignFlow(),
+        // so "what counts as a check job" stays defined in one place.
+        if ($job->canBypassMaterialAssignFlow()) {
+            return true;
+        }
 
-        return $this->isServiceLikeJob($job) && $isPeriodOne;
+        // Partial-completion follow-up jobs also bypass: they inherit a completed
+        // source job's material readiness and never get their own MaterialIssue.
+        // A brand-new service_first/service_routine job (period null/1) that never
+        // went through Material Assign must NOT bypass, or technicians can mark
+        // "arrived" on jobs with no job_number/team/material at all (see internal_notes
+        // tag set in findOrCreatePartialCompletionFollowUpJob()).
+        $isPartialCompletionFollowUp = str_starts_with((string) $job->internal_notes, 'Lanjutan dari Job ');
+
+        return $this->isServiceLikeJob($job) && $isPartialCompletionFollowUp;
     }
 
     private function materialPickupVerifiedForJob(JobSchedule $job): bool

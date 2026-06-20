@@ -137,6 +137,24 @@ class MobilePartialCompletionReturnTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('job_schedule_room_assignments', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_id')->nullable();
+            $table->foreignId('job_schedule_room_id')->nullable();
+            $table->foreignId('job_advice_room_id')->nullable();
+            $table->foreignId('team_id')->nullable();
+            $table->foreignId('job_assign_schedule_id')->nullable();
+            $table->boolean('is_custom')->default(false);
+            $table->foreignId('assigned_by')->nullable();
+            $table->date('assigned_date')->nullable();
+            $table->text('notes')->nullable();
+            $table->string('status')->default('assigned');
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('job_assign_schedules', function (Blueprint $table) {
             $table->id();
             $table->foreignId('job_schedule_id')->nullable();
@@ -402,6 +420,7 @@ class MobilePartialCompletionReturnTest extends TestCase
             'job_schedule_units',
             'job_reports',
             'job_schedule_room_rentals',
+            'job_schedule_room_assignments',
             'job_schedule_rooms',
             'job_schedules',
             'job_advice_rooms',
@@ -516,6 +535,74 @@ class MobilePartialCompletionReturnTest extends TestCase
         ]);
         $this->assertDatabaseMissing('job_team_locations', [
             'job_schedule_id' => 10,
+            'action' => 'arrived',
+        ]);
+    }
+
+    public function test_arrival_rejects_assigned_service_job_with_no_material_issue_created_yet(): void
+    {
+        $this->seedPartialCompletionScenario();
+
+        // Job has already been through "Assign Team" (so the technician's team has access),
+        // but "Material Assign" was never run for it: no job_number, no JobAssignMaterialIssue,
+        // no MaterialIssue at all. This must NOT be confused with a partial-completion follow-up
+        // job (which also has period null/1 and no material_checked, but is tagged via
+        // internal_notes) - a brand-new service job must still be blocked.
+        DB::table('job_schedules')->where('id', 10)->delete();
+        DB::table('job_assign_schedules')->where('id', 20)->delete();
+        DB::table('job_assign_material_issues')->where('id', 40)->delete();
+
+        DB::table('job_schedules')->insert([
+            'id' => 11,
+            'job_number' => null,
+            'type' => 'service_first',
+            'status' => 'assign_team',
+            'period' => 1,
+            'building_id' => 10,
+            'branch_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('teams')->insert([
+            'id' => 12,
+            'name' => 'Tim Surabaya',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_assign_schedules')->insert([
+            'id' => 21,
+            'job_schedule_id' => 11,
+            'team_id' => 12,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('team_members')->insert([
+            'team_id' => 12,
+            'user_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/api/v1/mobile/jobs/11/arrived-at-location', 'POST', [
+            'latitude' => -6.1910233,
+            'longitude' => 106.7625460,
+        ]);
+        $request->setUserResolver(fn () => User::find(1));
+
+        $response = app(JobController::class)->arrivedAtLocation($request, 11);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame('error', $payload['status']);
+        $this->assertStringContainsString('Material issue tidak ditemukan', $payload['message']);
+        $this->assertDatabaseHas('job_schedules', [
+            'id' => 11,
+            'status' => 'assign_team',
+            'job_number' => null,
+        ]);
+        $this->assertDatabaseMissing('job_team_locations', [
+            'job_schedule_id' => 11,
             'action' => 'arrived',
         ]);
     }

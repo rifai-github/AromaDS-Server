@@ -537,6 +537,29 @@ class JobSchedule extends Model
             && $this->hasOnlyRentalFlow(['unit_only']);
     }
 
+    /**
+     * Whether assign-team (web) / arrived-at-location (mobile) may bypass the
+     * material-assign flow for this job, regardless of `material_checked`.
+     *
+     * Unlike `skips_material_assignment` (UI display flag, requires material_checked
+     * to already be true), this is the gate used BEFORE material has ever been
+     * prepared: remove/check jobs and unit-only periodic services never have
+     * material to prepare in the first place, so they may go straight to
+     * Assign Team / arrived-at-location. Every other job (including a brand-new
+     * service_first/service_routine job) must go through Material Assign first.
+     */
+    public function canBypassMaterialAssignFlow(): bool
+    {
+        $type = strtolower(trim((string) ($this->type ?? '')));
+
+        if (in_array($type, ['remove', 'remove_free', 'remove free', 'removal', 'check'], true)) {
+            return true;
+        }
+
+        return in_array($type, ['service', 'service_first', 'service_routine'], true)
+            && $this->hasOnlyRentalFlow(['unit_only']);
+    }
+
     private function hasOnlyRentalFlow(array $allowedRentalTypes): bool
     {
         $rooms = $this->relationLoaded('jobScheduleRooms')
