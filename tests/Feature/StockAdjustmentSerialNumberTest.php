@@ -369,6 +369,58 @@ class StockAdjustmentSerialNumberTest extends TestCase
         $this->assertSame(0, InventoryMovement::where('reference_no', 'ADJ-RB-INC-001')->count());
     }
 
+    public function test_serial_number_can_be_reregistered_after_increase_rollback(): void
+    {
+        [$warehouse, $product] = $this->createWarehouseAndSerialProduct();
+
+        $adjustment = StockAdjustment::create([
+            'adjustment_no' => 'ADJ-RB-INC-002',
+            'warehouse_id' => $warehouse->id,
+            'reason' => 'increase to be rolled back then re-added',
+            'adjustment_date' => now()->toDateString(),
+            'status' => 'waiting for approval',
+        ]);
+
+        StockAdjustmentItem::create([
+            'stock_adjustment_id' => $adjustment->id,
+            'master_product_id' => $product->id,
+            'adjustment_qty' => 2,
+            'adjustment_type' => 'increase',
+            'serial_numbers' => ['W300-RR-001', 'W300-RR-002'],
+        ]);
+
+        $adjustment->approve(1);
+        $adjustment->fresh()->rollback(1);
+
+        // Serial numbers removed by rollback are soft-deleted, not hard-deleted.
+        $this->assertSame(0, SerialNumber::where('serial_number', 'W300-RR-001')->count());
+        $this->assertSame(1, SerialNumber::withTrashed()->where('serial_number', 'W300-RR-001')->count());
+
+        $secondAdjustment = StockAdjustment::create([
+            'adjustment_no' => 'ADJ-RB-INC-003',
+            'warehouse_id' => $warehouse->id,
+            'reason' => 're-add same serial numbers after rollback',
+            'adjustment_date' => now()->toDateString(),
+            'status' => 'draft',
+        ]);
+
+        $secondItem = StockAdjustmentItem::create([
+            'stock_adjustment_id' => $secondAdjustment->id,
+            'master_product_id' => $product->id,
+            'adjustment_qty' => 2,
+            'adjustment_type' => 'increase',
+            'serial_numbers' => ['W300-RR-001', 'W300-RR-002'],
+        ]);
+
+        // Must not throw: previously-registered-but-now-soft-deleted serial
+        // numbers are gone for good and should be re-registrable.
+        $secondAdjustment->approve(1);
+
+        $this->assertSame('approved', $secondAdjustment->fresh()->status);
+        $this->assertSame('ready', SerialNumber::where('serial_number', 'W300-RR-001')->value('status'));
+        $this->assertSame(2, SerialNumber::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->count());
+    }
+
     public function test_rollback_of_decrease_restores_serial_numbers_and_stock(): void
     {
         [$warehouse, $product] = $this->createWarehouseAndSerialProduct();

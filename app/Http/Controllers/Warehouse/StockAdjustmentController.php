@@ -510,8 +510,9 @@ class StockAdjustmentController extends Controller
 
                 if ($request->adjustment_type === 'increase') {
                     if ($product->requiresUniqueSerialNumber()) {
-                        $existing = SerialNumber::withTrashed()
-                            ->whereIn('serial_number', $serialNumbers)
+                        // Soft-deleted serial numbers (e.g. removed via adjustment rollback)
+                        // are gone for good and must be re-registrable.
+                        $existing = SerialNumber::whereIn('serial_number', $serialNumbers)
                             ->pluck('serial_number')
                             ->unique()
                             ->values();

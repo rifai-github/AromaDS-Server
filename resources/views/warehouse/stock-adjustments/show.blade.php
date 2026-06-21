@@ -353,7 +353,22 @@
                 </div>
                 <div id="item_serial_wrapper" class="mb-4" style="margin-bottom: 1rem; display:none;">
                     <label id="item_serial_label" class="block text-sm font-medium text-gray-700 mb-1" style="display: block; margin-bottom: 0.5rem;">Serial Numbers</label>
-                    <textarea id="item_serial_numbers" class="form-control" rows="4" style="width: 100%; padding: 0.5rem; display:none;" placeholder="Masukkan SN baru, 1 SN per baris"></textarea>
+                    <div id="item_serial_increase_group" style="display:none;">
+                        <div style="display:flex; gap: 0.5rem; align-items: flex-start;">
+                            <textarea id="item_serial_numbers" class="form-control" rows="4" style="flex: 1; padding: 0.5rem;" placeholder="Masukkan SN baru, 1 SN per baris"></textarea>
+                            <button type="button" class="btn btn-primary" onclick="toggleStockAdjustmentQRScanner()" id="stockAdjustmentScanBtn" style="border-radius: 8px; white-space: nowrap; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); border: none; padding: 0.5rem 0.75rem;">
+                                <i class="fas fa-camera me-1"></i>Scan
+                            </button>
+                        </div>
+                        <div id="stockAdjustmentQRReaderContainer" style="display:none; margin-top: 0.5rem;">
+                            <div id="stockAdjustmentQRReader" style="width: 100%; max-width: 400px; margin: 0 auto;"></div>
+                            <div class="text-center mt-2">
+                                <button type="button" class="btn btn-sm btn-secondary" onclick="stopStockAdjustmentQRScanner()">
+                                    <i class="fas fa-stop me-1"></i>Stop Camera
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                     <select id="item_decrease_serial_numbers" class="form-control" multiple size="7" style="width: 100%; padding: 0.5rem; display:none;"></select>
                     <small id="item_serial_help" class="text-muted d-block mt-1"></small>
                 </div>
@@ -393,6 +408,7 @@
 @endsection
 
 @push('scripts')
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
     const adjustmentId = {{ $adjustment->id }};
     const warehouseId = {{ $adjustment->warehouse_id }};
@@ -480,6 +496,7 @@
     }
 
     function closeAddItemModal() {
+        stopStockAdjustmentQRScanner();
         document.getElementById('addItemModal').style.display = 'none';
     }
 
@@ -537,6 +554,87 @@
             .filter(Boolean);
     }
 
+    let stockAdjustmentQRScanner = null;
+    let isStockAdjustmentScanning = false;
+
+    function toggleStockAdjustmentQRScanner() {
+        if (isStockAdjustmentScanning) {
+            stopStockAdjustmentQRScanner();
+        } else {
+            startStockAdjustmentQRScanner();
+        }
+    }
+
+    async function startStockAdjustmentQRScanner() {
+        const container = document.getElementById('stockAdjustmentQRReaderContainer');
+        const scanBtn = document.getElementById('stockAdjustmentScanBtn');
+        const textarea = document.getElementById('item_serial_numbers');
+
+        const isSecureContext = window.isSecureContext || window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        if (!isSecureContext) {
+            showErrorDialog('Kamera tidak dapat diakses', 'Akses kamera membutuhkan koneksi HTTPS atau localhost. Silakan input Serial Number secara manual.');
+            return;
+        }
+
+        try {
+            container.style.display = 'block';
+            scanBtn.innerHTML = '<i class="fas fa-stop me-1"></i>Stop';
+            isStockAdjustmentScanning = true;
+
+            if (stockAdjustmentQRScanner) {
+                try { await stockAdjustmentQRScanner.clear(); } catch (e) {}
+            }
+
+            stockAdjustmentQRScanner = new Html5Qrcode("stockAdjustmentQRReader");
+
+            await stockAdjustmentQRScanner.start(
+                { facingMode: "environment" },
+                {
+                    fps: 20,
+                    qrbox: (viewfinderWidth, viewfinderHeight) => {
+                        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                        const qrboxSize = Math.floor(minEdge * 0.7);
+                        return { width: qrboxSize, height: qrboxSize };
+                    }
+                },
+                (decodedText) => {
+                    const cleanedSN = decodedText.trim().toUpperCase();
+                    const existingLines = parseSerialNumbers(textarea.value);
+                    if (!existingLines.includes(cleanedSN)) {
+                        existingLines.push(cleanedSN);
+                        textarea.value = existingLines.join('\n');
+                    }
+                },
+                () => {
+                    // ignore per-frame scan errors, scanner keeps trying
+                }
+            );
+        } catch (err) {
+            console.error('Error starting QR scanner:', err);
+            showErrorDialog('Gagal membuka kamera', err.message || 'Pastikan browser mendukung akses kamera dan izin sudah diberikan. Anda tetap bisa input Serial Number secara manual.');
+            stopStockAdjustmentQRScanner();
+        }
+    }
+
+    async function stopStockAdjustmentQRScanner() {
+        const container = document.getElementById('stockAdjustmentQRReaderContainer');
+        const scanBtn = document.getElementById('stockAdjustmentScanBtn');
+
+        if (stockAdjustmentQRScanner && isStockAdjustmentScanning) {
+            try {
+                await stockAdjustmentQRScanner.stop();
+                await stockAdjustmentQRScanner.clear();
+            } catch (err) {
+                console.log('Error stopping scanner:', err);
+            }
+            stockAdjustmentQRScanner = null;
+        }
+
+        isStockAdjustmentScanning = false;
+        if (container) container.style.display = 'none';
+        if (scanBtn) scanBtn.innerHTML = '<i class="fas fa-camera me-1"></i>Scan';
+    }
+
     function getSelectedDecreaseSerialNumbers() {
         return Array.from(document.getElementById('item_decrease_serial_numbers').selectedOptions)
             .map(option => option.value);
@@ -547,15 +645,16 @@
         const type = document.getElementById('item_type').value;
         const qty = parseInt(document.getElementById('item_qty').value || '0', 10);
         const wrapper = document.getElementById('item_serial_wrapper');
-        const textarea = document.getElementById('item_serial_numbers');
+        const increaseGroup = document.getElementById('item_serial_increase_group');
         const select = document.getElementById('item_decrease_serial_numbers');
         const label = document.getElementById('item_serial_label');
         const help = document.getElementById('item_serial_help');
 
-        textarea.style.display = 'none';
+        increaseGroup.style.display = 'none';
         select.style.display = 'none';
         wrapper.style.display = 'none';
         help.textContent = '';
+        stopStockAdjustmentQRScanner();
 
         if (!product || !product.requires_serial_number) {
             return;
@@ -567,8 +666,8 @@
             : `Serial Numbers yang Dikeluarkan (${qty || 0} SN wajib)`;
 
         if (type === 'increase') {
-            textarea.style.display = 'block';
-            help.textContent = 'Untuk increase, masukkan SN unit tambahan yang belum pernah terdaftar. Pisahkan dengan baris baru, koma, atau spasi.';
+            increaseGroup.style.display = 'block';
+            help.textContent = 'Untuk increase, masukkan SN unit tambahan yang belum pernah terdaftar. Pisahkan dengan baris baru, koma, atau spasi, atau klik Scan untuk scan QR code.';
             return;
         }
 
