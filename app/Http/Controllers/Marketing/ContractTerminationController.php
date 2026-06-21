@@ -524,10 +524,18 @@ class ContractTerminationController extends Controller
                     $buildingId,
                     $contract->id
                 );
-                
+
+                // Link to the JobAdvice that originally installed this room so the
+                // job is visible in the mobile technician app, which requires
+                // jobAdvice to render customer/room data (see JobController::getTodayJobs).
+                $jobAdviceRoom = \App\Models\JobAdviceRoom::where('contract_room_id', $contractRoom->id)
+                    ->whereNull('deleted_at')
+                    ->latest('id')
+                    ->first();
+
                 // Create remove job schedule
-                JobSchedule::create([
-                    'job_advice_id' => null, // No job advice, auto-generated
+                $removeJob = JobSchedule::create([
+                    'job_advice_id' => $jobAdviceRoom->job_advice_id ?? null,
                     'building_id' => $buildingId,
                     'room_id' => $contractRoom->room_id,
                     'room_name' => $contractRoom->room_name ?? $contractRoom->room->room_name ?? null,
@@ -543,7 +551,11 @@ class ContractTerminationController extends Controller
                     'created_by' => Auth::id(),
                     'updated_by' => Auth::id(),
                 ]);
-                
+
+                if ($jobAdviceRoom) {
+                    $jobAdviceRoom->update(['remove_job_schedule_id' => $removeJob->id]);
+                }
+
                 $removeJobsCreated++;
             }
 
