@@ -182,6 +182,51 @@ class MobileJobListRoomAssignmentTest extends TestCase
         $this->assertTrue($job['material_checked']);
     }
 
+    public function test_mobile_job_list_keeps_plain_leave_location_job_visible(): void
+    {
+        DB::table('job_schedules')->insert([
+            'id' => 43,
+            'job_number' => 'BDG-CSR/26-06/0010',
+            'job_advice_id' => 30,
+            'type' => 'service',
+            'status' => 'meninggalkan_lokasi',
+            'room_name' => 'Ruang Melati',
+            'schedule_date' => '2026-06-10',
+            'material_checked' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 51,
+            'job_schedule_id' => 43,
+            'room_name' => 'Ruang Melati',
+            'room_id' => 500,
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 63,
+            'job_schedule_id' => 43,
+            'team_id' => 10,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/api/v1/mobile/jobs/today', 'GET');
+        $request->setUserResolver(fn () => User::find(1));
+        Cache::flush();
+
+        $response = app(JobController::class)->getTodayJobs($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertContains('BDG-CSR/26-06/0010', collect($payload['data'])->pluck('job_number')->all());
+    }
+
     public function test_mobile_remove_job_without_job_advice_rooms_gets_fallback_room_data(): void
     {
         DB::table('job_schedules')->insert([

@@ -2982,7 +2982,7 @@ class JobController extends Controller
         $partialRooms = $this->getPartialCompletionSourceRooms($job);
 
         if ($partialRooms->isEmpty()) {
-            return false;
+            return true;
         }
 
         foreach ($partialRooms as $room) {
