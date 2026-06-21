@@ -74,7 +74,7 @@ class AromaChange extends Model
 
     /**
      * Grade order for brand line, client-confirmed: Luxo (1, lowest) < Artisan (2) < Signature (3, highest).
-     * Switching to an equal or lower grade is auto-approved; switching up requires manager approval.
+     * Switching to an equal or higher grade is auto-approved; switching down requires manager approval.
      */
     const BRAND_LINE_GRADE = [
         'luxo' => 1,

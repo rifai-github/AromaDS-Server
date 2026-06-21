@@ -186,10 +186,6 @@ Route::post('/api/warehouse/inventory-receivings', [\App\Http\Controllers\Wareho
 Route::put('/api/warehouse/inventory-receivings/{id}', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'update'])->name('api.inventory-receivings.update');
 Route::post('/api/warehouse/inventory-receivings/bulk-delete', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'bulkDelete'])->name('api.inventory-receivings.bulk-delete');
 
-// Inventory Issuings API routes
-Route::get('/warehouse/inventory-issuings/get-replacement-candidates', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'getReplacementCandidates'])->name('warehouse.inventory-issuings.get-replacement-candidates');
-Route::post('/warehouse/inventory-issuings/items/{item}/change-aroma', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'changeAroma'])->name('warehouse.inventory-issuings.change-aroma');
-
 Route::get('/api/warehouse/inventory-issuings/modal-data', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'getModalData'])->name('api.inventory-issuings.modal-data');
 Route::get('/api/warehouse/inventory-issuings/{id}', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'show'])->name('api.inventory-issuings.show');
 Route::get('/api/warehouse/inventory-issuings/{id}/edit', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'edit'])->name('api.inventory-issuings.edit');
@@ -1097,6 +1093,12 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('inventory-issuings/{id}/finalize', [InventoryIssuingController::class, 'finalize'])->name('inventory-issuings.finalize')->middleware('permission:warehouse.inventory-issuings.update');
         Route::post('inventory-issuings/{id}/unpost', [InventoryIssuingController::class, 'unpost'])->name('inventory-issuings.unpost')->middleware('permission:warehouse.inventory-issuings.update');
         Route::post('inventory-issuings/{id}/scan-serial-number', [InventoryIssuingController::class, 'scanSerialNumber'])->name('inventory-issuings.scan-serial-number')->middleware('permission:warehouse.inventory-issuings.update');
+
+        // Change Aroma shortcut (Top Management only) — bypasses the Marketing > Aroma
+        // Switching approval workflow, so it's gated by a dedicated permission rather than
+        // the general inventory-issuings.update permission.
+        Route::get('inventory-issuings/get-replacement-candidates', [InventoryIssuingController::class, 'getReplacementCandidates'])->name('inventory-issuings.get-replacement-candidates');
+        Route::post('inventory-issuings/items/{item}/change-aroma', [InventoryIssuingController::class, 'changeAroma'])->name('inventory-issuings.change-aroma')->middleware('permission:warehouse.inventory-issuings.change-aroma-direct');
 
         // Manual Inventory Issuing API Routes
         Route::post('inventory-issuings/store-manual', [InventoryIssuingController::class, 'storeManual'])->name('inventory-issuings.store-manual');

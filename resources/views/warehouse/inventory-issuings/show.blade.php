@@ -440,7 +440,7 @@
                                             <td class="text-center">
                                                 @if($issuing->status === 'pending' || $issuing->status === 'draft')
                                                 <div class="btn-group">
-                                                    @if(optional($item->product->productCategory)->is_unit != true)
+                                                    @if(optional($item->product->productCategory)->is_unit != true && auth()->user()->hasPermission('warehouse.inventory-issuings.change-aroma-direct'))
                                                     <button class="btn btn-warning btn-sm" onclick="openChangeAromaModal({{ $item->id }}, '{{ $item->product->name }}', {{ $item->quantity_requested }}, {{ $item->product->packaging_size_id }}, '{{ $item->product->brand_line }}')" title="Change Aroma">
                                                         <i class="fas fa-exchange-alt"></i>
                                                     </button>

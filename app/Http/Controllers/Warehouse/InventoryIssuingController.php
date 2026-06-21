@@ -1526,36 +1526,30 @@ public function getUserTeams($userId)
             }
 
             $products = \App\Models\MasterProduct::where('is_active', true)
-                ->whereHas('productType', function($q) {
-                    $q->where('is_unit', false);
-                })
                 ->whereRaw('LOWER(TRIM(brand_line)) = ?', [$normalizedBrandLine])
-                ->with(['warehouseProducts' => function($q) use ($warehouseId) {
+                ->when($packagingSizeId, function ($query) use ($packagingSizeId) {
+                    $query->where('packaging_size_id', $packagingSizeId);
+                })
+                ->with(['productType', 'productCategory', 'warehouseProducts' => function($q) use ($warehouseId) {
                     $q->where('warehouse_id', $warehouseId);
                 }])
                 ->get()
-                ->map(function($product) use ($packagingSizeId) {
+                ->filter(function($product) {
+                    $isUnit = (bool) ($product->productCategory?->is_unit ?? $product->productType?->is_unit ?? false);
+
+                    return !$isUnit;
+                })
+                ->map(function($product) {
                     $quantity = $product->warehouseProducts->first()->quantity ?? 0;
-                    
-                    $isSelectable = true;
-                    $reasons = [];
-                    
-                    if ($quantity <= 0) {
-                        $isSelectable = false;
-                        $reasons[] = 'Stok Kosong';
-                    }
-                    
-                    if ($packagingSizeId && $product->packaging_size_id != $packagingSizeId) {
-                        $isSelectable = false;
-                        $reasons[] = 'Ukuran Berbeda';
-                    }
+
+                    $isSelectable = $quantity > 0;
 
                     return [
                         'id' => $product->id,
                         'name' => $product->name,
                         'stock' => $quantity,
                         'is_selectable' => $isSelectable,
-                        'reason' => !empty($reasons) ? implode(', ', $reasons) : null
+                        'reason' => $isSelectable ? null : 'Stok Kosong'
                     ];
                 });
 
@@ -1719,7 +1713,7 @@ public function getUserTeams($userId)
 
         DB::beginTransaction();
         try {
-            $item = \App\Models\InventoryIssuingItem::with('inventoryIssuing', 'product.productType')->findOrFail($itemId);
+            $item = \App\Models\InventoryIssuingItem::with('inventoryIssuing', 'product.productType', 'product.productCategory')->findOrFail($itemId);
             $issuing = $item->inventoryIssuing;
 
             // 1. Validation
@@ -1728,14 +1722,14 @@ public function getUserTeams($userId)
             }
 
             // Check if Item is a Unit (Machine) - Restriction
-            if ($item->product->productType && $item->product->productType->is_unit) {
+            if ($item->product->productCategory?->is_unit ?? $item->product->productType?->is_unit ?? false) {
                 throw new \Exception("Cannot change aroma for Unit items (Machines). This feature is for Aromas/Refills only.");
             }
 
-            $newProduct = MasterProduct::with('productType')->findOrFail($request->new_product_id);
-            
+            $newProduct = MasterProduct::with('productType', 'productCategory')->findOrFail($request->new_product_id);
+
             // Ensure New Product is also NOT a Unit
-            if ($newProduct->productType && $newProduct->productType->is_unit) {
+            if ($newProduct->productCategory?->is_unit ?? $newProduct->productType?->is_unit ?? false) {
                 throw new \Exception("Selected new product is a Unit. Please select an Aroma/Refill.");
             }
 

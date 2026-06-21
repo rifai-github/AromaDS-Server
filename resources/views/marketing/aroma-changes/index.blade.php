@@ -1113,7 +1113,7 @@ function populateAromaOptions(products, currentBrandLine = '', currentAromaName 
     const currentProductIdText = currentProductId ? currentProductId.toString() : '';
 
     // Show every grade (Luxo/Artisan/Signature), not just the current one — the technician
-    // can switch to any variant; the up/down-grade approval rule is enforced server-side.
+    // can switch to any variant; the down-grade approval rule is enforced server-side.
     const availableProducts = products.filter(product => {
         const sameProduct = currentProductIdText && product.id?.toString() === currentProductIdText;
         const sameAroma = normalizedCurrentAromaName && normalizeAromaName(product.display_name || product.name) === normalizedCurrentAromaName;
@@ -1145,7 +1145,7 @@ function populateAromaOptions(products, currentBrandLine = '', currentAromaName 
         .forEach(groupLabel => {
             const grade = brandLineGrade(groupLabel);
             const gradeNote = currentAromaGrade && grade
-                ? (grade > currentAromaGrade ? ' ↑ perlu approval' : (grade < currentAromaGrade ? ' ↓ turun grade' : ''))
+                ? (grade < currentAromaGrade ? ' ↓ perlu approval' : (grade > currentAromaGrade ? ' ↑ naik grade' : ''))
                 : '';
             const optgroup = $('<optgroup>', { label: groupLabel + gradeNote });
 
@@ -1171,8 +1171,8 @@ function populateAromaOptions(products, currentBrandLine = '', currentAromaName 
     initSelect2For(select);
 }
 
-// Show a warning when the selected new aroma is a higher grade than the current one,
-// mirroring the server-side rule: grade naik = perlu approval atasan, turun/sama = auto.
+// Show a warning when the selected new aroma is a lower grade than the current one,
+// mirroring the server-side rule: grade turun = perlu approval atasan, naik/sama = auto.
 $(document).on('change', '#aromaSelect', function() {
     const selected = $(this).find('option:selected');
     const newGrade = selected.data('brand-line-grade');
@@ -1183,12 +1183,12 @@ $(document).on('change', '#aromaSelect', function() {
         return;
     }
 
-    if (newGrade > currentAromaGrade) {
+    if (newGrade < currentAromaGrade) {
         $('<div>', {
             id: warningId,
             class: 'text-muted',
             style: 'color: #d97706; margin-top: 6px;',
-            html: '<i class="fas fa-exclamation-triangle"></i> Naik grade ke <strong>' + escapeHtml(selected.data('brand-line') || '') + '</strong> — request ini akan menunggu approval atasan sebelum diterapkan.'
+            html: '<i class="fas fa-exclamation-triangle"></i> Turun grade ke <strong>' + escapeHtml(selected.data('brand-line') || '') + '</strong> — request ini akan menunggu approval atasan sebelum diterapkan.'
         }).insertAfter($(this).next('.select2-container'));
     }
 });

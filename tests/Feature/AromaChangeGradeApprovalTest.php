@@ -65,40 +65,40 @@ class AromaChangeGradeApprovalTest extends TestCase
         $this->assertNull(AromaChange::brandLineGrade(null));
     }
 
-    public function test_upgrading_grade_requires_approval(): void
+    public function test_upgrading_grade_is_auto_approved(): void
     {
         // Luxo -> Artisan (up)
         [$status, $isAutoApproved] = $this->decide(1, 2);
-        $this->assertSame(AromaChange::STATUS_PENDING, $status);
-        $this->assertFalse($isAutoApproved);
+        $this->assertSame(AromaChange::STATUS_APPROVED, $status);
+        $this->assertTrue($isAutoApproved);
 
         // Artisan -> Signature (up)
         [$status, $isAutoApproved] = $this->decide(2, 3);
-        $this->assertSame(AromaChange::STATUS_PENDING, $status);
-        $this->assertFalse($isAutoApproved);
+        $this->assertSame(AromaChange::STATUS_APPROVED, $status);
+        $this->assertTrue($isAutoApproved);
 
         // Luxo -> Signature (up, skips a level)
         [$status, $isAutoApproved] = $this->decide(1, 3);
-        $this->assertSame(AromaChange::STATUS_PENDING, $status);
-        $this->assertFalse($isAutoApproved);
+        $this->assertSame(AromaChange::STATUS_APPROVED, $status);
+        $this->assertTrue($isAutoApproved);
     }
 
-    public function test_downgrading_grade_is_auto_approved(): void
+    public function test_downgrading_grade_requires_approval(): void
     {
         // Signature -> Artisan (down)
         [$status, $isAutoApproved] = $this->decide(3, 2);
-        $this->assertSame(AromaChange::STATUS_APPROVED, $status);
-        $this->assertTrue($isAutoApproved);
+        $this->assertSame(AromaChange::STATUS_PENDING, $status);
+        $this->assertFalse($isAutoApproved);
 
         // Artisan -> Luxo (down)
         [$status, $isAutoApproved] = $this->decide(2, 1);
-        $this->assertSame(AromaChange::STATUS_APPROVED, $status);
-        $this->assertTrue($isAutoApproved);
+        $this->assertSame(AromaChange::STATUS_PENDING, $status);
+        $this->assertFalse($isAutoApproved);
 
         // Signature -> Luxo (down, skips a level)
         [$status, $isAutoApproved] = $this->decide(3, 1);
-        $this->assertSame(AromaChange::STATUS_APPROVED, $status);
-        $this->assertTrue($isAutoApproved);
+        $this->assertSame(AromaChange::STATUS_PENDING, $status);
+        $this->assertFalse($isAutoApproved);
     }
 
     public function test_same_grade_switch_is_auto_approved(): void

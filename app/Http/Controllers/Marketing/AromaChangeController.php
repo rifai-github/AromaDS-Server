@@ -1046,16 +1046,16 @@ class AromaChangeController extends Controller
             ];
         }
 
-        if ($newGrade > $previousGrade) {
+        if ($newGrade < $previousGrade) {
             return [
                 AromaChange::STATUS_PENDING,
                 false,
-                sprintf('Menunggu approval: naik grade dari %s ke %s', $previousProduct->brand_line, $newProduct->brand_line),
+                sprintf('Menunggu approval: turun grade dari %s ke %s', $previousProduct->brand_line, $newProduct->brand_line),
             ];
         }
 
-        $approvalNotes = $newGrade < $previousGrade
-            ? sprintf('Auto-approved: turun grade dari %s ke %s', $previousProduct->brand_line, $newProduct->brand_line)
+        $approvalNotes = $newGrade > $previousGrade
+            ? sprintf('Auto-approved: naik grade dari %s ke %s', $previousProduct->brand_line, $newProduct->brand_line)
             : sprintf('Auto-approved: grade sama (%s)', $newProduct->brand_line);
 
         Log::info('Aroma Change Auto-Approved: ' . $approvalNotes);
