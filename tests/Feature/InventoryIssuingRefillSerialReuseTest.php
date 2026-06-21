@@ -108,6 +108,7 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
             $table->string('location_type')->nullable();
             $table->foreignId('location_id')->nullable();
             $table->foreignId('updated_by')->nullable();
+            $table->text('notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -540,6 +541,95 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
                 'location_id' => 77,
             ]);
         }
+    }
+
+    public function test_single_quantity_refill_item_moves_its_own_linked_serial_when_reissued_across_followup_jobs(): void
+    {
+        $this->seedProduct(12, 102, 'All Purpose Cleaner 100 ml', hasSerialNumber: false, isUnit: false);
+        $this->actingAs(User::findOrFail(1));
+
+        // The same physical unit (id 502) gets carried through an incomplete job's
+        // follow-ups (0005 -> 0006 -> 0004), re-linked via serial_number_id each time.
+        // Unrelated ready stock of the same serial-number string sits alongside it.
+        DB::table('serial_numbers')->insert([
+            ['id' => 501, 'serial_number' => 'CLN1000002', 'master_product_id' => 102, 'warehouse_id' => 1, 'status' => 'in_use', 'location_type' => 'customer', 'location_id' => 50, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 502, 'serial_number' => 'CLN1000002', 'master_product_id' => 102, 'warehouse_id' => 1, 'status' => 'ready', 'location_type' => 'warehouse', 'location_id' => null, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 503, 'serial_number' => 'CLN1000002', 'master_product_id' => 102, 'warehouse_id' => 1, 'status' => 'in_use', 'location_type' => 'customer', 'location_id' => 51, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 504, 'serial_number' => 'CLN1000002', 'master_product_id' => 102, 'warehouse_id' => 1, 'status' => 'on_hand', 'location_type' => 'technician', 'location_id' => 1, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('inventory_issuings')->insert([
+            ['id' => 1, 'issuing_number' => 'SBY-MI/26-06/0045', 'warehouse_id' => 1, 'received_by' => 1, 'status' => 'sent', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 2, 'issuing_number' => 'SBY-MI/26-06/0047', 'warehouse_id' => 1, 'received_by' => 1, 'status' => 'sent', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 3, 'issuing_number' => 'SBY-MI/26-06/0048', 'warehouse_id' => 1, 'received_by' => 1, 'status' => 'sent', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        // Three issuing items for the same job_assign chain, all explicitly linked to SN 502,
+        // each issuing exactly 1 unit (the common, unambiguous case).
+        DB::table('inventory_issuing_items')->insert([
+            ['id' => 100, 'inventory_issuing_id' => 1, 'product_id' => 102, 'serial_number_id' => 502, 'quantity_requested' => 1, 'quantity_issued' => 1, 'quantity_received' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 200, 'inventory_issuing_id' => 2, 'product_id' => 102, 'serial_number_id' => 502, 'quantity_requested' => 1, 'quantity_issued' => 1, 'quantity_received' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 300, 'inventory_issuing_id' => 3, 'product_id' => 102, 'serial_number_id' => 502, 'quantity_requested' => 1, 'quantity_issued' => 1, 'quantity_received' => 1, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $updated = app(InventoryIssuingService::class)->moveSerialNumbersToCustomerForItems(
+            InventoryIssuingItem::where('id', 300)->get(),
+            77,
+            1
+        );
+
+        $this->assertSame(1, $updated);
+
+        $this->assertDatabaseHas('serial_numbers', [
+            'id' => 502,
+            'status' => 'in_use',
+            'location_type' => 'customer',
+            'location_id' => 77,
+        ]);
+
+        // Unrelated same-serial-string rows must stay untouched.
+        $this->assertDatabaseHas('serial_numbers', ['id' => 501, 'location_id' => 50]);
+        $this->assertDatabaseHas('serial_numbers', ['id' => 503, 'location_id' => 51]);
+        $this->assertDatabaseHas('serial_numbers', ['id' => 504, 'status' => 'on_hand']);
+    }
+
+    public function test_reissuing_serial_to_a_new_job_appends_a_note_instead_of_replacing_history(): void
+    {
+        $this->seedProduct(12, 102, 'All Purpose Cleaner 100 ml', hasSerialNumber: false, isUnit: false);
+        $this->actingAs(User::findOrFail(1));
+
+        DB::table('serial_numbers')->insert([
+            'id' => 502,
+            'serial_number' => 'CLN1000002',
+            'master_product_id' => 102,
+            'warehouse_id' => 1,
+            'status' => 'ready',
+            'location_type' => 'warehouse',
+            'notes' => 'Queued to RR SBY-IRC/26-06/0012 from incomplete Job SBY-CSR/26-07/0005.',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_issuings')->insert([
+            'id' => 1, 'issuing_number' => 'SBY-MI/26-06/0048', 'warehouse_id' => 1, 'received_by' => 1, 'status' => 'sent', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_issuing_items')->insert([
+            'id' => 100, 'inventory_issuing_id' => 1, 'product_id' => 102, 'serial_number_id' => 502,
+            'quantity_requested' => 1, 'quantity_issued' => 1, 'quantity_received' => 1, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        app(InventoryIssuingService::class)->moveSerialNumbersToCustomerForItems(
+            InventoryIssuingItem::where('id', 100)->get(),
+            77,
+            1,
+            'SBY-CSR/26-08/0004'
+        );
+
+        $serialNumber = DB::table('serial_numbers')->find(502);
+
+        $this->assertStringContainsString('Queued to RR SBY-IRC/26-06/0012 from incomplete Job SBY-CSR/26-07/0005.', $serialNumber->notes);
+        $this->assertStringContainsString('Reissued to Job SBY-CSR/26-08/0004 on', $serialNumber->notes);
     }
 
     public function test_available_serial_list_keeps_reused_refill_serials_but_excludes_reused_unit_serials(): void

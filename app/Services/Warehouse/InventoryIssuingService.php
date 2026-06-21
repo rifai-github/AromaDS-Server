@@ -190,7 +190,7 @@ class InventoryIssuingService
         ]);
     }
 
-    public function moveSerialNumbersToCustomerForItems(Collection $items, ?int $customerId, ?int $actorId = null): int
+    public function moveSerialNumbersToCustomerForItems(Collection $items, ?int $customerId, ?int $actorId = null, ?string $reissuedToJobNumber = null): int
     {
         $items->load(['product.productCategory', 'product.productType', 'serialNumber']);
 
@@ -203,6 +203,10 @@ class InventoryIssuingService
             return 0;
         }
 
+        if ($reissuedToJobNumber) {
+            $this->appendReissueNote($serialNumberIds, $reissuedToJobNumber);
+        }
+
         return SerialNumber::whereIn('id', $serialNumberIds)
             ->whereIn('status', ['on_hand', 'ready', 'available', 'in_use'])
             ->update([
@@ -212,6 +216,25 @@ class InventoryIssuingService
                 'updated_by' => $actorId ?? Auth::id(),
                 'updated_at' => now(),
             ]);
+    }
+
+    private function appendReissueNote(array $serialNumberIds, string $jobNumber): void
+    {
+        $reissueNote = "Reissued to Job {$jobNumber} on " . now()->toDateString() . '.';
+
+        SerialNumber::whereIn('id', $serialNumberIds)
+            ->whereIn('status', ['on_hand', 'ready', 'available', 'in_use'])
+            ->get(['id', 'notes'])
+            ->each(function (SerialNumber $serialNumber) use ($reissueNote) {
+                $existingNotes = trim((string) ($serialNumber->notes ?? ''));
+
+                if (str_ends_with($existingNotes, $reissueNote)) {
+                    return;
+                }
+
+                $serialNumber->notes = $existingNotes === '' ? $reissueNote : "{$existingNotes}\n{$reissueNote}";
+                $serialNumber->save();
+            });
     }
 
     private function resolveSerialNumberIdsForItems(Collection $items, array $allowedStatuses): array
@@ -226,7 +249,7 @@ class InventoryIssuingService
             $quantity = $this->resolveSerialQuantity($item);
             $isUniqueSerial = $item->product?->requiresUniqueSerialNumber() ?? true;
 
-            if ($isUniqueSerial) {
+            if ($isUniqueSerial || $quantity <= 1) {
                 $resolvedIds[] = (int) $item->serial_number_id;
 
                 continue;

@@ -232,7 +232,8 @@ class JobMaterialCompletionService
         app(InventoryIssuingService::class)->moveSerialNumbersToCustomerForItems(
             $items,
             $jobSchedule->jobAdvice?->customer_id,
-            Auth::id()
+            Auth::id(),
+            $jobSchedule->job_number
         );
     }
 }
