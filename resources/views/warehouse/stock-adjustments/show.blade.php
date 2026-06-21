@@ -318,8 +318,8 @@
 </div>
 
 <!-- Add Item Modal -->
-<div id="addItemModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" style="display: none;">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden" style="max-width: 500px; margin: 100px auto;">
+<div id="addItemModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" style="display: none; overflow-y: auto;">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4" style="max-width: 500px; margin: 60px auto; max-height: calc(100vh - 120px); overflow-y: auto;">
         <div class="bg-blue-900 text-white p-4 flex justify-between items-center" style="background-color: #1e3a8a; padding: 1rem;">
             <h3 class="text-lg font-semibold m-0" style="color: white;">Add Product to Adjustment</h3>
             <button onclick="closeAddItemModal()" class="text-white hover:text-gray-200" style="background: none; border: none; color: white;">
