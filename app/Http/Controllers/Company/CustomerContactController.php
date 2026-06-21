@@ -500,7 +500,13 @@ class CustomerContactController extends Controller
     }
 
     /**
-     * Get customer contacts by customer ID (path parameter)
+     * Get customer contacts by customer ID (path parameter).
+     *
+     * Used by the Job Advice PIC dropdown. Deliberately not access-control filtered:
+     * a customer's PIC contacts belong to the customer, not to whichever staff member
+     * happened to create the record, so anyone handling that customer's contract must
+     * be able to see them (e.g. a "none"/strict access user would otherwise see an
+     * empty PIC list for a customer they legitimately work with).
      */
     public function getByCustomerId($customerId)
     {
@@ -510,11 +516,8 @@ class CustomerContactController extends Controller
 
         $contacts = CustomerContact::where('customer_id', $customerId)
             ->where('is_active', true)
-            ->orderBy('name');
-
-        $this->applyCustomerContactAccessFilter($contacts);
-
-        $contacts = $contacts->get(['id', 'name', 'position', 'email', 'phone']);
+            ->orderBy('name')
+            ->get(['id', 'name', 'position', 'email', 'phone']);
 
         return response()->json($contacts);
     }
