@@ -229,9 +229,14 @@ class JobWebCompletionService
     // ----- Phase 3: material confirm / verify, scanned-unit aroma schedule -----
 
     /**
-     * Confirm materials from the web. Mirrors mobile confirmMaterials()
-     * (JobController:1340): flags material_checked and auto-finalizes the
-     * related Inventory Issuings. Only valid from 'barang_siap_diambil'.
+     * Confirm materials from the web: flags material_checked only. This is the
+     * gudang/operator "I see the materials are ready" acknowledgement and is
+     * intentionally a no-op on the Inventory Issuing and job status — it must
+     * NOT finalize the issuing or advance the job to 'barang_diambil'. That
+     * transition (and recording who physically received the goods) belongs
+     * exclusively to verifyMaterials() ("Ambil Barang"), so the two actions
+     * stop being redundant and the issuing's "Diberikan kepada" stays accurate.
+     * Only valid from 'barang_siap_diambil'.
      *
      * @return array{ok:bool, code:int, message:string}
      */
@@ -250,30 +255,7 @@ class JobWebCompletionService
         $job->updated_by = $userId;
         $job->save();
 
-        // Auto-finalize related Inventory Issuings (mirror confirmMaterials:1372-1395).
-        try {
-            $materialIssueItems = \App\Models\MaterialIssueItem::whereHas('materialIssue.jobAssignMaterialIssues.jobAssignSchedule', function ($q) use ($job) {
-                $q->where('job_schedule_id', $job->id);
-            })->with('materialIssue')->get();
-
-            $issueNumbers = $materialIssueItems->map(fn ($item) => $item->materialIssue?->issue_number)->unique()->filter()->toArray();
-
-            if (!empty($issueNumbers)) {
-                $issuings = InventoryIssuing::whereIn('reference_no', $issueNumbers)
-                    ->where('status', 'processed')
-                    ->get();
-
-                $service = app(InventoryIssuingService::class);
-                foreach ($issuings as $issuing) {
-                    $service->finalize($issuing);
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::error("Web confirmMaterials: failed to auto-finalize issuings for Job {$job->id}: " . $e->getMessage());
-            // material_checked is already saved; do not fail the whole request.
-        }
-
-        return ['ok' => true, 'code' => 200, 'message' => 'Material berhasil dikonfirmasi dan inventory difinalisasi.'];
+        return ['ok' => true, 'code' => 200, 'message' => 'Material berhasil dikonfirmasi. Klik "Ambil Barang" saat teknisi benar-benar mengambil barang.'];
     }
 
     /**
