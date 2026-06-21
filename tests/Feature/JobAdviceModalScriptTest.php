@@ -18,7 +18,7 @@ class JobAdviceModalScriptTest extends TestCase
         $this->assertStringNotContainsString("toISOString().split('T')[0]", $indexView);
         $this->assertStringNotContainsString("toISOString().split('T')[0]", $showView);
         $this->assertStringContainsString('function dateValueForInput(dateInput)', $indexView);
-        $this->assertStringContainsString("dateString.match(/^(\\d{4}-\\d{2}-\\d{2})$/)", $showView);
+        $this->assertStringContainsString('dateString.match(/^(\\d{4}-\\d{2}-\\d{2})$/)', $showView);
     }
 
     public function test_job_advice_edit_endpoint_returns_calendar_dates_without_utc_shift(): void
@@ -32,7 +32,7 @@ class JobAdviceModalScriptTest extends TestCase
             'status' => 'draft',
         ]);
 
-        $response = (new JobAdviceController())->edit($jobAdvice);
+        $response = (new JobAdviceController)->edit($jobAdvice);
 
         $this->assertSame('2026-06-15', $response->getData(true)['expected_date']);
         $this->assertSame('2026-06-20', $response->getData(true)['first_service_date']);
@@ -67,5 +67,29 @@ class JobAdviceModalScriptTest extends TestCase
         );
         $this->assertStringContainsString('function addRoomRow() {', $view);
         $this->assertStringContainsString('resetCreateRoomSelection();', $view);
+    }
+
+    public function test_contract_room_loading_guards_against_overlapping_requests(): void
+    {
+        // Bug: selecting a contract then quickly changing Job Advice Type to "Remove"
+        // dispatches a second contract-rooms fetch while the first is still in-flight.
+        // Whichever fetch resolves last must win, and any rental-product dropdown left
+        // empty by a stale/in-flight fetch must be backfilled once data finally arrives.
+        $view = file_get_contents(resource_path('views/marketing/job-advices/index.blade.php'));
+
+        $this->assertStringContainsString('let contractRoomsRequestToken = 0;', $view);
+        $this->assertGreaterThanOrEqual(
+            2,
+            substr_count($view, 'const requestToken = ++contractRoomsRequestToken;')
+        );
+        $this->assertGreaterThanOrEqual(
+            2,
+            substr_count($view, 'if (requestToken !== contractRoomsRequestToken) {')
+        );
+        $this->assertStringContainsString('function refreshRentalProductOptionsInExistingRows() {', $view);
+        $this->assertGreaterThanOrEqual(
+            2,
+            substr_count($view, 'refreshRentalProductOptionsInExistingRows();')
+        );
     }
 }

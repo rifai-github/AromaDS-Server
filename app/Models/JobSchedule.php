@@ -220,6 +220,56 @@ class JobSchedule extends Model
     }
 
     /**
+     * Reconcile stale 'meninggalkan_lokasi' jobs left behind by the partial-completion
+     * flow (handleCannotCompleteAllRooms): once every room moved to a follow-up job
+     * ("Lanjutan dari Job {job_number}") has reached a terminal status, the source job
+     * itself is otherwise never updated and blocks MOM14 unfinished-job validation forever.
+     */
+    public static function reconcilePartialCompletionSourceJobs(string $contractNumber): void
+    {
+        $terminalStatuses = ['done_job', 'completed', 'cancelled', 'terminated', 'suspend', 'dpf'];
+
+        $staleJobs = self::where('contract_number', $contractNumber)
+            ->where('status', 'meninggalkan_lokasi')
+            ->get();
+
+        foreach ($staleJobs as $sourceJob) {
+            if (!$sourceJob->job_number) {
+                continue;
+            }
+
+            $sourceJob->loadMissing('jobScheduleRooms');
+
+            $cancelledRooms = $sourceJob->jobScheduleRooms
+                ->where('status', JobScheduleRoom::STATUS_CANCELLED)
+                ->filter(fn ($room) => str_contains((string) $room->notes, 'Pekerjaan tidak selesai'));
+
+            $otherRooms = $sourceJob->jobScheduleRooms
+                ->reject(fn ($room) => in_array($room->status, [
+                    JobScheduleRoom::STATUS_COMPLETED,
+                    JobScheduleRoom::STATUS_CANCELLED,
+                ], true));
+
+            if ($cancelledRooms->isEmpty() || $otherRooms->isNotEmpty()) {
+                continue;
+            }
+
+            $followUps = self::where('job_advice_id', $sourceJob->job_advice_id)
+                ->where('building_id', $sourceJob->building_id)
+                ->where('internal_notes', 'like', "Lanjutan dari Job {$sourceJob->job_number}%")
+                ->get();
+
+            if ($followUps->isEmpty() || $followUps->contains(fn ($job) => !in_array($job->status, $terminalStatuses, true))) {
+                continue;
+            }
+
+            $sourceJob->status = 'done_job';
+            $sourceJob->completed_at = $sourceJob->completed_at ?? now();
+            $sourceJob->save();
+        }
+    }
+
+    /**
      * Get the location logs for the job schedule.
      */
     public function locationLogs()

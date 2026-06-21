@@ -2356,6 +2356,7 @@ let contractJobAdviceJqueryBound = false;
 let extraOnWallRequestToken = 0;
 let extraUnitApplying = false;
 let extraUnitRestoring = false;
+let contractRoomsRequestToken = 0;
 
 function loadContractRoomsForJobAdvice(contractSelectElement) {
     const contractId = contractSelectElement?.value;
@@ -2391,11 +2392,18 @@ function loadContractRoomsForJobAdvice(contractSelectElement) {
     if (roomsContainer) roomsContainer.innerHTML = '<p class="text-sm text-gray-500 py-2">Loading rooms...</p>';
     if (roomsSection) roomsSection.style.display = 'block';
 
+    const requestToken = ++contractRoomsRequestToken;
+
     return Promise.all([
         fetch(`/api/contracts/${contractId}/for-job-advice?type=${encodeURIComponent(typeValue)}`).then(r => r.json()),
         fetch('/warehouse/rental-products/dropdown').then(r => r.json()).catch(() => ({ data: [] }))
     ]).then(([contractData, rentalsData]) => {
         console.log('Contract data received:', contractData);
+
+        // A newer contract/type change fired while this fetch was in-flight; let that one win.
+        if (requestToken !== contractRoomsRequestToken) {
+            return;
+        }
 
         contractRooms = contractData.contract_rooms || contractData.contractRooms || contractData.data?.contract_rooms || contractData.data?.contractRooms || [];
         quotationRooms = [];
@@ -2439,9 +2447,11 @@ function loadContractRoomsForJobAdvice(contractSelectElement) {
                 });
             }
         }
+
+        refreshRentalProductOptionsInExistingRows();
     }).catch(error => {
         console.error('Error loading contract data:', error);
-        if (roomsContainer) roomsContainer.innerHTML = '';
+        if (requestToken === contractRoomsRequestToken && roomsContainer) roomsContainer.innerHTML = '';
     });
 }
 
@@ -2488,12 +2498,19 @@ document.addEventListener('DOMContentLoaded', function() {
     if (roomsContainer) roomsContainer.innerHTML = '<p class="text-sm text-gray-500 py-2">Loading rooms...</p>';
     if (roomsSection) roomsSection.style.display = 'block';
 
+    const requestToken = ++contractRoomsRequestToken;
+
     Promise.all([
         fetch(`/api/contracts/${contractId}/for-job-advice?type=${encodeURIComponent(typeValue)}`).then(r => r.json()),
         fetch('/warehouse/rental-products/dropdown').then(r => r.json()).catch(() => ({ data: [] }))
     ]).then(([contractData, rentalsData]) => {
         console.log('Contract data received:', contractData);
-        
+
+        // A newer contract/type change fired while this fetch was in-flight; let that one win.
+        if (requestToken !== contractRoomsRequestToken) {
+            return;
+        }
+
         // Show Sales Notes IMMEDIATELY!
         const showSalesNotes = () => {
             const notesSales = contractData.notes_sales || contractData.data?.notes_sales || contractData.sales_notes || contractData.data?.sales_notes;
@@ -2570,6 +2587,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 confirmButtonText: 'OK',
             });
         }
+
+        refreshRentalProductOptionsInExistingRows();
     }).catch(error => {
         console.error('Error loading contract data:', error);
         });
@@ -2810,6 +2829,29 @@ function addRoomRow() {
             }
         }
     }
+}
+
+// Re-populates any contract-source rental-product dropdown that was rendered before
+// rentalProducts finished loading (e.g. a room row added while a contract/type-change
+// fetch was still in-flight), so the user doesn't have to reselect the room to see options.
+function refreshRentalProductOptionsInExistingRows() {
+    if (sourceType === 'quotation' || !rentalProducts.length) {
+        return;
+    }
+
+    document.querySelectorAll('#roomsContainer .rental-product-select').forEach(select => {
+        if (select.options.length > 1) {
+            return;
+        }
+
+        const currentValue = select.value;
+        let rentalOptions = '<option value="">Select Rental Product</option>';
+        rentalProducts.forEach(rental => {
+            rentalOptions += `<option value="${rental.id}">${rental.rental_name || rental.name}</option>`;
+        });
+        select.innerHTML = rentalOptions;
+        select.value = currentValue;
+    });
 }
 
 // MOM6: Load room details

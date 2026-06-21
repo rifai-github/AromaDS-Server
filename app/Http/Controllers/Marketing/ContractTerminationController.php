@@ -36,6 +36,8 @@ class ContractTerminationController extends Controller
 
     private function findBlockingUnfinishedJobForTermination(Contract $contract): ?JobSchedule
     {
+        JobSchedule::reconcilePartialCompletionSourceJobs($contract->contract_number);
+
         return JobSchedule::where('contract_number', $contract->contract_number)
             ->whereNotIn('status', ['completed', 'done_job', 'cancelled', 'terminated', 'suspend', 'dpf'])
             ->get()
