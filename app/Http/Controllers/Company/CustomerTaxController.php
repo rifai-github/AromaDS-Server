@@ -191,10 +191,10 @@ class CustomerTaxController extends Controller
         if ($taxName === 'NIK') {
             // NIK: 16 digits, NITKU auto 000000
             $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'size:16'];
-        } elseif ($taxName === 'NPWP') {
-            // NPWP: 15 or 16 digits
+        } elseif ($taxName === 'NPWP' || $taxName === 'NITKU') {
+            // NPWP/NITKU: tax_number stores the parent NPWP (15-16 digits)
             $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'min:15', 'max:16'];
-            // NPWP must have NITKU (Default 000000)
+            // NPWP/NITKU must have NITKU (Default 000000)
             $rules['nitku'] = ['nullable', 'string', 'regex:/^[0-9]+$/', 'size:6'];
         } else {
             // Others
