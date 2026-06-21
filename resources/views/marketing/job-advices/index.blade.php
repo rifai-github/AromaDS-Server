@@ -1282,6 +1282,8 @@
     window.openCreateModal = function() {
         console.log('openCreateModal initiating...');
         window.openModal('Create New Job Advice');
+        contractCustomerIdMap = {};
+        quotationCustomerIdMap = {};
         const modalBody = document.getElementById('modalBody');
         if (!modalBody) return;
         
@@ -1723,7 +1725,8 @@ function loadQuotations(marketingId = null) {
                 const option = document.createElement('option');
                 option.value = quotation.id;
                 option.setAttribute('data-customer-id', quotation.customer_id || '');
-                
+                quotationCustomerIdMap[String(quotation.id)] = quotation.customer_id || '';
+
                 const customerName = quotation.customer_name || 'N/A';
                 option.textContent = `${quotation.quotation_number} - ${customerName}`;
                 quotationSelect.appendChild(option);
@@ -1948,7 +1951,8 @@ function loadContracts(marketingId = null) {
                 option.value = contract.id;
                 // Store customer_id in data attribute
                 option.setAttribute('data-customer-id', contract.customer_id || '');
-                
+                contractCustomerIdMap[String(contract.id)] = contract.customer_id || '';
+
                 const customerName = contract.customer?.name || contract.customer_name || 'N/A';
                 option.textContent = (contract.contract_number || contract.id) + ' - ' + (customerName);
                 contractSelect.appendChild(option);
@@ -2300,7 +2304,9 @@ function populateMarketingUsers(data) {
                 if (!isApplyingExtraUnit) {
                     $('#extra_unit_on_wall_id').html('<option value="">Loading...</option>');
                 }
-                
+                contractCustomerIdMap = {};
+                loadCustomerContacts('');
+
                 // Load data for selected user
                 loadContracts(selectedUserId);
                 loadQuotations(selectedUserId);
@@ -2312,6 +2318,8 @@ function populateMarketingUsers(data) {
                 $('#contract_id').html('<option value="">Select Marketing First</option>').attr('disabled', true);
                 $('#quotation_id').html('<option value="">Select Marketing First</option>').attr('disabled', true);
                 $('#extra_unit_on_wall_id').html('<option value="">Select Marketing First</option>').attr('disabled', true);
+                contractCustomerIdMap = {};
+                loadCustomerContacts('');
             }
         });
     } else {
@@ -2357,6 +2365,10 @@ let extraOnWallRequestToken = 0;
 let extraUnitApplying = false;
 let extraUnitRestoring = false;
 let contractRoomsRequestToken = 0;
+// Fallback lookup so PIC loading still works if a contract/quotation <option>'s
+// data-customer-id attribute is ever missing/stale (e.g. DOM not fully settled when change fires).
+let contractCustomerIdMap = {};
+let quotationCustomerIdMap = {};
 
 function loadContractRoomsForJobAdvice(contractSelectElement) {
     const contractId = contractSelectElement?.value;
@@ -2375,12 +2387,10 @@ function loadContractRoomsForJobAdvice(contractSelectElement) {
     }
 
     const selectedOption = contractSelectElement.options[contractSelectElement.selectedIndex];
-    const customerId = selectedOption?.getAttribute('data-customer-id');
+    const customerId = selectedOption?.getAttribute('data-customer-id') || contractCustomerIdMap[String(contractId)] || '';
     console.log('Detected customerId:', customerId);
 
-    if (customerId) {
-        loadCustomerContacts(customerId);
-    }
+    loadCustomerContacts(customerId);
 
     const typeSelect = document.getElementById('modal_type');
     const typeValue = typeSelect ? typeSelect.value : '';
@@ -2476,16 +2486,15 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
     
-    // Get customerId from selected option data attribute
+    // Get customerId from selected option data attribute (fall back to the in-memory
+    // map populated by loadContracts(), in case the attribute wasn't set yet)
     const selectedOption = $(this).find('option:selected');
-    const customerId = selectedOption.attr('data-customer-id');
+    const customerId = selectedOption.attr('data-customer-id') || contractCustomerIdMap[String(contractId)] || '';
     console.log('Detected customerId:', customerId);
-    
+
     // Load PIC immediately
-    if (customerId) {
-        loadCustomerContacts(customerId);
-    }
-    
+    loadCustomerContacts(customerId);
+
     // MOM: Pass job advice type to allow filtering logic
     const typeSelect = document.getElementById('modal_type');
     const typeValue = typeSelect ? typeSelect.value : '';
@@ -2625,15 +2634,14 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
     
-    // Get customerId from selected option
+    // Get customerId from selected option (fall back to the in-memory map populated by
+    // loadQuotations(), in case the attribute wasn't set yet)
     const selectedOption = $(this).find('option:selected');
-    const customerId = selectedOption.attr('data-customer-id');
+    const customerId = selectedOption.attr('data-customer-id') || quotationCustomerIdMap[String(quotationId)] || '';
     console.log('Detected customerId (quotation):', customerId);
-    
+
     // Load PIC immediately
-    if (customerId) {
-        loadCustomerContacts(customerId);
-    }
+    loadCustomerContacts(customerId);
 
     const typeSelect = document.getElementById('modal_type');
     const typeValue = typeSelect ? typeSelect.value : '';
@@ -3870,22 +3878,18 @@ window.openAddPicModal = function() {
         const quotationSelect = document.getElementById('quotation_id');
         if (quotationSelect && quotationSelect.value) {
             const selectedOption = quotationSelect.options[quotationSelect.selectedIndex] || $(quotationSelect).find(':selected')[0];
-            if (selectedOption) {
-                customerId = selectedOption.getAttribute('data-customer-id');
-                console.log('Fallback customerId from quotation:', customerId);
-            }
+            customerId = selectedOption?.getAttribute('data-customer-id') || quotationCustomerIdMap[String(quotationSelect.value)] || '';
+            console.log('Fallback customerId from quotation:', customerId);
         }
     }
-    
+
     if (!customerId) {
         // Fallback: try to get from selected contract
         const contractSelect = document.getElementById('contract_id');
         if (contractSelect && contractSelect.value) {
             const selectedOption = contractSelect.options[contractSelect.selectedIndex] || $(contractSelect).find(':selected')[0];
-            if (selectedOption) {
-                customerId = selectedOption.getAttribute('data-customer-id');
-                console.log('Fallback customerId from contract:', customerId);
-            }
+            customerId = selectedOption?.getAttribute('data-customer-id') || contractCustomerIdMap[String(contractSelect.value)] || '';
+            console.log('Fallback customerId from contract:', customerId);
         }
     }
         

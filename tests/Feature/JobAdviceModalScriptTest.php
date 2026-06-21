@@ -92,4 +92,23 @@ class JobAdviceModalScriptTest extends TestCase
             substr_count($view, 'refreshRentalProductOptionsInExistingRows();')
         );
     }
+
+    public function test_pic_loading_falls_back_to_in_memory_customer_id_map(): void
+    {
+        // Bug: PIC dropdown could stay empty after selecting a Contract/Quotation if the
+        // selected <option>'s data-customer-id attribute wasn't readable yet when the
+        // change handler ran. loadCustomerContacts() must still be reachable via an
+        // in-memory id->customer_id map populated when the dropdown options are built.
+        $view = file_get_contents(resource_path('views/marketing/job-advices/index.blade.php'));
+
+        $this->assertStringContainsString('let contractCustomerIdMap = {};', $view);
+        $this->assertStringContainsString('let quotationCustomerIdMap = {};', $view);
+        $this->assertStringContainsString("contractCustomerIdMap[String(contract.id)] = contract.customer_id || '';", $view);
+        $this->assertStringContainsString("quotationCustomerIdMap[String(quotation.id)] = quotation.customer_id || '';", $view);
+        $this->assertGreaterThanOrEqual(
+            2,
+            substr_count($view, "|| contractCustomerIdMap[String(contractId)] || ''")
+        );
+        $this->assertStringContainsString("|| quotationCustomerIdMap[String(quotationId)] || ''", $view);
+    }
 }
