@@ -5052,6 +5052,10 @@ class JobScheduleController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Job sedang dalam proses koreksi BA Date dan tidak dapat diubah.'], 423);
         }
 
+        if (!$jobSchedule->job_number) {
+            return response()->json(['status' => 'error', 'message' => 'Job belum memiliki Nomor JS (belum di-Assign Team). Tidak dapat mencatat Tiba di Lokasi.'], 422);
+        }
+
         try {
             DB::beginTransaction();
             $res = app(\App\Services\Operational\JobWebCompletionService::class)

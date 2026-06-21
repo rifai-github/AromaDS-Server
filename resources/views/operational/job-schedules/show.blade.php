@@ -608,7 +608,7 @@
                                     $currentUser->hasRole('super_admin') ||
                                     $currentUser->hasRoleStartingWith('Management')
                                 );
-                                $arrivedAllowed = in_array($jobSchedule->status, ['barang_diambil','barang_dipersiapkan','assign_material','assign_team','scheduled','new_job','meninggalkan_lokasi'], true);
+                                $arrivedAllowed = $jobSchedule->job_number && in_array($jobSchedule->status, ['barang_diambil','barang_dipersiapkan','assign_material','assign_team','scheduled','new_job','meninggalkan_lokasi'], true);
                                 $startAllowed = in_array($jobSchedule->status, ['teknisi_tiba_dilokasi','barang_diambil'], true);
                                 $leaveAllowed = in_array($jobSchedule->status, ['teknisi_tiba_dilokasi','in_progress','teknisi_sedang_pengerjaan','teknisi_selesai_pengerjaan'], true);
                                 // Phase 3 material lifecycle (only for non-remove jobs that use materials)
