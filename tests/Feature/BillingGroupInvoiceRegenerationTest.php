@@ -55,6 +55,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->foreignId('customer_id')->nullable();
             $table->string('payment_terms')->nullable();
             $table->string('ppn_code')->nullable();
+            $table->date('start_date')->nullable();
+            $table->date('end_date')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('updated_by')->nullable();
             $table->foreignId('update_by_1')->nullable();
@@ -173,6 +175,27 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('job_schedule_ba_files', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_id')->nullable();
+            $table->string('room_name')->nullable();
+            $table->string('file_name')->nullable();
+            $table->string('verification_status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('contract_files', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('contract_id')->nullable();
+            $table->string('file_name')->nullable();
+            $table->string('file_path')->nullable();
+            $table->string('file_type')->nullable();
+            $table->string('verification_status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('invoices', function (Blueprint $table) {
             $table->id();
             $table->string('invoice_number')->nullable();
@@ -199,6 +222,15 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->string('invoice_status')->nullable();
             $table->string('status')->nullable();
             $table->string('kirim')->nullable();
+            $table->string('gedung')->nullable();
+            $table->string('alamat_1')->nullable();
+            $table->string('alamat_2')->nullable();
+            $table->text('catatan_internal')->nullable();
+            $table->text('catatan_customer')->nullable();
+            $table->integer('umur_invoice')->default(0);
+            $table->decimal('discount_amount', 12, 2)->default(0);
+            $table->text('notes')->nullable();
+            $table->text('terms_conditions')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('updated_by')->nullable();
             $table->timestamps();
@@ -1493,6 +1525,179 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'subtotal' => 6000000,
             'total_amount' => 6000000,
             'grand_total' => 6000000,
+        ]);
+    }
+
+    public function test_real_time_invoice_trigger_backfills_room_that_completes_after_draft_invoice_created(): void
+    {
+        DB::table('users')->insert([
+            'name' => 'Admin',
+            'email' => 'admin@aroma.com',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $customer = Customer::create(['name' => 'Test Multi Room']);
+        $contract = Contract::create([
+            'contract_number' => 'SBY-CA/26-06/0010',
+            'customer_id' => $customer->id,
+            'payment_terms' => 30,
+            'start_date' => '2026-06-21',
+            'end_date' => '2026-12-20',
+        ]);
+        BillingGroup::create([
+            'billing_group_name' => 'Main Billing',
+            'customer_id' => $customer->id,
+            'contract_id' => $contract->id,
+            'billing_frequency' => 'monthly',
+            'is_active' => true,
+        ]);
+
+        DB::table('buildings')->insert([
+            'id' => 70,
+            'building_name' => 'Gedung Multi Room',
+            'name' => 'Gedung Multi Room',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rooms')->insert([
+            ['id' => 701, 'building_id' => 70, 'room_name' => 'Ruang Meeting', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 702, 'building_id' => 70, 'room_name' => 'Ruang Aula', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rooms')->insert([
+            ['id' => 7001, 'contract_id' => $contract->id, 'room_id' => 701, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 7002, 'contract_id' => $contract->id, 'room_id' => 702, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('master_rentals')->insert([
+            ['id' => 7101, 'rental_name' => 'Rental 1x 1bln', 'rental_type' => 'unit_refill', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 7102, 'rental_name' => 'ADS W300 100 ml', 'rental_type' => 'unit_refill', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rentals')->insert([
+            ['id' => 7201, 'contract_id' => $contract->id, 'master_rental_id' => 7101, 'room_id' => 701, 'quantity' => 1, 'unit_price' => 1000000, 'total_price' => 1000000, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 7202, 'contract_id' => $contract->id, 'master_rental_id' => 7102, 'room_id' => 702, 'quantity' => 1, 'unit_price' => 1000000, 'total_price' => 1000000, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $jobAdviceId = DB::table('job_advices')->insertGetId([
+            'contract_id' => $contract->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Meeting room's job completes first.
+        $meetingJob = JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-06/0009',
+            'type' => 'service_first',
+            'status' => 'done_job',
+            'job_advice_id' => $jobAdviceId,
+            'room_id' => 701,
+            'schedule_date' => '2026-06-21',
+            'ba_date' => '2026-06-21',
+        ]);
+        DB::table('job_advice_rooms')->insert([
+            'id' => 7301,
+            'job_advice_id' => $jobAdviceId,
+            'contract_room_id' => 7001,
+            'contract_rental_id' => 7201,
+            'rental_product_id' => 7101,
+            'service_job_schedule_id' => $meetingJob->id,
+            'room_name' => 'Ruang Meeting',
+            'rental_name' => 'Rental 1x 1bln',
+            'status' => 'completed',
+            'is_trial' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'job_schedule_id' => $meetingJob->id,
+            'job_advice_room_id' => 7301,
+            'room_id' => 701,
+            'room_name' => 'Ruang Meeting',
+            'status' => 'completed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+            public function generate(
+                string $documentType,
+                ?string $branchCode = null,
+                ?int $buildingId = null,
+                ?int $contractId = null,
+                ?int $quotationId = null,
+                ?int $surveyId = null,
+                ?int $warehouseId = null,
+                ?int $branchId = null,
+                \DateTimeInterface|string|null $documentDate = null
+            ): string {
+                return 'SBY-INV/26-06/0027';
+            }
+        });
+
+        // First trigger: only Ruang Meeting's job is done. An invoice for Period 1 is
+        // drafted but should only contain Meeting's rental so far.
+        $service->attemptAutoInvoiceForContract($contract->id);
+
+        $this->assertDatabaseHas('invoices', [
+            'contract_id' => $contract->id,
+            'period_invoice' => 'Period 1',
+            'invoice_status' => 'draft',
+        ]);
+        $invoice = Invoice::where('contract_id', $contract->id)->where('period_invoice', 'Period 1')->first();
+        $this->assertNotNull($invoice);
+        $this->assertDatabaseCount('invoice_rental_details', 1);
+        $this->assertDatabaseHas('invoice_rental_details', [
+            'invoice_id' => $invoice->id,
+            'room_name' => 'Ruang Meeting',
+        ]);
+
+        // Aula room's job completes afterwards, still inside the same Period 1 window.
+        $aulaJob = JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-06/0009',
+            'type' => 'service_first',
+            'status' => 'done_job',
+            'job_advice_id' => $jobAdviceId,
+            'room_id' => 702,
+            'schedule_date' => '2026-06-21',
+            'ba_date' => '2026-06-22',
+        ]);
+        DB::table('job_advice_rooms')->insert([
+            'id' => 7302,
+            'job_advice_id' => $jobAdviceId,
+            'contract_room_id' => 7002,
+            'contract_rental_id' => 7202,
+            'rental_product_id' => 7102,
+            'service_job_schedule_id' => $aulaJob->id,
+            'room_name' => 'Ruang Aula',
+            'rental_name' => 'ADS W300 100 ml',
+            'status' => 'completed',
+            'is_trial' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'job_schedule_id' => $aulaJob->id,
+            'job_advice_room_id' => 7302,
+            'room_id' => 702,
+            'room_name' => 'Ruang Aula',
+            'status' => 'completed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Second trigger: should backfill Aula into the SAME draft invoice, not skip it
+        // and not create a second invoice for Period 1.
+        $service->attemptAutoInvoiceForContract($contract->id);
+
+        $this->assertDatabaseCount('invoices', 1);
+        $this->assertDatabaseCount('invoice_rental_details', 2);
+        $this->assertDatabaseHas('invoice_rental_details', [
+            'invoice_id' => $invoice->id,
+            'room_name' => 'Ruang Aula',
+        ]);
+        // payment_terms=30 (no "bulan" unit) resolves to a 1-month billing period, so
+        // each room's 1,000,000/month rental bills once.
+        $this->assertDatabaseHas('invoices', [
+            'id' => $invoice->id,
+            'subtotal' => 2000000,
         ]);
     }
 

@@ -482,7 +482,7 @@ class InvoiceGenerationService
     /**
      * Create invoice details from completed jobs
      */
-    private function createInvoiceDetailsFromJobs(Invoice $invoice, Contract $contract, Carbon $periodStart, Carbon $periodEnd): \Illuminate\Database\Eloquent\Collection
+    private function createInvoiceDetailsFromJobs(Invoice $invoice, Contract $contract, Carbon $periodStart, Carbon $periodEnd, array $billedRentals = []): \Illuminate\Database\Eloquent\Collection
     {
         $completedJobs = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
 
@@ -490,9 +490,6 @@ class InvoiceGenerationService
         // monthly_price x number of months in the period (MoM 17 Jun 2026:
         // "harga per bulan dikalikan jumlah bulan").
         $billingMonths = $this->billingMonthsForPeriod($periodStart, $periodEnd);
-
-        // Track what we have already billed for this period to avoid duplicates (e.g. IR & CSR in same month)
-        $billedRentals = [];
 
         foreach ($completedJobs as $jobSchedule) {
             // Get rental details for this job
@@ -890,18 +887,10 @@ class InvoiceGenerationService
 
     private function invoiceRentalBillingKey(array $rental): string
     {
-        if (!empty($rental['contract_rental_id'])) {
-            return 'contract-rental:'.$rental['contract_rental_id'];
-        }
-
-        if (!empty($rental['contract_room_id'])) {
-            return 'contract-room:'.$rental['contract_room_id'].'|rental:'.($rental['master_rental_id'] ?? '');
-        }
-
-        if (!empty($rental['room_id'])) {
-            return 'room:'.$rental['room_id'].'|rental:'.($rental['master_rental_id'] ?? '');
-        }
-
+        // Keyed on room_name + master_rental_id (not contract_rental_id/room_id) because
+        // that is all invoice_rental_details persists — a key built any other way here
+        // would not match what refreshDraftInvoiceRentalDetails() derives from saved rows,
+        // breaking dedup when backfilling a room into an already-drafted invoice.
         return 'room-name:'.strtolower(trim((string) ($rental['room_name'] ?? ''))).'|rental:'.($rental['master_rental_id'] ?? '');
     }
 
@@ -1288,7 +1277,7 @@ class InvoiceGenerationService
 
                     if (!$exists) {
                         Log::info("Real-time Invoice Trigger: Attempting to generate invoice for Contract {$contractId}, Period {$period['rental_period']}");
-                        
+
                         $result = $this->autoGenerateInvoiceForRentalPeriod(
                             $contractId,
                             $period['rental_period'],
@@ -1301,6 +1290,16 @@ class InvoiceGenerationService
                         } else {
                             Log::warning("Real-time Invoice Trigger: [FAILED] " . $result['message']);
                         }
+                    } elseif ($exists->invoice_status === Invoice::STATUS_DRAFT) {
+                        // A room/rental whose job completed after this period's invoice was
+                        // first drafted would otherwise never get billed (the existence check
+                        // above used to just skip). Backfill any missing rental lines while
+                        // the invoice is still a draft.
+                        $this->refreshDraftInvoiceRentalDetails(
+                            $exists,
+                            Carbon::parse($period['period_start']),
+                            Carbon::parse($period['period_end'])
+                        );
                     }
                 }
             }
@@ -1308,5 +1307,38 @@ class InvoiceGenerationService
         } catch (\Exception $e) {
             Log::error("Real-time Invoice Trigger Error: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Add any rental lines for completed jobs in the period that are missing from an
+     * already-drafted invoice (e.g. a second room's job completed after the invoice for
+     * this period was first generated from the first room's job).
+     */
+    private function refreshDraftInvoiceRentalDetails(Invoice $invoice, Carbon $periodStart, Carbon $periodEnd): void
+    {
+        $contract = $invoice->contract_id ? Contract::find($invoice->contract_id) : null;
+        if (!$contract) {
+            return;
+        }
+
+        $invoice->loadMissing('invoiceRentalDetails');
+        $billedRentals = $invoice->invoiceRentalDetails
+            ->map(fn ($detail) => $this->invoiceRentalBillingKey([
+                'room_name' => $detail->room_name,
+                'master_rental_id' => $detail->master_rental_id,
+            ]))
+            ->all();
+
+        DB::transaction(function () use ($invoice, $contract, $periodStart, $periodEnd, $billedRentals) {
+            $existingCount = $invoice->invoiceRentalDetails()->count();
+
+            $this->createInvoiceDetailsFromJobs($invoice, $contract, $periodStart, $periodEnd, $billedRentals);
+
+            $invoice->refresh();
+            if ($invoice->invoiceRentalDetails()->count() > $existingCount) {
+                $this->updateInvoiceTotals($invoice);
+                Log::info("Real-time Invoice Trigger: backfilled missing rental line(s) into existing draft invoice {$invoice->invoice_number}");
+            }
+        });
     }
 }
