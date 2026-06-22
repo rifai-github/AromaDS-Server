@@ -898,7 +898,17 @@ class ContractController extends Controller
         }
 
         try {
-            $contract->load(['customer', 'quotation.prospect', 'quotation.survey', 'marketing', 'creator']);
+            $contract->load([
+                'customer',
+                'quotation.prospect',
+                'quotation.survey',
+                'marketing',
+                'creator',
+                'contractRooms.room.building',
+                'contractRentals.masterRental',
+                'customerSigning1',
+                'internalSigning',
+            ]);
 
             // Generate PDF using DomPDF
             $pdf = Pdf::loadView('marketing.contracts.pdf', compact('contract'));
@@ -968,7 +978,17 @@ class ContractController extends Controller
         }
 
         try {
-            $contract->load(['customer', 'quotation.prospect', 'quotation.survey', 'marketing', 'creator']);
+            $contract->load([
+                'customer',
+                'quotation.prospect',
+                'quotation.survey',
+                'marketing',
+                'creator',
+                'contractRooms.room.building',
+                'contractRentals.masterRental',
+                'customerSigning1',
+                'internalSigning',
+            ]);
 
             // Generate PDF using DomPDF
             $pdf = Pdf::loadView('marketing.contracts.pdf', compact('contract'));

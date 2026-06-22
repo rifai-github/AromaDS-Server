@@ -793,6 +793,197 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
         ]);
     }
 
+    public function test_regenerated_cancelled_invoice_snapshot_keeps_room_with_stale_cancelled_schedule_room(): void
+    {
+        // Reproduces the Moonton/SBY-INV/26-06/0024->0026 bug: a room's job_advice_room
+        // accumulates a stale `cancelled` job_schedule_room from a superseded/corrected
+        // install job, while the actual billing (CSR) job for that same room completed
+        // fine. Regenerating from a cancelled invoice snapshot must not drop the room
+        // just because one historical schedule-room record was cancelled.
+        DB::table('users')->insert([
+            'name' => 'Admin',
+            'email' => 'admin@aroma.com',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $customer = Customer::create(['name' => 'Moonton']);
+        $contract = Contract::create([
+            'contract_number' => 'SBY-CA/26-06/0010',
+            'customer_id' => $customer->id,
+            'payment_terms' => 30,
+        ]);
+        $billingGroup = BillingGroup::create([
+            'billing_group_name' => 'Main Billing',
+            'customer_id' => $customer->id,
+            'contract_id' => $contract->id,
+            'billing_frequency' => 'monthly',
+            'billing_start_date' => '2026-06-21',
+            'billing_end_date' => '2026-09-20',
+            'billing_amount' => 6000000,
+            'is_active' => true,
+        ]);
+
+        DB::table('buildings')->insert([
+            'id' => 50,
+            'building_name' => 'Gedung Moonton',
+            'name' => 'Gedung Moonton',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rooms')->insert([
+            ['id' => 501, 'building_id' => 50, 'room_name' => 'Ruang Meeting', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rooms')->insert([
+            ['id' => 1201, 'contract_id' => $contract->id, 'room_id' => 501, 'billing_group_id' => $billingGroup->id, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('master_rentals')->insert([
+            ['id' => 1301, 'rental_name' => 'Rental 1x 1bln', 'rental_type' => 'unit_refill', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rentals')->insert([
+            ['contract_id' => $contract->id, 'master_rental_id' => 1301, 'room_id' => 501, 'quantity' => 1, 'unit_price' => 1000000, 'total_price' => 1000000, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $jobAdviceId = DB::table('job_advices')->insertGetId([
+            'contract_id' => $contract->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Superseded install job: its room entry was cancelled when the install was corrected.
+        $supersededInstallJob = JobSchedule::create([
+            'job_number' => 'SBY-IR/26-06/0005',
+            'type' => 'install',
+            'status' => 'meninggalkan_lokasi',
+            'job_advice_id' => $jobAdviceId,
+            'room_id' => 501,
+            'schedule_date' => '2026-06-21',
+            'ba_date' => '2026-06-22',
+        ]);
+
+        // The actual billing job: a completed CSR for the same room.
+        $csrJob = JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-06/0009',
+            'type' => 'service_first',
+            'status' => 'done_job',
+            'job_advice_id' => $jobAdviceId,
+            'room_id' => 501,
+            'schedule_date' => '2026-06-21',
+            'ba_date' => '2026-06-22',
+        ]);
+
+        // Corrected install job, also completed.
+        $correctedInstallJob = JobSchedule::create([
+            'job_number' => 'SBY-IR/26-06/0009',
+            'type' => 'install',
+            'status' => 'done_job',
+            'job_advice_id' => $jobAdviceId,
+            'room_id' => 501,
+            'schedule_date' => '2026-06-22',
+            'ba_date' => '2026-06-22',
+        ]);
+
+        $jobAdviceRoomId = DB::table('job_advice_rooms')->insertGetId([
+            'job_advice_id' => $jobAdviceId,
+            'contract_room_id' => 1201,
+            'rental_product_id' => 1301,
+            'service_job_schedule_id' => $csrJob->id,
+            'status' => 'completed',
+            'is_trial' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            [
+                'job_schedule_id' => $supersededInstallJob->id,
+                'job_advice_room_id' => $jobAdviceRoomId,
+                'room_id' => 501,
+                'room_name' => 'Ruang Meeting',
+                'status' => 'cancelled',
+                'notes' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'job_schedule_id' => $csrJob->id,
+                'job_advice_room_id' => $jobAdviceRoomId,
+                'room_id' => 501,
+                'room_name' => 'Ruang Meeting',
+                'status' => 'completed',
+                'notes' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'job_schedule_id' => $correctedInstallJob->id,
+                'job_advice_room_id' => $jobAdviceRoomId,
+                'room_id' => 501,
+                'room_name' => 'Ruang Meeting',
+                'status' => 'completed',
+                'notes' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $cancelledInvoice = Invoice::create([
+            'invoice_number' => 'SBY-INV/26-06/0024',
+            'contract_id' => $contract->id,
+            'contract_number' => $contract->contract_number,
+            'customer_id' => $customer->id,
+            'billing_group_id' => $billingGroup->id,
+            'invoice_date' => '2026-06-22',
+            'due_date' => '2026-07-22',
+            'invoice_status' => Invoice::STATUS_CANCELLED,
+            'status' => Invoice::STATUS_CANCELLED,
+        ]);
+        $cancelledInvoice->invoiceRentalDetails()->create([
+            'master_rental_id' => 1301,
+            'job_no' => 'SBY-CSR/26-06/0009',
+            'building_name' => 'Gedung Moonton',
+            'room_name' => 'Ruang Meeting',
+            'rental_name' => 'Rental 1x 1bln (3 bulan)',
+            'quantity' => 1,
+            'unit_price' => 1000000,
+            'total_price' => 3000000,
+        ]);
+
+        $service = new BillingGroupService(new class extends DocumentNumberService {
+            public function generate(
+                string $documentType,
+                ?string $branchCode = null,
+                ?int $buildingId = null,
+                ?int $contractId = null,
+                ?int $quotationId = null,
+                ?int $surveyId = null,
+                ?int $warehouseId = null,
+                ?int $branchId = null,
+                \DateTimeInterface|string|null $documentDate = null
+            ): string {
+                return 'SBY-INV/26-06/0026';
+            }
+        });
+
+        $result = $service->autoGenerateInvoiceWhenJobsCompleted(
+            $billingGroup->id,
+            Carbon::parse('2026-06-22'),
+            $cancelledInvoice
+        );
+
+        $this->assertTrue($result['success'], $result['message'] ?? 'No message');
+        $this->assertDatabaseHas('invoice_rental_details', [
+            'invoice_id' => $result['invoice']->id,
+            'room_name' => 'Ruang Meeting',
+            'rental_name' => 'Rental 1x 1bln (3 bulan)',
+            'total_price' => 3000000,
+        ]);
+        $this->assertDatabaseHas('invoices', [
+            'id' => $result['invoice']->id,
+            'subtotal' => 3000000,
+            'grand_total' => 3000000,
+        ]);
+    }
+
     public function test_rental_period_invoice_excludes_room_suspended_inside_completed_job(): void
     {
         $customer = Customer::create(['name' => 'Test110526']);

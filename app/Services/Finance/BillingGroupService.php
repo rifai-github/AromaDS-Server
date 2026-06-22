@@ -641,16 +641,26 @@ class BillingGroupService
             return true;
         }
 
-        return JobScheduleRoom::query()
+        $scheduleRooms = JobScheduleRoom::query()
             ->whereIn('job_advice_room_id', $matchingJobAdviceRoomIds->all())
-            ->get()
-            ->contains(function (JobScheduleRoom $room) {
-                $status = strtolower((string) $room->status);
-                $notes = strtolower((string) $room->notes);
+            ->get();
 
-                return in_array($status, self::NON_BILLABLE_ROOM_STATUSES, true)
-                    || str_contains($notes, '[suspend]');
-            });
+        if ($scheduleRooms->isEmpty()) {
+            return false;
+        }
+
+        // A room can be linked to multiple job_schedule_rooms over time (e.g. a
+        // superseded/corrected install job alongside the actual completed service
+        // job). Only treat the room as non-billable when there is no completed,
+        // non-suspended schedule room backing it — a single stale cancelled
+        // record from a since-corrected job must not block billing for the room.
+        return $scheduleRooms->every(function (JobScheduleRoom $room) {
+            $status = strtolower((string) $room->status);
+            $notes = strtolower((string) $room->notes);
+
+            return in_array($status, self::NON_BILLABLE_ROOM_STATUSES, true)
+                || str_contains($notes, '[suspend]');
+        });
     }
 
     /**
