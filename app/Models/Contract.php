@@ -1023,10 +1023,6 @@ class Contract extends Model
     public function updateContractStatus($status)
     {
         $validStatuses = ['draft', 'pending_signature', 'signed', 'active', 'completed', 'cancelled', 'rejected', 'waiting_for_approval'];
-        
-        if ($status === 'active' && ! $this->canBeActivated()) {
-            return false;
-        }
 
         if (in_array($status, $validStatuses)) {
             $this->update(['contract_status' => $status]);
@@ -1035,20 +1031,6 @@ class Contract extends Model
         }
 
         return false;
-    }
-
-    public function canBeActivated(): bool
-    {
-        return (bool) $this->is_contract;
-    }
-
-    public function getActivationBlockReason(): ?string
-    {
-        if ($this->canBeActivated()) {
-            return null;
-        }
-
-        return 'Contract belum bisa diaktifkan karena field Contract masih NO. Klik YES pada Contract terlebih dahulu sebelum mengaktifkan contract.';
     }
 
     public function getContractStatusBadgeAttribute()

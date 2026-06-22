@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Marketing\ContractController;
 use App\Models\Contract;
+use App\Services\Operational\ContractOnWallCsrService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -21,6 +22,8 @@ class ContractActivationTargetGuardTest extends TestCase
             $table->string('contract_number')->nullable();
             $table->string('contract_status')->nullable();
             $table->boolean('is_contract')->default(false);
+            $table->foreignId('customer_id')->nullable();
+            $table->foreignId('quotation_id')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('approved_by')->nullable();
             $table->timestamp('date_approved')->nullable();
@@ -37,7 +40,7 @@ class ContractActivationTargetGuardTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_approve_rejects_contract_when_contract_target_is_no(): void
+    public function test_approve_allows_job_order_when_contract_target_is_no(): void
     {
         $contract = Contract::create([
             'contract_number' => 'TST-CA/26-06/0001',
@@ -45,23 +48,34 @@ class ContractActivationTargetGuardTest extends TestCase
             'is_contract' => false,
         ]);
 
-        Auth::shouldReceive('user')->once()->andReturn(new class {
+        Auth::shouldReceive('user')->once()->andReturn(new class()
+        {
+            public int $id = 1;
+
             public function canApprove(string $module): bool
             {
                 return $module === 'contracts';
             }
         });
+        Auth::shouldReceive('id')->andReturn(1);
 
-        $response = app(ContractController::class)->approveContract(new Request(), $contract->fresh());
+        $this->mock(ContractOnWallCsrService::class)
+            ->shouldReceive('createForContract')
+            ->once()
+            ->andReturn(0);
+
+        $response = Contract::withoutEvents(
+            fn () => app(ContractController::class)->approveContract(new Request(), $contract->fresh())
+        );
         $payload = $response->getData(true);
 
-        $this->assertSame(422, $response->getStatusCode());
-        $this->assertSame('error', $payload['status']);
-        $this->assertStringContainsString('Contract masih NO', $payload['message']);
-        $this->assertSame('waiting_for_approval', $contract->fresh()->contract_status);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $payload['status']);
+        $this->assertSame('active', $contract->fresh()->contract_status);
+        $this->assertFalse($contract->fresh()->is_contract);
     }
 
-    public function test_update_status_rejects_active_when_contract_target_is_no(): void
+    public function test_update_status_allows_active_when_contract_target_is_no(): void
     {
         $contract = Contract::create([
             'contract_number' => 'TST-CA/26-06/0002',
@@ -76,10 +90,10 @@ class ContractActivationTargetGuardTest extends TestCase
         $response = app(ContractController::class)->updateStatus($request, $contract->fresh());
         $payload = $response->getData(true);
 
-        $this->assertSame(422, $response->getStatusCode());
-        $this->assertSame('error', $payload['status']);
-        $this->assertStringContainsString('Contract masih NO', $payload['message']);
-        $this->assertSame('signed', $contract->fresh()->contract_status);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $payload['status']);
+        $this->assertSame('active', $contract->fresh()->contract_status);
+        $this->assertFalse($contract->fresh()->is_contract);
     }
 
     public function test_update_status_allows_active_when_contract_target_is_yes(): void
@@ -101,4 +115,5 @@ class ContractActivationTargetGuardTest extends TestCase
         $this->assertSame('success', $payload['status']);
         $this->assertSame('active', $contract->fresh()->contract_status);
     }
+
 }

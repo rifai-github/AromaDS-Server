@@ -412,13 +412,6 @@ class ContractController extends Controller
             }
         }
 
-        if ($request->contract_status === 'active' && ! $isContractTarget) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Contract belum bisa diaktifkan karena field Contract masih NO. Klik YES pada Contract terlebih dahulu sebelum mengaktifkan contract.',
-            ], 422);
-        }
-
         $contract = Contract::create([
             'contract_number' => $request->contract_number,
             'quotation_number' => $request->quotation_number,
@@ -730,13 +723,6 @@ class ContractController extends Controller
             return response()->json([
                 'status' => 'error',
                 'errors' => $validator->errors(),
-            ], 422);
-        }
-
-        if ($request->contract_status === 'active' && ! $contract->canBeActivated()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $contract->getActivationBlockReason(),
             ], 422);
         }
 
@@ -1815,14 +1801,6 @@ class ContractController extends Controller
                 ], 400);
             }
 
-            $activationBlockReason = $contract->getActivationBlockReason();
-            if ($activationBlockReason) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => $activationBlockReason,
-                ], 422);
-            }
-
             $renewalBlockReason = $this->getRenewalActivationBlockReason($contract);
             if ($renewalBlockReason) {
                 return response()->json([
@@ -1978,14 +1956,6 @@ class ContractController extends Controller
      */
     public function postContract(Request $request, Contract $contract)
     {
-        $activationBlockReason = $contract->getActivationBlockReason();
-        if ($activationBlockReason) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $activationBlockReason,
-            ], 422);
-        }
-
         if (! $contract->isReadyForPosting()) {
             return response()->json([
                 'status' => 'error',
@@ -2325,16 +2295,6 @@ class ContractController extends Controller
                 'status' => 'error',
                 'errors' => $validator->errors(),
             ], 422);
-        }
-
-        if ($request->status === 'active') {
-            $activationBlockReason = $contract->getActivationBlockReason();
-            if ($activationBlockReason) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => $activationBlockReason,
-                ], 422);
-            }
         }
 
         $contract->updateContractStatus($request->status);
