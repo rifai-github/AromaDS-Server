@@ -7922,6 +7922,17 @@ class JobScheduleController extends Controller
      */
     public function generateAllRemainingServices(JobSchedule $completedFirstService, $jobAdvice)
     {
+        // Concurrent/duplicate completion requests (double-submit, retried network call) can
+        // otherwise both pass the "does period N already exist?" checks below before either
+        // INSERT commits, creating duplicate JobSchedule rows for the same period. Serialize
+        // per job_advice so only one run executes generation at a time.
+        $lock = Cache::lock("generate-remaining-services:{$jobAdvice->id}", 30);
+
+        if (!$lock->get()) {
+            \Log::info("generateAllRemainingServices already running for JA {$jobAdvice->id}. Skipping concurrent call.");
+            return;
+        }
+
         try {
             // Only run for the first service. Standalone Service JAs may leave the first period
             // unset, so treat a null/empty period as the first period too.
@@ -7929,7 +7940,7 @@ class JobScheduleController extends Controller
                 \Log::info("Not first service (period {$completedFirstService->period}). Skipping bulk service generation.");
                 return;
             }
-            
+
             $eligibleRoomIds = $this->getFinalizedRoomIdsForSchedule($completedFirstService);
 
             if (empty($eligibleRoomIds)) {
@@ -8067,9 +8078,11 @@ class JobScheduleController extends Controller
             \Log::info("MOM13: Generated " . count($servicesCreated) . " remaining services (period 2-{$totalServices}) for JA {$jobAdvice->job_advice_number}");
             
             return $servicesCreated;
-            
+
         } catch (\Exception $e) {
             \Log::error("Failed to generate remaining services: " . $e->getMessage());
+        } finally {
+            $lock->release();
         }
     }
 
