@@ -241,6 +241,16 @@
             text-align: right;
         }
 
+        /* ===== Bottom-pin wrapper =====
+         * Forces the totals/payment/footer block to the bottom of the page on short
+         * invoices (empty spacer row eats the remaining height), while staying purely
+         * in normal flow so it never overlaps table rows on multi-page invoices.
+         */
+        .bottom-spacer {
+            line-height: 0;
+            font-size: 0;
+        }
+
         /* ===== Footer ===== */
         .page-footer {
             margin-top: 14px;
@@ -256,15 +266,15 @@
         }
 
         .find-us {
-            font-size: 7px;
+            font-size: 8px;
             font-weight: bold;
             line-height: 1;
         }
 
         .find-us img,
         .find-us svg {
-            width: 60px;
-            height: 60px;
+            width: 70px;
+            height: 70px;
             margin-top: 3px;
         }
 
@@ -298,7 +308,7 @@
         .footer-meta {
             width: 100%;
             border-collapse: collapse;
-            font-size: 10px;
+            font-size: 8px;
             color: #555;
             font-weight: bold;
             margin-top: 8px;
@@ -635,6 +645,22 @@ if (file_exists($sealPath)) {
         /* ===== Group rental rows by building ===== */
         $rentalGroups = $invoice->invoiceRentalDetails->groupBy(fn($d) => trim((string) ($d->building_name ?? '')));
         $displayedRentalNames = $invoice->invoiceRentalDetails->pluck('rental_name')->filter()->toArray();
+
+        /* ===== Bottom-pin spacer height =====
+         * Pushes totals/payment/footer to the bottom of the page on short invoices.
+         * Estimated from row counts since DomPDF v3.1.2 ignores `height` on <table>/<div>
+         * when content is shorter — only an explicit pixel value on a plain block works.
+         * Page content area ≈ 1063px (A4 @96dpi minus 30px top/bottom margins).
+         */
+        $buildingGroupCount = $rentalGroups->filter(fn ($g, $name) => trim((string) $name) !== '')->count();
+        $itemRowCount = $invoice->invoiceRentalDetails->count()
+            + $invoice->invoiceDetails->filter(fn ($i) => !in_array($i->description, $displayedRentalNames) && $i->description)->count();
+        $estimatedContentHeight = 215 // letterhead + bill-to/meta block
+            + 40 // items table header
+            + ($buildingGroupCount * 28)
+            + ($itemRowCount * 38)
+            + 230; // totals + terbilang + payment-info + generated-note + footer block itself
+        $bottomSpacerHeight = max(0, 900 - $estimatedContentHeight);
     @endphp
 
     <!-- ===== Letterhead ===== -->
@@ -757,6 +783,11 @@ if (file_exists($sealPath)) {
         </tbody>
     </table>
 
+    <!-- ===== Bottom-pin spacer: pushes totals/payment/footer to page bottom on short invoices ===== -->
+    @if ($bottomSpacerHeight > 0)
+        <div class="bottom-spacer" style="height: {{ $bottomSpacerHeight }}px;">&nbsp;</div>
+    @endif
+
     <!-- ===== Totals ===== -->
     <table class="totals-wrap">
         <tr class="rule-top">
@@ -869,19 +900,6 @@ if (file_exists($sealPath)) {
             </tr>
         </table>
     </div>
-
-    {{-- DomPDF page numbering: rendered bottom-right inside the fixed footer band --}}
-    <script type="text/php">
-        if (isset($pdf)) {
-            $font = $fontMetrics->get_font("DejaVu Sans", "bold");
-            $size = 9;
-            $w = $pdf->get_width();
-            $h = $pdf->get_height();
-            $text = "Page {PAGE_NUM} Of {PAGE_COUNT}";
-            $textWidth = $fontMetrics->get_text_width($text, $font, $size);
-            $pdf->page_text($w - 30 - $textWidth, $h - 20, $text, $font, $size, array(0.33, 0.33, 0.33));
-        }
-    </script>
 </body>
 
 </html>
