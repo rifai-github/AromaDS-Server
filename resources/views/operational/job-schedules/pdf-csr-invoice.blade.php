@@ -11,46 +11,46 @@
     <meta charset="utf-8">
     <title>Service Report</title>
     <style>
-        @page { margin: 30px 36px 40px 36px; }
-        body { font-family: 'DejaVu Sans', sans-serif; font-size: 11px; color: #111; }
+        @page { margin: 34px 40px 40px 40px; }
+        body { font-family: 'DejaVu Sans', sans-serif; font-size: 13px; color: #111; }
         .page-break { page-break-after: always; }
 
         .letterhead { width: 100%; border-collapse: collapse; }
         .letterhead td { vertical-align: top; }
-        .logo { width: 92px; }
-        .company-name { font-size: 15px; font-weight: bold; text-align: right; }
-        .doc-title { font-size: 26px; font-weight: bold; text-align: center; margin: 6px 0 44px; }
+        .logo { width: 100px; }
+        .company-name { font-size: 17px; font-weight: bold; text-align: right; }
+        .doc-title { font-size: 30px; font-weight: bold; text-align: center; margin: 10px 0 48px; }
 
-        .info-wrap { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
+        .info-wrap { width: 100%; border-collapse: collapse; margin-bottom: 26px; }
         .info-wrap > tbody > tr > td { vertical-align: top; }
         .info-left { width: 56%; padding-right: 20px; }
         .info-right { width: 44%; }
 
         .building-table { width: 100%; border-collapse: collapse; }
-        .building-table td { vertical-align: top; font-size: 13px; padding: 0; line-height: 1.35; }
-        .building-table .b-label { width: 70px; white-space: nowrap; }
+        .building-table td { vertical-align: top; font-size: 15px; padding: 0; line-height: 1.4; }
+        .building-table .b-label { width: 78px; white-space: nowrap; }
         .building-table .b-sep { width: 10px; }
 
         .meta-table { width: 100%; border-collapse: collapse; }
-        .meta-table td { padding: 2px 0; vertical-align: top; font-size: 13px; }
-        .meta-label { width: 110px; }
+        .meta-table td { padding: 3px 0; vertical-align: top; font-size: 15px; }
+        .meta-label { width: 120px; }
         .meta-sep { width: 10px; }
 
-        .rooms-table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 12px; }
+        .rooms-table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 14px; }
         .rooms-table th {
             border: 1px solid #222;
-            padding: 6px 8px;
-            font-size: 13px;
+            padding: 8px 10px;
+            font-size: 15px;
             font-weight: bold;
             text-align: left;
         }
-        .rooms-table td { padding: 6px 8px; vertical-align: top; border: 0; }
+        .rooms-table td { padding: 8px 10px; vertical-align: top; border: 0; }
 
         .center { text-align: center; }
         .right { text-align: right; }
 
         .signature-table { width: 100%; border-collapse: collapse; margin-top: 320px; }
-        .signature-table td { vertical-align: bottom; font-size: 12px; }
+        .signature-table td { vertical-align: bottom; font-size: 14px; }
         .sign-line { border-top: 1px solid #222; }
         .sign-name { text-align: center; padding-top: 4px; }
     </style>

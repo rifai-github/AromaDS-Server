@@ -4,36 +4,36 @@
     <meta charset="utf-8">
     <title>Tanda Terima {{ $invoice->invoice_number }}</title>
     <style>
-        @page { margin: 30px 40px 24px 40px; }
-        body { font-family: 'DejaVu Sans', sans-serif; font-size: 12px; color: #111; }
+        @page { margin: 34px 44px 28px 44px; }
+        body { font-family: 'DejaVu Sans', sans-serif; font-size: 14px; color: #111; }
 
         .receipt { width: 100%; }
-        .receipt + .receipt { margin-top: 120px; }
+        .receipt + .receipt { margin-top: 110px; }
 
-        .rec-head { width: 100%; border-collapse: collapse; margin-bottom: 26px; }
+        .rec-head { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
         .rec-head td { vertical-align: top; }
-        .logo { width: 78px; }
-        .rec-company { font-size: 14px; font-weight: bold; padding-top: 12px; }
-        .rec-title { font-size: 15px; font-weight: bold; text-align: center; }
-        .rec-number { font-size: 14px; font-weight: bold; text-align: center; margin-top: 2px; }
+        .logo { width: 84px; }
+        .rec-company { font-size: 16px; font-weight: bold; padding-top: 14px; }
+        .rec-title { font-size: 17px; font-weight: bold; text-align: center; }
+        .rec-number { font-size: 16px; font-weight: bold; text-align: center; margin-top: 4px; }
 
         .rec-body { width: 100%; border-collapse: collapse; }
-        .rec-body td { vertical-align: top; font-size: 12px; line-height: 1.45; }
-        .rb-label { width: 130px; white-space: nowrap; }
+        .rec-body td { vertical-align: top; font-size: 14px; line-height: 1.5; }
+        .rb-label { width: 140px; white-space: nowrap; }
         .rb-sep { width: 10px; }
         .rb-right { text-align: right; white-space: nowrap; }
 
-        .row-gap td { height: 28px; }
-        .row-gap-sm td { height: 14px; }
+        .row-gap td { height: 30px; }
+        .row-gap-sm td { height: 16px; }
 
-        .sign-row td { vertical-align: top; font-size: 12px; }
+        .sign-row td { vertical-align: top; font-size: 14px; }
         .sign-col { width: 46%; }
         .sign-spacer { width: 8%; }
-        .sign-line { border-top: 1px solid #222; margin-top: 56px; }
+        .sign-line { border-top: 1px solid #222; margin-top: 60px; }
         .sign-name { padding-top: 4px; }
         .sign-caption { padding-top: 4px; }
 
-        .rec-footer { margin-top: 22px; font-size: 11px; line-height: 1.5; }
+        .rec-footer { margin-top: 24px; font-size: 12px; line-height: 1.55; }
         .rec-footer .addr-line { }
         .rec-footer .branch-line { }
     </style>

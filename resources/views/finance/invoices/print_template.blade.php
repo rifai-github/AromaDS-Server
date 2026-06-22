@@ -4,73 +4,73 @@
     <meta charset="utf-8">
     <title>Invoice {{ $invoice->invoice_number }}</title>
     <style>
-        @page { margin: 24px 30px 96px 30px; }
-        body { font-family: 'DejaVu Sans', sans-serif; font-size: 11px; color: #111; }
+        @page { margin: 30px 36px 30px 36px; }
+        body { font-family: 'DejaVu Sans', sans-serif; font-size: 13px; color: #111; }
         .page-break { page-break-after: always; }
 
         /* ===== Letterhead ===== */
-        .letterhead { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+        .letterhead { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
         .letterhead td { vertical-align: top; }
-        .logo { width: 96px; }
-        .company-name { font-size: 15px; font-weight: bold; text-align: right; }
-        .doc-title { font-size: 22px; font-weight: bold; text-align: center; margin: 14px 0 26px; }
-        .header-qr { text-align: right; }
-        .header-qr img, .header-qr svg { width: 78px; height: 78px; }
+        .logo { width: 110px; }
+        .company-name { font-size: 17px; font-weight: bold; text-align: right; line-height: 1.25; }
+        .doc-title { font-size: 26px; font-weight: bold; text-align: center; margin: 18px 0 0; }
+        .header-qr { text-align: right; margin-top: 6px; }
+        .header-qr img, .header-qr svg { width: 92px; height: 92px; }
 
         /* ===== Info block ===== */
-        .info-wrap { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+        .info-wrap { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
         .info-wrap > tbody > tr > td { vertical-align: top; }
-        .info-left { width: 52%; padding-right: 22px; }
-        .info-right { width: 48%; }
+        .info-left { width: 54%; padding-right: 22px; }
+        .info-right { width: 46%; }
 
-        .info-left .lbl { font-size: 11px; }
-        .info-left .party-name { font-size: 12px; font-weight: bold; margin: 2px 0 4px; }
-        .info-left .party-addr { line-height: 1.3; margin-bottom: 16px; }
+        .info-left .lbl { font-size: 13px; }
+        .info-left .party-name { font-size: 14px; font-weight: bold; margin: 4px 0 6px; }
+        .info-left .party-addr { line-height: 1.4; margin-bottom: 22px; }
 
         .meta-table { width: 100%; border-collapse: collapse; }
-        .meta-table td { padding: 2px 0; vertical-align: top; font-size: 11px; }
-        .meta-label { width: 120px; }
-        .meta-sep { width: 10px; font-weight: bold; }
+        .meta-table td { padding: 4px 0; vertical-align: top; font-size: 13px; }
+        .meta-label { width: 140px; }
+        .meta-sep { width: 12px; font-weight: bold; }
 
         /* ===== Items table ===== */
-        .items-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+        .items-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
         .items-table thead th {
-            border-top: 1px solid #222;
-            border-bottom: 1px solid #222;
-            padding: 6px 6px;
-            font-size: 12px;
+            border-top: 2px solid #222;
+            border-bottom: 2px solid #222;
+            padding: 8px 6px;
+            font-size: 14px;
             font-weight: bold;
             text-align: left;
         }
-        .items-table td { padding: 4px 6px; vertical-align: top; }
-        .items-table tr.building-row td { padding-top: 8px; font-weight: bold; text-transform: uppercase; }
+        .items-table td { padding: 6px 6px; vertical-align: top; font-size: 13px; }
+        .items-table tr.building-row td { padding-top: 12px; font-weight: bold; text-transform: uppercase; font-size: 13px; }
 
         /* ===== Totals ===== */
-        .totals-wrap { width: 100%; border-collapse: collapse; margin-top: 4px; }
+        .totals-wrap { width: 100%; border-collapse: collapse; margin-top: 16px; }
         .totals-wrap td { vertical-align: top; }
         .totals-table { width: 100%; border-collapse: collapse; }
-        .totals-table td { padding: 3px 6px; font-size: 12px; }
+        .totals-table td { padding: 5px 6px; font-size: 14px; }
         .totals-table .t-label { text-align: right; font-weight: bold; }
         .totals-table .t-sep { width: 12px; text-align: center; font-weight: bold; }
-        .totals-table .t-value { text-align: right; width: 110px; }
+        .totals-table .t-value { text-align: right; width: 120px; }
         .rule-top td { border-top: 2px solid #777; padding: 0; height: 0; }
         .rule-bottom td { border-bottom: 2px solid #777; padding: 0; height: 0; }
-        .terbilang { font-size: 11px; padding-top: 6px; }
+        .terbilang { font-size: 13px; padding-top: 10px; }
         .terbilang .t-key { font-weight: bold; }
 
         /* ===== Payment ===== */
-        .payment-info { margin-top: 26px; line-height: 1.45; }
-        .payment-info-title { font-weight: bold; margin-bottom: 4px; }
-        .payment-info-row { margin-bottom: 1px; }
+        .payment-info { margin-top: 32px; line-height: 1.55; font-size: 13px; }
+        .payment-info-title { font-weight: bold; margin-bottom: 6px; }
+        .payment-info-row { margin-bottom: 2px; }
         .payment-email a { color: #1a56db; text-decoration: none; }
 
         .generated-note {
-            margin-top: 20px;
+            margin-top: 26px;
             border-top: 1px solid #aaa;
-            padding-top: 8px;
+            padding-top: 10px;
             text-align: center;
             color: #888;
-            font-size: 10px;
+            font-size: 11px;
             font-weight: bold;
         }
 
@@ -78,17 +78,17 @@
         .right { text-align: right; }
 
         /* ===== Footer ===== */
-        .page-footer { position: fixed; left: 30px; right: 30px; bottom: 14px; }
+        .page-footer { margin-top: 14px; }
         .footer-grid { width: 100%; border-collapse: collapse; }
         .footer-grid td { vertical-align: bottom; }
-        .find-us { font-size: 9px; font-weight: bold; line-height: 1.2; }
-        .find-us img, .find-us svg { width: 56px; height: 56px; margin-top: 2px; }
-        .footer-center { text-align: center; font-size: 9px; color: #777; line-height: 1.35; }
-        .footer-center .iso-line { font-weight: bold; color: #333; }
+        .find-us { font-size: 10px; font-weight: bold; line-height: 1.25; }
+        .find-us img, .find-us svg { width: 60px; height: 60px; margin-top: 3px; }
+        .footer-center { text-align: center; font-size: 10px; color: #777; line-height: 1.4; }
+        .footer-center .iso-line { font-weight: bold; color: #333; font-size: 11px; }
         .footer-center .branch-line { color: #9a9a9a; }
-        .seal-cell { width: 90px; text-align: right; }
-        .seal-img { width: 88px; height: auto; }
-        .footer-meta { width: 100%; border-collapse: collapse; font-size: 9px; color: #555; font-weight: bold; margin-top: 6px; }
+        .seal-cell { width: 96px; text-align: right; }
+        .seal-img { width: 92px; height: auto; }
+        .footer-meta { width: 100%; border-collapse: collapse; font-size: 10px; color: #555; font-weight: bold; margin-top: 8px; }
         .footer-meta td { padding-top: 4px; }
     </style>
 </head>
@@ -367,13 +367,13 @@
     <!-- ===== Letterhead ===== -->
     <table class="letterhead">
         <tr>
-            <td style="width: 30%;">
+            <td style="width: 26%;">
                 <img src="{{ $logoSrc }}" class="logo" alt="Logo" onerror="this.style.display='none'">
             </td>
-            <td style="width: 45%;">
+            <td style="width: 42%;">
                 <div class="doc-title">CUSTOMER INVOICE</div>
             </td>
-            <td style="width: 25%;">
+            <td style="width: 32%;">
                 <div class="company-name">{{ $companyName }}</div>
                 <div class="header-qr">
                     @if($qrHeaderSrc)
