@@ -2333,6 +2333,20 @@ class JobController extends Controller
                 ], 422);
             }
 
+            if ($jobScheduleRoom->status !== \App\Models\JobScheduleRoom::STATUS_COMPLETED) {
+                $missingUnitSerials = $this->getMissingUnitSerialNumbersForRoom($jobSchedule, $roomId, $room->room_name);
+                if (!empty($missingUnitSerials)) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Masih ada unit yang belum di-scan/input SN-nya di room ini: '
+                            . implode(', ', array_map(fn ($serial, $name) => "{$name} ({$serial})", array_keys($missingUnitSerials), $missingUnitSerials))
+                            . '. Scan/input SN unit tersebut sebelum menyelesaikan room.',
+                        'code' => 'MISSING_UNIT_SERIAL_NUMBER',
+                        'data' => ['missing_serial_numbers' => array_keys($missingUnitSerials)],
+                    ], 422);
+                }
+            }
+
             \DB::beginTransaction();
 
             $jobScheduleRoom = \App\Models\JobScheduleRoom::whereKey($jobScheduleRoom->id)
@@ -2895,6 +2909,84 @@ class JobController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Unit-tracked products (e.g. Diffuser) issued for this job/room that have no
+     * matching scan in job_schedule_units yet. A room can have several serialized
+     * products (unit + refill + cleaner); verifying material at pickup only confirms
+     * the warehouse handed them over, it does not confirm which physical SN the
+     * technician actually installed in this room. Without this check, scanning a
+     * single SN (e.g. the refill) was enough to mark the whole room "completed",
+     * leaving the unit's SN never verified by the technician even though
+     * autoCreateUnitOnWall() later treats it as installed based on the issuing record.
+     */
+    private function getMissingUnitSerialNumbersForRoom(JobSchedule $job, int $jobAdviceRoomId, ?string $roomName): array
+    {
+        $materialIssues = $this->materialIssuesForJob($job);
+        if ($materialIssues->isEmpty()) {
+            return [];
+        }
+
+        $issueNumbers = $materialIssues->pluck('issue_number')->filter()->values()->toArray();
+        if (empty($issueNumbers)) {
+            return [];
+        }
+
+        $inventoryIssuingIds = \App\Models\InventoryIssuing::whereIn('reference_no', $issueNumbers)
+            ->whereIn('status', ['processed', 'sent', 'received'])
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($inventoryIssuingIds)) {
+            return [];
+        }
+
+        $unitItemsQuery = \App\Models\InventoryIssuingItem::whereIn('inventory_issuing_id', $inventoryIssuingIds)
+            ->join('master_products as mp', 'inventory_issuing_items.product_id', '=', 'mp.id')
+            ->join('product_categories as pc', 'mp.product_category_id', '=', 'pc.id')
+            ->where('pc.is_unit', true)
+            ->whereNotNull('inventory_issuing_items.serial_number_id')
+            ->select('inventory_issuing_items.*');
+
+        $normalizedRoomName = $roomName ? trim(strtolower($roomName)) : null;
+        if ($normalizedRoomName) {
+            $unitItemsQuery->where(function ($q) use ($normalizedRoomName) {
+                $q->whereRaw('LOWER(TRIM(inventory_issuing_items.room_name)) = ?', [$normalizedRoomName])
+                    ->orWhereNull('inventory_issuing_items.room_name')
+                    ->orWhere('inventory_issuing_items.room_name', '');
+            });
+        }
+
+        $unitItems = $unitItemsQuery->with('serialNumber')->get();
+
+        if ($unitItems->isEmpty()) {
+            return [];
+        }
+
+        $scannedSerials = \DB::table('job_schedule_units')
+            ->where('job_schedule_id', $job->id)
+            ->where('job_advice_room_id', $jobAdviceRoomId)
+            ->pluck('mac')
+            ->map(fn ($mac) => trim(strtoupper((string) $mac)))
+            ->filter()
+            ->values()
+            ->all();
+
+        $missing = [];
+        foreach ($unitItems as $item) {
+            $serial = $item->serialNumber->serial_number ?? null;
+            if (!$serial) {
+                continue;
+            }
+
+            $normalizedSerial = trim(strtoupper($serial));
+            if (!in_array($normalizedSerial, $scannedSerials, true)) {
+                $missing[$normalizedSerial] = $item->serialNumber->masterProduct->name ?? ($item->serialNumber->masterProduct?->name ?? 'Unit');
+            }
+        }
+
+        return $missing;
     }
 
     private function jobScheduleRoomHasPhotoType(?int $jobScheduleRoomId, string $photoType): bool
