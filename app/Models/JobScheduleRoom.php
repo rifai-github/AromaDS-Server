@@ -171,17 +171,10 @@ class JobScheduleRoom extends Model
             'completed_by' => $userId ?? auth()->id(),
         ];
 
-        // DUPLICATION FIX: Smart Note Appending
         if ($notes) {
-            $newNote = trim($notes);
-            $currentNotes = $this->completion_notes ?? '';
-            
-            // Only append if the note is not already present
-            if (strpos($currentNotes, $newNote) === false) {
-                $updateData['completion_notes'] = ($currentNotes ? $currentNotes . "\n" : '') . $newNote;
-            }
+            $updateData['completion_notes'] = trim($notes);
         }
-        
+
         $this->update($updateData);
     }
 

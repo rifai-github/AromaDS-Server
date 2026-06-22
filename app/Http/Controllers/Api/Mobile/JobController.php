@@ -2416,17 +2416,10 @@ class JobController extends Controller
             // Update JobAdviceRoom status to completed
             $room->status = 'completed';
             
-            // DUPLICATION FIX: Smart Note Appending
             if ($request->filled('notes')) {
-                $newNote = trim($request->notes);
-                $currentNotes = $room->notes ?? '';
-                
-                // Only append if the note is not already present
-                if (strpos($currentNotes, $newNote) === false) {
-                    $room->notes = ($currentNotes ? $currentNotes . "\n" : '') . $newNote;
-                }
+                $room->notes = trim($request->notes);
             }
-            
+
             $room->save();
 
             // Ensure JobSchedule status is updated to 'in_progress' if work just started
@@ -2440,7 +2433,6 @@ class JobController extends Controller
             // IMPORTANT: Only update JobScheduleRoom for the job schedule we're working on (not all jobs)
             // This prevents status updates from affecting other jobs (e.g., install free vs remove)
             if ($jobScheduleRoom) {
-                // Also update completion notes with smart append logic
                 $completionNote = 'Completed via mobile app';
                 if ($request->filled('notes')) {
                      // If user provided notes, use them instead of default
