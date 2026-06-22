@@ -544,19 +544,20 @@ class QuotationController extends Controller
         return view('marketing.quotations.show', compact('quotation'));
     }
 
-    public function downloadPdf(Quotation $quotation)
+    public function downloadPdf(Request $request, Quotation $quotation)
     {
         // Load quotation with all necessary relationships
         $quotation->load([
-            'prospect', 
-            'survey', 
-            'creator', 
-            'updater', 
-            'marketing', 
-            'approver', 
-            'contracts', 
+            'prospect',
+            'survey',
+            'creator',
+            'updater',
+            'marketing',
+            'approver',
+            'contracts',
             'branch',
             'quotationDetails.masterRental',
+            'quotationDetails.survey.building',
             'quotationSurveys.survey',
             'quotationRooms',
             'quotationRentals.masterRental'
@@ -572,7 +573,10 @@ class QuotationController extends Controller
         $safeQuotationNumber = str_replace(['/', '\\'], '-', $quotation->quotation_number);
         $filename = 'Quotation_' . $safeQuotationNumber . '_' . date('Y-m-d') . '.pdf';
         
-        // Return PDF download
+        if ($request->boolean('inline')) {
+            return $pdf->stream($filename);
+        }
+
         return $pdf->download($filename);
     }
 

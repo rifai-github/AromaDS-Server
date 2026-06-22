@@ -139,13 +139,14 @@
                                 @endif
                             @elseif($quotation->status === 'approved')
                                 @php
-                                    $canDownloadPdf = auth()->user()->hasPermission('quotations.download');
+                                    $canDownloadPdf = auth()->user()->hasPermission('marketing.quotations.download')
+                                        || auth()->user()->hasPermission('quotations.download');
                                     $canCreateContract = $quotation->canCreateContract();
                                 @endphp
                                 
                                 @if($canDownloadPdf)
-                                    <a href="{{ route('marketing.quotations.download-pdf', $quotation->id) }}" class="btn btn-primary btn-sm me-2">
-                                        <i class="fas fa-download"></i> DOWNLOAD PDF
+                                    <a href="{{ route('marketing.quotations.download-pdf', ['quotation' => $quotation->id, 'inline' => 'true']) }}" target="_blank" class="btn btn-primary btn-sm me-2">
+                                        <i class="fas fa-print"></i> PRINT
                                     </a>
                                 @endif
                                 
