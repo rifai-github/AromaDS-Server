@@ -1463,9 +1463,13 @@ class InvoiceController extends Controller
             // 1. Generate Invoice PDF
             // Ensure necessary data is loaded (Matching printInvoice method)
             $invoice->load([
-                'invoiceDetails', 
-                'invoiceRentalDetails.masterRental', 
+                'invoiceDetails',
+                'invoiceRentalDetails.masterRental',
                 'invoiceRentalDetails.jobSchedule.room',
+                'invoiceRentalDetails.jobSchedule.building.city',
+                'invoiceRentalDetails.jobSchedule.building.district',
+                'invoiceRentalDetails.jobSchedule.building.subdistrict',
+                'invoiceRentalDetails.jobSchedule.building.province',
                 'customer.defaultBankPayment.bank',
                 'billingGroup',
                 'contract.billingGroup',
@@ -1475,8 +1479,10 @@ class InvoiceController extends Controller
                 'taxSetting'
             ]);
             
-            // Generate PDF using existing view
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('finance.invoices.print_template', compact('invoice'));
+            // Generate PDF using existing view.
+            // enable_php is required for the in-template page_text() page-numbering script.
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('finance.invoices.print_template', compact('invoice'))
+                ->setOption('enable_php', true);
             $invoicePdfContent = $pdf->output();
 
             // Save temp invoice PDF
@@ -1512,7 +1518,7 @@ class InvoiceController extends Controller
                             // Match grouping logic from JobScheduleController.printCsr
                             $groupedJobs = $jobs->groupBy('job_number');
                             
-                            $csrPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('operational.job-schedules.pdf-csr', [
+                            $csrPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('operational.job-schedules.pdf-csr-invoice', [
                                 'groupedJobs' => $groupedJobs,
                                 'selectedRoomIds' => null
                             ]);

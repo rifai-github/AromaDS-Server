@@ -4,142 +4,161 @@
     <meta charset="utf-8">
     <title>Tanda Terima {{ $invoice->invoice_number }}</title>
     <style>
-        body { font-family: sans-serif; font-size: 11px; color: #333; }
-        .page-break { page-break-after: always; }
-        
-        .header-table { width: 100%; margin-bottom: 20px; border-bottom: 2px solid #214589; padding-bottom: 10px; }
-        .header-table td { vertical-align: top; }
-        
-        .logo { width: 150px; }
-        
-        .title { font-size: 20px; font-weight: bold; color: #214589; text-align: right; }
-        .doc-number { font-size: 14px; font-weight: bold; text-align: right; margin-top: 5px; }
-        
-        .info-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; }
-        .info-table td { padding: 5px; vertical-align: top; }
-        .label { font-weight: bold; width: 120px; color: #555; }
-        
-        .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        .items-table th { background-color: #214589; color: white; padding: 8px; text-align: left; }
-        .items-table td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
-        
-        .center { text-align: center; }
-        .right { text-align: right; }
-        
-        .footer { position: fixed; bottom: 30px; left: 0; right: 0; text-align: center; font-size: 10px; color: #888; border-top: 1px solid #eee; padding-top: 10px; }
-        
-        @media print {
-            .footer { position: fixed; bottom: 0; }
-        }
+        @page { margin: 30px 40px 24px 40px; }
+        body { font-family: 'DejaVu Sans', sans-serif; font-size: 12px; color: #111; }
+
+        .receipt { width: 100%; }
+        .receipt + .receipt { margin-top: 120px; }
+
+        .rec-head { width: 100%; border-collapse: collapse; margin-bottom: 26px; }
+        .rec-head td { vertical-align: top; }
+        .logo { width: 78px; }
+        .rec-company { font-size: 14px; font-weight: bold; padding-top: 12px; }
+        .rec-title { font-size: 15px; font-weight: bold; text-align: center; }
+        .rec-number { font-size: 14px; font-weight: bold; text-align: center; margin-top: 2px; }
+
+        .rec-body { width: 100%; border-collapse: collapse; }
+        .rec-body td { vertical-align: top; font-size: 12px; line-height: 1.45; }
+        .rb-label { width: 130px; white-space: nowrap; }
+        .rb-sep { width: 10px; }
+        .rb-right { text-align: right; white-space: nowrap; }
+
+        .row-gap td { height: 28px; }
+        .row-gap-sm td { height: 14px; }
+
+        .sign-row td { vertical-align: top; font-size: 12px; }
+        .sign-col { width: 46%; }
+        .sign-spacer { width: 8%; }
+        .sign-line { border-top: 1px solid #222; margin-top: 56px; }
+        .sign-name { padding-top: 4px; }
+        .sign-caption { padding-top: 4px; }
+
+        .rec-footer { margin-top: 22px; font-size: 11px; line-height: 1.5; }
+        .rec-footer .addr-line { }
+        .rec-footer .branch-line { }
     </style>
 </head>
 <body>
     @php
         $company = \App\Models\Company::first();
-        $submittedDocuments = collect([
-            'Invoice Asli No: ' . $invoice->invoice_number,
-        ]);
 
-        if ($invoice->faktur_pajak) {
-            $submittedDocuments->push('Faktur Pajak Asli');
+        $companyName = strtoupper(trim((string) ($company->name ?? 'PT. PINK SERVICES INDONESIA')));
+        $customerName = strtoupper(trim((string) ($invoice->customer->name ?? '-')));
+
+        // Derive the Tanda Terima number from the invoice number: swap the INV type code for TT.
+        // Legacy keeps a separate TT counter we don't have, so we derive deterministically.
+        $ttNumber = preg_replace('#/INV/#', '/TT/', '/' . $invoice->invoice_number . '/');
+        $ttNumber = trim($ttNumber, '/');
+        if ($ttNumber === $invoice->invoice_number) {
+            // Fallback when the pattern differs: replace a bare "-INV/" or "INV" token.
+            $ttNumber = preg_replace('/-INV\b/i', '-TT', $invoice->invoice_number);
+            $ttNumber = preg_replace('/\bINV\b/i', 'TT', $ttNumber);
         }
 
-        if ($invoice->contract) {
-            $submittedDocuments->push('Lampiran Kontrak / PO No: ' . $invoice->contract->contract_number);
+        // Short job reference (e.g. "25-11/0247") shown on the right of "Ditujukan kepada".
+        $jobRefFull = $invoice->invoiceRentalDetails->pluck('job_no')->filter()->first()
+            ?: ($invoice->contract_number ?: '');
+        $jobRefShort = '';
+        if ($jobRefFull && preg_match('#([0-9]{2}-[0-9]{2}/[0-9]+)#', $jobRefFull, $m)) {
+            $jobRefShort = $m[1];
         }
 
-        $invoiceJobNumbers = $invoice->invoiceRentalDetails
-            ? $invoice->invoiceRentalDetails->pluck('job_no')->filter()->unique()->values()
-            : collect();
+        // Indonesian long-form invoice date: "02 Desember 2025".
+        $idMonths = [1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+        $invDateId = '-';
+        if ($invoice->invoice_date) {
+            $d = $invoice->invoice_date;
+            $invDateId = sprintf('%02d %s %d', (int) $d->format('d'), $idMonths[(int) $d->format('n')], (int) $d->format('Y'));
+        }
 
-        if ($invoiceJobNumbers->isNotEmpty()) {
-            $submittedDocuments->push('Berita Acara Pekerjaan (' . $invoiceJobNumbers->count() . ' dokumen)');
+        $amountIdr = 'IDR ' . number_format($invoice->grand_total, 0, ',', ',');
+        $dikirimOleh = trim((string) ($invoice->dikirim_oleh ?? ''));
+
+        // Footer: prefer the company address, then append the legacy Tel/Fax + branch-phone lines
+        // (static branding text not stored per-record — defaults match the official template).
+        $footerAddrLine = trim((string) ($company->address ?? ''));
+        if ($footerAddrLine === '') {
+            $footerAddrLine = 'Komplek Kedoya Center Blok C 8- 9 Jl. Raya Pejuangan No. 1 Kebon Jeruk, Jakarta Barat 11530. INDONESIA Tel.62 21 533 3405, 549 |49|, Fax 62 21 533 3406 - 07';
+        } else {
+            $footerAddrLine .= ' Tel.62 21 533 3405, 549 |49|, Fax 62 21 533 3406 - 07';
+        }
+        $footerBranchLine = 'Bali : 62 361 722 745  Batam : 62 778 461 601  Bandung : 62 22 730 4176  Surabaya : 62 31 849 6409-10  Semarang : 62 24 7617 314  Medan : 62 61 4146 494';
+
+        $logoPath = public_path('images/logo.png');
+        $logoSrc = $logoPath;
+        if (file_exists($logoPath)) {
+            $logoType = pathinfo($logoPath, PATHINFO_EXTENSION);
+            $logoSrc = 'data:image/' . $logoType . ';base64,' . base64_encode(file_get_contents($logoPath));
         }
     @endphp
 
-    <!-- Header -->
-    <table class="header-table">
-        <tr>
-            <td style="width: 50%;">
-                <img src="{{ public_path('images/logo.png') }}" class="logo" alt="Logo" onerror="this.style.display='none'">
-                <div style="margin-top: 10px; font-size: 10px;">
-                    <strong>{{ $company->name ?? config('app.name') }}</strong><br>
-                    {!! nl2br(e($company->address ?? '')) !!}<br>
-                    Phone: {{ $company->phone ?? '-' }} | Email: {{ $company->email ?? '-' }}
-                </div>
-            </td>
-            <td style="width: 50%; text-align: right;">
-                <div class="title">TANDA TERIMA INVOICE</div>
-                <div class="doc-number">{{ $invoice->invoice_number }}</div>
-            </td>
-        </tr>
-    </table>
-
-    <!-- Info -->
-    <table class="info-table">
-        <tr>
-            <td class="label">Customer:</td>
-            <td>{{ $invoice->customer->name }}</td>
-            <td class="label">Invoice Date:</td>
-            <td>{{ $invoice->invoice_date ? $invoice->invoice_date->format('d/M/Y') : '-' }}</td>
-        </tr>
-        <tr>
-            <td class="label">Address:</td>
-            <td>{{ $invoice->billing_address ?? $invoice->customer->billing_address ?? '-' }}</td>
-            <td class="label">Total Amount:</td>
-            <td>Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}</td>
-        </tr>
-    </table>
-
-    <!-- Document Checklist -->
-    <h3>Dokumen yang Diserahkan</h3>
-    <table class="items-table">
-        <thead>
+    @for($copy = 0; $copy < 2; $copy++)
+    <div class="receipt">
+        <table class="rec-head">
             <tr>
-                <th style="width: 10%;" class="center">No</th>
-                <th style="width: 90%;">Nama Dokumen</th>
+                <td style="width: 12%;">
+                    <img src="{{ $logoSrc }}" class="logo" alt="Logo">
+                </td>
+                <td style="width: 30%;">
+                    <div class="rec-company">{{ $companyName }}</div>
+                </td>
+                <td style="width: 58%;">
+                    <div class="rec-title">TANDA TERIMA</div>
+                    <div class="rec-number">No. {{ $ttNumber }}</div>
+                </td>
             </tr>
-        </thead>
-        <tbody>
-            @foreach($submittedDocuments as $document)
+        </table>
+
+        <table class="rec-body">
             <tr>
-                <td class="center">{{ $loop->iteration }}</td>
-                <td>{{ $document }}</td>
+                <td class="rb-label">Ditujukan kepada</td>
+                <td class="rb-sep">:</td>
+                <td>{{ $customerName }}</td>
+                <td class="rb-right">{{ $jobRefShort !== '' ? $jobRefShort . ';' : '' }}</td>
             </tr>
-            @endforeach
-        </tbody>
-    </table>
+            <tr class="row-gap"><td colspan="4"></td></tr>
+            <tr>
+                <td class="rb-label">Telah diterima</td>
+                <td class="rb-sep">:</td>
+                <td colspan="2">
+                    Invoice bertanggal {{ $invDateId }} dengan No {{ $invoice->invoice_number }}<br>
+                    sebesar {{ $amountIdr }}
+                </td>
+            </tr>
+            <tr class="row-gap-sm"><td colspan="4"></td></tr>
+            <tr>
+                <td class="rb-label">Catatan</td>
+                <td class="rb-sep">:</td>
+                <td>&nbsp;</td>
+                <td class="rb-right" style="font-weight: normal;">Tanggal,</td>
+            </tr>
+        </table>
 
-    @if($invoice->catatan_pengiriman)
-    <div style="margin-top: 20px; font-style: italic; border: 1px solid #ddd; padding: 10px; background-color: #f9f9f9;">
-        <strong>Catatan Pengiriman:</strong><br>
-        {{ $invoice->catatan_pengiriman }}
+        <table class="rec-body" style="margin-top: 4px;">
+            <tr class="sign-row">
+                <td class="sign-col">Yang menyerahkan,</td>
+                <td class="sign-spacer">&nbsp;</td>
+                <td class="sign-col" style="text-align: right;">Yang menerima,</td>
+            </tr>
+            <tr class="sign-row">
+                <td class="sign-col">
+                    <div class="sign-name" style="text-align: center;">{{ $dikirimOleh }}</div>
+                    <div class="sign-line"></div>
+                </td>
+                <td class="sign-spacer">&nbsp;</td>
+                <td class="sign-col">
+                    <div class="sign-line"></div>
+                    <div class="sign-caption" style="text-align: center;">Tanda tangan, nama jelas, cap</div>
+                </td>
+            </tr>
+        </table>
+
+        <div class="rec-footer">
+            <div class="addr-line">{{ $footerAddrLine }}</div>
+            <div class="branch-line">{{ $footerBranchLine }}</div>
+        </div>
     </div>
-    @endif
-
-    <!-- Signatures -->
-    <table style="width: 100%; margin-top: 50px; text-align: center;">
-        <tr>
-            <td style="width: 33%;">
-                <p>Dikirim Oleh</p>
-                <br><br><br>
-                <hr style="width: 80%; border-top: 1px solid #ccc;">
-                <p>{{ $invoice->dikirim_oleh }}</p>
-                <p style="font-size: 10px;">{{ $invoice->dikirim_pada ? $invoice->dikirim_pada->format('d/M/Y H:i') : '' }}</p>
-            </td>
-            <td style="width: 33%;"></td>
-            <td style="width: 33%;">
-                <p>Diterima Oleh</p>
-                <br><br><br>
-                <hr style="width: 80%; border-top: 1px solid #ccc;">
-                <p>{{ $invoice->diterima_oleh ?? '( ....................... )' }}</p>
-                <p style="font-size: 10px;">{{ $invoice->pada ? $invoice->pada->format('d/M/Y H:i') : '' }}</p>
-            </td>
-        </tr>
-    </table>
-
-    <div class="footer">
-        Dicetak pada: {{ now()->format('d/M/Y H:i') }} | Dokumen ini digenerate secara otomatis oleh sistem.
-    </div>
+    @endfor
 </body>
 </html>
