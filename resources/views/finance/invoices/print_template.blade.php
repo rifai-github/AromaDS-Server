@@ -655,10 +655,12 @@ if (file_exists($sealPath)) {
         $buildingGroupCount = $rentalGroups->filter(fn ($g, $name) => trim((string) $name) !== '')->count();
         $itemRowCount = $invoice->invoiceRentalDetails->count()
             + $invoice->invoiceDetails->filter(fn ($i) => !in_array($i->description, $displayedRentalNames) && $i->description)->count();
+        $extraTotalsRowCount = ($invoice->discount_amount > 0 ? 1 : 0) + ($showTaxRow ? 1 : 0);
         $estimatedContentHeight = 215 // letterhead + bill-to/meta block
             + 40 // items table header
             + ($buildingGroupCount * 28)
             + ($itemRowCount * 38)
+            + ($extraTotalsRowCount * 22)
             + 230; // totals + terbilang + payment-info + generated-note + footer block itself
         $bottomSpacerHeight = max(0, 900 - $estimatedContentHeight);
     @endphp

@@ -116,6 +116,18 @@
                             </h3>
                         </div>
                         <div>
+                            @php
+                                $canPrintQuotation = in_array($quotation->status, ['approved', 'accepted', 'contract'], true)
+                                    && (auth()->user()->hasPermission('marketing.quotations.download')
+                                        || auth()->user()->hasPermission('quotations.download'));
+                            @endphp
+
+                            @if($canPrintQuotation)
+                                <a href="{{ route('marketing.quotations.download-pdf', ['quotation' => $quotation->id, 'inline' => 'true']) }}" target="_blank" class="btn btn-primary btn-sm me-2">
+                                    <i class="fas fa-print"></i> PRINT
+                                </a>
+                            @endif
+
                             @if($quotation->status === 'draft')
                                 <a href="{{ route('marketing.quotations.edit', $quotation->id) }}" class="btn btn-warning btn-sm me-2">
                                     <i class="fas fa-edit"></i> EDIT
@@ -139,16 +151,8 @@
                                 @endif
                             @elseif($quotation->status === 'approved')
                                 @php
-                                    $canDownloadPdf = auth()->user()->hasPermission('marketing.quotations.download')
-                                        || auth()->user()->hasPermission('quotations.download');
                                     $canCreateContract = $quotation->canCreateContract();
                                 @endphp
-                                
-                                @if($canDownloadPdf)
-                                    <a href="{{ route('marketing.quotations.download-pdf', ['quotation' => $quotation->id, 'inline' => 'true']) }}" target="_blank" class="btn btn-primary btn-sm me-2">
-                                        <i class="fas fa-print"></i> PRINT
-                                    </a>
-                                @endif
                                 
                                 @if($canCreateContract)
                                     <a href="{{ route('marketing.contracts.wizard.create', ['quotation_id' => $quotation->id]) }}" class="btn btn-success btn-sm me-2">
