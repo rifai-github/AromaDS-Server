@@ -803,7 +803,25 @@ class ContractController extends Controller
 
     public function destroy(Contract $contract)
     {
-        $contract->delete();
+        if ($contract->contract_status !== 'draft') {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Contract tidak dapat dihapus pada status \"{$contract->contract_status}\". Lakukan Unpost terlebih dahulu untuk mengembalikan Contract ke status Draft sebelum menghapus.",
+            ], 422);
+        }
+
+        DB::transaction(function () use ($contract) {
+            $quotation = $contract->quotation;
+
+            $contract->delete();
+
+            if ($quotation && $quotation->status === 'contract') {
+                $quotation->update([
+                    'status' => 'approved',
+                    'updated_by' => Auth::id(),
+                ]);
+            }
+        });
 
         return response()->json([
             'status' => 'success',
@@ -827,7 +845,33 @@ class ContractController extends Controller
         }
 
         try {
-            $count = Contract::whereIn('id', $request->ids)->delete();
+            $contracts = Contract::whereIn('id', $request->ids)->get();
+
+            $nonDraft = $contracts->filter(fn ($c) => $c->contract_status !== 'draft');
+            if ($nonDraft->isNotEmpty()) {
+                $numbers = $nonDraft->pluck('contract_number')->implode(', ');
+
+                return response()->json([
+                    'success' => false,
+                    'message' => "Contract berikut tidak berstatus Draft dan tidak dapat dihapus: {$numbers}. Unpost terlebih dahulu.",
+                ], 422);
+            }
+
+            $count = DB::transaction(function () use ($contracts) {
+                foreach ($contracts as $contract) {
+                    $quotation = $contract->quotation;
+                    $contract->delete();
+
+                    if ($quotation && $quotation->status === 'contract') {
+                        $quotation->update([
+                            'status' => 'approved',
+                            'updated_by' => Auth::id(),
+                        ]);
+                    }
+                }
+
+                return $contracts->count();
+            });
 
             return response()->json([
                 'success' => true,
