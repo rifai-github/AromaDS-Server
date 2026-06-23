@@ -1209,10 +1209,11 @@
                             <!-- 9. Material (Product Name) -->
                             <td>
                                 @php
-                                    $isPending = $materialIssue && $materialIssue->status === 'pending';
+                                    // MOM11: editable while pending, approved, or out_of_stock — locked once issued/received/sent
+                                    $isEditableStatus = $materialIssue && in_array($materialIssue->status, ['pending', 'approved', 'out_of_stock'], true);
                                 @endphp
 
-                                @if($canPrepareMaterial && ($item->is_copied || $isPending))
+                                @if($canPrepareMaterial && ($item->is_copied || $isEditableStatus))
                                     @php
                                         // STRICT FILTERING LOGIC
                                         $currentProduct = $item->product;
