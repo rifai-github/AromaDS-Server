@@ -795,14 +795,36 @@ class JobSchedule extends Model
 
     public function suspend()
     {
+        if (!$this->canBeSuspendedOrDpf()) {
+            throw new \RuntimeException("Suspend/DPF tidak dapat diberlakukan pada job type '{$this->display_type}'. Hanya service routine yang bisa di-suspend/dpf.");
+        }
+
         // Suspend: Job diselesaikan tapi TIDAK ditagih (MOM6)
         $this->update(['status' => 'suspend']);
     }
 
     public function markAsDpf()
     {
+        if (!$this->canBeSuspendedOrDpf()) {
+            throw new \RuntimeException("Suspend/DPF tidak dapat diberlakukan pada job type '{$this->display_type}'. Hanya service routine yang bisa di-suspend/dpf.");
+        }
+
         // DPF (Done but Force-charged): Job diselesaikan tapi TETAP ditagih (MOM6)
         $this->update(['status' => 'dpf']);
+    }
+
+    /**
+     * Whether this job may be suspended or marked DPF.
+     *
+     * MOM: IR (install) and S1 (service_first) jobs are the markers that a
+     * contract has gone active and must not be suspendable/DPF-able. Only
+     * periodic service jobs (service_routine, legacy service) qualify.
+     */
+    public function canBeSuspendedOrDpf(): bool
+    {
+        $type = strtolower(trim((string) ($this->type ?? '')));
+
+        return in_array($type, ['service_routine', 'service'], true);
     }
 
     public function isSuspended()

@@ -6056,8 +6056,7 @@ class JobScheduleController extends Controller
                 try {
                     // MOM: Only service_routine type can be suspended/dpf
                     // Other types (install, install_free, service_first) cannot be suspended/dpf
-                    $allowedTypes = ['service_routine', 'service']; // 'service' for legacy
-                    if (!in_array(strtolower($jobSchedule->type), $allowedTypes)) {
+                    if (!$jobSchedule->canBeSuspendedOrDpf()) {
                         $errors[] = "Job {$jobSchedule->job_number}: Suspend/DPF tidak dapat diberlakukan pada job type '{$jobSchedule->display_type}'. Hanya service routine yang bisa di-suspend/dpf.";
                         continue;
                     }
@@ -7585,6 +7584,11 @@ class JobScheduleController extends Controller
                 'message' => 'Job suspended successfully (will NOT be invoiced)',
                 'data' => $jobSchedule->fresh()
             ]);
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 422);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -7625,6 +7629,11 @@ class JobScheduleController extends Controller
                 'message' => 'Job marked as DPF successfully (will be invoiced)',
                 'data' => $jobSchedule->fresh()
             ]);
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 422);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
