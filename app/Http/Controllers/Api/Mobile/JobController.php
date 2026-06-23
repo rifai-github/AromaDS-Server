@@ -4565,6 +4565,20 @@ class JobController extends Controller
             if ($cannotCompleteAllRooms) {
                 $this->handleCannotCompleteAllRooms($job, now());
             } else {
+                // Re-check room completion with a fresh query right before flipping to done_job.
+                // The earlier readiness check (validateJobReadyForMobileCompletion) can be stale if
+                // a concurrent complete_room request is still in flight (offline-sync replay can fire
+                // several requests back-to-back), so guard the actual status mutation too.
+                $job->unsetRelation('jobScheduleRooms');
+                if (!$job->areAllRoomsCompleted() && !$this->jobRoomsAreClosedForMobileVerification($job)) {
+                    \DB::rollBack();
+
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Masih ada room yang belum diselesaikan pada job ini.',
+                    ], 422);
+                }
+
                 // Complete only the current schedule. Related schedules under the same job_number
                 // represent separate IR/CSR/IF/RV/RF work and must be finished independently.
                 $job->status = 'done_job';
