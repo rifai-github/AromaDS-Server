@@ -148,10 +148,50 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             $table->integer('quantity_received')->default(0);
             $table->timestamps();
         });
+
+        Schema::create('product_types', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->boolean('is_unit')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('job_advice_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_advice_id')->nullable();
+            $table->unsignedBigInteger('rental_product_id')->nullable();
+            $table->string('room_name')->nullable();
+            $table->integer('quantity')->default(1);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('rental_details', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('master_rental_id')->nullable();
+            $table->string('item_type')->nullable();
+            $table->unsignedBigInteger('item_id')->nullable();
+            $table->unsignedBigInteger('product_type_id')->nullable();
+            $table->unsignedBigInteger('product_category_id')->nullable();
+            $table->unsignedBigInteger('master_product_id')->nullable();
+            $table->integer('service_frequency_multiplier')->nullable();
+            $table->integer('quantity')->nullable();
+            $table->integer('bom_rental_qty')->nullable();
+            $table->boolean('auto_expand')->default(false);
+            $table->string('unit')->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
     }
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('rental_details');
+        Schema::dropIfExists('job_advice_rooms');
+        Schema::dropIfExists('product_types');
         Schema::dropIfExists('inventory_issuing_items');
         Schema::dropIfExists('inventory_issuings');
         Schema::dropIfExists('job_assign_material_issues');
@@ -286,5 +326,121 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
         $missing = $this->invokeGetMissingUnitSerialNumbersForRoom($job, 410, 'Studio 1');
 
         $this->assertSame([], $missing);
+    }
+
+    /**
+     * Bug #25 (live QA case: job_schedule_room 154/155, "Ruang Ballroom" with 3
+     * rental links): a single physical room hosts 2 DIFFERENT rentals, each with
+     * its own Diffuser unit but the SAME room_name. The old exact-serial-match
+     * query pulled in BOTH rentals' units and demanded both serials be scanned
+     * under whichever job_advice_room_id was being completed — so finishing the
+     * "unit komplit" rental failed because the OTHER rental's diffuser serial
+     * (tracked under a different job_advice_room_id) could never match. Scoping
+     * by per-rental BOM quantity instead of exact serial fixes this: completing
+     * rental A only requires as many scanned units as rental A's own BOM calls
+     * for, ignoring rental B's separate unit entirely.
+     */
+    public function test_room_with_two_different_rentals_does_not_demand_the_other_rentals_unit_serial(): void
+    {
+        $jobAdvice = JobAdvice::create(['customer_id' => 7, 'type' => 'install']);
+
+        $job = JobSchedule::create([
+            'job_number' => 'SBY-IR/26-06/0099',
+            'type' => 'install',
+            'status' => 'in_progress',
+            'job_advice_id' => $jobAdvice->id,
+        ]);
+
+        $unitCategory = ProductCategory::create(['code' => 'UNIT', 'name' => 'Diffuser', 'is_unit' => true]);
+        $unitProduct = MasterProduct::create(['product_category_id' => $unitCategory->id, 'name' => 'Diffuser W300 Black']);
+
+        $masterRentalA = 501; // rental A's MasterRental id (BOM: 1x Diffuser)
+        $masterRentalB = 502; // rental B's MasterRental id (separate BOM: 1x Diffuser)
+
+        \DB::table('rental_details')->insert([
+            'master_rental_id' => $masterRentalA,
+            'item_type' => 'product',
+            'master_product_id' => $unitProduct->id,
+            'product_category_id' => $unitCategory->id,
+            'bom_rental_qty' => 1,
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        \DB::table('rental_details')->insert([
+            'master_rental_id' => $masterRentalB,
+            'item_type' => 'product',
+            'master_product_id' => $unitProduct->id,
+            'product_category_id' => $unitCategory->id,
+            'bom_rental_qty' => 1,
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Rental A and Rental B are two DIFFERENT JobAdviceRoom rows for the
+        // SAME physical room ("Ruang Ballroom"), each with its own unit.
+        $roomA = \App\Models\JobAdviceRoom::create([
+            'job_advice_id' => $jobAdvice->id,
+            'rental_product_id' => $masterRentalA,
+            'room_name' => 'Ruang Ballroom',
+            'quantity' => 1,
+        ]);
+        $roomB = \App\Models\JobAdviceRoom::create([
+            'job_advice_id' => $jobAdvice->id,
+            'rental_product_id' => $masterRentalB,
+            'room_name' => 'Ruang Ballroom',
+            'quantity' => 1,
+        ]);
+
+        $unitSnA = SerialNumber::create(['serial_number' => 'DW300B260001', 'master_product_id' => $unitProduct->id, 'status' => 'pending']);
+        $unitSnB = SerialNumber::create(['serial_number' => 'DW300B260002', 'master_product_id' => $unitProduct->id, 'status' => 'pending']);
+
+        $materialIssue = MaterialIssue::create(['issue_number' => 'SBY-MI/26-06/0099', 'status' => 'issued']);
+        $jobAssignSchedule = JobAssignSchedule::create(['job_schedule_id' => $job->id, 'status' => 'assigned']);
+        JobAssignMaterialIssue::create([
+            'job_assign_schedule_id' => $jobAssignSchedule->id,
+            'material_issue_id' => $materialIssue->id,
+        ]);
+
+        $inventoryIssuing = InventoryIssuing::create([
+            'issuing_number' => 'SBY-WI/26-06/0099',
+            'reference_no' => $materialIssue->issue_number,
+            'status' => 'sent',
+            'warehouse_id' => 1,
+        ]);
+
+        // Both rentals' units were issued under the SAME room_name.
+        InventoryIssuingItem::create([
+            'inventory_issuing_id' => $inventoryIssuing->id,
+            'product_id' => $unitProduct->id,
+            'serial_number_id' => $unitSnA->id,
+            'room_name' => 'Ruang Ballroom',
+        ]);
+        InventoryIssuingItem::create([
+            'inventory_issuing_id' => $inventoryIssuing->id,
+            'product_id' => $unitProduct->id,
+            'serial_number_id' => $unitSnB->id,
+            'room_name' => 'Ruang Ballroom',
+        ]);
+
+        // Technician only scanned Rental A's own unit serial, under Rental A's
+        // job_advice_room_id. Rental B's unit (under a different room id) has
+        // not been touched at all — and shouldn't need to be, to finish A.
+        \DB::table('job_schedule_units')->insert([
+            'job_schedule_id' => $job->id,
+            'job_advice_room_id' => $roomA->id,
+            'mac' => 'DW300B260001',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $missing = $this->invokeGetMissingUnitSerialNumbersForRoom($job, $roomA->id, 'Ruang Ballroom');
+
+        $this->assertSame(
+            [],
+            $missing,
+            'Completing Rental A must not be blocked by Rental B\'s separate, not-yet-scanned unit.'
+        );
     }
 }

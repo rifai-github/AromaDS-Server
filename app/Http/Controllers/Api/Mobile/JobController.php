@@ -3009,20 +3009,119 @@ class JobController extends Controller
             ->values()
             ->all();
 
+        // BUG #25: a single physical room can host 2+ DIFFERENT rentals (e.g. one
+        // "unit+refill" rental and a separate "unit only" rental), each tracked
+        // under its own job_advice_room_id but sharing the same room_name. The
+        // query above matches inventory items by room_name only, so it used to
+        // pull in BOTH rentals' units and demand every one of their exact serial
+        // numbers be scanned under THIS $jobAdviceRoomId — failing the "unit
+        // komplit" rental's completion because the other rental's unit serial
+        // (scanned under a different job_advice_room_id, or not yet scanned at
+        // all) was never going to match. Compare by COUNT-per-product instead of
+        // exact serial match: only require as many scanned units of a given
+        // product as THIS rental's own BOM calls for, not every unit issued to
+        // the shared room name.
+        $room = \App\Models\JobAdviceRoom::find($jobAdviceRoomId);
+        $requiredQtyByProductId = $this->unitQuantitiesRequiredForRentalRoom($room);
+
+        if (empty($requiredQtyByProductId)) {
+            // No rental-specific BOM info available — fall back to the original
+            // exact-serial behaviour rather than silently skipping validation.
+            $missing = [];
+            foreach ($unitItems as $item) {
+                $serial = $item->serialNumber->serial_number ?? null;
+                if (!$serial) {
+                    continue;
+                }
+
+                $normalizedSerial = trim(strtoupper($serial));
+                if (!in_array($normalizedSerial, $scannedSerials, true)) {
+                    $missing[$normalizedSerial] = $item->serialNumber->masterProduct->name ?? ($item->serialNumber->masterProduct?->name ?? 'Unit');
+                }
+            }
+
+            return $missing;
+        }
+
+        $scannedCountByProductId = \DB::table('job_schedule_units as jsu')
+            ->join('serial_numbers as sn', function ($join) {
+                $join->whereRaw('UPPER(TRIM(sn.serial_number)) = UPPER(TRIM(jsu.mac))');
+            })
+            ->where('jsu.job_schedule_id', $job->id)
+            ->where('jsu.job_advice_room_id', $jobAdviceRoomId)
+            ->select('sn.master_product_id')
+            ->get()
+            ->countBy('master_product_id');
+
+        $itemsByProductId = $unitItems->groupBy('product_id');
+
         $missing = [];
-        foreach ($unitItems as $item) {
-            $serial = $item->serialNumber->serial_number ?? null;
-            if (!$serial) {
+        foreach ($requiredQtyByProductId as $productId => $requiredQty) {
+            $scannedCount = $scannedCountByProductId->get($productId, 0);
+            $stillNeeded = $requiredQty - $scannedCount;
+
+            if ($stillNeeded <= 0) {
                 continue;
             }
 
-            $normalizedSerial = trim(strtoupper($serial));
-            if (!in_array($normalizedSerial, $scannedSerials, true)) {
-                $missing[$normalizedSerial] = $item->serialNumber->masterProduct->name ?? ($item->serialNumber->masterProduct?->name ?? 'Unit');
-            }
+            $productItems = $itemsByProductId->get($productId, collect());
+            $productName = $productItems->first()->serialNumber->masterProduct->name
+                ?? $productItems->first()?->serialNumber?->masterProduct?->name
+                ?? 'Unit';
+
+            $missing["{$productName} (x{$stillNeeded})"] = $productName;
         }
 
         return $missing;
+    }
+
+    /**
+     * How many serial-tracked units THIS SPECIFIC rental (job_advice_room row)
+     * requires, keyed by master_product_id — derived from the rental's BOM
+     * (RentalDetail rows whose category/type is_unit) times the room's own
+     * quantity. Used by getMissingUnitSerialNumbersForRoom() to scope SN
+     * validation to the rental being completed instead of every rental sharing
+     * the same physical room name.
+     */
+    private function unitQuantitiesRequiredForRentalRoom(?\App\Models\JobAdviceRoom $room): array
+    {
+        if (!$room || !$room->rental_product_id) {
+            return [];
+        }
+
+        $rentalDetails = \App\Models\RentalDetail::where('master_rental_id', $room->rental_product_id)
+            ->where(function ($q) {
+                $q->whereHas('productCategory', fn ($catQ) => $catQ->where('is_unit', true))
+                    ->orWhereHas('productType', fn ($typeQ) => $typeQ->where('is_unit', true));
+            })
+            ->get();
+
+        if ($rentalDetails->isEmpty()) {
+            return [];
+        }
+
+        $roomQuantity = max((int) ($room->quantity ?? 1), 1);
+        $requiredByProductId = [];
+
+        foreach ($rentalDetails as $detail) {
+            $productIds = [];
+
+            if ($detail->master_product_id) {
+                $productIds[] = $detail->master_product_id;
+            } elseif ($detail->product_category_id) {
+                $productIds = \App\Models\MasterProduct::where('product_category_id', $detail->product_category_id)
+                    ->pluck('id')
+                    ->all();
+            }
+
+            $qtyPerRoom = max((int) ($detail->bom_rental_qty ?: $detail->quantity ?: 1), 1) * $roomQuantity;
+
+            foreach ($productIds as $productId) {
+                $requiredByProductId[$productId] = ($requiredByProductId[$productId] ?? 0) + $qtyPerRoom;
+            }
+        }
+
+        return $requiredByProductId;
     }
 
     private function jobScheduleRoomHasPhotoType(?int $jobScheduleRoomId, string $photoType): bool
