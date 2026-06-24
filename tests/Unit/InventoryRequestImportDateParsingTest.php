@@ -18,6 +18,14 @@ class InventoryRequestImportDateParsingTest extends TestCase
 
     public function test_accepts_standard_dashboard_format(): void
     {
+        $date = $this->parse('29 Jun 2026');
+
+        $this->assertNotNull($date);
+        $this->assertSame('2026-06-29', $date->format('Y-m-d'));
+    }
+
+    public function test_accepts_dash_separated_format_for_backward_compatibility(): void
+    {
         $date = $this->parse('29-Jun-2026');
 
         $this->assertNotNull($date);

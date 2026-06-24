@@ -44,9 +44,9 @@ class InventoryRequestImportController extends Controller
         $format = $request->query('format', 'xlsx');
 
         $sample = [
-            ['REQ-001', 'JKT', '', now()->addDays(7)->format('d-M-Y'), 'Restock kebutuhan service', 'Import contoh', 'REF-001', '', '10', 'Aroma lavender'],
-            ['REQ-001', 'JKT', '', now()->addDays(7)->format('d-M-Y'), 'Restock kebutuhan service', 'Import contoh', '', 'Dispenser Aroma X', '2', 'Unit tambahan'],
-            ['REQ-002', '', 'Bandung', now()->addDays(10)->format('d-M-Y'), 'Kebutuhan cabang', '', 'CLN-001', '', '5', ''],
+            ['REQ-001', 'JKT', '', now()->addDays(7)->format('d M Y'), 'Restock kebutuhan service', 'Import contoh', 'REF-001', '', '10', 'Aroma lavender'],
+            ['REQ-001', 'JKT', '', now()->addDays(7)->format('d M Y'), 'Restock kebutuhan service', 'Import contoh', '', 'Dispenser Aroma X', '2', 'Unit tambahan'],
+            ['REQ-002', '', 'Bandung', now()->addDays(10)->format('d M Y'), 'Kebutuhan cabang', '', 'CLN-001', '', '5', ''],
         ];
 
         return SpreadsheetImportHelper::downloadTemplate(
@@ -394,9 +394,10 @@ class InventoryRequestImportController extends Controller
     }
 
     /**
-     * Accepts the standard dashboard display format (d-M-Y, e.g. 29-Jun-2026)
-     * as the primary format, plus ISO (Y-m-d) and Excel serial dates for
-     * backward compatibility with files built before the format was fixed.
+     * Accepts the standard dashboard display format (d M Y, e.g. 29 Jun 2026)
+     * as the primary format, plus dash/slash variants, ISO (Y-m-d), and Excel
+     * serial dates for backward compatibility with files built before the
+     * format was fixed.
      */
     private function parseRequiredDate($value): ?Carbon
     {
@@ -413,7 +414,7 @@ class InventoryRequestImportController extends Controller
             }
         }
 
-        foreach (['d-M-Y', 'd/M/Y', 'Y-m-d', 'd-m-Y', 'd/m/Y'] as $format) {
+        foreach (['d M Y', 'd-M-Y', 'd/M/Y', 'Y-m-d', 'd-m-Y', 'd/m/Y'] as $format) {
             try {
                 return Carbon::createFromFormat($format, $value)->startOfDay();
             } catch (\Throwable) {
