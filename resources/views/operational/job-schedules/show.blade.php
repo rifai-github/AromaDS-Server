@@ -903,6 +903,12 @@
                                             @endif
                                         </div>
                                     </div>
+                                    @if($jobSchedule->ba_number)
+                                    <div class="info-field">
+                                        <div class="info-field-label">No. BA</div>
+                                        <div class="info-field-value">{{ $jobSchedule->ba_number }}</div>
+                                    </div>
+                                    @endif
                                     @endif
                                     <div class="info-field" style="align-items: flex-start;">
                                         <div class="info-field-label" style="margin-top: 0.25rem;">Catatan Internal</div>
