@@ -220,6 +220,35 @@ class JobSchedule extends Model
     }
 
     /**
+     * BUG #30: generate a BA (Berita Acara) number by counting existing
+     * job_schedules.ba_number rows for the month — NOT via
+     * DocumentNumberService::generate('berita_acara', ...), which reads from
+     * the separate `berita_acara` table. That table is never actually
+     * populated (0 rows), so every call to the DocumentNumberService path
+     * always found "no existing number" and returned sequence 1, handing out
+     * the exact same "JKT-BA/{yy}-{mm}/0001" to every job that went through
+     * it — confirmed on live QA data where 16 different done_job rows all
+     * shared ba_number "JKT-BA/26-06/0001". This mirrors
+     * JobScheduleController::generateBANumber(), the one path that was
+     * already reading from the correct table, so all three BA-stamping call
+     * sites (web JobScheduleController, JobWebCompletionService, mobile
+     * JobController::verifyJob) share one correct implementation.
+     */
+    public static function generateBaNumber(?\DateTimeInterface $date = null): string
+    {
+        $branchCode = 'JKT';
+        $typeCode = 'BA';
+        $yearMonth = ($date ?? now())->format('y-m');
+        $prefix = "{$branchCode}-{$typeCode}/{$yearMonth}/";
+
+        $count = self::withTrashed()
+            ->where('ba_number', 'like', "{$prefix}%")
+            ->count();
+
+        return $prefix . str_pad($count + 1, 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
      * Reconcile stale 'meninggalkan_lokasi' jobs left behind by the partial-completion
      * flow (handleCannotCompleteAllRooms): once every room moved to a follow-up job
      * ("Lanjutan dari Job {job_number}") has reached a terminal status, the source job

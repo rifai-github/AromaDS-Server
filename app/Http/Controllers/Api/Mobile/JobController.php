@@ -4161,8 +4161,7 @@ class JobController extends Controller
                 $job->ba_date = now()->toDateString();
             }
             if (!$job->ba_number) {
-                $documentNumberService = new \App\Services\DocumentNumberService();
-                $job->ba_number = $documentNumberService->generate('berita_acara', null, null, null, $job->id);
+                $job->ba_number = JobSchedule::generateBaNumber();
             }
             
             // Store verification data in internal_notes or create JobReport

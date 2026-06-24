@@ -94,8 +94,7 @@ class JobWebCompletionService
             $jobSchedule->ba_date = $now->toDateString();
         }
         if (!$jobSchedule->ba_number) {
-            $jobSchedule->ba_number = (new DocumentNumberService())
-                ->generate('berita_acara', null, null, null, $jobScheduleId);
+            $jobSchedule->ba_number = JobSchedule::generateBaNumber();
         }
         $jobSchedule->completed_at = $now;
         $jobSchedule->updated_by = $userId;

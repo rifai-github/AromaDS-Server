@@ -9342,20 +9342,7 @@ class JobScheduleController extends Controller
      */
     private function generateBANumber(JobSchedule $jobSchedule)
     {
-        $branchCode = 'JKT'; // Default branch code
-        $typeCode = 'BA';
-        
-        // Format: BranchCode-BA/YY-MM/NNNN
-        $yearMonth = date('y-m');
-        
-        // Count existing job schedules with BA number in same month
-        $count = JobSchedule::withTrashed()
-            ->where('ba_number', 'like', "{$branchCode}-{$typeCode}/{$yearMonth}/%")
-            ->count();
-        
-        $sequence = str_pad($count + 1, 4, '0', STR_PAD_LEFT);
-        
-        return "{$branchCode}-{$typeCode}/{$yearMonth}/{$sequence}";
+        return JobSchedule::generateBaNumber();
     }
 
     /**
