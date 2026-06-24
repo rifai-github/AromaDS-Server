@@ -159,4 +159,44 @@ class JobSchedulePartialCompletionReconciliationTest extends TestCase
         $sourceJob->refresh();
         $this->assertSame('meninggalkan_lokasi', $sourceJob->status);
     }
+
+    public function test_source_job_is_reconciled_when_its_room_says_moved_but_no_followup_was_ever_created(): void
+    {
+        // Bug #15 (live QA case: job 130 "SBY-CSR/26-10/0004"): the room is marked
+        // 'cancelled' with the "dipindahkan ke Job baru" note, but its follow-up job
+        // was never actually created (or was later removed) — zero JobSchedule rows
+        // reference "Lanjutan dari Job {job_number}". The old check treated "no
+        // follow-up found" the same as "follow-up still open" and skipped
+        // reconciliation, leaving this job blocking MOM14's unfinished-job
+        // validation forever with nothing left to ever resolve it.
+        $sourceJob = JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-10/0004',
+            'type' => 'service_first',
+            'status' => 'meninggalkan_lokasi',
+            'job_advice_id' => 19,
+            'building_id' => 197,
+            'contract_number' => 'SBY-CA/26-06/0010',
+        ]);
+
+        $sourceJob->jobScheduleRooms()->create([
+            'job_advice_room_id' => 14,
+            'room_name' => 'Ruang Aula',
+            'status' => 'completed',
+        ]);
+
+        $sourceJob->jobScheduleRooms()->create([
+            'job_advice_room_id' => 15,
+            'room_name' => 'Ruang Meeting',
+            'status' => 'cancelled',
+            'notes' => 'Pekerjaan tidak selesai, dipindahkan ke Job baru.',
+        ]);
+
+        // No JobSchedule referencing "Lanjutan dari Job SBY-CSR/26-10/0004" exists.
+
+        JobSchedule::reconcilePartialCompletionSourceJobs('SBY-CA/26-06/0010');
+
+        $sourceJob->refresh();
+        $this->assertSame('done_job', $sourceJob->status);
+        $this->assertNotNull($sourceJob->completed_at);
+    }
 }

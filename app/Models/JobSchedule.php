@@ -259,7 +259,15 @@ class JobSchedule extends Model
                 ->where('internal_notes', 'like', "Lanjutan dari Job {$sourceJob->job_number}%")
                 ->get();
 
-            if ($followUps->isEmpty() || $followUps->contains(fn ($job) => !in_array($job->status, $terminalStatuses, true))) {
+            // BUG #15: a room can be marked 'cancelled' with the "dipindahkan ke Job
+            // baru" note while its follow-up job was never actually created (or was
+            // later deleted) — e.g. findOrCreatePartialCompletionFollowUpJob() failed
+            // partway through, or the room/job linkage changed since. The old check
+            // here treated "no follow-up found" the same as "follow-up still pending"
+            // and skipped reconciliation either way, leaving the source job blocking
+            // MOM14 forever with nothing left to actually wait for. If there's
+            // genuinely no follow-up to track, there's nothing pending — reconcile.
+            if ($followUps->isNotEmpty() && $followUps->contains(fn ($job) => !in_array($job->status, $terminalStatuses, true))) {
                 continue;
             }
 
