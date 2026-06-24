@@ -4951,6 +4951,7 @@ class JobScheduleController extends Controller
             'photos' => 'nullable|array',
             'photos.*' => 'image|max:5120',
             'notes' => 'nullable|string',
+            'cannot_complete_all_rooms' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -4973,12 +4974,18 @@ class JobScheduleController extends Controller
             return response()->json($transitionValidation, 422);
         }
 
+        // "Tidak dapat menyelesaikan semua ruangan" mirrors the mobile checkbox
+        // (verifyJob's cannot_complete_all_rooms): skip the all-rooms-completed
+        // gate and route incomplete rooms into a follow-up job instead of done_job.
+        $cannotCompleteAllRooms = $request->boolean('cannot_complete_all_rooms');
+
         // Readiness: all rooms must be completed before BA can be issued (mirrors
-        // mobile validateJobReadyForMobileCompletion for the full path).
-        if (!$jobSchedule->areAllRoomsCompleted()) {
+        // mobile validateJobReadyForMobileCompletion for the full path) — unless
+        // the technician/operator explicitly flagged the job as not fully done.
+        if (!$cannotCompleteAllRooms && !$jobSchedule->areAllRoomsCompleted()) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Semua ruangan harus berstatus selesai (lengkap dengan foto before/after) sebelum BA dapat dibuat.',
+                'message' => 'Semua ruangan harus berstatus selesai (lengkap dengan foto before/after) sebelum BA dapat dibuat. Atau centang "Tidak dapat menyelesaikan semua ruangan" jika sebagian pekerjaan belum selesai.',
             ], 422);
         }
 
@@ -5006,6 +5013,25 @@ class JobScheduleController extends Controller
                 'pic_photo' => $request->file('pic_photo'),
                 'work_photos' => $request->file('photos') ?? [],
             ], Auth::id());
+
+            if ($cannotCompleteAllRooms) {
+                // Leave incomplete rooms as-is; move them into a follow-up job
+                // instead of forcing them to "completed" (mirrors mobile verifyJob's
+                // cannot_complete_all_rooms branch, see JobController::handleCannotCompleteAllRooms).
+                $service->handlePartialCompletion($jobSchedule, now(), Auth::id());
+                $jobSchedule->save();
+
+                DB::commit();
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Job ditandai meninggalkan lokasi dengan Berita Acara. Room yang belum selesai dipindahkan ke Job baru (outstanding).',
+                    'data' => [
+                        'ba_number' => $meta['ba_number'] ?? null,
+                        'ba_date' => $meta['ba_date'] ?? null,
+                    ],
+                ]);
+            }
 
             // Move to done_job + propagate via the shared automation (single state machine).
             $this->completeScheduleRoomsFromWeb($jobSchedule);

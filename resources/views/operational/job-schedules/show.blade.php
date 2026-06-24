@@ -2196,6 +2196,15 @@
                         <label class="form-label fw-bold">Catatan (opsional)</label>
                         <textarea class="form-control" name="notes" id="baNotes" rows="2"></textarea>
                     </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="cannot_complete_all_rooms" id="baCannotCompleteAllRooms">
+                        <label class="form-check-label fw-bold" for="baCannotCompleteAllRooms">
+                            Tidak dapat menyelesaikan semua ruangan
+                        </label>
+                        <div class="form-text">
+                            Centang jika sebagian ruangan belum selesai dikerjakan. Job akan ditandai "meninggalkan lokasi" dan ruangan yang belum selesai dipindahkan ke Job baru (outstanding).
+                        </div>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
@@ -3189,6 +3198,8 @@ function submitDoneJobBa() {
     for (let i = 0; i < work.length; i++) fd.append('photos[]', work[i]);
     const notes = document.getElementById('baNotes').value;
     if (notes) fd.append('notes', notes);
+    const cannotCompleteAllRooms = document.getElementById('baCannotCompleteAllRooms').checked;
+    fd.append('cannot_complete_all_rooms', cannotCompleteAllRooms ? '1' : '0');
 
     const btn = document.getElementById('baSubmitBtn');
     const original = btn.innerHTML;

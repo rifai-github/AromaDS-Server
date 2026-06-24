@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Http\Controllers\Api\Mobile\JobController;
 use App\Models\JobSchedule;
 use App\Models\User;
+use App\Services\Operational\JobWebCompletionService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -441,20 +442,20 @@ class MobilePartialCompletionReturnTest extends TestCase
     {
         $this->seedPartialCompletionScenario();
 
-        $controller = app(JobController::class);
+        $service = app(JobWebCompletionService::class);
         $job = JobSchedule::findOrFail(10);
         $room = (object) [
             'room_name' => 'VIP ROOM',
             'room_id' => 900,
         ];
 
-        $contextMethod = new ReflectionMethod($controller, 'preparePartialCompletionReturnContext');
+        $contextMethod = new ReflectionMethod($service, 'preparePartialCompletionReturnContext');
         $contextMethod->setAccessible(true);
-        $returnContext = $contextMethod->invoke($controller, $job, collect([$room]), now());
+        $returnContext = $contextMethod->invoke($service, $job, collect([$room]), now(), 1);
 
-        $processMethod = new ReflectionMethod($controller, 'processPartialCompletionMaterialReturnItems');
+        $processMethod = new ReflectionMethod($service, 'processPartialCompletionMaterialReturnItems');
         $processMethod->setAccessible(true);
-        $processMethod->invoke($controller, $job, $room, collect([20]), $returnContext, now());
+        $processMethod->invoke($service, $job, $room, collect([20]), $returnContext, 1);
 
         $this->assertDatabaseHas('material_returns', [
             'job_schedule_id' => 10,
