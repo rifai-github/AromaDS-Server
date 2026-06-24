@@ -10969,6 +10969,17 @@ class JobScheduleController extends Controller
             return true;
         }
 
+        if (in_array($targetStatus, ['suspend', 'dpf'], true) && !$jobSchedule->canBeSuspendedOrDpf()) {
+            return [
+                'status' => 'error',
+                'message' => "Suspend/DPF tidak dapat diberlakukan pada job type '{$jobSchedule->display_type}'. Hanya service routine yang bisa di-suspend/dpf.",
+                'job_number' => $jobSchedule->job_number ?? 'No Job Number',
+                'job_id' => $jobSchedule->id,
+                'current_status' => $jobSchedule->status,
+                'target_status' => $targetStatus,
+            ];
+        }
+
         $completionTargets = ['completed', 'done_job'];
         if (!in_array($targetStatus, $completionTargets, true)) {
             return true;
