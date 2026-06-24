@@ -1265,8 +1265,10 @@ function openImportModal() {
                 <div class="font-semibold text-yellow-900 mb-1">Ketentuan kolom:</div>
                 <ul class="text-sm text-yellow-800 space-y-1 list-disc list-inside">
                     <li><strong>Wajib:</strong> required_date, reason, quantity, dan salah satu dari product_sku / product_name</li>
+                    <li><strong>required_date:</strong> format tanggal <strong>dd-MMM-yyyy</strong>, contoh <strong>29-Jun-2026</strong> (sama seperti tampilan tanggal di dashboard).</li>
                     <li><strong>Branch:</strong> isi branch_code atau branch_name. Jika kosong, sistem memakai branch utama user.</li>
-                    <li><strong>request_group:</strong> baris dengan nilai yang sama akan dibuat menjadi satu Inventory Request.</li>
+                    <li><strong>request_group:</strong> bukan nomor request — nomor request akan dibuat otomatis oleh sistem. Kolom ini hanya untuk mengelompokkan beberapa baris menjadi satu Inventory Request (boleh dikosongkan; jika kosong, baris dengan branch/tanggal/reason/notes yang sama otomatis digabung).</li>
+                    <li><strong>notes:</strong> catatan level request (header), tersimpan di Inventory Request. <strong>item_notes:</strong> catatan level item per produk, tersimpan di masing-masing baris item. Keduanya opsional.</li>
                     <li>Request hasil import dibuat sebagai <strong>draft</strong> seperti create manual.</li>
                 </ul>
             </div>
