@@ -594,9 +594,12 @@
                                 $anyPendingRoom = $relatedJobScheduleRooms->where('status', '!=', 'completed')->isNotEmpty();
                                 $doneAllowedStatuses = ['in_progress', 'teknisi_sedang_pengerjaan', 'teknisi_selesai_pengerjaan'];
                                 $canDoneFromStatus = in_array($jobSchedule->status, $doneAllowedStatuses, true);
-                                $doneButtonDisabled = $anyPendingRoom || !$canDoneFromStatus;
+                                // Pending rooms no longer disable the button outright: the BA modal
+                                // now has a "Tidak dapat menyelesaikan semua ruangan" checkbox that
+                                // routes incomplete rooms into a follow-up (outstanding) job instead.
+                                $doneButtonDisabled = !$canDoneFromStatus;
                                 $doneButtonTitle = $anyPendingRoom
-                                    ? 'Selesaikan semua room terlebih dahulu'
+                                    ? 'Ada room belum selesai — centang "Tidak dapat menyelesaikan semua ruangan" di form jika ingin lanjut'
                                     : ($canDoneFromStatus ? 'Selesaikan pekerjaan' : 'Done Job hanya bisa setelah On Progress Teknisi');
                             @endphp
                             @php
@@ -2167,6 +2170,7 @@
             <div class="modal-body">
                 <p style="font-size:13px;color:#6b7280;">
                     Pastikan semua ruangan sudah selesai dengan foto before/after sebelum menyimpan PIC, tanda tangan, dan BA.
+                    Jika sebagian ruangan belum selesai, centang opsi di bawah agar ruangan tersebut dipindahkan ke Job baru.
                 </p>
                 <form id="doneJobBaForm" enctype="multipart/form-data">
                     @csrf
