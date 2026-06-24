@@ -2163,13 +2163,37 @@ class JobController extends Controller
                 && $this->jobScheduleRoomHasPhotoType($recentCompletedScheduleRoom->id, 'Before Work')
                 && $this->jobScheduleRoomHasPhotoType($recentCompletedScheduleRoom->id, 'After Work')
             ) {
+                // BUG #26/#27 FIX: this used to hardcode all_completed=true and skip the
+                // job-status transition entirely, so a retried/duplicate complete_room
+                // call (e.g. technician re-taps after a slow response) reported success
+                // to the app while the job stayed stuck at 'in_progress' forever — the
+                // status-transition block below only ran on the FIRST request, not this
+                // early-return one. Re-derive the real completion state and run the same
+                // transition here so a duplicate call is idempotent instead of silently
+                // skipping the job status update.
+                $duplicateJobSchedule = \App\Models\JobSchedule::find($request->job_schedule_id);
+                $duplicateAllCompleted = $duplicateJobSchedule ? $duplicateJobSchedule->areAllRoomsCompleted() : true;
+
+                if ($duplicateJobSchedule && !in_array($duplicateJobSchedule->status, ['done_job', 'completed', 'selesai'], true)) {
+                    if ($duplicateAllCompleted) {
+                        $duplicateJobSchedule->status = 'teknisi_selesai_pengerjaan';
+                    } elseif ($duplicateJobSchedule->status !== 'in_progress') {
+                        $duplicateJobSchedule->status = 'in_progress';
+                    }
+
+                    if ($duplicateJobSchedule->isDirty('status')) {
+                        $duplicateJobSchedule->updated_by = Auth::id();
+                        $duplicateJobSchedule->save();
+                    }
+                }
+
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Room completed successfully (duplicate)',
                     'data' => [
                         'room_id' => $room->id,
                         'room_status' => $recentCompletedScheduleRoom->status,
-                        'all_completed' => true // Assume true for duplicates
+                        'all_completed' => $duplicateAllCompleted,
                     ]
                 ]);
             }
