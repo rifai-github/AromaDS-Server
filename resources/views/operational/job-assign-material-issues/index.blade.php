@@ -210,6 +210,22 @@
         border-bottom: 2px solid #e5e7eb;
     }
 
+    /* BUG #18: the filter row's sticky <th> cells extend slightly below their
+       visible background, so a body row scrolled to just beneath the filter
+       row can sit in that dead zone — a click there hits the (visually empty)
+       <th> instead of the row's Material combobox underneath, since the <th>
+       has a higher z-index. Disable hit-testing on the <th> wrapper and only
+       re-enable it on the actual filter input/select, so clicks outside those
+       controls always pass through to whatever body cell is really there.
+       This was happening at the time the row data + qty cell are sticky too
+       so it's not a single product type — it depends on scroll position. */
+    .responsive-table thead tr.filter-row th {
+        pointer-events: none !important;
+    }
+    .responsive-table thead tr.filter-row th .column-filter {
+        pointer-events: auto !important;
+    }
+
     .responsive-table tr td {
         background-color: white;
     }
