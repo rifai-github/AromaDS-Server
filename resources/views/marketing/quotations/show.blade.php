@@ -123,7 +123,7 @@
                             @endphp
 
                             @if($canPrintQuotation)
-                                <a href="{{ route('marketing.quotations.download-pdf', ['quotation' => $quotation->id, 'inline' => 'true']) }}" target="_blank" class="btn btn-primary btn-sm me-2">
+                                <a href="{{ route('marketing.quotations.download-pdf', ['quotation' => $quotation->id, 'inline' => 'true']) }}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm me-2">
                                     <i class="fas fa-print"></i> PRINT
                                 </a>
                             @endif
@@ -288,7 +288,7 @@
                                         <div class="quotation-field-label">Nomor Contract</div>
                                         <div class="quotation-field-value">
                                             @if($quotation->existingContract)
-                                                <a href="{{ route('marketing.contracts.show', $quotation->existing_contract_id) }}" class="text-primary fw-bold">
+                                                <a href="{{ route('marketing.contracts.show', $quotation->existing_contract_id) }}" class="text-primary fw-bold" target="_blank" rel="noopener noreferrer">
                                                     {{ $quotation->existingContract->contract_number }}
                                                 </a>
                                             @else
@@ -368,7 +368,7 @@
                                         <div class="quotation-field-label">Nama Perusahaan</div>
                                         <div class="quotation-field-value">
                                             @if($quotation->customer_id)
-                                                <a href="{{ route('company.customers.show', $quotation->customer_id) }}" class="text-primary fw-bold">
+                                                <a href="{{ route('company.customers.show', $quotation->customer_id) }}" class="text-primary fw-bold" target="_blank" rel="noopener noreferrer">
                                                     {{ $quotation->company_name ?? '-' }}
                                                     <i class="fas fa-external-link-alt fa-xs ms-1"></i>
                                                 </a>
@@ -647,7 +647,7 @@
                                                 @endphp
                                                 
                                                 @forelse($surveys as $survey)
-                                                    <a href="{{ route('marketing.surveys.show', $survey->id) }}" class="text-primary fw-bold">
+                                                    <a href="{{ route('marketing.surveys.show', $survey->id) }}" class="text-primary fw-bold" target="_blank" rel="noopener noreferrer">
                                                         {{ $survey->survey_number }}
                                                         <i class="fas fa-external-link-alt fa-xs ms-1"></i>
                                                     </a>{{ !$loop->last ? ',' : '' }}

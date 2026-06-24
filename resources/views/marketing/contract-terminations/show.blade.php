@@ -260,7 +260,7 @@
             <div class="detail-item">
                 <div class="detail-label">Contract Number</div>
                 <div class="detail-value">
-                    <a href="{{ route('marketing.contracts.show', $contractTermination->contract_id) }}" target="_blank">
+                    <a href="{{ route('marketing.contracts.show', $contractTermination->contract_id) }}" target="_blank" rel="noopener noreferrer">
                         {{ $contractTermination->contract->contract_number ?? '-' }}
                     </a>
                 </div>

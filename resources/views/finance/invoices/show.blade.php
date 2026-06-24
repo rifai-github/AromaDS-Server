@@ -729,7 +729,7 @@
                                         </td>
                                         <td>{{ $file->file_name }}</td>
                                         <td>
-                                            <a href="{{ $file->file_url }}" target="_blank" class="btn btn-outline-primary btn-sm px-3">
+                                            <a href="{{ $file->file_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm px-3">
                                                 <i class="fas fa-download me-2"></i>Download
                                             </a>
                                         </td>

@@ -267,6 +267,7 @@
                             <a href="{{ route('warehouse.inventory-issuings.print-receipt', $issuing->id) }}" 
                                class="btn btn-info btn-sm" 
                                target="_blank"
+                               rel="noopener noreferrer"
                                style="margin-left: 10px;">
                                 <i class="fas fa-print"></i> Print Receipt
                             </a>

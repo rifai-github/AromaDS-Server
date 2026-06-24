@@ -634,7 +634,7 @@
                             <td><strong>{{ $item->change_number }}</strong></td>
                             <td>
                                 @if($item->contract)
-                                <a href="{{ route('marketing.contracts.show', $item->contract_id) }}" target="_blank">
+                                <a href="{{ route('marketing.contracts.show', $item->contract_id) }}" target="_blank" rel="noopener noreferrer">
                                     {{ $item->contract->contract_number ?? '-' }}
                                 </a>
                                 <br>

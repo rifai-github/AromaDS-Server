@@ -479,7 +479,7 @@
                     @if($user->ktp_file_path)
                         <small class="text-success">
                             <i class="fas fa-file"></i> 
-                            <a href="{{ asset('uploads/' . $user->ktp_file_path) }}" target="_blank" class="text-success">View Current KTP File</a>
+                            <a href="{{ asset('uploads/' . $user->ktp_file_path) }}" target="_blank" rel="noopener noreferrer" class="text-success">View Current KTP File</a>
                         </small>
                     @endif
                     <small class="text-muted">Format: PDF, JPG, PNG (Max: 5MB)</small>
@@ -490,7 +490,7 @@
                     @if($user->npwp_file_path)
                         <small class="text-success">
                             <i class="fas fa-file"></i> 
-                            <a href="{{ asset('uploads/' . $user->npwp_file_path) }}" target="_blank" class="text-success">View Current NPWP File</a>
+                            <a href="{{ asset('uploads/' . $user->npwp_file_path) }}" target="_blank" rel="noopener noreferrer" class="text-success">View Current NPWP File</a>
                         </small>
                     @endif
                     <small class="text-muted">Format: PDF, JPG, PNG (Max: 5MB)</small>

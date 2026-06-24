@@ -432,7 +432,7 @@
                                             <td>{{ $history->technician_name ?? '-' }}</td>
                                             <td>
                                                 @if($history->job_schedule_number)
-                                                <a href="{{ route('operational.job-schedules.show', $history->job_schedule_id) }}" class="text-primary">
+                                                <a href="{{ route('operational.job-schedules.show', $history->job_schedule_id) }}" class="text-primary" target="_blank" rel="noopener noreferrer">
                                                     {{ $history->job_schedule_number }}
                                                 </a>
                                                 @else
@@ -491,7 +491,7 @@
                                             <td>{{ $history->technician_name ?? '-' }}</td>
                                             <td>
                                                 @if($history->job_schedule_number)
-                                                <a href="{{ route('operational.job-schedules.show', $history->job_schedule_id) }}" class="text-primary">
+                                                <a href="{{ route('operational.job-schedules.show', $history->job_schedule_id) }}" class="text-primary" target="_blank" rel="noopener noreferrer">
                                                     {{ $history->job_schedule_number }}
                                                 </a>
                                                 @else

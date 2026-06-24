@@ -856,7 +856,7 @@ function roleBadges(user) {
 
 function fileLink(path, label) {
     if (!path) return '-';
-    return `<a href="{{ url('storage') }}/${escapeHtml(path)}" target="_blank" class="text-blue-600 hover:underline">${label}</a>`;
+    return `<a href="{{ url('storage') }}/${escapeHtml(path)}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">${label}</a>`;
 }
 
 function detailItem(label, value) {

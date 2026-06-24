@@ -897,7 +897,7 @@
                             @if($oldContractId)
                                 <a href="{{ route('marketing.contracts.show', $oldContractId) }}" 
                                    class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-blue-600 hover:text-blue-800 hover:underline break-words"
-                                   onclick="event.stopPropagation()" title="Lihat contract lama">
+                                   onclick="event.stopPropagation()" title="Lihat contract lama" target="_blank" rel="noopener noreferrer">
                                     {{ $oldContractNumber }}
                                 </a>
                             @else
@@ -927,7 +927,7 @@
                             @if($currentContractId)
                                 <a href="{{ route('marketing.contracts.show', $currentContractId) }}" 
                                    class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-blue-600 hover:text-blue-800 hover:underline break-words"
-                                   onclick="event.stopPropagation()" title="Lihat contract terbaru">
+                                   onclick="event.stopPropagation()" title="Lihat contract terbaru" target="_blank" rel="noopener noreferrer">
                                     {{ $currentContractNumber }}
                                 </a>
                             @else
@@ -1098,6 +1098,7 @@
                                    class="btn btn-secondary btn-sm" 
                                    title="Print PDF"
                                    target="_blank"
+                                   rel="noopener noreferrer"
                                    onclick="event.stopPropagation()">
                                     <i class="fas fa-print"></i>
                                 </a>

@@ -288,7 +288,7 @@
                     <div class="info-label">Contract Number</div>
                     <div class="info-value">
                         @if($report->contract)
-                            <a href="{{ route('marketing.contracts.show', $report->contract_id) }}" class="text-primary fw-bold">
+                            <a href="{{ route('marketing.contracts.show', $report->contract_id) }}" class="text-primary fw-bold" target="_blank" rel="noopener noreferrer">
                                 {{ $report->contract_number }}
                             </a>
                         @else
@@ -464,7 +464,7 @@
                     <div class="info-row">
                         <div class="info-label">Invoice Number</div>
                         <div class="info-value">
-                            <a href="{{ route('finance.invoices.show', $report->invoice_id) }}" class="text-primary fw-bold">
+                            <a href="{{ route('finance.invoices.show', $report->invoice_id) }}" class="text-primary fw-bold" target="_blank" rel="noopener noreferrer">
                                 {{ $report->invoice->invoice_number ?? '-' }}
                             </a>
                         </div>
@@ -501,7 +501,7 @@
                         <input type="file" name="bap_file" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
                         @if($report->bap_file)
                             <div class="small mt-2">
-                                <a href="{{ Storage::url($report->bap_file) }}" target="_blank">Lihat BAP saat ini</a>
+                                <a href="{{ Storage::url($report->bap_file) }}" target="_blank" rel="noopener noreferrer">Lihat BAP saat ini</a>
                             </div>
                         @endif
                     </div>

@@ -60,7 +60,7 @@
                                     <td><strong>Document Path:</strong></td>
                                     <td>
                                         @if($eMateraiTransaction->document_path)
-                                            <a href="{{ $eMateraiTransaction->document_path }}" target="_blank" class="btn btn-sm btn-info">
+                                            <a href="{{ $eMateraiTransaction->document_path }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-info">
                                                 <i class="fas fa-file"></i> View Document
                                             </a>
                                         @else

@@ -183,7 +183,7 @@
                                                 <div class="card-body text-center">
                                                     <i class="fas fa-file-alt fa-2x mb-2"></i>
                                                     <p class="card-text small">{{ $attachment['name'] }}</p>
-                                                    <a href="{{ $attachment['url'] }}" target="_blank" class="btn btn-sm btn-primary">
+                                                    <a href="{{ $attachment['url'] }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary">
                                                         <i class="fas fa-download"></i>
                                                     </a>
                                                 </div>

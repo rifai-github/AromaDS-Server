@@ -632,7 +632,7 @@
                         <tr onclick="window.location='{{ route('marketing.contract-terminations.show', $item->id) }}'" style="cursor: pointer;">
                             <td><strong>{{ $item->termination_number }}</strong></td>
                             <td>
-                                <a href="{{ route('marketing.contracts.show', $item->contract_id) }}" target="_blank" onclick="event.stopPropagation()">
+                                <a href="{{ route('marketing.contracts.show', $item->contract_id) }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">
                                     {{ $item->contract->contract_number ?? '-' }}
                                 </a>
                             </td>

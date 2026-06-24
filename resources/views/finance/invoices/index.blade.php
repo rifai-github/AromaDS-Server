@@ -1948,7 +1948,7 @@ function renderFilesSupport(filesSupport) {
                         </div>
                     </div>
                 </div>
-                <a href="${file.file_path}" target="_blank" class="btn btn-sm btn-info" title="Download">
+                <a href="${file.file_path}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-info" title="Download">
                     <i class="fas fa-download"></i>
                 </a>
             </div>

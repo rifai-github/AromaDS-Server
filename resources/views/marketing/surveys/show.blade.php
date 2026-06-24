@@ -226,7 +226,7 @@
                                     <div class="survey-field">
                                         <div class="survey-field-label">Survey Report</div>
                                         <div class="survey-field-value">
-                                            <a href="{{ route('marketing.surveys.download-pdf', $survey->id) }}" class="btn btn-lg" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 30px; font-weight: bold; font-size: 16px; border-radius: 50px; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); transition: all 0.3s ease; display: inline-flex; align-items: center; gap: 10px;" onmouseover="this.style.transform=`translateY(-2px)`; this.style.boxShadow=`0 6px 20px rgba(102, 126, 234, 0.6)`" onmouseout="this.style.transform=`translateY(0)`; this.style.boxShadow=`0 4px 15px rgba(102, 126, 234, 0.4)`" target="_blank">
+                                                <a href="{{ route('marketing.surveys.download-pdf', $survey->id) }}" class="btn btn-lg" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 30px; font-weight: bold; font-size: 16px; border-radius: 50px; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); transition: all 0.3s ease; display: inline-flex; align-items: center; gap: 10px;" onmouseover="this.style.transform=`translateY(-2px)`; this.style.boxShadow=`0 6px 20px rgba(102, 126, 234, 0.6)`" onmouseout="this.style.transform=`translateY(0)`; this.style.boxShadow=`0 4px 15px rgba(102, 126, 234, 0.4)`" target="_blank" rel="noopener noreferrer">
                                                 <i class="fas fa-file-pdf" style="font-size: 20px;"></i> <span style="font-weight: bold;">Download PDF Report</span>
                                             </a>
                                         </div>
@@ -248,7 +248,7 @@
                                         <div class="survey-field-label">Nama Company</div>
                                         <div class="survey-field-value">
                                             @if($survey->customer_id)
-                                                <a href="{{ route('company.customers.show', $survey->customer_id) }}" class="text-primary fw-bold">
+                                                <a href="{{ route('company.customers.show', $survey->customer_id) }}" class="text-primary fw-bold" target="_blank" rel="noopener noreferrer">
                                                     {{ $survey->display_company_name }}
                                                     <i class="fas fa-external-link-alt fa-xs ms-1"></i>
                                                 </a>
@@ -281,7 +281,7 @@
                                         <div class="survey-field-label">Nama Gedung</div>
                                         <div class="survey-field-value">
                                             @if($survey->building_id)
-                                                <a href="{{ route('operational.buildings.show', $survey->building_id) }}" class="text-primary fw-bold">
+                                                <a href="{{ route('operational.buildings.show', $survey->building_id) }}" class="text-primary fw-bold" target="_blank" rel="noopener noreferrer">
                                                     {{ $survey->display_building_name }}
                                                     <i class="fas fa-external-link-alt fa-xs ms-1"></i>
                                                 </a>

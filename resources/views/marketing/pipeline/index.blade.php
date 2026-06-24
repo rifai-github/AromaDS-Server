@@ -1543,7 +1543,7 @@ function openViewModal(id) {
                             <ul class="list-disc list-inside space-y-1">
                                 ${data.quotation_details.map(quotation => `
                                     <li>
-                                        <a href="/marketing/quotations/${quotation.id}" class="contract-link" style="color: #2563eb; text-decoration: underline; cursor: pointer; font-weight: 500;" target="_blank" onclick="event.stopPropagation();">
+                                        <a href="/marketing/quotations/${quotation.id}" class="contract-link" style="color: #2563eb; text-decoration: underline; cursor: pointer; font-weight: 500;" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();">
                                             ${quotation.quotation_number}
                                         </a>
                                         ${quotation.customer ? ` - ${quotation.customer.name}` : ''}
@@ -1562,7 +1562,7 @@ function openViewModal(id) {
                             <ul class="list-disc list-inside space-y-1">
                                 ${data.survey_details.map(survey => `
                                     <li>
-                                        <a href="/operational/surveys/${survey.id}" class="contract-link" style="color: #2563eb; text-decoration: underline; cursor: pointer; font-weight: 500;" target="_blank" onclick="event.stopPropagation();">
+                                        <a href="/operational/surveys/${survey.id}" class="contract-link" style="color: #2563eb; text-decoration: underline; cursor: pointer; font-weight: 500;" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();">
                                             ${survey.survey_number}
                                         </a>
                                         ${survey.customer ? ` - ${survey.customer.name}` : ''}
@@ -1581,7 +1581,7 @@ function openViewModal(id) {
                             <ul class="list-disc list-inside space-y-1">
                                 ${data.contract_details.map(contract => `
                                     <li>
-                                        <a href="/marketing/contracts/${contract.id}" class="contract-link" style="color: #2563eb; text-decoration: underline; cursor: pointer; font-weight: 500;" target="_blank" onclick="event.stopPropagation();">
+                                        <a href="/marketing/contracts/${contract.id}" class="contract-link" style="color: #2563eb; text-decoration: underline; cursor: pointer; font-weight: 500;" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();">
                                             ${contract.contract_number}
                                         </a>
                                         ${contract.customer ? ` - ${contract.customer.name}` : ''}
@@ -1600,7 +1600,7 @@ function openViewModal(id) {
                             <ul class="list-disc list-inside space-y-1">
                                 ${data.job_advice_details.map(job => `
                                     <li>
-                                        <a href="/operational/job-advices/${job.id}" class="contract-link" style="color: #2563eb; text-decoration: underline; cursor: pointer; font-weight: 500;" target="_blank" onclick="event.stopPropagation();">
+                                        <a href="/operational/job-advices/${job.id}" class="contract-link" style="color: #2563eb; text-decoration: underline; cursor: pointer; font-weight: 500;" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();">
                                             ${job.job_advice_number}
                                         </a>
                                         ${job.customer ? ` - ${job.customer.name}` : ''}

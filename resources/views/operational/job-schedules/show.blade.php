@@ -586,7 +586,7 @@
                         </div>
                         <div>
                             @if($jobSchedule->status === 'done_job' || $jobSchedule->status === 'completed')
-                            <a href="{{ route('operational.job-schedules.print-csr') }}?ids={{ $jobSchedule->id }}" target="_blank" class="btn btn-light btn-sm me-2">
+                            <a href="{{ route('operational.job-schedules.print-csr') }}?ids={{ $jobSchedule->id }}" target="_blank" rel="noopener noreferrer" class="btn btn-light btn-sm me-2">
                                 <i class="fas fa-print"></i> Print
                             </a>
                             @endif
@@ -1115,7 +1115,7 @@
                                         <tr data-room-id="{{ $jobScheduleRoom->id }}">
                                             <td>
                                                 @if($roomJobSchedule)
-                                                    <a href="{{ route('operational.job-schedules.show', $roomJobSchedule->id) }}" class="{{ $roomJobSchedule->id == $jobSchedule->id ? 'fw-bold text-dark' : 'text-primary' }}">
+                                                    <a href="{{ route('operational.job-schedules.show', $roomJobSchedule->id) }}" class="{{ $roomJobSchedule->id == $jobSchedule->id ? 'fw-bold text-dark' : 'text-primary' }}" target="_blank" rel="noopener noreferrer">
                                                         {{ $roomJobSchedule->job_number ?? '-' }}
                                                     </a>
                                                 @else
@@ -1184,7 +1184,7 @@
                                                 @if($startAt)
                                                     <div style="font-size: 0.85rem;">{{ $startAt->format('d/M/Y H:i') }}</div>
                                                     @if($startLat && $startLng)
-                                                        <a href="https://www.google.com/maps?q={{ $startLat }},{{ $startLng }}" target="_blank" class="badge badge-info mt-1" style="text-decoration: none;">
+                                                        <a href="https://www.google.com/maps?q={{ $startLat }},{{ $startLng }}" target="_blank" rel="noopener noreferrer" class="badge badge-info mt-1" style="text-decoration: none;">
                                                             <i class="fas fa-map-marker-alt"></i> View Map
                                                         </a>
                                                     @endif
@@ -1226,7 +1226,7 @@
                                                 @if($finishTime)
                                                     <div style="font-size: 0.85rem;">{{ $finishTime->format('d/M/Y H:i') }}</div>
                                                     @if($finishLat && $finishLng)
-                                                        <a href="https://www.google.com/maps?q={{ $finishLat }},{{ $finishLng }}" target="_blank" class="badge badge-success mt-1" style="text-decoration: none;">
+                                                        <a href="https://www.google.com/maps?q={{ $finishLat }},{{ $finishLng }}" target="_blank" rel="noopener noreferrer" class="badge badge-success mt-1" style="text-decoration: none;">
                                                             <i class="fas fa-map-marker-alt"></i> View Map
                                                         </a>
                                                     @endif
@@ -1513,7 +1513,7 @@
                                                 </span>
                                             </td>
                                             <td>
-                                                <a href="{{ $location->google_maps_link }}" target="_blank" class="text-primary">
+                                                <a href="{{ $location->google_maps_link }}" target="_blank" rel="noopener noreferrer" class="text-primary">
                                                     {{ $location->formatted_location }}
                                                     <i class="fas fa-external-link-alt ms-1" style="font-size: 0.8rem;"></i>
                                                 </a>
@@ -1638,7 +1638,7 @@
                                                             $photoUrl = asset('uploads/' . $photoPath);
                                                         }
                                                     @endphp
-                                                    <a href="{{ $photoUrl }}" target="_blank" title="Klik untuk melihat foto lengkap">
+                                                    <a href="{{ $photoUrl }}" target="_blank" rel="noopener noreferrer" title="Klik untuk melihat foto lengkap">
                                                         <img src="{{ $photoUrl }}" alt="{{ $photo->photo_type }}" class="img-thumbnail" style="width: 80px; height: 80px; object-fit: cover; cursor: pointer;" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\'text-muted\'>Gambar tidak ditemukan</span>';">
                                                     </a>
                                                 @else
@@ -1882,7 +1882,7 @@
                                                         <small class="text-muted">{{ $file->uploader->name ?? '-' }}</small>
                                                     </td>
                                                     <td>
-                                                        <a href="{{ route('operational.job-schedules.ba-files.preview', $file->id) }}" target="_blank" class="btn btn-sm btn-outline-primary" title="Preview">
+                                                        <a href="{{ route('operational.job-schedules.ba-files.preview', $file->id) }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary" title="Preview">
                                                             <i class="fas fa-eye"></i>
                                                         </a>
                                                         @if(!$file->is_approved && $canApproveBA)

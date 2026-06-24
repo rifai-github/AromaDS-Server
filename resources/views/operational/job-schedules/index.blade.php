@@ -1238,7 +1238,7 @@
                         
                         <!-- 1. Job No -->
                         <td onclick="event.stopPropagation()">
-                            <a href="{{ route('operational.job-schedules.show', $job->id) }}?view_mode={{ $viewMode ?? 'job' }}&{{ $isRoomView ? 'room_id=' . ($schedule->room_id ?? '') : 'building_id=' . ($job->building_id ?? '') }}" class="text-blue-600 hover:underline">
+                            <a href="{{ route('operational.job-schedules.show', $job->id) }}?view_mode={{ $viewMode ?? 'job' }}&{{ $isRoomView ? 'room_id=' . ($schedule->room_id ?? '') : 'building_id=' . ($job->building_id ?? '') }}" class="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">
                                 @if(!$isRoomView)
                                     @if($jobViewRows->isNotEmpty())
                                         @foreach($jobViewRows as $index => $row)

@@ -426,7 +426,7 @@
                                         <div class="contract-field-label">Old Contract</div>
                                         <div class="contract-field-value">
                                             @if($oldContractObj)
-                                                <a href="{{ route('marketing.contracts.show', $oldContractObj->id) }}" class="text-primary fw-bold">
+                                                <a href="{{ route('marketing.contracts.show', $oldContractObj->id) }}" class="text-primary fw-bold" target="_blank" rel="noopener noreferrer">
                                                     {{ $oldContractObj->contract_number }}
                                                     <i class="fas fa-external-link-alt fa-xs ms-1"></i>
                                                 </a>
@@ -439,7 +439,7 @@
                                         <div class="contract-field-label">Current Contract</div>
                                         <div class="contract-field-value">
                                             @if($currentContractObj)
-                                                <a href="{{ route('marketing.contracts.show', $currentContractObj->id) }}" class="text-primary fw-bold">
+                                                <a href="{{ route('marketing.contracts.show', $currentContractObj->id) }}" class="text-primary fw-bold" target="_blank" rel="noopener noreferrer">
                                                     {{ $currentContractObj->contract_number }}
                                                     <i class="fas fa-external-link-alt fa-xs ms-1"></i>
                                                 </a>
@@ -455,7 +455,7 @@
                                             <div class="contract-field-label font-weight-bold" style="color: #166534;">Merged From</div>
                                             <div class="contract-field-value">
                                                 @foreach($contract->mergedSources as $source)
-                                                    <a href="{{ route('marketing.contracts.show', $source->id) }}" class="badge badge-success mb-1" style="font-size: 0.85rem; padding: 5px 10px;">
+                                                    <a href="{{ route('marketing.contracts.show', $source->id) }}" class="badge badge-success mb-1" style="font-size: 0.85rem; padding: 5px 10px;" target="_blank" rel="noopener noreferrer">
                                                         <i class="fas fa-link mr-1"></i> {{ $source->contract_number }}
                                                     </a>
                                                     @if(!$loop->last) <br> @endif
@@ -475,7 +475,7 @@
                                         <div class="contract-field" style="background-color: #fff1f2; border-radius: 4px; padding: 5px;">
                                             <div class="contract-field-label font-weight-bold" style="color: #991b1b;">Merged Into</div>
                                             <div class="contract-field-value text-red">
-                                                <a href="{{ route('marketing.contracts.show', $mergedInto->newContract->id) }}" class="badge badge-danger" style="font-size: 0.85rem; padding: 5px 10px;">
+                                                <a href="{{ route('marketing.contracts.show', $mergedInto->newContract->id) }}" class="badge badge-danger" style="font-size: 0.85rem; padding: 5px 10px;" target="_blank" rel="noopener noreferrer">
                                                     <i class="fas fa-arrow-right mr-1"></i> {{ $mergedInto->newContract->contract_number }}
                                                 </a>
                                                 <div class="text-xs text-muted mt-1" style="font-size: 0.75rem;">
@@ -646,7 +646,7 @@
                                         <div class="contract-field-label">Customer Name</div>
                                         <div class="contract-field-value">
                                             @if($contract->customer_id)
-                                                <a href="{{ route('company.customers.show', $contract->customer_id) }}" class="text-primary fw-bold">
+                                                <a href="{{ route('company.customers.show', $contract->customer_id) }}" class="text-primary fw-bold" target="_blank" rel="noopener noreferrer">
                                                     {{ $contract->customer->name ?? '-' }}
                                                     <i class="fas fa-external-link-alt fa-xs ms-1"></i>
                                                 </a>
@@ -762,7 +762,7 @@
                                         <div class="contract-field-label">Quotation Number</div>
                                         <div class="contract-field-value">
                                             @if($contract->quotation_id)
-                                                <a href="{{ route('marketing.quotations.show', $contract->quotation_id) }}" class="text-primary fw-bold">
+                                                <a href="{{ route('marketing.quotations.show', $contract->quotation_id) }}" class="text-primary fw-bold" target="_blank" rel="noopener noreferrer">
                                                     {{ $contract->quotation->quotation_number ?? '-' }}
                                                     <i class="fas fa-external-link-alt fa-xs ms-1"></i>
                                                 </a>
@@ -796,7 +796,7 @@
                                             @endphp
                                             
                                             @forelse($surveys as $survey)
-                                                <a href="{{ route('marketing.surveys.show', $survey->id) }}" class="text-primary fw-bold me-2">
+                                                <a href="{{ route('marketing.surveys.show', $survey->id) }}" class="text-primary fw-bold me-2" target="_blank" rel="noopener noreferrer">
                                                     {{ $survey->survey_number }}
                                                     <i class="fas fa-external-link-alt fa-xs ms-1"></i>
                                                 </a>{{ !$loop->last ? ',' : '' }}
@@ -1693,7 +1693,7 @@
                                             <td>
                                                 <div class="d-flex gap-1 flex-wrap">
                                                     <!-- Download Button -->
-                                                    <a href="{{ asset($file->file_path) }}" class="btn btn-sm btn-info" target="_blank" title="Download">
+                                                    <a href="{{ asset($file->file_path) }}" class="btn btn-sm btn-info" target="_blank" rel="noopener noreferrer" title="Download">
                                                         <i class="fas fa-download"></i>
                                                     </a>
                                                     
