@@ -2010,14 +2010,26 @@ class JobController extends Controller
             return ['is_blocked' => false, 'message' => ''];
         }
 
-        // Check if there's any INSTALL job for the same Job Advice that is NOT completed
+        // Check if there's any INSTALL job for the same Job Advice that is NOT completed.
+        // BUG #21/#29: a job's status can stay 'meninggalkan_lokasi' forever after the
+        // partial-completion flow moves its unfinished rooms into a follow-up job (see
+        // JobWebCompletionService::handlePartialCompletion) — the SOURCE job itself is
+        // never flipped to a terminal status. So this query used to keep matching that
+        // stale source job and block CSR/Service work for a room that had already been
+        // completed and handed off, even though the technician's actual outstanding work
+        // moved to a brand-new follow-up JobSchedule row. Room-level state (not the
+        // source job's own status) is what tells us whether THIS job is still relevant:
+        // if every room on it is already completed/cancelled, it has nothing left to
+        // finish and must not block sibling Service/CSR work.
         $blockingInstallJob = \App\Models\JobSchedule::where('job_advice_id', $job->job_advice_id)
             ->when($job->room_id, function ($query) use ($job) {
                 $query->where('room_id', $job->room_id);
             })
             ->whereIn(\DB::raw('LOWER(type)'), ['install', 'install_free', 'install free', 'ir'])
             ->whereNotIn('status', ['done_job', 'completed', 'selesai', 'cancelled', 'undone'])
-            ->first();
+            ->with('jobScheduleRooms')
+            ->get()
+            ->first(fn ($candidate) => !$this->jobRoomsAreClosedForMobileVerification($candidate));
 
         if ($blockingInstallJob) {
             return [
