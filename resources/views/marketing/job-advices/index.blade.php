@@ -2764,14 +2764,30 @@ function addRoomRow() {
     const roomFieldName = isQuotationSource ? 'quotation_room_id' : 'contract_room_id';
     const roomLabel = isQuotationSource ? 'Quotation Room' : 'Contract Room';
     
+    // BUG #14: the room <select> never had a default selection, so its onchange
+    // (loadRoomDetails, which auto-fills Rental Product) only fired once the user
+    // manually re-picked a room — reported as "rental tidak muncul otomatis dan
+    // dipilih rentalnya pun tidak muncul" for Remove Job Advice. Auto-select the
+    // first not-yet-used room here and call loadRoomDetails() right after
+    // insertion so Rental Product is filled without an extra click.
+    const usedRoomIds = new Set(
+        Array.from(document.querySelectorAll('.room-select'))
+            .map(s => s.value)
+            .filter(v => v)
+    );
+    const firstAvailableRoom = (!isQuotationSource && !pendingExtraContractRoomId)
+        ? roomsToUse.find(room => !usedRoomIds.has(String(room.id)))
+        : null;
+
     let roomOptions = '<option value="">Select Room</option>';
     roomsToUse.forEach(room => {
         const roomName = room.room_name || room.room?.room_name || 'Room ' + room.id;
         const buildingName = room.room?.building?.nama_gedung || room.room?.building?.name || room.building_name || '';
         const displayName = buildingName ? `${roomName} (${buildingName})` : roomName;
-        roomOptions += `<option value="${room.id}" data-rental-id="${room.rental_product_id || ''}">${displayName}</option>`;
+        const isPreselected = firstAvailableRoom && room.id === firstAvailableRoom.id;
+        roomOptions += `<option value="${room.id}" data-rental-id="${room.rental_product_id || ''}" ${isPreselected ? 'selected' : ''}>${displayName}</option>`;
     });
-    
+
     let rentalOptions = '<option value="">Select Rental Product</option>';
     if (isQuotationSource) {
         rentalOptions = '<option value="">Select room first</option>';
@@ -2834,6 +2850,13 @@ function addRoomRow() {
                 roomSelect.value = pendingExtraContractRoomId;
                 loadRoomDetails(roomSelect, roomRowCounter);
                 pendingExtraContractRoomId = null;
+            }
+        } else if (firstAvailableRoom) {
+            // The "selected" attribute above doesn't fire onchange, so call
+            // loadRoomDetails() directly to auto-fill Rental Product right away.
+            const roomSelect = document.querySelector(`#${rowId} .room-select`);
+            if (roomSelect) {
+                loadRoomDetails(roomSelect, roomRowCounter);
             }
         }
     }
