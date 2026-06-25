@@ -390,6 +390,9 @@
                     </h1>
                 </div>
                 <div class="flex gap-2">
+                    <a href="{{ route('warehouse.rental-management.bottom-prices', $masterRental->id) }}" class="btn btn-secondary">
+                        <i class="fas fa-tags"></i> Bottom Prices
+                    </a>
                     <button class="btn btn-primary" onclick="openEditModal()">
                         <i class="fas fa-edit"></i> Edit
                     </button>

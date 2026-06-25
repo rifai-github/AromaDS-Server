@@ -22,6 +22,7 @@ class Branch extends Model
         'phone_1',
         'phone_2',
         'fax',
+        'email',
         'postal_code',
         'province_id',
         'city_id',

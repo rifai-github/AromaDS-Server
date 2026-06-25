@@ -419,6 +419,7 @@ class RentalManagementController extends Controller
     {
         $validator = \Validator::make($request->all(), [
             'branch_id' => 'required|exists:branches,id',
+            'offer_type' => 'required|in:hari,bulan',
             'bottom_price' => 'required|numeric|min:0',
             'replacement_price' => 'required|numeric|min:0',
             'is_active' => 'boolean'
@@ -438,6 +439,7 @@ class RentalManagementController extends Controller
             $bottomPrice = RentalBottomPrice::create([
                 'master_rental_id' => $rental->id,
                 'branch_id' => $request->branch_id,
+                'offer_type' => $request->offer_type,
                 'bottom_price' => $request->bottom_price,
                 'replacement_price' => $request->replacement_price,
                 'is_active' => $request->is_active ?? true,

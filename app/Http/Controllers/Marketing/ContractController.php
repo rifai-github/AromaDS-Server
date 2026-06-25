@@ -2553,12 +2553,23 @@ class ContractController extends Controller
         }
 
         try {
-            $contract->update([
-                'notes_operation' => $request->notes_operation,
-                'notes_finance' => $request->notes_finance,
-                'notes_sales' => $request->notes_sales,
-                'updated_by' => Auth::id(),
-            ]);
+            $user = Auth::user();
+            $canEditOperation = $user->hasRoleStartingWith('Operational') || $user->hasRoleStartingWith('Marketing') || $user->hasRoleStartingWith('Management') || $user->hasRole('Admin');
+            $canEditFinance = $user->hasRoleStartingWith('Finance') || $user->hasRoleStartingWith('Marketing') || $user->hasRoleStartingWith('Management') || $user->hasRole('Admin');
+            $canEditSales = $user->hasRoleStartingWith('Marketing') || $user->hasRoleStartingWith('Management') || $user->hasRole('Admin');
+
+            $updateData = ['updated_by' => Auth::id()];
+            if ($canEditOperation) {
+                $updateData['notes_operation'] = $request->notes_operation;
+            }
+            if ($canEditFinance) {
+                $updateData['notes_finance'] = $request->notes_finance;
+            }
+            if ($canEditSales) {
+                $updateData['notes_sales'] = $request->notes_sales;
+            }
+
+            $contract->update($updateData);
 
             return response()->json([
                 'status' => 'success',

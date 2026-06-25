@@ -849,8 +849,22 @@
                                     </div>
                                 </div>
                                 <div class="contract-card-body">
+                                    @php
+                                        $canViewOperationNotes = auth()->user()->hasRoleStartingWith('Operational')
+                                            || auth()->user()->hasRoleStartingWith('Marketing')
+                                            || auth()->user()->hasRoleStartingWith('Management')
+                                            || auth()->user()->hasRole('Admin');
+                                        $canViewFinanceNotes = auth()->user()->hasRoleStartingWith('Finance')
+                                            || auth()->user()->hasRoleStartingWith('Marketing')
+                                            || auth()->user()->hasRoleStartingWith('Management')
+                                            || auth()->user()->hasRole('Admin');
+                                        $canViewSalesNotes = auth()->user()->hasRoleStartingWith('Marketing')
+                                            || auth()->user()->hasRoleStartingWith('Management')
+                                            || auth()->user()->hasRole('Admin');
+                                    @endphp
                                     <div class="row g-3">
                                         <!-- Notes Operation -->
+                                        @if($canViewOperationNotes)
                                         <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
                                             <div class="p-3 h-100" style="background-color: #eff6ff; border-left: 4px solid #2563eb; border-radius: 4px; min-height: 120px;">
                                                 <h6 class="fw-bold mb-2" style="color: #2563eb;">
@@ -862,8 +876,10 @@
                                                 </p>
                                             </div>
                                         </div>
+                                        @endif
 
                                         <!-- Notes Finance -->
+                                        @if($canViewFinanceNotes)
                                         <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
                                             <div class="p-3 h-100" style="background-color: #f0fdf4; border-left: 4px solid #059669; border-radius: 4px; min-height: 120px;">
                                                 <h6 class="fw-bold mb-2" style="color: #059669;">
@@ -875,8 +891,10 @@
                                                 </p>
                                             </div>
                                         </div>
+                                        @endif
 
                                         <!-- Notes Sales -->
+                                        @if($canViewSalesNotes)
                                         <div class="col-lg-4 col-md-12 col-sm-12 mb-3">
                                             <div class="p-3 h-100" style="background-color: #fef2f2; border-left: 4px solid #dc2626; border-radius: 4px; min-height: 120px;">
                                                 <h6 class="fw-bold mb-2" style="color: #dc2626;">
@@ -888,6 +906,7 @@
                                                 </p>
                                             </div>
                                         </div>
+                                        @endif
                                     </div>
                                 </div>
                             </div>
@@ -3024,50 +3043,66 @@ body.modal-open {
             </button>
         </div>
         <div class="modal-body">
+            @php
+                $userCanEditOperation = auth()->user()->hasRoleStartingWith('Operational')
+                    || auth()->user()->hasRoleStartingWith('Marketing')
+                    || auth()->user()->hasRoleStartingWith('Management')
+                    || auth()->user()->hasRole('Admin');
+                $userCanEditFinance = auth()->user()->hasRoleStartingWith('Finance')
+                    || auth()->user()->hasRoleStartingWith('Marketing')
+                    || auth()->user()->hasRoleStartingWith('Management')
+                    || auth()->user()->hasRole('Admin');
+                $userCanEditSales = auth()->user()->hasRoleStartingWith('Marketing')
+                    || auth()->user()->hasRoleStartingWith('Management')
+                    || auth()->user()->hasRole('Admin');
+            @endphp
             <form id="contractNotesForm">
                 <input type="hidden" id="notesContractId" value="{{ $contract->id }}">
-                
+
                 <!-- Notes Operation -->
-                <div class="form-group mb-4">
+                <div class="form-group mb-4" style="{{ $userCanEditOperation ? '' : 'display:none;' }}">
                     <label class="form-label" style="font-weight: 600; color: #2563eb;">
                         <i class="fas fa-tools me-2"></i>Notes Operation
                     </label>
                     <small class="text-muted d-block mb-2">Catatan untuk operation team (install, service, dll)</small>
-                    <textarea 
-                        id="notes_operation" 
-                        name="notes_operation" 
-                        rows="4" 
+                    <textarea
+                        id="notes_operation"
+                        name="notes_operation"
+                        rows="4"
                         class="form-control"
+                        {{ $userCanEditOperation ? '' : 'readonly' }}
                         placeholder="Contoh: Install unit di ruang meeting lantai 5, pastikan selesai sebelum jam 3 sore"
                     >{{ $contract->notes_operation }}</textarea>
                 </div>
 
                 <!-- Notes Finance -->
-                <div class="form-group mb-4">
+                <div class="form-group mb-4" style="{{ $userCanEditFinance ? '' : 'display:none;' }}">
                     <label class="form-label" style="font-weight: 600; color: #059669;">
                         <i class="fas fa-dollar-sign me-2"></i>Notes Finance
                     </label>
                     <small class="text-muted d-block mb-2">Catatan untuk finance/invoice team</small>
-                    <textarea 
-                        id="notes_finance" 
-                        name="notes_finance" 
-                        rows="4" 
+                    <textarea
+                        id="notes_finance"
+                        name="notes_finance"
+                        rows="4"
                         class="form-control"
+                        {{ $userCanEditFinance ? '' : 'readonly' }}
                         placeholder="Contoh: TOP 30 hari, invoice dikirim setiap tanggal 1, PIC: Ibu Siti"
                     >{{ $contract->notes_finance }}</textarea>
                 </div>
 
                 <!-- Notes Sales -->
-                <div class="form-group mb-4">
+                <div class="form-group mb-4" style="{{ $userCanEditSales ? '' : 'display:none;' }}">
                     <label class="form-label" style="font-weight: 600; color: #dc2626;">
                         <i class="fas fa-chart-line me-2"></i>Notes Sales
                     </label>
                     <small class="text-muted d-block mb-2">Catatan untuk sales/renewal (muncul pop-up saat renewal)</small>
-                    <textarea 
-                        id="notes_sales" 
-                        name="notes_sales" 
-                        rows="4" 
+                    <textarea
+                        id="notes_sales"
+                        name="notes_sales"
+                        rows="4"
                         class="form-control"
+                        {{ $userCanEditSales ? '' : 'readonly' }}
                         placeholder="Contoh: Renewal reminder 2 bulan sebelum expire. Customer prefer komunikasi via WA: 081234567890"
                     >{{ $contract->notes_sales }}</textarea>
                 </div>

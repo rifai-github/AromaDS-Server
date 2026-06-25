@@ -14,6 +14,7 @@ class RentalBottomPrice extends Model
     protected $fillable = [
         'master_rental_id',
         'branch_id',
+        'offer_type',
         'bottom_price',
         'replacement_price',
         'is_active',
@@ -62,6 +63,11 @@ class RentalBottomPrice extends Model
     public function scopeByMasterRental($query, $masterRentalId)
     {
         return $query->where('master_rental_id', $masterRentalId);
+    }
+
+    public function scopeByOfferType($query, $offerType)
+    {
+        return $query->where('offer_type', $offerType);
     }
 
     // Helper methods

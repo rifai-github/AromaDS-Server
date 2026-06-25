@@ -26,6 +26,7 @@ class QuotationRental extends Model
         'has_bottom_price',
         'bottom_price',
         'requires_approval',
+        'top_mismatch_warning',
         'created_by',
         'updated_by'
     ];
@@ -170,8 +171,10 @@ class QuotationRental extends Model
             ]);
         } else {
             // No price slab found, check if there's a rental bottom price
+            // for this branch and the quotation's offer type (harian/bulanan).
             $rentalBottomPrice = RentalBottomPrice::where('master_rental_id', $this->master_rental_id)
                 ->where('branch_id', $this->quotation->prospect->customer->branch_id ?? null)
+                ->where('offer_type', $this->quotation->rental_unit ?? 'bulan')
                 ->first();
 
             if ($rentalBottomPrice) {
@@ -188,24 +191,86 @@ class QuotationRental extends Model
                 ]);
             }
         }
+
+        $this->validateTermOfPayment();
+        $this->save();
     }
 
+    /**
+     * Cross-check ToP against the rental's component replacement frequency
+     * (per spec: NOT the service frequency). Skipped for Job Order
+     * (rental_unit === 'hari') since daily jobs don't have recurring billing periods.
+     *
+     * Non-blocking: stores a warning on the record instead of failing,
+     * since there's no prior enforcement and we don't want to block
+     * quotations that were previously accepted under looser rules.
+     */
     public function validateTermOfPayment()
     {
-        // Get rental service frequency
-        $serviceFrequency = $this->masterRental->serviceFrequency;
-        
-        if (!$serviceFrequency) {
+        $quotation = $this->quotation;
+
+        if (!$quotation || $quotation->rental_unit === 'hari') {
+            $this->top_mismatch_warning = null;
+            return true;
+        }
+
+        $topMonths = $this->parseTermOfPaymentMonths($quotation->terms_of_payment);
+        if ($topMonths === null) {
+            $this->top_mismatch_warning = null;
+            return true;
+        }
+
+        $replacementComponent = $this->masterRental?->rentalComponents()
+            ->whereNotNull('replacement_frequency_months')
+            ->where('replacement_frequency_months', '>', 0)
+            ->orderBy('replacement_frequency_months')
+            ->first();
+
+        if (!$replacementComponent) {
+            $this->top_mismatch_warning = null;
+            return true;
+        }
+
+        $replacementMonths = (int) $replacementComponent->replacement_frequency_months;
+
+        if ($topMonths > $replacementMonths) {
+            $this->top_mismatch_warning = "ToP {$topMonths} bulan lebih panjang dari frekuensi penggantian komponen rental ({$replacementMonths} bulan).";
             return false;
         }
 
-        // Check if term of payment matches service frequency
-        $quotation = $this->quotation;
-        $termOfPayment = $quotation->terms_of_payment;
-        
-        // This is a simplified validation - in real implementation,
-        // you would have more complex logic based on business rules
-        return true; // Placeholder
+        $this->top_mismatch_warning = null;
+        return true;
+    }
+
+    /**
+     * Parse a ToP label like "1 bulan 1x" or "3 bulan" into a month count.
+     * Returns null when the label doesn't express a month-based period (e.g. "Cash", "Tahunan" handled as 12).
+     */
+    private function parseTermOfPaymentMonths(?string $term): ?int
+    {
+        $term = strtolower(trim($term ?? ''));
+
+        if ($term === '' || $term === 'cash' || $term === 'tunai') {
+            return null;
+        }
+
+        if (preg_match('/(\d+)\s*bulan/i', $term, $matches)) {
+            return (int) $matches[1];
+        }
+
+        if (str_contains($term, 'tahunan') || str_contains($term, 'annual')) {
+            return 12;
+        }
+
+        if (str_contains($term, 'triwulan') || str_contains($term, 'quarter')) {
+            return 3;
+        }
+
+        if (str_contains($term, 'semester')) {
+            return 6;
+        }
+
+        return null;
     }
 
     public function isBelowBottomPrice()

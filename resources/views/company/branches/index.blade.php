@@ -1258,9 +1258,13 @@ function openCreateModal() {
                             <label class="form-label">Fax</label>
                             <input type="text" name="fax" class="form-input">
                         </div>
+                        <div class="form-group">
+                            <label class="form-label">Email</label>
+                            <input type="email" name="email" class="form-input">
+                        </div>
                     </div>
                 </div>
-                
+
                 <div class="modal-section">
                     <h3 class="modal-section-title">Settings</h3>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1373,9 +1377,13 @@ function openViewModal(id) {
                                     <label class="form-label">Fax</label>
                                     <div class="detail-value">${branch.fax || '-'}</div>
                                 </div>
+                                <div class="detail-item">
+                                    <label class="form-label">Email</label>
+                                    <div class="detail-value">${branch.email || '-'}</div>
+                                </div>
                             </div>
                         </div>
-                        
+
                         <div class="modal-section">
                             <h3 class="modal-section-title">Settings</h3>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1657,9 +1665,13 @@ function openEditModal(id) {
                                         <label class="form-label">Fax</label>
                                         <input type="text" name="fax" class="form-input" value="${branch.fax || ''}">
                                     </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Email</label>
+                                        <input type="email" name="email" class="form-input" value="${branch.email || ''}">
+                                    </div>
                                 </div>
                             </div>
-                            
+
                             <div class="modal-section">
                                 <h3 class="modal-section-title">Settings</h3>
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
