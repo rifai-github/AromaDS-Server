@@ -800,11 +800,23 @@
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Contract No</div>
-                                        <div class="info-field-value">{{ $jobSchedule->contract_number ?? '-' }}</div>
+                                        <div class="info-field-value">
+                                            @if($jobSchedule->jobAdvice?->contract)
+                                                <a href="{{ route('marketing.contracts.show', $jobSchedule->jobAdvice->contract) }}" target="_blank" rel="noopener noreferrer">{{ $jobSchedule->contract_number ?? $jobSchedule->jobAdvice->contract->contract_number ?? '-' }}</a>
+                                            @else
+                                                {{ $jobSchedule->contract_number ?? '-' }}
+                                            @endif
+                                        </div>
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Customer</div>
-                                        <div class="info-field-value">{{ $jobSchedule->jobAdvice?->customer?->name ?? $jobSchedule->company_name ?? '-' }}</div>
+                                        <div class="info-field-value">
+                                            @if($jobSchedule->jobAdvice?->customer)
+                                                <a href="{{ route('company.customers.show', $jobSchedule->jobAdvice->customer) }}" target="_blank" rel="noopener noreferrer">{{ $jobSchedule->jobAdvice->customer->name }}</a>
+                                            @else
+                                                {{ $jobSchedule->company_name ?? '-' }}
+                                            @endif
+                                        </div>
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">P.Service</div>
@@ -825,7 +837,13 @@
                                 <div class="card-body">
                                     <div class="info-field">
                                         <div class="info-field-label">Gedung</div>
-                                        <div class="info-field-value">{{ $jobSchedule->building?->nama_gedung ?? '-' }}</div>
+                                        <div class="info-field-value">
+                                            @if($jobSchedule->building)
+                                                <a href="{{ route('operational.buildings.show', $jobSchedule->building) }}" target="_blank" rel="noopener noreferrer">{{ $jobSchedule->building->nama_gedung ?? '-' }}</a>
+                                            @else
+                                                -
+                                            @endif
+                                        </div>
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Schedule Date</div>

@@ -1313,6 +1313,9 @@
                 @if(auth()->user()->canAccessMenuItem('marketing.aroma-changes'))
                 <li data-tooltip="Aroma Switching" class="{{ request()->routeIs('marketing.aroma-changes.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('marketing.aroma-changes.index') }}')">Aroma Switching</li>
                 @endif
+                @if(auth()->user()->canAccessMenuItem('marketing.stock-view'))
+                <li data-tooltip="Stock View" class="{{ request()->routeIs('marketing.stock-view.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('marketing.stock-view.index') }}')">Stock View</li>
+                @endif
                 @if(auth()->user()->canAccessMenuItem('marketing.job-advices'))
                 <li data-tooltip="Job Advice" class="{{ request()->routeIs('marketing.job-advices.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('marketing.job-advices.index') }}')">Job Advice</li>
                 @endif

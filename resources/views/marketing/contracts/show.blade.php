@@ -1107,7 +1107,13 @@
                                         @forelse($contract->contractRooms ?? [] as $index => $contractRoom)
                                         <tr>
                                             <td>{{ $index + 1 }}</td>
-                                            <td>{{ $contractRoom->building->nama_gedung ?? $contractRoom->building->name ?? '-' }}</td>
+                                            <td>
+                                                @if($contractRoom->building)
+                                                    <a href="{{ route('operational.buildings.show', $contractRoom->building) }}" target="_blank" rel="noopener noreferrer">{{ $contractRoom->building->nama_gedung ?? $contractRoom->building->name ?? '-' }}</a>
+                                                @else
+                                                    -
+                                                @endif
+                                            </td>
                                             <td>{{ $contractRoom->room->room_name ?? '-' }}</td>
                                             <td>{{ $contractRoom->room->room_type ?? '-' }}</td>
                                             <td>{{ $contractRoom->room->room_floor ?? '-' }}</td>

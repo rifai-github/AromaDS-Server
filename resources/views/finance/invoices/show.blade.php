@@ -301,7 +301,13 @@
 
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Contract Number</div>
-                                        <div class="invoice-field-value">{{ $invoice->contract_number ?? $invoice->contract->contract_number ?? '-' }}</div>
+                                        <div class="invoice-field-value">
+                                            @if($invoice->contract)
+                                                <a href="{{ route('marketing.contracts.show', $invoice->contract) }}" target="_blank" rel="noopener noreferrer">{{ $invoice->contract_number ?? $invoice->contract->contract_number ?? '-' }}</a>
+                                            @else
+                                                {{ $invoice->contract_number ?? '-' }}
+                                            @endif
+                                        </div>
                                     </div>
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Invoice Period</div>
@@ -372,7 +378,13 @@
                                 <div class="invoice-card-body">
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Customer Name</div>
-                                        <div class="invoice-field-value fw-bold">{{ $invoice->customer->name ?? '-' }}</div>
+                                        <div class="invoice-field-value fw-bold">
+                                            @if($invoice->customer)
+                                                <a href="{{ route('company.customers.show', $invoice->customer) }}" target="_blank" rel="noopener noreferrer">{{ $invoice->customer->name }}</a>
+                                            @else
+                                                -
+                                            @endif
+                                        </div>
                                     </div>
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Billing Group</div>

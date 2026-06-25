@@ -63,6 +63,8 @@ class CompleteModulePermissionSeeder extends Seeder
             'marketing.customer-contacts' => 'Access Customer Contacts',
             'marketing.customer-taxes' => 'Access Master Customer Tax',
             'marketing.customer-types' => 'Access Master Customer Type',
+            'marketing.stock-view' => 'Access Stock View (Read-only)',
+            'marketing.stock-view.view' => 'View Stock View (Read-only)',
 
             // Operational Module Permissions
             'operational.job-schedules' => 'Access Job Schedules',
@@ -363,6 +365,8 @@ class CompleteModulePermissionSeeder extends Seeder
                 'marketing.customer-contacts',
                 'marketing.customer-taxes',
                 'marketing.customer-types',
+                'marketing.stock-view',
+                'marketing.stock-view.view',
                 'company.bank-payments', // Marketing needs Bank Payment access
                 'operational.master-rooms', // Marketing needs Master Room access
                 'operational.master-buildings', // Marketing needs Master Building access

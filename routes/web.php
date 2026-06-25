@@ -540,6 +540,9 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('aroma-changes/{aromaChange}/cancel', [AromaChangeController::class, 'cancel'])->name('aroma-changes.cancel');
         Route::get('aroma-changes-history', [AromaChangeController::class, 'history'])->name('aroma-changes.history');
 
+        // Stock View (read-only) for Marketing
+        Route::get('stock-view', [\App\Http\Controllers\Marketing\StockViewController::class, 'index'])->name('stock-view.index')->middleware('permission:marketing.stock-view.view');
+
         // Extra Service Routes
         Route::resource('extra-services', ExtraServiceController::class);
         Route::post('extra-services/{extraService}/submit', [ExtraServiceController::class, 'submitForApproval'])->name('extra-services.submit');
