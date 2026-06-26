@@ -443,4 +443,92 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             'Completing Rental A must not be blocked by Rental B\'s separate, not-yet-scanned unit.'
         );
     }
+
+    /**
+     * Bug #25 (round 2, live QA case: job 187 "SBY-IR/26-06/0014",
+     * job_advice_room_id 49, "Toilet Umum"): the rental's BOM calls for an
+     * exact master_product_id ("Diffuser W300 Black"), but the technician
+     * scanned a different product in the same unit category ("Diffuser W300
+     * White") — a legitimate variant swap, same flow the system already
+     * allows elsewhere (Aroma Switching). The old exact-product_id match
+     * never recognized the swapped variant as fulfilling the requirement, so
+     * the "unit komplit" rental could never be completed even though an
+     * equivalent unit had been scanned. Matching by product_category_id
+     * instead of master_product_id fixes this.
+     */
+    public function test_room_completion_accepts_a_different_product_in_the_same_unit_category(): void
+    {
+        $jobAdvice = JobAdvice::create(['customer_id' => 7, 'type' => 'install']);
+
+        $job = JobSchedule::create([
+            'job_number' => 'SBY-IR/26-06/0014',
+            'type' => 'install',
+            'status' => 'in_progress',
+            'job_advice_id' => $jobAdvice->id,
+        ]);
+
+        $unitCategory = ProductCategory::create(['code' => 'UNIT', 'name' => 'Diffuser', 'is_unit' => true]);
+        $bomProduct = MasterProduct::create(['product_category_id' => $unitCategory->id, 'name' => 'Diffuser W300 Black']);
+        $scannedVariant = MasterProduct::create(['product_category_id' => $unitCategory->id, 'name' => 'Diffuser W300 White']);
+
+        $masterRental = 503; // BOM: 1x Diffuser (specific variant: Black)
+        \DB::table('rental_details')->insert([
+            'master_rental_id' => $masterRental,
+            'item_type' => 'product',
+            'master_product_id' => $bomProduct->id,
+            'product_category_id' => $unitCategory->id,
+            'bom_rental_qty' => 1,
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $room = \App\Models\JobAdviceRoom::create([
+            'job_advice_id' => $jobAdvice->id,
+            'rental_product_id' => $masterRental,
+            'room_name' => 'Toilet Umum',
+            'quantity' => 1,
+        ]);
+
+        $scannedSn = SerialNumber::create(['serial_number' => 'DW300W2606003', 'master_product_id' => $scannedVariant->id, 'status' => 'pending']);
+
+        $materialIssue = MaterialIssue::create(['issue_number' => 'SBY-MI/26-06/0014', 'status' => 'issued']);
+        $jobAssignSchedule = JobAssignSchedule::create(['job_schedule_id' => $job->id, 'status' => 'assigned']);
+        JobAssignMaterialIssue::create([
+            'job_assign_schedule_id' => $jobAssignSchedule->id,
+            'material_issue_id' => $materialIssue->id,
+        ]);
+
+        $inventoryIssuing = InventoryIssuing::create([
+            'issuing_number' => 'SBY-WI/26-06/0014',
+            'reference_no' => $materialIssue->issue_number,
+            'status' => 'sent',
+            'warehouse_id' => 1,
+        ]);
+
+        // Inventory was issued for the BOM's exact variant (Black)...
+        InventoryIssuingItem::create([
+            'inventory_issuing_id' => $inventoryIssuing->id,
+            'product_id' => $bomProduct->id,
+            'serial_number_id' => SerialNumber::create(['serial_number' => 'DW300B2606999', 'master_product_id' => $bomProduct->id, 'status' => 'pending'])->id,
+            'room_name' => 'Toilet Umum',
+        ]);
+
+        // ...but the technician actually scanned a different variant (White) in the field.
+        \DB::table('job_schedule_units')->insert([
+            'job_schedule_id' => $job->id,
+            'job_advice_room_id' => $room->id,
+            'mac' => 'DW300W2606003',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $missing = $this->invokeGetMissingUnitSerialNumbersForRoom($job, $room->id, 'Toilet Umum');
+
+        $this->assertSame(
+            [],
+            $missing,
+            'Scanning a different product in the same unit category should fulfill the BOM requirement.'
+        );
+    }
 }

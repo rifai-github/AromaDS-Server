@@ -3022,9 +3022,9 @@ class JobController extends Controller
         // product as THIS rental's own BOM calls for, not every unit issued to
         // the shared room name.
         $room = \App\Models\JobAdviceRoom::find($jobAdviceRoomId);
-        $requiredQtyByProductId = $this->unitQuantitiesRequiredForRentalRoom($room);
+        $requiredQtyByCategoryId = $this->unitQuantitiesRequiredForRentalRoom($room);
 
-        if (empty($requiredQtyByProductId)) {
+        if (empty($requiredQtyByCategoryId)) {
             // No rental-specific BOM info available — fall back to the original
             // exact-serial behaviour rather than silently skipping validation.
             $missing = [];
@@ -3043,30 +3043,31 @@ class JobController extends Controller
             return $missing;
         }
 
-        $scannedCountByProductId = \DB::table('job_schedule_units as jsu')
+        $scannedCountByCategoryId = \DB::table('job_schedule_units as jsu')
             ->join('serial_numbers as sn', function ($join) {
                 $join->whereRaw('UPPER(TRIM(sn.serial_number)) = UPPER(TRIM(jsu.mac))');
             })
+            ->join('master_products as mp', 'sn.master_product_id', '=', 'mp.id')
             ->where('jsu.job_schedule_id', $job->id)
             ->where('jsu.job_advice_room_id', $jobAdviceRoomId)
-            ->select('sn.master_product_id')
+            ->select('mp.product_category_id')
             ->get()
-            ->countBy('master_product_id');
+            ->countBy('product_category_id');
 
-        $itemsByProductId = $unitItems->groupBy('product_id');
+        $itemsByCategoryId = $unitItems->groupBy(fn ($item) => $item->serialNumber->masterProduct->product_category_id ?? null);
 
         $missing = [];
-        foreach ($requiredQtyByProductId as $productId => $requiredQty) {
-            $scannedCount = $scannedCountByProductId->get($productId, 0);
+        foreach ($requiredQtyByCategoryId as $categoryId => $requiredQty) {
+            $scannedCount = $scannedCountByCategoryId->get($categoryId, 0);
             $stillNeeded = $requiredQty - $scannedCount;
 
             if ($stillNeeded <= 0) {
                 continue;
             }
 
-            $productItems = $itemsByProductId->get($productId, collect());
-            $productName = $productItems->first()->serialNumber->masterProduct->name
-                ?? $productItems->first()?->serialNumber?->masterProduct?->name
+            $categoryItems = $itemsByCategoryId->get($categoryId, collect());
+            $productName = $categoryItems->first()->serialNumber->masterProduct->productCategory->name
+                ?? $categoryItems->first()?->serialNumber?->masterProduct?->name
                 ?? 'Unit';
 
             $missing["{$productName} (x{$stillNeeded})"] = $productName;
@@ -3077,11 +3078,21 @@ class JobController extends Controller
 
     /**
      * How many serial-tracked units THIS SPECIFIC rental (job_advice_room row)
-     * requires, keyed by master_product_id — derived from the rental's BOM
+     * requires, keyed by product_category_id — derived from the rental's BOM
      * (RentalDetail rows whose category/type is_unit) times the room's own
      * quantity. Used by getMissingUnitSerialNumbersForRoom() to scope SN
      * validation to the rental being completed instead of every rental sharing
      * the same physical room name.
+     *
+     * BUG #25 (round 2): grouping used to be by exact master_product_id, which
+     * broke as soon as a technician scanned a different variant of the same
+     * unit category (e.g. "Diffuser W300 White" instead of the BOM's "Diffuser
+     * W300 Black") — confirmed on live QA data (job 187, job_advice_room_id 49)
+     * where the scanned Diffuser variant's product_id never matched the BOM's
+     * exact product_id, so the room could never be marked complete. Variant
+     * swaps are an accepted real flow elsewhere (see bug #17 / Aroma
+     * Switching), so requirement counting is grouped by product_category_id
+     * instead: any product in the same unit category fulfills the slot.
      */
     private function unitQuantitiesRequiredForRentalRoom(?\App\Models\JobAdviceRoom $room): array
     {
@@ -3089,10 +3100,12 @@ class JobController extends Controller
             return [];
         }
 
-        $rentalDetails = \App\Models\RentalDetail::where('master_rental_id', $room->rental_product_id)
+        $rentalDetails = \App\Models\RentalDetail::with(['productCategory', 'productType', 'masterProduct.productCategory'])
+            ->where('master_rental_id', $room->rental_product_id)
             ->where(function ($q) {
                 $q->whereHas('productCategory', fn ($catQ) => $catQ->where('is_unit', true))
-                    ->orWhereHas('productType', fn ($typeQ) => $typeQ->where('is_unit', true));
+                    ->orWhereHas('productType', fn ($typeQ) => $typeQ->where('is_unit', true))
+                    ->orWhereHas('masterProduct.productCategory', fn ($catQ) => $catQ->where('is_unit', true));
             })
             ->get();
 
@@ -3101,27 +3114,22 @@ class JobController extends Controller
         }
 
         $roomQuantity = max((int) ($room->quantity ?? 1), 1);
-        $requiredByProductId = [];
+        $requiredByCategoryId = [];
 
         foreach ($rentalDetails as $detail) {
-            $productIds = [];
+            $categoryId = $detail->product_category_id
+                ?? $detail->masterProduct?->product_category_id;
 
-            if ($detail->master_product_id) {
-                $productIds[] = $detail->master_product_id;
-            } elseif ($detail->product_category_id) {
-                $productIds = \App\Models\MasterProduct::where('product_category_id', $detail->product_category_id)
-                    ->pluck('id')
-                    ->all();
+            if (!$categoryId) {
+                continue;
             }
 
             $qtyPerRoom = max((int) ($detail->bom_rental_qty ?: $detail->quantity ?: 1), 1) * $roomQuantity;
 
-            foreach ($productIds as $productId) {
-                $requiredByProductId[$productId] = ($requiredByProductId[$productId] ?? 0) + $qtyPerRoom;
-            }
+            $requiredByCategoryId[$categoryId] = ($requiredByCategoryId[$categoryId] ?? 0) + $qtyPerRoom;
         }
 
-        return $requiredByProductId;
+        return $requiredByCategoryId;
     }
 
     private function jobScheduleRoomHasPhotoType(?int $jobScheduleRoomId, string $photoType): bool
