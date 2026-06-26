@@ -1058,7 +1058,7 @@ function openCreateModal() {
                     </div>
                     <div class="form-group">
                         <label class="form-label">Tax Number *</label>
-                        <input type="text" id="create_tax_number" name="tax_number" class="form-input" placeholder="Enter tax number" required oninput="updateTaxNumberCounter('create'); this.value = this.value.replace(/[^0-9]/g, '');" maxlength="30">
+                        <input type="text" id="create_tax_number" name="tax_number" class="form-input" placeholder="Enter tax number" required oninput="normalizeTaxNumberInput('create')" maxlength="30">
                         <small class="text-gray-600 mt-1">
                             Length: <span id="create_tax_number_counter" class="font-semibold text-blue-600">0</span> / <span id="create_tax_number_max" class="font-semibold">30</span> characters
                         </small>
@@ -1288,7 +1288,7 @@ function openEditModal(id) {
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Tax Number *</label>
-                                <input type="text" id="edit_tax_number" name="tax_number" class="form-input" value="${data.data.tax_number || ''}" placeholder="Enter tax number" required oninput="updateTaxNumberCounter('edit'); this.value = this.value.replace(/[^0-9]/g, '');" maxlength="30">
+                                <input type="text" id="edit_tax_number" name="tax_number" class="form-input" value="${data.data.tax_number || ''}" placeholder="Enter tax number" required oninput="normalizeTaxNumberInput('edit')" maxlength="30">
                                 <small class="text-gray-600 mt-1">
                                     Length: <span id="edit_tax_number_counter" class="font-semibold text-blue-600">0</span> / <span id="edit_tax_number_max" class="font-semibold">30</span> characters
                                 </small>
@@ -1714,6 +1714,18 @@ style.textContent = `
 document.head.appendChild(style);
 
 // Tax Number Character Counter per report-mom5.md
+function normalizeTaxNumberInput(mode) {
+    const inputId = mode === 'create' ? 'create_tax_number' : 'edit_tax_number';
+    const input = document.getElementById(inputId);
+
+    if (input) {
+        const maxLength = parseInt(input.getAttribute('maxlength') || 30, 10);
+        input.value = input.value.replace(/[^0-9]/g, '').substring(0, maxLength);
+    }
+
+    updateTaxNumberCounter(mode);
+}
+
 function updateTaxNumberCounter(mode) {
     const inputId = mode === 'create' ? 'create_tax_number' : 'edit_tax_number';
     const counterId = mode === 'create' ? 'create_tax_number_counter' : 'edit_tax_number_counter';
@@ -1725,7 +1737,7 @@ function updateTaxNumberCounter(mode) {
     
     if (input && counter) {
         const length = input.value.length;
-        const maxLength = parseInt(input.getAttribute('maxlength') || 25);
+        const maxLength = parseInt(input.getAttribute('maxlength') || 30, 10);
         counter.textContent = length;
         
         // Change color based on whether reached expected length
@@ -1802,13 +1814,8 @@ function updateTaxNumberMaxLength(mode) {
             maxDisplay.textContent = maxLength;
         }
         
-        // Truncate current value if exceeds new maxlength
-        if (taxNumberInput.value.length > maxLength) {
-            taxNumberInput.value = taxNumberInput.value.substring(0, maxLength);
-        }
-        
         // Update counter display
-        updateTaxNumberCounter(mode);
+        normalizeTaxNumberInput(mode);
         
         console.log(`Tax Name: ${taxName}, Max Length set to: ${maxLength}, NITKU shown: ${showNitku}`);
     }
@@ -1857,8 +1864,7 @@ function fetchCustomerTaxInfo(customerId, mode) {
             const taxNumberInput = document.getElementById(`${prefix}tax_number`);
             if (taxNumberInput) {
                 taxNumberInput.value = data.tax_number || '';
-                // Update counter
-                updateTaxNumberCounter(mode);
+                normalizeTaxNumberInput(mode);
             }
             
             // 2.1 NITKU
