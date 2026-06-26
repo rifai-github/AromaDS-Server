@@ -765,6 +765,7 @@
 
                 <!-- Quantity hidden field, default to 1 -->
                 <input type="hidden" id="quantity" name="quantity" value="1">
+                <input type="hidden" id="auto_expand" name="auto_expand" value="0">
 
                 <div class="form-group">
                     <label class="form-label">BOM Rental Qty <span class="text-red-500">*</span></label>
@@ -1008,6 +1009,25 @@ function getSelectedMultiProductIds() {
         .filter(id => !Number.isNaN(id));
 }
 
+function getAllCurrentCategoryProductIds() {
+    return Array.from(document.querySelectorAll('#master_product_ids option'))
+        .map(option => parseInt(option.value, 10))
+        .filter(id => !Number.isNaN(id));
+}
+
+function setAutoExpandMode(enabled) {
+    const autoExpandInput = document.getElementById('auto_expand');
+    if (autoExpandInput) {
+        autoExpandInput.value = enabled ? '1' : '0';
+    }
+}
+
+function syncAutoExpandModeFromProductSelection() {
+    const selectedProductIds = getSelectedMultiProductIds();
+    const allProductIds = getAllCurrentCategoryProductIds();
+    setAutoExpandMode(allProductIds.length > 0 && selectedProductIds.length === allProductIds.length);
+}
+
 function populateProductSelections(products, selectedIds = [], primaryProductId = null) {
     const normalizedSelectedIds = (selectedIds || []).map(id => String(id));
     const normalizedPrimaryId = primaryProductId != null ? String(primaryProductId) : (normalizedSelectedIds[0] || '');
@@ -1136,6 +1156,7 @@ function openAddDetailModal() {
 
     document.getElementById('detailForm').reset();
     document.getElementById('detail_id').value = '';
+    setAutoExpandMode(false);
     document.getElementById('bom_rental_qty').value = 1;
     
     // Clear product dropdowns
@@ -1185,6 +1206,7 @@ function editDetail(detailId) {
             console.log('📦 Loading Detail:', detail);
             
             document.getElementById('detail_id').value = detail.id;
+            setAutoExpandMode(Boolean(detail.auto_expand));
             
             // Logic to determine BOM Rental Qty
             let bomQty = parseFloat(detail.bom_rental_qty || 0);
@@ -1224,6 +1246,7 @@ function editDetail(detailId) {
                 const allowedProducts = materialsResponse.data.all_products || materialsResponse.data.allowed_products || [];
                 const allowedIds = materialsResponse.data.allowed_product_ids || [];
                 populateProductSelections(allowedProducts, allowedIds, detail.master_product_id);
+                setAutoExpandMode(Boolean(materialsResponse.data.auto_expand || detail.auto_expand));
             }
             
             // Initialize Select2
@@ -1289,9 +1312,14 @@ function submitDetail(event) {
     const detailId = formData.get('detail_id');
     
     const selectedProductIds = getSelectedMultiProductIds();
+    const allProductIds = getAllCurrentCategoryProductIds();
+    const autoExpandInput = document.getElementById('auto_expand');
+    const shouldAutoExpand = autoExpandInput?.value === '1'
+        || (allProductIds.length > 0 && selectedProductIds.length === allProductIds.length);
 
     formData.delete('master_product_id');
     formData.delete('master_product_ids[]');
+    formData.set('auto_expand', shouldAutoExpand ? '1' : '0');
 
     if (selectedProductIds.length > 0) {
         formData.append('master_product_id', String(selectedProductIds[0]));
@@ -1346,12 +1374,14 @@ function selectAllFromCategory() {
         $('#master_product_ids option').prop('selected', true);
         $('#master_product_ids').trigger('change');
     }
+    setAutoExpandMode(true);
 }
 
 function clearProductSelection() {
     if (typeof $ !== 'undefined') {
         $('#master_product_ids').val(null).trigger('change');
     }
+    setAutoExpandMode(false);
 }
 
 // Add event listener for category change
@@ -1435,6 +1465,7 @@ function openMaterialList(detailId) {
         if (data.status === 'success') {
             globalProductTypes = data.data.product_types || [];
             globalAllProducts = data.data.all_products || [];
+            setAutoExpandMode(Boolean(data.data.auto_expand));
             // Normalize selected product IDs to numbers for consistent comparison
             const allowedIds = data.data.allowed_product_ids || [];
             globalSelectedProductIds = allowedIds.map(id => parseInt(id));
@@ -1653,6 +1684,9 @@ function applyMaterialList() {
 }
 
 function applyMaterialListConfirmed(detailId, productIds) {
+    const allProductIds = (globalAllProducts || []).map(product => parseInt(product.id || product.product_id, 10)).filter(id => !Number.isNaN(id));
+    const selectedAll = allProductIds.length > 0 && productIds.length === allProductIds.length;
+
     fetch(`/warehouse/master-rentals/{{ $masterRental->id }}/details/${detailId}/materials`, {
         method: 'POST',
         headers: {
@@ -1662,7 +1696,8 @@ function applyMaterialListConfirmed(detailId, productIds) {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            product_ids: productIds
+            product_ids: productIds,
+            auto_expand: selectedAll ? 1 : 0
         })
     })
     .then(response => response.json())
@@ -2065,11 +2100,13 @@ document.addEventListener('DOMContentLoaded', function() {
             $(productCategorySelect).on('change', handleChange);
             $(document).on('change', '#master_product_id', handleChange);
             $(document).on('change', '#master_product_ids', handleChange);
+            $(document).on('change', '#master_product_ids', syncAutoExpandModeFromProductSelection);
         }
     }
 
     if (multiProductSelect && typeof $ === 'undefined') {
         multiProductSelect.addEventListener('change', function() {
+            syncAutoExpandModeFromProductSelection();
             window.validateRentalCompliance();
             window.handleFrequencyValidation();
         });

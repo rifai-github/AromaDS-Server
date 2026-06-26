@@ -23,12 +23,13 @@ class RentalDetail extends Model
         'auto_expand', // Auto expand product_category to products
         'unit',
         'created_by',
-        'updated_by'
+        'updated_by',
     ];
 
     protected $casts = [
         'service_frequency_multiplier' => 'integer',
         'quantity' => 'integer',
+        'auto_expand' => 'boolean',
     ];
 
     // Relationships
@@ -87,9 +88,9 @@ class RentalDetail extends Model
             'rental_detail_id',
             'master_product_id'
         )
-        ->withPivot(['is_selected', 'sort_order'])
-        ->withTimestamps()
-        ->orderBy('rental_detail_materials.sort_order');
+            ->withPivot(['is_selected', 'sort_order'])
+            ->withTimestamps()
+            ->orderBy('rental_detail_materials.sort_order');
     }
 
     // Get only selected products from material list
@@ -107,6 +108,7 @@ class RentalDetail extends Model
         if ($this->item_type === 'product_type') {
             return $this->belongsTo(ProductType::class, 'item_id');
         }
+
         return $this->belongsTo(MasterProduct::class, 'item_id');
     }
 
@@ -119,6 +121,7 @@ class RentalDetail extends Model
         if ($this->item_type === 'product_type') {
             return ProductType::find($this->item_id);
         }
+
         return MasterProduct::find($this->item_id);
     }
 

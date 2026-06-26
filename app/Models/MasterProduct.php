@@ -6,6 +6,8 @@ use App\Traits\HasComprehensiveAuditTrail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class MasterProduct extends Model
 {
@@ -63,6 +65,94 @@ class MasterProduct extends Model
         'is_stock_substitute' => 'boolean',
         'product_photos' => 'array', // Cast JSON to array
     ];
+
+    protected static function booted(): void
+    {
+        static::saved(function (MasterProduct $product) {
+            $product->syncAutoExpandedRentalDetails();
+        });
+    }
+
+    public function syncAutoExpandedRentalDetails(): void
+    {
+        if (! Schema::hasTable('rental_details') || ! Schema::hasTable('rental_detail_materials')) {
+            return;
+        }
+
+        $oldCategoryId = $this->getOriginal('product_category_id');
+
+        if ($this->wasChanged('product_category_id') && $oldCategoryId) {
+            $oldDetailIds = RentalDetail::query()
+                ->where('auto_expand', true)
+                ->where('product_category_id', $oldCategoryId)
+                ->pluck('id');
+
+            if ($oldDetailIds->isNotEmpty()) {
+                DB::table('rental_detail_materials')
+                    ->whereIn('rental_detail_id', $oldDetailIds)
+                    ->where('master_product_id', $this->id)
+                    ->delete();
+            }
+        }
+
+        if (! $this->is_active || ! $this->product_category_id) {
+            $currentDetailIds = RentalDetail::query()
+                ->where('auto_expand', true)
+                ->where('product_category_id', $this->product_category_id)
+                ->pluck('id');
+
+            if ($currentDetailIds->isNotEmpty()) {
+                DB::table('rental_detail_materials')
+                    ->whereIn('rental_detail_id', $currentDetailIds)
+                    ->where('master_product_id', $this->id)
+                    ->delete();
+            }
+
+            return;
+        }
+
+        $detailIds = RentalDetail::query()
+            ->where('auto_expand', true)
+            ->where('product_category_id', $this->product_category_id)
+            ->pluck('id');
+
+        if ($detailIds->isEmpty()) {
+            return;
+        }
+
+        $now = now();
+
+        foreach ($detailIds as $detailId) {
+            $existingRow = DB::table('rental_detail_materials')
+                ->where('rental_detail_id', $detailId)
+                ->where('master_product_id', $this->id)
+                ->first();
+
+            if ($existingRow) {
+                DB::table('rental_detail_materials')
+                    ->where('id', $existingRow->id)
+                    ->update([
+                        'is_selected' => true,
+                        'updated_at' => $now,
+                    ]);
+
+                continue;
+            }
+
+            $nextSortOrder = (int) DB::table('rental_detail_materials')
+                ->where('rental_detail_id', $detailId)
+                ->max('sort_order') + 1;
+
+            DB::table('rental_detail_materials')->insert([
+                'rental_detail_id' => $detailId,
+                'master_product_id' => $this->id,
+                'is_selected' => true,
+                'sort_order' => $nextSortOrder,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+    }
 
     // Relationships
     public function productType()
