@@ -36,8 +36,22 @@ class RepairPartialCompletionFollowUps extends Command
         DB::transaction(function () use ($sourceJobs, $jobNumber, $apply) {
             foreach ($sourceJobs as $sourceJob) {
                 $rooms = $sourceJob->jobScheduleRooms
-                    ->filter(fn ($room) => $room->status !== JobScheduleRoom::STATUS_CANCELLED
-                        || str_contains((string) $room->notes, 'Pekerjaan tidak selesai'))
+                    ->filter(function ($room) {
+                        // Bug #28 (QA, live case job_schedule 198 "SBY-IR/26-06/0018"):
+                        // this command only excluded CANCELLED rooms, so a room that
+                        // had already been finished (status COMPLETED, e.g. "Ruang
+                        // Meeting VIP" completed via mobile) was still treated as
+                        // "needs a follow-up" and dragged into outstanding alongside
+                        // the genuinely unfinished room ("Toilet VIP"). Mirror
+                        // JobWebCompletionService::handlePartialCompletion(), which
+                        // correctly skips both COMPLETED and CANCELLED rooms.
+                        if ($room->status === JobScheduleRoom::STATUS_COMPLETED) {
+                            return false;
+                        }
+
+                        return $room->status !== JobScheduleRoom::STATUS_CANCELLED
+                            || str_contains((string) $room->notes, 'Pekerjaan tidak selesai');
+                    })
                     ->values();
 
                 foreach ($rooms as $room) {
