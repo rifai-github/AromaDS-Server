@@ -31,6 +31,11 @@ class BrandVariant extends Model
         return $this->belongsTo(OptionDetail::class, 'brand_line_id');
     }
 
+    public function products()
+    {
+        return $this->hasMany(MasterProduct::class, 'brand_variant_id');
+    }
+
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by');

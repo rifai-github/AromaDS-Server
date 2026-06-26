@@ -24,6 +24,7 @@ class MasterProduct extends Model
         'packaging_size',
         'packaging_size_id',
         'brand_line',
+        'brand_variant_id',
         'sku',
         'part_no', // Part number from CSV (PartNo)
         'universal_code_type', // Universal code type (barcode type)
@@ -136,6 +137,11 @@ class MasterProduct extends Model
     public function packagingSize()
     {
         return $this->belongsTo(PackagingSize::class);
+    }
+
+    public function brandVariant()
+    {
+        return $this->belongsTo(BrandVariant::class);
     }
 
     public function photos()

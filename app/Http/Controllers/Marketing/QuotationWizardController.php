@@ -144,6 +144,10 @@ class QuotationWizardController extends Controller
             return null;
         }
 
+        if (is_string($productId) && str_starts_with($productId, 'brandline:')) {
+            return $this->resolveCanonicalAromaProductIdFromBrandLine((int) substr($productId, strlen('brandline:')));
+        }
+
         $product = MasterProduct::with(['productCategory', 'productType', 'packagingSize'])->find($productId);
         if (!$product) {
             return null;
@@ -163,6 +167,66 @@ class QuotationWizardController extends Controller
             ->where('is_active', true)
             ->where('variant_name', $variantName)
             ->when($brandLine !== '', fn ($query) => $query->whereRaw('LOWER(TRIM(brand_line)) = ?', [$brandLine]))
+            ->get()
+            ->filter(fn ($candidate) => $this->isSelectableAromaProduct($candidate))
+            ->sortBy(function ($candidate) {
+                $categoryName = strtolower($candidate->productCategory?->name ?? '');
+                $packageName = strtolower($candidate->packagingSize?->name ?? '');
+
+                return [
+                    str_contains($categoryName, 'refill') ? 0 : 1,
+                    $packageName === '100ml' ? 0 : 1,
+                    $candidate->id,
+                ];
+            })
+            ->first()?->id;
+    }
+
+    /**
+     * Resolve a brand-line option_details id (from the Survey "Pilih Aroma/Variant" dropdown,
+     * which now lists brand lines sourced from product_brand_variants) to a concrete, saveable
+     * MasterProduct id. Prefers products already linked via brand_variant_id; falls back to the
+     * legacy brand_line string match for master_products rows not yet backfilled with a FK.
+     */
+    private function resolveCanonicalAromaProductIdFromBrandLine(int $brandLineId): ?int
+    {
+        $variantIds = \App\Models\BrandVariant::active()
+            ->where('brand_line_id', $brandLineId)
+            ->pluck('id');
+
+        if ($variantIds->isEmpty()) {
+            return null;
+        }
+
+        $product = MasterProduct::with(['productCategory', 'productType', 'packagingSize'])
+            ->where('is_active', true)
+            ->whereIn('brand_variant_id', $variantIds)
+            ->get()
+            ->filter(fn ($candidate) => $this->isSelectableAromaProduct($candidate))
+            ->sortBy(function ($candidate) {
+                $categoryName = strtolower($candidate->productCategory?->name ?? '');
+                $packageName = strtolower($candidate->packagingSize?->name ?? '');
+
+                return [
+                    str_contains($categoryName, 'refill') ? 0 : 1,
+                    $packageName === '100ml' ? 0 : 1,
+                    $candidate->id,
+                ];
+            })
+            ->first();
+
+        if ($product) {
+            return (int) $product->id;
+        }
+
+        $brandLineName = trim((string) (\App\Models\OptionDetail::find($brandLineId)?->option_name));
+        if ($brandLineName === '') {
+            return null;
+        }
+
+        return MasterProduct::with(['productCategory', 'productType', 'packagingSize'])
+            ->where('is_active', true)
+            ->whereRaw('LOWER(TRIM(brand_line)) = ?', [strtolower($brandLineName)])
             ->get()
             ->filter(fn ($candidate) => $this->isSelectableAromaProduct($candidate))
             ->sortBy(function ($candidate) {
@@ -1894,43 +1958,26 @@ class QuotationWizardController extends Controller
     public function getAromaProducts(Request $request)
     {
         try {
-            // Get real aroma/refill products consolidated by variant_name.
-            // Some valid refill products do not have product_type_id, so category
-            // must be part of the source of truth. Exclude unit/SN products to avoid
-            // options like test devices or hand-sanitizer placeholders.
-            $products = MasterProduct::with(['productCategory', 'productType', 'packagingSize'])
-                ->where('is_active', true)
-                ->whereNotNull('brand_line')
-                ->where('brand_line', '!=', '')
-                ->whereNotNull('variant_name')
-                ->where('variant_name', '!=', '')
-                ->get();
-
-            $aromaProducts = $products
-                ->filter(fn ($product) => $this->isSelectableAromaProduct($product))
-                ->groupBy(fn ($product) => strtolower(trim((string) $product->brand_line)) . '|' . trim((string) $product->variant_name))
+            // Brand lines are the single source of truth for this dropdown (product_brand_variants),
+            // not the free-text master_products.brand_line/variant_name columns. Only brand lines
+            // with at least one active BrandVariant are offered, so an empty brand line never shows
+            // as a dead-end option.
+            $aromaProducts = \App\Models\BrandVariant::active()
+                ->with('brandLine')
+                ->get()
+                ->filter(fn ($variant) => $variant->brandLine !== null)
+                ->groupBy('brand_line_id')
                 ->map(function ($group) {
-                    $product = $group->sortBy(function ($candidate) {
-                        $categoryName = strtolower($candidate->productCategory?->name ?? '');
-                        $productName = strtolower($candidate->name ?? '');
-                        $packageName = strtolower($candidate->packagingSize?->name ?? '');
-
-                        return [
-                            str_contains($categoryName, 'refill') ? 0 : 1,
-                            str_contains($productName, 'test') ? 1 : 0,
-                            $packageName === '100ml' ? 0 : 1,
-                            $candidate->id,
-                        ];
-                    })->first();
+                    $brandLine = $group->first()->brandLine;
 
                     return [
-                        'id' => $product->id,
-                        'name' => $product->variant_name,
-                        'variant' => $product->variant_name,
-                        'display_name' => $product->variant_name,
-                        'brand_line' => $product->brand_line,
+                        'id' => 'brandline:' . $brandLine->id,
+                        'name' => $brandLine->option_name,
+                        'variant' => $brandLine->option_name,
+                        'display_name' => $brandLine->option_name,
+                        'brand_line' => $brandLine->option_name,
                         'packaging_size' => '',
-                        'product_type' => 'Aroma/Variant'
+                        'product_type' => 'Aroma/Variant',
                     ];
                 })
                 ->sortBy('display_name')
