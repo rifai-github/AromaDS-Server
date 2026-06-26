@@ -1898,26 +1898,17 @@ class JobAssignMaterialIssueController extends Controller
             }
         }
         
-        // MOM9: Filter products - hanya produk yang bukan is_unit (bisa di-edit)
+        // MOM9: Non-unit products are always editable.
+        // Bug #18 (confirmed with client 2026-06-22): unit products (e.g. Diffuser,
+        // Dispenser) CAN be swapped for a different variant in the SAME category
+        // (e.g. "Diffuser W300 Black" -> "Diffuser W300 White"), just not to a
+        // different unit category entirely. So unit products are now included
+        // here too - the JS side (filteredProducts) restricts the dropdown to the
+        // row's own product_category_id, same mechanism already used for non-unit
+        // rows. Swapping a unit still requires the change-reason note (see
+        // handleRentalProductChange / checkProductChanges).
         // MOM12: Include product_type_id untuk filter berdasarkan component
         $products = MasterProduct::with(['productCategory', 'productType'])
-            ->where(function($q) {
-                $q->where(function($subQ) {
-                    $subQ->whereHas('productCategory', function($catQ) {
-                        $catQ->where('is_unit', false);
-                    })
-                    ->orWhere(function($typeQ) {
-                        $typeQ->whereHas('productType', function($subTypeQ) {
-                            $subTypeQ->where('is_unit', false);
-                        })
-                        ->whereDoesntHave('productCategory');
-                    });
-                })
-                ->orWhere(function($noneQ) {
-                    $noneQ->whereDoesntHave('productCategory')
-                          ->whereDoesntHave('productType');
-                });
-            })
             ->orderBy('name')
             ->get()
             ->map(function($product) {
@@ -4385,18 +4376,26 @@ class JobAssignMaterialIssueController extends Controller
                         
                         // Check if user actually changed the product from the master rental default
                         if ($formProductId != $product->id) {
-                            $formProduct = \App\Models\MasterProduct::with('productType')->find($formProductId);
+                            $formProduct = \App\Models\MasterProduct::with(['productType', 'productCategory'])->find($formProductId);
                             if ($formProduct) {
-                                $isUnit = $formProduct->productType->is_unit ?? false;
-                                
-                                if (!$isUnit) {
-                                    // Non-unit product - allow change
+                                $isUnit = ($formProduct->productCategory->is_unit ?? false) || ($formProduct->productType->is_unit ?? false);
+
+                                // Bug #18 (confirmed with client 2026-06-22): a unit CAN be swapped
+                                // for a different variant in the SAME category (e.g. "Diffuser W300
+                                // Black" -> "Diffuser W300 White"), just not to a different unit
+                                // category entirely. Non-unit products were always allowed to change.
+                                $originalCategoryId = $product->product_category_id ?? null;
+                                $isSameUnitCategory = $isUnit
+                                    && $originalCategoryId
+                                    && $formProduct->product_category_id == $originalCategoryId;
+
+                                if (!$isUnit || $isSameUnitCategory) {
                                     $product = $formProduct;
                                     $useFormData = true;
                                     $userManuallyChangedProduct = true;
                                     \Log::info("MOM12: Using form product: {$product->name} (ID: {$product->id}) for room {$jaRoom->room_name}, component {$detail->id}");
                                 } else {
-                                    \Log::warning("MOM12: Cannot change unit product. Keeping original: {$product->name}");
+                                    \Log::warning("Bug #18: Cannot change unit to a different category. Keeping original: {$product->name}");
                                 }
                             }
                         }

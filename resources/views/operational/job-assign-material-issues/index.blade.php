@@ -2148,15 +2148,29 @@ function openEditModal(id) {
                                 </thead>
                                 <tbody>
                                     ${rentalProducts.map((item, index) => {
-                                        // MOM12: Check if this is a unit product (cannot be edited)
+                                        // MOM12: Check if this is a unit product. Component (jenis komponen)
+                                        // stays locked for unit rows, but Product (the specific unit variant)
+                                        // is now editable - bug #18 (confirmed with client 2026-06-22): a unit
+                                        // CAN be swapped for a different variant in the SAME category (e.g.
+                                        // "Diffuser W300 Black" -> "Diffuser W300 White"), just not to a
+                                        // different unit category entirely.
                                         const isUnit = item.is_unit || false;
                                         const productTypeId = item.product_type_id || null;
                                         const productCategoryId = item.product_category_id || null;
                                         const allowedProductIds = (item.allowed_product_ids || []).map(id => String(id));
-                                        
+
                                         // Material options must follow the exact Material List selected in Rental Detail.
                                         let filteredProducts = availableProducts;
-                                        if (allowedProductIds.length > 0) {
+                                        if (isUnit) {
+                                            // Unit swap is restricted to the SAME unit category (e.g. only other
+                                            // Diffuser variants), never across categories (e.g. Diffuser -> Dispenser).
+                                            filteredProducts = availableProducts.filter(p => {
+                                                const isSameCategoryUnit = productCategoryId
+                                                    ? (p.product_category_id == productCategoryId || (p.productCategory && p.productCategory.id == productCategoryId))
+                                                    : false;
+                                                return isSameCategoryUnit;
+                                            });
+                                        } else if (allowedProductIds.length > 0) {
                                             filteredProducts = availableProducts.filter(p => allowedProductIds.includes(String(p.id)));
                                         } else if (productTypeId) {
                                             filteredProducts = availableProducts.filter(p => p.product_type_id == productTypeId || (p.productType && p.productType.id == productTypeId));
@@ -2164,13 +2178,15 @@ function openEditModal(id) {
                                             filteredProducts = availableProducts.filter(p => p.product_category_id == productCategoryId || (p.productCategory && p.productCategory.id == productCategoryId));
                                         }
 
-                                        filteredProducts = filterSamePackageMaterialFamily(item.product, filteredProducts);
-                                        
+                                        if (!isUnit) {
+                                            filteredProducts = filterSamePackageMaterialFamily(item.product, filteredProducts);
+                                        }
+
                                         // Unit row styling
-                                        const rowStyle = isUnit ? 'background-color: #f9fafb; opacity: 0.8;' : '';
+                                        const rowStyle = isUnit ? 'background-color: #f9fafb;' : '';
                                         const unitBadge = isUnit ? '<span style="display: inline-block; padding: 2px 6px; background: #dbeafe; color: #1e40af; border-radius: 4px; font-size: 10px; margin-left: 4px;">UNIT</span>' : '';
-                                        
-                                        // MOM12: Build component cell - dropdown for non-unit
+
+                                        // MOM12: Build component cell - dropdown for non-unit, always locked for unit
                                         let componentCell = '';
                                         if (isUnit) {
                                             componentCell = '<div style="padding: 8px 12px; background: #f3f4f6; border-radius: 6px; color: #6b7280;"><i class="fas fa-lock" style="margin-right: 6px; font-size: 11px;"></i>' + (item.component_name || 'N/A') + '</div>' + unitBadge;
@@ -2182,28 +2198,24 @@ function openEditModal(id) {
                                             });
                                             componentCell = '<select name="rental_products[' + index + '][product_type_id]" class="form-input component-select" data-row-index="' + index + '" onchange="handleComponentChange(this, ' + index + ')" style="min-width: 150px;">' + componentOptions + '</select>';
                                         }
-                                        
-                                        // Build product cell content
-                                        let productCell = '';
-                                        if (isUnit) {
-                                            productCell = '<div style="padding: 8px 12px; background: #f3f4f6; border-radius: 6px; color: #6b7280;"><i class="fas fa-lock" style="margin-right: 6px; font-size: 11px;"></i>' + item.product.name + '</div><input type="hidden" name="rental_products[' + index + '][product_id]" value="' + item.product.id + '">';
-                                        } else {
-                                            let optionProducts = filteredProducts.slice();
-                                            const currentProductAllowed = optionProducts.some(p => String(p.id) === String(item.product.id));
-                                            if (!currentProductAllowed) {
-                                                optionProducts.unshift(item.product);
-                                            }
 
-                                            let options = '';
-                                            if (!currentProductAllowed) {
-                                                options += '<option value="" selected>-- Select Material --</option>';
-                                            }
-                                            optionProducts.forEach(p => {
-                                                const selected = String(p.id) === String(item.product.id) ? ' selected' : '';
-                                                options += '<option value="' + p.id + '"' + selected + '>' + p.name + '</option>';
-                                            });
-                                            productCell = '<select name="rental_products[' + index + '][product_id]" id="product_select_' + index + '" class="form-input product-select" data-original-product-id="' + item.product.id + '" data-component-id="' + item.component_id + '" data-product-type-id="' + (productTypeId || '') + '" data-product-category-id="' + (productCategoryId || '') + '" data-allowed-product-ids="' + allowedProductIds.join(',') + '" onchange="handleRentalProductChange(this, ' + index + ')" style="min-width: 200px;">' + options + '</select>';
+                                        // Build product cell content - dropdown for both unit (same-category
+                                        // variants only) and non-unit rows.
+                                        let optionProducts = filteredProducts.slice();
+                                        const currentProductAllowed = optionProducts.some(p => String(p.id) === String(item.product.id));
+                                        if (!currentProductAllowed) {
+                                            optionProducts.unshift(item.product);
                                         }
+
+                                        let options = '';
+                                        if (!currentProductAllowed) {
+                                            options += '<option value="" selected>-- Select Material --</option>';
+                                        }
+                                        optionProducts.forEach(p => {
+                                            const selected = String(p.id) === String(item.product.id) ? ' selected' : '';
+                                            options += '<option value="' + p.id + '"' + selected + '>' + p.name + '</option>';
+                                        });
+                                        const productCell = '<select name="rental_products[' + index + '][product_id]" id="product_select_' + index + '" class="form-input product-select" data-original-product-id="' + item.product.id + '" data-component-id="' + item.component_id + '" data-product-type-id="' + (productTypeId || '') + '" data-product-category-id="' + (productCategoryId || '') + '" data-allowed-product-ids="' + allowedProductIds.join(',') + '" data-is-unit="' + (isUnit ? '1' : '0') + '" onchange="handleRentalProductChange(this, ' + index + ')" style="min-width: 200px;">' + options + '</select>';
                                         
                                         // Build packaging size cell
                                         let packagingCell = '<span style="color: #9ca3af;">-</span>';
