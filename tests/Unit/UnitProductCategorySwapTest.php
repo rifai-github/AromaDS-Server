@@ -115,4 +115,25 @@ class UnitProductCategorySwapTest extends TestCase
         $this->assertStringContainsString('isSameCategoryUnit', $view);
         $this->assertStringContainsString("data-is-unit", $view);
     }
+
+    /**
+     * Standardization (reported by client 2026-06-22): the list page's
+     * material-select for a 2-variant unit row (e.g. "Diffuser W300 Black" /
+     * "White", 2 options + placeholder = 3) rendered as a plain native
+     * <select> instead of the select2-styled dropdown used everywhere else
+     * on the page, because the global select2 initializer in app.blade.php
+     * skips selects with <= 3 options outside modals. The dropdown was
+     * functionally fine (confirmed live on QA) but looked locked/different
+     * from every other row. data-force-select2 opts this specific dropdown
+     * back into select2 styling regardless of its option count.
+     */
+    public function test_material_select_list_dropdown_opts_into_select2_regardless_of_option_count(): void
+    {
+        $view = file_get_contents(resource_path('views/operational/job-assign-material-issues/index.blade.php'));
+        $layout = file_get_contents(resource_path('views/layouts/app.blade.php'));
+
+        $this->assertStringContainsString('data-force-select2="1"', $view);
+        $this->assertStringContainsString('material-select', $view);
+        $this->assertStringContainsString("!this.hasAttribute('data-force-select2')", $layout);
+    }
 }

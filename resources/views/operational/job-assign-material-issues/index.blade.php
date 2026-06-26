@@ -1378,10 +1378,11 @@
                                             return 2 . $p->name; 
                                         });
                                     @endphp
-                                    <select class="material-select px-2 py-1 border border-gray-300 rounded text-sm" 
-                                            data-item-id="{{ $item->id }}" 
+                                    <select class="material-select px-2 py-1 border border-gray-300 rounded text-sm"
+                                            data-item-id="{{ $item->id }}"
                                             data-rental-detail-id="{{ $rentalDetailId }}"
                                             data-current-product-id="{{ $item->product_id }}"
+                                            data-force-select2="1"
                                             style="width: 200px;"
                                             onclick="event.stopPropagation()">
                                         <option value="">Select Material...</option>

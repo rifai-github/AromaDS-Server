@@ -2991,8 +2991,14 @@
                     return;
                 }
 
-                // Skip very small selects (like pagination) outside modals
-                if ($select.find('option').length <= 3 && !$select.closest('.modal-body, .modal-container').length) {
+                // Skip very small selects (like pagination) outside modals.
+                // data-force-select2 opts a specific dropdown back in regardless of
+                // option count - used by editable table cells (e.g. Material Assign's
+                // unit-variant dropdown) so every row gets the same select2 styling
+                // even when a row only has 2-3 variant options.
+                if ($select.find('option').length <= 3
+                    && !$select.closest('.modal-body, .modal-container').length
+                    && !this.hasAttribute('data-force-select2')) {
                     return;
                 }
                 
