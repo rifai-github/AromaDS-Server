@@ -10340,6 +10340,7 @@ class JobScheduleController extends Controller
                         'jobSchedule.jobAssignSchedules.team',
                         'jobSchedule.jobAssignSchedules.jobAssignMaterialIssues.materialIssue.items',
                         'roomAssignment.team',
+                        'jobAdviceRoom.rentalProduct',
                     ])
                     ->whereIn('id', $selectedRoomIds->all())
                     ->get();
@@ -10388,6 +10389,15 @@ class JobScheduleController extends Controller
                         'status' => $isAssigned ? (($job->material_checked) ? 'already_assigned' : 'can_reassign') : 'will_assign',
                         'team_id' => $roomAssignment?->team_id ?? ($activeAssignment?->team_id ?? null),
                         'team_name' => $roomAssignment?->team?->team_name ?? $activeAssignment?->team?->team_name ?? '-',
+                        // BUG #31: a single physical room can host 2+ different
+                        // rentals (e.g. "unit+refill" and "unit only" sharing the
+                        // same room_name), each its own JobScheduleRoom/JobAdviceRoom
+                        // row. The Material Assign confirmation list groups multiple
+                        // room ids under one checkbox in the underlying table, so
+                        // checking ONE row there can expand to 2+ rows here — with
+                        // nothing to tell them apart, QA read this as a duplicate-row
+                        // bug. Surface the rental name so each row is identifiable.
+                        'rental_name' => $room->jobAdviceRoom?->rentalProduct?->rental_name ?? '-',
                         'job_status' => $currentStatus,
                         'material_checked' => (bool) $job->material_checked,
                         'display_text' => $room->room_name,

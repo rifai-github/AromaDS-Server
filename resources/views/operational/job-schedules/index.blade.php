@@ -3839,7 +3839,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                                                 ${isDone ? '<span class="text-red-500 text-[10px] font-bold ml-1">(DONE)</span>' : ''}
                                             </td>
                                             <td class="px-3 py-2">${item.room_name}</td>
-                                            <td class="px-3 py-2 text-gray-500">${item.team_name || '-'}</td>
+                                            <td class="px-3 py-2 text-gray-500">${item.rental_name || '-'}</td>
                                         </tr>
                                     `;
                                 });
@@ -3852,7 +3852,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                                     </tbody>
                                 </table>
                             </div>
-                            <div class="text-xs text-gray-500 mt-1">* Hanya room yang dicentang yang akan diproses.</div>
+                            <div class="text-xs text-gray-500 mt-1">* Hanya room yang dicentang yang akan diproses. Jika 1 room tampil lebih dari sekali, itu artinya room tersebut punya beberapa rental berbeda (lihat kolom Product).</div>
                         `;
 
                         Swal.fire({
