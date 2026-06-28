@@ -778,6 +778,118 @@ class MobileJobListRoomAssignmentTest extends TestCase
         ]);
     }
 
+    public function test_mobile_service_room_list_is_not_blocked_by_stale_closed_ir(): void
+    {
+        DB::table('master_rooms')->insert([
+            'id' => 601,
+            'room_name' => 'Ruang Aula',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('contract_rooms')->insert([
+            'id' => 171,
+            'room_id' => 601,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            'id' => 192,
+            'job_advice_id' => 30,
+            'contract_room_id' => 171,
+            'room_name' => 'Ruang Aula',
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedules')->insert([
+            [
+                'id' => 144,
+                'job_number' => 'SBY-IR/26-06/0100',
+                'job_advice_id' => 30,
+                'type' => 'install',
+                'status' => 'meninggalkan_lokasi',
+                'room_id' => 601,
+                'room_name' => 'Ruang Aula',
+                'schedule_date' => '2026-06-15',
+                'material_checked' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 145,
+                'job_number' => 'SBY-CSR/26-06/0100',
+                'job_advice_id' => 30,
+                'type' => 'service_first',
+                'status' => 'barang_diambil',
+                'room_id' => 601,
+                'room_name' => 'Ruang Aula',
+                'schedule_date' => '2026-06-16',
+                'material_checked' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            [
+                'id' => 150,
+                'job_schedule_id' => 144,
+                'job_advice_room_id' => 192,
+                'room_name' => 'Ruang Aula',
+                'room_id' => 601,
+                'status' => 'completed',
+                'notes' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 151,
+                'job_schedule_id' => 144,
+                'job_advice_room_id' => null,
+                'room_name' => 'Ruang Meeting',
+                'room_id' => 602,
+                'status' => 'cancelled',
+                'notes' => 'Pekerjaan tidak selesai, dipindahkan ke Job baru.',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 152,
+                'job_schedule_id' => 145,
+                'job_advice_room_id' => 192,
+                'room_name' => 'Ruang Aula',
+                'room_id' => 601,
+                'status' => 'completed',
+                'notes' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 165,
+            'job_schedule_id' => 145,
+            'team_id' => 10,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/api/v1/mobile/jobs/145/rooms', 'GET');
+        $request->setUserResolver(fn () => User::find(1));
+        $this->actingAs(User::find(1));
+
+        $roomsResponse = app(JobController::class)->getJobRooms(145);
+        $roomsPayload = $roomsResponse->getData(true);
+
+        $this->assertSame('success', $roomsPayload['status']);
+        $this->assertSame('Ruang Aula', $roomsPayload['data'][0]['name']);
+        $this->assertFalse($roomsPayload['data'][0]['is_blocked_by_ir']);
+    }
+
     private function createSchema(): void
     {
         Schema::create('users', function (Blueprint $table) {

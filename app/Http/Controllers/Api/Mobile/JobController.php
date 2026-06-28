@@ -1908,14 +1908,18 @@ class JobController extends Controller
             $isServiceJob = $this->isServiceLikeJob($job);
             
             if ($isServiceJob && $masterRoom && $this->shouldBlockServiceByPendingInstall($job)) {
-                // Find if there is an Install job for this room in the same JA that is NOT completed
-                $irJobExists = \App\Models\JobSchedule::where('job_advice_id', $job->job_advice_id)
+                // Match checkJobDependency(): a stale source IR can keep
+                // status meninggalkan_lokasi after partial outstanding, but
+                // it must not block CSR once its room rows are all closed.
+                $blockingInstallJob = \App\Models\JobSchedule::where('job_advice_id', $job->job_advice_id)
                     ->where('room_id', $masterRoom->id)
                     ->whereIn(\DB::raw('lower(type)'), ['install', 'install_free', 'install free', 'ir'])
                     ->whereNotIn('status', ['completed', 'done_job', 'selesai', 'cancelled', 'undone'])
-                    ->exists();
+                    ->with('jobScheduleRooms')
+                    ->get()
+                    ->first(fn ($candidate) => !$this->jobRoomsAreClosedForMobileVerification($candidate));
                 
-                if ($irJobExists) {
+                if ($blockingInstallJob) {
                     $isBlockedByIr = true;
                     $blockedByIrMessage = 'Harap selesaikan pemasangan unit (Job IR) terlebih dahulu untuk ruangan ini.';
                 }
