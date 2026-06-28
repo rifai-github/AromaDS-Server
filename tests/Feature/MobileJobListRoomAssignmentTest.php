@@ -85,6 +85,7 @@ class MobileJobListRoomAssignmentTest extends TestCase
             'master_rentals',
             'contract_rooms',
             'master_rooms',
+            'buildings',
             'team_members',
             'teams',
             'customers',
@@ -629,6 +630,154 @@ class MobileJobListRoomAssignmentTest extends TestCase
         );
     }
 
+    public function test_mobile_job_rooms_reconcile_install_room_completed_from_active_unit_on_wall(): void
+    {
+        DB::table('buildings')->insert([
+            'id' => 9,
+            'name' => 'Gedung QA',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('product_types')->insert([
+            'id' => 700,
+            'name' => 'Unit',
+            'is_unit' => true,
+            'has_serial_number' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('master_products')->insert([
+            'id' => 900,
+            'product_type_id' => 700,
+            'name' => 'Diffuser W300 Black',
+            'sku' => 'DW300B',
+            'unit' => 'pcs',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('serial_numbers')->insert([
+            'id' => 1000,
+            'master_product_id' => 900,
+            'serial_number' => 'DW300B2606031',
+            'status' => 'in_use',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('master_rooms')->insert([
+            'id' => 501,
+            'room_name' => 'Lobby',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('contract_rooms')->insert([
+            'id' => 71,
+            'room_id' => 501,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            'id' => 92,
+            'job_advice_id' => 30,
+            'contract_room_id' => 71,
+            'room_name' => 'Lobby',
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedules')->insert([
+            'id' => 44,
+            'job_number' => 'JKT-IR/26-06/0001',
+            'job_advice_id' => 30,
+            'type' => 'install',
+            'status' => 'in_progress',
+            'building_id' => 9,
+            'room_id' => 501,
+            'room_name' => 'Lobby',
+            'schedule_date' => '2026-06-15',
+            'material_checked' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 65,
+            'job_schedule_id' => 44,
+            'team_id' => 10,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_issuings')->insert([
+            'id' => 92,
+            'issuing_number' => 'JKT-WI/26-06/0002',
+            'reference_no' => 'JKT-MI/26-06/0001',
+            'status' => 'sent',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_issuing_items')->insert([
+            'id' => 93,
+            'inventory_issuing_id' => 92,
+            'job_assign_schedule_id' => 65,
+            'room_name' => 'Lobby',
+            'product_id' => 900,
+            'serial_number_id' => 1000,
+            'quantity_requested' => 1,
+            'quantity_issued' => 1,
+            'quantity_received' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 50,
+            'job_schedule_id' => 44,
+            'job_advice_room_id' => 92,
+            'room_name' => 'Lobby',
+            'room_id' => 501,
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('unit_on_walls')->insert([
+            'id' => 1200,
+            'customer_id' => 20,
+            'building_id' => 9,
+            'room_id' => 501,
+            'product_id' => 900,
+            'serial_number_id' => 1000,
+            'serial_number' => 'DW300B2606031',
+            'status' => 'active',
+            'room_name' => 'Lobby',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/api/v1/mobile/jobs/44/rooms', 'GET');
+        $request->setUserResolver(fn () => User::find(1));
+        $this->actingAs(User::find(1));
+
+        $roomsResponse = app(JobController::class)->getJobRooms(44);
+        $roomsPayload = $roomsResponse->getData(true);
+
+        $this->assertSame('success', $roomsPayload['status']);
+        $this->assertSame('completed', $roomsPayload['data'][0]['status']);
+        $this->assertDatabaseHas('job_schedule_rooms', [
+            'id' => 50,
+            'status' => 'completed',
+        ]);
+    }
+
     private function createSchema(): void
     {
         Schema::create('users', function (Blueprint $table) {
@@ -667,6 +816,13 @@ class MobileJobListRoomAssignmentTest extends TestCase
             $table->foreignId('customer_id')->nullable();
             $table->foreignId('customer_contact_id')->nullable();
             $table->foreignId('contract_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('buildings', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -871,6 +1027,9 @@ class MobileJobListRoomAssignmentTest extends TestCase
             $table->foreignId('room_id')->nullable();
             $table->string('status')->nullable();
             $table->string('material_return_status')->nullable();
+            $table->timestamp('completed_at')->nullable();
+            $table->foreignId('completed_by')->nullable();
+            $table->text('completion_notes')->nullable();
             $table->text('notes')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('updated_by')->nullable();

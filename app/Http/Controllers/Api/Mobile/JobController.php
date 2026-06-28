@@ -1422,6 +1422,7 @@ class JobController extends Controller
 
             $this->ensureMobileRentalScheduleRoomsForJob($job);
             $this->ensureFallbackJobAdviceRoomForRemoveJob($job);
+            $this->syncInstallRoomsFromActiveUnitOnWall($job);
             
             // Get job assign schedule for material issue items lookup
             $jobAssign = $job->jobAssignSchedules->where('status', '!=', 'cancelled')->sortByDesc('id')->first();
