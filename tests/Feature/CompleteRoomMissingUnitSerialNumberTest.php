@@ -531,4 +531,164 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             'Scanning a different product in the same unit category should fulfill the BOM requirement.'
         );
     }
+
+    /**
+     * Bug #72 (QA): the previous validator joined job_schedule_units.mac to
+     * serial_numbers.serial_number with an INNER JOIN, silently dropping any
+     * scanned MAC that didn't already exist in the serial_numbers master.
+     * That made it impossible to complete a room when the technician scanned
+     * a brand-new SN not yet registered by the warehouse — the scan vanished
+     * from the count, the category stayed reported as "missing", and the
+     * technician saw the same "still has unscanned unit" message no matter
+     * how many times they re-scanned. Scans not present in serial_numbers
+     * should still count toward unmet required categories so the technician
+     * is unblocked.
+     */
+    public function test_room_completion_accepts_scanned_sn_not_yet_in_serial_numbers_master(): void
+    {
+        $jobAdvice = JobAdvice::create(['customer_id' => 7, 'type' => 'install']);
+
+        $job = JobSchedule::create([
+            'job_number' => 'JKT-IR/26-06/0099',
+            'type' => 'install',
+            'status' => 'in_progress',
+            'job_advice_id' => $jobAdvice->id,
+        ]);
+
+        $unitCategory = ProductCategory::create(['code' => 'UNIT', 'name' => 'Diffuser', 'is_unit' => true]);
+        $unitProduct = MasterProduct::create(['product_category_id' => $unitCategory->id, 'name' => 'Diffuser W300 Black']);
+
+        $masterRental = 510; // BOM: 1x Diffuser
+        \DB::table('rental_details')->insert([
+            'master_rental_id' => $masterRental,
+            'item_type' => 'product',
+            'master_product_id' => $unitProduct->id,
+            'product_category_id' => $unitCategory->id,
+            'bom_rental_qty' => 1,
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $room = \App\Models\JobAdviceRoom::create([
+            'job_advice_id' => $jobAdvice->id,
+            'rental_product_id' => $masterRental,
+            'room_name' => 'Lobby',
+            'quantity' => 1,
+        ]);
+
+        // Warehouse issued a registered SN, but the technician (per the QA
+        // bug report) scans a different, NOT-YET-REGISTERED SN in the field.
+        $issuedSn = SerialNumber::create(['serial_number' => 'DW300B2606REG', 'master_product_id' => $unitProduct->id, 'status' => 'pending']);
+
+        $materialIssue = MaterialIssue::create(['issue_number' => 'JKT-MI/26-06/0099', 'status' => 'issued']);
+        $jobAssignSchedule = JobAssignSchedule::create(['job_schedule_id' => $job->id, 'status' => 'assigned']);
+        JobAssignMaterialIssue::create([
+            'job_assign_schedule_id' => $jobAssignSchedule->id,
+            'material_issue_id' => $materialIssue->id,
+        ]);
+
+        $inventoryIssuing = InventoryIssuing::create([
+            'issuing_number' => 'JKT-WI/26-06/0099',
+            'reference_no' => $materialIssue->issue_number,
+            'status' => 'sent',
+            'warehouse_id' => 1,
+        ]);
+
+        InventoryIssuingItem::create([
+            'inventory_issuing_id' => $inventoryIssuing->id,
+            'product_id' => $unitProduct->id,
+            'serial_number_id' => $issuedSn->id,
+            'room_name' => 'Lobby',
+        ]);
+
+        // Technician scans a MAC that has NO row in serial_numbers (typed
+        // manually or a brand-new physical unit not yet registered).
+        \DB::table('job_schedule_units')->insert([
+            'job_schedule_id' => $job->id,
+            'job_advice_room_id' => $room->id,
+            'mac' => 'DHS2605001',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $missing = $this->invokeGetMissingUnitSerialNumbersForRoom($job, $room->id, 'Lobby');
+
+        $this->assertSame(
+            [],
+            $missing,
+            'A scanned SN not yet present in the serial_numbers master should still count toward the required category and unblock completion.'
+        );
+    }
+
+    /**
+     * Bug #72 regression guard: validator must still block completion when the
+     * technician has scanned nothing at all for the room's required units.
+     * The unknown-scan tolerance added in the fix must not turn the validator
+     * into a no-op.
+     */
+    public function test_room_with_unit_required_but_zero_scans_still_blocks_completion(): void
+    {
+        $jobAdvice = JobAdvice::create(['customer_id' => 7, 'type' => 'install']);
+
+        $job = JobSchedule::create([
+            'job_number' => 'JKT-IR/26-06/0100',
+            'type' => 'install',
+            'status' => 'in_progress',
+            'job_advice_id' => $jobAdvice->id,
+        ]);
+
+        $unitCategory = ProductCategory::create(['code' => 'UNIT', 'name' => 'Diffuser', 'is_unit' => true]);
+        $unitProduct = MasterProduct::create(['product_category_id' => $unitCategory->id, 'name' => 'Diffuser W300 Black']);
+
+        $masterRental = 511;
+        \DB::table('rental_details')->insert([
+            'master_rental_id' => $masterRental,
+            'item_type' => 'product',
+            'master_product_id' => $unitProduct->id,
+            'product_category_id' => $unitCategory->id,
+            'bom_rental_qty' => 1,
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $room = \App\Models\JobAdviceRoom::create([
+            'job_advice_id' => $jobAdvice->id,
+            'rental_product_id' => $masterRental,
+            'room_name' => 'Lobby',
+            'quantity' => 1,
+        ]);
+
+        $issuedSn = SerialNumber::create(['serial_number' => 'DW300B2606AAA', 'master_product_id' => $unitProduct->id, 'status' => 'pending']);
+
+        $materialIssue = MaterialIssue::create(['issue_number' => 'JKT-MI/26-06/0100', 'status' => 'issued']);
+        $jobAssignSchedule = JobAssignSchedule::create(['job_schedule_id' => $job->id, 'status' => 'assigned']);
+        JobAssignMaterialIssue::create([
+            'job_assign_schedule_id' => $jobAssignSchedule->id,
+            'material_issue_id' => $materialIssue->id,
+        ]);
+
+        $inventoryIssuing = InventoryIssuing::create([
+            'issuing_number' => 'JKT-WI/26-06/0100',
+            'reference_no' => $materialIssue->issue_number,
+            'status' => 'sent',
+            'warehouse_id' => 1,
+        ]);
+
+        InventoryIssuingItem::create([
+            'inventory_issuing_id' => $inventoryIssuing->id,
+            'product_id' => $unitProduct->id,
+            'serial_number_id' => $issuedSn->id,
+            'room_name' => 'Lobby',
+        ]);
+
+        // No scans at all.
+        $missing = $this->invokeGetMissingUnitSerialNumbersForRoom($job, $room->id, 'Lobby');
+
+        $this->assertNotEmpty(
+            $missing,
+            'Validator must still block completion when no unit SN has been scanned.'
+        );
+    }
 }

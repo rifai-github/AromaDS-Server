@@ -81,43 +81,6 @@ class WarehousePlacementService
         return self::CONDITION_USED;
     }
 
-    private function resolveByCondition(Warehouse $fallbackWarehouse, string $condition): Warehouse
-    {
-        $keywords = match ($condition) {
-            self::CONDITION_DAMAGED => ['rusak', 'damaged', 'broken'],
-            self::CONDITION_USED => ['bekas', 'used', 'return', 'retur'],
-            default => ['baru', 'new'],
-        };
-
-        $query = Warehouse::query();
-
-        if (Schema::hasColumn('warehouses', 'branch_id') && $fallbackWarehouse->branch_id) {
-            $query->where('branch_id', $fallbackWarehouse->branch_id);
-        }
-
-        if (Schema::hasColumn('warehouses', 'is_active')) {
-            $query->where('is_active', true);
-        }
-
-        $query->where(function ($nested) use ($keywords) {
-            foreach ($keywords as $keyword) {
-                $nested->orWhere('name', 'like', "%{$keyword}%");
-
-                if (Schema::hasColumn('warehouses', 'warehouse_code')) {
-                    $nested->orWhere('warehouse_code', 'like', "%{$keyword}%");
-                }
-            }
-        });
-
-        if (Schema::hasColumn('warehouses', 'is_center')) {
-            $query->orderByDesc('is_center');
-        }
-
-        $warehouse = $query->orderBy('id')->first();
-
-        return $warehouse ?: $fallbackWarehouse;
-    }
-
     private function findMaterialReturnForReceiving(InventoryReceiving $inventoryReceiving): ?MaterialReturn
     {
         if (! $inventoryReceiving->reference_no) {

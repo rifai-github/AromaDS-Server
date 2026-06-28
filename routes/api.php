@@ -169,6 +169,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('jobs/{jobScheduleId}/verify', [App\Http\Controllers\Api\Mobile\JobController::class, 'verifyJob'])->name('jobs.verify');
         Route::post('jobs/{jobScheduleId}/favorite', [App\Http\Controllers\Api\Mobile\JobController::class, 'toggleFavorite'])->name('jobs.favorite');
         Route::post('jobs/{id}/swap-serial-number', [App\Http\Controllers\Api\Mobile\JobController::class, 'swapSerialNumber'])->name('jobs.swap-serial-number');
+
+        // Bug #71 (QA): Install Free / Trial jobs need a size-only dropdown
+        // (variants of the SAME aroma in sizes <100ml) so the technician can
+        // record which trial bottle was installed without changing the aroma.
+        Route::get('products/install-free-sizes', [App\Http\Controllers\Api\Mobile\JobController::class, 'installFreeSizeOptions'])->name('products.install-free-sizes');
     });
     
     // User Photo API Route (with authentication)

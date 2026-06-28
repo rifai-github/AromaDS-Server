@@ -1235,17 +1235,30 @@
                                         $currentProduct = $item->product;
                                         $currentProductTypeName = $currentProduct && $currentProduct->productType ? (string) $currentProduct->productType->name : '';
                                         $currentProductCategoryName = $currentProduct && $currentProduct->productCategory ? (string) $currentProduct->productCategory->name : '';
+
+                                        // QA bug: variant_name on master_products is a generic brand-line code
+                                        // (e.g. "Luxo GHI", "Artisan DEF") shared by MULTIPLE distinct aromas
+                                        // within the same brand line (e.g. "Loco Floral" and "Ginger Blossom"
+                                        // both carry variant_name "Luxo GHI"). Filtering by variant_name alone
+                                        // therefore mixed unrelated aromas into the same dropdown — the
+                                        // requirement is "show only size (ml) variants of THIS SAME aroma,
+                                        // never switch to a different aroma." The product NAME (with the size
+                                        // suffix stripped) is the only field that actually identifies which
+                                        // aroma this is, so that's what we group by.
+                                        $currentBaseName = $currentProduct ? trim(preg_replace([
+                                            '/\b\d+(?:[\.,]\d+)?\s*ml\b/i',
+                                            '/[-_\[\]\(\)]+/',
+                                            '/\s+/',
+                                        ], [
+                                            '',
+                                            ' ',
+                                            ' ',
+                                        ], $currentProduct->name ?? '')) : null;
+                                        $normalizedCurrentBaseName = $currentBaseName ? strtolower($currentBaseName) : null;
+
                                         $currentVariant = $currentProduct ? $currentProduct->variant_name : null;
                                         if (!$currentVariant && $currentProduct) {
-                                            $currentVariant = trim(preg_replace([
-                                                '/\b\d+(?:\.\d+)?\s*ml\b/i',
-                                                '/[-_\[\]\(\)]+/',
-                                                '/\s+/',
-                                            ], [
-                                                '',
-                                                ' ',
-                                                ' ',
-                                            ], $currentProduct->name ?? ''));
+                                            $currentVariant = $currentBaseName;
                                         }
                                         
                                         // Detect if current item is an Aroma/Fragrance type
@@ -1291,8 +1304,10 @@
                                         $hasStrictAllowedProductList = $rentalDetailId && !empty($allowedProductIds);
 
                                         // Filter products list to the checked Material List for this rental detail.
-                                        // Aroma/refill variants are expanded by variant name so all packaging sizes appear.
-                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $item, $allowedProductIds, $rentalDetailId) {
+                                        // Aroma/refill variants are expanded by BASE PRODUCT NAME (size suffix
+                                        // stripped) so all packaging sizes of the SAME aroma appear, never a
+                                        // different aroma — variant_name is too coarse for this (see note above).
+                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBaseName, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $item, $allowedProductIds, $rentalDetailId) {
                                             $productBrandLine = $p->brand_line
                                                 ? strtolower(trim(preg_replace('/\s+/', ' ', $p->brand_line)))
                                                 : null;
@@ -1300,10 +1315,22 @@
                                                 ? strtolower(trim(preg_replace('/\s+/', ' ', $p->variant_name)))
                                                 : null;
                                             $productName = strtolower($p->name ?? '');
-                                            $sameVariant = $normalizedCurrentVariant && (
-                                                $productVariant === $normalizedCurrentVariant
-                                                || str_contains($productName, $normalizedCurrentVariant)
-                                            );
+                                            $productBaseName = trim(preg_replace([
+                                                '/\b\d+(?:[\.,]\d+)?\s*ml\b/i',
+                                                '/[-_\[\]\(\)]+/',
+                                                '/\s+/',
+                                            ], [
+                                                '',
+                                                ' ',
+                                                ' ',
+                                            ], $p->name ?? ''));
+                                            $normalizedProductBaseName = strtolower($productBaseName);
+                                            $sameVariant = $normalizedCurrentBaseName
+                                                ? $normalizedProductBaseName === $normalizedCurrentBaseName
+                                                : ($normalizedCurrentVariant && (
+                                                    $productVariant === $normalizedCurrentVariant
+                                                    || str_contains($productName, $normalizedCurrentVariant)
+                                                ));
 
                                             if ($hasStrictAllowedProductList) {
                                                 if ($hasSpecificVariant) {

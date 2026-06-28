@@ -1220,7 +1220,26 @@ class JobAssignMaterialIssueController extends Controller
                             $detailProducts = $detail->allowedProducts()
                                 ->wherePivot('is_selected', true)
                                 ->get();
-                            
+
+                            // Bug #75 (QA): legacy rentals — especially unit-only
+                            // ones that historically skipped Material Assign — often
+                            // never had rental_detail_materials.is_selected populated,
+                            // leaving the curated list empty and the dropdown blank
+                            // so the technician cannot pick a product. Fall back to
+                            // the full allowed-products list (mirrors PRIORITY-3 in
+                            // JobAssignScheduleController) rather than stranding the
+                            // operator with no choices.
+                            if ($detailProducts->isEmpty()) {
+                                $detailProducts = $detail->allowedProducts()->get();
+                                if ($detailProducts->isNotEmpty()) {
+                                    \Log::warning('JobAssignMaterialIssue: falling back to all allowed products because is_selected pivot is empty', [
+                                        'rental_detail_id' => $detail->id,
+                                        'rental_id'        => $rental->id ?? null,
+                                        'job_schedule_id'  => $jobAssignSchedule->job_schedule_id,
+                                    ]);
+                                }
+                            }
+
                             foreach ($detailProducts as $product) {
                                 // Filter logic: aroma products must match one of the selected aromas (variants).
                                 $isAromaType = $this->isAromaMaterialProduct($product);

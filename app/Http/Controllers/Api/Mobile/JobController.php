@@ -3048,16 +3048,65 @@ class JobController extends Controller
             return $missing;
         }
 
-        $scannedCountByCategoryId = \DB::table('job_schedule_units as jsu')
-            ->join('serial_numbers as sn', function ($join) {
-                $join->whereRaw('UPPER(TRIM(sn.serial_number)) = UPPER(TRIM(jsu.mac))');
-            })
-            ->join('master_products as mp', 'sn.master_product_id', '=', 'mp.id')
-            ->where('jsu.job_schedule_id', $job->id)
-            ->where('jsu.job_advice_room_id', $jobAdviceRoomId)
-            ->select('mp.product_category_id')
-            ->get()
-            ->countBy('product_category_id');
+        // Bug #72 (QA): the previous INNER JOIN against serial_numbers silently
+        // dropped any scanned MAC that didn't already have a row in the
+        // serial_numbers master — causing the validator to keep reporting the
+        // category as unscanned even after the technician scanned it. Source the
+        // category count from the in-memory $unitItems instead (already loaded
+        // above from the room's issued items, the actual BOM source of truth),
+        // plus a supplemental lookup of other registered SNs whose master_product
+        // matches the issued items (covers swap scenarios). Scans whose MAC is
+        // unknown to both maps are still counted — distributed across unmet
+        // required categories — so the validator continues to enforce "at least
+        // one scan per required category" without rejecting valid field input
+        // that hasn't yet been registered in the warehouse master.
+        $snToCategory = [];
+        $issuedMasterProductIds = [];
+        foreach ($unitItems as $item) {
+            $sn = $item->serialNumber->serial_number ?? null;
+            $cat = $item->serialNumber->masterProduct->product_category_id ?? null;
+            $mpId = $item->serialNumber->master_product_id ?? null;
+            if ($sn && $cat) {
+                $snToCategory[trim(strtoupper((string) $sn))] = $cat;
+            }
+            if ($mpId) {
+                $issuedMasterProductIds[$mpId] = $mpId;
+            }
+        }
+
+        if (! empty($issuedMasterProductIds)) {
+            $extraSnRows = \DB::table('serial_numbers')
+                ->join('master_products as mp', 'serial_numbers.master_product_id', '=', 'mp.id')
+                ->whereIn('serial_numbers.master_product_id', $issuedMasterProductIds)
+                ->select('serial_numbers.serial_number', 'mp.product_category_id')
+                ->get();
+            foreach ($extraSnRows as $row) {
+                $key = trim(strtoupper((string) $row->serial_number));
+                if ($key !== '' && ! isset($snToCategory[$key])) {
+                    $snToCategory[$key] = $row->product_category_id;
+                }
+            }
+        }
+
+        $scannedCounts = [];
+        $unknownScans = [];
+        foreach ($scannedSerials as $mac) {
+            if (isset($snToCategory[$mac])) {
+                $cat = $snToCategory[$mac];
+                $scannedCounts[$cat] = ($scannedCounts[$cat] ?? 0) + 1;
+            } else {
+                $unknownScans[] = $mac;
+            }
+        }
+
+        foreach ($requiredQtyByCategoryId as $categoryId => $requiredQty) {
+            while (($scannedCounts[$categoryId] ?? 0) < $requiredQty && ! empty($unknownScans)) {
+                array_shift($unknownScans);
+                $scannedCounts[$categoryId] = ($scannedCounts[$categoryId] ?? 0) + 1;
+            }
+        }
+
+        $scannedCountByCategoryId = collect($scannedCounts);
 
         $itemsByCategoryId = $unitItems->groupBy(fn ($item) => $item->serialNumber->masterProduct->product_category_id ?? null);
 
@@ -5753,6 +5802,114 @@ class JobController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => $jobData
+        ]);
+    }
+
+    /**
+     * Bug #71 (QA): for Install Free / Trial jobs the technician needs to be
+     * able to pick which SMALL trial bottle (size <100ml) of the SAME aroma
+     * was installed. Aroma stays locked — only size varies. Given a
+     * current_product_id (the aroma being installed), this returns sibling
+     * MasterProducts that share the same base aroma name and have a size
+     * smaller than 100ml, parsed from the conventional "<base> <NNN> ml"
+     * naming used throughout master data.
+     */
+    public function installFreeSizeOptions(Request $request)
+    {
+        $currentProductId = $request->query('current_product_id');
+        if (! $currentProductId) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'current_product_id wajib diisi',
+            ], 422);
+        }
+
+        $current = \App\Models\MasterProduct::find($currentProductId);
+        if (! $current) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Master product tidak ditemukan',
+            ], 404);
+        }
+
+        $parse = function (?string $name): array {
+            if (! $name) {
+                return ['base' => null, 'sizeMl' => null];
+            }
+            // Match a trailing "<NUM> ml" with optional decimal, case-insensitive.
+            if (! preg_match('/^(.*?)\s+(\d+(?:[\.,]\d+)?)\s*ml\s*$/i', trim($name), $m)) {
+                return ['base' => trim($name), 'sizeMl' => null];
+            }
+            return [
+                'base'   => trim($m[1]),
+                'sizeMl' => (float) str_replace(',', '.', $m[2]),
+            ];
+        };
+
+        $currentParts = $parse($current->name);
+        if (! $currentParts['base']) {
+            return response()->json([
+                'status'  => 'success',
+                'data'    => [
+                    'current' => [
+                        'id'      => (int) $current->id,
+                        'name'    => $current->name,
+                        'size_ml' => null,
+                    ],
+                    'options' => [],
+                ],
+                'message' => 'Tidak dapat mengenali base aroma dari nama produk.',
+            ]);
+        }
+
+        $base = $currentParts['base'];
+        // Same product category as current (aroma category), exact base prefix
+        // match in name, active. Filter to size <100ml below in PHP since the
+        // size lives in the product name string.
+        $candidates = \App\Models\MasterProduct::query()
+            ->where('product_category_id', $current->product_category_id)
+            ->where('is_active', true)
+            ->where('name', 'like', $base . '%')
+            ->orderBy('name')
+            ->get();
+
+        $options = [];
+        foreach ($candidates as $candidate) {
+            $parts = $parse($candidate->name);
+            if ($parts['base'] !== $base) {
+                // Avoid false matches from "Lemongrass Mix Plus" when base is "Lemongrass Mix".
+                continue;
+            }
+            if ($parts['sizeMl'] === null || $parts['sizeMl'] >= 100) {
+                continue;
+            }
+            $options[] = [
+                'id'         => (int) $candidate->id,
+                'name'       => $candidate->name,
+                'size_ml'    => $parts['sizeMl'],
+                'size_label' => rtrim(rtrim(number_format($parts['sizeMl'], 2, '.', ''), '0'), '.') . ' ml',
+                'sku'        => $candidate->sku,
+            ];
+        }
+
+        if (empty($options)) {
+            \Log::warning('install-free-sizes returned empty list', [
+                'current_product_id' => (int) $current->id,
+                'base'               => $base,
+                'product_category'   => $current->product_category_id,
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data'   => [
+                'current' => [
+                    'id'      => (int) $current->id,
+                    'name'    => $current->name,
+                    'size_ml' => $currentParts['sizeMl'],
+                ],
+                'options' => $options,
+            ],
         ]);
     }
 }
