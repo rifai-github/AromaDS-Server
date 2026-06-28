@@ -924,12 +924,18 @@
                                             @endif
                                         </div>
                                     </div>
-                                    @if($jobSchedule->ba_number)
+                                    {{-- Hidden per request (2026-06-28): QA kept asking where this number's
+                                    source document was (not found in SQ/CA/JA/JS/Invoice/Inventory) since it's
+                                    only an internally-generated reference shown once in the "Konfirmasi
+                                    Pekerjaan" success popup. Hiding from this permanent display until a final
+                                    decision is made on whether/how to surface it. Do not delete - data and
+                                    bug #11/#30 fix are still intact, only this display is hidden. --}}
+                                    {{-- @if($jobSchedule->ba_number)
                                     <div class="info-field">
                                         <div class="info-field-label">No. BA</div>
                                         <div class="info-field-value">{{ $jobSchedule->ba_number }}</div>
                                     </div>
-                                    @endif
+                                    @endif --}}
                                     @endif
                                     <div class="info-field" style="align-items: flex-start;">
                                         <div class="info-field-label" style="margin-top: 0.25rem;">Catatan Internal</div>
