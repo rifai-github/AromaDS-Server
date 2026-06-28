@@ -3226,8 +3226,22 @@ document.addEventListener('DOMContentLoaded', function() {
             const row = e.target.closest('tr[data-id]');
             if (!row) return;
             
-            // Don't trigger if clicking on checkbox or button
-            if (e.target.closest('.row-checkbox') || e.target.closest('button') || e.target.closest('a')) {
+            // Don't trigger if clicking on checkbox, button, or any inline-editable
+            // form control. Bug #18 follow-up (QA, 2026-06-27): the Material
+            // dropdown's `<select>` carries onclick="event.stopPropagation()", but
+            // select2 hides that real <select> and renders a sibling
+            // .select2-selection span in its place - clicks on the visible span
+            // never reach the <select>, so stopPropagation() never fired and the
+            // click fell through to this row handler, popping the "View Material
+            // Issue" modal open on top of (and blocking) the dropdown the user was
+            // trying to use.
+            if (e.target.closest('.row-checkbox')
+                || e.target.closest('button')
+                || e.target.closest('a')
+                || e.target.closest('select')
+                || e.target.closest('input')
+                || e.target.closest('.select2-container')
+                || e.target.closest('.select2-dropdown')) {
                 return;
             }
             
