@@ -174,6 +174,7 @@ class CustomerTaxNitkuValidationTest extends TestCase
         $customerId = DB::table('customers')->insertGetId([
             'name' => 'Abadi Company',
             'status' => 'active',
+            'npwp' => '1100011100001114',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -197,12 +198,13 @@ class CustomerTaxNitkuValidationTest extends TestCase
         $this->assertSame(0, DB::table('customer_tax_settings')->count());
     }
 
-    public function test_store_accepts_nitku_tax_name_with_valid_parent_npwp_number(): void
+    public function test_store_accepts_nitku_tax_name_with_full_22_digit_number(): void
     {
         $user = $this->createUserWithPermission('marketing.customer-taxes.view');
         $customerId = DB::table('customers')->insertGetId([
             'name' => 'Abadi Company',
             'status' => 'active',
+            'npwp' => '1100011100001114',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -212,8 +214,7 @@ class CustomerTaxNitkuValidationTest extends TestCase
             ->postJson(route('company.customer-taxes.store'), [
                 'customer_id' => $customerId,
                 'tax_name' => 'NITKU',
-                'tax_number' => '1100011100001114', // 16-digit parent NPWP number
-                'nitku' => '015471',
+                'tax_number' => '1100011100001114015471', // 16-digit NPWP + 6-digit NITKU branch code
                 'tax_type' => '04',
                 'effective_date' => '2026-06-21',
                 'status' => 'active',
@@ -226,8 +227,78 @@ class CustomerTaxNitkuValidationTest extends TestCase
         $this->assertSame(1, DB::table('customer_tax_settings')->count());
         $this->assertDatabaseHas('customer_tax_settings', [
             'tax_name' => 'NITKU',
-            'tax_number' => '1100011100001114',
+            'tax_number' => '1100011100001114015471',
             'nitku' => '015471',
+        ]);
+    }
+
+    public function test_store_rejects_nitku_when_parent_npwp_does_not_match_customer(): void
+    {
+        $user = $this->createUserWithPermission('marketing.customer-taxes.view');
+        $customerId = DB::table('customers')->insertGetId([
+            'name' => 'Abadi Company',
+            'status' => 'active',
+            'npwp' => '1100011100001114',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeaders(['X-Requested-With' => 'XMLHttpRequest'])
+            ->postJson(route('company.customer-taxes.store'), [
+                'customer_id' => $customerId,
+                'tax_name' => 'NITKU',
+                'tax_number' => '9900011100001114015471',
+                'tax_type' => '04',
+                'effective_date' => '2026-06-21',
+                'status' => 'active',
+                'tax_address' => 'Jalan Test',
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('tax_number');
+
+        $this->assertSame(0, DB::table('customer_tax_settings')->count());
+    }
+
+    public function test_store_accepts_multiple_nitku_branch_codes_for_same_customer(): void
+    {
+        $user = $this->createUserWithPermission('marketing.customer-taxes.view');
+        $customerId = DB::table('customers')->insertGetId([
+            'name' => 'Abadi Company',
+            'status' => 'active',
+            'npwp' => '1100011100001114',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        foreach (['015471', '015472'] as $suffix) {
+            $response = $this->actingAs($user)
+                ->withHeaders(['X-Requested-With' => 'XMLHttpRequest'])
+                ->postJson(route('company.customer-taxes.store'), [
+                    'customer_id' => $customerId,
+                    'tax_name' => 'NITKU',
+                    'tax_number' => '1100011100001114'.$suffix,
+                    'tax_type' => '04',
+                    'effective_date' => '2026-06-21',
+                    'status' => 'active',
+                    'tax_address' => 'Jalan Test',
+                ]);
+
+            $response->assertStatus(200);
+            $response->assertJsonPath('status', 'success');
+        }
+
+        $this->assertSame(2, DB::table('customer_tax_settings')->count());
+        $this->assertDatabaseHas('customer_tax_settings', [
+            'tax_name' => 'NITKU',
+            'tax_number' => '1100011100001114015471',
+            'nitku' => '015471',
+        ]);
+        $this->assertDatabaseHas('customer_tax_settings', [
+            'tax_name' => 'NITKU',
+            'tax_number' => '1100011100001114015472',
+            'nitku' => '015472',
         ]);
     }
 

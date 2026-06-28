@@ -1054,7 +1054,7 @@ function openCreateModal() {
                             <option value="KITAS/PASSPORT/KTP WNA">KITAS/PASSPORT/KTP WNA</option>
                             <option value="OTHER">OTHER</option>
                         </select>
-                        <small class="text-gray-600 mt-1">NPWP: 15-16 digit, NIK: 16 digit</small>
+                        <small class="text-gray-600 mt-1">NPWP/NIK: 16 digit, NITKU: 22 digit</small>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Tax Number *</label>
@@ -1284,7 +1284,7 @@ function openEditModal(id) {
                                     <option value="KITAS/PASSPORT/KTP WNA" ${data.data.tax_name === 'KITAS/PASSPORT/KTP WNA' ? 'selected' : ''}>KITAS/PASSPORT/KTP WNA</option>
                                     <option value="OTHER" ${data.data.tax_name === 'OTHER' ? 'selected' : ''}>OTHER</option>
                                 </select>
-                                <small class="text-gray-600 mt-1">NPWP: 15-16 digit, NIK: 16 digit</small>
+                                <small class="text-gray-600 mt-1">NPWP/NIK: 16 digit, NITKU: 22 digit</small>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Tax Number *</label>
@@ -1776,8 +1776,8 @@ function updateTaxNumberMaxLength(mode) {
                 showNitku = true;
                 break;
             case 'NITKU':
-                maxLength = 16;
-                showNitku = true;
+                maxLength = 22;
+                showNitku = false;
                 break;
             case 'NIK':
                 maxLength = 16;

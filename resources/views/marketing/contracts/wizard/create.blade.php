@@ -739,7 +739,7 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">Tax Number *</label>
-                        <input type="text" id="modal_tax_number" name="tax_number" class="form-control" placeholder="Enter tax number" required oninput="updateTaxNumberCounter('modal'); this.value = this.value.replace(/[^0-9]/g, '');" maxlength="25">
+                        <input type="text" id="modal_tax_number" name="tax_number" class="form-control" placeholder="Enter tax number" required oninput="normalizeTaxNumberInput('modal')" maxlength="25">
                         <small class="text-gray-600 mt-1 block">
                             Length: <span id="modal_tax_number_counter" class="font-semibold text-blue-600">0</span> / <span id="modal_tax_number_max" class="font-semibold">25</span> characters
                         </small>
@@ -4117,6 +4117,18 @@ function closeAddTaxModal() {
     }
 }
 
+function normalizeTaxNumberInput(mode) {
+    const inputId = mode === 'modal' ? 'modal_tax_number' : 'edit_tax_number';
+    const input = document.getElementById(inputId);
+
+    if (input) {
+        const maxLength = parseInt(input.getAttribute('maxlength') || 25, 10);
+        input.value = input.value.replace(/[^0-9]/g, '').substring(0, maxLength);
+    }
+
+    updateTaxNumberCounter(mode);
+}
+
 function updateTaxNumberCounter(mode) {
     const inputId = mode === 'modal' ? 'modal_tax_number' : 'edit_tax_number';
     const counterId = mode === 'modal' ? 'modal_tax_number_counter' : 'edit_tax_number_counter';
@@ -4127,7 +4139,7 @@ function updateTaxNumberCounter(mode) {
     
     if (input && counter) {
         const length = input.value.length;
-        const maxLength = parseInt(input.getAttribute('maxlength') || 25);
+        const maxLength = parseInt(input.getAttribute('maxlength') || 25, 10);
         counter.textContent = length;
         
         if (length === maxLength) {
@@ -4169,10 +4181,7 @@ function updateTaxNumberMaxLength(mode) {
         taxNumberInput.setAttribute('maxlength', maxLength);
         if (maxDisplay) maxDisplay.textContent = maxLength;
         
-        if (taxNumberInput.value.length > maxLength) {
-            taxNumberInput.value = taxNumberInput.value.substring(0, maxLength);
-        }
-        updateTaxNumberCounter(mode);
+        normalizeTaxNumberInput(mode);
     }
 }
 

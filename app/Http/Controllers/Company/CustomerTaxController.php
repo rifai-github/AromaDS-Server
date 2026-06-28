@@ -191,17 +191,19 @@ class CustomerTaxController extends Controller
         if ($taxName === 'NIK') {
             // NIK: 16 digits, NITKU auto 000000
             $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'size:16'];
-        } elseif ($taxName === 'NPWP' || $taxName === 'NITKU') {
-            // NPWP/NITKU: tax_number stores the parent NPWP (15-16 digits)
+        } elseif ($taxName === 'NPWP') {
             $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'min:15', 'max:16'];
-            // NPWP/NITKU must have NITKU (Default 000000)
             $rules['nitku'] = ['nullable', 'string', 'regex:/^[0-9]+$/', 'size:6'];
+        } elseif ($taxName === 'NITKU') {
+            // NITKU stores the full 22-digit identifier: 16-digit parent NPWP + 6-digit branch code.
+            $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'size:22'];
         } else {
             // Others
             $rules['tax_number'] = ['required', 'string', 'max:30'];
         }
 
         $request->validate($rules);
+        $this->validateNitkuParentNpwp($taxName, $request->tax_number, (int) $request->customer_id);
 
         try {
             DB::beginTransaction();
@@ -209,22 +211,7 @@ class CustomerTaxController extends Controller
             $taxNumber = $request->tax_number;
             $taxRate = $this->resolveTaxRateForCode($request->tax_type);
 
-            // NITKU Logic:
-            // 1. If NIK -> auto 000000
-            // 2. If NPWP and NITKU empty -> auto 000000
-            $nitku = $request->nitku;
-            if ($taxName === 'NIK') {
-                $nitku = '000000';
-            } elseif ($taxName === 'NPWP' || $taxName === 'NITKU') {
-                if (empty($nitku)) {
-                    $nitku = '000000';
-                }
-            } else {
-                // For others, if empty, default to 000000 for consistency or keep null
-                if (empty($nitku)) {
-                    $nitku = '000000';
-                }
-            }
+            $nitku = $this->resolveNitkuBranchCode($taxName, $taxNumber, $request->nitku);
 
             if ($taxName === 'NPWP') {
                 $this->customerIdentifierUniqueness->validateUniqueNpwp($taxNumber, (int) $request->customer_id);
@@ -374,32 +361,24 @@ class CustomerTaxController extends Controller
 
         if ($taxName === 'NIK') {
             $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'size:16'];
-        } elseif ($taxName === 'NPWP' || $taxName === 'NITKU') {
+        } elseif ($taxName === 'NPWP') {
             $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'min:15', 'max:16'];
             $rules['nitku'] = ['nullable', 'string', 'regex:/^[0-9]+$/', 'size:6'];
+        } elseif ($taxName === 'NITKU') {
+            $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'size:22'];
         } else {
             $rules['tax_number'] = ['required', 'string', 'max:30'];
         }
 
         $request->validate($rules);
+        $this->validateNitkuParentNpwp($taxName, $request->tax_number, (int) $request->customer_id);
 
         try {
             DB::beginTransaction();
 
             $taxNumber = $request->tax_number;
             $taxRate = $this->resolveTaxRateForCode($request->tax_type);
-            $nitku = $request->nitku;
-            if ($taxName === 'NIK') {
-                $nitku = '000000';
-            } elseif ($taxName === 'NPWP' || $taxName === 'NITKU') {
-                if (empty($nitku)) {
-                    $nitku = '000000';
-                }
-            } else {
-                if (empty($nitku)) {
-                    $nitku = '000000';
-                }
-            }
+            $nitku = $this->resolveNitkuBranchCode($taxName, $taxNumber, $request->nitku);
 
             if ($taxName === 'NPWP') {
                 $this->customerIdentifierUniqueness->validateUniqueNpwp($taxNumber, (int) $request->customer_id);
@@ -765,6 +744,55 @@ class CustomerTaxController extends Controller
         }
 
         return $defaultRate;
+    }
+
+    private function resolveNitkuBranchCode(string $taxName, string $taxNumber, ?string $requestNitku): string
+    {
+        if ($taxName === 'NITKU') {
+            return substr($taxNumber, 16, 6);
+        }
+
+        if ($taxName === 'NIK') {
+            return '000000';
+        }
+
+        $nitku = preg_replace('/\D/', '', (string) $requestNitku);
+
+        return $nitku !== '' ? $nitku : '000000';
+    }
+
+    private function validateNitkuParentNpwp(string $taxName, string $taxNumber, int $customerId): void
+    {
+        if ($taxName !== 'NITKU') {
+            return;
+        }
+
+        $parentNpwp = substr($taxNumber, 0, 16);
+        $validParentNpwp = $this->getCustomerNpwpCandidates($customerId)
+            ->contains($parentNpwp);
+
+        if (! $validParentNpwp) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'tax_number' => '16 digit pertama NITKU harus sama dengan NPWP customer yang bersangkutan.',
+            ]);
+        }
+    }
+
+    private function getCustomerNpwpCandidates(int $customerId): \Illuminate\Support\Collection
+    {
+        $customer = Customer::find($customerId);
+        $customerNpwp = preg_replace('/\D/', '', (string) ($customer?->npwp ?? ''));
+
+        $taxNpwp = CustomerTax::where('customer_id', $customerId)
+            ->where('tax_name', 'NPWP')
+            ->pluck('tax_number')
+            ->map(fn ($taxNumber) => preg_replace('/\D/', '', (string) $taxNumber));
+
+        return $taxNpwp
+            ->push($customerNpwp)
+            ->filter(fn ($taxNumber) => strlen($taxNumber) === 16)
+            ->unique()
+            ->values();
     }
 
     /**

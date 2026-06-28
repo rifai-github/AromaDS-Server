@@ -28,6 +28,19 @@ class CustomerTaxFormScriptTest extends TestCase
         $this->assertStringContainsString("input.value = input.value.replace(/[^0-9]/g, '').substring(0, maxLength);", $view);
         $this->assertStringContainsString('normalizeTaxNumberInput(mode);', $view);
         $this->assertStringContainsString("const maxLength = parseInt(input.getAttribute('maxlength') || 30, 10);", $view);
+        $this->assertStringContainsString("case 'NITKU':", $view);
+        $this->assertStringContainsString('maxLength = 22;', $view);
         $this->assertStringNotContainsString("input.getAttribute('maxlength') || 25", $view);
+    }
+
+    public function test_contract_wizard_tax_modal_allows_full_nitku_number(): void
+    {
+        $view = file_get_contents(resource_path('views/marketing/contracts/wizard/create.blade.php'));
+
+        $this->assertStringContainsString('NPWP/NIK: 16 digit, NITKU: 22 digit, Other: 25 digit', $view);
+        $this->assertStringContainsString('oninput="normalizeTaxNumberInput(\'modal\')"', $view);
+        $this->assertStringContainsString('function normalizeTaxNumberInput(mode)', $view);
+        $this->assertStringContainsString("case 'NITKU':", $view);
+        $this->assertStringContainsString('maxLength = 22;', $view);
     }
 }
