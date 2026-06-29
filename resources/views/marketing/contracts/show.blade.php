@@ -661,7 +661,7 @@
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Virtual Account</div>
-                                        <div class="contract-field-value">{{ $contract->virtual_account ?? '-' }}</div>
+                                        <div class="contract-field-value">{{ $contract->display_virtual_accounts }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Email</div>
@@ -761,14 +761,14 @@
                                     <div class="contract-field">
                                         <div class="contract-field-label">Quotation Number</div>
                                         <div class="contract-field-value">
-                                            @if($contract->quotation_id)
-                                                <a href="{{ route('marketing.quotations.show', $contract->quotation_id) }}" class="text-primary fw-bold" target="_blank" rel="noopener noreferrer">
-                                                    {{ $contract->quotation->quotation_number ?? '-' }}
+                                            @forelse($contract->display_quotations as $quotation)
+                                                <a href="{{ route('marketing.quotations.show', $quotation->id) }}" class="text-primary fw-bold me-2" target="_blank" rel="noopener noreferrer">
+                                                    {{ $quotation->quotation_number }}
                                                     <i class="fas fa-external-link-alt fa-xs ms-1"></i>
-                                                </a>
-                                            @else
-                                                {{ $contract->display_quotation_numbers }}
-                                            @endif
+                                                </a>{{ !$loop->last ? ',' : '' }}
+                                            @empty
+                                                -
+                                            @endforelse
                                         </div>
                                     </div>
                                     <div class="contract-field">

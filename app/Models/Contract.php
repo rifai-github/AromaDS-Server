@@ -369,17 +369,51 @@ class Contract extends Model
 
     public function getDisplayQuotationNumbersAttribute(): string
     {
-        if ($this->quotation?->quotation_number) {
-            return $this->quotation->quotation_number;
-        }
-
-        $numbers = $this->mergeDisplaySources()
-            ->map(fn ($contract) => $contract->quotation?->quotation_number)
+        $numbers = $this->display_quotations
+            ->map(fn ($quotation) => $quotation->quotation_number)
             ->filter()
             ->unique()
             ->values();
 
         return $numbers->isNotEmpty() ? $numbers->implode(', ') : '-';
+    }
+
+    public function getDisplayQuotationsAttribute()
+    {
+        if ($this->quotation?->quotation_number) {
+            return collect([$this->quotation]);
+        }
+
+        return $this->mergeDisplaySources()
+            ->map(fn ($contract) => $contract->quotation)
+            ->filter(fn ($quotation) => $quotation && $quotation->quotation_number)
+            ->unique('id')
+            ->values();
+    }
+
+    public function getDisplayVirtualAccountsAttribute(): string
+    {
+        $accounts = collect([$this->virtual_account])
+            ->merge($this->collectBillingGroupVirtualAccounts($this))
+            ->merge($this->collectCustomerVirtualAccounts());
+
+        if ($this->is_merged_contract) {
+            $accounts = $accounts->merge(
+                $this->mergeDisplaySources()
+                    ->flatMap(function ($sourceContract) {
+                        return collect([$sourceContract->virtual_account])
+                            ->merge($this->collectBillingGroupVirtualAccounts($sourceContract));
+                    })
+            );
+        }
+
+        $accounts = $accounts
+            ->filter(fn ($account) => filled($account))
+            ->map(fn ($account) => trim((string) $account))
+            ->unique()
+            ->values();
+
+        return $accounts->isNotEmpty() ? $accounts->implode(', ') : '-';
     }
 
     public function getDisplayContractTypeAttribute(): string
@@ -526,9 +560,49 @@ class Contract extends Model
             'mergedSources.quotation.quotationSurveys.survey',
             'mergedSources.quotation.survey',
             'mergedSources.contractSurveys.survey',
+            'mergedSources.billingGroups',
         ]);
 
         return $this->mergedSources;
+    }
+
+    private function collectBillingGroupVirtualAccounts(self $contract)
+    {
+        $contract->loadMissing('billingGroups');
+
+        return $contract->billingGroups
+            ->pluck('virtual_account_number');
+    }
+
+    private function collectCustomerVirtualAccounts()
+    {
+        if (!$this->customer_id) {
+            return collect();
+        }
+
+        $accounts = collect();
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('virtual_accounts')) {
+            $this->loadMissing('customer.virtualAccounts.bankPayment');
+
+            $accounts = $accounts->merge(
+                $this->customer?->virtualAccounts
+                    ?->filter(fn ($account) => $account->status_active ?? true)
+                    ->map(fn ($account) => $account->full_va_number ?? $account->va_number)
+                    ?? collect()
+            );
+        }
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('company_virtual_accounts')) {
+            $accounts = $accounts->merge(
+                \App\Models\CompanyVirtualAccount::query()
+                    ->where('customer_id', $this->customer_id)
+                    ->where('is_active', true)
+                    ->pluck('account_number')
+            );
+        }
+
+        return $accounts;
     }
 
     private function formatMergeDisplayDates(string $field): string

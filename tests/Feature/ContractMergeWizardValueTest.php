@@ -53,6 +53,7 @@ class ContractMergeWizardValueTest extends TestCase
             $table->string('contract_number')->nullable();
             $table->foreignId('customer_id')->nullable();
             $table->foreignId('branch_id')->nullable();
+            $table->foreignId('quotation_id')->nullable();
             $table->string('contract_type')->nullable();
             $table->date('contract_date')->nullable();
             $table->date('start_date')->nullable();
@@ -153,6 +154,27 @@ class ContractMergeWizardValueTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('quotations', function (Blueprint $table) {
+            $table->id();
+            $table->string('quotation_number')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('quotation_surveys', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('quotation_id')->nullable();
+            $table->foreignId('survey_id')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('contract_surveys', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('contract_id')->nullable();
+            $table->foreignId('survey_id')->nullable();
+            $table->timestamps();
+        });
+
         Schema::create('billing_groups', function (Blueprint $table) {
             $table->id();
             $table->string('billing_group_name')->nullable();
@@ -200,6 +222,9 @@ class ContractMergeWizardValueTest extends TestCase
     {
         Schema::dropIfExists('billing_group_buildings');
         Schema::dropIfExists('billing_groups');
+        Schema::dropIfExists('contract_surveys');
+        Schema::dropIfExists('quotation_surveys');
+        Schema::dropIfExists('quotations');
         Schema::dropIfExists('contract_merges');
         Schema::dropIfExists('contract_terminations');
         Schema::dropIfExists('job_schedules');
@@ -381,5 +406,68 @@ class ContractMergeWizardValueTest extends TestCase
         $newRoom = ContractRoom::where('contract_id', $newContract->id)->first();
         $this->assertNotNull($newRoom);
         $this->assertSame($newBillingGroup->id, $newRoom->billing_group_id);
+    }
+
+    public function test_merge_contract_exposes_clickable_quotations_and_virtual_account_fallback(): void
+    {
+        DB::table('quotations')->insert([
+            ['id' => 11, 'quotation_number' => 'SBY-SQ/26-06/0020', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 12, 'quotation_number' => 'SBY-SQ/26-06/0021', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $sourceA = Contract::create([
+            'contract_number' => 'SBY-CA/26-06/0017',
+            'customer_id' => 1,
+            'quotation_id' => 11,
+            'contract_status' => 'terminated',
+            'contract_value' => 1000000,
+        ]);
+
+        $sourceB = Contract::create([
+            'contract_number' => 'SBY-CA/26-06/0018',
+            'customer_id' => 1,
+            'quotation_id' => 12,
+            'contract_status' => 'terminated',
+            'contract_value' => 2300000,
+        ]);
+
+        $mergeContract = Contract::create([
+            'contract_number' => 'SBY-CA/26-06/0022',
+            'customer_id' => 1,
+            'contract_type' => 'merge',
+            'contract_status' => 'active',
+            'contract_value' => 3300000,
+        ]);
+
+        DB::table('contract_merges')->insert([
+            [
+                'new_contract_id' => $mergeContract->id,
+                'source_contract_id' => $sourceA->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'new_contract_id' => $mergeContract->id,
+                'source_contract_id' => $sourceB->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        BillingGroup::create([
+            'billing_group_name' => 'Billing Group 1',
+            'customer_id' => 1,
+            'contract_id' => $mergeContract->id,
+            'virtual_account_number' => 'VA-001',
+        ]);
+
+        $freshContract = $mergeContract->fresh();
+
+        $this->assertSame(
+            ['SBY-SQ/26-06/0020', 'SBY-SQ/26-06/0021'],
+            $freshContract->display_quotations->pluck('quotation_number')->all()
+        );
+        $this->assertSame('SBY-SQ/26-06/0020, SBY-SQ/26-06/0021', $freshContract->display_quotation_numbers);
+        $this->assertSame('VA-001', $freshContract->display_virtual_accounts);
     }
 }
