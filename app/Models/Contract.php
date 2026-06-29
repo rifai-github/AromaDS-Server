@@ -502,17 +502,17 @@ class Contract extends Model
             return $this->term_of_payment;
         }
 
-        if ($this->payment_terms) {
-            return $this->payment_terms;
-        }
-
         $terms = $this->mergeDisplaySources()
             ->map(fn ($contract) => $contract->term_of_payment ?: $contract->payment_terms)
             ->filter()
             ->unique()
             ->values();
 
-        return $terms->isNotEmpty() ? $terms->implode(', ') : '-';
+        if ($terms->isNotEmpty()) {
+            return $terms->implode(', ');
+        }
+
+        return $this->payment_terms ?: '-';
     }
 
     public function mergeDisplaySources()
