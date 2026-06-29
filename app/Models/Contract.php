@@ -367,6 +367,186 @@ class Contract extends Model
                (!empty($this->merged_from_ids) && count($this->merged_from_ids) > 0);
     }
 
+    public function getDisplayQuotationNumbersAttribute(): string
+    {
+        if ($this->quotation?->quotation_number) {
+            return $this->quotation->quotation_number;
+        }
+
+        $numbers = $this->mergeDisplaySources()
+            ->map(fn ($contract) => $contract->quotation?->quotation_number)
+            ->filter()
+            ->unique()
+            ->values();
+
+        return $numbers->isNotEmpty() ? $numbers->implode(', ') : '-';
+    }
+
+    public function getDisplayContractTypeAttribute(): string
+    {
+        return ucfirst($this->quotation?->quotation_type ?? $this->contract_type ?? 'New');
+    }
+
+    public function getDisplayContractPeriodAttribute(): string
+    {
+        $period = $this->quotation?->rental_period;
+
+        if (!$period && $this->start_date && $this->end_date) {
+            $months = \Carbon\Carbon::parse($this->start_date)
+                ->diffInMonths(\Carbon\Carbon::parse($this->end_date));
+            $period = $months > 0 ? (string) $months : null;
+        }
+
+        if (!$period) {
+            return '-';
+        }
+
+        if (preg_match('/\d+/', (string) $period, $matches)) {
+            return $matches[0];
+        }
+
+        return (string) $period;
+    }
+
+    public function getDisplayBranchCodeAttribute(): string
+    {
+        if ($this->quotation?->branch?->code) {
+            return $this->quotation->branch->code;
+        }
+
+        $codes = $this->mergeDisplaySources()
+            ->map(fn ($contract) => $contract->quotation?->branch?->code)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($codes->isNotEmpty()) {
+            return $codes->implode(', ');
+        }
+
+        if ($this->contract_number && str_contains($this->contract_number, '-')) {
+            return explode('-', $this->contract_number, 2)[0];
+        }
+
+        return '-';
+    }
+
+    public function getDisplayBranchNameAttribute(): string
+    {
+        if ($this->quotation?->branch?->name) {
+            return $this->quotation->branch->name;
+        }
+
+        $names = $this->mergeDisplaySources()
+            ->map(fn ($contract) => $contract->quotation?->branch?->name)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($names->isNotEmpty()) {
+            return $names->implode(', ');
+        }
+
+        $branch = \App\Models\Branch::where('code', $this->display_branch_code)->first();
+        return $branch->name ?? '-';
+    }
+
+    public function getDisplayQuotationDateAttribute(): string
+    {
+        return $this->formatMergeDisplayDates('quotation_date');
+    }
+
+    public function getDisplayValidUntilAttribute(): string
+    {
+        return $this->formatMergeDisplayDates('valid_until');
+    }
+
+    public function getDisplayQuotationTotalAmountAttribute(): float
+    {
+        return $this->quotation
+            ? (float) ($this->quotation->total_amount ?? 0)
+            : (float) $this->mergeDisplaySources()->sum(fn ($contract) => (float) ($contract->quotation?->total_amount ?? 0));
+    }
+
+    public function getDisplayQuotationGrandTotalAttribute(): float
+    {
+        return $this->quotation
+            ? (float) ($this->quotation->grand_total ?? 0)
+            : (float) $this->mergeDisplaySources()->sum(fn ($contract) => (float) ($contract->quotation?->grand_total ?? 0));
+    }
+
+    public function getDisplayQuotationStatusAttribute(): string
+    {
+        if ($this->quotation?->status) {
+            return ucfirst($this->quotation->status);
+        }
+
+        $statuses = $this->mergeDisplaySources()
+            ->map(fn ($contract) => $contract->quotation?->status)
+            ->filter()
+            ->unique()
+            ->values();
+
+        return $statuses->isNotEmpty()
+            ? $statuses->map(fn ($status) => ucfirst($status))->implode(', ')
+            : '-';
+    }
+
+    public function getDisplayTermOfPaymentAttribute(): string
+    {
+        if ($this->quotation?->terms_of_payment_label) {
+            return $this->quotation->terms_of_payment_label;
+        }
+
+        if ($this->term_of_payment) {
+            return $this->term_of_payment;
+        }
+
+        if ($this->payment_terms) {
+            return $this->payment_terms;
+        }
+
+        $terms = $this->mergeDisplaySources()
+            ->map(fn ($contract) => $contract->term_of_payment ?: $contract->payment_terms)
+            ->filter()
+            ->unique()
+            ->values();
+
+        return $terms->isNotEmpty() ? $terms->implode(', ') : '-';
+    }
+
+    public function mergeDisplaySources()
+    {
+        if (!$this->is_merged_contract) {
+            return collect();
+        }
+
+        $this->loadMissing([
+            'mergedSources.quotation.branch',
+            'mergedSources.quotation.quotationSurveys.survey',
+            'mergedSources.quotation.survey',
+            'mergedSources.contractSurveys.survey',
+        ]);
+
+        return $this->mergedSources;
+    }
+
+    private function formatMergeDisplayDates(string $field): string
+    {
+        if ($this->quotation && $this->quotation->{$field}) {
+            return \Carbon\Carbon::parse($this->quotation->{$field})->format('d/M/Y');
+        }
+
+        $dates = $this->mergeDisplaySources()
+            ->map(fn ($contract) => $contract->quotation?->{$field})
+            ->filter()
+            ->map(fn ($date) => \Carbon\Carbon::parse($date)->format('d/M/Y'))
+            ->unique()
+            ->values();
+
+        return $dates->isNotEmpty() ? $dates->implode(', ') : '-';
+    }
+
     public static function findRenewalSource($contractId): ?self
     {
         if (!$contractId) {

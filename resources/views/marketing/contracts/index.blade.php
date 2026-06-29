@@ -957,35 +957,23 @@
                         </td>
                         <!-- Sales Quotation No -->
                         <td class="w-[140px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->quotation_number ?? 'N/A' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->display_quotation_numbers }}</p>
                         </td>
                         <!-- Contract Type -->
                         <td class="w-[110px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ ucfirst($contract->quotation->quotation_type ?? 'N/A') }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->display_contract_type }}</p>
                         </td>
                         <!-- Contract Period -->
                         <td class="w-[100px] p-2">
-                            @php
-                                // Contract Period: prefer quotation.rental_period (e.g. "12 bulan"),
-                                // fall back to computing months from start_date/end_date.
-                                $periodDisplay = '-';
-                                if (!empty($contract->quotation?->rental_period)) {
-                                    $periodDisplay = $contract->quotation->rental_period;
-                                } elseif ($contract->start_date && $contract->end_date) {
-                                    $months = \Carbon\Carbon::parse($contract->start_date)
-                                        ->diffInMonths(\Carbon\Carbon::parse($contract->end_date));
-                                    $periodDisplay = $months > 0 ? ($months . ' bulan') : '-';
-                                }
-                            @endphp
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $periodDisplay }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->display_contract_period }}</p>
                         </td>
                         <!-- Branch (code) -->
                         <td class="w-[80px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->branch->code ?? '-' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->display_branch_code }}</p>
                         </td>
                         <!-- Branch Name -->
                         <td class="w-[110px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->quotation->branch->name ?? '-' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $contract->display_branch_name }}</p>
                         </td>
                         <!-- Cust PO No -->
                         <td class="w-[120px] p-2">

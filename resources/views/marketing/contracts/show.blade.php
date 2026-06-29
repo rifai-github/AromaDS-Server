@@ -505,7 +505,7 @@
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Contract Type</div>
-                                        <div class="contract-field-value">{{ ucfirst($contract->quotation->quotation_type ?? $contract->contract_type ?? 'New') }}</div>
+                                        <div class="contract-field-value">{{ $contract->display_contract_type }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Contract Date</div>
@@ -568,7 +568,7 @@
                                     @endif
                                     <div class="contract-field">
                                         <div class="contract-field-label">Term of Payment</div>
-                                        <div class="contract-field-value">{{ $contract->quotation?->terms_of_payment_label ?? '-' }}</div>
+                                        <div class="contract-field-value">{{ $contract->display_term_of_payment }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">BA Files Supported</div>
@@ -767,7 +767,7 @@
                                                     <i class="fas fa-external-link-alt fa-xs ms-1"></i>
                                                 </a>
                                             @else
-                                                {{ $contract->quotation->quotation_number ?? '-' }}
+                                                {{ $contract->display_quotation_numbers }}
                                             @endif
                                         </div>
                                     </div>
@@ -791,6 +791,24 @@
                                                     }
                                                 } elseif ($contract->quotation && $contract->quotation->survey) {
                                                     $surveys->push($contract->quotation->survey);
+                                                } elseif ($contract->is_merged_contract) {
+                                                    foreach ($contract->mergeDisplaySources() as $sourceContract) {
+                                                        if ($sourceContract->contractSurveys->isNotEmpty()) {
+                                                            foreach ($sourceContract->contractSurveys as $contractSurvey) {
+                                                                if ($contractSurvey->survey) {
+                                                                    $surveys->push($contractSurvey->survey);
+                                                                }
+                                                            }
+                                                        } elseif ($sourceContract->quotation && $sourceContract->quotation->quotationSurveys->isNotEmpty()) {
+                                                            foreach ($sourceContract->quotation->quotationSurveys as $quotationSurvey) {
+                                                                if ($quotationSurvey->survey) {
+                                                                    $surveys->push($quotationSurvey->survey);
+                                                                }
+                                                            }
+                                                        } elseif ($sourceContract->quotation && $sourceContract->quotation->survey) {
+                                                            $surveys->push($sourceContract->quotation->survey);
+                                                        }
+                                                    }
                                                 }
                                                 $surveys = $surveys->unique('id');
                                             @endphp
@@ -807,25 +825,25 @@
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Quotation Date</div>
-                                        <div class="contract-field-value">{{ $contract->quotation?->quotation_date ? $contract->quotation->quotation_date->format('d/M/Y') : '-' }}</div>
+                                        <div class="contract-field-value">{{ $contract->display_quotation_date }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Valid Until</div>
-                                        <div class="contract-field-value">{{ $contract->quotation?->valid_until ? $contract->quotation->valid_until->format('d/M/Y') : '-' }}</div>
+                                        <div class="contract-field-value">{{ $contract->display_valid_until }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Total Amount</div>
-                                        <div class="contract-field-value">Rp {{ number_format($contract->quotation?->total_amount ?? 0, 0, ',', '.') }}</div>
+                                        <div class="contract-field-value">Rp {{ number_format($contract->display_quotation_total_amount, 0, ',', '.') }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Grand Total</div>
-                                        <div class="contract-field-value">Rp {{ number_format($contract->quotation?->grand_total ?? 0, 0, ',', '.') }}</div>
+                                        <div class="contract-field-value">Rp {{ number_format($contract->display_quotation_grand_total, 0, ',', '.') }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Status</div>
                                         <div class="contract-field-value">
-                                            <span class="badge badge-{{ ($contract->quotation?->status ?? null) == 'approved' ? 'success' : 'warning' }}">
-                                                {{ ucfirst($contract->quotation?->status ?? '-') }}
+                                            <span class="badge badge-{{ strtolower($contract->display_quotation_status) == 'approved' || strtolower($contract->display_quotation_status) == 'contract' ? 'success' : 'warning' }}">
+                                                {{ $contract->display_quotation_status }}
                                             </span>
                                         </div>
                                     </div>

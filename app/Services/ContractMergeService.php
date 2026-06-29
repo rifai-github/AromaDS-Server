@@ -7,6 +7,7 @@ use App\Models\ContractMerge;
 use App\Models\ContractRoom;
 use App\Models\ContractRental;
 use App\Models\ContractTermination;
+use App\Models\Finance\BillingGroupBuilding;
 use App\Models\JobSchedule;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -117,7 +118,7 @@ class ContractMergeService
      * Copy semua contract_rooms dan contract_rentals dari source contracts ke contract baru.
      * Room di-copy persis, dengan tambahan source_contract_id untuk tracking.
      */
-    public function copyRoomsAndRentals(Contract $newContract, array $sourceContracts): array
+    public function copyRoomsAndRentals(Contract $newContract, array $sourceContracts, array $billingGroupMap = []): array
     {
         $stats = ['rooms' => 0, 'rentals' => 0];
 
@@ -127,7 +128,7 @@ class ContractMergeService
                 ContractRoom::create([
                     'contract_id' => $newContract->id,
                     'room_id' => $sourceRoom->room_id,
-                    'billing_group_id' => null, // Reset billing group untuk contract baru
+                    'billing_group_id' => $billingGroupMap[$sourceRoom->billing_group_id] ?? null,
                     'source_contract_id' => $sourceContract->id,
                     'source_contract_room_id' => $sourceRoom->id,
                     'created_by' => Auth::id(),
@@ -156,6 +157,125 @@ class ContractMergeService
 
         Log::info("ContractMergeService: Copied rooms/rentals for Contract #{$newContract->id}", $stats);
         return $stats;
+    }
+
+    /**
+     * Copy billing groups from source contracts so merged rooms keep invoice coverage.
+     */
+    public function copyBillingGroups(Contract $newContract, array $sourceContracts): array
+    {
+        $billingGroupMap = [];
+
+        foreach ($sourceContracts as $sourceContract) {
+            foreach ($sourceContract->billingGroups as $sourceBillingGroup) {
+                $newBillingGroup = $sourceBillingGroup->replicate([
+                    'id',
+                    'contract_id',
+                    'created_at',
+                    'updated_at',
+                    'deleted_at',
+                ]);
+
+                $newBillingGroup->contract_id = $newContract->id;
+                $newBillingGroup->billing_group_name = $sourceBillingGroup->billing_group_name ?: $sourceContract->contract_number;
+                $newBillingGroup->billing_amount = $sourceBillingGroup->billing_amount;
+                $newBillingGroup->created_by = Auth::id();
+                $newBillingGroup->updated_by = Auth::id();
+                $newBillingGroup->save();
+
+                $billingGroupMap[$sourceBillingGroup->id] = $newBillingGroup->id;
+
+                foreach ($sourceBillingGroup->billingGroupBuildings as $sourceBuilding) {
+                    BillingGroupBuilding::create([
+                        'billing_group_id' => $newBillingGroup->id,
+                        'building_id' => $sourceBuilding->building_id,
+                        'billing_amount' => $sourceBuilding->billing_amount,
+                        'notes' => $sourceBuilding->notes,
+                        'is_active' => $sourceBuilding->is_active,
+                        'created_by' => Auth::id(),
+                        'updated_by' => Auth::id(),
+                    ]);
+                }
+            }
+        }
+
+        Log::info("ContractMergeService: Copied billing groups for Contract #{$newContract->id}", [
+            'billing_groups' => count($billingGroupMap),
+        ]);
+
+        return $billingGroupMap;
+    }
+
+    public function syncMergeContractMetadata(Contract $newContract, array $sourceContracts): void
+    {
+        $payload = [];
+
+        foreach ([
+            'payment_terms',
+            'term_of_payment',
+            'contract_period_type',
+            'invoice_period_type',
+            'ppn_code',
+            'install_date',
+            'first_service_date',
+            'customer_signing_1_id',
+            'customer_signing_2_id',
+            'customer_signing_3_id',
+            'customer_signing_4_id',
+            'internal_signing_id',
+            'pic_service_email',
+        ] as $field) {
+            $value = $this->sameSourceValue($sourceContracts, $field);
+            if ($value !== null && $value !== '') {
+                $payload[$field] = $value;
+            }
+        }
+
+        foreach (['internal_remark', 'external_remark', 'notes_operation', 'notes_finance', 'notes_sales'] as $field) {
+            $value = $this->mergeSourceText($sourceContracts, $field);
+            if ($value !== null && $value !== '') {
+                $payload[$field] = $value;
+            }
+        }
+
+        if (!empty($payload)) {
+            $newContract->update($payload);
+        }
+    }
+
+    private function sameSourceValue(array $sourceContracts, string $field)
+    {
+        $values = collect($sourceContracts)
+            ->map(fn ($contract) => $contract->{$field})
+            ->filter(fn ($value) => $value !== null && $value !== '')
+            ->unique(fn ($value) => is_scalar($value) ? (string) $value : json_encode($value))
+            ->values();
+
+        return $values->count() === 1 ? $values->first() : null;
+    }
+
+    private function mergeSourceText(array $sourceContracts, string $field): ?string
+    {
+        $values = collect($sourceContracts)
+            ->map(fn ($contract) => [
+                'contract_number' => $contract->contract_number,
+                'value' => trim((string) ($contract->{$field} ?? '')),
+            ])
+            ->filter(fn ($item) => $item['value'] !== '')
+            ->values();
+
+        if ($values->isEmpty()) {
+            return null;
+        }
+
+        $uniqueValues = $values->pluck('value')->unique()->values();
+        if ($uniqueValues->count() === 1) {
+            return $uniqueValues->first();
+        }
+
+        return $values
+            ->map(fn ($item) => "{$item['contract_number']}: {$item['value']}")
+            ->implode("\n");
     }
 
     /**
@@ -262,6 +382,7 @@ class ContractMergeService
         $sourceContracts = Contract::with([
             'contractRooms',
             'contractRentals',
+            'billingGroups.billingGroupBuildings',
         ])->whereIn('id', $sourceContractIds)->get()->all();
 
         // Validasi
@@ -287,8 +408,10 @@ class ContractMergeService
             $statsPerContract['jobs_per_contract'][$sc->id] = $jobCount;
         }
 
-        // 1. Copy rooms & rentals
-        $copyStats = $this->copyRoomsAndRentals($newContract, $sourceContracts);
+        // 1. Copy metadata, billing groups, rooms, and rentals
+        $this->syncMergeContractMetadata($newContract, $sourceContracts);
+        $billingGroupMap = $this->copyBillingGroups($newContract, $sourceContracts);
+        $copyStats = $this->copyRoomsAndRentals($newContract, $sourceContracts, $billingGroupMap);
 
         // 2. Cancel outstanding job schedules
         $totalCancelled = $this->cancelOutstandingJobSchedules($sourceContracts, $newContract);

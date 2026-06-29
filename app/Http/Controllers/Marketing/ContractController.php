@@ -48,6 +48,7 @@ class ContractController extends Controller
             'marketing',
             'renewals.newContract',
             'renewedByContract',
+            'mergedSources.quotation.branch',
         ]);
 
         // Apply access control filter (hierarchical data)
@@ -529,6 +530,10 @@ class ContractController extends Controller
             // Renewal tracking
             'renewals.newContract',
             'renewedByContract',
+            'mergedSources.quotation.branch',
+            'mergedSources.quotation.quotationSurveys.survey',
+            'mergedSources.quotation.survey',
+            'mergedSources.contractSurveys.survey',
         ]);
 
         // For job schedule creation, we need building and rental data

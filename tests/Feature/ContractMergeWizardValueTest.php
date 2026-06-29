@@ -4,6 +4,9 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Marketing\ContractController;
 use App\Models\Contract;
+use App\Models\ContractRoom;
+use App\Models\Finance\BillingGroup;
+use App\Models\Finance\BillingGroupBuilding;
 use App\Services\ContractMergeService;
 use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
@@ -59,6 +62,17 @@ class ContractMergeWizardValueTest extends TestCase
             $table->foreignId('marketing_id')->nullable();
             $table->string('contract_status')->nullable();
             $table->boolean('is_contract')->default(false);
+            $table->string('payment_terms')->nullable();
+            $table->string('term_of_payment')->nullable();
+            $table->string('contract_period_type')->nullable();
+            $table->string('invoice_period_type')->nullable();
+            $table->string('ppn_code')->nullable();
+            $table->date('install_date')->nullable();
+            $table->date('first_service_date')->nullable();
+            $table->foreignId('customer_signing_1_id')->nullable();
+            $table->foreignId('internal_signing_id')->nullable();
+            $table->text('internal_remark')->nullable();
+            $table->text('external_remark')->nullable();
             $table->text('notes')->nullable();
             $table->text('merged_from_ids')->nullable();
             $table->foreignId('created_by')->nullable();
@@ -139,6 +153,44 @@ class ContractMergeWizardValueTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('billing_groups', function (Blueprint $table) {
+            $table->id();
+            $table->string('billing_group_name')->nullable();
+            $table->foreignId('customer_id')->nullable();
+            $table->foreignId('contract_id')->nullable();
+            $table->string('billing_frequency')->nullable();
+            $table->date('billing_start_date')->nullable();
+            $table->date('billing_end_date')->nullable();
+            $table->decimal('billing_amount', 12, 2)->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->string('pic_name')->nullable();
+            $table->string('pic_phone')->nullable();
+            $table->string('pic_email')->nullable();
+            $table->string('npwp')->nullable();
+            $table->string('nitku')->nullable();
+            $table->string('invoice_type')->nullable();
+            $table->string('payment_method')->nullable();
+            $table->string('virtual_account_number')->nullable();
+            $table->string('bank_name')->nullable();
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('billing_group_buildings', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('billing_group_id')->nullable();
+            $table->foreignId('building_id')->nullable();
+            $table->decimal('billing_amount', 12, 2)->nullable();
+            $table->text('notes')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         DB::table('customers')->insert(['id' => 1, 'name' => 'Acme', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('branches')->insert(['id' => 1, 'code' => 'SBY', 'name' => 'Surabaya', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('users')->insert(['id' => 1, 'name' => 'Marketing', 'email' => 'marketing@example.test', 'created_at' => now(), 'updated_at' => now()]);
@@ -146,6 +198,8 @@ class ContractMergeWizardValueTest extends TestCase
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('billing_group_buildings');
+        Schema::dropIfExists('billing_groups');
         Schema::dropIfExists('contract_merges');
         Schema::dropIfExists('contract_terminations');
         Schema::dropIfExists('job_schedules');
@@ -244,5 +298,88 @@ class ContractMergeWizardValueTest extends TestCase
             'status' => 'term-renew',
             'reason' => 'Contract Merge',
         ]);
+    }
+
+    public function test_merge_copies_metadata_billing_groups_and_room_billing_mapping(): void
+    {
+        $source = Contract::create([
+            'contract_number' => 'SBY-CA/26-06/0001',
+            'customer_id' => 1,
+            'contract_status' => 'active',
+            'contract_value' => 1000000,
+            'payment_terms' => 'cash',
+            'term_of_payment' => '1 bulan 1x',
+            'contract_period_type' => 'contract',
+            'invoice_period_type' => 'contract_date',
+            'ppn_code' => '01',
+            'install_date' => '2026-06-25',
+            'first_service_date' => '2026-06-25',
+            'customer_signing_1_id' => 10,
+            'internal_signing_id' => 112,
+            'internal_remark' => 'test internal',
+            'external_remark' => 'test external',
+        ]);
+
+        $newContract = Contract::create([
+            'contract_number' => 'SBY-CA/26-06/0002',
+            'customer_id' => 1,
+            'contract_type' => 'merge',
+            'contract_status' => 'active',
+            'contract_value' => 1000000,
+        ]);
+
+        $billingGroup = BillingGroup::create([
+            'billing_group_name' => 'Billing Group 1',
+            'customer_id' => 1,
+            'contract_id' => $source->id,
+            'billing_frequency' => 'monthly',
+            'billing_amount' => 1000000,
+            'pic_name' => 'Lily',
+            'pic_email' => 'ceo@example.test',
+            'npwp' => '123',
+            'nitku' => '000000',
+            'invoice_type' => 'both',
+            'virtual_account_number' => 'VA-001',
+            'bank_name' => 'Bank Central Asia',
+        ]);
+
+        BillingGroupBuilding::create([
+            'billing_group_id' => $billingGroup->id,
+            'building_id' => 501,
+            'billing_amount' => 1000000,
+            'notes' => 'Main building',
+        ]);
+
+        ContractRoom::create([
+            'contract_id' => $source->id,
+            'room_id' => 701,
+            'billing_group_id' => $billingGroup->id,
+        ]);
+
+        $service = app(ContractMergeService::class);
+        $service->syncMergeContractMetadata($newContract, [$source]);
+        $billingGroupMap = $service->copyBillingGroups($newContract, [$source->load('billingGroups.billingGroupBuildings')]);
+        $service->copyRoomsAndRentals($newContract, [$source->load('contractRooms', 'contractRentals')], $billingGroupMap);
+
+        $freshContract = $newContract->fresh();
+        $this->assertSame('1 bulan 1x', $freshContract->term_of_payment);
+        $this->assertSame('01', $freshContract->ppn_code);
+        $this->assertSame('test internal', $freshContract->internal_remark);
+
+        $newBillingGroup = BillingGroup::where('contract_id', $newContract->id)->first();
+        $this->assertNotNull($newBillingGroup);
+        $this->assertSame('Billing Group 1', $newBillingGroup->billing_group_name);
+        $this->assertSame('Lily', $newBillingGroup->pic_name);
+        $this->assertSame(1000000.0, (float) $newBillingGroup->billing_amount);
+
+        $this->assertDatabaseHas('billing_group_buildings', [
+            'billing_group_id' => $newBillingGroup->id,
+            'building_id' => 501,
+            'notes' => 'Main building',
+        ]);
+
+        $newRoom = ContractRoom::where('contract_id', $newContract->id)->first();
+        $this->assertNotNull($newRoom);
+        $this->assertSame($newBillingGroup->id, $newRoom->billing_group_id);
     }
 }
