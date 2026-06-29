@@ -7,6 +7,7 @@ use App\Http\Traits\AccessControlFilterTrait;
 use App\Http\Traits\ColumnFilterTrait;
 use App\Models\Contract;
 use App\Models\ContractRemark;
+use App\Models\ContractRental;
 use App\Models\ContractRenewal;
 use App\Models\ContractRevision;
 use App\Models\ContractSwitching;
@@ -3747,6 +3748,8 @@ class ContractController extends Controller
                 (int) $request->branch_id // branchId langsung
             );
 
+            $mergeValue = $this->calculateMergeContractValue($request->source_contract_ids);
+
             // Buat contract baru bertipe merge
             $newContract = Contract::create([
                 'contract_number' => $contractNumber,
@@ -3756,6 +3759,8 @@ class ContractController extends Controller
                 'contract_date' => $request->contract_date,
                 'start_date' => $request->start_date,
                 'end_date' => $request->end_date,
+                'contract_value' => $mergeValue['contract_value'],
+                'net_value' => $mergeValue['net_value'],
                 'marketing_id' => $request->marketing_id,
                 'contract_status' => 'active',
                 'is_contract' => true,
@@ -3787,5 +3792,31 @@ class ContractController extends Controller
                 'message' => 'Gagal membuat merge contract: '.$e->getMessage(),
             ], 500);
         }
+    }
+
+    private function calculateMergeContractValue(array $sourceContractIds): array
+    {
+        $sourceContracts = Contract::whereIn('id', $sourceContractIds)
+            ->get(['id', 'contract_value', 'net_value']);
+
+        $contractValue = (float) $sourceContracts->sum(fn ($contract) => (float) ($contract->contract_value ?? 0));
+
+        if ($contractValue <= 0) {
+            $contractValue = (float) ContractRental::whereIn('contract_id', $sourceContracts->pluck('id'))
+                ->sum('total_price');
+        }
+
+        $netValue = (float) $sourceContracts->sum(function ($contract) {
+            return (float) ($contract->net_value ?? $contract->contract_value ?? 0);
+        });
+
+        if ($netValue <= 0) {
+            $netValue = $contractValue;
+        }
+
+        return [
+            'contract_value' => $contractValue,
+            'net_value' => $netValue,
+        ];
     }
 }
