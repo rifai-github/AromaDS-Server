@@ -217,4 +217,32 @@ class ContractMergeWizardValueTest extends TestCase
         $this->assertSame(3500000.0, (float) $newContract->contract_value);
         $this->assertSame(3300000.0, (float) $newContract->net_value);
     }
+
+    public function test_merge_termination_uses_valid_contract_status_and_term_renew_audit_status(): void
+    {
+        $source = Contract::create([
+            'contract_number' => 'SBY-CA/26-06/0001',
+            'customer_id' => 1,
+            'contract_status' => 'active',
+            'contract_value' => 1000000,
+        ]);
+
+        $newContract = Contract::create([
+            'contract_number' => 'SBY-CA/26-06/0002',
+            'customer_id' => 1,
+            'contract_type' => 'merge',
+            'contract_status' => 'active',
+            'contract_value' => 1000000,
+        ]);
+
+        app(ContractMergeService::class)->terminateSourceContracts([$source], $newContract);
+
+        $this->assertSame('terminated', $source->fresh()->contract_status);
+        $this->assertDatabaseHas('contract_terminations', [
+            'contract_id' => $source->id,
+            'new_contract_id' => $newContract->id,
+            'status' => 'term-renew',
+            'reason' => 'Contract Merge',
+        ]);
+    }
 }

@@ -159,8 +159,7 @@ class ContractMergeService
     }
 
     /**
-     * Terminate source contracts dengan status term-renew.
-     * Record muncul otomatis di modul Contract Termination.
+     * Terminate source contracts dan simpan jejak term-renew di modul Contract Termination.
      */
     public function terminateSourceContracts(array $sourceContracts, Contract $newContract): void
     {
@@ -188,9 +187,9 @@ class ContractMergeService
                 'updated_by' => Auth::id(),
             ]);
 
-            // Update contract_status menjadi term-renew
+            // contract_status follows the contracts enum; term-renew is tracked on contract_terminations.status.
             $sourceContract->update([
-                'contract_status' => 'term-renew',
+                'contract_status' => 'terminated',
             ]);
 
             Log::info("ContractMergeService: Contract #{$sourceContract->id} ({$sourceContract->contract_number}) terminated as term-renew → new contract #{$newContract->id}");
