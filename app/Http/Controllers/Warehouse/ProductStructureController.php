@@ -27,14 +27,7 @@ class ProductStructureController extends Controller
     // Product Categories Management
     public function categories(Request $request)
     {
-        $query = ProductCategory::with(['parent', 'children', 'createdBy', 'updatedBy'])
-            ->withCount('masterProducts')
-            ->withExists([
-                'masterProducts as serial_required_products_exists' => function ($query) {
-                    $query->whereHas('serialNumbers')
-                        ->orWhereHas('productType', fn ($typeQuery) => $typeQuery->where('has_serial_number', true));
-                },
-            ]);
+        $query = ProductCategory::query();
 
         // Apply column filters
         $this->applyColumnFilters($query, 'productCategoriesTable', [
@@ -65,6 +58,17 @@ class ProductStructureController extends Controller
             $query->where('is_active', $request->status === 'active');
         }
 
+        $matchedCategories = $query->get(['id', 'parent_id']);
+        $categoryIds = $matchedCategories->pluck('id')->filter()->unique()->values();
+        $pendingParentIds = $matchedCategories->pluck('parent_id')->filter()->unique()->diff($categoryIds)->values();
+
+        while ($pendingParentIds->isNotEmpty()) {
+            $parents = ProductCategory::whereIn('id', $pendingParentIds)->get(['id', 'parent_id']);
+
+            $categoryIds = $categoryIds->merge($parents->pluck('id'))->unique()->values();
+            $pendingParentIds = $parents->pluck('parent_id')->filter()->unique()->diff($categoryIds)->values();
+        }
+
         $sortBy = $request->get('sort_by', 'sort_order');
         $sortDirection = $request->get('sort_direction', 'asc');
         
@@ -74,13 +78,42 @@ class ProductStructureController extends Controller
         }
         
         $allowedSortFields = ['name', 'code', 'sort_order', 'created_at', 'updated_at'];
+        $categoriesQuery = ProductCategory::with(['parent', 'children', 'createdBy', 'updatedBy'])
+            ->withCount('masterProducts')
+            ->withExists([
+                'masterProducts as serial_required_products_exists' => function ($query) {
+                    $query->whereHas('serialNumbers')
+                        ->orWhereHas('productType', fn ($typeQuery) => $typeQuery->where('has_serial_number', true));
+                },
+            ])
+            ->whereIn('id', $categoryIds);
+
         if (in_array($sortBy, $allowedSortFields)) {
-            $query->orderBy($sortBy, $sortDirection);
+            $categoriesQuery->orderBy($sortBy, $sortDirection);
         } else {
-            $query->orderBy('sort_order')->orderBy('name');
+            $categoriesQuery->orderBy('sort_order')->orderBy('name');
         }
 
-        $categories = $query->paginateStd(25);
+        $categories = $categoriesQuery->get();
+        $childrenByParent = $categories->groupBy(fn ($category) => (int) ($category->parent_id ?? 0));
+        $categoryTreeRows = collect();
+
+        $appendCategoryRows = function (int $parentId, int $level) use (&$appendCategoryRows, $childrenByParent, $categoryTreeRows) {
+            foreach ($childrenByParent->get($parentId, collect()) as $category) {
+                $category->tree_level = $level;
+                $categoryTreeRows->push($category);
+                $appendCategoryRows((int) $category->id, $level + 1);
+            }
+        };
+
+        $appendCategoryRows(0, 0);
+
+        $categories->whereNotIn('id', $categoryTreeRows->pluck('id'))->each(function ($category) use ($categoryTreeRows) {
+            $category->tree_level = 0;
+            $categoryTreeRows->push($category);
+        });
+
+        $categories = $categoryTreeRows;
         $parentCategories = ProductCategory::whereNull('parent_id')->orderBy('name')->get();
         $unitOptions = $this->getUnitOptions();
 

@@ -130,11 +130,11 @@
         border-collapse: collapse;
         margin: 0;
         font-size: 14px;
-        min-width: 1800px;
+        min-width: 1500px;
         table-layout: auto;
     }
 
-    .data-table th:nth-child(1) { width: 300px; min-width: 300px; }
+    .data-table th:nth-child(1) { width: 360px; min-width: 360px; }
     .data-table th:nth-child(2) { width: 120px; }
 
     .data-table thead th {
@@ -167,6 +167,25 @@
         padding: 16px 12px;
         vertical-align: top;
         white-space: nowrap;
+    }
+
+    .category-parent-row {
+        background-color: #f8fafc;
+        font-weight: 600;
+    }
+
+    .category-child-row td:first-child {
+        border-left: 3px solid #dbeafe;
+    }
+
+    .category-tree-name {
+        padding-left: calc(var(--tree-level, 0) * 28px);
+    }
+
+    .tree-prefix {
+        color: #6b7280;
+        font-weight: 600;
+        margin-right: 6px;
     }
 
     /* Badge Styles */
@@ -719,8 +738,6 @@
                                 <tr>
                                     <th data-column="name">Category</th>
                                     <th data-column="code">Code</th>
-                                    <th data-column="parent__name">Parent</th>
-                                    <th data-column="sort_order" data-type="numeric">Sort Order</th>
                                     <th data-no-filter>Products</th>
                                     <th data-column="sku_prefix">SKU Prefix</th>
                                     <th data-column="unit">Unit</th>
@@ -736,9 +753,12 @@
                             </thead>
                             <tbody>
                                 @foreach($categories as $category)
-                                <tr onclick="showCategory({{ $category->id }})" style="cursor: pointer;">
+                                <tr class="{{ ($category->tree_level ?? 0) === 0 ? 'category-parent-row' : 'category-child-row' }}" onclick="showCategory({{ $category->id }})" style="cursor: pointer;">
                                     <td>
-                                        <div class="d-flex align-items-center">
+                                        <div class="d-flex align-items-center category-tree-name" style="--tree-level: {{ $category->tree_level ?? 0 }};">
+                                            @if(($category->tree_level ?? 0) > 0)
+                                                <span class="tree-prefix">{{ str_repeat('-- ', $category->tree_level ?? 0) }}</span>
+                                            @endif
                                             @if($category->icon)
                                                 <div class="category-icon" style="background-color: {{ $category->color ?? '#e5e7eb' }}; color: white;">
                                                     <i class="{{ $category->icon }}"></i>
@@ -755,14 +775,6 @@
                                     <td>
                                         <span class="badge badge-info">{{ $category->code }}</span>
                                     </td>
-                                    <td>
-                                        @if($category->parent)
-                                            <span class="badge badge-secondary">{{ $category->parent->name }}</span>
-                                        @else
-                                            <span class="badge badge-primary">Parent</span>
-                                        @endif
-                                    </td>
-                                    <td>{{ $category->sort_order }}</td>
                                     <td>
                                         <span class="badge badge-info">{{ $category->master_products_count }}</span>
                                     </td>
@@ -828,21 +840,6 @@
                         </div>
                     @endif
                 </div>
-
-                @if($categories->count() > 0)
-                <!-- Pagination -->
-                <div class="pagination-wrapper">
-                    <div class="pagination-info">
-                        <span class="info-text">
-                            Showing {{ $categories->firstItem() ?? 0 }} to {{ $categories->lastItem() ?? 0 }} 
-                            of {{ $categories->total() }} entries
-                        </span>
-                    </div>
-                    <div class="pagination-controls">
-                        {{ $categories->links() }}
-                    </div>
-                </div>
-                @endif
             </div>
         </div>
     </div>
