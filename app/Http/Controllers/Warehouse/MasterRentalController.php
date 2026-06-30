@@ -148,6 +148,7 @@ class MasterRentalController extends Controller
             ->get();
 
         $productCategories = ProductCategory::where('is_active', true)
+            ->whereNull('parent_id')
             ->orderBy('name')
             ->get();
 
@@ -169,6 +170,7 @@ class MasterRentalController extends Controller
             ->get();
 
         $productCategories = ProductCategory::where('is_active', true)
+            ->whereNull('parent_id')
             ->orderBy('name')
             ->get();
 
@@ -310,6 +312,7 @@ class MasterRentalController extends Controller
             ->get();
 
         $productCategories = ProductCategory::where('is_active', true)
+            ->whereNull('parent_id')
             ->orderBy('name')
             ->get();
 
@@ -335,6 +338,7 @@ class MasterRentalController extends Controller
             ->get();
 
         $productCategories = ProductCategory::where('is_active', true)
+            ->whereNull('parent_id')
             ->orderBy('name')
             ->get();
 
