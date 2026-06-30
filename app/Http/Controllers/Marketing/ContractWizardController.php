@@ -318,7 +318,7 @@ class ContractWizardController extends Controller
 
             if ($quotation && $quotation->quotation_type === 'renewal' && $quotation->existing_contract_id) {
                 $oldContract = Contract::findRenewalSource($quotation->existing_contract_id);
-                $blockReason = $oldContract?->getRenewalBlockReason();
+                $blockReason = $oldContract?->getRenewalBlockReason(null, $quotation->id);
 
                 if (!$oldContract) {
                     \Log::warning('Renewal source contract lookup failed during contract draft creation', [

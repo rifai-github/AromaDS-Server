@@ -693,6 +693,35 @@ class Contract extends Model
             ->exists();
     }
 
+    public function hasActiveRenewalQuotation(?int $exceptQuotationId = null): bool
+    {
+        return Quotation::query()
+            ->where('quotation_type', 'renewal')
+            ->where('existing_contract_id', $this->id)
+            ->whereNotIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(status))'), [
+                'cancelled',
+                'canceled',
+                'rejected',
+                'expired',
+                'lost',
+            ])
+            ->when($exceptQuotationId, fn ($query) => $query->whereKeyNot($exceptQuotationId))
+            ->exists();
+    }
+
+    public function getRenewalAlreadyInProgressBlockReason(?int $exceptSuccessorContractId = null, ?int $exceptQuotationId = null): ?string
+    {
+        if ($this->hasRenewalSuccessor($exceptSuccessorContractId)) {
+            return "Contract {$this->contract_number} sudah memiliki contract renewal/current contract.";
+        }
+
+        if ($this->hasActiveRenewalQuotation($exceptQuotationId)) {
+            return "Contract {$this->contract_number} sudah memiliki SQ renewal yang masih aktif/approved.";
+        }
+
+        return null;
+    }
+
     public function blockingOperationalJobsForRenewal()
     {
         $contractNumber = $this->contract_number;
@@ -724,14 +753,15 @@ class Contract extends Model
         return $this->blockingOperationalJobsForRenewal()->exists();
     }
 
-    public function getRenewalBlockReason(?int $exceptSuccessorContractId = null): ?string
+    public function getRenewalBlockReason(?int $exceptSuccessorContractId = null, ?int $exceptQuotationId = null): ?string
     {
         if ($this->hasBlockingOperationalJobsForRenewal()) {
             return "Contract {$this->contract_number} masih memiliki Job Schedule aktif/belum selesai. Selesaikan atau cancel job tersebut sebelum membuat renewal.";
         }
 
-        if ($this->hasRenewalSuccessor($exceptSuccessorContractId)) {
-            return "Contract {$this->contract_number} sudah memiliki contract renewal/current contract.";
+        $renewalInProgressReason = $this->getRenewalAlreadyInProgressBlockReason($exceptSuccessorContractId, $exceptQuotationId);
+        if ($renewalInProgressReason) {
+            return $renewalInProgressReason;
         }
 
         if (!$this->actual_start_date || !$this->actual_end_date) {

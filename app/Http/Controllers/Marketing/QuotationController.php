@@ -679,7 +679,7 @@ class QuotationController extends Controller
             ], 422);
         }
 
-        $this->ensureRenewalSourceCanProceed($request->quotation_type, $request->existing_contract_id, true);
+        $this->ensureRenewalSourceCanProceed($request->quotation_type, $request->existing_contract_id, true, $quotation->id);
 
         $oldStatus = $quotation->status;
         
@@ -1721,11 +1721,12 @@ class QuotationController extends Controller
         $this->ensureRenewalSourceCanProceed(
             $quotation->quotation_type,
             $quotation->existing_contract_id,
-            $allowPendingOperationalWork
+            $allowPendingOperationalWork,
+            $quotation->id
         );
     }
 
-    private function ensureRenewalSourceCanProceed(?string $quotationType, ?int $existingContractId, bool $allowPendingOperationalWork = false): void
+    private function ensureRenewalSourceCanProceed(?string $quotationType, ?int $existingContractId, bool $allowPendingOperationalWork = false, ?int $exceptQuotationId = null): void
     {
         if ($quotationType !== 'renewal') {
             return;
@@ -1748,10 +1749,11 @@ class QuotationController extends Controller
             // Renewal quotations may be prepared/approved while the source
             // contract still has active jobs. Contract execution remains
             // guarded by the renewal/contract workflow rules.
-            return;
+            $blockReason = $contract->getRenewalAlreadyInProgressBlockReason(null, $exceptQuotationId);
+        } else {
+            $blockReason = $contract->getRenewalBlockReason(null, $exceptQuotationId);
         }
 
-        $blockReason = $contract->getRenewalBlockReason();
         if ($blockReason) {
             throw ValidationException::withMessages([
                 'existing_contract_id' => $blockReason,

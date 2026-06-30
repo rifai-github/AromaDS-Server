@@ -2089,7 +2089,7 @@ class ContractController extends Controller
             return 'Contract lama untuk renewal tidak ditemukan.';
         }
 
-        return $oldContract->getRenewalBlockReason($contract->id);
+        return $oldContract->getRenewalBlockReason($contract->id, $quotation->id);
     }
 
     private function completeRenewalSourceContractLink(Contract $contract): void

@@ -1315,7 +1315,7 @@ class QuotationWizardController extends Controller
         return [$quantity, $qtyFree];
     }
 
-    private function ensureRenewalSourceCanProceed(?string $quotationType, ?int $existingContractId): void
+    private function ensureRenewalSourceCanProceed(?string $quotationType, ?int $existingContractId, ?int $exceptQuotationId = null): void
     {
         if ($quotationType !== 'renewal') {
             return;
@@ -1334,8 +1334,14 @@ class QuotationWizardController extends Controller
             ]);
         }
 
-        // Quotation renewal may be prepared while operational jobs are still active.
-        // Final renewal/contract execution remains guarded by contract renewal rules.
+        // Quotation renewal may be prepared while operational jobs are still active,
+        // but a source contract cannot have more than one live renewal quotation.
+        $blockReason = $contract->getRenewalAlreadyInProgressBlockReason(null, $exceptQuotationId);
+        if ($blockReason) {
+            throw ValidationException::withMessages([
+                'existing_contract_id' => $blockReason,
+            ]);
+        }
     }
 
     private function ensureRenewalSourceMatchesSelection(Request $request): void
@@ -1483,7 +1489,8 @@ class QuotationWizardController extends Controller
 
             $this->ensureRenewalSourceCanProceed(
                 $quotation->quotation_type,
-                $quotation->existing_contract_id
+                $quotation->existing_contract_id,
+                $quotation->id
             );
 
             $quotation->ensureServiceFrequencyPeriodCompatible();

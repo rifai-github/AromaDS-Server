@@ -45,6 +45,9 @@ class ContractRenewalEligibilityTest extends TestCase
 
         Schema::create('quotations', function (Blueprint $table) {
             $table->id();
+            $table->string('quotation_number')->nullable();
+            $table->string('quotation_type')->nullable();
+            $table->string('status')->nullable();
             $table->foreignId('existing_contract_id')->nullable();
             $table->timestamps();
             $table->softDeletes();
@@ -226,6 +229,62 @@ class ContractRenewalEligibilityTest extends TestCase
         $this->assertNotNull($contractPayload);
         $this->assertFalse($contractPayload['eligible']);
         $this->assertStringContainsString('Job Schedule aktif/belum selesai', $contractPayload['block_reason']);
+    }
+
+    public function test_contract_with_active_renewal_quotation_is_excluded_from_new_sq_renewal_dropdown(): void
+    {
+        $contract = $this->createContract('SBY-CA/26-06/0001');
+        $this->createJob($contract, 'SBY-IR/26-06/0001', 'install', 'done_job', '2026-06-11');
+
+        DB::table('quotations')->insert([
+            'quotation_number' => 'SBY-SQ/26-06/0002',
+            'quotation_type' => 'renewal',
+            'status' => 'approved',
+            'existing_contract_id' => $contract->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = app(ContractRenewalController::class)->getEligibleContracts(
+            Request::create('/marketing/contract-renewals/eligible-contracts', 'GET')
+        );
+
+        $payload = $response->getData(true);
+
+        $this->assertTrue($contract->fresh()->hasActiveRenewalQuotation());
+        $this->assertStringContainsString('SQ renewal', $contract->fresh()->getRenewalBlockReason());
+        $this->assertSame('success', $payload['status']);
+        $this->assertNotContains('SBY-CA/26-06/0001', collect($payload['data'])->pluck('contract_number')->all());
+    }
+
+    public function test_current_contract_can_still_be_included_for_edit_restore_mode(): void
+    {
+        $contract = $this->createContract('SBY-CA/26-06/0001');
+        $this->createJob($contract, 'SBY-IR/26-06/0001', 'install', 'done_job', '2026-06-11');
+
+        DB::table('quotations')->insert([
+            'quotation_number' => 'SBY-SQ/26-06/0002',
+            'quotation_type' => 'renewal',
+            'status' => 'approved',
+            'existing_contract_id' => $contract->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = app(ContractRenewalController::class)->getEligibleContracts(
+            Request::create('/marketing/contract-renewals/eligible-contracts', 'GET', [
+                'include_id' => $contract->id,
+            ])
+        );
+
+        $payload = $response->getData(true);
+        $contractPayload = collect($payload['data'])->firstWhere('contract_number', 'SBY-CA/26-06/0001');
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertNotNull($contractPayload);
+        $this->assertFalse($contractPayload['eligible']);
+        $this->assertTrue($contractPayload['is_current']);
+        $this->assertStringContainsString('SQ renewal', $contractPayload['block_reason']);
     }
 
     public function test_dropdown_includes_eligible_contract_with_past_original_end_date_and_different_marketing(): void
