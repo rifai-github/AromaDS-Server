@@ -699,7 +699,7 @@ class MasterRentalController extends Controller
                 'product_category_id' => $request->product_category_id,
                 'product_type_id' => $request->product_type_id,
                 'master_product_id' => $masterProductId,
-                'item_type' => $masterProductId ? 'product' : null,
+                'item_type' => $masterProductId ? 'product' : 'product_type',
                 'item_id' => $masterProductId,
                 'auto_expand' => $autoExpand,
                 'service_frequency_multiplier' => $request->service_frequency_multiplier,
@@ -803,7 +803,7 @@ class MasterRentalController extends Controller
                 'product_category_id' => $request->product_category_id,
                 'product_type_id' => $request->product_type_id,
                 'master_product_id' => $masterProductId,
-                'item_type' => $masterProductId ? 'product' : null,
+                'item_type' => $masterProductId ? 'product' : 'product_type',
                 'item_id' => $masterProductId,
                 'auto_expand' => $autoExpand,
                 'service_frequency_multiplier' => $request->service_frequency_multiplier,
@@ -1052,7 +1052,7 @@ class MasterRentalController extends Controller
             $autoExpand = $request->boolean('auto_expand') || $selectedAllScopedProducts;
 
             $detail->update([
-                'item_type' => $productIds->isNotEmpty() ? 'product' : null,
+                'item_type' => $productIds->isNotEmpty() ? 'product' : 'product_type',
                 'item_id' => $productIds->first(),
                 'master_product_id' => $productIds->first(),
                 'auto_expand' => $autoExpand,
