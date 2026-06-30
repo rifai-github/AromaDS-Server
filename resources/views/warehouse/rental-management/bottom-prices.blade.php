@@ -160,7 +160,7 @@
             <div class="table-container">
                 <div class="table-header">
                     <div style="display: flex; align-items: center; gap: 15px;">
-                        <a href="{{ route('warehouse.master-rentals.index') }}" class="btn btn-light">
+                        <a href="{{ route('warehouse.master-rentals.show', $rental->id) }}" class="btn btn-light">
                             <i class="fas fa-arrow-left"></i>
                             Back to Master Rental
                         </a>
