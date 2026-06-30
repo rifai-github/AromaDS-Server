@@ -209,7 +209,7 @@ class MasterProductController extends Controller
     {
         $productTypes = ProductType::orderBy('name')->get();
         $warehouses = Warehouse::orderBy('name')->get();
-        $productCategories = ProductCategory::where('is_active', true)->orderBy('name')->get();
+        $productCategories = ProductCategory::where('is_active', true)->whereNotNull('parent_id')->orderBy('name')->get();
         $packagingSizes = PackagingSize::where('is_active', true)->orderBy('sort_order')->get();
         
         // Load brand lines and product variants from master options
@@ -428,7 +428,7 @@ class MasterProductController extends Controller
         
         $masterProduct->load(['productType', 'createdBy', 'updatedBy']);
         $productTypes = ProductType::orderBy('name')->get();
-        $productCategories = ProductCategory::where('is_active', true)->orderBy('name')->get();
+        $productCategories = ProductCategory::where('is_active', true)->whereNotNull('parent_id')->orderBy('name')->get();
         $packagingSizes = PackagingSize::where('is_active', true)->orderBy('sort_order')->get();
         
         $brandLines = MasterOption::where('name', 'Brand Lines')->where('is_active', true)->with('optionDetails')->first();
