@@ -4140,7 +4140,9 @@ function updateMaterial(itemId, selectElement) {
             const targetBomQty = row.querySelector('.target-bom-qty')?.value || 0;
             if (bomQtyCell && qtyIssueInput) {
                 const qtyIssue = parseFloat(qtyIssueInput.value || 0);
-                const bomQty = qtyIssue * parseFloat(data.bom_per_unit || 0);
+                const bomQty = data.bom_qty !== undefined
+                    ? parseFloat(data.bom_qty || 0)
+                    : qtyIssue * parseFloat(data.bom_per_unit || 0);
                 bomQtyCell.innerHTML = `
                     <span title="BOM Rental Qty: ${new Intl.NumberFormat().format(parseFloat(targetBomQty || 0))}">${new Intl.NumberFormat().format(bomQty)}</span>
                     <div class="text-[10px] text-blue-600 font-bold">Target: ${new Intl.NumberFormat().format(parseFloat(targetBomQty || 0))}</div>
@@ -4155,7 +4157,7 @@ function updateMaterial(itemId, selectElement) {
             if (rentalDetailId) {
                 const groupRows = Array.from(document.querySelectorAll(`tr[data-rental-detail-id="${rentalDetailId}"]`));
                 const indexInGroup = groupRows.indexOf(row);
-                suggestQtyForGroup(rentalDetailId, indexInGroup);
+                suggestQtyForGroup(rentalDetailId, indexInGroup + 1);
             }
             
             // Success feedback
@@ -4324,14 +4326,17 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // Material dropdown autosave on change
-    document.querySelectorAll('.material-select').forEach(select => {
-        select.addEventListener('change', function() {
-            const itemId = this.getAttribute('data-item-id');
-            if (itemId) {
-                updateMaterial(itemId, this);
-            }
-        });
+    // Material dropdown autosave on change. Delegated binding keeps this working
+    // after Select2/global UI enhancement wraps or reinitializes table selects.
+    document.addEventListener('change', function(e) {
+        if (!e.target.matches('.material-select')) {
+            return;
+        }
+
+        const itemId = e.target.getAttribute('data-item-id');
+        if (itemId) {
+            updateMaterial(itemId, e.target);
+        }
     });
     
     // Initialize Flatpickr for date filters (moved to unified block below)
