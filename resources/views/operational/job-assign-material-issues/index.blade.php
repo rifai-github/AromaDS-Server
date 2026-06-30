@@ -285,6 +285,14 @@
     .responsive-table tbody tr a {
         pointer-events: auto; /* Re-enable clicks on form elements */
     }
+
+    /* Select2 renders a sibling span for searchable selects. Keep that span clickable too. */
+    .responsive-table tbody tr .select2-container,
+    .responsive-table tbody tr .select2-selection,
+    .responsive-table tbody tr .select2-selection__rendered,
+    .responsive-table tbody tr .select2-selection__arrow {
+        pointer-events: auto;
+    }
     
     .responsive-table tbody {
         height: auto;
