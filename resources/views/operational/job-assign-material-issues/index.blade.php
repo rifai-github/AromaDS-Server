@@ -4089,6 +4089,13 @@ function updateMaterial(itemId, selectElement) {
     const productId = selectElement.value;
     if (!productId) return;
     const previousValue = selectElement.getAttribute('data-current-product-id') || selectElement.defaultValue || '';
+    if (previousValue && productId === previousValue) return;
+    const lastRequestedProductId = selectElement.getAttribute('data-last-requested-product-id') || '';
+    if (selectElement.dataset.materialUpdateInFlight === '1' && lastRequestedProductId === productId) {
+        return;
+    }
+    selectElement.dataset.materialUpdateInFlight = '1';
+    selectElement.setAttribute('data-last-requested-product-id', productId);
     
     // Show loading
     selectElement.style.opacity = '0.6';
@@ -4201,6 +4208,7 @@ function updateMaterial(itemId, selectElement) {
     .finally(() => {
         selectElement.style.opacity = '1';
         selectElement.disabled = false;
+        selectElement.dataset.materialUpdateInFlight = '0';
     });
 }
 
@@ -4338,6 +4346,15 @@ document.addEventListener('DOMContentLoaded', function() {
             updateMaterial(itemId, e.target);
         }
     });
+
+    if (window.jQuery) {
+        jQuery(document).on('select2:select change.select2', '.material-select', function() {
+            const itemId = this.getAttribute('data-item-id');
+            if (itemId) {
+                updateMaterial(itemId, this);
+            }
+        });
+    }
     
     // Initialize Flatpickr for date filters (moved to unified block below)
 
