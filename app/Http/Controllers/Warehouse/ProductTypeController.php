@@ -597,6 +597,7 @@ class ProductTypeController extends Controller
     public function getProductCategories()
     {
         $categories = ProductCategory::where('is_active', true)
+            ->whereNotNull('parent_id')
             ->orderBy('name')
             ->get();
 
