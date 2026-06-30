@@ -43,6 +43,8 @@
 
     .btn-primary { background: #007bff; color: white; }
     .btn-primary:hover { background: #0056b3; }
+    .btn-warning { background: #f59e0b; color: white; }
+    .btn-warning:hover { background: #d97706; }
     .btn-danger { background: #dc3545; color: white; }
     .btn-danger:hover { background: #c82333; }
     .btn-sm { padding: 4px 8px; font-size: 12px; }
@@ -207,6 +209,16 @@
                                     </td>
                                     <td>{{ $bp->updatedBy->name ?? '-' }}</td>
                                     <td>
+                                        <button class="btn btn-sm btn-warning" onclick="openEditModal({
+                                            id: {{ $bp->id }},
+                                            branch_id: {{ $bp->branch_id }},
+                                            offer_type: '{{ $bp->offer_type }}',
+                                            bottom_price: '{{ $bp->bottom_price }}',
+                                            replacement_price: '{{ $bp->replacement_price }}',
+                                            is_active: {{ $bp->is_active ? 'true' : 'false' }}
+                                        })" title="Edit">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
                                         <button class="btn btn-sm btn-danger" onclick="deleteBottomPrice({{ $bp->id }})" title="Delete">
                                             <i class="fas fa-trash"></i>
                                         </button>
@@ -232,10 +244,11 @@
 <div class="modal-overlay" id="addBottomPriceModal">
     <div class="modal-content">
         <div class="modal-header">
-            <h5 class="modal-title">Add Bottom Price</h5>
+            <h5 class="modal-title" id="bottomPriceModalTitle">Add Bottom Price</h5>
             <button type="button" class="modal-close" onclick="closeAddModal()">&times;</button>
         </div>
         <form id="bottomPriceForm" onsubmit="return false;">
+            <input type="hidden" id="bottom_price_id" name="bottom_price_id">
             <div class="modal-body">
                 <div class="mb-3">
                     <label class="form-label">Branch <span class="text-danger">*</span></label>
@@ -282,9 +295,29 @@
 <script>
     const rentalId = {{ $rental->id }};
     const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    let editingBottomPriceId = null;
 
     function openAddModal() {
+        editingBottomPriceId = null;
         document.getElementById('bottomPriceForm').reset();
+        document.getElementById('bottom_price_id').value = '';
+        document.getElementById('bottomPriceModalTitle').textContent = 'Add Bottom Price';
+        document.getElementById('bottomPriceSubmitBtn').innerHTML = '<i class="fas fa-save me-1"></i>Save';
+        document.getElementById('addBottomPriceModal').classList.add('show');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function openEditModal(bottomPrice) {
+        editingBottomPriceId = bottomPrice.id;
+        document.getElementById('bottomPriceForm').reset();
+        document.getElementById('bottom_price_id').value = bottomPrice.id;
+        document.getElementById('branch_id').value = bottomPrice.branch_id;
+        document.getElementById('offer_type').value = bottomPrice.offer_type;
+        document.getElementById('bottom_price').value = bottomPrice.bottom_price;
+        document.getElementById('replacement_price').value = bottomPrice.replacement_price;
+        document.getElementById('is_active').checked = Boolean(bottomPrice.is_active);
+        document.getElementById('bottomPriceModalTitle').textContent = 'Edit Bottom Price';
+        document.getElementById('bottomPriceSubmitBtn').innerHTML = '<i class="fas fa-save me-1"></i>Update';
         document.getElementById('addBottomPriceModal').classList.add('show');
         document.body.style.overflow = 'hidden';
     }
@@ -304,8 +337,15 @@
         const formData = new FormData(document.getElementById('bottomPriceForm'));
         formData.set('is_active', document.getElementById('is_active').checked ? '1' : '0');
         formData.append('_token', csrfToken);
+        const url = editingBottomPriceId
+            ? `/warehouse/rental-management/bottom-prices/${editingBottomPriceId}`
+            : `/warehouse/rental-management/rentals/${rentalId}/bottom-prices`;
 
-        fetch(`/warehouse/rental-management/rentals/${rentalId}/bottom-prices`, {
+        if (editingBottomPriceId) {
+            formData.append('_method', 'PUT');
+        }
+
+        fetch(url, {
             method: 'POST',
             body: formData,
             credentials: 'same-origin',

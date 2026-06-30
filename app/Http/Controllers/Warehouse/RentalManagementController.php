@@ -464,6 +464,53 @@ class RentalManagementController extends Controller
         }
     }
 
+    public function updateBottomPrice(Request $request, RentalBottomPrice $bottomPrice)
+    {
+        $validator = \Validator::make($request->all(), [
+            'branch_id' => 'required|exists:branches,id',
+            'offer_type' => 'required|in:hari,bulan',
+            'bottom_price' => 'required|numeric|min:0',
+            'replacement_price' => 'required|numeric|min:0',
+            'is_active' => 'boolean'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $bottomPrice->update([
+                'branch_id' => $request->branch_id,
+                'offer_type' => $request->offer_type,
+                'bottom_price' => $request->bottom_price,
+                'replacement_price' => $request->replacement_price,
+                'is_active' => $request->is_active ?? false,
+                'updated_by' => Auth::id()
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Bottom price updated successfully.',
+                'data' => $bottomPrice->load(['branch', 'createdBy', 'updatedBy'])
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update bottom price: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function destroyBottomPrice(RentalBottomPrice $bottomPrice)
     {
         try {

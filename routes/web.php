@@ -1293,6 +1293,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
 
             Route::get('rentals/{rental}/bottom-prices', [\App\Http\Controllers\Warehouse\RentalManagementController::class, 'bottomPrices'])->name('bottom-prices')->middleware('permission:warehouse.master-rentals.view');
             Route::post('rentals/{rental}/bottom-prices', [\App\Http\Controllers\Warehouse\RentalManagementController::class, 'storeBottomPrice'])->name('bottom-prices.store')->middleware('permission:warehouse.master-rentals.update');
+            Route::put('bottom-prices/{bottomPrice}', [\App\Http\Controllers\Warehouse\RentalManagementController::class, 'updateBottomPrice'])->name('bottom-prices.update')->middleware('permission:warehouse.master-rentals.update');
             Route::delete('bottom-prices/{bottomPrice}', [\App\Http\Controllers\Warehouse\RentalManagementController::class, 'destroyBottomPrice'])->name('bottom-prices.destroy')->middleware('permission:warehouse.master-rentals.delete');
         });
 
