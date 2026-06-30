@@ -4,13 +4,15 @@ namespace Tests\Unit;
 
 use App\Services\Imports\SpreadsheetImportHelper;
 use Illuminate\Http\UploadedFile;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
 
 class SpreadsheetImportHelperTest extends TestCase
 {
     private function csvUpload(string $contents): UploadedFile
     {
-        $path = tempnam(sys_get_temp_dir(), 'sih') . '.csv';
+        $path = tempnam(sys_get_temp_dir(), 'sih').'.csv';
         file_put_contents($path, $contents);
 
         // test mode = true so the file does not need to be a real HTTP upload.
@@ -36,6 +38,39 @@ class SpreadsheetImportHelperTest extends TestCase
 
         $this->assertArrayHasKey('name', $rows[0]);
         $this->assertSame('PT Contoh', $rows[0]['name']);
+    }
+
+    public function test_normalizes_header_keys_from_excel_friendly_labels(): void
+    {
+        $rows = SpreadsheetImportHelper::parse($this->csvUpload(
+            "Product SKU,Required-Date, Item Notes \nDISW300W,29 Jun 2026,Catatan item\n"
+        ));
+
+        $this->assertSame('DISW300W', $rows[0]['product_sku']);
+        $this->assertSame('29 Jun 2026', $rows[0]['required_date']);
+        $this->assertSame('Catatan item', $rows[0]['item_notes']);
+    }
+
+    public function test_parses_xlsx_upload_even_when_temporary_path_has_no_extension(): void
+    {
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray([
+            ['required_date', 'reason', 'product_sku', 'quantity'],
+            ['29 Jun 2026', 'Restock', 'DISW300W', 10],
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'sih');
+        (new Xlsx($spreadsheet))->save($path);
+
+        $rows = SpreadsheetImportHelper::parse(
+            new UploadedFile($path, 'template-import-inventory-request.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true)
+        );
+
+        $this->assertSame('29 Jun 2026', $rows[0]['required_date']);
+        $this->assertSame('Restock', $rows[0]['reason']);
+        $this->assertSame('DISW300W', $rows[0]['product_sku']);
+        $this->assertSame('10', $rows[0]['quantity']);
     }
 
     public function test_skips_fully_empty_rows_and_pads_short_rows(): void

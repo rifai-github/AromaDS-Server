@@ -9,7 +9,7 @@ class InventoryRequestImportDateParsingTest extends TestCase
 {
     private function parse(?string $value): ?\Carbon\Carbon
     {
-        $controller = new InventoryRequestImportController();
+        $controller = new InventoryRequestImportController;
         $method = new \ReflectionMethod($controller, 'parseRequiredDate');
         $method->setAccessible(true);
 
@@ -27,6 +27,14 @@ class InventoryRequestImportDateParsingTest extends TestCase
     public function test_accepts_dash_separated_format_for_backward_compatibility(): void
     {
         $date = $this->parse('29-Jun-2026');
+
+        $this->assertNotNull($date);
+        $this->assertSame('2026-06-29', $date->format('Y-m-d'));
+    }
+
+    public function test_accepts_two_digit_year_dash_separated_format_for_excel_compatibility(): void
+    {
+        $date = $this->parse('29-Jun-26');
 
         $this->assertNotNull($date);
         $this->assertSame('2026-06-29', $date->format('Y-m-d'));

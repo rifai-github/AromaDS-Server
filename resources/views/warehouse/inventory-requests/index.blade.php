@@ -1267,7 +1267,7 @@ function openImportModal() {
                     <li><strong>Wajib:</strong> required_date, reason, quantity, dan salah satu dari product_sku / product_name</li>
                     <li><strong>required_date:</strong> format tanggal <strong>dd MMM yyyy</strong>, contoh <strong>29 Jun 2026</strong> (sama seperti tampilan tanggal di dashboard).</li>
                     <li><strong>Branch:</strong> isi branch_code atau branch_name. Jika kosong, sistem memakai branch utama user.</li>
-                    <li><strong>request_group:</strong> bukan nomor request — nomor request akan dibuat otomatis oleh sistem. Kolom ini hanya untuk mengelompokkan beberapa baris menjadi satu Inventory Request (boleh dikosongkan; jika kosong, baris dengan branch/tanggal/reason/notes yang sama otomatis digabung).</li>
+                    <li><strong>request_group:</strong> bukan nomor request - nomor request akan dibuat otomatis oleh sistem. Kolom ini hanya untuk mengelompokkan beberapa baris menjadi satu Inventory Request (boleh dikosongkan; jika kosong, baris dengan branch/tanggal/reason/notes yang sama otomatis digabung).</li>
                     <li><strong>notes:</strong> catatan level request (header), tersimpan di Inventory Request. <strong>item_notes:</strong> catatan level item per produk, tersimpan di masing-masing baris item. Keduanya opsional.</li>
                     <li>Request hasil import dibuat sebagai <strong>draft</strong> seperti create manual.</li>
                 </ul>
@@ -1285,7 +1285,10 @@ function inventoryRequestHandleFileSelect(event) {
     const btn = document.getElementById('inventoryRequestPreviewBtn');
     btn.disabled = !(event.target.files && event.target.files.length > 0);
     document.getElementById('inventoryRequestPreviewSection').style.display = 'none';
-    document.getElementById('inventoryRequestConfirmBtn').style.display = 'none';
+    const confirmBtn = document.getElementById('inventoryRequestConfirmBtn');
+    confirmBtn.style.display = 'none';
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Mulai Import';
 }
 
 function inventoryRequestPreviewImport(event) {
@@ -1321,14 +1324,21 @@ function inventoryRequestPreviewImport(event) {
         previewBtn.textContent = 'Preview';
         if (result.status !== 'success') {
             content.innerHTML = '<div class="text-red-600 text-sm">' + (result.message || 'Gagal membaca file.') + '</div>';
+            document.getElementById('inventoryRequestConfirmBtn').style.display = 'none';
             return;
         }
 
         const p = result.preview;
+        const hasErrors = p.errors && p.errors.length;
         let html = '<div class="text-sm space-y-1">';
         html += '<div>Total baris item: <strong>' + p.total_rows + '</strong></div>';
-        html += '<div>Request akan dibuat: <strong class="text-green-700">' + p.new + '</strong></div>';
-        if (p.errors && p.errors.length) {
+        html += '<div>Total group request: <strong>' + (p.request_groups || 0) + '</strong></div>';
+        html += '<div>Request valid dan siap dibuat: <strong class="text-green-700">' + p.new + '</strong></div>';
+        if (p.invalid_request_groups) {
+            html += '<div>Group bermasalah: <strong class="text-red-600">' + p.invalid_request_groups + '</strong></div>';
+        }
+        if (hasErrors) {
+            html += '<div class="mt-2 text-red-600 font-semibold">Import belum bisa dilanjutkan. Perbaiki error di bawah ini lalu preview ulang.</div>';
             html += '<div class="mt-2 text-red-600"><strong>' + p.errors.length + ' peringatan:</strong><ul class="list-disc list-inside">';
             p.errors.slice(0, 10).forEach(e => { html += '<li>' + e + '</li>'; });
             if (p.errors.length > 10) html += '<li>...dan ' + (p.errors.length - 10) + ' lainnya</li>';
@@ -1336,7 +1346,7 @@ function inventoryRequestPreviewImport(event) {
         }
         html += '</div>';
         content.innerHTML = html;
-        document.getElementById('inventoryRequestConfirmBtn').style.display = (p.new > 0) ? 'inline-flex' : 'none';
+        document.getElementById('inventoryRequestConfirmBtn').style.display = (p.new > 0 && !hasErrors) ? 'inline-flex' : 'none';
     })
     .catch(() => {
         previewBtn.disabled = false;
@@ -1365,7 +1375,8 @@ function inventoryRequestConfirmImport() {
     .then(result => {
         const content = document.getElementById('inventoryRequestPreviewContent');
         const s = result.stats || {};
-        let html = '<div class="text-sm space-y-1"><div class="font-semibold text-green-700">' + (result.message || 'Import selesai') + '</div>';
+        const isSuccess = result.status === 'success';
+        let html = '<div class="text-sm space-y-1"><div class="font-semibold ' + (isSuccess ? 'text-green-700' : 'text-red-600') + '">' + (result.message || (isSuccess ? 'Import selesai' : 'Import gagal')) + '</div>';
         if (typeof s.success !== 'undefined') {
             html += '<div>Baris berhasil: <strong>' + s.success + '</strong></div>';
         }
@@ -1377,8 +1388,13 @@ function inventoryRequestConfirmImport() {
         }
         html += '</div>';
         content.innerHTML = html;
-        confirmBtn.style.display = 'none';
-        setTimeout(() => { window.location.reload(); }, 1800);
+        if (isSuccess) {
+            confirmBtn.style.display = 'none';
+            setTimeout(() => { window.location.reload(); }, 1800);
+        } else {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Mulai Import';
+        }
     })
     .catch(() => {
         confirmBtn.disabled = false;

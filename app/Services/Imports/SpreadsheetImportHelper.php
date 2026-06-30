@@ -4,6 +4,7 @@ namespace App\Services\Imports;
 
 use App\Exports\ArrayTemplateExport;
 use Illuminate\Http\UploadedFile;
+use Maatwebsite\Excel\Excel as ExcelReader;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -44,13 +45,21 @@ class SpreadsheetImportHelper
         $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension());
 
         if (in_array($extension, ['xlsx', 'xls'], true)) {
-            $matrix = Excel::toArray([], $file->getRealPath());
+            $matrix = Excel::toArray([], $file->getRealPath(), null, self::readerTypeForExtension($extension));
             $matrix = $matrix[0] ?? [];
         } else {
             $matrix = self::readCsv($file->getRealPath());
         }
 
         return self::matrixToHeaderedRows($matrix);
+    }
+
+    private static function readerTypeForExtension(string $extension): string
+    {
+        return match ($extension) {
+            'xls' => ExcelReader::XLS,
+            default => ExcelReader::XLSX,
+        };
     }
 
     /**
@@ -88,12 +97,8 @@ class SpreadsheetImportHelper
         }
 
         $header = array_map(static function ($h) {
-            return trim((string) $h);
+            return self::normalizeHeaderKey($h);
         }, $matrix[0]);
-
-        if (! empty($header)) {
-            $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', $header[0]);
-        }
 
         $columnCount = count($header);
         $rows = [];
@@ -119,6 +124,17 @@ class SpreadsheetImportHelper
         }
 
         return $rows;
+    }
+
+    private static function normalizeHeaderKey(mixed $header): string
+    {
+        $key = trim((string) $header);
+        $key = preg_replace('/^\xEF\xBB\xBF/', '', $key) ?? $key;
+        $key = preg_replace('/[\x{200B}-\x{200D}\x{FEFF}]/u', '', $key) ?? $key;
+        $key = mb_strtolower(trim($key));
+        $key = preg_replace('/[\s\-]+/', '_', $key) ?? $key;
+
+        return trim($key, '_');
     }
 
     /**

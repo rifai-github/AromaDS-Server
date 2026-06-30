@@ -44,9 +44,9 @@ class InventoryRequestImportController extends Controller
         $format = $request->query('format', 'xlsx');
 
         $sample = [
-            ['REQ-001', 'JKT', '', now()->addDays(7)->format('d M Y'), 'Restock kebutuhan service', 'Import contoh', 'REF-001', '', '10', 'Aroma lavender'],
-            ['REQ-001', 'JKT', '', now()->addDays(7)->format('d M Y'), 'Restock kebutuhan service', 'Import contoh', '', 'Dispenser Aroma X', '2', 'Unit tambahan'],
-            ['REQ-002', '', 'Bandung', now()->addDays(10)->format('d M Y'), 'Kebutuhan cabang', '', 'CLN-001', '', '5', ''],
+            ['', 'JKT', '', now()->addDays(7)->format('d M Y'), 'Restock kebutuhan service', 'Import contoh', 'REF-001', '', '10', 'Aroma lavender'],
+            ['', 'JKT', '', now()->addDays(7)->format('d M Y'), 'Restock kebutuhan service', 'Import contoh', '', 'Dispenser Aroma X', '2', 'Unit tambahan'],
+            ['', '', 'Bandung', now()->addDays(10)->format('d M Y'), 'Kebutuhan cabang', '', 'CLN-001', '', '5', ''],
         ];
 
         return SpreadsheetImportHelper::downloadTemplate(
@@ -74,6 +74,8 @@ class InventoryRequestImportController extends Controller
             'errors' => [],
             'preview_data' => [],
             'request_groups' => 0,
+            'valid_request_groups' => 0,
+            'invalid_request_groups' => 0,
         ];
 
         $groupSummaries = [];
@@ -100,13 +102,20 @@ class InventoryRequestImportController extends Controller
 
         foreach ($this->groupRows($rows) as $group) {
             $validation = $this->validateGroup($group);
+            if (empty($validation['errors'])) {
+                $preview['valid_request_groups']++;
+
+                continue;
+            }
+
+            $preview['invalid_request_groups']++;
             foreach ($validation['errors'] as $error) {
                 $preview['errors'][] = "Baris {$error['row']}: {$error['error']}";
             }
         }
 
         $preview['request_groups'] = count($groupSummaries);
-        $preview['new'] = count($groupSummaries);
+        $preview['new'] = $preview['valid_request_groups'];
 
         return response()->json(['status' => 'success', 'preview' => $preview]);
     }
@@ -131,7 +140,8 @@ class InventoryRequestImportController extends Controller
 
         $groups = $this->groupRows($rows);
         $userId = Auth::id();
-        $documentNumberService = new DocumentNumberService();
+        $documentNumberService = new DocumentNumberService;
+        $validatedGroups = [];
 
         foreach ($groups as $group) {
             $validation = $this->validateGroup($group);
@@ -139,12 +149,30 @@ class InventoryRequestImportController extends Controller
             if (! empty($validation['errors'])) {
                 $stats['failed'] += count($group['rows']);
                 array_push($stats['errors'], ...$validation['errors']);
+
                 continue;
             }
 
-            DB::beginTransaction();
+            $validatedGroups[] = [
+                'group' => $group,
+                'validation' => $validation,
+            ];
+        }
 
-            try {
+        if (! empty($stats['errors'])) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Import dibatalkan. Perbaiki baris yang masih error sebelum mulai import.',
+                'stats' => $stats,
+            ], 422);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            foreach ($validatedGroups as $validatedGroup) {
+                $group = $validatedGroup['group'];
+                $validation = $validatedGroup['validation'];
                 $branch = $validation['branch'];
                 $requestNumber = $documentNumberService->generate(
                     'inventory_request',
@@ -186,15 +214,18 @@ class InventoryRequestImportController extends Controller
 
                 $stats['success'] += count($group['rows']);
                 $stats['requests_created']++;
-            } catch (\Throwable $e) {
-                DB::rollBack();
-                Log::error('Inventory request import group failed: '.$e->getMessage());
-                $stats['failed'] += count($group['rows']);
-                $stats['errors'][] = [
-                    'row' => $group['first_row_no'],
-                    'error' => 'Gagal membuat request: '.$e->getMessage(),
-                ];
             }
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error('Inventory request import failed: '.$e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal membuat Inventory Request: '.$e->getMessage(),
+                'stats' => $stats,
+            ], 500);
         }
 
         return response()->json([
@@ -308,12 +339,14 @@ class InventoryRequestImportController extends Controller
             $product = $this->resolveProduct($row);
             if (! $product) {
                 $errors[] = ['row' => $rowNo, 'error' => 'product_sku/product_name tidak ditemukan di master produk aktif'];
+
                 continue;
             }
 
             $quantity = trim($row['quantity'] ?? '');
             if ($quantity === '' || ! is_numeric($quantity) || (float) $quantity <= 0) {
                 $errors[] = ['row' => $rowNo, 'error' => 'quantity wajib angka lebih dari 0'];
+
                 continue;
             }
 
@@ -414,7 +447,7 @@ class InventoryRequestImportController extends Controller
             }
         }
 
-        foreach (['d M Y', 'd-M-Y', 'd/M/Y', 'Y-m-d', 'd-m-Y', 'd/m/Y'] as $format) {
+        foreach (['d M Y', 'd M y', 'd-M-y', 'd-M-Y', 'd/M/y', 'd/M/Y', 'Y-m-d', 'd-m-y', 'd-m-Y', 'd/m/y', 'd/m/Y'] as $format) {
             try {
                 return Carbon::createFromFormat($format, $value)->startOfDay();
             } catch (\Throwable) {
