@@ -1790,6 +1790,58 @@ function getProductBomPerUnit(product) {
     return parseFloat(product.bom_quantity || 0);
 }
 
+function getProductPackagingSizeId(product) {
+    return product?.packaging_size_id ||
+        product?.packagingSize?.id ||
+        product?.packaging_size?.id ||
+        '';
+}
+
+function getProductPackagingName(product) {
+    return product?.packagingSize?.name ||
+        product?.packaging_size?.name ||
+        product?.packaging_size_name ||
+        product?.packaging_size ||
+        '';
+}
+
+function formatMaterialOptionLabel(product) {
+    if (!product) {
+        return 'Unknown product';
+    }
+
+    const sku = product.sku || product.code;
+    const packaging = getProductPackagingName(product);
+    const suffix = [
+        sku ? `SKU: ${sku}` : '',
+        packaging ? `Size: ${packaging}` : '',
+    ].filter(Boolean).join(' | ');
+
+    return suffix ? `${product.name} (${suffix})` : product.name;
+}
+
+function findProductForPackagingSize(currentProduct, candidateProducts, packagingSizeId) {
+    if (!packagingSizeId) {
+        return null;
+    }
+
+    const currentFamily = normalizePackageMaterialFamily(currentProduct);
+    const currentBrandLine = normalizeProductBrandLine(currentProduct);
+
+    return candidateProducts.find(product => {
+        if (String(getProductPackagingSizeId(product)) !== String(packagingSizeId)) {
+            return false;
+        }
+
+        if (currentFamily && normalizePackageMaterialFamily(product) !== currentFamily) {
+            return false;
+        }
+
+        const productBrandLine = normalizeProductBrandLine(product);
+        return !currentBrandLine || !productBrandLine || currentBrandLine === productBrandLine;
+    }) || null;
+}
+
 function normalizeProductBrandLine(product) {
     return String(product?.brand_line || '').trim().toLowerCase().replace(/\s+/g, ' ') || null;
 }
@@ -2241,7 +2293,7 @@ function openEditModal(id) {
                                         }
                                         optionProducts.forEach(p => {
                                             const selected = String(p.id) === String(item.product.id) ? ' selected' : '';
-                                            options += '<option value="' + p.id + '"' + selected + '>' + p.name + '</option>';
+                                            options += '<option value="' + p.id + '"' + selected + '>' + formatMaterialOptionLabel(p) + '</option>';
                                         });
                                         const productCell = '<select name="rental_products[' + index + '][product_id]" id="product_select_' + index + '" class="form-input product-select" data-original-product-id="' + item.product.id + '" data-component-id="' + item.component_id + '" data-product-type-id="' + (productTypeId || '') + '" data-product-category-id="' + (productCategoryId || '') + '" data-allowed-product-ids="' + allowedProductIds.join(',') + '" data-is-unit="' + (isUnit ? '1' : '0') + '" onchange="handleRentalProductChange(this, ' + index + ')" style="min-width: 200px;">' + options + '</select>';
                                         
@@ -2253,7 +2305,7 @@ function openEditModal(id) {
                                                 const selected = ps.id == item.product.packaging_size_id ? 'selected' : '';
                                                 psOptions += '<option value="' + ps.id + '" ' + selected + '>' + ps.name + '</option>';
                                             });
-                                            packagingCell = '<select name="rental_products[' + index + '][packaging_size_id]" class="form-input" style="min-width: 150px;">' + psOptions + '</select>';
+                                            packagingCell = '<select name="rental_products[' + index + '][packaging_size_id]" id="packaging_select_' + index + '" class="form-input package-size-select" data-row-index="' + index + '" data-current-packaging-size-id="' + (item.product.packaging_size_id || '') + '" onchange="handlePackagingSizeChange(this, ' + index + ')" style="min-width: 150px;">' + psOptions + '</select>';
                                         }
                                         
                                         // Build Qty cell - editable for non-unit
@@ -2434,7 +2486,7 @@ function handleComponentChange(selectElement, rowIndex) {
     // Rebuild options
     let options = '<option value="">-- Select Product --</option>';
     filteredProducts.forEach(p => {
-        options += '<option value="' + p.id + '">' + p.name + '</option>';
+        options += '<option value="' + p.id + '">' + formatMaterialOptionLabel(p) + '</option>';
     });
     
     productSelect.innerHTML = options;
@@ -2448,7 +2500,73 @@ function handleComponentChange(selectElement, rowIndex) {
 
 // Handle rental product change
 function handleRentalProductChange(selectElement, index) {
+    const selectedProduct = window.availableProducts?.find(p => String(p.id) === String(selectElement.value));
+    const packagingSelect = document.getElementById('packaging_select_' + index);
+
+    if (selectedProduct && packagingSelect) {
+        const packagingSizeId = getProductPackagingSizeId(selectedProduct);
+        if (packagingSizeId) {
+            packagingSelect.value = packagingSizeId;
+            packagingSelect.setAttribute('data-current-packaging-size-id', packagingSizeId);
+        }
+    }
+
     checkProductChanges();
+}
+
+function handlePackagingSizeChange(selectElement, index) {
+    const productSelect = document.getElementById('product_select_' + index);
+    if (!productSelect || !window.availableProducts) {
+        return;
+    }
+
+    const selectedPackagingSizeId = selectElement.value;
+    const previousPackagingSizeId = selectElement.getAttribute('data-current-packaging-size-id') || '';
+    const currentProduct = window.availableProducts.find(p => String(p.id) === String(productSelect.value)) ||
+        window.availableProducts.find(p => String(p.id) === String(productSelect.dataset.originalProductId));
+
+    const allowedProductIds = (productSelect.dataset.allowedProductIds || '')
+        .split(',')
+        .map(id => id.trim())
+        .filter(Boolean);
+    const productTypeId = productSelect.dataset.productTypeId || '';
+    const productCategoryId = productSelect.dataset.productCategoryId || '';
+    const isUnit = productSelect.dataset.isUnit === '1';
+
+    let candidates = window.availableProducts;
+    if (isUnit && productCategoryId) {
+        candidates = candidates.filter(p => p.product_category_id == productCategoryId || (p.productCategory && p.productCategory.id == productCategoryId));
+    } else if (allowedProductIds.length > 0) {
+        candidates = candidates.filter(p => allowedProductIds.includes(String(p.id)));
+    } else if (productTypeId) {
+        candidates = candidates.filter(p => p.product_type_id == productTypeId || (p.productType && p.productType.id == productTypeId));
+    } else if (productCategoryId) {
+        candidates = candidates.filter(p => p.product_category_id == productCategoryId || (p.productCategory && p.productCategory.id == productCategoryId));
+    }
+
+    if (!isUnit) {
+        candidates = filterSamePackageMaterialFamily(currentProduct, candidates);
+    }
+
+    const replacement = findProductForPackagingSize(currentProduct, candidates, selectedPackagingSizeId);
+    if (!replacement) {
+        selectElement.value = previousPackagingSizeId;
+        Swal.fire({
+            icon: 'warning',
+            title: 'Produk Tidak Ditemukan',
+            text: 'Tidak ada material dengan ukuran tersebut untuk aroma/unit yang sama.',
+            confirmButtonColor: '#214589'
+        });
+        return;
+    }
+
+    if (!Array.from(productSelect.options).some(option => String(option.value) === String(replacement.id))) {
+        productSelect.add(new Option(formatMaterialOptionLabel(replacement), replacement.id));
+    }
+
+    productSelect.value = replacement.id;
+    selectElement.setAttribute('data-current-packaging-size-id', selectedPackagingSizeId);
+    handleRentalProductChange(productSelect, index);
 }
 
 function submitForm(event, id = null) {

@@ -1927,7 +1927,7 @@ class JobAssignMaterialIssueController extends Controller
         // rows. Swapping a unit still requires the change-reason note (see
         // handleRentalProductChange / checkProductChanges).
         // MOM12: Include product_type_id untuk filter berdasarkan component
-        $products = MasterProduct::with(['productCategory', 'productType'])
+        $products = MasterProduct::with(['productCategory', 'productType', 'packagingSize'])
             ->orderBy('name')
             ->get()
             ->map(function($product) {
@@ -1935,6 +1935,16 @@ class JobAssignMaterialIssueController extends Controller
                     'id' => $product->id,
                     'name' => $product->name,
                     'sku' => $product->sku,
+                    'brand_line' => $product->brand_line,
+                    'variant_name' => $product->variant_name,
+                    'bom_quantity' => $product->bom_quantity,
+                    'last_unit_price' => $product->last_unit_price,
+                    'packaging_size_id' => $product->packaging_size_id,
+                    'packaging_size' => $product->packagingSize ? [
+                        'id' => $product->packagingSize->id,
+                        'name' => $product->packagingSize->name,
+                    ] : null,
+                    'packaging_size_name' => $product->packagingSize?->name ?? $product->packaging_size,
                     'product_type_id' => $product->product_type_id,
                     'product_category_id' => $product->product_category_id,
                     'productCategory' => $product->productCategory ? [
