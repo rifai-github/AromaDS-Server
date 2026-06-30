@@ -304,6 +304,86 @@ class SubmitIssueGroupedSelectionTest extends TestCase
         $this->assertStringContainsString('Stock: 5', implode("\n", $result['warnings']));
     }
 
+    public function test_bulk_submit_stock_validation_uses_total_needed_across_selected_material_issues(): void
+    {
+        $now = now();
+
+        DB::table('warehouses')->insert([
+            'id' => 1,
+            'name' => 'Gudang DKI Jakarta',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('master_products')->insert([
+            'id' => 60,
+            'name' => 'Diffuser W300 Black',
+            'bom_quantity' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('warehouse_products')->insert([
+            'warehouse_id' => 1,
+            'master_product_id' => 60,
+            'quantity' => 2,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        foreach ([30, 31, 32, 33] as $offset => $materialIssueId) {
+            DB::table('material_issues')->insert([
+                'id' => $materialIssueId,
+                'issue_number' => 'JKT-MI/26-06/000'.($offset + 1),
+                'warehouse_id' => 1,
+                'product_id' => 60,
+                'status' => 'approved',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            DB::table('material_issue_items')->insert([
+                'material_issue_id' => $materialIssueId,
+                'product_id' => 60,
+                'room_name' => 'Room '.($offset + 1),
+                'quantity' => 1,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            DB::table('job_assign_material_issues')->insert([
+                'id' => 40 + $offset,
+                'material_issue_id' => $materialIssueId,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        $request = Request::create(
+            '/operational/job-assign-material-issues/submit-issue',
+            'POST',
+            ['material_issue_ids' => [40, 41, 42, 43]],
+            [],
+            [],
+            ['HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest']
+        );
+
+        $response = app(JobAssignMaterialIssueController::class)->submitIssue($request);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertSame('error', $payload['status']);
+        $this->assertStringContainsString('Total butuh: 4', implode("\n", $payload['errors']));
+        $this->assertStringContainsString('Stock: 2', implode("\n", $payload['errors']));
+
+        $statuses = DB::table('material_issues')
+            ->whereIn('id', [30, 31, 32, 33])
+            ->pluck('status')
+            ->all();
+
+        $this->assertSame(['out_of_stock', 'out_of_stock', 'out_of_stock', 'out_of_stock'], $statuses);
+    }
+
     public function test_qty_update_reopens_out_of_stock_material_issue(): void
     {
         $now = now();

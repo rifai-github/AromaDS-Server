@@ -2499,6 +2499,33 @@ class JobAssignMaterialIssueController extends Controller
             // Stock validation is now per-product with alternative package size suggestions
             
             \Log::info("MOM11: Skipping old ML validation logic. Using new per-product stock validation instead.");
+
+            $bulkStockCheck = $this->validateSelectedIssueStockAvailability($selectedJobAssignMaterialIssues);
+            if (!empty($bulkStockCheck['errors'])) {
+                if (!empty($bulkStockCheck['affected_material_issue_ids'])) {
+                    MaterialIssue::whereIn('id', $bulkStockCheck['affected_material_issue_ids'])
+                        ->whereNotIn('status', ['issued', 'received', 'sent'])
+                        ->update([
+                            'status' => 'out_of_stock',
+                            'updated_by' => Auth::id(),
+                        ]);
+                }
+
+                DB::commit();
+
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Gagal meng-issue material karena total stock tidak mencukupi untuk pilihan bulk submit.',
+                        'errors' => $bulkStockCheck['errors'],
+                    ], 422);
+                }
+
+                return back()
+                    ->with('error', 'Gagal meng-issue material karena total stock tidak mencukupi untuk pilihan bulk submit.')
+                    ->with('errors', $bulkStockCheck['errors'])
+                    ->withInput($request->all());
+            }
             
             // If there are errors and user hasn't confirmed to continue, abort
             if (count($errors) > 0 && !$forceContinue) {
@@ -3454,6 +3481,122 @@ class JobAssignMaterialIssueController extends Controller
             'split_combinations' => [],
             'message' => "Stock insufficient. Available: {$stockAvailable}, Required: {$requiredQuantity}. Please create additional material issue for remaining quantity: " . ($requiredQuantity - $stockAvailable)
         ];
+    }
+
+    /**
+     * Validate stock across every selected material issue before bulk submit.
+     *
+     * Per-issue validation is still needed for detailed item messages, but bulk
+     * submit must also reserve the selected quantity as one request. Otherwise,
+     * four selected rows with qty 1 can each pass against stock 2.
+     */
+    private function validateSelectedIssueStockAvailability($selectedJobAssignMaterialIssues): array
+    {
+        $selectedJobAssignMaterialIssues->loadMissing([
+            'materialIssue.warehouse',
+            'materialIssue.items.product',
+        ]);
+
+        $requiredByWarehouseProduct = [];
+        $warehouseIds = collect();
+        $productIds = collect();
+
+        foreach ($selectedJobAssignMaterialIssues as $jobAssignMaterialIssue) {
+            $materialIssue = $jobAssignMaterialIssue->materialIssue;
+            if (!$materialIssue || !$materialIssue->warehouse_id) {
+                continue;
+            }
+
+            foreach ($materialIssue->items as $item) {
+                $quantity = (float) ($item->quantity ?? 0);
+                if (!$item->product_id || $quantity <= 0) {
+                    continue;
+                }
+
+                $warehouseId = (int) $materialIssue->warehouse_id;
+                $productId = (int) $item->product_id;
+                $key = "{$warehouseId}:{$productId}";
+
+                if (!isset($requiredByWarehouseProduct[$key])) {
+                    $requiredByWarehouseProduct[$key] = [
+                        'warehouse_id' => $warehouseId,
+                        'warehouse_name' => $materialIssue->warehouse?->name ?? "Warehouse #{$warehouseId}",
+                        'product_id' => $productId,
+                        'product_name' => $item->product?->name ?? "Product #{$productId}",
+                        'total_needed' => 0.0,
+                        'material_issue_ids' => [],
+                        'issue_numbers' => [],
+                    ];
+                }
+
+                $requiredByWarehouseProduct[$key]['total_needed'] += $quantity;
+                $requiredByWarehouseProduct[$key]['material_issue_ids'][] = $materialIssue->id;
+                $requiredByWarehouseProduct[$key]['issue_numbers'][] = $materialIssue->issue_number;
+
+                $warehouseIds->push($warehouseId);
+                $productIds->push($productId);
+            }
+        }
+
+        if (empty($requiredByWarehouseProduct)) {
+            return [
+                'errors' => [],
+                'affected_material_issue_ids' => [],
+            ];
+        }
+
+        $stockByWarehouseProduct = \App\Models\WarehouseProduct::query()
+            ->select('warehouse_id', 'master_product_id', 'quantity')
+            ->whereIn('warehouse_id', $warehouseIds->unique()->values())
+            ->whereIn('master_product_id', $productIds->unique()->values())
+            ->get()
+            ->keyBy(fn ($stock) => ((int) $stock->warehouse_id).':'.((int) $stock->master_product_id));
+
+        $errors = [];
+        $affectedMaterialIssueIds = [];
+
+        foreach ($requiredByWarehouseProduct as $key => $requirement) {
+            $stockAvailable = (float) ($stockByWarehouseProduct->get($key)?->quantity ?? 0);
+            $totalNeeded = (float) $requirement['total_needed'];
+
+            if ($stockAvailable >= $totalNeeded) {
+                continue;
+            }
+
+            $issueNumbers = collect($requirement['issue_numbers'])
+                ->filter()
+                ->unique()
+                ->values()
+                ->implode(', ');
+
+            $errors[] = sprintf(
+                'Stock tidak cukup untuk bulk submit: %s di %s. Total butuh: %s, Stock: %s. Material issue: %s',
+                $requirement['product_name'],
+                $requirement['warehouse_name'],
+                $this->formatStockQuantity($totalNeeded),
+                $this->formatStockQuantity($stockAvailable),
+                $issueNumbers ?: '-'
+            );
+
+            $affectedMaterialIssueIds = array_merge(
+                $affectedMaterialIssueIds,
+                $requirement['material_issue_ids']
+            );
+        }
+
+        return [
+            'errors' => $errors,
+            'affected_material_issue_ids' => array_values(array_unique(array_filter($affectedMaterialIssueIds))),
+        ];
+    }
+
+    private function formatStockQuantity(float $quantity): string
+    {
+        if (abs($quantity - round($quantity)) < 0.0001) {
+            return (string) (int) round($quantity);
+        }
+
+        return rtrim(rtrim(number_format($quantity, 4, '.', ''), '0'), '.');
     }
 
     /**
