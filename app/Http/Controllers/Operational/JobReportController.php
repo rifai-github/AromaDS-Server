@@ -230,8 +230,11 @@ class JobReportController extends Controller
                     $jobSchedule->update($updateData);
                     \Log::info("✅ STUDY CASE B1: All rooms completed, JobSchedule {$jobSchedule->job_number} marked as completed");
                     
-                    // MOM10 UPDATE: Check if install + first service completed, then auto-generate remaining services
-                    $this->checkAndGenerateRemainingServices($jobSchedule);
+                    // MOM10 UPDATE: Check if install + first service completed, then auto-generate remaining services.
+                    // Delegates to JobScheduleController's rental-flow-aware generators (same ones used by the
+                    // web/mobile status-update path) instead of this controller's own legacy implementation,
+                    // which bundled unit_only and unit_refill rentals in the same room into one CSR chain.
+                    $this->generateFollowUpSchedulesAfterCompletion($jobSchedule);
 
                     // MOM: Check for remove job after service completion
                     if ($jobSchedule->type === 'service') {
@@ -858,125 +861,45 @@ class JobReportController extends Controller
     }
 
     /**
-     * MOM10 UPDATE: Check if install + first service completed, then auto-generate remaining services
-     * 
+     * MOM10 UPDATE: Check if install / first service completed, then auto-generate remaining
+     * services or unit-only check periods.
+     *
+     * Delegates to JobScheduleController's rental-flow-aware generators (the same ones used by
+     * the web/mobile job-status-update path) instead of re-implementing the logic here. The old
+     * implementation grouped by job_advice room without excluding unit_only rentals from the
+     * refill CSR chain, which let a mixed room (unit_only + unit_refill/refill_only) bundle both
+     * rentals into a single service chain.
+     *
      * @param JobSchedule $completedJobSchedule
      * @return void
      */
-    private function checkAndGenerateRemainingServices($completedJobSchedule)
+    private function generateFollowUpSchedulesAfterCompletion($completedJobSchedule)
     {
         try {
-            // Only process for install or first-service completion
-            if (!in_array($completedJobSchedule->type, ['install', 'service', 'service_first'])) {
+            if (!in_array(strtolower((string) $completedJobSchedule->type), ['install', 'install_free', 'service', 'service_first', 'service_routine'], true)) {
                 return;
             }
-            
-            // Get job advice with rooms
+
             $jobAdvice = $completedJobSchedule->jobAdvice;
             if (!$jobAdvice) {
                 \Log::warning("No job advice found for job schedule {$completedJobSchedule->job_number}");
                 return;
             }
-            
-            // Only process for "install" type job advice (not install_free)
-            $jobAdviceType = strtolower($jobAdvice->type ?? '');
-            if ($jobAdviceType !== 'install') {
-                \Log::info("Job advice type is '{$jobAdviceType}', not 'install'. Skipping remaining service generation.");
+
+            $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
+
+            if (in_array(strtolower((string) $completedJobSchedule->type), ['install', 'install_free'], true)) {
+                $jobScheduleController->generateUnitOnlyCheckSchedulesAfterInstall($completedJobSchedule, $jobAdvice);
+
                 return;
             }
-            
-            // Load job advice with necessary relationships
-            $jobAdvice->load([
-                'rooms.contractRoom.room.building',
-                'contract.quotation.survey.building'
-            ]);
-            
-            // Process each room in job advice
-            foreach ($jobAdvice->rooms as $jaRoom) {
-                // Check if this room's install and first service are both completed
-                $installCompleted = false;
-                $firstServiceCompleted = false;
-                
-                // Check install job status
-                if ($jaRoom->install_job_schedule_id) {
-                    $installJob = \App\Models\JobSchedule::find($jaRoom->install_job_schedule_id);
-                    $installRoomCompleted = $installJob && \App\Models\JobScheduleRoom::where('job_schedule_id', $installJob->id)
-                        ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
-                        ->where(function ($query) use ($jaRoom) {
-                            $query->where('job_advice_room_id', $jaRoom->id)
-                                ->orWhereHas('rentals', function ($rentalQuery) use ($jaRoom) {
-                                    $rentalQuery->where('job_advice_room_id', $jaRoom->id);
-                                });
-                        })
-                        ->exists();
 
-                    if ($installJob && in_array($installJob->status, ['completed', 'done_job']) && $installRoomCompleted) {
-                        $installCompleted = true;
-                    }
-                }
-                
-                // Check first service job status (period = 1)
-                if ($jaRoom->service_job_schedule_id) {
-                    $firstServiceJob = \App\Models\JobSchedule::find($jaRoom->service_job_schedule_id);
-                    $firstServiceRoomCompleted = $firstServiceJob && \App\Models\JobScheduleRoom::where('job_schedule_id', $firstServiceJob->id)
-                        ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
-                        ->where(function ($query) use ($jaRoom) {
-                            $query->where('job_advice_room_id', $jaRoom->id)
-                                ->orWhereHas('rentals', function ($rentalQuery) use ($jaRoom) {
-                                    $rentalQuery->where('job_advice_room_id', $jaRoom->id);
-                                });
-                        })
-                        ->exists();
-
-                    if ($firstServiceJob && in_array($firstServiceJob->status, ['completed', 'done_job']) && $firstServiceJob->period == 1 && $firstServiceRoomCompleted) {
-                        $firstServiceCompleted = true;
-                    }
-                }
-                
-                // If both install and first service completed, generate remaining services
-                if ($installCompleted && $firstServiceCompleted) {
-                    // Check if remaining services already generated
-                    $existingServicesCount = \App\Models\JobSchedule::whereHas('jobAdvice.rooms', function($q) use ($jaRoom) {
-                            $q->where('id', $jaRoom->id);
-                        })
-                        ->whereIn('type', ['service', 'service_first', 'service_routine'])
-                        ->count();
-                    
-                    // If only 1 service exists (the first one), generate remaining
-                    if ($existingServicesCount <= 1) {
-                        \Log::info("🔧 Install + First Service completed for room {$jaRoom->room_name}. Generating remaining services...");
-                        
-                        // Get building
-                        $building = null;
-                        if ($jobAdvice->contract && $jobAdvice->contract->quotation && $jobAdvice->contract->quotation->survey) {
-                            $building = $jobAdvice->contract->quotation->survey->building;
-                        }
-                        
-                        if (!$building && $jaRoom->contractRoom && $jaRoom->contractRoom->room) {
-                            $building = $jaRoom->contractRoom->room->building;
-                        }
-                        
-                        if ($building) {
-                            // Call JobAdviceController method to generate remaining services
-                            $jobAdviceController = new \App\Http\Controllers\Marketing\JobAdviceController();
-                            $reflection = new \ReflectionClass($jobAdviceController);
-                            $method = $reflection->getMethod('generateRemainingServiceSchedules');
-                            $method->setAccessible(true);
-                            
-                            $remainingServices = $method->invoke($jobAdviceController, $jobAdvice, $jaRoom, $building);
-                            
-                            \Log::info("✅ Generated {$remainingServices->count()} remaining service schedules for room {$jaRoom->room_name}");
-                        } else {
-                            \Log::warning("⚠️ No building found for room {$jaRoom->room_name}. Cannot generate remaining services.");
-                        }
-                    } else {
-                        \Log::info("Remaining services already generated for room {$jaRoom->room_name} (found {$existingServicesCount} services)");
-                    }
-                }
-            }
-            
+            $reflection = new \ReflectionClass($jobScheduleController);
+            $method = $reflection->getMethod('generateFollowUpServiceSchedules');
+            $method->setAccessible(true);
+            $method->invoke($jobScheduleController, $completedJobSchedule, $jobAdvice);
         } catch (\Exception $e) {
-            \Log::error("❌ Failed to check and generate remaining services: " . $e->getMessage());
+            \Log::error("❌ Failed to generate follow-up schedules: " . $e->getMessage());
             \Log::error("Stack trace: " . $e->getTraceAsString());
             // Don't throw exception, just log it
         }

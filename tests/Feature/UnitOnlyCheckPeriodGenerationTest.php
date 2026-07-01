@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Operational\JobScheduleController;
 use App\Models\JobAdvice;
+use App\Models\JobAdviceRoom;
 use App\Models\JobSchedule;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
@@ -70,8 +71,26 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
         Schema::create('contracts', function (Blueprint $table) {
             $table->id();
             $table->string('contract_number')->nullable();
+            $table->foreignId('quotation_id')->nullable();
             $table->date('start_date')->nullable();
             $table->date('end_date')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('quotations', function (Blueprint $table) {
+            $table->id();
+            $table->string('quotation_number')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('unit_on_walls', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('customer_id')->nullable();
+            $table->foreignId('room_id')->nullable();
+            $table->foreignId('serial_number_id')->nullable();
+            $table->string('status')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -132,9 +151,12 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             $table->id();
             $table->string('job_advice_number')->nullable();
             $table->string('type')->nullable();
+            $table->string('status')->nullable();
             $table->string('company_name')->nullable();
             $table->foreignId('contract_id')->nullable();
+            $table->foreignId('customer_id')->nullable();
             $table->date('expected_date')->nullable();
+            $table->date('first_service_date')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -246,6 +268,8 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             'contract_rooms',
             'master_rooms',
             'buildings',
+            'unit_on_walls',
+            'quotations',
             'contracts',
             'user_permission',
             'role_permissions',
@@ -976,6 +1000,103 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    public function test_first_service_after_cancelled_remove_free_excludes_unit_only_rental_in_mixed_room(): void
+    {
+        $this->seedMixedRoomForCancelledRemoveFree();
+
+        $removeJob = JobSchedule::findOrFail(60);
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'ensureFirstServiceAfterCancelledRemoveFree');
+        $method->setAccessible(true);
+        $created = $method->invoke(new JobScheduleController(), $removeJob);
+
+        $this->assertSame(1, $created);
+
+        $schedule = JobSchedule::where('job_advice_id', 3)
+            ->where('type', 'service_first')
+            ->whereNotIn('id', [41, 50])
+            ->firstOrFail();
+
+        $this->assertFalse((bool) $schedule->material_checked);
+
+        $linkedJobAdviceRoomIds = DB::table('job_schedule_room_rentals')
+            ->join('job_schedule_rooms', 'job_schedule_rooms.id', '=', 'job_schedule_room_rentals.job_schedule_room_id')
+            ->where('job_schedule_rooms.job_schedule_id', $schedule->id)
+            ->pluck('job_schedule_room_rentals.job_advice_room_id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        // Only the refill_only jaRoom (id 4) should be linked — the unit_only jaRoom (id 3)
+        // must not be pulled into this refill CSR chain.
+        $this->assertSame([4], $linkedJobAdviceRoomIds);
+
+        // The unit_only jaRoom's own service_job_schedule_id must be untouched by this
+        // refill CSR generation — it still points at its own (now-cancelled) check job.
+        $this->assertSame(41, JobAdviceRoom::findOrFail(3)->service_job_schedule_id);
+        $this->assertSame($schedule->id, JobAdviceRoom::findOrFail(4)->service_job_schedule_id);
+    }
+
+    private function seedMixedRoomForCancelledRemoveFree(): void
+    {
+        $this->seedMixedUnitOnlyAndRefillRoom();
+
+        DB::table('quotations')->insert([
+            'id' => 1,
+            'quotation_number' => 'JKT-QT/26-06/0004',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contracts')->where('id', 3)->update(['quotation_id' => 1]);
+        DB::table('job_advices')->where('id', 3)->update([
+            'status' => 'approved',
+            'customer_id' => 1,
+        ]);
+        DB::table('unit_on_walls')->insert([
+            'id' => 1,
+            'customer_id' => 1,
+            'room_id' => 3,
+            'serial_number_id' => 1,
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedules')->insert([
+            'id' => 60,
+            'job_number' => 'JKT-RF/26-06/0004',
+            'type' => 'remove_free',
+            'status' => 'cancelled',
+            'job_advice_id' => 3,
+            'building_id' => 3,
+            'building_name' => 'Gedung Mixed',
+            'room_id' => 3,
+            'room_name' => 'Ruang Delima',
+            'company_name' => 'Test 260218 PT',
+            'contract_number' => 'JKT-CA/26-06/0004',
+            'quotation_number' => 'JKT-QT/26-06/0004',
+            'schedule_date' => '2026-07-05',
+            'expected_date' => '2026-07-05',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 60,
+            'job_schedule_id' => 60,
+            'job_advice_room_id' => 3,
+            'room_name' => 'Ruang Delima',
+            'room_id' => 3,
+            'status' => 'cancelled',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Cancel the prior schedules linked to this jaRoom group so the "active service
+        // schedule already exists" guard (which checks the whole physical-room group,
+        // unit_only included) doesn't skip generation before we can observe the pivot fix.
+        DB::table('job_schedules')->whereIn('id', [41, 42, 50])->update(['status' => 'cancelled']);
+        DB::table('job_advice_rooms')->where('id', 4)->update(['service_job_schedule_id' => null]);
     }
 
     private function seedMixedUnitOnlyAndRefillRoom(): void

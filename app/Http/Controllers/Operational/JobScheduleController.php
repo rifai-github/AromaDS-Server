@@ -7425,15 +7425,25 @@ class JobScheduleController extends Controller
                     }
 
                     DB::transaction(function () use ($jobAdvice, $roomGroup, &$createdCount) {
-                        $primaryRoom = $roomGroup->first();
+                        // Unit-only rentals never get a CSR/service job — they follow the
+                        // independent install -> check chain. Scope this auto-created CSR to
+                        // refill-bearing rentals only, otherwise a mixed physical room (unit_only
+                        // + unit_refill/refill_only) incorrectly pulls the unit_only rental into
+                        // the refill's service chain (see RepairMixedRentalFollowUpSchedules).
+                        $serviceEligibleRoomGroup = $roomGroup->filter(function ($item) {
+                            $rentalType = strtolower((string) ($item->rentalProduct?->rental_type ?? 'unit_refill'));
+                            return $rentalType !== 'unit_only';
+                        })->values();
+
+                        if ($serviceEligibleRoomGroup->isEmpty()) {
+                            return;
+                        }
+
+                        $primaryRoom = $serviceEligibleRoomGroup->first();
                         $contractRoom = $primaryRoom->contractRoom;
                         $room = $contractRoom?->room;
                         $building = $room?->building;
                         $roomId = $contractRoom?->room_id;
-                        $hasServiceMaterials = $roomGroup->contains(function ($item) {
-                            $rentalType = strtolower((string) ($item->rentalProduct?->rental_type ?? 'unit_refill'));
-                            return $rentalType !== 'unit_only';
-                        });
                         $rental = $primaryRoom->rentalProduct;
                         $serviceFrequencyObj = $rental?->serviceFrequency;
                         $serviceFrequency = $serviceFrequencyObj?->frequency_times_per_month
@@ -7459,8 +7469,8 @@ class JobScheduleController extends Controller
                             'service_period_type' => $serviceFrequencyObj?->name ?? 'monthly',
                             'reference_number' => $jobAdvice->job_advice_number,
                             'internal_notes' => "Auto-generated first CSR because related Remove Free was cancelled while Unit On Wall remains installed. JA: {$jobAdvice->job_advice_number}",
-                            'material_checked' => !$hasServiceMaterials,
-                            'material_checked_at' => !$hasServiceMaterials ? now() : null,
+                            'material_checked' => false,
+                            'material_checked_at' => null,
                             'created_by' => Auth::id(),
                             'updated_by' => Auth::id(),
                         ]);
@@ -7478,7 +7488,7 @@ class JobScheduleController extends Controller
                         ]);
 
                         $isPrimary = true;
-                        foreach ($roomGroup as $rentalItem) {
+                        foreach ($serviceEligibleRoomGroup as $rentalItem) {
                             \App\Models\JobScheduleRoomRental::create([
                                 'job_schedule_room_id' => $jobScheduleRoom->id,
                                 'job_advice_room_id' => $rentalItem->id,
