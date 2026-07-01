@@ -1701,6 +1701,144 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
         ]);
     }
 
+    public function test_multi_month_top_period_bills_sq_price_flat_not_multiplied_by_months(): void
+    {
+        // Client rule (1 Jul 2026): the price on the SQ is per TOP installment and must
+        // be billed as-is, regardless of how many calendar months the TOP period spans.
+        // Contract: 3 bulan 1x TOP -> period spans 3 months, SQ price stays 1,000,000/invoice.
+        DB::table('users')->insert([
+            'name' => 'Admin',
+            'email' => 'admin2@aroma.com',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $customer = Customer::create(['name' => 'Test TOP Multi Month']);
+        $contract = Contract::create([
+            'contract_number' => 'SBY-CA/26-07/0011',
+            'customer_id' => $customer->id,
+            'payment_terms' => '3 bulan 1x',
+            'start_date' => '2026-01-01',
+            'end_date' => '2026-12-31',
+        ]);
+        BillingGroup::create([
+            'billing_group_name' => 'Main Billing',
+            'customer_id' => $customer->id,
+            'contract_id' => $contract->id,
+            'billing_frequency' => 'monthly',
+            'is_active' => true,
+        ]);
+
+        DB::table('buildings')->insert([
+            'id' => 80,
+            'building_name' => 'Gedung TOP',
+            'name' => 'Gedung TOP',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rooms')->insert([
+            ['id' => 801, 'building_id' => 80, 'room_name' => 'Ruang TOP', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rooms')->insert([
+            ['id' => 8001, 'contract_id' => $contract->id, 'room_id' => 801, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('master_rentals')->insert([
+            ['id' => 8101, 'rental_name' => 'Rental 3bln TOP', 'rental_type' => 'unit_refill', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rentals')->insert([
+            ['id' => 8201, 'contract_id' => $contract->id, 'master_rental_id' => 8101, 'room_id' => 801, 'quantity' => 1, 'unit_price' => 1000000, 'total_price' => 1000000, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $jobAdviceId = DB::table('job_advices')->insertGetId([
+            'contract_id' => $contract->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $topJob = JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-01/0011',
+            'type' => 'service_first',
+            'status' => 'done_job',
+            'job_advice_id' => $jobAdviceId,
+            'room_id' => 801,
+            'schedule_date' => '2026-01-05',
+            'ba_date' => '2026-01-05',
+        ]);
+        DB::table('job_advice_rooms')->insert([
+            'id' => 8301,
+            'job_advice_id' => $jobAdviceId,
+            'contract_room_id' => 8001,
+            'contract_rental_id' => 8201,
+            'rental_product_id' => 8101,
+            'service_job_schedule_id' => $topJob->id,
+            'room_name' => 'Ruang TOP',
+            'rental_name' => 'Rental 3bln TOP',
+            'status' => 'completed',
+            'is_trial' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'job_schedule_id' => $topJob->id,
+            'job_advice_room_id' => 8301,
+            'room_id' => 801,
+            'room_name' => 'Ruang TOP',
+            'status' => 'completed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+            public function generate(
+                string $documentType,
+                ?string $branchCode = null,
+                ?int $buildingId = null,
+                ?int $contractId = null,
+                ?int $quotationId = null,
+                ?int $surveyId = null,
+                ?int $warehouseId = null,
+                ?int $branchId = null,
+                \DateTimeInterface|string|null $documentDate = null
+            ): string {
+                return 'SBY-INV/26-01/0031';
+            }
+        });
+
+        // Contract's TOP interval must resolve to 3 months so Period 1 (Jan-Mar) spans
+        // multiple calendar months.
+        $this->assertSame(3, $contract->fresh()->top_interval_months);
+
+        $invoice = LegacyInvoice::create([
+            'invoice_number' => 'SBY-INV/26-01/0031',
+            'contract_id' => $contract->id,
+            'contract_number' => $contract->contract_number,
+            'customer_id' => $customer->id,
+            'billing_group_id' => null,
+            'period_invoice' => 'Period 1',
+            'invoice_date' => '2026-01-05',
+            'due_date' => '2026-02-04',
+            'invoice_status' => Invoice::STATUS_DRAFT,
+            'status' => Invoice::STATUS_DRAFT,
+        ]);
+
+        $createDetailsMethod = new \ReflectionMethod($service, 'createInvoiceDetailsFromJobs');
+        $createDetailsMethod->setAccessible(true);
+        $createDetailsMethod->invoke(
+            $service,
+            $invoice,
+            $contract->fresh(['contractRentals.masterRental', 'contractRooms.room']),
+            Carbon::parse('2026-01-01'),
+            Carbon::parse('2026-03-31')
+        );
+
+        // Period 1 spans 3 calendar months (Jan-Mar), but the invoice amount must stay
+        // the flat SQ price (1,000,000), not 1,000,000 x 3.
+        $this->assertDatabaseHas('invoice_rental_details', [
+            'invoice_id' => $invoice->id,
+            'room_name' => 'Ruang TOP',
+            'total_price' => 1000000,
+        ]);
+    }
+
     private function makeContractWithRentalFlow(
         string $rentalType,
         string $rentalName,
