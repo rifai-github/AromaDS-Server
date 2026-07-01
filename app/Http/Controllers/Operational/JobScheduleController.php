@@ -10386,7 +10386,7 @@ class JobScheduleController extends Controller
                     }
 
                     $currentStatus = $job->status;
-                    if (in_array($currentStatus, ['assign_material', 'barang_dipersiapkan', 'barang_siap_diambil', 'barang_diambil', 'material_issue'], true) && !$thisRoomHasMaterial) {
+                    if (in_array($currentStatus, ['barang_dipersiapkan', 'barang_siap_diambil', 'barang_diambil', 'material_issue'], true) && !$thisRoomHasMaterial) {
                         $currentStatus = 'scheduled';
                     }
 

@@ -285,4 +285,50 @@ class CheckBulkAssignmentsRentalNameTest extends TestCase
             'The two rooms must be distinguishable by rental name instead of looking like identical duplicates.'
         );
     }
+
+    public function test_selected_assign_material_room_stays_assign_material_without_material_items(): void
+    {
+        DB::table('job_schedules')->insert([
+            'id' => 73,
+            'job_number' => 'JKT-IR/26-06/0008',
+            'job_advice_id' => 14,
+            'building_id' => 199,
+            'type' => 'install',
+            'period' => 1,
+            'status' => 'assign_material',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 77,
+            'job_schedule_id' => 73,
+            'job_advice_room_id' => 23,
+            'room_name' => 'Toko',
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 54,
+            'job_schedule_id' => 73,
+            'team_id' => null,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/operational/job-schedules/check-bulk-assignments', 'POST', [
+            'job_ids' => [73],
+            'selected_room_ids' => [77],
+            'strict_selection' => true,
+        ]);
+
+        $response = app(JobScheduleController::class)->checkBulkAssignments($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertSame('assign_material', $payload['data'][0]['job_status']);
+    }
 }
