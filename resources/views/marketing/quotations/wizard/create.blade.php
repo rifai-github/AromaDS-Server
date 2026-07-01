@@ -1546,12 +1546,13 @@
         const checkbox = $(this);
         const surveyId = checkbox.data('survey');
         console.log('Room checkbox changed. Survey:', surveyId);
-        
+
         // Fix: Save current selections BEFORE rebuilding UI
         if (typeof updateRoomSelections === 'function') {
             updateRoomSelections();
         }
-        
+
+        window.ensureAromaProductsLoaded();
         if (typeof window.rebuildAromaDropdowns === 'function') {
             window.rebuildAromaDropdowns(surveyId);
         }
@@ -1571,11 +1572,12 @@
         if (typeof updateRoomSelections === 'function') {
             updateRoomSelections();
         }
-        
+
+        window.ensureAromaProductsLoaded();
         if (typeof window.rebuildAromaDropdowns === 'function') {
             window.rebuildAromaDropdowns(surveyId);
         }
-        
+
         if (typeof window.updateNextButtonState === 'function') {
             window.updateNextButtonState();
         }
@@ -1589,8 +1591,11 @@
     };
 
     window.loadAromaProducts = function() {
+        if (window.aromaProductsLoadInFlight) {
+            return window.aromaProductsLoadInFlight;
+        }
         console.log('Loading aroma products (Global)...');
-        $.ajax({
+        window.aromaProductsLoadInFlight = $.ajax({
             url: '/marketing/quotations/wizard/get-aroma-products',
             method: 'GET',
             success: window.processAromaProductsResponseV2,
@@ -1600,7 +1605,19 @@
                     Swal.fire('Error', 'Failed to load aroma products', 'error');
                 }
             }
+        }).always(function() {
+            window.aromaProductsLoadInFlight = null;
         });
+        return window.aromaProductsLoadInFlight;
+    };
+
+    // Ensures any dropdown built while aromaProductsList was still empty gets
+    // repopulated once the async load resolves (fixes race where a room is
+    // checked before the initial AJAX call returns).
+    window.ensureAromaProductsLoaded = function() {
+        if (!window.aromaProductsList || window.aromaProductsList.length === 0) {
+            window.loadAromaProducts();
+        }
     };
 
     window.populateAromaDropdowns = function() {
@@ -1747,6 +1764,7 @@
             }
         });
 
+        window.ensureAromaProductsLoaded();
         surveyIds.forEach(function(surveyId) {
             window.rebuildAromaDropdowns(surveyId);
         });
@@ -6375,10 +6393,11 @@ $(document).ready(function() {
             }
             
             // Rebuild aroma dropdowns
+            window.ensureAromaProductsLoaded();
             rebuildAromaDropdowns(surveyId);
             updateRoomSelections();
             updateNextButtonState();
-            
+
             console.log('All rooms selected for survey:', surveyId);
         } else {
             console.error('No room checkboxes found for survey:', surveyId);
