@@ -1026,9 +1026,10 @@ class AromaChangeController extends Controller
     }
 
     /**
-     * Grade-based approval decision (client rule, MOM):
-     * - Grade turun atau tetap (Signature->Artisan, Artisan->Luxo, sama grade) = auto-approved.
-     * - Grade naik (Luxo->Artisan, Luxo->Signature, Artisan->Signature) = perlu approval atasan (status pending).
+     * Grade-based approval decision (client rule, MoM correction):
+     * Grade order (low -> high): Signature < Artisan < Luxo.
+     * - Grade turun atau tetap (Luxo->Artisan, Artisan->Signature, sama grade) = auto-approved.
+     * - Grade naik (Signature->Artisan, Signature->Luxo, Artisan->Luxo) = perlu approval atasan (status pending).
      * - Brand line lama/baru tidak dikenali = perlu approval (fail-safe, tidak auto-approve hal yang tidak pasti).
      *
      * @return array{0: string, 1: bool, 2: ?string} [status, isAutoApproved, approvalNotes]
@@ -1046,16 +1047,16 @@ class AromaChangeController extends Controller
             ];
         }
 
-        if ($newGrade < $previousGrade) {
+        if ($newGrade > $previousGrade) {
             return [
                 AromaChange::STATUS_PENDING,
                 false,
-                sprintf('Menunggu approval: turun grade dari %s ke %s', $previousProduct->brand_line, $newProduct->brand_line),
+                sprintf('Menunggu approval: naik grade dari %s ke %s', $previousProduct->brand_line, $newProduct->brand_line),
             ];
         }
 
-        $approvalNotes = $newGrade > $previousGrade
-            ? sprintf('Auto-approved: naik grade dari %s ke %s', $previousProduct->brand_line, $newProduct->brand_line)
+        $approvalNotes = $newGrade < $previousGrade
+            ? sprintf('Auto-approved: turun grade dari %s ke %s', $previousProduct->brand_line, $newProduct->brand_line)
             : sprintf('Auto-approved: grade sama (%s)', $newProduct->brand_line);
 
         Log::info('Aroma Change Auto-Approved: ' . $approvalNotes);

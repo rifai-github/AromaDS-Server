@@ -1092,9 +1092,9 @@ function normalizeAromaName(value) {
     return (value || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-// Grade order client-confirmed: Luxo (1, lowest) < Artisan (2) < Signature (3, highest).
+// Grade order client-confirmed (MoM correction): Signature (1, lowest) < Artisan (2) < Luxo (3, highest).
 // Keep in sync with AromaChange::BRAND_LINE_GRADE on the backend.
-const BRAND_LINE_GRADE = { luxo: 1, artisan: 2, signature: 3 };
+const BRAND_LINE_GRADE = { signature: 1, artisan: 2, luxo: 3 };
 
 function brandLineGrade(brandLine) {
     const key = normalizeBrandLine(brandLine);
@@ -1145,7 +1145,7 @@ function populateAromaOptions(products, currentBrandLine = '', currentAromaName 
         .forEach(groupLabel => {
             const grade = brandLineGrade(groupLabel);
             const gradeNote = currentAromaGrade && grade
-                ? (grade < currentAromaGrade ? ' ↓ perlu approval' : (grade > currentAromaGrade ? ' ↑ naik grade' : ''))
+                ? (grade > currentAromaGrade ? ' ↑ perlu approval' : (grade < currentAromaGrade ? ' ↓ turun grade' : ''))
                 : '';
             const optgroup = $('<optgroup>', { label: groupLabel + gradeNote });
 
@@ -1171,8 +1171,8 @@ function populateAromaOptions(products, currentBrandLine = '', currentAromaName 
     initSelect2For(select);
 }
 
-// Show a warning when the selected new aroma is a lower grade than the current one,
-// mirroring the server-side rule: grade turun = perlu approval atasan, naik/sama = auto.
+// Show a warning when the selected new aroma is a higher grade than the current one,
+// mirroring the server-side rule: grade naik = perlu approval atasan, turun/sama = auto.
 $(document).on('change', '#aromaSelect', function() {
     const selected = $(this).find('option:selected');
     const newGrade = selected.data('brand-line-grade');
@@ -1183,12 +1183,12 @@ $(document).on('change', '#aromaSelect', function() {
         return;
     }
 
-    if (newGrade < currentAromaGrade) {
+    if (newGrade > currentAromaGrade) {
         $('<div>', {
             id: warningId,
             class: 'text-muted',
             style: 'color: #d97706; margin-top: 6px;',
-            html: '<i class="fas fa-exclamation-triangle"></i> Turun grade ke <strong>' + escapeHtml(selected.data('brand-line') || '') + '</strong> — request ini akan menunggu approval atasan sebelum diterapkan.'
+            html: '<i class="fas fa-exclamation-triangle"></i> Naik grade ke <strong>' + escapeHtml(selected.data('brand-line') || '') + '</strong> — request ini akan menunggu approval atasan sebelum diterapkan.'
         }).insertAfter($(this).next('.select2-container'));
     }
 });

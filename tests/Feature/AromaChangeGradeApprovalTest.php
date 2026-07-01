@@ -58,44 +58,45 @@ class AromaChangeGradeApprovalTest extends TestCase
 
     public function test_brand_line_grade_order_matches_client_confirmed_ranking(): void
     {
-        $this->assertSame(1, AromaChange::brandLineGrade('Luxo'));
+        // MoM correction: Signature (lowest) < Artisan < Luxo (highest).
+        $this->assertSame(1, AromaChange::brandLineGrade('Signature'));
         $this->assertSame(2, AromaChange::brandLineGrade('Artisan'));
-        $this->assertSame(3, AromaChange::brandLineGrade('Signature'));
+        $this->assertSame(3, AromaChange::brandLineGrade('Luxo'));
         $this->assertNull(AromaChange::brandLineGrade('Mystery'));
         $this->assertNull(AromaChange::brandLineGrade(null));
     }
 
-    public function test_upgrading_grade_is_auto_approved(): void
+    public function test_downgrading_grade_is_auto_approved(): void
     {
-        // Luxo -> Artisan (up)
+        // Luxo -> Artisan (down, no approval per client)
         [$status, $isAutoApproved] = $this->decide(1, 2);
         $this->assertSame(AromaChange::STATUS_APPROVED, $status);
         $this->assertTrue($isAutoApproved);
 
-        // Artisan -> Signature (up)
+        // Artisan -> Signature (down, no approval per client)
         [$status, $isAutoApproved] = $this->decide(2, 3);
         $this->assertSame(AromaChange::STATUS_APPROVED, $status);
         $this->assertTrue($isAutoApproved);
 
-        // Luxo -> Signature (up, skips a level)
+        // Luxo -> Signature (down, skips a level)
         [$status, $isAutoApproved] = $this->decide(1, 3);
         $this->assertSame(AromaChange::STATUS_APPROVED, $status);
         $this->assertTrue($isAutoApproved);
     }
 
-    public function test_downgrading_grade_requires_approval(): void
+    public function test_upgrading_grade_requires_approval(): void
     {
-        // Signature -> Artisan (down)
+        // Signature -> Artisan (up, needs approval per client)
         [$status, $isAutoApproved] = $this->decide(3, 2);
         $this->assertSame(AromaChange::STATUS_PENDING, $status);
         $this->assertFalse($isAutoApproved);
 
-        // Artisan -> Luxo (down)
+        // Artisan -> Luxo (up, needs approval per client)
         [$status, $isAutoApproved] = $this->decide(2, 1);
         $this->assertSame(AromaChange::STATUS_PENDING, $status);
         $this->assertFalse($isAutoApproved);
 
-        // Signature -> Luxo (down, skips a level)
+        // Signature -> Luxo (up, skips a level)
         [$status, $isAutoApproved] = $this->decide(3, 1);
         $this->assertSame(AromaChange::STATUS_PENDING, $status);
         $this->assertFalse($isAutoApproved);

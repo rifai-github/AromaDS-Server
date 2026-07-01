@@ -73,13 +73,15 @@ class AromaChange extends Model
     const STATUS_CANCELLED = 'cancelled';
 
     /**
-     * Grade order for brand line, client-confirmed: Luxo (1, lowest) < Artisan (2) < Signature (3, highest).
-     * Switching to an equal or higher grade is auto-approved; switching down requires manager approval.
+     * Grade order for brand line, client-confirmed (MoM correction): Signature (1, lowest) < Artisan (2) < Luxo (3, highest).
+     * Client's literal examples: Luxo -> Artisan/Signature = no approval (moving down). Artisan -> Luxo = approval
+     * (moving up); Artisan -> Signature = no approval (moving down). Signature -> Luxo/Artisan = approval (moving up).
+     * Switching to an equal or lower grade is auto-approved; switching up (toward Luxo) requires manager approval.
      */
     const BRAND_LINE_GRADE = [
-        'luxo' => 1,
+        'signature' => 1,
         'artisan' => 2,
-        'signature' => 3,
+        'luxo' => 3,
     ];
 
     /**
