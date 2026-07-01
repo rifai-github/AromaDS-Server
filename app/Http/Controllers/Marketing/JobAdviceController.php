@@ -3217,6 +3217,16 @@ class JobAdviceController extends Controller
             $type = ($period !== null && (int) $period === 1) ? 'service_first' : 'service_routine';
             $forceMaterialChecked = true;
         }
+        $isRemoveType = in_array(strtolower(trim($type)), ['remove', 'remove_free', 'remove free'], true);
+
+        if ($isRemoveType) {
+            $rooms = $this->filterRemoveRoomsWithActiveOnWallUnits($jobAdvice, $rooms, $building);
+
+            if ($rooms->isEmpty()) {
+                \Log::warning("No active Unit On Wall with serial number found for remove Job Advice {$jobAdvice->job_advice_number}. No RV/RF job schedule created.");
+                return $createdJobSchedules;
+            }
+        }
 
         // Check if this is an Install Free (from quotation)
         $jobAdviceType = strtolower($jobAdvice->type ?? 'install');
@@ -3289,7 +3299,17 @@ class JobAdviceController extends Controller
         
         // Create 1 JobSchedule PER ROOM with SAME job_number
         // Group rooms by their source room ID to ensure one schedule per room even if multiple rentals
-        $groupedRooms = $rooms->groupBy(function($item) {
+        $groupedRooms = $rooms->groupBy(function($item) use ($isRemoveType) {
+            if ($isRemoveType) {
+                $roomId = $item->room_id
+                    ?? $item->contractRoom?->room_id
+                    ?? $item->quotationRoom?->room_id;
+
+                if ($roomId) {
+                    return 'room_' . $roomId;
+                }
+            }
+
             return $item->contract_room_id ? 'c_' . $item->contract_room_id : 'q_' . $item->quotation_room_id;
         });
 
@@ -3377,6 +3397,54 @@ class JobAdviceController extends Controller
         \Log::info("âœ… Created {$createdJobSchedules->count()} JobSchedule(s) with shared job_number: {$sharedJobNumber}");
         
         return $createdJobSchedules;
+    }
+
+    private function filterRemoveRoomsWithActiveOnWallUnits(JobAdvice $jobAdvice, $rooms, $building)
+    {
+        $jobAdvice->loadMissing(['contract', 'quotation']);
+        $customerId = $jobAdvice->customer_id
+            ?? $jobAdvice->contract?->customer_id
+            ?? $jobAdvice->quotation?->customer_id;
+        $buildingId = $building?->id;
+
+        if (! $customerId || ! $buildingId) {
+            return collect();
+        }
+
+        $activeStatuses = ['active', 'installed', 'on_wall', 'on wall', 'onwall'];
+
+        return collect($rooms)
+            ->filter(function ($jaRoom) use ($customerId, $buildingId, $activeStatuses) {
+                $roomId = $jaRoom->room_id
+                    ?? $jaRoom->contractRoom?->room_id
+                    ?? $jaRoom->quotationRoom?->room_id;
+                $rentalId = $jaRoom->rental_product_id;
+
+                if (! $roomId || ! $rentalId) {
+                    return false;
+                }
+
+                return \App\Models\UnitOnWall::query()
+                    ->where('customer_id', $customerId)
+                    ->where('building_id', $buildingId)
+                    ->where('room_id', $roomId)
+                    ->where('rental_id', $rentalId)
+                    ->whereIn('status', $activeStatuses)
+                    ->where(function ($query) {
+                        $query->whereNotNull('serial_number_id')
+                            ->orWhereNotNull('serial_number');
+                    })
+                    ->exists();
+            })
+            ->unique(function ($jaRoom) {
+                $roomId = $jaRoom->room_id
+                    ?? $jaRoom->contractRoom?->room_id
+                    ?? $jaRoom->quotationRoom?->room_id;
+
+                return ($roomId ? 'room:' . $roomId : 'name:' . strtolower(trim((string) $jaRoom->room_name)))
+                    . ':rental:' . (int) $jaRoom->rental_product_id;
+            })
+            ->values();
     }
     
     /**

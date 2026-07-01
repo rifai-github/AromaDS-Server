@@ -23,7 +23,7 @@ class ContractTerminationController extends Controller
         $this->documentNumberService = $documentNumberService;
     }
 
-    private function shouldCreateRemoveJobForContractRoom(\App\Models\ContractRoom $contractRoom): bool
+    private function shouldCreateRemoveJobForContractRoom(\App\Models\ContractRoom $contractRoom, ?Contract $contract = null, ?int $buildingId = null): bool
     {
         $rentalType = strtolower(trim((string) ($contractRoom->rental_product?->rental_type ?? '')));
 
@@ -31,7 +31,33 @@ class ContractTerminationController extends Controller
             return false;
         }
 
-        return true;
+        return $this->activeOnWallUnitExistsForContractRoom($contractRoom, $contract, $buildingId);
+    }
+
+    private function activeOnWallUnitExistsForContractRoom(\App\Models\ContractRoom $contractRoom, ?Contract $contract = null, ?int $buildingId = null): bool
+    {
+        $contract ??= $contractRoom->contract;
+        $customerId = $contract?->customer_id;
+        $roomId = $contractRoom->room_id;
+        $rentalId = $contractRoom->rental_product?->id;
+
+        if (! $customerId || ! $roomId || ! $rentalId) {
+            return false;
+        }
+
+        $activeStatuses = ['active', 'installed', 'on_wall', 'on wall', 'onwall'];
+
+        return \App\Models\UnitOnWall::query()
+            ->where('customer_id', $customerId)
+            ->when($buildingId, fn ($query) => $query->where('building_id', $buildingId))
+            ->where('room_id', $roomId)
+            ->where('rental_id', $rentalId)
+            ->whereIn('status', $activeStatuses)
+            ->where(function ($query) {
+                $query->whereNotNull('serial_number_id')
+                    ->orWhereNotNull('serial_number');
+            })
+            ->exists();
     }
 
     private function findBlockingUnfinishedJobForTermination(Contract $contract): ?JobSchedule
@@ -500,6 +526,8 @@ class ContractTerminationController extends Controller
             $contractRooms = \App\Models\ContractRoom::where('contract_id', $contract->id)->get();
             $removeJobsCreated = 0;
             $refillOnlyRoomsSkipped = 0;
+            $roomsWithoutActiveUnitSkipped = 0;
+            $processedRemoveKeys = [];
             
             // Get building ID from contract
             $buildingId = $contract->building_id;
@@ -508,16 +536,36 @@ class ContractTerminationController extends Controller
             }
             
             foreach ($contractRooms as $contractRoom) {
-                if (! $this->shouldCreateRemoveJobForContractRoom($contractRoom)) {
-                    $refillOnlyRoomsSkipped++;
-                    Log::info("Skipping remove job for refill-only contract room during termination", [
+                $rentalType = strtolower(trim((string) ($contractRoom->rental_product?->rental_type ?? '')));
+                $rentalId = $contractRoom->rental_product?->id;
+                $removeKey = ($contractRoom->room_id ?: 'room-name:' . strtolower(trim((string) ($contractRoom->room?->room_name ?? ''))))
+                    . ':rental:' . (int) $rentalId;
+
+                if (isset($processedRemoveKeys[$removeKey])) {
+                    continue;
+                }
+
+                if (! $this->shouldCreateRemoveJobForContractRoom($contractRoom, $contract, $buildingId)) {
+                    if ($rentalType === 'refill_only') {
+                        $refillOnlyRoomsSkipped++;
+                        $skipMessage = 'Skipping remove job for refill-only contract room during termination';
+                    } else {
+                        $roomsWithoutActiveUnitSkipped++;
+                        $skipMessage = 'Skipping remove job for contract room during termination because it has no removable active Unit On Wall';
+                    }
+
+                    Log::info($skipMessage, [
                         'termination_number' => $contractTermination->termination_number,
                         'contract_id' => $contract->id,
                         'contract_room_id' => $contractRoom->id,
                         'room_id' => $contractRoom->room_id,
+                        'rental_type' => $rentalType,
+                        'has_active_unit_on_wall' => false,
                     ]);
                     continue;
                 }
+
+                $processedRemoveKeys[$removeKey] = true;
 
                 // Generate job number for remove
                 $jobNumber = $this->documentNumberService->generate(
@@ -532,6 +580,7 @@ class ContractTerminationController extends Controller
                 // jobAdvice to render customer/room data (see JobController::getTodayJobs).
                 $jobAdviceRoom = \App\Models\JobAdviceRoom::where('contract_room_id', $contractRoom->id)
                     ->whereNull('deleted_at')
+                    ->when($rentalId, fn ($query) => $query->where('rental_product_id', $rentalId))
                     ->latest('id')
                     ->first();
 
@@ -556,6 +605,23 @@ class ContractTerminationController extends Controller
 
                 if ($jobAdviceRoom) {
                     $jobAdviceRoom->update(['remove_job_schedule_id' => $removeJob->id]);
+
+                    $jobScheduleRoom = \App\Models\JobScheduleRoom::create([
+                        'job_schedule_id' => $removeJob->id,
+                        'job_advice_room_id' => $jobAdviceRoom->id,
+                        'room_name' => $contractRoom->room_name ?? $contractRoom->room?->room_name,
+                        'room_id' => $contractRoom->room_id,
+                        'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
+                        'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
+                        'created_by' => Auth::id(),
+                        'updated_by' => Auth::id(),
+                    ]);
+
+                    \App\Models\JobScheduleRoomRental::create([
+                        'job_schedule_room_id' => $jobScheduleRoom->id,
+                        'job_advice_room_id' => $jobAdviceRoom->id,
+                        'is_primary' => true,
+                    ]);
                 }
 
                 $removeJobsCreated++;
@@ -563,11 +629,11 @@ class ContractTerminationController extends Controller
 
             DB::commit();
 
-            Log::info("Contract termination approved: {$contractTermination->termination_number} by user {$user->name}. Terminated {$terminatedJobCount} jobs, created {$removeJobsCreated} remove jobs, skipped {$refillOnlyRoomsSkipped} refill-only rooms.");
+            Log::info("Contract termination approved: {$contractTermination->termination_number} by user {$user->name}. Terminated {$terminatedJobCount} jobs, created {$removeJobsCreated} remove jobs, skipped {$refillOnlyRoomsSkipped} refill-only rooms, skipped {$roomsWithoutActiveUnitSkipped} rooms without active Unit On Wall.");
 
             return response()->json([
                 'status' => 'success',
-                'message' => "Contract termination approved successfully. {$terminatedJobCount} job(s) terminated, {$removeJobsCreated} remove job(s) created." . ($refillOnlyRoomsSkipped > 0 ? " {$refillOnlyRoomsSkipped} refill-only room(s) skipped for remove job." : "")
+                'message' => "Contract termination approved successfully. {$terminatedJobCount} job(s) terminated, {$removeJobsCreated} remove job(s) created." . ($refillOnlyRoomsSkipped > 0 ? " {$refillOnlyRoomsSkipped} refill-only room(s) skipped for remove job." : "") . ($roomsWithoutActiveUnitSkipped > 0 ? " {$roomsWithoutActiveUnitSkipped} room(s) without active unit skipped for remove job." : "")
             ]);
 
         } catch (\Exception $e) {

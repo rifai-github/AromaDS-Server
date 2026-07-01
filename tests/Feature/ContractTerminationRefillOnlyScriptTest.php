@@ -16,7 +16,10 @@ class ContractTerminationRefillOnlyScriptTest extends TestCase
 
         $this->assertStringContainsString('shouldCreateRemoveJobForContractRoom', $controller);
         $this->assertStringContainsString("\$rentalType === 'refill_only'", $controller);
+        $this->assertStringContainsString('activeOnWallUnitExistsForContractRoom', $controller);
+        $this->assertStringContainsString('whereNotNull(\'serial_number_id\')', $controller);
         $this->assertStringContainsString('Skipping remove job for refill-only contract room during termination', $controller);
+        $this->assertStringContainsString('room(s) without active unit skipped for remove job', $controller);
         $this->assertStringContainsString('refill-only room(s) skipped for remove job', $controller);
     }
 

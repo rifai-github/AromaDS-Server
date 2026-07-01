@@ -52,6 +52,16 @@ class JobAdviceRentalFlowTest extends TestCase
         $this->assertTrue($result['needs_check']);
     }
 
+    public function test_remove_flow_is_limited_to_active_on_wall_units_with_serial_numbers(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/Marketing/JobAdviceController.php'));
+
+        $this->assertStringContainsString('filterRemoveRoomsWithActiveOnWallUnits', $controller);
+        $this->assertStringContainsString('No active Unit On Wall with serial number found for remove Job Advice', $controller);
+        $this->assertStringContainsString('whereNotNull(\'serial_number_id\')', $controller);
+        $this->assertStringContainsString("return 'room_' . \$roomId;", $controller);
+    }
+
     private function makeRoomWithRentalType(string $rentalType): JobAdviceRoom
     {
         $rental = new MasterRental(['rental_type' => $rentalType]);
