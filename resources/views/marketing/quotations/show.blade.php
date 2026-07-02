@@ -338,7 +338,7 @@
                                     @if($quotation->status === 'approved')
                                         <div class="quotation-field">
                                             <div class="quotation-field-label">Disetujui Oleh</div>
-                                            <div class="quotation-field-value">{{ $quotation->approver->name ?? '-' }}</div>
+                                            <div class="quotation-field-value">{{ $quotation->approved_by_display_name }}</div>
                                         </div>
                                         <div class="quotation-field">
                                             <div class="quotation-field-label">Tanggal Disetujui</div>

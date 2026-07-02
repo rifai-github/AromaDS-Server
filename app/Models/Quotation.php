@@ -62,6 +62,11 @@ class Quotation extends Model
         'date_approved' => 'datetime'
     ];
 
+    protected $appends = [
+        'approved_by_display_name',
+        'is_auto_approved',
+    ];
+
     // Relationships
     public function prospect()
     {
@@ -114,6 +119,30 @@ class Quotation extends Model
     public function approver()
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function getIsAutoApprovedAttribute(): bool
+    {
+        return $this->status === 'approved'
+            && $this->approved_by === null
+            && $this->date_approved !== null;
+    }
+
+    public function getApprovedByDisplayNameAttribute(): string
+    {
+        if ($this->approver) {
+            return $this->approver->name;
+        }
+
+        if ($this->is_auto_approved) {
+            $marketingName = $this->marketing?->name
+                ?? $this->creator?->name
+                ?? 'System';
+
+            return "{$marketingName} (Auto Approve)";
+        }
+
+        return 'N/A';
     }
 
     public function contracts()

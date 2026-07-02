@@ -1472,7 +1472,7 @@
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->marketing->name ?? 'N/A' }}</p>
                         </td>
                         <td class="w-[120px] p-2">
-                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->approver->name ?? 'N/A' }}</p>
+                            <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->approved_by_display_name }}</p>
                         </td>
                         <td class="w-[120px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->date_approved ? \Carbon\Carbon::parse($quotation->date_approved)->format('d/M/Y') : 'N/A' }}</p>
@@ -2309,7 +2309,7 @@ function openViewModal(id) {
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div class="bg-gray-50 p-4 rounded-lg">
                                 <div class="text-sm font-medium text-gray-600 mb-1">Approved By</div>
-                                <div class="text-gray-900">${data.approver ? data.approver.name : 'N/A'}</div>
+                                <div class="text-gray-900">${data.approved_by_display_name || 'N/A'}</div>
                             </div>
                             <div class="bg-gray-50 p-4 rounded-lg">
                                 <div class="text-sm font-medium text-gray-600 mb-1">Date Approved</div>
