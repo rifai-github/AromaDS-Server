@@ -144,7 +144,7 @@ class QuotationWizardAromaProductsTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_quotation_wizard_aroma_products_list_brand_lines_from_brand_variants(): void
+    public function test_quotation_wizard_aroma_products_list_brand_variants_with_brand_line_label(): void
     {
         $response = (new QuotationWizardController())->getAromaProducts(Request::create(
             '/marketing/quotations/wizard/get-aroma-products',
@@ -153,11 +153,24 @@ class QuotationWizardAromaProductsTest extends TestCase
 
         $payload = collect($response->getData(true));
 
-        $this->assertSame(['Signature'], $payload->pluck('display_name')->all());
-        $this->assertSame(['brandline:10'], $payload->pluck('id')->all());
+        $this->assertSame(['Signature - Lemongrass'], $payload->pluck('display_name')->all());
+        $this->assertSame(['brandvariant:100'], $payload->pluck('id')->all());
+        $this->assertSame(['Lemongrass'], $payload->pluck('variant')->all());
+        $this->assertSame(['Signature'], $payload->pluck('brand_line')->all());
     }
 
     public function test_resolve_canonical_aroma_product_id_prefers_brand_variant_linked_product(): void
+    {
+        $controller = new QuotationWizardController();
+        $resolve = (new \ReflectionClass($controller))->getMethod('resolveCanonicalAromaProductId');
+        $resolve->setAccessible(true);
+
+        $resolvedId = $resolve->invoke($controller, 'brandvariant:100');
+
+        $this->assertSame(1, $resolvedId);
+    }
+
+    public function test_resolve_canonical_aroma_product_id_keeps_legacy_brand_line_values(): void
     {
         $controller = new QuotationWizardController();
         $resolve = (new \ReflectionClass($controller))->getMethod('resolveCanonicalAromaProductId');
