@@ -301,18 +301,33 @@
         editingBottomPriceId = null;
         document.getElementById('bottomPriceForm').reset();
         document.getElementById('bottom_price_id').value = '';
+        setSelectValue('branch_id', '');
+        setSelectValue('offer_type', 'bulan');
         document.getElementById('bottomPriceModalTitle').textContent = 'Add Bottom Price';
         document.getElementById('bottomPriceSubmitBtn').innerHTML = '<i class="fas fa-save me-1"></i>Save';
         document.getElementById('addBottomPriceModal').classList.add('show');
         document.body.style.overflow = 'hidden';
     }
 
+    function setSelectValue(selectId, value) {
+        const select = document.getElementById(selectId);
+        if (!select) return;
+
+        select.value = value ?? '';
+
+        if (typeof jQuery !== 'undefined' && jQuery(select).data('select2')) {
+            jQuery(select).trigger('change.select2');
+        } else {
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+
     function openEditModal(bottomPrice) {
         editingBottomPriceId = bottomPrice.id;
         document.getElementById('bottomPriceForm').reset();
         document.getElementById('bottom_price_id').value = bottomPrice.id;
-        document.getElementById('branch_id').value = bottomPrice.branch_id;
-        document.getElementById('offer_type').value = bottomPrice.offer_type;
+        setSelectValue('branch_id', bottomPrice.branch_id);
+        setSelectValue('offer_type', bottomPrice.offer_type);
         document.getElementById('bottom_price').value = bottomPrice.bottom_price;
         document.getElementById('replacement_price').value = bottomPrice.replacement_price;
         document.getElementById('is_active').checked = Boolean(bottomPrice.is_active);

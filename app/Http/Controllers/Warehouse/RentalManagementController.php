@@ -410,7 +410,13 @@ class RentalManagementController extends Controller
     public function bottomPrices(MasterRental $rental)
     {
         $bottomPrices = $rental->bottomPrices()->with(['branch', 'createdBy', 'updatedBy'])->get();
-        $branches = Branch::where('is_active', true)->orderBy('name')->get();
+        $existingBranchIds = $bottomPrices->pluck('branch_id')->filter()->unique();
+        $branches = Branch::where('is_active', true)
+            ->when($existingBranchIds->isNotEmpty(), function ($query) use ($existingBranchIds) {
+                $query->orWhereIn('id', $existingBranchIds);
+            })
+            ->orderBy('name')
+            ->get();
         
         return view('warehouse.rental-management.bottom-prices', compact('rental', 'bottomPrices', 'branches'));
     }
