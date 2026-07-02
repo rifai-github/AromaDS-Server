@@ -17,6 +17,7 @@ use App\Models\MasterRental;
 use App\Models\MasterProduct;
 use App\Models\Branch;
 use App\Models\Contract;
+use App\Services\Marketing\QuotationBottomPriceEvaluator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,39 @@ use Illuminate\Validation\ValidationException;
 class QuotationWizardController extends Controller
 {
     use AccessControlFilterTrait;
+
+    private function applyBottomPriceFinalStatus(Quotation $quotation): array
+    {
+        $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
+
+        if ($result['requires_approval']) {
+            $quotation->update([
+                'status' => 'waiting_for_approval',
+                'approved_by' => null,
+                'date_approved' => null,
+                'updated_by' => auth()->id(),
+            ]);
+
+            return [
+                'status' => 'waiting_for_approval',
+                'message' => 'Quotation has been submitted for approval',
+                'bottom_price_validation' => $result,
+            ];
+        }
+
+        $quotation->update([
+            'status' => 'approved',
+            'approved_by' => null,
+            'date_approved' => now(),
+            'updated_by' => auth()->id(),
+        ]);
+
+        return [
+            'status' => 'approved',
+            'message' => 'Quotation auto-approved because all rental prices meet bottom price.',
+            'bottom_price_validation' => $result,
+        ];
+    }
 
     private function surveySelectionDuplicateKey(Survey $survey): string
     {
@@ -843,7 +877,7 @@ class QuotationWizardController extends Controller
                 'pic_name' => $request->get('pic_quotation') ?? 'Unknown PIC',
                 'billing_methods' => $request->get('payment_method'),
                 'payment_method' => $request->get('payment_method'),
-                'status' => $action === 'finalize' ? 'waiting_for_approval' : 'draft',
+                'status' => 'draft',
                 'rental_period' => $request->get('rental_period'),
                 'rental_unit' => $request->get('rental_unit'),
                 'terms_of_payment' => $request->get('term_of_payment'),
@@ -980,9 +1014,11 @@ class QuotationWizardController extends Controller
                 \Log::warning('No room_selections_data found in request');
             }
 
+            $finalizeDecision = null;
             if ($action === 'finalize') {
                 try {
                     $quotation->ensureServiceFrequencyPeriodCompatible();
+                    $finalizeDecision = $this->applyBottomPriceFinalStatus($quotation);
                 } catch (ValidationException $e) {
                     $quotation->update([
                         'status' => 'draft',
@@ -994,10 +1030,8 @@ class QuotationWizardController extends Controller
             }
             
             // Determine status and message based on action
-            $status = $action === 'finalize' ? 'waiting_for_approval' : 'draft';
-            $message = $action === 'finalize' 
-                ? 'Quotation has been submitted for approval' 
-                : 'Quotation saved as draft';
+            $status = $finalizeDecision['status'] ?? 'draft';
+            $message = $finalizeDecision['message'] ?? 'Quotation saved as draft';
             
             // Log the quotation creation
             
@@ -1008,6 +1042,7 @@ class QuotationWizardController extends Controller
                         'message' => $message,
                         'status' => $status,
                         'action' => $action,
+                        'bottom_price_validation' => $finalizeDecision['bottom_price_validation'] ?? null,
                         'data' => $request->all(),
                         'quotation_id' => $quotation->id,
                         'redirect_url' => route('marketing.quotations.show', $quotation->id)
@@ -1140,7 +1175,7 @@ class QuotationWizardController extends Controller
                     'pic_name' => $request->get('pic_quotation') ?? 'Unknown PIC',
                     'billing_methods' => $request->get('payment_method'),
                     'payment_method' => $request->get('payment_method'),
-                    'status' => $action === 'finalize' ? 'waiting_for_approval' : 'draft',
+                    'status' => 'draft',
                     'rental_period' => $request->get('rental_period'),
                     'rental_unit' => $request->get('rental_unit'),
                     'terms_of_payment' => $request->get('term_of_payment'),
@@ -1259,21 +1294,24 @@ class QuotationWizardController extends Controller
                     }
                 }
 
+                $finalizeDecision = null;
                 if ($action === 'finalize') {
                     $quotation->ensureServiceFrequencyPeriodCompatible();
+                    $finalizeDecision = $this->applyBottomPriceFinalStatus($quotation);
                 }
 
                 DB::commit();
 
                 // Response
-                $status = $action === 'finalize' ? 'waiting_for_approval' : 'draft';
-                $message = $action === 'finalize' ? 'Quotation updated and submitted' : 'Quotation draft updated';
+                $status = $finalizeDecision['status'] ?? 'draft';
+                $message = $finalizeDecision['message'] ?? 'Quotation draft updated';
 
                 if ($request->ajax()) {
                     return response()->json([
                         'success' => true,
                         'message' => $message,
                         'status' => $status,
+                        'bottom_price_validation' => $finalizeDecision['bottom_price_validation'] ?? null,
                         'redirect_url' => route('marketing.quotations.show', $quotation->id)
                     ]);
                 } else {
