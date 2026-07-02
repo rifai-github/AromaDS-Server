@@ -6001,8 +6001,12 @@ $(document).ready(function() {
                     const previousValue = select.val();
                     select.empty().append('<option value="">Pilih contract...</option>');
                     
-                    // Use all returned contracts (backend already handles filtering active status)
-                    const eligibleContracts = response.data;
+                    // Use all returned contracts (backend already handles filtering active status).
+                    // Object.values keeps the dropdown compatible with older cached responses whose
+                    // filtered Laravel collection keys were serialized as an object.
+                    const eligibleContracts = Array.isArray(response.data)
+                        ? response.data
+                        : Object.values(response.data || {});
                     
                     eligibleContracts.forEach(function(contract) {
                         // Display format: No. Contract - Customer Name

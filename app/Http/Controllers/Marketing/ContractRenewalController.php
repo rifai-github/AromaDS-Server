@@ -311,6 +311,7 @@ class ContractRenewalController extends Controller
 
                     return $contract->getRenewalAlreadyInProgressBlockReason() === null;
                 })
+                ->values()
                 ->map(function ($contract) use ($includeId) {
                     $blockReason = $contract->getRenewalBlockReason();
                 // Calculate remaining duration string
