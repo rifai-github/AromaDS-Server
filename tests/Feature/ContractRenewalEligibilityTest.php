@@ -30,6 +30,7 @@ class ContractRenewalEligibilityTest extends TestCase
         Schema::create('contracts', function (Blueprint $table) {
             $table->id();
             $table->string('contract_number')->nullable();
+            $table->string('status')->nullable();
             $table->string('contract_status')->nullable();
             $table->foreignId('customer_id')->nullable();
             $table->foreignId('marketing_id')->nullable();
@@ -231,6 +232,35 @@ class ContractRenewalEligibilityTest extends TestCase
         $this->assertStringContainsString('Job Schedule aktif/belum selesai', $contractPayload['block_reason']);
     }
 
+    public function test_dropdown_excludes_terminated_contracts(): void
+    {
+        $activeContract = $this->createContract('SBY-CA/26-06/0001');
+        $terminatedByStatus = $this->createContract('SBY-CA/26-06/0002', [
+            'status' => 'terminated',
+            'contract_status' => 'active',
+        ]);
+        $terminatedByContractStatus = $this->createContract('SBY-CA/26-06/0003', [
+            'status' => 'active',
+            'contract_status' => 'terminated',
+        ]);
+
+        $this->createJob($activeContract, 'SBY-IR/26-06/0001', 'install', 'done_job', '2026-06-11');
+        $this->createJob($terminatedByStatus, 'SBY-IR/26-06/0002', 'install', 'done_job', '2026-06-11');
+        $this->createJob($terminatedByContractStatus, 'SBY-IR/26-06/0003', 'install', 'done_job', '2026-06-11');
+
+        $response = app(ContractRenewalController::class)->getEligibleContracts(
+            Request::create('/marketing/contract-renewals/eligible-contracts', 'GET')
+        );
+
+        $payload = $response->getData(true);
+        $contractNumbers = collect($payload['data'])->pluck('contract_number')->all();
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertContains('SBY-CA/26-06/0001', $contractNumbers);
+        $this->assertNotContains('SBY-CA/26-06/0002', $contractNumbers);
+        $this->assertNotContains('SBY-CA/26-06/0003', $contractNumbers);
+    }
+
     public function test_contract_with_active_renewal_quotation_is_excluded_from_new_sq_renewal_dropdown(): void
     {
         $contract = $this->createContract('SBY-CA/26-06/0001');
@@ -320,6 +350,7 @@ class ContractRenewalEligibilityTest extends TestCase
     {
         return Contract::create(array_merge([
             'contract_number' => $contractNumber,
+            'status' => 'active',
             'contract_status' => 'active',
             'start_date' => '2025-05-01',
             'end_date' => '2026-05-15',

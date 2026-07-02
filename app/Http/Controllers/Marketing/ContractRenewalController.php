@@ -287,7 +287,15 @@ class ContractRenewalController extends Controller
         try {
             $query = Contract::query()
                 ->orderBy('end_date', 'asc') // Sort by expiry date (soonest first)
-                ->with(['customer', 'contractRooms.room', 'contractRooms.billingGroup']);
+                ->with(['customer', 'contractRooms.room', 'contractRooms.billingGroup'])
+                ->where(function ($statusQuery) {
+                    $statusQuery->whereNull('status')
+                        ->orWhereRaw('LOWER(TRIM(status)) != ?', ['terminated']);
+                })
+                ->where(function ($statusQuery) {
+                    $statusQuery->whereNull('contract_status')
+                        ->orWhereRaw('LOWER(TRIM(contract_status)) != ?', ['terminated']);
+                });
 
             // Optional: Filter by customer
             if ($request->filled('customer_id')) {
