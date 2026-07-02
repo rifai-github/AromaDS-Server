@@ -379,8 +379,8 @@ function deleteSelected() {
     showConfirmDialog(
         'Hapus export yang dipilih?',
         'Export yang dipilih akan dihapus.'
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         const selectedIds = Array.from(checkboxes).map(checkbox => checkbox.value);

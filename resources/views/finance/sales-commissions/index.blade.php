@@ -556,8 +556,8 @@ function deleteSelected() {
     showConfirmDialog(
         'Hapus komisi yang dipilih?',
         'Data komisi yang dipilih akan dihapus.'
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         const selectedIds = Array.from(checkboxes).map(checkbox => checkbox.value);

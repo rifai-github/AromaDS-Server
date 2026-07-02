@@ -772,8 +772,8 @@ function regenerateToken(id) {
     showConfirmDialog(
         'Regenerate API token ini?',
         'Token lama tidak akan bisa digunakan lagi.'
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         fetch(`/system/api-tokens/${id}/regenerate`, {
@@ -809,8 +809,8 @@ function deleteSelected() {
     showConfirmDialog(
         'Hapus API token yang dipilih?',
         `${checkboxes.length} API token akan dihapus.`
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         const selectedIds = Array.from(checkboxes).map(checkbox => checkbox.value);

@@ -543,8 +543,8 @@ function deleteSelected() {
     showConfirmDialog(
         'Hapus bank receipt yang dipilih?',
         'Data bank receipt yang dipilih akan dihapus.'
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         const selectedIds = Array.from(checkboxes).map(checkbox => checkbox.value);

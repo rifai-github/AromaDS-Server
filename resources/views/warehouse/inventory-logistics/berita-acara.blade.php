@@ -760,8 +760,8 @@ function viewBeritaAcara(id) {
 
 function approveBeritaAcara(id) {
     showConfirmDialog('Setujui berita acara?', 'Berita acara ini akan disetujui.')
-    .then((result) => {
-        if (!result.isConfirmed) {
+    .then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         fetch(`/warehouse/inventory-logistics/berita-acara/${id}/approve`, {
@@ -788,8 +788,8 @@ function approveBeritaAcara(id) {
 
 function rejectBeritaAcara(id) {
     showConfirmDialog('Tolak berita acara?', 'Berita acara ini akan ditolak.')
-    .then((result) => {
-        if (!result.isConfirmed) {
+    .then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         fetch(`/warehouse/inventory-logistics/berita-acara/${id}/reject`, {

@@ -1729,8 +1729,8 @@ function generateESPTExport(id) {
     showConfirmDialog(
         'Generate export e-SPT?',
         'File CSV yang kompatibel dengan e-SPT akan dibuat.'
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         fetch(`/finance/tax-file-exports/${id}/generate-espt`, {

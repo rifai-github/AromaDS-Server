@@ -132,8 +132,8 @@ function deleteSelected() {
     showConfirmDialog(
         'Hapus follow up yang dipilih?',
         'Data follow up yang dipilih akan dihapus.'
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         const selectedIds = Array.from(checkboxes).map(checkbox => checkbox.value);

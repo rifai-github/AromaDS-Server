@@ -2692,8 +2692,8 @@ function confirmDoneJob(event) {
     showConfirmDialog(
         'Tandai job ini sebagai selesai?',
         'Status akan berubah menjadi Completed, bisa memicu auto-create Unit On Wall, Remove Job, dan invoice generation.'
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
 
@@ -2721,8 +2721,8 @@ function confirmUndoneJob(event) {
     showConfirmDialog(
         'Yakin ingin undone job?',
         'Status akan berubah menjadi Undone dan BA Date akan dihapus.'
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
 

@@ -1423,8 +1423,8 @@ function processImport(id) {
     showConfirmDialog(
         'Proses import ini?',
         'Proses ini akan memulai impor data.'
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         fetch(`/finance/tax-file-imports/${id}/process`, {

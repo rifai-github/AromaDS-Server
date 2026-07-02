@@ -1431,8 +1431,8 @@ function deleteSelected() {
     showConfirmDialog(
         'Hapus price slab yang dipilih?',
         `${selectedIds.length} price slab akan dihapus.`
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         fetch("{{ route('company.master-price-slabs.bulk-delete') }}", {

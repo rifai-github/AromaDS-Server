@@ -1375,8 +1375,8 @@ function submitFaktur(id) {
     showConfirmDialog(
         'Ajukan Faktur Pajak ini?',
         'Faktur Pajak ini akan diajukan untuk persetujuan.'
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         fetch(`/finance/faktur-pajak/${id}/submit`, {

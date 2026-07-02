@@ -1326,8 +1326,8 @@ resendVerification = function(contactId) {
     showConfirmDialog(
         'Kirim email verifikasi?',
         'Email verifikasi akan dikirim ke contact ini.'
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
 

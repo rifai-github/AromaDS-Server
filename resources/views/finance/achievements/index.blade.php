@@ -1301,8 +1301,8 @@ function confirmDeleteAchievement(event) {
     showConfirmDialog(
         'Hapus achievement ini?',
         'Data achievement ini akan dihapus.'
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
 

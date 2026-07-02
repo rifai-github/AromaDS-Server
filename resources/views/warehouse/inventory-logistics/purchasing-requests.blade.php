@@ -734,8 +734,8 @@ function viewPurchasingRequest(id) {
 
 function approvePurchasingRequest(id) {
     showConfirmDialog('Setujui purchasing request?', 'Purchasing request ini akan disetujui.')
-    .then((result) => {
-        if (!result.isConfirmed) {
+    .then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         fetch(`/warehouse/inventory-logistics/purchasing-requests/${id}/approve`, {
@@ -762,8 +762,8 @@ function approvePurchasingRequest(id) {
 
 function rejectPurchasingRequest(id) {
     showConfirmDialog('Tolak purchasing request?', 'Purchasing request ini akan ditolak.')
-    .then((result) => {
-        if (!result.isConfirmed) {
+    .then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         fetch(`/warehouse/inventory-logistics/purchasing-requests/${id}/reject`, {

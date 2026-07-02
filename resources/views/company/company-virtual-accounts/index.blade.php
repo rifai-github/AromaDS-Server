@@ -1080,8 +1080,8 @@ document.addEventListener('DOMContentLoaded', function() {
             showConfirmDialog(
                 `${status === 'activate' ? 'Aktifkan' : 'Nonaktifkan'} virtual account ini?`,
                 `Virtual account ini akan ${status === 'activate' ? 'diaktifkan' : 'dinonaktifkan'}.`
-            ).then((result) => {
-                if (!result.isConfirmed) {
+            ).then((confirmed) => {
+                if (!confirmed) {
                     return;
                 }
                 const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
@@ -1113,8 +1113,8 @@ document.addEventListener('DOMContentLoaded', function() {
             showConfirmDialog(
                 'Hapus virtual account ini?',
                 'Data virtual account ini akan dihapus.'
-            ).then((result) => {
-                if (!result.isConfirmed) {
+            ).then((confirmed) => {
+                if (!confirmed) {
                     return;
                 }
                 const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
@@ -1415,8 +1415,8 @@ function toggleStatus(id, status) {
     showConfirmDialog(
         `${status === 'true' ? 'Aktifkan' : 'Nonaktifkan'} virtual account ini?`,
         `Virtual account ini akan ${status === 'true' ? 'diaktifkan' : 'dinonaktifkan'}.`
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         fetch(`{{ route("company.company-virtual-accounts.index") }}/${id}/toggle-status`, {
@@ -1450,8 +1450,8 @@ function deleteSelected() {
     showConfirmDialog(
         'Hapus virtual account yang dipilih?',
         `${selectedIds.length} virtual account akan dihapus.`
-    ).then((result) => {
-        if (!result.isConfirmed) {
+    ).then((confirmed) => {
+        if (!confirmed) {
             return;
         }
         fetch('{{ route("company.company-virtual-accounts.bulk-delete") }}', {

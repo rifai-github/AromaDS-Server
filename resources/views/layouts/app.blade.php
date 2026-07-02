@@ -1882,35 +1882,50 @@
             return showAlertDialog({ title, text: message, icon: 'info' });
         }
 
-        function showConfirmDialog({
-            title = 'Apakah Anda yakin?',
-            text = '',
-            icon = 'question',
-            confirmButtonText = 'Ya, lanjutkan',
-            cancelButtonText = 'Batal',
-            confirmButtonColor = '#214589',
-            cancelButtonColor = '#6c757d',
-            allowOutsideClick = true,
-            allowEscapeKey = true
-        } = {}) {
+        function showConfirmDialog(options = {}, legacyText, legacyConfirmButtonText, legacyCancelButtonText) {
+            const isLegacySignature = typeof options !== 'object' || options === null || Array.isArray(options);
+            const config = isLegacySignature ? {
+                title: options || 'Apakah Anda yakin?',
+                text: legacyText || '',
+                icon: 'question',
+                confirmButtonText: legacyConfirmButtonText || 'Ya, lanjutkan',
+                cancelButtonText: legacyCancelButtonText || 'Batal',
+                confirmButtonColor: '#214589',
+                cancelButtonColor: '#6c757d',
+                allowOutsideClick: true,
+                allowEscapeKey: true
+            } : {
+                title: 'Apakah Anda yakin?',
+                text: '',
+                icon: 'question',
+                confirmButtonText: 'Ya, lanjutkan',
+                cancelButtonText: 'Batal',
+                confirmButtonColor: '#214589',
+                cancelButtonColor: '#6c757d',
+                allowOutsideClick: true,
+                allowEscapeKey: true,
+                ...options
+            };
+
             if (typeof Swal !== 'undefined') {
-                return Swal.fire({
-                    title,
-                    text,
-                    icon,
+                const confirmation = Swal.fire({
+                    title: config.title,
+                    text: config.text,
+                    icon: config.icon,
                     showCancelButton: true,
-                    confirmButtonText,
-                    cancelButtonText,
-                    confirmButtonColor,
-                    cancelButtonColor,
-                    allowOutsideClick,
-                    allowEscapeKey
+                    confirmButtonText: config.confirmButtonText,
+                    cancelButtonText: config.cancelButtonText,
+                    confirmButtonColor: config.confirmButtonColor,
+                    cancelButtonColor: config.cancelButtonColor,
+                    allowOutsideClick: config.allowOutsideClick,
+                    allowEscapeKey: config.allowEscapeKey
                 });
+
+                return isLegacySignature ? confirmation.then((result) => result.isConfirmed === true) : confirmation;
             }
 
-            return Promise.resolve({
-                isConfirmed: confirm(text || title)
-            });
+            const confirmed = confirm(config.text || config.title);
+            return Promise.resolve(isLegacySignature ? confirmed : { isConfirmed: confirmed });
         }
 
         window.nativeAlert = window.alert.bind(window);
