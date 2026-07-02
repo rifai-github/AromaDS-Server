@@ -2189,14 +2189,36 @@ $(document).ready(function() {
 
     initializeExistingContractSearch();
 
+    function keepExistingContractSelection(contractData) {
+        if (!contractData || !contractData.contract_id) {
+            return;
+        }
+
+        const select = $('#existing_contract_id');
+        const customerName = contractData.customer?.name || contractData.customer_name || '';
+        const label = customerName
+            ? `${contractData.contract_number} - ${customerName}`
+            : contractData.contract_number;
+
+        if (select.find(`option[value="${contractData.contract_id}"]`).length === 0) {
+            select.append(new Option(label, contractData.contract_id, true, true));
+        }
+
+        select.val(String(contractData.contract_id)).trigger('change.select2');
+    }
+
     function reloadEligibleContractsIfRenewal() {
+        if (window.isPopulatingData) {
+            return;
+        }
+
         if ($('#quotation_type').val() === 'renewal' && $('#contract-field').hasClass('show')) {
             $('#existing_contract_id').val('');
             loadEligibleContracts();
         }
     }
 
-    function loadUserBranches(userId, preselectedBranchId = null) {
+    function loadUserBranches(userId, preselectedBranchId = null, preserveExistingContract = false) {
         const branchSelect = $('#branch_id');
         const branchContainer = $('#branch-field-container');
         const readonlyDisplay = branchContainer.find('.branch-readonly-display');
@@ -2258,7 +2280,12 @@ $(document).ready(function() {
                         readonlyDisplay.hide();
                     }
                     updateNextButtonState();
-                    reloadEligibleContractsIfRenewal();
+
+                    if (preserveExistingContract) {
+                        keepExistingContractSelection(window.renewalContractData);
+                    } else {
+                        reloadEligibleContractsIfRenewal();
+                    }
                 } else {
                     branchSelect.html('<option value="">Error: ' + (response.message || 'Gagal memuat cabang') + '</option>');
                 }
@@ -2277,6 +2304,10 @@ $(document).ready(function() {
     });
 
     $('#branch_id, #branch_id_hidden').on('change', function() {
+        if (window.isPopulatingData) {
+            return;
+        }
+
         if ($('#quotation_type').val() === 'renewal' && $('#contract-field').hasClass('show')) {
             $('#existing_contract_id').val('');
             loadEligibleContracts();
@@ -6089,12 +6120,13 @@ $(document).ready(function() {
                     
                     // Populate step 1 fields
                     window.isPopulatingData = true;
+                    keepExistingContractSelection(data);
                     
                     $('#marketing_id').val(data.marketing_id); // Don't trigger change yet, we'll call manually
                     if (data.branch_id) {
-                        loadUserBranches(data.marketing_id, data.branch_id);
+                        loadUserBranches(data.marketing_id, data.branch_id, true);
                     } else {
-                    $('#marketing_id').trigger('change');
+                        loadUserBranches(data.marketing_id, null, true);
                     }
                     
 
