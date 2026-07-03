@@ -8221,7 +8221,9 @@ class JobScheduleController extends Controller
                     continue;
                 }
 
-                for ($period = 1; $period <= $totalChecks; $period++) {
+                $firstPeriodToGenerate = in_array($completedType, ['service', 'service_first', 'service_routine'], true) ? 1 : 2;
+
+                for ($period = $firstPeriodToGenerate; $period <= $totalChecks; $period++) {
                     if ($existingCheckPeriods->has($period)) {
                         continue;
                     }

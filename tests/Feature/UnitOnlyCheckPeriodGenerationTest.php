@@ -326,8 +326,8 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             JobAdvice::findOrFail(1)
         );
 
-        $this->assertCount(12, $created);
-        $this->assertSame(range(1, 12), JobSchedule::where('job_advice_id', 1)
+        $this->assertCount(11, $created);
+        $this->assertSame(range(2, 12), JobSchedule::where('job_advice_id', 1)
             ->whereIn('type', ['service_first', 'service_routine'])
             ->orderBy('period')
             ->pluck('period')

@@ -157,6 +157,7 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->string('status')->nullable();
             $table->foreignId('job_advice_id')->nullable();
             $table->foreignId('room_id')->nullable();
+            $table->integer('period')->nullable();
             $table->date('schedule_date')->nullable();
             $table->date('ba_date')->nullable();
             $table->timestamps();
@@ -1177,6 +1178,54 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
         $this->assertSame(['JKT-IR/26-05/0005'], $triggerJobs->pluck('job_number')->values()->all());
         $this->assertSame('ADS Unit Only', $detailMethod->invoke($service, $installJob->fresh('jobAdvice.rooms.rentalProduct'))[0]['rental_name']);
         $this->assertSame([], $detailMethod->invoke($service, $serviceJob->fresh('jobAdvice.rooms.rentalProduct')));
+    }
+
+    public function test_rental_period_invoice_uses_unit_only_check_after_install_period(): void
+    {
+        [$contract, $installJob, $checkJob] = $this->makeContractWithRentalFlow(
+            rentalType: 'unit_only',
+            rentalName: 'ADS Unit Only',
+            installJobNo: 'JKT-IR/26-05/0005',
+            serviceJobNo: 'JKT-IR/26-06/0005'
+        );
+
+        $checkJob->update([
+            'type' => 'service_routine',
+            'period' => 2,
+            'schedule_date' => '2026-06-26',
+            'ba_date' => '2026-06-26',
+        ]);
+
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+            public function generate(
+                string $documentType,
+                ?string $branchCode = null,
+                ?int $buildingId = null,
+                ?int $contractId = null,
+                ?int $quotationId = null,
+                ?int $surveyId = null,
+                ?int $warehouseId = null,
+                ?int $branchId = null,
+                \DateTimeInterface|string|null $documentDate = null
+            ): string {
+                return 'JKT-INV/26-06/0009';
+            }
+        });
+
+        $triggerMethod = new \ReflectionMethod($service, 'getCompletedInvoiceTriggerJobsInPeriod');
+        $triggerMethod->setAccessible(true);
+        $detailMethod = new \ReflectionMethod($service, 'getRentalDetailsForJob');
+        $detailMethod->setAccessible(true);
+
+        $triggerJobs = $triggerMethod->invoke(
+            $service,
+            $contract->fresh(['contractRentals.masterRental', 'contractRooms.room']),
+            Carbon::parse('2026-06-01'),
+            Carbon::parse('2026-06-30')
+        );
+
+        $this->assertSame(['JKT-IR/26-06/0005'], $triggerJobs->pluck('job_number')->values()->all());
+        $this->assertSame('ADS Unit Only', $detailMethod->invoke($service, $checkJob->fresh('jobAdvice.rooms.rentalProduct'))[0]['rental_name']);
     }
 
     public function test_rental_period_invoice_includes_refill_only_csr_when_same_room_has_unit_only_ir(): void

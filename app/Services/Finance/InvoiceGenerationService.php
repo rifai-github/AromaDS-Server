@@ -277,7 +277,7 @@ class InvoiceGenerationService
             return $legacyTriggerTypes === null || in_array($jobType, $legacyTriggerTypes, true);
         }
 
-        return $rentalTypes->contains(fn (string $rentalType) => $this->jobTypeCanInvoiceRentalType($jobType, $rentalType, $contract));
+        return $rentalTypes->contains(fn (string $rentalType) => $this->jobTypeCanInvoiceRentalType($jobType, $rentalType, $contract, $jobSchedule));
     }
 
     private function getRentalTypesForJob(Contract $contract, JobSchedule $jobSchedule): \Illuminate\Support\Collection
@@ -326,13 +326,20 @@ class InvoiceGenerationService
             ->values();
     }
 
-    private function jobTypeCanInvoiceRentalType(string $jobType, string $rentalType, Contract $contract): bool
+    private function jobTypeCanInvoiceRentalType(string $jobType, string $rentalType, Contract $contract, ?JobSchedule $jobSchedule = null): bool
     {
         $installTypes = ['install', 'installation', 'installation_report', 'ir'];
         $serviceTypes = ['service', 'service_first', 'service_routine', 'servis', 'csr', 'customer_service_report', 'customer service report'];
 
         if ($rentalType === 'unit_only') {
-            return in_array($jobType, $installTypes, true);
+            if (in_array($jobType, $installTypes, true)) {
+                return true;
+            }
+
+            return in_array($jobType, $serviceTypes, true)
+                && $jobSchedule
+                && is_numeric($jobSchedule->period)
+                && (int) $jobSchedule->period > 1;
         }
 
         if (in_array($rentalType, ['unit_refill', 'refill_only'], true)) {
@@ -785,7 +792,8 @@ class InvoiceGenerationService
         if (!$this->jobTypeCanInvoiceRentalType(
             $this->normalizeJobType($jobSchedule->type),
             $this->normalizeRentalType($masterRental),
-            $contract
+            $contract,
+            $jobSchedule
         )) {
             Log::debug("Skipping JA room rental detail because job type is not the invoice trigger for this rental type", [
                 'job_no' => $jobSchedule->job_number,
@@ -835,7 +843,8 @@ class InvoiceGenerationService
         if (!$this->jobTypeCanInvoiceRentalType(
             $this->normalizeJobType($jobSchedule->type),
             $this->normalizeRentalType($masterRental),
-            $contract
+            $contract,
+            $jobSchedule
         )) {
             Log::debug("Skipping rental detail because job type is not the invoice trigger for this rental type", [
                 'job_no' => $jobSchedule->job_number,
