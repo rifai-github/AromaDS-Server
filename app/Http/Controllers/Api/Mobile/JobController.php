@@ -3299,6 +3299,7 @@ class JobController extends Controller
         string $completionNote
     ): void {
         $relatedAdviceRoomIds = $this->getRelatedAdviceRoomsForPhysicalRoom($job->jobAdvice, $completedAdviceRoom)
+            ->filter(fn ($room) => !$this->jobAdviceRoomRequiresUnit($room))
             ->pluck('id')
             ->filter()
             ->values();
@@ -3322,6 +3323,50 @@ class JobController extends Controller
             ->each(function ($siblingRoom) use ($userId, $completionNote) {
                 $siblingRoom->markAsCompleted($userId, $completionNote ?: 'Completed with unit package via mobile app');
             });
+    }
+
+    private function missingUnitScanMessagesForJob(JobSchedule $job): array
+    {
+        $job->loadMissing(['jobScheduleRooms.rentals', 'jobAdvice.rooms']);
+
+        $messages = [];
+        foreach ($job->jobScheduleRooms as $scheduleRoom) {
+            if ($scheduleRoom->status === \App\Models\JobScheduleRoom::STATUS_CANCELLED) {
+                continue;
+            }
+
+            foreach ($this->getJobScheduleRoomAdviceRoomIds($scheduleRoom) as $adviceRoomId) {
+                $adviceRoom = ($job->jobAdvice?->rooms ?? collect())
+                    ->firstWhere('id', $adviceRoomId)
+                    ?? \App\Models\JobAdviceRoom::find($adviceRoomId);
+
+                if (!$this->jobAdviceRoomRequiresUnit($adviceRoom)) {
+                    continue;
+                }
+
+                $missing = $this->getMissingUnitSerialNumbersForRoom(
+                    $job,
+                    (int) $adviceRoomId,
+                    $adviceRoom?->room_name ?? $scheduleRoom->room_name
+                );
+
+                if (empty($missing)) {
+                    continue;
+                }
+
+                $roomLabel = $adviceRoom?->room_name ?: $scheduleRoom->room_name ?: "Room {$adviceRoomId}";
+                $rentalLabel = $this->getJobAdviceRoomRentalDisplayName($adviceRoom);
+                $missingLabel = implode(', ', array_map(
+                    fn ($serial, $name) => "{$name} ({$serial})",
+                    array_keys($missing),
+                    $missing
+                ));
+
+                $messages[(int) $adviceRoomId] = trim("{$roomLabel} - {$rentalLabel}: {$missingLabel}");
+            }
+        }
+
+        return array_values($messages);
     }
 
     private function jobScheduleRoomHasPhotoType(?int $jobScheduleRoomId, string $photoType): bool
@@ -3360,6 +3405,16 @@ class JobController extends Controller
                     'message' => 'Job lanjutan untuk room yang belum selesai masih New Job. Admin perlu set Suspend atau DPF sebelum verifikasi pekerjaan.',
                 ];
             }
+        }
+
+        $missingUnitScans = $this->missingUnitScanMessagesForJob($job);
+        if (!empty($missingUnitScans)) {
+            return [
+                'ok' => false,
+                'message' => 'Masih ada rental unit yang belum di-scan/input SN-nya: '
+                    . implode('; ', $missingUnitScans)
+                    . '. Scan/input SN unit tersebut sebelum verifikasi BA.',
+            ];
         }
 
         foreach ($job->jobScheduleRooms as $room) {
@@ -3671,7 +3726,7 @@ class JobController extends Controller
                     $autoCreateUnitOnWallMethod->setAccessible(true);
                     $autoCreateUnitOnWallMethod->invoke($jobScheduleController, $job, $jobAdvice);
 
-                    if (in_array($jobTypeLower, ['install', 'ir'], true)) {
+                    if (in_array($jobTypeLower, ['install', 'ir', 'install_free', 'install free', 'if'], true)) {
                         $generateUnitOnlyChecksMethod = $reflection->getMethod('generateUnitOnlyCheckSchedulesAfterInstall');
                         $generateUnitOnlyChecksMethod->setAccessible(true);
                         $generateUnitOnlyChecksMethod->invoke($jobScheduleController, $job, $jobAdvice);
@@ -4566,7 +4621,7 @@ class JobController extends Controller
                                 $unitCreated = $autoCreateUnitOnWallMethod->invoke($jobScheduleController, $completedSchedule, $jobAdvice);
                                 if ($unitCreated) $anyUnitCreated = true;
 
-                                if (in_array(strtolower(trim((string) $completedSchedule->type)), ['install', 'ir'], true)) {
+                                if (in_array(strtolower(trim((string) $completedSchedule->type)), ['install', 'ir', 'install_free', 'install free', 'if'], true)) {
                                     $generateUnitOnlyChecksMethod->invoke($jobScheduleController, $completedSchedule, $jobAdvice);
                                 }
                             }

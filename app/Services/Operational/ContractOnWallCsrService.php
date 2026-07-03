@@ -49,14 +49,19 @@ class ContractOnWallCsrService
             $createdCount = 0;
 
             foreach ($eligibleRoomGroups as $roomGroup) {
-                $jobAdviceRooms = $this->createJobAdviceRooms($jobAdvice, $roomGroup, $userId);
+                $serviceRoomGroup = $this->serviceEligibleRoomGroup($roomGroup);
+                if ($serviceRoomGroup === null) {
+                    continue;
+                }
+
+                $jobAdviceRooms = $this->createJobAdviceRooms($jobAdvice, $serviceRoomGroup, $userId);
 
                 if ($jobAdviceRooms->isEmpty()) {
                     continue;
                 }
 
-                $jobSchedule = $this->createFirstCsrSchedule($jobAdvice, $roomGroup, $jobAdviceRooms, $serviceDate, $userId);
-                $serviceRoom = $this->createJobScheduleRoom($jobSchedule, $jobAdviceRooms, $roomGroup, $userId);
+                $jobSchedule = $this->createFirstCsrSchedule($jobAdvice, $serviceRoomGroup, $jobAdviceRooms, $serviceDate, $userId);
+                $serviceRoom = $this->createJobScheduleRoom($jobSchedule, $jobAdviceRooms, $serviceRoomGroup, $userId);
 
                 $isPrimary = true;
                 foreach ($jobAdviceRooms as $jobAdviceRoom) {
@@ -135,6 +140,26 @@ class ContractOnWallCsrService
             })
             ->filter()
             ->values();
+    }
+
+    private function serviceEligibleRoomGroup(array $roomGroup): ?array
+    {
+        $serviceRentals = $roomGroup['rentals']
+            ->filter(fn ($contractRental) => $this->contractRentalHasService($contractRental))
+            ->values();
+
+        if ($serviceRentals->isEmpty()) {
+            return null;
+        }
+
+        $roomGroup['rentals'] = $serviceRentals;
+
+        return $roomGroup;
+    }
+
+    private function contractRentalHasService($contractRental): bool
+    {
+        return strtolower((string) ($contractRental->masterRental?->rental_type ?? 'unit_refill')) !== 'unit_only';
     }
 
     private function activeUnitOnWallForContractRoom(Contract $contract, $contractRoom): ?UnitOnWall

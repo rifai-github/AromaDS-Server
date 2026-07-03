@@ -102,6 +102,26 @@ class ContractOnWallCsrServiceTest extends TestCase
         $this->assertDatabaseCount('job_advices', 1);
     }
 
+    public function test_it_excludes_unit_only_rentals_from_first_csr_for_mixed_room(): void
+    {
+        $contract = $this->seedContractWithOnWallRoom(includeUnitOnlyRental: true);
+
+        $createdCount = app(ContractOnWallCsrService::class)->createForContract($contract, 7, 'approved');
+
+        $this->assertSame(1, $createdCount);
+        $this->assertDatabaseCount('job_advice_rooms', 1);
+        $this->assertDatabaseHas('job_advice_rooms', [
+            'contract_rental_id' => 1,
+            'rental_product_id' => 1,
+            'rental_has_service' => true,
+        ]);
+        $this->assertDatabaseMissing('job_advice_rooms', [
+            'contract_rental_id' => 2,
+            'rental_product_id' => 2,
+        ]);
+        $this->assertDatabaseCount('job_schedule_room_rentals', 1);
+    }
+
     private function createSchema(): void
     {
         Schema::create('customers', function (Blueprint $table) {
@@ -321,7 +341,7 @@ class ContractOnWallCsrServiceTest extends TestCase
         });
     }
 
-    private function seedContractWithOnWallRoom(): Contract
+    private function seedContractWithOnWallRoom(bool $includeUnitOnlyRental = false): Contract
     {
         DB::table('customers')->insert([
             'id' => 1,
@@ -389,6 +409,16 @@ class ContractOnWallCsrServiceTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        if ($includeUnitOnlyRental) {
+            DB::table('master_rentals')->insert([
+                'id' => 2,
+                'rental_name' => 'Unit Only',
+                'rental_type' => 'unit_only',
+                'service_frequency_id' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
         DB::table('contract_rentals')->insert([
             'id' => 1,
             'contract_id' => 1,
@@ -401,6 +431,20 @@ class ContractOnWallCsrServiceTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        if ($includeUnitOnlyRental) {
+            DB::table('contract_rentals')->insert([
+                'id' => 2,
+                'contract_id' => 1,
+                'master_rental_id' => 2,
+                'room_id' => 1,
+                'rental_alias' => 'Unit Only',
+                'quantity' => 1,
+                'unit_price' => 50,
+                'total_price' => 50,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
         DB::table('unit_on_walls')->insert([
             'id' => 1,
             'customer_id' => 1,
