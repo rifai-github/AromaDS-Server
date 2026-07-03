@@ -839,9 +839,11 @@
         <!-- Inventory Issuing Header -->
         <div class="flex flex-row justify-between items-center w-full bg-white rounded-t-[10px] p-4">
             <h1 class="text-xl font-semibold text-[#214589]">Inventory Issuing</h1>
+            @if(auth()->user()->hasPermission('warehouse.inventory-issuings.create'))
             <button onclick="openManualIssuingModal()" class="btn btn-primary btn-sm">
                 <i class="fas fa-plus"></i> Add New Manual Issuing
             </button>
+            @endif
         </div>
         
         <!-- Filter Row - Responsive -->

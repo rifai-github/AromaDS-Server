@@ -1104,7 +1104,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('inventory-issuings/items/{item}/change-aroma', [InventoryIssuingController::class, 'changeAroma'])->name('inventory-issuings.change-aroma')->middleware('permission:warehouse.inventory-issuings.change-aroma-direct');
 
         // Manual Inventory Issuing API Routes
-        Route::post('inventory-issuings/store-manual', [InventoryIssuingController::class, 'storeManual'])->name('inventory-issuings.store-manual');
+        Route::post('inventory-issuings/store-manual', [InventoryIssuingController::class, 'storeManual'])->name('inventory-issuings.store-manual')->middleware('permission:warehouse.inventory-issuings.create');
         Route::get('inventory-issuings/rentals/{rentalId}/products', [InventoryIssuingController::class, 'getRentalProducts'])->name('inventory-issuings.rental-products');
         Route::get('inventory-issuings/products/{productId}/serials', [InventoryIssuingController::class, 'getAvailableSerials'])->name('inventory-issuings.available-serials');
         Route::get('inventory-issuings/users/{userId}/teams', [InventoryIssuingController::class, 'getUserTeams'])->name('inventory-issuings.user-teams');
