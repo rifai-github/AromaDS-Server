@@ -54,7 +54,7 @@ class MasterProduct extends Model
     protected $casts = [
         'unit_price' => 'decimal:2',
         'last_unit_price' => 'decimal:2',
-        'bom_quantity' => 'decimal:2',
+        'bom_quantity' => 'integer',
         'net_weight' => 'decimal:3',
         'gross_weight' => 'decimal:3',
         'lifetime' => 'integer',

@@ -1457,7 +1457,7 @@ function openCreateModal() {
                     </div>
                     <div class="form-group">
                         <label class="form-label">BOM Qty *</label>
-                        <input type="number" name="bom_quantity" class="form-input" min="0" step="0.01" placeholder="Enter BOM Quantity" required>
+                        <input type="number" name="bom_quantity" class="form-input" min="0" step="1" placeholder="Enter BOM Quantity" required>
                     </div>
                 </div>
             </div>
@@ -2139,7 +2139,7 @@ function openEditModal(id) {
                             </div>
                             <div class="form-group">
                                 <label class="form-label">BOM Qty *</label>
-                                <input type="number" name="bom_quantity" class="form-input" value="${data.bom_quantity || ''}" min="0" step="0.01" placeholder="Enter BOM Quantity" required>
+                                <input type="number" name="bom_quantity" class="form-input" value="${data.bom_quantity || ''}" min="0" step="1" placeholder="Enter BOM Quantity" required>
                             </div>
                         </div>
                     </div>
@@ -2612,7 +2612,7 @@ function openDuplicateModal(id) {
 
                         <div class="form-group">
                             <label class="form-label">BOM Qty</label>
-                            <input type="number" name="bom_quantity" class="form-input" value="${data.bom_quantity || ''}" min="0" step="0.01" placeholder="Enter BOM Quantity">
+                            <input type="number" name="bom_quantity" class="form-input" value="${data.bom_quantity || ''}" min="0" step="1" placeholder="Enter BOM Quantity">
                         </div>
                     </div>
                 </div>
