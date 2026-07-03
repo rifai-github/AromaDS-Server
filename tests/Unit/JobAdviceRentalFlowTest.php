@@ -52,6 +52,20 @@ class JobAdviceRentalFlowTest extends TestCase
         $this->assertTrue($result['needs_check']);
     }
 
+    public function test_only_unit_only_rooms_are_treated_as_check_flow(): void
+    {
+        $controller = new JobAdviceController();
+        $method = (new ReflectionClass($controller))->getMethod('roomsRepresentUnitOnlyCheckFlow');
+        $method->setAccessible(true);
+
+        $unitOnlyRoom = $this->makeRoomWithRentalType('unit_only');
+        $refillOnlyRoom = $this->makeRoomWithRentalType('refill_only');
+
+        $this->assertTrue($method->invoke($controller, collect([$unitOnlyRoom])));
+        $this->assertFalse($method->invoke($controller, collect([$unitOnlyRoom, $refillOnlyRoom])));
+        $this->assertFalse($method->invoke($controller, collect([$refillOnlyRoom])));
+    }
+
     public function test_remove_flow_is_limited_to_active_on_wall_units_with_serial_numbers(): void
     {
         $controller = file_get_contents(app_path('Http/Controllers/Marketing/JobAdviceController.php'));

@@ -659,7 +659,9 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
         $method->invoke(new JobScheduleController(), JobSchedule::findOrFail(42), 4);
 
         $this->assertStringStartsWith('JKT-IR/26-07/', JobSchedule::findOrFail(42)->job_number);
+        $this->assertSame('Job Check', JobSchedule::findOrFail(42)->display_type);
         $this->assertSame('JKT-CSR/26-07/0002', JobSchedule::findOrFail(51)->job_number);
+        $this->assertSame('Service Routine', JobSchedule::findOrFail(51)->display_type);
     }
 
     private function seedUnitOnlyInstallWithExistingFirstCheck(): void

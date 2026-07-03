@@ -105,16 +105,17 @@ Official, client-approved status labels and document codes. Load-bearing busines
 | | Subsequent service periods | `Service` | CSR |
 | | Remove | `Remove` | RV |
 | **Unit Only** | First install | `Install (IR)` | IR |
-| | Subsequent service periods | `Service` / `Service Pertama (CSR)` / `Service Routine` | IR |
+| | Subsequent check periods | `Job Check` | IR |
 | | Remove | `Remove` | RV |
 | **Refill Only** | First service | `Service Pertama (CSR)` | CSR |
 | | Subsequent service periods | `Service` | CSR |
 
 Implementation facts to preserve:
 
-- **`Job Check` was REMOVED (MoM 17 Jun 2026: "Job Check tidak digunakan").** Unit-only periodic services display their plain service label (`Service` / `Service Pertama (CSR)` / `Service Routine`) in `JobSchedule::getDisplayTypeAttribute()`. No `check` type and no derived `Job Check` label.
-- **Material-flow bypass is separate and preserved.** Unit-only periodic services and remove jobs still skip material assign, now via `JobSchedule::skips_material_assignment` accessor + server-side `JobScheduleController::jobScheduleSkipsMaterialAssignment()`. The list UI reads `data-skips-material` (not the old `isCheckJobType()` label substring). Do not re-couple material bypass to a display label.
-- `service` = ad-hoc/manual service; `service_routine` = auto-generated from a contract's periodic schedule (`ServiceSchedulingService` / `PeriodicJob`). Both render the `customer_service_report` (CSR) document.
+- **`Job Check` is the client-confirmed label for Unit Only follow-up/check jobs.** The database still stores these jobs as valid service enum values (`service_first` / `service_routine`) because production has no separate `check` enum, but `JobSchedule::getDisplayTypeAttribute()` derives `Job Check` when the linked rental flow is Unit Only only.
+- **Why `Job Check` was reintroduced:** latest client feedback on the Jayadi CT mixed-rental case (`JKT-CA/26-06/0001`) confirmed that one room can contain both Unit + Refill and Unit Only rentals. Unit + Refill must continue through the CSR service chain after first service, while Unit Only must continue as `Job Check` with IR document numbering after install. Do not collapse Unit Only into the CSR chain.
+- **Material-flow bypass is separate and preserved.** Unit-only check jobs and remove jobs still skip material assign via `JobSchedule::skips_material_assignment` accessor + server-side `JobScheduleController::jobScheduleSkipsMaterialAssignment()`. The list UI reads `data-skips-material`; do not rely only on a display-label substring for workflow gates.
+- `service` = ad-hoc/manual service; `service_routine` = auto-generated from a contract's periodic schedule (`ServiceSchedulingService` / `PeriodicJob`). Refill-bearing services render the `customer_service_report` (CSR) document; Unit Only check schedules render the `installation_report` (IR) document.
 - Unit-only periodic jobs keep the **IR** document-number prefix even though their stored `type` is `service_routine` — prefix and type intentionally differ; do not "fix" the prefix.
 - Locked by `tests/Unit/JobScheduleDisplayTypeTest.php` and `tests/Feature/JobScheduleCheckMaterialBypassTest.php`. If you touch the logic, update those tests and confirm they pass.
 

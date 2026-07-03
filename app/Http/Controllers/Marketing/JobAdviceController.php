@@ -1964,6 +1964,21 @@ class JobAdviceController extends Controller
         ];
     }
 
+    private function jobAdviceRoomRepresentsUnitOnlyCheck($jaRoom): bool
+    {
+        $flow = $this->determineRentalJobFlow($jaRoom);
+
+        return $flow['needs_check'] === true && $flow['needs_service'] === false;
+    }
+
+    private function roomsRepresentUnitOnlyCheckFlow($rooms): bool
+    {
+        $rooms = collect($rooms);
+
+        return $rooms->isNotEmpty()
+            && $rooms->every(fn ($room) => $this->jobAdviceRoomRepresentsUnitOnlyCheck($room));
+    }
+
     private function detectRentalMaterialComposition($rental): array
     {
         $hasUnit = false;
@@ -2996,6 +3011,9 @@ class JobAdviceController extends Controller
             // job_schedules.type on production does not include a separate "check" enum.
             $type = ($period !== null && (int) $period === 1) ? 'service_first' : 'service_routine';
         }
+        $isUnitOnlyCheckFlow = $requestedType === 'check'
+            || (in_array($type, ['service', 'service_first', 'service_routine'], true)
+                && $this->jobAdviceRoomRepresentsUnitOnlyCheck($jaRoom));
         
         // MOM10 UPDATE: Use DocumentNumberService with proper type codes (IR/IF/CSR/RV/RF/RR)
         // IR = Installation Report (install from contract)
@@ -3016,7 +3034,7 @@ class JobAdviceController extends Controller
             // Differentiate between IR (install from contract) and IF (install free from quotation)
             $documentType = $isInstallFree ? 'installation_free' : 'installation_report'; // IF or IR
         } elseif (in_array($type, ['service', 'service_first', 'service_routine'], true)) {
-            $documentType = 'customer_service_report'; // CSR
+            $documentType = $isUnitOnlyCheckFlow ? 'installation_report' : 'customer_service_report'; // IR for Unit Only checks, CSR for refill service
         } elseif (in_array($type, ['remove_free', 'remove free'])) {
             $documentType = 'remove_free'; // RF
         } elseif ($type === 'remove') {
@@ -3175,8 +3193,8 @@ class JobAdviceController extends Controller
             'service_frequency' => $serviceFrequency, // MOM8: Diambil dari MasterRental, bukan contract
             'service_period_type' => $servicePeriodType, // MOM8: Diambil dari MasterRental, default 'monthly' if not available
             'internal_notes' => "Auto-generated from JA: {$jobAdvice->job_advice_number} | Room: {$jaRoom->room_name} | Rental: {$jaRoom->rental_name}",
-            'material_checked' => $requestedType === 'check',
-            'material_checked_at' => $requestedType === 'check' ? now() : null,
+            'material_checked' => $isUnitOnlyCheckFlow,
+            'material_checked_at' => $isUnitOnlyCheckFlow ? now() : null,
             'created_by' => Auth::id(),
             'updated_by' => Auth::id()
         ]);
@@ -3217,6 +3235,10 @@ class JobAdviceController extends Controller
             $type = ($period !== null && (int) $period === 1) ? 'service_first' : 'service_routine';
             $forceMaterialChecked = true;
         }
+        $isUnitOnlyCheckFlow = $isLegacyCheckType
+            || (in_array($type, ['service', 'service_first', 'service_routine'], true)
+                && $this->roomsRepresentUnitOnlyCheckFlow($rooms));
+        $forceMaterialChecked = $forceMaterialChecked || $isUnitOnlyCheckFlow;
         $isRemoveType = in_array(strtolower(trim($type)), ['remove', 'remove_free', 'remove free'], true);
 
         if ($isRemoveType) {
@@ -3247,7 +3269,9 @@ class JobAdviceController extends Controller
             'maintenance' => 'job_schedule',              // JS-xxx
         ];
         
-        $documentType = $documentTypeMap[$type] ?? 'job_schedule';
+        $documentType = $isUnitOnlyCheckFlow
+            ? 'installation_report'
+            : ($documentTypeMap[$type] ?? 'job_schedule');
         
         // Generate job number ONCE - all rooms will share this number
         // UPDATE MOM: Job Number generated ONLY upon assignment (set to NULL initially)
