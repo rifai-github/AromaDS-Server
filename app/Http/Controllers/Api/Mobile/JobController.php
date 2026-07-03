@@ -1934,8 +1934,14 @@ class JobController extends Controller
                     : $this->resolveJobScheduleRoomForAdviceRoom($specificJobScheduleId, $adviceRoom, $masterRoom?->id);
             })->filter()->values();
 
-            $jobScheduleRoom = $jobScheduleRooms
-                ->first(fn ($scheduleRoom) => $scheduleRoom->status !== \App\Models\JobScheduleRoom::STATUS_COMPLETED)
+            $unitBearingScheduleRoom = $jobScheduleRooms->first(function ($scheduleRoom) use ($roomGroup) {
+                $adviceRoom = $roomGroup
+                    ->first(fn ($candidate) => (int) $candidate->id === (int) ($scheduleRoom->job_advice_room_id ?? 0));
+
+                return $this->jobAdviceRoomRequiresUnit($adviceRoom);
+            });
+            $jobScheduleRoom = $unitBearingScheduleRoom
+                ?? $jobScheduleRooms->first(fn ($scheduleRoom) => $scheduleRoom->status !== \App\Models\JobScheduleRoom::STATUS_COMPLETED)
                 ?? $jobScheduleRooms->first();
             $displayRoom = $roomGroup
                 ->first(fn ($adviceRoom) => (int) $adviceRoom->id === (int) ($jobScheduleRoom?->job_advice_room_id ?? 0))
@@ -2328,6 +2334,19 @@ class JobController extends Controller
                 ], 422);
             }
 
+            $jobSchedule->loadMissing([
+                'jobAdvice.rooms.contractRoom.room',
+                'jobAdvice.rooms.quotationRoom.room',
+                'jobAdvice.rooms.rentalProduct',
+            ]);
+
+            $canonicalRoomId = $this->canonicalUnitAdviceRoomIdForCompletion($jobSchedule, (int) $roomId);
+            if ($canonicalRoomId !== (int) $roomId) {
+                $roomId = $canonicalRoomId;
+                $room = \App\Models\JobAdviceRoom::find($roomId);
+                $jobAdvice = $room?->jobAdvice ?? $jobAdvice;
+            }
+
             if ($jobSchedule->status === 'undone') {
                 return response()->json([
                     'status' => 'error',
@@ -2496,8 +2515,15 @@ class JobController extends Controller
                 
                 $jobScheduleRoom->markAsCompleted(Auth::id(), $completionNote);
 
-                // One physical room can contain multiple rental rows. Completing one
-                // scanned rental must not close the other rentals in the same room.
+                if ($this->jobAdviceRoomRequiresUnit($room)) {
+                    $this->closePhysicalRoomSiblingsForCompletedUnitRoom(
+                        $jobSchedule,
+                        $room,
+                        $jobScheduleRoom,
+                        Auth::id(),
+                        $completionNote
+                    );
+                }
             } else {
                 \Log::warning("JobScheduleRoom not found for room {$roomId} and job schedule " . ($jobSchedule ? $jobSchedule->id : 'null'));
             }
@@ -3186,6 +3212,118 @@ class JobController extends Controller
         return $requiredByCategoryId;
     }
 
+    private function jobAdviceRoomRequiresUnit(?\App\Models\JobAdviceRoom $room): bool
+    {
+        if (!$room) {
+            return false;
+        }
+
+        if (!empty($this->unitQuantitiesRequiredForRentalRoom($room))) {
+            return true;
+        }
+
+        if (!$room->rental_product_id) {
+            return false;
+        }
+
+        return \App\Models\MasterRental::whereKey($room->rental_product_id)
+            ->where('rental_type', '!=', 'refill_only')
+            ->exists();
+    }
+
+    private function scannedIdentifierIsUnit(?string $identifier): bool
+    {
+        $identifier = trim((string) $identifier);
+        if ($identifier === '' || $identifier === '-') {
+            return false;
+        }
+
+        $serialNumber = \App\Models\SerialNumber::with(['masterProduct.productType', 'masterProduct.productCategory'])
+            ->whereRaw('UPPER(TRIM(serial_number)) = ?', [strtoupper($identifier)])
+            ->first();
+
+        $product = $serialNumber?->masterProduct;
+
+        return (bool) ($product?->productType?->is_unit ?? $product?->productCategory?->is_unit ?? false);
+    }
+
+    private function canonicalUnitAdviceRoomId(JobSchedule $job, int $requestedAdviceRoomId): int
+    {
+        $requestedRoom = \App\Models\JobAdviceRoom::find($requestedAdviceRoomId);
+        if (!$requestedRoom || $this->jobAdviceRoomRequiresUnit($requestedRoom)) {
+            return $requestedAdviceRoomId;
+        }
+
+        $relatedRooms = $this->getRelatedAdviceRoomsForPhysicalRoom($job->jobAdvice, $requestedRoom);
+        $unitRoom = $relatedRooms->first(fn ($room) => $this->jobAdviceRoomRequiresUnit($room));
+
+        return $unitRoom ? (int) $unitRoom->id : $requestedAdviceRoomId;
+    }
+
+    private function canonicalUnitAdviceRoomIdForScan(JobSchedule $job, int $requestedAdviceRoomId, ?string $identifier): int
+    {
+        if (!$this->scannedIdentifierIsUnit($identifier)) {
+            return $requestedAdviceRoomId;
+        }
+
+        return $this->canonicalUnitAdviceRoomId($job, $requestedAdviceRoomId);
+    }
+
+    private function canonicalUnitAdviceRoomIdForCompletion(JobSchedule $job, int $requestedAdviceRoomId): int
+    {
+        $requestedRoom = \App\Models\JobAdviceRoom::find($requestedAdviceRoomId);
+        if (!$requestedRoom || $this->jobAdviceRoomRequiresUnit($requestedRoom)) {
+            return $requestedAdviceRoomId;
+        }
+
+        $relatedRooms = $this->getRelatedAdviceRoomsForPhysicalRoom($job->jobAdvice, $requestedRoom);
+        $unitRoom = $relatedRooms->first(fn ($room) => $this->jobAdviceRoomRequiresUnit($room));
+        if (!$unitRoom) {
+            return $requestedAdviceRoomId;
+        }
+
+        $hasUnitScan = \DB::table('job_schedule_units')
+            ->where('job_schedule_id', $job->id)
+            ->where('job_advice_room_id', $unitRoom->id)
+            ->pluck('mac')
+            ->contains(fn ($mac) => $this->scannedIdentifierIsUnit((string) $mac));
+
+        return $hasUnitScan ? (int) $unitRoom->id : $requestedAdviceRoomId;
+    }
+
+    private function closePhysicalRoomSiblingsForCompletedUnitRoom(
+        JobSchedule $job,
+        \App\Models\JobAdviceRoom $completedAdviceRoom,
+        \App\Models\JobScheduleRoom $completedScheduleRoom,
+        ?int $userId,
+        string $completionNote
+    ): void {
+        $relatedAdviceRoomIds = $this->getRelatedAdviceRoomsForPhysicalRoom($job->jobAdvice, $completedAdviceRoom)
+            ->pluck('id')
+            ->filter()
+            ->values();
+
+        if ($relatedAdviceRoomIds->isEmpty()) {
+            return;
+        }
+
+        \App\Models\JobAdviceRoom::whereIn('id', $relatedAdviceRoomIds)
+            ->where('status', '!=', 'completed')
+            ->update([
+                'status' => 'completed',
+                'updated_at' => now(),
+            ]);
+
+        \App\Models\JobScheduleRoom::where('job_schedule_id', $job->id)
+            ->whereIn('job_advice_room_id', $relatedAdviceRoomIds)
+            ->where('id', '!=', $completedScheduleRoom->id)
+            ->where('status', '!=', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
+            ->get()
+            ->each(function ($siblingRoom) use ($userId, $completionNote) {
+                $siblingRoom->markAsCompleted($userId, $completionNote ?: 'Completed with unit package via mobile app');
+            });
+    }
+
     private function jobScheduleRoomHasPhotoType(?int $jobScheduleRoomId, string $photoType): bool
     {
         if (!$jobScheduleRoomId) {
@@ -3839,12 +3977,24 @@ class JobController extends Controller
                 $deviceSnapshot = [];
             }
 
+            $jobSchedule->loadMissing([
+                'jobAdvice.rooms.contractRoom.room',
+                'jobAdvice.rooms.quotationRoom.room',
+                'jobAdvice.rooms.rentalProduct',
+            ]);
+
+            $targetRoomId = $this->canonicalUnitAdviceRoomIdForScan(
+                $jobSchedule,
+                (int) $request->room_id,
+                (string) $request->mac
+            );
+
             $existingScanForSn = \DB::table('job_schedule_units')
                 ->where('job_schedule_id', $request->job_schedule_id)
                 ->whereRaw('UPPER(TRIM(mac)) = ?', [strtoupper(trim((string) $request->mac))])
                 ->first();
 
-            if ($existingScanForSn && (int) ($existingScanForSn->job_advice_room_id ?? 0) !== (int) $request->room_id) {
+            if ($existingScanForSn && (int) ($existingScanForSn->job_advice_room_id ?? 0) !== $targetRoomId) {
                 \DB::rollBack();
 
                 return response()->json([
@@ -3868,7 +4018,7 @@ class JobController extends Controller
             // Since unit_id is nullable, we use mac as the identifier
             $jobUnitData = [
                 'job_schedule_id' => $request->job_schedule_id,
-                'job_advice_room_id' => $request->room_id, // Save room ID for better tracking
+                'job_advice_room_id' => $targetRoomId, // Save room ID for better tracking
                 'unit_id' => null, // unit_id is nullable now
                 'unit_on_wall_id' => $request->unit_on_wall_id ?? null, // For remove job
                 'mac' => $request->mac,
