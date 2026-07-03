@@ -852,7 +852,7 @@ class JobController extends Controller
             'status' => $job->status,
             'status_label' => $this->getJobStatusLabel($job->status),
             'type' => $job->type,
-            'job_type' => $this->getJobTypeLabel($job->type),
+            'job_type' => $job->display_type ?? $this->getJobTypeLabel($job->type),
             'contract_number' => $job->jobAdvice->contract->contract_number ?? null,
             'is_new' => $jobAssign && $jobAssign->created_at->isToday(),
             'is_favorite' => $this->isFavorite($job->id, $user->id),
