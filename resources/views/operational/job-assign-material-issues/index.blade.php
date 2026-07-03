@@ -2915,10 +2915,39 @@ function updateSubmitIssueButton() {
     }
 }
 
+function getSelectedSubmitIssueRows() {
+    return Array.from(document.querySelectorAll('.row-checkbox:checked'))
+        .map(cb => cb.closest('tr'))
+        .filter(Boolean);
+}
+
+function getSelectedMaterialIssueIds(rows) {
+    const ids = rows
+        .map(row => row.querySelector('.row-checkbox')?.value)
+        .filter(Boolean);
+
+    return [...new Set(ids)];
+}
+
+function getSelectedSubmitUnitTotal(rows) {
+    return rows.reduce((total, row) => {
+        const qtyInput = row.querySelector('.qty-issue-input');
+        const quantity = parseFloat(qtyInput?.value || 0);
+
+        return total + (Number.isFinite(quantity) ? quantity : 0);
+    }, 0);
+}
+
+function formatSubmitUnitTotal(total) {
+    return new Intl.NumberFormat('id-ID', {
+        maximumFractionDigits: 2
+    }).format(total);
+}
+
 // Submit issue function
 function submitIssue(forceContinue = false) {
-    const checkboxes = document.querySelectorAll('.row-checkbox:checked');
-    if (checkboxes.length === 0) {
+    const selectedRows = getSelectedSubmitIssueRows();
+    if (selectedRows.length === 0) {
         Swal.fire({
             icon: 'warning',
             title: 'Perhatian!',
@@ -2928,13 +2957,14 @@ function submitIssue(forceContinue = false) {
         return;
     }
     
-    const materialIssueIds = Array.from(checkboxes).map(cb => cb.value);
+    const materialIssueIds = getSelectedMaterialIssueIds(selectedRows);
+    const totalSubmitUnits = getSelectedSubmitUnitTotal(selectedRows);
     
     if (!forceContinue) {
         Swal.fire({
             icon: 'question',
             title: 'Submit Material Issue',
-            html: `Apakah Anda yakin ingin submit <strong>${materialIssueIds.length}</strong> material issue?<br><br><small>Material akan di-issue dan stok warehouse akan diperbarui.</small>`,
+            html: `Apakah Anda yakin ingin submit total <strong>${formatSubmitUnitTotal(totalSubmitUnits)}</strong> unit dari <strong>${materialIssueIds.length}</strong> material issue?<br><br><small>Material akan di-issue dan stok warehouse akan diperbarui.</small>`,
             showCancelButton: true,
             confirmButtonText: 'Ya, Submit!',
             cancelButtonText: 'Batal',
