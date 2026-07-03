@@ -1145,7 +1145,7 @@ function populateAromaOptions(products, currentBrandLine = '', currentAromaName 
         .forEach(groupLabel => {
             const grade = brandLineGrade(groupLabel);
             const gradeNote = currentAromaGrade && grade
-                ? (grade > currentAromaGrade ? ' ↑ perlu approval' : (grade < currentAromaGrade ? ' ↓ turun grade' : ''))
+                ? (grade > currentAromaGrade ? ' ↑ Perlu Approval' : (grade < currentAromaGrade ? ' ↓ Turun Grade' : ''))
                 : '';
             const optgroup = $('<optgroup>', { label: groupLabel + gradeNote });
 

@@ -354,7 +354,7 @@ class AromaChangeController extends Controller
             $this->ensureDifferentAromaProduct($previousMasterProduct, $masterProduct);
 
             // Grade-based approval (client rule): grade turun atau sama = auto-approved,
-            // grade naik (Luxo -> Artisan/Signature, Artisan -> Signature) = perlu approval atasan.
+            // grade naik (Signature -> Artisan/Luxo, Artisan -> Luxo) = perlu approval atasan.
             [$initialStatus, $isAutoApproved, $approvalNotes] = $this->resolveGradeApprovalDecision($previousMasterProduct, $masterProduct);
 
             // Create aroma change record
