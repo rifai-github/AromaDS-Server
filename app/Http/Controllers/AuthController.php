@@ -312,6 +312,9 @@ class AuthController extends Controller
             $photoPath = $user->photo_file_path;
         }
 
+        $user->loadMissing('branch');
+        $branchName = trim((string) ($user->branch_name ?: $user->branch?->name));
+
         return response()->json([
             'status' => 'success',
             'message' => 'Login berhasil',
@@ -324,7 +327,7 @@ class AuthController extends Controller
                 'phone' => $user->phone ?? '',
                 'role' => $role,
                 'team' => $user->department_name ?? 'Teknisi',
-                'area' => 'Area Jakarta',
+                'area' => $branchName !== '' ? 'Area '.$branchName : '-',
                 'photo_path' => $photoPath,
             ]
         ]);
