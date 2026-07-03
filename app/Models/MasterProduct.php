@@ -80,12 +80,10 @@ class MasterProduct extends Model
         }
 
         $oldCategoryId = $this->getOriginal('product_category_id');
+        $oldProductTypeId = $this->getOriginal('product_type_id');
 
-        if ($this->wasChanged('product_category_id') && $oldCategoryId) {
-            $oldDetailIds = RentalDetail::query()
-                ->where('auto_expand', true)
-                ->where('product_category_id', $oldCategoryId)
-                ->pluck('id');
+        if (($this->wasChanged('product_category_id') || $this->wasChanged('product_type_id')) && $oldCategoryId) {
+            $oldDetailIds = $this->rentalDetailIdsForMaterialScope($oldCategoryId, $oldProductTypeId);
 
             if ($oldDetailIds->isNotEmpty()) {
                 DB::table('rental_detail_materials')
@@ -96,10 +94,7 @@ class MasterProduct extends Model
         }
 
         if (! $this->is_active || ! $this->product_category_id) {
-            $currentDetailIds = RentalDetail::query()
-                ->where('auto_expand', true)
-                ->where('product_category_id', $this->product_category_id)
-                ->pluck('id');
+            $currentDetailIds = $this->rentalDetailIdsForMaterialScope($this->product_category_id, $this->product_type_id);
 
             if ($currentDetailIds->isNotEmpty()) {
                 DB::table('rental_detail_materials')
@@ -111,10 +106,7 @@ class MasterProduct extends Model
             return;
         }
 
-        $detailIds = RentalDetail::query()
-            ->where('auto_expand', true)
-            ->where('product_category_id', $this->product_category_id)
-            ->pluck('id');
+        $detailIds = $this->rentalDetailIdsForMaterialScope($this->product_category_id, $this->product_type_id);
 
         if ($detailIds->isEmpty()) {
             return;
@@ -152,6 +144,24 @@ class MasterProduct extends Model
                 'updated_at' => $now,
             ]);
         }
+    }
+
+    private function rentalDetailIdsForMaterialScope($productCategoryId, $productTypeId)
+    {
+        $query = RentalDetail::query()
+            ->where('product_category_id', $productCategoryId);
+
+        if (Schema::hasColumn('rental_details', 'product_type_id')) {
+            $query->where(function ($detailQuery) use ($productTypeId) {
+                $detailQuery->whereNull('product_type_id');
+
+                if ($productTypeId) {
+                    $detailQuery->orWhere('product_type_id', $productTypeId);
+                }
+            });
+        }
+
+        return $query->pluck('id');
     }
 
     // Relationships

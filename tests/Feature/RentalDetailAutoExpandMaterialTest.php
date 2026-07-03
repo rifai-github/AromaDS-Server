@@ -17,6 +17,7 @@ class RentalDetailAutoExpandMaterialTest extends TestCase
         Schema::create('rental_details', function (Blueprint $table) {
             $table->id();
             $table->foreignId('product_category_id')->nullable();
+            $table->foreignId('product_type_id')->nullable();
             $table->boolean('auto_expand')->default(false);
             $table->timestamps();
             $table->softDeletes();
@@ -25,6 +26,7 @@ class RentalDetailAutoExpandMaterialTest extends TestCase
         Schema::create('master_products', function (Blueprint $table) {
             $table->id();
             $table->foreignId('product_category_id')->nullable();
+            $table->foreignId('product_type_id')->nullable();
             $table->string('name')->nullable();
             $table->boolean('is_active')->default(true);
             $table->foreignId('created_by')->nullable();
@@ -74,9 +76,9 @@ class RentalDetailAutoExpandMaterialTest extends TestCase
         ]);
     }
 
-    public function test_new_product_is_not_attached_to_manual_rental_detail(): void
+    public function test_new_active_product_is_attached_to_manual_rental_detail_in_same_category(): void
     {
-        DB::table('rental_details')->insert([
+        $rentalDetailId = DB::table('rental_details')->insertGetId([
             'product_category_id' => 151,
             'auto_expand' => false,
             'created_at' => now(),
@@ -89,7 +91,46 @@ class RentalDetailAutoExpandMaterialTest extends TestCase
             'is_active' => true,
         ]);
 
+        $this->assertDatabaseHas('rental_detail_materials', [
+            'rental_detail_id' => $rentalDetailId,
+            'master_product_id' => $product->id,
+            'is_selected' => true,
+        ]);
+    }
+
+    public function test_new_active_product_is_not_attached_to_rental_detail_with_different_type(): void
+    {
+        $matchingDetailId = DB::table('rental_details')->insertGetId([
+            'product_category_id' => 151,
+            'product_type_id' => 7,
+            'auto_expand' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $differentTypeDetailId = DB::table('rental_details')->insertGetId([
+            'product_category_id' => 151,
+            'product_type_id' => 8,
+            'auto_expand' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $product = MasterProduct::create([
+            'name' => 'Fragrance Type Scoped',
+            'product_category_id' => 151,
+            'product_type_id' => 7,
+            'is_active' => true,
+        ]);
+
+        $this->assertDatabaseHas('rental_detail_materials', [
+            'rental_detail_id' => $matchingDetailId,
+            'master_product_id' => $product->id,
+            'is_selected' => true,
+        ]);
+
         $this->assertDatabaseMissing('rental_detail_materials', [
+            'rental_detail_id' => $differentTypeDetailId,
             'master_product_id' => $product->id,
         ]);
     }
