@@ -329,6 +329,9 @@
                                 <span class="badge badge-success fs-6 me-2">
                                     Active
                                 </span>
+                                <button class="btn btn-primary btn-sm me-2" onclick="openActiveContractEditModal()">
+                                    <i class="fas fa-edit"></i> Edit
+                                </button>
                                 <button class="btn btn-warning btn-sm" onclick="unpostContract({{ $contract->id }})">
                                     <i class="fas fa-undo"></i> UNPOST
                                 </button>
@@ -1824,6 +1827,72 @@
 // Contract and building data
 const contractId = {{ $contract->id }};
 const customerId = {{ $contract->customer_id ?? 0 }};
+
+function openActiveContractEditModal() {
+    const modalOverlay = document.getElementById('activeContractEditModal');
+    modalOverlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeActiveContractEditModal() {
+    const modalOverlay = document.getElementById('activeContractEditModal');
+    modalOverlay.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+function saveActiveContractEdit() {
+    const form = document.getElementById('activeContractEditForm');
+    const saveBtn = document.getElementById('saveActiveContractEditBtn');
+    const formData = new FormData(form);
+    const payload = {};
+
+    formData.forEach((value, key) => {
+        payload[key] = value;
+    });
+
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Saving...';
+
+    fetch(`/marketing/contracts/${contractId}/editable-fields`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.json().then(data => ({ ok: response.ok, data })))
+    .then(({ ok, data }) => {
+        if (!ok || data.status !== 'success') {
+            throw new Error(data.message || 'Gagal menyimpan perubahan kontrak.');
+        }
+
+        closeActiveContractEditModal();
+
+        if (typeof showSuccessDialog === 'function') {
+            showSuccessDialog('Berhasil', 'Contract berhasil diperbarui.');
+            setTimeout(() => location.reload(), 800);
+            return;
+        }
+
+        location.reload();
+    })
+    .catch(error => {
+        console.error('Error updating contract:', error);
+        if (typeof showErrorDialog === 'function') {
+            showErrorDialog('Gagal', error.message || 'Gagal menyimpan perubahan kontrak.');
+            return;
+        }
+
+        alert(error.message || 'Gagal menyimpan perubahan kontrak.');
+    })
+    .finally(() => {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
+    });
+}
+
 @php
     try {
         $buildings = ($contract->contractRooms ?? collect())
@@ -3001,6 +3070,98 @@ body.modal-open {
     pointer-events: auto !important;
 }
 </style>
+
+<!-- Active Contract Limited Edit Modal -->
+<div id="activeContractEditModal" class="modal-overlay" onclick="closeActiveContractEditModal()">
+    <div class="modal-container" onclick="event.stopPropagation()" style="max-width: 760px;">
+        <div class="modal-header">
+            <h2 class="modal-title">Edit Contract</h2>
+            <button class="modal-close" onclick="closeActiveContractEditModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info mb-3">
+                Hanya field terbatas yang dapat diedit saat kontrak sudah aktif.
+            </div>
+            <form id="activeContractEditForm">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold" for="active_contract_date">Contract Date</label>
+                        <input type="date"
+                               id="active_contract_date"
+                               name="contract_date"
+                               class="form-control"
+                               value="{{ $contract->contract_date ? $contract->contract_date->format('Y-m-d') : '' }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold" for="active_signatory_name">Signatory Name</label>
+                        <input type="text"
+                               id="active_signatory_name"
+                               name="signatory_name"
+                               class="form-control"
+                               value="{{ $contract->signatory_name }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold" for="active_signatory_position">Signatory Position</label>
+                        <input type="text"
+                               id="active_signatory_position"
+                               name="signatory_position"
+                               class="form-control"
+                               value="{{ $contract->signatory_position }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold" for="active_signatory_npwp">Signatory NPWP</label>
+                        <input type="text"
+                               id="active_signatory_npwp"
+                               name="signatory_npwp"
+                               class="form-control"
+                               value="{{ $contract->signatory_npwp }}">
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-bold" for="active_signatory_address">Signatory Address</label>
+                        <textarea id="active_signatory_address"
+                                  name="signatory_address"
+                                  rows="3"
+                                  class="form-control">{{ $contract->signatory_address }}</textarea>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold" for="active_marketing_name">Marketing Name</label>
+                        <input type="text"
+                               id="active_marketing_name"
+                               name="marketing_name"
+                               class="form-control"
+                               value="{{ $contract->marketing_name }}">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold" for="active_marketing_phone">Marketing Phone</label>
+                        <input type="text"
+                               id="active_marketing_phone"
+                               name="marketing_phone"
+                               class="form-control"
+                               value="{{ $contract->marketing_phone }}">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold" for="active_marketing_email">Marketing Email</label>
+                        <input type="email"
+                               id="active_marketing_email"
+                               name="marketing_email"
+                               class="form-control"
+                               value="{{ $contract->marketing_email }}">
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeActiveContractEditModal()">
+                <i class="fas fa-times me-1"></i>Cancel
+            </button>
+            <button type="button" id="saveActiveContractEditBtn" class="btn btn-primary" onclick="saveActiveContractEdit()">
+                <i class="fas fa-save me-1"></i>Save
+            </button>
+        </div>
+    </div>
+</div>
 
 <!-- MOM6: File Upload Modal -->
 <div id="uploadFileModal" class="modal-overlay" style="z-index: 10000;">
