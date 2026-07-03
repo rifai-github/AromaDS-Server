@@ -154,7 +154,7 @@ class RepairMixedRentalFollowUpSchedules extends Command
     {
         return JobSchedule::query()
             ->where('job_advice_id', $jobAdvice->id)
-            ->whereIn(DB::raw("LOWER(COALESCE(type, ''))"), ['install', 'installation', 'installation_report'])
+            ->whereIn(DB::raw("LOWER(COALESCE(type, ''))"), ['install', 'install_free', 'install free', 'if', 'installation', 'installation_report'])
             ->whereIn('status', self::COMPLETED_STATUSES)
             ->orderBy('schedule_date')
             ->orderBy('id')

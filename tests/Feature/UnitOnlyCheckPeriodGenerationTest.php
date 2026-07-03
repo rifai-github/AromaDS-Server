@@ -609,6 +609,34 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
         $this->assertSame('JKT-JA/26-06/0004', $servicePeriodTwo->fresh()->reference_number);
     }
 
+    public function test_repair_mixed_rental_follow_ups_generates_missing_unit_only_check_after_install_free(): void
+    {
+        $this->seedMixedUnitOnlyAndRefillRoom();
+
+        DB::table('job_schedules')->where('id', 40)->update([
+            'job_number' => 'JKT-IF/26-06/0002',
+            'type' => 'install_free',
+        ]);
+        DB::table('job_schedule_room_rentals')->where('job_schedule_room_id', 42)->delete();
+        DB::table('job_schedule_rooms')->where('id', 42)->delete();
+        DB::table('job_schedules')->where('id', 42)->delete();
+
+        $this->artisan('operational:repair-mixed-rental-follow-up-schedules', [
+            '--job-advice' => ['JKT-JA/26-06/0004'],
+            '--apply' => true,
+        ])->assertSuccessful();
+
+        $check = JobSchedule::where('job_advice_id', 3)
+            ->where('period', 2)
+            ->whereHas('jobScheduleRooms.rentals.jobAdviceRoom.rentalProduct', function ($query) {
+                $query->where('rental_type', 'unit_only');
+            })
+            ->firstOrFail();
+
+        $this->assertNull($check->job_number);
+        $this->assertStringContainsString('Check period', $check->internal_notes);
+    }
+
     public function test_assigning_unit_only_check_does_not_reuse_csr_number_from_same_day_and_team(): void
     {
         $this->seedMixedUnitOnlyAndRefillRoom();
