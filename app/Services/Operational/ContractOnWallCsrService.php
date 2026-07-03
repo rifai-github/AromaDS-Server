@@ -2,6 +2,7 @@
 
 namespace App\Services\Operational;
 
+use App\Http\Controllers\Operational\JobScheduleController;
 use App\Models\Contract;
 use App\Models\JobAdvice;
 use App\Models\JobAdviceRoom;
@@ -88,12 +89,14 @@ class ContractOnWallCsrService
             }
 
             $this->cancelPendingRemoveFreeJobs($contract, $eligibleRoomGroups, $trigger);
+            $generatedCheckCount = $this->generateUnitOnlyChecksForCompletedInstalls($contract);
 
             Log::info('Created first CSR schedules for active Unit On Wall rooms during contract activation.', [
                 'contract_id' => $contract->id,
                 'contract_number' => $contract->contract_number,
                 'job_advice_id' => $jobAdvice->id,
                 'created_count' => $createdCount,
+                'generated_unit_only_checks' => $generatedCheckCount,
                 'trigger' => $trigger,
             ]);
 
@@ -210,6 +213,65 @@ class ContractOnWallCsrService
                 });
             })
             ->exists();
+    }
+
+    private function generateUnitOnlyChecksForCompletedInstalls(Contract $contract): int
+    {
+        if (! $contract->quotation_id) {
+            return 0;
+        }
+
+        $jobAdvices = JobAdvice::query()
+            ->with([
+                'rooms.rentalProduct.serviceFrequency',
+                'rooms.rentalProduct.rentalDetails.productCategory',
+                'rooms.rentalProduct.rentalDetails.productType',
+                'rooms.rentalProduct.rentalDetails.masterProduct.productCategory',
+                'rooms.rentalProduct.rentalDetails.masterProduct.productType',
+                'rooms.rentalProduct.rentalDetails.allowedProducts.productCategory',
+                'rooms.rentalProduct.rentalDetails.allowedProducts.productType',
+                'rooms.contractRoom.room',
+                'rooms.quotationRoom.room',
+            ])
+            ->where('quotation_id', $contract->quotation_id)
+            ->where(function ($query) use ($contract) {
+                $query->whereNull('contract_id')
+                    ->orWhere('contract_id', $contract->id);
+            })
+            ->whereRaw("LOWER(REPLACE(COALESCE(type, ''), ' ', '_')) IN (?, ?)", ['install', 'install_free'])
+            ->whereHas('rooms.rentalProduct', function ($query) {
+                $query->whereRaw("LOWER(REPLACE(COALESCE(rental_type, ''), '-', '_')) = ?", ['unit_only']);
+            })
+            ->get();
+
+        if ($jobAdvices->isEmpty()) {
+            return 0;
+        }
+
+        $controller = app(JobScheduleController::class);
+        $createdCount = 0;
+
+        foreach ($jobAdvices as $jobAdvice) {
+            $jobAdvice->setRelation('contract', $contract);
+
+            $completedInstalls = JobSchedule::query()
+                ->where('job_advice_id', $jobAdvice->id)
+                ->whereIn(DB::raw("LOWER(REPLACE(COALESCE(type, ''), ' ', '_'))"), ['install', 'install_free', 'if'])
+                ->whereIn('status', ['completed', 'done_job', 'selesai'])
+                ->orderBy('schedule_date')
+                ->orderBy('id')
+                ->get();
+
+            foreach ($completedInstalls as $completedInstall) {
+                if (! $completedInstall->contract_number) {
+                    $completedInstall->contract_number = $contract->contract_number;
+                }
+
+                $createdCount += count($controller->generateUnitOnlyCheckSchedulesAfterInstall($completedInstall, $jobAdvice));
+            }
+        }
+
+        return $createdCount;
     }
 
     private function createJobAdvice(Contract $contract, Carbon $serviceDate, ?int $userId, string $trigger): JobAdvice
