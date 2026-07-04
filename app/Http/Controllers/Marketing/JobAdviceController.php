@@ -1810,10 +1810,20 @@ class JobAdviceController extends Controller
                 ->first();
             
             if ($existingUnit) {
-                $unitAlreadyInstalled = true;
-                $existingUnitId = $existingUnit->id;
-                $roomSource = $contractRoom ? "contract room {$contractRoom->id}" : "quotation room {$quotationRoom->id}";
-                \Log::info("Unit already installed for {$roomSource} (Room ID: {$roomId}, Unit On Wall ID: {$existingUnit->id}, Status: {$existingUnit->status})");
+                if ($this->hasCompletedInstallSourceForJobAdviceRoom($jobAdvice, $contractRoom, $quotationRoom, $room, $existingUnit)) {
+                    $unitAlreadyInstalled = true;
+                    $existingUnitId = $existingUnit->id;
+                    $roomSource = $contractRoom ? "contract room {$contractRoom->id}" : "quotation room {$quotationRoom->id}";
+                    \Log::info("Unit already installed for {$roomSource} (Room ID: {$roomId}, Unit On Wall ID: {$existingUnit->id}, Status: {$existingUnit->status})");
+                } else {
+                    \Log::info('Ignoring active Unit On Wall for Job Advice room because no completed install source belongs to this Job Advice source.', [
+                        'job_advice_number' => $jobAdvice->job_advice_number,
+                        'contract_id' => $jobAdvice->contract_id,
+                        'quotation_id' => $jobAdvice->quotation_id,
+                        'room_id' => $roomId,
+                        'unit_on_wall_id' => $existingUnit->id,
+                    ]);
+                }
             }
         }
 
@@ -4369,14 +4379,28 @@ class JobAdviceController extends Controller
         if ($jaRoom->existing_unit_on_wall_id) {
             $linkedUnitStillActive = \App\Models\UnitOnWall::whereKey($jaRoom->existing_unit_on_wall_id)
                 ->whereIn('status', $this->activeUnitOnWallStatuses())
-                ->exists();
+                ->first();
 
-            if ($linkedUnitStillActive) {
+            if ($linkedUnitStillActive && $this->hasCompletedInstallSourceForJobAdviceRoom(
+                $jobAdvice,
+                $jaRoom->contractRoom,
+                $jaRoom->quotationRoom,
+                $jaRoom->contractRoom?->room ?? $jaRoom->quotationRoom?->room,
+                $linkedUnitStillActive,
+                $building
+            )) {
                 return true;
             }
         }
 
-        if ($jaRoom->unit_already_installed) {
+        if ($jaRoom->unit_already_installed && $this->hasCompletedInstallSourceForJobAdviceRoom(
+            $jobAdvice,
+            $jaRoom->contractRoom,
+            $jaRoom->quotationRoom,
+            $jaRoom->contractRoom?->room ?? $jaRoom->quotationRoom?->room,
+            null,
+            $building
+        )) {
             return true;
         }
 
@@ -4402,6 +4426,76 @@ class JobAdviceController extends Controller
                 if ($buildingId && $normalizedRoomName !== '') {
                     $query->orWhere(function ($roomQuery) use ($buildingId, $normalizedRoomName) {
                         $roomQuery->where('building_id', $buildingId)
+                            ->whereRaw('LOWER(TRIM(room_name)) = ?', [$normalizedRoomName]);
+                    });
+                }
+            })
+            ->get()
+            ->contains(fn ($unitOnWall) => $this->hasCompletedInstallSourceForJobAdviceRoom(
+                $jobAdvice,
+                $jaRoom->contractRoom,
+                $jaRoom->quotationRoom,
+                $jaRoom->contractRoom?->room ?? $jaRoom->quotationRoom?->room,
+                $unitOnWall,
+                $building
+            ));
+    }
+
+    private function hasCompletedInstallSourceForJobAdviceRoom(
+        \App\Models\JobAdvice $jobAdvice,
+        $contractRoom = null,
+        $quotationRoom = null,
+        $room = null,
+        ?\App\Models\UnitOnWall $unitOnWall = null,
+        $building = null
+    ): bool {
+        $jobAdvice->loadMissing(['contract.quotation', 'quotation']);
+
+        $contractNumber = $jobAdvice->contract?->contract_number;
+        $quotationId = $jobAdvice->quotation_id ?? $jobAdvice->contract?->quotation_id;
+        $quotationNumber = $jobAdvice->quotation?->quotation_number ?? $jobAdvice->contract?->quotation?->quotation_number;
+
+        if (! $jobAdvice->contract_id && ! $contractNumber && ! $quotationId && ! $quotationNumber) {
+            return false;
+        }
+
+        $roomId = $contractRoom?->room_id ?? $quotationRoom?->room_id ?? $room?->id ?? $unitOnWall?->room_id;
+        $roomName = trim((string) ($room?->room_name ?? $unitOnWall?->room_name ?? ''));
+        $normalizedRoomName = mb_strtolower(preg_replace('/\s+/', ' ', $roomName));
+        $buildingId = $building?->id ?? $room?->building_id ?? $unitOnWall?->building_id ?? null;
+
+        return \App\Models\JobSchedule::query()
+            ->whereIn(\Illuminate\Support\Facades\DB::raw("LOWER(REPLACE(COALESCE(type, ''), ' ', '_'))"), ['install', 'install_free', 'if'])
+            ->whereIn('status', ['completed', 'done_job', 'selesai'])
+            ->where(function ($sourceQuery) use ($jobAdvice, $contractNumber, $quotationId, $quotationNumber) {
+                if ($contractNumber) {
+                    $sourceQuery->where('contract_number', $contractNumber);
+                }
+
+                if ($quotationNumber) {
+                    $sourceQuery->orWhere('quotation_number', $quotationNumber);
+                }
+
+                if ($jobAdvice->contract_id) {
+                    $sourceQuery->orWhereHas('jobAdvice', function ($jobAdviceQuery) use ($jobAdvice) {
+                        $jobAdviceQuery->where('contract_id', $jobAdvice->contract_id);
+                    });
+                }
+
+                if ($quotationId) {
+                    $sourceQuery->orWhereHas('jobAdvice', function ($jobAdviceQuery) use ($quotationId) {
+                        $jobAdviceQuery->where('quotation_id', $quotationId);
+                    });
+                }
+            })
+            ->where(function ($roomQuery) use ($roomId, $buildingId, $normalizedRoomName) {
+                if ($roomId) {
+                    $roomQuery->where('room_id', $roomId);
+                }
+
+                if ($buildingId && $normalizedRoomName !== '') {
+                    $roomQuery->orWhere(function ($namedRoomQuery) use ($buildingId, $normalizedRoomName) {
+                        $namedRoomQuery->where('building_id', $buildingId)
                             ->whereRaw('LOWER(TRIM(room_name)) = ?', [$normalizedRoomName]);
                     });
                 }

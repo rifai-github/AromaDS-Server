@@ -81,6 +81,14 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
         Schema::create('quotations', function (Blueprint $table) {
             $table->id();
             $table->string('quotation_number')->nullable();
+            $table->foreignId('survey_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('surveys', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('building_id')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -88,9 +96,11 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
         Schema::create('unit_on_walls', function (Blueprint $table) {
             $table->id();
             $table->foreignId('customer_id')->nullable();
+            $table->foreignId('building_id')->nullable();
             $table->foreignId('room_id')->nullable();
             $table->foreignId('serial_number_id')->nullable();
             $table->string('status')->nullable();
+            $table->string('room_name')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -154,6 +164,7 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             $table->string('status')->nullable();
             $table->string('company_name')->nullable();
             $table->foreignId('contract_id')->nullable();
+            $table->foreignId('quotation_id')->nullable();
             $table->foreignId('customer_id')->nullable();
             $table->date('expected_date')->nullable();
             $table->date('first_service_date')->nullable();
@@ -172,6 +183,7 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             $table->foreignId('service_job_schedule_id')->nullable();
             $table->boolean('rental_has_service')->default(false);
             $table->boolean('unit_already_installed')->default(false);
+            $table->foreignId('existing_unit_on_wall_id')->nullable();
             $table->foreignId('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
@@ -199,6 +211,9 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             $table->string('service_period_type')->nullable();
             $table->text('internal_notes')->nullable();
             $table->string('reference_number')->nullable();
+            $table->string('postal_code')->nullable();
+            $table->string('district')->nullable();
+            $table->string('sub_district')->nullable();
             $table->boolean('material_checked')->default(false);
             $table->timestamp('material_checked_at')->nullable();
             $table->foreignId('created_by')->nullable();
@@ -269,6 +284,7 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
             'master_rooms',
             'buildings',
             'unit_on_walls',
+            'surveys',
             'quotations',
             'contracts',
             'user_permission',
@@ -690,6 +706,151 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
         $this->assertSame('Job Check', JobSchedule::findOrFail(42)->display_type);
         $this->assertSame('JKT-CSR/26-07/0002', JobSchedule::findOrFail(51)->job_number);
         $this->assertSame('Service Routine', JobSchedule::findOrFail(51)->display_type);
+    }
+
+    public function test_install_job_advice_does_not_skip_install_for_on_wall_unit_from_another_quotation(): void
+    {
+        DB::table('surveys')->insert([
+            ['id' => 10, 'building_id' => 10, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 11, 'building_id' => 10, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('quotations')->insert([
+            ['id' => 10, 'quotation_number' => 'JKT-SQ/26-07/0010', 'survey_id' => 10, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 11, 'quotation_number' => 'JKT-SQ/26-07/0011', 'survey_id' => 11, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contracts')->insert([
+            [
+                'id' => 10,
+                'contract_number' => 'JKT-CA/26-07/0010',
+                'quotation_id' => 10,
+                'start_date' => '2026-07-01',
+                'end_date' => '2027-06-30',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 11,
+                'contract_number' => 'JKT-CA/26-07/0011',
+                'quotation_id' => 11,
+                'start_date' => '2026-07-01',
+                'end_date' => '2027-06-30',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+        DB::table('buildings')->insert([
+            'id' => 10,
+            'building_name' => 'Gedung Reused Survey',
+            'name' => 'Gedung Reused Survey',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rooms')->insert([
+            'id' => 10,
+            'building_id' => 10,
+            'room_name' => 'Ruang Sama',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contract_rooms')->insert([
+            ['id' => 10, 'contract_id' => 10, 'room_id' => 10, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 11, 'contract_id' => 11, 'room_id' => 10, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('rental_service_frequencies')->insert([
+            'id' => 10,
+            'name' => 'Monthly',
+            'frequency_times_per_month' => 1,
+            'frequency_months' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('master_rentals')->insert([
+            'id' => 10,
+            'rental_name' => 'Unit Only',
+            'rental_type' => 'unit_only',
+            'service_frequency_id' => 10,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('unit_on_walls')->insert([
+            'id' => 10,
+            'building_id' => 10,
+            'room_id' => 10,
+            'status' => 'active',
+            'room_name' => 'Ruang Sama',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_advices')->insert([
+            [
+                'id' => 10,
+                'job_advice_number' => 'JKT-JA/26-07/0010',
+                'type' => 'install_free',
+                'status' => 'approved',
+                'company_name' => 'Test Company',
+                'contract_id' => null,
+                'quotation_id' => 10,
+                'expected_date' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 11,
+                'job_advice_number' => 'JKT-JA/26-07/0011',
+                'type' => 'install',
+                'status' => 'approved',
+                'company_name' => 'Test Company',
+                'contract_id' => 11,
+                'quotation_id' => null,
+                'expected_date' => '2026-07-01',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+        DB::table('job_advice_rooms')->insert([
+            'id' => 11,
+            'job_advice_id' => 11,
+            'contract_room_id' => 11,
+            'rental_product_id' => 10,
+            'room_name' => 'Ruang Sama',
+            'rental_name' => 'Unit Only',
+            'unit_already_installed' => true,
+            'existing_unit_on_wall_id' => 10,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedules')->insert([
+            'id' => 10,
+            'job_number' => 'JKT-IF/26-07/0010',
+            'type' => 'install_free',
+            'status' => 'done_job',
+            'job_advice_id' => 10,
+            'building_id' => 10,
+            'building_name' => 'Gedung Reused Survey',
+            'room_id' => 10,
+            'room_name' => 'Ruang Sama',
+            'company_name' => 'Test Company',
+            'quotation_number' => 'JKT-SQ/26-07/0010',
+            'schedule_date' => '2026-07-01',
+            'expected_date' => '2026-07-01',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $method = new ReflectionMethod(\App\Http\Controllers\Marketing\JobAdviceController::class, 'createJobSchedulesFromJobAdvice');
+        $method->setAccessible(true);
+        $method->invoke(new \App\Http\Controllers\Marketing\JobAdviceController(), JobAdvice::findOrFail(11));
+
+        $this->assertDatabaseHas('job_schedules', [
+            'job_advice_id' => 11,
+            'type' => 'install',
+            'room_id' => 10,
+        ]);
+        $this->assertDatabaseMissing('job_schedules', [
+            'job_advice_id' => 11,
+            'type' => 'service_first',
+            'room_id' => 10,
+        ]);
     }
 
     private function seedUnitOnlyInstallWithExistingFirstCheck(): void
