@@ -1131,9 +1131,14 @@
                                             $isRoomEditable = $roomJobSchedule && $roomJobSchedule->status === 'assign_team';
                                             $roomDoneAllowedStatuses = ['in_progress', 'teknisi_sedang_pengerjaan', 'teknisi_selesai_pengerjaan'];
                                             $canCompleteRoomFromWeb = $roomJobSchedule && in_array($roomJobSchedule->status, $roomDoneAllowedStatuses, true);
-                                            $displayRentalName = $jobScheduleRoom->display_rental_name;
+                                            $displayRentalName = $jaRoom?->rentalProduct?->rental_name
+                                                ?? $jaRoom?->rental_name
+                                                ?? null;
                                             if (($displayRentalName === '-' || blank($displayRentalName)) && filled($jobScheduleRoom->fallback_rental_name ?? null)) {
                                                 $displayRentalName = $jobScheduleRoom->fallback_rental_name;
+                                            }
+                                            if (($displayRentalName === '-' || blank($displayRentalName))) {
+                                                $displayRentalName = $jobScheduleRoom->display_rental_name;
                                             }
                                         @endphp
                                         <tr data-room-id="{{ $jobScheduleRoom->id }}">
@@ -1589,11 +1594,29 @@
                                                 @php
                                                     $photoRoomName = '-';
                                                     $photoRentalName = '-';
+                                                    $resolveSpecificRentalName = function ($scheduleRoom) {
+                                                        if (!$scheduleRoom) {
+                                                            return '-';
+                                                        }
+
+                                                        $adviceRoom = $scheduleRoom->jobAdviceRoom;
+                                                        $rentalName = $adviceRoom?->rentalProduct?->rental_name
+                                                            ?? $adviceRoom?->rental_name
+                                                            ?? null;
+
+                                                        if (($rentalName === '-' || blank($rentalName)) && filled($scheduleRoom->fallback_rental_name ?? null)) {
+                                                            $rentalName = $scheduleRoom->fallback_rental_name;
+                                                        }
+
+                                                        return ($rentalName === '-' || blank($rentalName))
+                                                            ? ($scheduleRoom->display_rental_name ?? '-')
+                                                            : $rentalName;
+                                                    };
                                                     
                                                     // Priority 0: Digital ID (New permanent solution)
                                                     if ($photo->job_schedule_room_id && $photo->jobScheduleRoom) {
                                                         $photoRoomName = $photo->jobScheduleRoom->room_name;
-                                                        $photoRentalName = $photo->jobScheduleRoom->display_rental_name;
+                                                        $photoRentalName = $resolveSpecificRentalName($photo->jobScheduleRoom);
                                                     }
                                                     // Priority 1: Regex dari description (format: "Room: ..." atau "- Room: ...")
                                                     elseif (!empty($photo->description) && preg_match('/[\-\s]*Room:\s*(.+)/i', $photo->description, $matches)) {
@@ -1605,7 +1628,7 @@
                                                         });
                                                         if ($matchedRoom) {
                                                             $photoRoomName = $matchedRoom->room_name;
-                                                            $photoRentalName = $matchedRoom->display_rental_name;
+                                                            $photoRentalName = $resolveSpecificRentalName($matchedRoom);
                                                         } else {
                                                             $photoRoomName = $extractedRoomName;
                                                         }
@@ -1614,7 +1637,7 @@
                                                     elseif ($jobSchedule->jobScheduleRooms->count() == 1) {
                                                         $firstRoom = $jobSchedule->jobScheduleRooms->first();
                                                         $photoRoomName = $firstRoom->room_name;
-                                                        $photoRentalName = $firstRoom->display_rental_name;
+                                                        $photoRentalName = $resolveSpecificRentalName($firstRoom);
                                                     }
                                                     // Priority 2.5: Foto dari sibling JS yang berbeda -> cari room berdasarkan job_schedule_id foto
                                                     // Fix cross-room bug: foto JS 306 (Toilet Wanita) jangan berlabel Toilet Pria (JS 304)
@@ -1626,14 +1649,14 @@
                                                             : null;
                                                         if ($photoOwnJsr) {
                                                             $photoRoomName = $photoOwnJsr->room_name;
-                                                            $photoRentalName = $photoOwnJsr->display_rental_name;
+                                                            $photoRentalName = $resolveSpecificRentalName($photoOwnJsr);
                                                         }
                                                     }
                                                     // Priority 3: Fallback ke room_name JS yang sedang dibuka (hanya jika foto memang milik JS ini)
                                                     elseif ($jobSchedule->room_name && $jobSchedule->room_name !== '-') {
                                                         $photoRoomName = $jobSchedule->room_name;
                                                         if ($jobSchedule->jobScheduleRooms->count() > 0) {
-                                                            $photoRentalName = $jobSchedule->jobScheduleRooms->first()->display_rental_name;
+                                                            $photoRentalName = $resolveSpecificRentalName($jobSchedule->jobScheduleRooms->first());
                                                         }
                                                     }
                                                     // Last resort: banyak room, tidak bisa ditentukan
