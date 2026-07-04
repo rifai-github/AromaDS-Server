@@ -80,6 +80,7 @@ class MobileJobListRoomAssignmentTest extends TestCase
             'master_products',
             'product_types',
             'product_categories',
+            'rental_details',
             'rental_component_products',
             'rental_components',
             'master_rentals',
@@ -463,12 +464,14 @@ class MobileJobListRoomAssignmentTest extends TestCase
             [
                 'id' => 701,
                 'rental_name' => 'ADS W300 300 ml baterai',
+                'rental_type' => 'unit_refill',
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
             [
                 'id' => 702,
                 'rental_name' => 'Rental Unit Only',
+                'rental_type' => 'unit_only',
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
@@ -628,6 +631,22 @@ class MobileJobListRoomAssignmentTest extends TestCase
             ['DW300B2606031', 'PD72002606001'],
             $products->pluck('serial_number')->all()
         );
+
+        DB::table('job_schedule_rooms')
+            ->where('job_schedule_id', 44)
+            ->where('job_advice_room_id', 92)
+            ->update(['status' => 'completed', 'updated_at' => now()]);
+        DB::table('job_advice_rooms')
+            ->where('id', 92)
+            ->update(['status' => 'completed', 'updated_at' => now()]);
+
+        $roomsResponse = app(JobController::class)->getJobRooms(44);
+        $roomsPayload = $roomsResponse->getData(true);
+
+        $this->assertSame('success', $roomsPayload['status']);
+        $this->assertCount(1, $roomsPayload['data']);
+        $this->assertSame('pending', $roomsPayload['data'][0]['status']);
+        $this->assertSame(93, $roomsPayload['data'][0]['id']);
     }
 
     public function test_mobile_job_rooms_reconcile_install_room_completed_from_active_unit_on_wall(): void
@@ -967,6 +986,7 @@ class MobileJobListRoomAssignmentTest extends TestCase
         Schema::create('master_rentals', function (Blueprint $table) {
             $table->id();
             $table->string('rental_name')->nullable();
+            $table->string('rental_type')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->softDeletes();
@@ -1008,6 +1028,18 @@ class MobileJobListRoomAssignmentTest extends TestCase
             $table->string('component_name')->nullable();
             $table->integer('quantity')->default(1);
             $table->boolean('is_active')->default(true);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('rental_details', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('master_rental_id')->nullable();
+            $table->foreignId('product_category_id')->nullable();
+            $table->foreignId('product_type_id')->nullable();
+            $table->foreignId('master_product_id')->nullable();
+            $table->integer('quantity')->nullable();
+            $table->integer('bom_rental_qty')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });

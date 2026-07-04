@@ -1934,14 +1934,32 @@ class JobController extends Controller
                     : $this->resolveJobScheduleRoomForAdviceRoom($specificJobScheduleId, $adviceRoom, $masterRoom?->id);
             })->filter()->values();
 
+            $openScheduleRoomStatuses = [
+                \App\Models\JobScheduleRoom::STATUS_COMPLETED,
+                \App\Models\JobScheduleRoom::STATUS_CANCELLED,
+            ];
+            $openScheduleRoom = $jobScheduleRooms->first(
+                fn ($scheduleRoom) => !in_array($scheduleRoom->status, $openScheduleRoomStatuses, true)
+            );
+            $unitBearingOpenScheduleRoom = $jobScheduleRooms->first(function ($scheduleRoom) use ($roomGroup, $openScheduleRoomStatuses) {
+                if (in_array($scheduleRoom->status, $openScheduleRoomStatuses, true)) {
+                    return false;
+                }
+
+                $adviceRoom = $roomGroup
+                    ->first(fn ($candidate) => (int) $candidate->id === (int) ($scheduleRoom->job_advice_room_id ?? 0));
+
+                return $this->jobAdviceRoomRequiresUnit($adviceRoom);
+            });
             $unitBearingScheduleRoom = $jobScheduleRooms->first(function ($scheduleRoom) use ($roomGroup) {
                 $adviceRoom = $roomGroup
                     ->first(fn ($candidate) => (int) $candidate->id === (int) ($scheduleRoom->job_advice_room_id ?? 0));
 
                 return $this->jobAdviceRoomRequiresUnit($adviceRoom);
             });
-            $jobScheduleRoom = $unitBearingScheduleRoom
-                ?? $jobScheduleRooms->first(fn ($scheduleRoom) => $scheduleRoom->status !== \App\Models\JobScheduleRoom::STATUS_COMPLETED)
+            $jobScheduleRoom = $unitBearingOpenScheduleRoom
+                ?? $openScheduleRoom
+                ?? $unitBearingScheduleRoom
                 ?? $jobScheduleRooms->first();
             $displayRoom = $roomGroup
                 ->first(fn ($adviceRoom) => (int) $adviceRoom->id === (int) ($jobScheduleRoom?->job_advice_room_id ?? 0))
