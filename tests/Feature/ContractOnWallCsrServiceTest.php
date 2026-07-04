@@ -98,8 +98,8 @@ class ContractOnWallCsrServiceTest extends TestCase
         $createdCount = app(ContractOnWallCsrService::class)->createForContract($contract->fresh(), 7, 'posted');
 
         $this->assertSame(0, $createdCount);
-        $this->assertDatabaseCount('job_schedules', 1);
-        $this->assertDatabaseCount('job_advices', 1);
+        $this->assertSame(1, DB::table('job_schedules')->where('type', 'service_first')->count());
+        $this->assertSame(1, DB::table('job_advices')->where('type', 'service')->count());
     }
 
     public function test_it_excludes_unit_only_rentals_from_first_csr_for_mixed_room(): void
@@ -120,6 +120,61 @@ class ContractOnWallCsrServiceTest extends TestCase
             'rental_product_id' => 2,
         ]);
         $this->assertDatabaseCount('job_schedule_room_rentals', 1);
+    }
+
+    public function test_it_does_not_create_first_csr_from_unit_on_wall_owned_by_another_quotation(): void
+    {
+        $this->seedContractWithOnWallRoom();
+
+        DB::table('quotations')->insert([
+            'id' => 2,
+            'quotation_number' => 'JKT-SQ/26-05/0002',
+            'survey_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contracts')->insert([
+            'id' => 2,
+            'contract_number' => 'JKT-CA/26-05/0002',
+            'customer_id' => 1,
+            'quotation_id' => 2,
+            'contract_status' => 'active',
+            'first_service_date' => '2026-05-10',
+            'start_date' => '2026-05-04',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contract_rooms')->insert([
+            'id' => 2,
+            'contract_id' => 2,
+            'room_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contract_rentals')->insert([
+            'id' => 3,
+            'contract_id' => 2,
+            'master_rental_id' => 1,
+            'room_id' => 1,
+            'rental_alias' => 'Aroma On Wall',
+            'quantity' => 1,
+            'unit_price' => 100,
+            'total_price' => 100,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $createdCount = app(ContractOnWallCsrService::class)->createForContract(Contract::findOrFail(2), 7, 'approved');
+
+        $this->assertSame(0, $createdCount);
+        $this->assertDatabaseMissing('job_advices', [
+            'contract_id' => 2,
+            'type' => 'service',
+        ]);
+        $this->assertDatabaseMissing('job_schedules', [
+            'contract_number' => 'JKT-CA/26-05/0002',
+            'type' => 'service_first',
+        ]);
     }
 
     private function createSchema(): void
@@ -454,6 +509,32 @@ class ContractOnWallCsrServiceTest extends TestCase
             'serial_number' => 'SN-ONWALL-001',
             'status' => 'active',
             'room_name' => 'Lobby',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_advices')->insert([
+            'id' => 10,
+            'job_advice_number' => 'JKT-JA/26-05/0001',
+            'type' => 'install_free',
+            'company_name' => 'Group Hiro',
+            'quotation_id' => 1,
+            'customer_id' => 1,
+            'status' => 'approved',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedules')->insert([
+            'id' => 10,
+            'job_number' => 'JKT-IF/26-05/0001',
+            'type' => 'install_free',
+            'status' => 'done_job',
+            'job_advice_id' => 10,
+            'building_id' => 1,
+            'room_id' => 1,
+            'room_name' => 'Lobby',
+            'company_name' => 'Group Hiro',
+            'quotation_number' => 'JKT-SQ/26-05/0001',
+            'schedule_date' => '2026-05-04',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

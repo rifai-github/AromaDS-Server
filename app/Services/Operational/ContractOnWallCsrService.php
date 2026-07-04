@@ -187,7 +187,60 @@ class ContractOnWallCsrService
                     });
                 }
             })
-            ->first();
+            ->get()
+            ->first(fn (UnitOnWall $unitOnWall) => $this->hasCompletedInstallSourceForContract($contract, $contractRoom, $unitOnWall));
+    }
+
+    private function hasCompletedInstallSourceForContract(Contract $contract, $contractRoom, UnitOnWall $unitOnWall): bool
+    {
+        $quotationNumber = $contract->quotation?->quotation_number;
+
+        if (! $contract->quotation_id && ! $quotationNumber) {
+            return false;
+        }
+
+        $room = $contractRoom->room;
+        $roomName = trim((string) ($room->room_name ?? $unitOnWall->room_name ?? ''));
+        $normalizedRoomName = mb_strtolower(preg_replace('/\s+/', ' ', $roomName));
+        $buildingId = $room->building_id ?? $unitOnWall->building_id ?? null;
+
+        return JobSchedule::query()
+            ->whereIn(DB::raw("LOWER(REPLACE(COALESCE(type, ''), ' ', '_'))"), ['install', 'install_free', 'if'])
+            ->whereIn('status', ['completed', 'done_job', 'selesai'])
+            ->where(function ($sourceQuery) use ($contract, $quotationNumber) {
+                if ($quotationNumber) {
+                    $sourceQuery->where('quotation_number', $quotationNumber);
+                }
+
+                if ($contract->quotation_id) {
+                    $sourceQuery->orWhereHas('jobAdvice', function ($jobAdviceQuery) use ($contract) {
+                        $jobAdviceQuery->where('quotation_id', $contract->quotation_id);
+                    });
+                }
+
+                if ($contract->id) {
+                    $sourceQuery->orWhereHas('jobAdvice', function ($jobAdviceQuery) use ($contract) {
+                        $jobAdviceQuery->where('contract_id', $contract->id);
+                    });
+                }
+            })
+            ->where(function ($roomQuery) use ($contractRoom, $unitOnWall, $buildingId, $normalizedRoomName) {
+                if ($contractRoom->room_id) {
+                    $roomQuery->where('room_id', $contractRoom->room_id);
+                }
+
+                if ($unitOnWall->room_id && $unitOnWall->room_id !== $contractRoom->room_id) {
+                    $roomQuery->orWhere('room_id', $unitOnWall->room_id);
+                }
+
+                if ($buildingId && $normalizedRoomName !== '') {
+                    $roomQuery->orWhere(function ($namedRoomQuery) use ($buildingId, $normalizedRoomName) {
+                        $namedRoomQuery->where('building_id', $buildingId)
+                            ->whereRaw('LOWER(TRIM(room_name)) = ?', [$normalizedRoomName]);
+                    });
+                }
+            })
+            ->exists();
     }
 
     private function activeServiceScheduleExists(Contract $contract, $contractRoom): bool
