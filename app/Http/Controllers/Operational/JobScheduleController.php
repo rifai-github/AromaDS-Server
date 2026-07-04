@@ -10353,6 +10353,7 @@ class JobScheduleController extends Controller
                         'jobSchedule.jobAssignSchedules.jobAssignMaterialIssues.materialIssue.items',
                         'roomAssignment.team',
                         'jobAdviceRoom.rentalProduct',
+                        'rentals.jobAdviceRoom.rentalProduct',
                     ])
                     ->whereIn('id', $selectedRoomIds->all())
                     ->get();
@@ -10393,6 +10394,17 @@ class JobScheduleController extends Controller
                     }
 
                     $isAssigned = (bool) ($roomAssignment?->team || $activeAssignment?->team);
+                    $rentalName = $room->rentals
+                        ->map(fn ($rentalLink) => $rentalLink->jobAdviceRoom?->rentalProduct?->rental_name)
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->implode(', ');
+
+                    if ($rentalName === '') {
+                        $rentalName = $room->jobAdviceRoom?->rentalProduct?->rental_name ?? '-';
+                    }
+
                     $allRooms[] = [
                         'id' => $room->id,
                         'job_id' => $job->id,
@@ -10409,7 +10421,7 @@ class JobScheduleController extends Controller
                         // checking ONE row there can expand to 2+ rows here — with
                         // nothing to tell them apart, QA read this as a duplicate-row
                         // bug. Surface the rental name so each row is identifiable.
-                        'rental_name' => $room->jobAdviceRoom?->rentalProduct?->rental_name ?? '-',
+                        'rental_name' => $rentalName,
                         'job_status' => $currentStatus,
                         'material_checked' => (bool) $job->material_checked,
                         'display_text' => $room->room_name,

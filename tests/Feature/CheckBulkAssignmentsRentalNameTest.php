@@ -22,8 +22,9 @@ use Tests\TestCase;
  * the modal showed two rows that looked identical ("Toilet Umum" / "-"),
  * with nothing to tell them apart. QA read this as a duplicate-row bug.
  *
- * The fix surfaces each room's rental_name in the response so the rows are
- * distinguishable instead of indistinguishable duplicates.
+ * The fix surfaces linked rental names in the response so rows are either
+ * distinguishable or, for one physical room row with multiple rental links,
+ * clearly show all products attached to that room.
  */
 class CheckBulkAssignmentsRentalNameTest extends TestCase
 {
@@ -118,6 +119,15 @@ class CheckBulkAssignmentsRentalNameTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('job_schedule_room_rentals', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_room_id')->nullable();
+            $table->foreignId('job_advice_room_id')->nullable();
+            $table->boolean('is_primary')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('job_assign_schedules', function (Blueprint $table) {
             $table->id();
             $table->foreignId('job_schedule_id')->nullable();
@@ -173,6 +183,7 @@ class CheckBulkAssignmentsRentalNameTest extends TestCase
             'material_issues',
             'job_schedule_room_assignments',
             'job_assign_schedules',
+            'job_schedule_room_rentals',
             'job_schedule_rooms',
             'master_rentals',
             'job_advice_rooms',
@@ -284,6 +295,102 @@ class CheckBulkAssignmentsRentalNameTest extends TestCase
             $payload['data'][1]['rental_name'],
             'The two rooms must be distinguishable by rental name instead of looking like identical duplicates.'
         );
+    }
+
+    public function test_one_schedule_room_with_multiple_rental_links_shows_all_rental_names(): void
+    {
+        DB::table('job_advices')->insert(['id' => 30, 'created_at' => now(), 'updated_at' => now()]);
+
+        DB::table('master_rentals')->insert([
+            [
+                'id' => 11,
+                'rental_code' => 'w300100',
+                'rental_name' => 'ADS W300 100 ml',
+                'rental_type' => 'unit_refill',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 12,
+                'rental_code' => 'unit-only',
+                'rental_name' => 'Rental Unit Only',
+                'rental_type' => 'unit_only',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            [
+                'id' => 51,
+                'job_advice_id' => 30,
+                'rental_product_id' => 11,
+                'room_name' => 'Ruang Lobby Umum',
+                'quantity' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 52,
+                'job_advice_id' => 30,
+                'rental_product_id' => 12,
+                'room_name' => 'Ruang Lobby Umum',
+                'quantity' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_schedules')->insert([
+            'id' => 188,
+            'job_number' => null,
+            'job_advice_id' => 30,
+            'type' => 'install',
+            'status' => 'scheduled',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 208,
+            'job_schedule_id' => 188,
+            'job_advice_room_id' => 51,
+            'room_name' => 'Ruang Lobby Umum',
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedule_room_rentals')->insert([
+            [
+                'job_schedule_room_id' => 208,
+                'job_advice_room_id' => 51,
+                'is_primary' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'job_schedule_room_id' => 208,
+                'job_advice_room_id' => 52,
+                'is_primary' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $request = Request::create('/operational/job-schedules/check-bulk-assignments', 'POST', [
+            'job_ids' => [188],
+            'selected_room_ids' => [208],
+            'strict_selection' => true,
+        ]);
+
+        $response = app(JobScheduleController::class)->checkBulkAssignments($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertCount(1, $payload['data']);
+        $this->assertSame('Ruang Lobby Umum', $payload['data'][0]['room_name']);
+        $this->assertSame('ADS W300 100 ml, Rental Unit Only', $payload['data'][0]['rental_name']);
     }
 
     public function test_selected_assign_material_room_stays_assign_material_without_material_items(): void
