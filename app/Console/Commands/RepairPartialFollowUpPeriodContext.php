@@ -156,6 +156,7 @@ class RepairPartialFollowUpPeriodContext extends Command
     private function contextColumns(): array
     {
         return [
+            'schedule_date',
             'period',
             'service_frequency',
             'service_period_type',

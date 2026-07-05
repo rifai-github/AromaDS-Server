@@ -152,7 +152,7 @@ class RepairPartialCompletionFollowUps extends Command
         $newJob->quotation_number = $sourceJob->quotation_number;
         $newJob->type = $sourceJob->type;
         $newJob->status = 'new_job';
-        $newJob->schedule_date = now()->toDateString();
+        $newJob->schedule_date = $sourceJob->schedule_date;
         $newJob->expected_date = $sourceJob->expected_date;
         $newJob->job_number = null;
         $newJob->internal_notes = "Lanjutan dari Job {$sourceJob->job_number} (Pekerjaan tidak selesai). Room: {$room->room_name}.";
@@ -167,6 +167,7 @@ class RepairPartialCompletionFollowUps extends Command
     private function syncFollowUpScheduleContext(JobSchedule $sourceJob, JobSchedule $followUpJob, bool $save = true): void
     {
         foreach ([
+            'schedule_date',
             'period',
             'service_frequency',
             'service_period_type',

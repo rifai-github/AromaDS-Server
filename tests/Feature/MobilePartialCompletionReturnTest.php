@@ -630,6 +630,7 @@ class MobilePartialCompletionReturnTest extends TestCase
             'material_checked' => true,
             'material_checked_at' => now()->subMinutes(10),
             'period' => 3,
+            'schedule_date' => '2026-08-05',
             'service_frequency' => 1,
             'service_period_type' => '1 Bulan 1x',
             'service_interval_days' => 30,
@@ -688,6 +689,7 @@ class MobilePartialCompletionReturnTest extends TestCase
         $this->assertNotNull($followUpJob);
         $this->assertSame('new_job', $followUpJob->status);
         $this->assertSame(3, (int) $followUpJob->period);
+        $this->assertSame('2026-08-05', \Illuminate\Support\Carbon::parse($followUpJob->schedule_date)->toDateString());
         $this->assertSame(3, (int) JobSchedule::findOrFail($followUpJob->id)->invoice_period);
         $this->assertSame(1, (int) $followUpJob->service_frequency);
         $this->assertSame('1 Bulan 1x', $followUpJob->service_period_type);
