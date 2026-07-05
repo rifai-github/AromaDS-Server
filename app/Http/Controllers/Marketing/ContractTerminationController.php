@@ -502,7 +502,12 @@ class ContractTerminationController extends Controller
             // Terminate all pending/in-progress job schedules
             $terminatedJobCount = 0;
             if ($jobAdviceIds->isNotEmpty()) {
+                // Exclude type 'remove': those are the termination's own generated jobs
+                // (created below) and must not be force-terminated here, otherwise a
+                // repeated/duplicate approve() call retroactively terminates the remove
+                // job that a prior call just created.
                 $terminatedJobCount = JobSchedule::whereIn('job_advice_id', $jobAdviceIds)
+                    ->where('type', '!=', 'remove')
                     ->whereNotIn('status', ['completed', 'cancelled', 'done_job', 'terminated'])
                     ->update([
                         'status' => 'terminated',
@@ -513,6 +518,7 @@ class ContractTerminationController extends Controller
 
             // Also terminate jobs linked directly to contract (if any)
             $directTerminatedCount = JobSchedule::where('contract_number', $contract->contract_number)
+                ->where('type', '!=', 'remove')
                 ->whereNotIn('status', ['completed', 'cancelled', 'done_job', 'terminated'])
                 ->update([
                     'status' => 'terminated',
@@ -542,6 +548,30 @@ class ContractTerminationController extends Controller
                     . ':rental:' . (int) $rentalId;
 
                 if (isset($processedRemoveKeys[$removeKey])) {
+                    continue;
+                }
+
+                // Guard against duplicate remove-job creation if approve() is ever
+                // invoked more than once for the same termination (e.g. double submit).
+                // Without this, a second run can spawn a second remove job for the same
+                // room while the direct-terminate query above force-terminates the first.
+                $existingRemoveJob = JobSchedule::where('type', 'remove')
+                    ->where('contract_number', $contract->contract_number)
+                    ->where('reference_number', $contractTermination->termination_number)
+                    ->where('room_id', $contractRoom->room_id)
+                    ->first();
+
+                if ($existingRemoveJob) {
+                    $processedRemoveKeys[$removeKey] = true;
+
+                    Log::info('Skipping duplicate remove job creation for contract room during termination: remove job already exists', [
+                        'termination_number' => $contractTermination->termination_number,
+                        'contract_id' => $contract->id,
+                        'contract_room_id' => $contractRoom->id,
+                        'room_id' => $contractRoom->room_id,
+                        'existing_job_schedule_id' => $existingRemoveJob->id,
+                        'existing_job_number' => $existingRemoveJob->job_number,
+                    ]);
                     continue;
                 }
 
