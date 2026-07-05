@@ -847,7 +847,7 @@
                     <label class="form-label">Category <span class="text-red-500">*</span></label>
                     <select class="form-select" id="edit_category" name="category" required>
                         <option value="">Select Category</option>
-                        @foreach($productCategories as $category)
+                        @foreach($masterRentalCategories as $category)
                             <option value="{{ $category->name }}">{{ $category->name }}</option>
                         @endforeach
                     </select>

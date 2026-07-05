@@ -316,6 +316,11 @@ class MasterRentalController extends Controller
             ->orderBy('name')
             ->get();
 
+        $masterRentalCategories = ProductCategory::where('is_active', true)
+            ->whereNull('parent_id')
+            ->orderBy('name')
+            ->get();
+
         // Return view for web requests
         return view('warehouse.master-rentals.show', compact(
             'masterRental',
@@ -323,7 +328,8 @@ class MasterRentalController extends Controller
             'productTypes',
             'masterProducts',
             'branches',
-            'productCategories'
+            'productCategories',
+            'masterRentalCategories'
         ));
     }
 
