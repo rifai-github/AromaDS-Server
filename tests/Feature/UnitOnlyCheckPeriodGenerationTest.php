@@ -559,6 +559,34 @@ class UnitOnlyCheckPeriodGenerationTest extends TestCase
         $this->assertSame('customer_service_report', $docTypeMethod->invoke($controller, JobSchedule::findOrFail(50)));
     }
 
+    public function test_first_csr_created_with_install_excludes_unit_only_rental_in_mixed_room(): void
+    {
+        $this->seedMixedUnitOnlyAndRefillRoom();
+
+        $method = new ReflectionMethod(JobScheduleController::class, 'createFirstServiceWithInstall');
+        $method->setAccessible(true);
+        $firstService = $method->invoke(
+            new JobScheduleController(),
+            JobSchedule::findOrFail(40),
+            JobAdvice::findOrFail(3),
+            new \Illuminate\Http\Request(['schedule_date' => '2026-06-01'])
+        );
+
+        $this->assertNotNull($firstService);
+
+        $linkedJobAdviceRoomIds = DB::table('job_schedule_room_rentals')
+            ->join('job_schedule_rooms', 'job_schedule_rooms.id', '=', 'job_schedule_room_rentals.job_schedule_room_id')
+            ->where('job_schedule_rooms.job_schedule_id', $firstService->id)
+            ->pluck('job_schedule_room_rentals.job_advice_room_id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        $this->assertSame([4], $linkedJobAdviceRoomIds);
+        $this->assertSame(41, JobAdviceRoom::findOrFail(3)->service_job_schedule_id);
+        $this->assertSame($firstService->id, JobAdviceRoom::findOrFail(4)->service_job_schedule_id);
+    }
+
     public function test_repair_mixed_rental_follow_ups_generates_missing_csr_and_repairs_old_check_number(): void
     {
         $this->seedMixedUnitOnlyAndRefillRoom();

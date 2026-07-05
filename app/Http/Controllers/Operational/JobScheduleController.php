@@ -996,6 +996,15 @@ class JobScheduleController extends Controller
         if ($allowedJobAdviceRoomIds !== null) {
             $sourceRooms = $sourceRooms->whereIn('id', $allowedJobAdviceRoomIds);
         }
+        if ($linkColumn === 'service_job_schedule_id') {
+            $serviceEligibleRooms = $sourceRooms
+                ->reject(fn ($jaRoom) => $this->jobAdviceRoomShouldGenerateUnitOnlyCheck($jaRoom))
+                ->values();
+
+            if ($serviceEligibleRooms->isNotEmpty()) {
+                $sourceRooms = $serviceEligibleRooms;
+            }
+        }
 
         if ($sourceRooms->isEmpty()) {
             \Log::warning("No eligible Job Advice rooms to sync for job schedule {$jobSchedule->id}", [
