@@ -599,7 +599,8 @@ class StockAdjustment extends Model
 
         $searchPattern = $prefix.'/'.$yearMonth.'/%';
 
-        $lastAdjustment = self::where('adjustment_no', 'like', $searchPattern)
+        $lastAdjustment = self::withTrashed()
+            ->where('adjustment_no', 'like', $searchPattern)
             ->orderBy('id', 'desc')
             ->first();
 
