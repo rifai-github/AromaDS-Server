@@ -9856,14 +9856,22 @@ class JobScheduleController extends Controller
                              $hasSubstitutedAroma = true;
                         }
 
-                        // MOM: Default to 100ml (Packaging Size ID: 2) for Aroma/Refill products if available
+                        // MOM: Default to 100ml (Packaging Size ID: 2) for Aroma/Refill products if available.
+                        // `variant_name`/`brand_line` alone are a brand-tier code (e.g. "Artisan DEF") shared by
+                        // every scent in that tier (Amberwood, Garden Mix, ...), NOT the scent itself — matching
+                        // on those two columns can silently swap to a same-tier product with a DIFFERENT scent.
+                        // Match on the product name with the size suffix stripped instead, so the 100ml lookup
+                        // stays within the same scent.
                         if ($isAromaType && $product->packaging_size_id != 2) {
-                            $hundredMlProduct = \App\Models\MasterProduct::where('variant_name', $product->variant_name)
-                                ->where('brand_line', $product->brand_line)
+                            $stripSize = fn ($name) => trim(preg_replace('/\s*\d+(\.\d+)?\s*ml\s*$/i', '', (string) $name));
+                            $baseName = $stripSize($product->name);
+
+                            $hundredMlProduct = \App\Models\MasterProduct::where('brand_line', $product->brand_line)
                                 ->where('packaging_size_id', 2)
                                 ->where('is_active', true)
-                                ->first();
-                            
+                                ->get()
+                                ->first(fn ($candidate) => $stripSize($candidate->name) === $baseName);
+
                             if ($hundredMlProduct) {
                                 $product = $hundredMlProduct;
                             }
