@@ -804,15 +804,18 @@ class LostUnitReportController extends Controller
             $contract = $lostUnitReport->contract;
             $invoice = null;
             $isOnHold = $contract && $contract->hold_invoice;
+            $shouldCharge = $lostUnitReport->charge_customer && (float) $lostUnitReport->charge_amount > 0;
 
-            if (!$isOnHold) {
+            if (!$isOnHold && $shouldCharge) {
                 $invoice = $this->generateLostUnitInvoice($lostUnitReport);
-                
+
                 if ($invoice) {
                     $lostUnitReport->update(['invoice_id' => $invoice->id]);
                 }
-            } else {
+            } elseif ($isOnHold) {
                 \Log::info("Invoice generation skipped for LUR {$lostUnitReport->report_number} because contract {$contract->contract_number} is on Hold Invoice.");
+            } else {
+                \Log::info("Invoice generation skipped for LUR {$lostUnitReport->report_number} because customer is not charged (charge_customer=false or charge_amount=0).");
             }
 
             // NEW: Auto-generate Job Advice + Job Schedule untuk pemasangan pengganti
@@ -820,9 +823,13 @@ class LostUnitReportController extends Controller
 
             DB::commit();
 
-            $successMessage = $isOnHold 
-                ? 'Laporan Unit Hilang berhasil di-approve dan Job Advice telah dibuat. Pembuatan invoice ditunda (Hold Invoice aktif).'
-                : 'Laporan Unit Hilang berhasil di-approve. Invoice dan Job Advice telah dibuat.';
+            if ($isOnHold) {
+                $successMessage = 'Laporan Unit Hilang berhasil di-approve dan Job Advice telah dibuat. Pembuatan invoice ditunda (Hold Invoice aktif).';
+            } elseif ($invoice) {
+                $successMessage = 'Laporan Unit Hilang berhasil di-approve. Invoice dan Job Advice telah dibuat.';
+            } else {
+                $successMessage = 'Laporan Unit Hilang berhasil di-approve dan Job Advice telah dibuat. Invoice tidak dibuat karena customer tidak dikenakan charge.';
+            }
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -1151,7 +1158,7 @@ class LostUnitReportController extends Controller
     {
         try {
             $contract = $report->contract;
-            $unitPrice = $report->lost_unit_price;
+            $unitPrice = (float) ($report->charge_amount ?? $report->lost_unit_price);
             
             // Auto-generate invoice number using DocumentNumberService
             $documentNumberService = app(\App\Services\DocumentNumberService::class);
