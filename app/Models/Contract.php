@@ -969,7 +969,7 @@ class Contract extends Model
             return (int) $this->quotation->top_months;
         }
 
-        if (preg_match('/(\d+)\s*x.*(periode|period|contract|kontrak)/i', $term, $matches)) {
+        if (preg_match('/(\d+)\s*x.*(periode|period|contract|kontrak|advance)/i', $term, $matches)) {
             $paymentCount = (int) $matches[1];
             $contractMonths = $this->getContractDurationMonthsForTop();
 
