@@ -501,7 +501,7 @@
                         <input type="file" name="bap_file" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
                         @if($report->bap_file)
                             <div class="small mt-2">
-                                <a href="{{ Storage::url($report->bap_file) }}" target="_blank" rel="noopener noreferrer">Lihat BAP saat ini</a>
+                                <a href="{{ Storage::disk('public')->url($report->bap_file) }}" target="_blank" rel="noopener noreferrer">Lihat BAP saat ini</a>
                             </div>
                         @endif
                     </div>
