@@ -556,11 +556,13 @@ class AromaChange extends Model
      * @param Contract|null $contract
      * @return string
      */
-    public static function generateChangeNumber($contract = null)
+    public static function generateChangeNumber($contract = null, $branchCodeOverride = null)
     {
         // Get branch code from contract, default to 'JKT'
         $branchCode = 'JKT';
-        if ($contract && $contract->branch) {
+        if ($branchCodeOverride) {
+            $branchCode = strtoupper($branchCodeOverride);
+        } elseif ($contract && $contract->branch) {
             $branchCode = strtoupper($contract->branch->code ?? 'JKT');
         } elseif ($contract && $contract->branch_code) {
             $branchCode = strtoupper($contract->branch_code);

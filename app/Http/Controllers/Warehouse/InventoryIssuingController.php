@@ -1810,7 +1810,13 @@ public function getUserTeams($userId)
                     ?->room_id;
             }
 
-            $contract = $jobAdvice->contract;
+            // A job's own JobAdvice may not carry a contract_id yet (e.g. an Install Free job
+            // advice created before signing), even though the underlying Quotation already has
+            // a Contract via a different JobAdvice (e.g. a later CSR/service job). Without this
+            // fallback, changing aroma from the IF side would silently skip the AromaChange audit
+            // trail and miss syncing already-issued Material Issues on the CSR side of the same room.
+            $contract = $jobAdvice->contract
+                ?: ($jobAdvice->quotation_id ? \App\Models\Contract::where('quotation_id', $jobAdvice->quotation_id)->first() : null);
             $contractRoom = null;
             if ($contract) {
                 $contractRoomQuery = \App\Models\ContractRoom::where('contract_id', $contract->id);
@@ -1947,14 +1953,53 @@ public function getUserTeams($userId)
                     ]);
                 }
 
-                $materialIssueItem = \App\Models\MaterialIssueItem::where('job_assign_schedule_id', $item->job_assign_schedule_id)
+                // Record this direct swap in the Aroma Switching history too, even though
+                // there's no Contract yet, so it isn't invisible to that audit trail.
+                \App\Models\AromaChange::create([
+                    'change_number' => \App\Models\AromaChange::generateChangeNumber(null, strtok($jobSchedule->job_number ?: '', '-')),
+                    'contract_id' => null,
+                    'building_id' => $quotationRoom?->room?->building_id,
+                    'room_id' => $roomId,
+
+                    'previous_aroma_code' => $item->product->product_code,
+                    'previous_aroma_name' => $item->product->name,
+                    'previous_product_type_id' => $item->product->product_type_id,
+                    'previous_product_category_id' => $item->product->product_category_id,
+                    'previous_product_id' => $oldProductId,
+
+                    'new_aroma' => $newProduct->variant_name ?? $newProduct->name,
+                    'new_aroma_code' => $newProduct->variant ?? $newProduct->product_code,
+                    'new_aroma_name' => $newProduct->variant_name ?? $newProduct->name,
+                    'new_product_type_id' => $newProduct->product_type_id,
+                    'new_product_category_id' => $newProduct->product_category_id,
+                    'new_product_id' => $newProduct->id,
+
+                    'change_reason' => $request->change_reason ?? 'Warehouse Issuing Change (Quotation/Free-Install)',
+                    'status' => \App\Models\AromaChange::STATUS_COMPLETED,
+                    'applied_by' => Auth::id(),
+                    'applied_at' => now(),
+                    'requested_by' => Auth::id(),
+                    'created_by' => Auth::id(),
+                    'approval_notes' => 'Auto-completed via Warehouse Issuing Change (no Contract yet)',
+                ]);
+
+                // Sync ALL matching MaterialIssueItem rows for this job/room, not just the one
+                // tied to the specific InventoryIssuingItem, so already-issued MIs created from a
+                // different JobAssignSchedule for the same room still pick up the new aroma.
+                $jobAssignScheduleIds = \App\Models\JobAssignSchedule::where('job_schedule_id', $jobSchedule->id)
+                    ->pluck('id');
+
+                $materialIssueItems = \App\Models\MaterialIssueItem::whereIn('job_assign_schedule_id', $jobAssignScheduleIds)
                     ->where('product_id', $oldProductId)
                     ->when($roomName, function ($query) use ($roomName) {
                         $query->whereRaw('LOWER(TRIM(room_name)) = ?', [strtolower($roomName)]);
                     })
-                    ->first();
+                    ->whereHas('materialIssue', function ($query) {
+                        $query->whereIn('status', ['pending', 'approved', 'issued']);
+                    })
+                    ->get();
 
-                if ($materialIssueItem) {
+                foreach ($materialIssueItems as $materialIssueItem) {
                     if ($remainQty > 0) {
                         $materialIssueItem->update([
                             'quantity' => $remainQty,
@@ -1983,6 +2028,7 @@ public function getUserTeams($userId)
                             'bom_quantity' => $newProduct->bom_quantity ?? $materialIssueItem->bom_quantity,
                             'unit_price' => $newProduct->unit_price ?? $materialIssueItem->unit_price,
                             'total_price' => ($newProduct->unit_price ?? $materialIssueItem->unit_price ?? 0) * $request->quantity,
+                            'notes' => trim(($materialIssueItem->notes ? $materialIssueItem->notes . "\n" : '') . "Aroma changed from {$oldProductName} to {$newProduct->name}."),
                             'updated_by' => Auth::id(),
                         ]);
                     }
