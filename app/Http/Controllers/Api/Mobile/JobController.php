@@ -3132,12 +3132,45 @@ class JobController extends Controller
             }
         }
 
+        // Bug: a scanned MAC that IS registered but belongs to a non-unit product
+        // (e.g. a Refill/Cleaner serial number) used to fall into $unknownScans
+        // below and get silently credited toward a still-missing Unit slot —
+        // letting a technician satisfy "unit belum discan" by scanning the
+        // wrong item. Only truly UNREGISTERED serials (a brand-new unit not yet
+        // in the serial_numbers master — the bug #72 case above) should still
+        // get that unknown-scan benefit of the doubt.
+        $registeredNonUnitSerials = [];
+        $unregisteredCandidates = array_values(array_diff($scannedSerials, array_keys($snToCategory)));
+        if (! empty($unregisteredCandidates)) {
+            $registeredRows = \DB::table('serial_numbers')
+                ->join('master_products as mp', 'serial_numbers.master_product_id', '=', 'mp.id')
+                ->join('product_categories as pc', 'mp.product_category_id', '=', 'pc.id')
+                ->whereIn(\DB::raw('UPPER(TRIM(serial_numbers.serial_number))'), $unregisteredCandidates)
+                ->select('serial_numbers.serial_number', 'pc.is_unit', 'mp.product_category_id')
+                ->get();
+            foreach ($registeredRows as $row) {
+                $key = trim(strtoupper((string) $row->serial_number));
+                if ($row->is_unit) {
+                    // A registered unit of a different product than what was
+                    // issued for this rental — still a real unit scan, credit
+                    // it to its own category instead of treating as unknown.
+                    $snToCategory[$key] = $row->product_category_id;
+                } else {
+                    $registeredNonUnitSerials[$key] = true;
+                }
+            }
+        }
+
         $scannedCounts = [];
         $unknownScans = [];
         foreach ($scannedSerials as $mac) {
             if (isset($snToCategory[$mac])) {
                 $cat = $snToCategory[$mac];
                 $scannedCounts[$cat] = ($scannedCounts[$cat] ?? 0) + 1;
+            } elseif (isset($registeredNonUnitSerials[$mac])) {
+                // Known non-unit product (Refill/Cleaner/etc) — cannot fulfil a
+                // Unit requirement no matter how many units are still missing.
+                continue;
             } else {
                 $unknownScans[] = $mac;
             }

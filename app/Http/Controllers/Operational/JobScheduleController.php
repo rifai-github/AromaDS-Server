@@ -6651,75 +6651,95 @@ class JobScheduleController extends Controller
                 $serialNumberId = null;
                 $serialNumberString = null;
 
-                $materialIssues = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function ($q) use ($installJob) {
-                    $q->where('job_schedule_id', $installJob->id);
-                })->pluck('issue_number')->toArray();
-
-                if (!empty($materialIssues)) {
-                    $inventoryIssuingIds = \App\Models\InventoryIssuing::whereIn('reference_no', $materialIssues)
-                        ->whereIn('status', ['processed', 'received', 'sent'])
-                        ->pluck('id')
-                        ->toArray();
-
-                    if (!empty($inventoryIssuingIds)) {
-                        $inventoryIssuingItems = \App\Models\InventoryIssuingItem::whereIn('inventory_issuing_id', $inventoryIssuingIds)
-                            ->join('master_products as mp', 'inventory_issuing_items.product_id', '=', 'mp.id')
-                            ->join('product_categories as pc', 'mp.product_category_id', '=', 'pc.id')
-                            ->where('pc.is_unit', true)
-                            ->whereNotNull('inventory_issuing_items.serial_number_id')
-                            ->whereNotIn('inventory_issuing_items.id', $usedInventoryIssuingItemIds)
-                            ->select('inventory_issuing_items.*')
-                            ->with(['serialNumber'])
-                            ->get();
-
-                        $inventoryIssuingItem = $inventoryIssuingItems->first(function ($item) use ($roomName) {
-                            if (!$roomName) {
-                                return true;
-                            }
-
-                            return str_contains(strtolower($item->notes ?? ''), strtolower(trim($roomName)));
-                        }) ?? $inventoryIssuingItems->first();
-
-                        if ($inventoryIssuingItem) {
-                            $productId = $inventoryIssuingItem->product_id;
-                            $serialNumberId = $inventoryIssuingItem->serial_number_id;
-                            $serialNumberString = $inventoryIssuingItem->serialNumber->serial_number ?? null;
-                            $usedInventoryIssuingItemIds[] = $inventoryIssuingItem->id;
-                        }
-                    }
-                }
-
-                // STEP 3.5: Fallback to Technician Scanned Unit (from job_schedule_units)
-                // This is factual data from the field - highly reliable for matching specific rooms
-                if (!$productId && $installJob) {
-                    
-                    $scannedUnit = \DB::table('job_schedule_units')
+                // STEP 1: Prefer what the technician ACTUALLY scanned/verified in the
+                // app (job_schedule_units) over what the warehouse merely issued (WI).
+                // A unit "on wall" record must reflect the physical unit installed in
+                // the field, not just the paperwork — the WI can differ from reality
+                // (unit swap, technician error, partial issuance). Only registered
+                // scans whose product is genuinely a Unit category count here; a
+                // scanned Refill/Cleaner SN must never resolve a Unit's identity.
+                if ($installJob) {
+                    $scannedUnitRows = \DB::table('job_schedule_units')
                         ->where('job_schedule_id', $installJob->id)
-                        ->where(function($q) use ($jaRoom) {
+                        ->where(function ($q) use ($jaRoom) {
                             $q->where('job_advice_room_id', $jaRoom->id)
                               ->orWhere('mac', 'LIKE', "%{$jaRoom->room_name}%"); // Fallback to room name match in mac field if room_id not set
                         })
-                        ->first();
-                        
-                    if ($scannedUnit && $scannedUnit->mac) {
-                        $snRecord = \App\Models\SerialNumber::where('serial_number', $scannedUnit->mac)->first();
-                        
+                        ->orderByDesc('scanned_at')
+                        ->get();
+
+                    foreach ($scannedUnitRows as $scannedUnit) {
+                        if (!$scannedUnit->mac) {
+                            continue;
+                        }
+
+                        $snRecord = \App\Models\SerialNumber::with('masterProduct.productCategory')
+                            ->whereRaw('UPPER(TRIM(serial_number)) = ?', [strtoupper(trim((string) $scannedUnit->mac))])
+                            ->first();
+
                         // Try fallback via MAC Address in units table
                         if (!$snRecord) {
                             $unitRecord = \DB::table('units')->where('mac', $scannedUnit->mac)->first();
                             if ($unitRecord && $unitRecord->serial_number) {
-                                $snRecord = \App\Models\SerialNumber::where('serial_number', $unitRecord->serial_number)->first();
+                                $snRecord = \App\Models\SerialNumber::with('masterProduct.productCategory')
+                                    ->where('serial_number', $unitRecord->serial_number)
+                                    ->first();
                             }
                         }
-                        
-                        if ($snRecord) {
+
+                        $isUnitScan = $snRecord && ($snRecord->masterProduct?->productCategory?->is_unit ?? false);
+                        if ($isUnitScan) {
                             $productId = $snRecord->master_product_id;
                             $serialNumberId = $snRecord->id;
                             $serialNumberString = $snRecord->serial_number;
+                            break;
                         }
                     }
                 }
-                
+
+                // STEP 2: Fallback to what the warehouse issued (WI) — only used when
+                // the technician never scanned a valid unit SN in the app (e.g. an
+                // older job predating in-app scanning, or an offline-completed job).
+                if (!$productId) {
+                    $materialIssues = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function ($q) use ($installJob) {
+                        $q->where('job_schedule_id', $installJob->id);
+                    })->pluck('issue_number')->toArray();
+
+                    if (!empty($materialIssues)) {
+                        $inventoryIssuingIds = \App\Models\InventoryIssuing::whereIn('reference_no', $materialIssues)
+                            ->whereIn('status', ['processed', 'received', 'sent'])
+                            ->pluck('id')
+                            ->toArray();
+
+                        if (!empty($inventoryIssuingIds)) {
+                            $inventoryIssuingItems = \App\Models\InventoryIssuingItem::whereIn('inventory_issuing_id', $inventoryIssuingIds)
+                                ->join('master_products as mp', 'inventory_issuing_items.product_id', '=', 'mp.id')
+                                ->join('product_categories as pc', 'mp.product_category_id', '=', 'pc.id')
+                                ->where('pc.is_unit', true)
+                                ->whereNotNull('inventory_issuing_items.serial_number_id')
+                                ->whereNotIn('inventory_issuing_items.id', $usedInventoryIssuingItemIds)
+                                ->select('inventory_issuing_items.*')
+                                ->with(['serialNumber'])
+                                ->get();
+
+                            $inventoryIssuingItem = $inventoryIssuingItems->first(function ($item) use ($roomName) {
+                                if (!$roomName) {
+                                    return true;
+                                }
+
+                                return str_contains(strtolower($item->notes ?? ''), strtolower(trim($roomName)));
+                            }) ?? $inventoryIssuingItems->first();
+
+                            if ($inventoryIssuingItem) {
+                                $productId = $inventoryIssuingItem->product_id;
+                                $serialNumberId = $inventoryIssuingItem->serial_number_id;
+                                $serialNumberString = $inventoryIssuingItem->serialNumber->serial_number ?? null;
+                                $usedInventoryIssuingItemIds[] = $inventoryIssuingItem->id;
+                            }
+                        }
+                    }
+                }
+
                 // STEP 4: Fallback to Material Issue Items (if no inventory issuing items found)
                 if (!$productId) {
                     
