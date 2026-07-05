@@ -157,6 +157,9 @@ class ContractMergeWizardValueTest extends TestCase
         Schema::create('quotations', function (Blueprint $table) {
             $table->id();
             $table->string('quotation_number')->nullable();
+            $table->string('quotation_type')->nullable();
+            $table->foreignId('existing_contract_id')->nullable();
+            $table->string('status')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -295,6 +298,46 @@ class ContractMergeWizardValueTest extends TestCase
         $this->assertSame('merge', $newContract->contract_type);
         $this->assertSame(3500000.0, (float) $newContract->contract_value);
         $this->assertSame(3300000.0, (float) $newContract->net_value);
+    }
+
+    public function test_merge_candidates_exclude_renewal_source_contract_for_selected_quotation(): void
+    {
+        $renewalSource = Contract::create([
+            'contract_number' => 'SBY-CA/26-07/0010',
+            'customer_id' => 1,
+            'contract_status' => 'active',
+            'contract_value' => 1000000,
+        ]);
+
+        $otherContract = Contract::create([
+            'contract_number' => 'SBY-CA/26-07/0011',
+            'customer_id' => 1,
+            'contract_status' => 'active',
+            'contract_value' => 1000000,
+        ]);
+
+        DB::table('quotations')->insert([
+            'id' => 56,
+            'quotation_number' => 'SBY-SQ/26-07/0016',
+            'quotation_type' => 'renewal',
+            'existing_contract_id' => $renewalSource->id,
+            'status' => 'approved',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/marketing/contracts/merge-candidates', 'GET', [
+            'customer_id' => 1,
+            'quotation_id' => 56,
+        ]);
+
+        $response = app(ContractController::class)->getMergeCandidates($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($payload['success']);
+        $this->assertSame([$otherContract->id], collect($payload['data'])->pluck('id')->all());
+        $this->assertNotContains($renewalSource->id, collect($payload['data'])->pluck('id')->all());
     }
 
     public function test_merge_termination_uses_valid_contract_status_and_term_renew_audit_status(): void

@@ -1134,7 +1134,7 @@ function loadQuotationData(quotationId) {
                 
                 // [NEW] Load Merge Candidates for the customer
                 if (data.customer && data.customer.id) {
-                    loadMergeCandidates(data.customer.id);
+                    loadMergeCandidates(data.customer.id, data.quotation?.id || selectedQuotation);
                 }
                 
                 // Populate form fields with quotation data
@@ -1150,7 +1150,7 @@ function loadQuotationData(quotationId) {
 
 // [NEW] Function to load merge candidates
 let selectedMergeContractIds = [];
-function loadMergeCandidates(customerId) {
+function loadMergeCandidates(customerId, quotationId = null) {
     const section = document.getElementById('mergeContractsSection');
     const loading = document.getElementById('mergeCandidatesLoading');
     const list = document.getElementById('mergeCandidatesList');
@@ -1165,7 +1165,12 @@ function loadMergeCandidates(customerId) {
     list.innerHTML = '';
     selectedMergeContractIds = []; // Reset selected
 
-    fetch(`/marketing/contracts/merge-candidates?customer_id=${customerId}`)
+    const params = new URLSearchParams({ customer_id: customerId });
+    if (quotationId) {
+        params.append('quotation_id', quotationId);
+    }
+
+    fetch(`/marketing/contracts/merge-candidates?${params.toString()}`)
         .then(response => response.json())
         .then(data => {
             loading.style.display = 'none';
@@ -1556,7 +1561,7 @@ function loadQuotationDetails() {
 
                 // [NEW] Load Merge Candidates for the customer when step 2 is loaded
                 if (data.customer && data.customer.id) {
-                    loadMergeCandidates(data.customer.id);
+                    loadMergeCandidates(data.customer.id, data.quotation?.id || selectedQuotation);
                 }
             } else {
                 console.error('No data received from API or success is false');

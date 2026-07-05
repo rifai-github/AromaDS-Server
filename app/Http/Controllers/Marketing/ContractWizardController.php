@@ -319,6 +319,18 @@ class ContractWizardController extends Controller
             if ($quotation && $quotation->quotation_type === 'renewal' && $quotation->existing_contract_id) {
                 $oldContract = Contract::findRenewalSource($quotation->existing_contract_id);
                 $blockReason = $oldContract?->getRenewalBlockReason(null, $quotation->id);
+                $sourceContractIds = collect($request->input('source_contract_ids', []))
+                    ->filter(fn ($id) => filled($id))
+                    ->map(fn ($id) => (int) $id);
+
+                if ($sourceContractIds->contains((int) $quotation->existing_contract_id)) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Contract lama renewal tidak boleh dipilih sebagai kontrak merge.',
+                    ], 422);
+                }
 
                 if (!$oldContract) {
                     \Log::warning('Renewal source contract lookup failed during contract draft creation', [

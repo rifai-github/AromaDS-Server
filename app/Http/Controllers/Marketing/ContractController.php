@@ -3546,6 +3546,7 @@ class ContractController extends Controller
         try {
             $customerId = $request->input('customer_id');
             $excludeId = $request->input('exclude_contract_id');
+            $quotationId = $request->input('quotation_id');
 
             if (! $customerId) {
                 return response()->json([
@@ -3556,6 +3557,17 @@ class ContractController extends Controller
 
             // Status yang eligible untuk di-merge
             $mergableStatuses = ['active', 'approved', 'signed'];
+            $excludedContractIds = collect([$excludeId])->filter()->map(fn ($id) => (int) $id);
+
+            if ($quotationId) {
+                $quotation = Quotation::query()
+                    ->select('id', 'quotation_type', 'existing_contract_id')
+                    ->find($quotationId);
+
+                if ($quotation?->quotation_type === 'renewal' && $quotation->existing_contract_id) {
+                    $excludedContractIds->push((int) $quotation->existing_contract_id);
+                }
+            }
 
             $query = Contract::with(['contractRooms.room', 'contractRentals.masterRental'])
                 ->where('customer_id', $customerId)
@@ -3566,8 +3578,9 @@ class ContractController extends Controller
                         ->orWhereNotIn('contract_type', ['merge']);
                 });
 
-            if ($excludeId) {
-                $query->where('id', '!=', $excludeId);
+            $excludedContractIds = $excludedContractIds->unique()->values();
+            if ($excludedContractIds->isNotEmpty()) {
+                $query->whereNotIn('id', $excludedContractIds->all());
             }
 
             $contracts = $query->orderByDesc('created_at')->get();
