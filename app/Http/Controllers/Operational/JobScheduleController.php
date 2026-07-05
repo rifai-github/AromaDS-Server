@@ -8944,7 +8944,25 @@ class JobScheduleController extends Controller
             })
             ->with(['jobAdvice', 'jobScheduleRooms.rentals.jobAdviceRoom.rentalProduct'])
             ->get()
+            ->reject(fn (JobSchedule $candidate) => $this->isPartialCompletionFollowUpSource($job, $candidate))
             ->first(fn (JobSchedule $candidate) => $this->documentTypeForJobSchedule($candidate) === $documentType);
+    }
+
+    /**
+     * A partial-completion follow-up job must never reuse (share) the job_number of the
+     * source job it was split off from. The source job is still an independent, unfinished
+     * job (e.g. status "meninggalkan_lokasi") and sharing its job_number with the follow-up
+     * makes the mobile/web clients treat both rows as one job, breaking arrival/start/verify
+     * flows for whichever one loads second (see internal_notes "Lanjutan dari Job ..." marker
+     * set in JobWebCompletionService::findOrCreatePartialCompletionFollowUpJob()).
+     */
+    private function isPartialCompletionFollowUpSource(JobSchedule $followUp, JobSchedule $candidate): bool
+    {
+        if (empty($candidate->job_number)) {
+            return false;
+        }
+
+        return str_starts_with((string) $followUp->internal_notes, "Lanjutan dari Job {$candidate->job_number}");
     }
 
     /**
