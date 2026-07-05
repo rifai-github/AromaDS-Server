@@ -2193,7 +2193,7 @@ class InvoiceController extends Controller
                 'period_end' => 'required|date'
             ]);
 
-            $invoiceGenerationService = new InvoiceGenerationService();
+            $invoiceGenerationService = app(InvoiceGenerationService::class);
             
             $result = $invoiceGenerationService->autoGenerateInvoiceForRentalPeriod(
                 $request->contract_id,
@@ -2239,7 +2239,7 @@ class InvoiceController extends Controller
                 'contract_id' => 'required|exists:contracts,id'
             ]);
 
-            $invoiceGenerationService = new InvoiceGenerationService();
+            $invoiceGenerationService = app(InvoiceGenerationService::class);
             $periods = $invoiceGenerationService->getRentalPeriodsForContract($request->contract_id);
 
             return response()->json([
@@ -2269,7 +2269,7 @@ class InvoiceController extends Controller
                 'rental_periods.*.period_end' => 'required|date'
             ]);
 
-            $invoiceGenerationService = new InvoiceGenerationService();
+            $invoiceGenerationService = app(InvoiceGenerationService::class);
             
             $result = $invoiceGenerationService->generateInvoicesForMultiplePeriods(
                 $request->contract_id,
