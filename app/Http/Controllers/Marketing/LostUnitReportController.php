@@ -1198,17 +1198,10 @@ class LostUnitReportController extends Controller
                 'updated_by' => Auth::id(),
             ]);
 
-            // Create invoice detail
-            \App\Models\Finance\InvoiceDetail::create([
-                'invoice_id' => $invoice->id,
-                'description' => 'Penggantian Unit Hilang - ' . ($report->rental_name ?? 'Unit') . ' (Ref: ' . $report->report_number . ')',
-                'quantity' => 1,
-                'unit_price' => $unitPrice,
-                'total_price' => $unitPrice,
-                'created_by' => Auth::id(),
-            ]);
-
-            // Create rental details for RENTAL tab
+            // Create rental details for RENTAL/DETAIL tabs, one row per lost-unit item.
+            // Do NOT also create a summary InvoiceDetail row here: calculateInvoiceSubtotal()
+            // and the invoice Detail tab sum invoiceDetails + invoiceRentalDetails together,
+            // so adding both a summary row and per-item rows for the same charge double-counts it.
             foreach ($report->items as $item) {
                 \App\Models\Finance\InvoiceRentalDetail::create([
                     'invoice_id' => $invoice->id,

@@ -524,6 +524,15 @@
                 </form>
             @else
                 <p class="mb-0">{{ $report->remark ?? 'No remark provided' }}</p>
+                <div class="small mt-2">
+                    @if($report->bap_file)
+                        <a href="{{ Storage::disk('public')->url($report->bap_file) }}" target="_blank" rel="noopener noreferrer">
+                            <i class="fas fa-file-alt me-1"></i>Lihat BAP
+                        </a>
+                    @else
+                        <span class="text-muted">Tidak ada file BAP</span>
+                    @endif
+                </div>
             @endif
         </div>
     </div>
