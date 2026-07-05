@@ -331,7 +331,11 @@ class InvoiceGenerationService
         $installTypes = ['install', 'installation', 'installation_report', 'ir'];
         $serviceTypes = ['service', 'service_first', 'service_routine', 'servis', 'csr', 'customer_service_report', 'customer service report'];
 
-        if ($rentalType === 'unit_only') {
+        $isUnitOnly = $rentalType === 'unit_only';
+        $isUnitRefillBeforeService = $rentalType === 'unit_refill'
+            && $this->getInvoiceTiming($contract) === 'before_service';
+
+        if ($isUnitOnly || $isUnitRefillBeforeService) {
             if (in_array($jobType, $installTypes, true)) {
                 return true;
             }
