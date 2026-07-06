@@ -656,6 +656,8 @@ class InventoryController extends Controller
             'submission_letter_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
             'delivery_note_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
             'notes' => 'nullable|string|max:1000',
+            'return_reason' => 'nullable|string|max:1000',
+            'return_reason_category' => 'nullable|in:slow_moving,near_expired,customer_need_changed,damaged,other',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:master_products,id',
             'items.*.quantity' => 'required|integer|min:1'
@@ -728,6 +730,8 @@ class InventoryController extends Controller
                 'delivery_note_uploaded_by' => $request->hasFile('delivery_note_file') ? Auth::id() : null,
                 'delivery_note_uploaded_at' => $request->hasFile('delivery_note_file') ? now() : null,
                 'notes' => $request->notes,
+                'return_reason' => $request->return_reason,
+                'return_reason_category' => $request->return_reason_category,
                 'created_by' => Auth::id(),
                 'updated_by' => Auth::id()
             ]);
@@ -778,7 +782,9 @@ class InventoryController extends Controller
             'central_approval_notes' => 'nullable|string|max:1000',
             'submission_letter_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
             'delivery_note_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
-            'notes' => 'nullable|string|max:1000'
+            'notes' => 'nullable|string|max:1000',
+            'return_reason' => 'nullable|string|max:1000',
+            'return_reason_category' => 'nullable|in:slow_moving,near_expired,customer_need_changed,damaged,other'
         ]);
 
         try {
@@ -887,6 +893,8 @@ class InventoryController extends Controller
                 'delivery_note_uploaded_by' => $deliveryNoteUploadedBy,
                 'delivery_note_uploaded_at' => $deliveryNoteUploadedAt,
                 'notes' => $request->notes,
+                'return_reason' => $request->return_reason,
+                'return_reason_category' => $request->return_reason_category,
                 'updated_by' => Auth::id()
             ]);
 

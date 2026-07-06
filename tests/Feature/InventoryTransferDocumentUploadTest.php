@@ -91,6 +91,8 @@ class InventoryTransferDocumentUploadTest extends TestCase
             $table->string('source_type', 64)->nullable();
             $table->unsignedBigInteger('source_id')->nullable();
             $table->text('notes')->nullable();
+            $table->text('return_reason')->nullable();
+            $table->string('return_reason_category', 64)->nullable();
             $table->unsignedBigInteger('created_by')->nullable();
             $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamps();
@@ -199,5 +201,42 @@ class InventoryTransferDocumentUploadTest extends TestCase
         $this->assertNotNull($transfer->delivery_note_file);
         Storage::disk('public')->assertExists($transfer->delivery_note_file);
         $this->assertSame(1, $transfer->delivery_note_uploaded_by);
+    }
+
+    /**
+     * Standalone warehouse-to-warehouse return, no job schedule involved: a branch
+     * can already create a direct Branch -> Center transfer (canTransferTo() already
+     * allows it), this locks down the new structured return_reason/category fields
+     * that give it the same audit trail a job-schedule-triggered MaterialReturn has.
+     */
+    public function test_store_transfer_records_return_reason_for_standalone_branch_to_center_return(): void
+    {
+        $branch = Warehouse::create(['name' => 'Gudang Cabang', 'is_center' => false]);
+        $center = Warehouse::create(['name' => 'Gudang Pusat', 'is_center' => true]);
+        DB::table('master_products')->insert(['id' => 1, 'name' => 'Diffuser W300 White', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('warehouse_products')->insert([
+            'warehouse_id' => $branch->id, 'master_product_id' => 1, 'quantity' => 5,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/warehouse/inventory-transfers/api/store', 'POST', [
+            'transfer_date' => now()->toDateString(),
+            'from_warehouse_id' => $branch->id,
+            'to_warehouse_id' => $center->id,
+            'status' => 'draft',
+            'items' => [['product_id' => 1, 'quantity' => 2]],
+            'return_reason_category' => 'damaged',
+            'return_reason' => 'Unit rusak saat pengecekan stok cabang, dikembalikan ke pusat untuk repair.',
+        ]);
+
+        $response = (new InventoryController())->storeTransfer($request);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
+
+        $transfer = InventoryTransfer::first();
+        $this->assertSame('damaged', $transfer->return_reason_category);
+        $this->assertSame('Unit rusak saat pengecekan stok cabang, dikembalikan ke pusat untuk repair.', $transfer->return_reason);
+        $this->assertNull($transfer->source_type); // not tied to a job-schedule material return
     }
 }

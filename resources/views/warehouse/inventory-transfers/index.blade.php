@@ -1042,6 +1042,24 @@ function openCreateModal() {
                     <label class="form-label">Notes</label>
                     <textarea name="notes" class="form-input" rows="3" placeholder="Masukkan catatan transfer"></textarea>
                 </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                    <div class="form-group">
+                        <label class="form-label">Kategori Alasan Return</label>
+                        <select name="return_reason_category" class="form-input">
+                            <option value="">- Bukan return / tidak relevan -</option>
+                            <option value="slow_moving">Slow Moving</option>
+                            <option value="near_expired">Near Expired</option>
+                            <option value="customer_need_changed">Perubahan Kebutuhan Customer</option>
+                            <option value="damaged">Rusak</option>
+                            <option value="other">Lainnya</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">Isi jika transfer ini adalah return warehouse cabang ke pusat (tanpa job schedule).</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Detail Alasan Return</label>
+                        <textarea name="return_reason" class="form-input" rows="2" placeholder="Detail alasan return (opsional)"></textarea>
+                    </div>
+                </div>
             </div>
 
             <div class="modal-section">
@@ -1216,6 +1234,16 @@ function openViewModal(id) {
                             <label class="form-label">Notes</label>
                             <p class="detail-value">${data.notes || '-'}</p>
                         </div>
+                        ${data.return_reason_category ? `
+                        <div class="detail-item">
+                            <label class="form-label">Kategori Alasan Return</label>
+                            <p class="detail-value">${data.return_reason_category}</p>
+                        </div>
+                        <div class="detail-item">
+                            <label class="form-label">Detail Alasan Return</label>
+                            <p class="detail-value">${data.return_reason || '-'}</p>
+                        </div>
+                        ` : ''}
                         <div class="detail-item">
                             <label class="form-label">Created At</label>
                             <p class="detail-value">${data.created_at ? new Date(data.created_at).toLocaleString() : '-'}</p>
@@ -1364,6 +1392,23 @@ function openEditModal(id) {
                     <div class="form-group">
                         <label class="form-label">Notes</label>
                         <textarea name="notes" class="form-input" rows="3" placeholder="Masukkan catatan transfer">${data.notes || ''}</textarea>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                        <div class="form-group">
+                            <label class="form-label">Kategori Alasan Return</label>
+                            <select name="return_reason_category" class="form-input">
+                                <option value="">- Bukan return / tidak relevan -</option>
+                                <option value="slow_moving" ${data.return_reason_category == 'slow_moving' ? 'selected' : ''}>Slow Moving</option>
+                                <option value="near_expired" ${data.return_reason_category == 'near_expired' ? 'selected' : ''}>Near Expired</option>
+                                <option value="customer_need_changed" ${data.return_reason_category == 'customer_need_changed' ? 'selected' : ''}>Perubahan Kebutuhan Customer</option>
+                                <option value="damaged" ${data.return_reason_category == 'damaged' ? 'selected' : ''}>Rusak</option>
+                                <option value="other" ${data.return_reason_category == 'other' ? 'selected' : ''}>Lainnya</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Detail Alasan Return</label>
+                            <textarea name="return_reason" class="form-input" rows="2" placeholder="Detail alasan return (opsional)">${data.return_reason || ''}</textarea>
+                        </div>
                     </div>
                 </div>
 

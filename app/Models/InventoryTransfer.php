@@ -31,6 +31,8 @@ class InventoryTransfer extends Model
         'delivery_note_uploaded_by',
         'delivery_note_uploaded_at',
         'notes',
+        'return_reason',
+        'return_reason_category',
         'source_type',
         'source_id',
         'created_by',
