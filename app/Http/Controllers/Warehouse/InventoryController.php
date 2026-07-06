@@ -764,6 +764,7 @@ class InventoryController extends Controller
 
         try {
             $transfer = InventoryTransfer::findOrFail($id);
+            $oldStatus = $transfer->status;
 
             DB::beginTransaction();
 
@@ -798,6 +799,31 @@ class InventoryController extends Controller
                 $deliveryOrderFile = $request->file('delivery_order_file')->store('inventory-transfers/do', 'public');
             }
 
+            // When a transfer leaves 'draft' for the first time, stock physically moves
+            // (source warehouse -, destination warehouse +). storeTransfer applies this at
+            // creation for non-draft transfers; drafts created earlier (e.g. auto-created
+            // from a branch material return) commit their stock movement here. Validate
+            // source stock first, mirroring storeTransfer.
+            $shouldApplyStock = $oldStatus === 'draft' && $request->status !== 'draft';
+
+            if ($shouldApplyStock) {
+                $transfer->load('transferItems');
+                foreach ($transfer->transferItems as $item) {
+                    $warehouseProduct = WarehouseProduct::where('warehouse_id', $request->from_warehouse_id)
+                        ->where('master_product_id', $item->master_product_id)
+                        ->first();
+
+                    if (!$warehouseProduct || $warehouseProduct->quantity < $item->quantity) {
+                        $product = MasterProduct::find($item->master_product_id);
+                        DB::rollBack();
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => "Stok tidak mencukupi untuk produk " . ($product->name ?? "#{$item->master_product_id}") . ". Stok tersedia: " . ($warehouseProduct->quantity ?? 0)
+                        ], 422);
+                    }
+                }
+            }
+
             $transfer->update([
                 'transfer_date' => $request->transfer_date,
                 'from_warehouse_id' => $request->from_warehouse_id,
@@ -811,6 +837,10 @@ class InventoryController extends Controller
                 'notes' => $request->notes,
                 'updated_by' => Auth::id()
             ]);
+
+            if ($shouldApplyStock) {
+                $this->updateStockForTransfer($transfer->load(['transferItems', 'fromWarehouse', 'toWarehouse']));
+            }
 
             DB::commit();
 

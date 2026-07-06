@@ -78,6 +78,7 @@ class MaterialReturnSiblingJobApprovalTest extends TestCase
             $table->foreignId('warehouse_id')->nullable();
             $table->foreignId('team_id')->nullable();
             $table->string('status')->nullable();
+            $table->string('disposition')->default('keep_branch');
             $table->date('return_date')->nullable();
             $table->string('return_reason')->nullable();
             $table->text('notes')->nullable();
@@ -86,6 +87,7 @@ class MaterialReturnSiblingJobApprovalTest extends TestCase
             $table->text('approval_notes')->nullable();
             $table->foreignId('returned_by')->nullable();
             $table->timestamp('returned_at')->nullable();
+            $table->unsignedBigInteger('inventory_transfer_id')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('updated_by')->nullable();
             $table->timestamps();

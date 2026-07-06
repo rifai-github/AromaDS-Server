@@ -243,6 +243,60 @@
             });
         });
 
+        // Return cabang -> pusat: label the transfer progress toward the central warehouse.
+        function forwardTransferBadge(status) {
+            const map = {
+                draft: { cls: 'warning', text: 'Menunggu Dikirim' },
+                transferred: { cls: 'info', text: 'Dalam Perjalanan' },
+                received: { cls: 'success', text: 'Diterima Pusat' }
+            };
+            const m = map[status] || { cls: 'secondary', text: (status || '-').toUpperCase() };
+            return `<span class="badge badge-${m.cls}">${m.text}</span>`;
+        }
+
+        function renderDispositionSection(materialReturn) {
+            const isPending = materialReturn.status === 'pending';
+
+            // Pending + can approve: let the branch admin choose where the returned stock goes.
+            if (isPending && window.canApproveMaterialReturn) {
+                return `
+                    <div class="mb-3">
+                        <strong>Tujuan Barang Return:</strong>
+                        <div class="form-check mt-1">
+                            <input class="form-check-input" type="radio" name="return_disposition" id="disp_keep" value="keep_branch" checked>
+                            <label class="form-check-label" for="disp_keep">Simpan di gudang cabang</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="return_disposition" id="disp_forward" value="forward_to_center">
+                            <label class="form-check-label" for="disp_forward">Teruskan ke gudang pusat (buat transfer otomatis saat Complete)</label>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Already decided: show the disposition and any linked center transfer.
+            const isForward = materialReturn.disposition === 'forward_to_center';
+            let html = `
+                <div class="mb-3">
+                    <strong>Tujuan Barang Return:</strong>
+                    ${isForward ? '<span class="badge badge-info">Diteruskan ke Pusat</span>' : '<span class="badge badge-secondary">Simpan di Cabang</span>'}
+                </div>
+            `;
+
+            if (materialReturn.inventory_transfer) {
+                const t = materialReturn.inventory_transfer;
+                html += `
+                    <div class="mb-3">
+                        <strong>Transfer ke Pusat:</strong>
+                        ${t.transfer_number} &rarr; ${t.to_warehouse?.name || 'Gudang Pusat'}
+                        ${forwardTransferBadge(t.status)}
+                    </div>
+                `;
+            }
+
+            return html;
+        }
+
         function displayMaterialReturn(materialReturn) {
             let html = `
                 <div class="mb-3">
@@ -266,6 +320,7 @@
                 <div class="mb-3">
                     <strong>Notes:</strong> ${materialReturn.notes || '-'}
                 </div>
+                ${renderDispositionSection(materialReturn)}
                 <hr>
                 <h6>Return Items:</h6>
                 <table class="table table-bordered">
@@ -326,10 +381,15 @@
             const returnId = $(this).data('return-id');
             const csrfToken = $('meta[name="csrf-token"]').attr('content');
             
-            if (!confirm('Are you sure you want to approve this material return?')) {
+            const disposition = $('input[name="return_disposition"]:checked').val() || 'keep_branch';
+            const confirmMsg = disposition === 'forward_to_center'
+                ? 'Approve return ini dan tandai untuk diteruskan ke gudang pusat?'
+                : 'Are you sure you want to approve this material return?';
+
+            if (!confirm(confirmMsg)) {
                 return;
             }
-            
+
             $.ajax({
                 url: `/operational/job-schedules/{{ $jobSchedule->id }}/material-returns/${returnId}/approve`,
                 method: 'POST',
@@ -337,9 +397,10 @@
                     'X-CSRF-TOKEN': csrfToken,
                     'Accept': 'application/json'
                 },
+                data: { disposition: disposition },
                 success: function(response) {
                     if (response.status === 'success') {
-                        toast('Success', 'Material return approved successfully.', 'success');
+                        toast('Success', response.message || 'Material return approved successfully.', 'success');
                         const modal = bootstrap.Modal.getInstance(document.getElementById('viewMaterialReturnModal'));
                         if (modal) modal.hide();
                         location.reload();
@@ -370,7 +431,7 @@
                 },
                 success: function(response) {
                     if (response.status === 'success') {
-                        toast('Success', 'Material return completed successfully and warehouse stock updated.', 'success');
+                        toast('Success', response.message || 'Material return completed successfully and warehouse stock updated.', 'success');
                         const modal = bootstrap.Modal.getInstance(document.getElementById('viewMaterialReturnModal'));
                         if (modal) modal.hide();
                         location.reload();

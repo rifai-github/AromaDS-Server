@@ -2430,7 +2430,9 @@ class JobScheduleController extends Controller
                 'jobScheduleRoom',
                 'approvedBy',
                 'returnedBy',
-                'createdBy'
+                'createdBy',
+                'inventoryTransfer:id,transfer_number,status,to_warehouse_id',
+                'inventoryTransfer.toWarehouse:id,name'
             ])
             ->orderBy('created_at', 'desc')
             ->get();
@@ -5259,6 +5261,80 @@ class JobScheduleController extends Controller
     }
 
     /**
+     * Guard: can this material return be forwarded to the central warehouse?
+     * Returns true when allowed, otherwise a human-readable error message.
+     */
+    private function assertReturnCanForwardToCenter(\App\Models\MaterialReturn $materialReturn)
+    {
+        $center = \App\Models\Warehouse::getCenterWarehouse();
+        if (!$center) {
+            return 'Belum ada gudang pusat (is_center) yang diset. Set salah satu warehouse sebagai pusat sebelum meneruskan return ke pusat.';
+        }
+
+        if (!$materialReturn->warehouse_id) {
+            return 'Gudang cabang untuk return ini tidak dapat ditentukan, sehingga tidak bisa diteruskan ke pusat.';
+        }
+
+        if ((int) $materialReturn->warehouse_id === (int) $center->id) {
+            return 'Return ini sudah berada di gudang pusat, tidak perlu diteruskan.';
+        }
+
+        return true;
+    }
+
+    /**
+     * Auto-create a branch -> center InventoryTransfer (status draft) from a
+     * completed material return. The transfer starts as draft because the goods
+     * are physically still at the branch; the warehouse/center team ships and
+     * receives it through the normal InventoryTransfer flow, which is what
+     * actually moves stock from the branch to the center warehouse.
+     *
+     * Returns the created InventoryTransfer, or null when forwarding is not
+     * possible (no center warehouse / no branch warehouse / from == to).
+     */
+    private function createForwardTransferForReturn(\App\Models\MaterialReturn $materialReturn, ?\App\Models\Warehouse $fromWarehouse)
+    {
+        $center = \App\Models\Warehouse::getCenterWarehouse();
+        if (!$center || !$fromWarehouse || (int) $fromWarehouse->id === (int) $center->id) {
+            \Log::warning("⚠️ Return {$materialReturn->return_number}: forward-to-center skipped (center/branch warehouse unavailable or identical).");
+            return null;
+        }
+
+        $transfer = \App\Models\InventoryTransfer::create([
+            'from_warehouse_id' => $fromWarehouse->id,
+            'to_warehouse_id' => $center->id,
+            'transfer_date' => now()->toDateString(),
+            'status' => 'draft',
+            'source_type' => 'material_return',
+            'source_id' => $materialReturn->id,
+            'notes' => "Auto dari return material cabang {$materialReturn->return_number} (job {$materialReturn->jobSchedule?->job_number}).",
+            'created_by' => Auth::id(),
+            'updated_by' => Auth::id(),
+        ]);
+
+        foreach ($materialReturn->items as $item) {
+            if (!$item->product_id || (float) $item->quantity <= 0) {
+                continue;
+            }
+
+            \App\Models\InventoryTransferItem::create([
+                'inventory_transfer_id' => $transfer->id,
+                'master_product_id' => $item->product_id,
+                'quantity' => $item->quantity,
+                'notes' => "Return item #{$item->id} dari {$materialReturn->return_number}",
+                'created_by' => Auth::id(),
+                'updated_by' => Auth::id(),
+            ]);
+        }
+
+        $materialReturn->update(['inventory_transfer_id' => $transfer->id]);
+
+        \Log::info("✅ Return {$materialReturn->return_number}: forward-to-center transfer {$transfer->transfer_number} created (draft) from WH {$fromWarehouse->name} -> WH {$center->name}.");
+
+        return $transfer;
+    }
+
+    /**
      * STUDY CASE B1: Approve material return
      */
     public function approveMaterialReturn(Request $request, JobSchedule $jobSchedule, $returnId)
@@ -5274,7 +5350,8 @@ class JobScheduleController extends Controller
         }
 
         $request->validate([
-            'approval_notes' => 'nullable|string|max:1000'
+            'approval_notes' => 'nullable|string|max:1000',
+            'disposition' => 'nullable|in:keep_branch,forward_to_center',
         ]);
 
         try {
@@ -5282,6 +5359,7 @@ class JobScheduleController extends Controller
 
             $materialReturn = \App\Models\MaterialReturn::whereIn('job_schedule_id', $this->getMaterialReturnJobScheduleIds($jobSchedule))
                 ->where('id', $returnId)
+                ->with('warehouse')
                 ->firstOrFail();
 
             if ($materialReturn->status !== \App\Models\MaterialReturn::STATUS_PENDING) {
@@ -5293,7 +5371,21 @@ class JobScheduleController extends Controller
                 ], 422);
             }
 
-            $materialReturn->approve(Auth::id(), $request->approval_notes);
+            // Default to keeping stock at the branch; only forward to center when explicitly chosen.
+            $disposition = $request->input('disposition', \App\Models\MaterialReturn::DISPOSITION_KEEP_BRANCH);
+
+            if ($disposition === \App\Models\MaterialReturn::DISPOSITION_FORWARD_TO_CENTER) {
+                $forwardCheck = $this->assertReturnCanForwardToCenter($materialReturn);
+                if ($forwardCheck !== true) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $forwardCheck,
+                    ], 422);
+                }
+            }
+
+            $materialReturn->approve(Auth::id(), $request->approval_notes, $disposition);
 
             DB::commit();
 
@@ -5450,14 +5542,27 @@ class JobScheduleController extends Controller
                 ]);
             }
 
+            // Return cabang -> pusat: if this return was approved to forward to the
+            // central warehouse, auto-create a draft InventoryTransfer (branch -> center).
+            // Stock physically moves later when that transfer is shipped/received.
+            $forwardedTransfer = null;
+            if ($materialReturn->isForwardToCenter()) {
+                $forwardedTransfer = $this->createForwardTransferForReturn($materialReturn, $warehouse);
+            }
+
             DB::commit();
 
             \Log::info("✅ STUDY CASE B1: Completed material return {$materialReturn->return_number} and updated warehouse stock");
 
+            $message = 'Material return completed successfully and warehouse stock updated.';
+            if ($forwardedTransfer) {
+                $message .= " Transfer ke gudang pusat dibuat (Draft): {$forwardedTransfer->transfer_number}. Proses pengiriman & penerimaan dilakukan dari menu Inventory Transfer.";
+            }
+
             return response()->json([
                 'status' => 'success',
-                'message' => 'Material return completed successfully and warehouse stock updated.',
-                'data' => $materialReturn->load(['items.product', 'warehouse', 'team', 'returnedBy'])
+                'message' => $message,
+                'data' => $materialReturn->load(['items.product', 'warehouse', 'team', 'returnedBy', 'inventoryTransfer'])
             ]);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -5491,7 +5596,9 @@ class JobScheduleController extends Controller
                 'jobScheduleRoom',
                 'approvedBy',
                 'returnedBy',
-                'createdBy'
+                'createdBy',
+                'inventoryTransfer:id,transfer_number,status,to_warehouse_id',
+                'inventoryTransfer.toWarehouse:id,name'
             ])
             ->orderBy('created_at', 'desc')
             ->get();

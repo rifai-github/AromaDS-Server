@@ -19,6 +19,7 @@ class MaterialReturn extends Model
         'warehouse_id',
         'team_id',
         'status',
+        'disposition',
         'return_date',
         'return_reason',
         'return_reason_category',
@@ -28,8 +29,9 @@ class MaterialReturn extends Model
         'approval_notes',
         'returned_by',
         'returned_at',
+        'inventory_transfer_id',
         'created_by',
-        'updated_by'
+        'updated_by',
     ];
 
     protected $casts = [
@@ -40,15 +42,23 @@ class MaterialReturn extends Model
 
     // Status constants
     const STATUS_PENDING = 'pending';
+
     const STATUS_APPROVED = 'approved';
+
     const STATUS_RETURNED = 'returned';
+
     const STATUS_CANCELLED = 'cancelled';
+
     const STATUS_REJECTED = 'rejected';
+
+    // Disposition constants (return cabang -> pusat)
+    const DISPOSITION_KEEP_BRANCH = 'keep_branch';
+
+    const DISPOSITION_FORWARD_TO_CENTER = 'forward_to_center';
 
     /**
      * Relationships
      */
-    
     public function jobSchedule()
     {
         return $this->belongsTo(JobSchedule::class);
@@ -72,6 +82,11 @@ class MaterialReturn extends Model
     public function warehouse()
     {
         return $this->belongsTo(Warehouse::class);
+    }
+
+    public function inventoryTransfer()
+    {
+        return $this->belongsTo(InventoryTransfer::class);
     }
 
     public function team()
@@ -107,7 +122,6 @@ class MaterialReturn extends Model
     /**
      * Scopes
      */
-    
     public function scopeByJobSchedule($query, $jobScheduleId)
     {
         return $query->where('job_schedule_id', $jobScheduleId);
@@ -136,7 +150,7 @@ class MaterialReturn extends Model
     /**
      * Methods
      */
-    
+
     /**
      * Generate return number
      */
@@ -144,7 +158,7 @@ class MaterialReturn extends Model
     {
         // Use DocumentNumberService for consistent format: [BRANCH_CODE]-ADS-RTR/[YY]-[MM]/[NNNN]
         $documentNumberService = app(\App\Services\DocumentNumberService::class);
-        
+
         // Get branch from job schedule or building
         $branchCode = null;
         if ($jobScheduleId) {
@@ -167,21 +181,36 @@ class MaterialReturn extends Model
                 }
             }
         }
-        
+
         return $documentNumberService->generate('material_return', $branchCode);
+    }
+
+    /**
+     * Whether this return should be forwarded to the central warehouse
+     * after it is completed (instead of staying in the branch warehouse).
+     */
+    public function isForwardToCenter()
+    {
+        return $this->disposition === self::DISPOSITION_FORWARD_TO_CENTER;
     }
 
     /**
      * Approve return
      */
-    public function approve($userId = null, $notes = null)
+    public function approve($userId = null, $notes = null, $disposition = null)
     {
-        $this->update([
+        $data = [
             'status' => self::STATUS_APPROVED,
             'approved_by' => $userId ?? auth()->id(),
             'approved_at' => now(),
-            'approval_notes' => $notes
-        ]);
+            'approval_notes' => $notes,
+        ];
+
+        if ($disposition !== null) {
+            $data['disposition'] = $disposition;
+        }
+
+        $this->update($data);
     }
 
     /**
@@ -192,7 +221,7 @@ class MaterialReturn extends Model
         $this->update([
             'status' => self::STATUS_RETURNED,
             'returned_by' => $userId ?? auth()->id(),
-            'returned_at' => now()
+            'returned_at' => now(),
         ]);
     }
 }
