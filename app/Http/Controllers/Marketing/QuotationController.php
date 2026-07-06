@@ -56,10 +56,18 @@ class QuotationController extends Controller
                 'updated_by',
                 'updated_at',
                 'revision_number',
-                'is_latest_revision',
                 'customer_id',
                 'prospect_id',
             ])
+            // Count of newer revisions sharing the same quotation_number. Used to
+            // decide whether the "Copy sebagai Revisi" button should show: only the
+            // latest revision (count = 0) may be copied. Derived from data so it does
+            // not rely on the possibly-stale is_latest_revision flag.
+            ->addSelect(['newer_revision_count' => \DB::table('quotations as nq')
+                ->selectRaw('COUNT(*)')
+                ->whereColumn('nq.quotation_number', 'quotations.quotation_number')
+                ->whereColumn('nq.revision_number', '>', 'quotations.revision_number')
+                ->whereNull('nq.deleted_at')])
             ->with([
                 'customer:id,name',
                 'survey:id,survey_location',

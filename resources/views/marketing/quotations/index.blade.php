@@ -1509,7 +1509,7 @@
                             <span class="text-[10px] md:text-[12px] lg:text-[14px] font-bold text-[#3d3d3d]">{{ $quotation->revision_number ?? 0 }}</span>
                         </td>
                         <td class="w-[80px] p-2 text-center">
-                            @if($quotation->status === 'approved' && ($quotation->is_latest_revision ?? true))
+                            @if($quotation->status === 'approved' && (int)($quotation->newer_revision_count ?? 0) === 0)
                                 <button type="button" class="btn btn-sm btn-primary" onclick="event.stopPropagation(); copyQuotation({{ $quotation->id }})" title="Copy sebagai Revisi">
                                     <i class="fas fa-copy"></i>
                                 </button>
