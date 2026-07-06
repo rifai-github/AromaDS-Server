@@ -37,8 +37,15 @@ class SerialNumberIssuingLinkService
             return 0;
         }
 
+        // QA "1 Rental banyak Qty": a unit SN may be linked as the 2nd/3rd slot of a row
+        // only via the pivot table, so stale links must be released from both places.
         $items = InventoryIssuingItem::with('inventoryIssuing')
-            ->where('serial_number_id', $serialNumber->id)
+            ->where(function ($query) use ($serialNumber) {
+                $query->where('serial_number_id', $serialNumber->id)
+                    ->orWhereHas('serialLinks', function ($linkQuery) use ($serialNumber) {
+                        $linkQuery->where('serial_number_id', $serialNumber->id);
+                    });
+            })
             ->when($exceptItemId, fn ($query) => $query->where('id', '!=', $exceptItemId))
             ->whereHas('inventoryIssuing', function ($query) {
                 $query->whereIn('status', ['sent', 'received']);
@@ -52,8 +59,12 @@ class SerialNumberIssuingLinkService
                 . ' | SN: ' . $serialNumber->serial_number
                 . ' | WI: ' . ($item->inventoryIssuing?->issuing_number ?? '-');
 
+            $item->serialLinks()->where('serial_number_id', $serialNumber->id)->delete();
+
             $item->update([
-                'serial_number_id' => null,
+                'serial_number_id' => $item->serial_number_id === $serialNumber->id
+                    ? ($item->serialLinks()->orderBy('unit_index')->value('serial_number_id'))
+                    : $item->serial_number_id,
                 'updated_by' => $actorId ?: $item->updated_by,
                 'notes' => $notes !== '' ? "{$notes} | {$repairNote}" : $repairNote,
             ]);
@@ -65,7 +76,12 @@ class SerialNumberIssuingLinkService
     public function findPreparedLink(int $serialNumberId, ?int $exceptItemId = null): ?InventoryIssuingItem
     {
         return InventoryIssuingItem::with('inventoryIssuing')
-            ->where('serial_number_id', $serialNumberId)
+            ->where(function ($query) use ($serialNumberId) {
+                $query->where('serial_number_id', $serialNumberId)
+                    ->orWhereHas('serialLinks', function ($linkQuery) use ($serialNumberId) {
+                        $linkQuery->where('serial_number_id', $serialNumberId);
+                    });
+            })
             ->when($exceptItemId, fn ($query) => $query->where('id', '!=', $exceptItemId))
             ->whereHas('inventoryIssuing', function ($query) {
                 $query->whereIn('status', ['pending', 'processed']);

@@ -204,12 +204,14 @@
                         <div>
                             @if($issuing->isPending())
                                 @php
+                                    // QA "1 Rental banyak Qty": a unit row with quantity_requested > 1
+                                    // needs that many distinct SNs linked, not just one.
                                     $missingSN = false;
                                     $missingItems = [];
                                     foreach($issuing->items as $item) {
-                                        if (($item->product?->requiresSerialNumber() ?? false) && !$item->serial_number_id) {
+                                        if (!$item->hasAllRequiredSerials()) {
                                             $missingSN = true;
-                                            $missingItems[] = $item->product->name;
+                                            $missingItems[] = $item->product->name . " ({$item->linkedSerialCount()}/{$item->requiredSerialCount()})";
                                         }
                                     }
                                 @endphp
@@ -502,6 +504,16 @@
                                             $requiresSerialNumber = $item->product?->requiresSerialNumber() ?? false;
                                             $canScanSerialNumber = $requiresSerialNumber || in_array((int) $item->product_id, $scanSerialProductIds ?? [], true);
                                             $isOptionalSerialNumber = !$requiresSerialNumber && $canScanSerialNumber;
+                                            // QA "1 Rental banyak Qty": a unit row with quantity_requested > 1 needs
+                                            // that many distinct SNs. $linkedSerials lists every SN linked via the
+                                            // pivot; fall back to the single serialNumber for legacy/aroma rows.
+                                            $linkedSerials = $item->serialLinks->pluck('serialNumber')->filter()->values();
+                                            if ($linkedSerials->isEmpty() && $item->serialNumber) {
+                                                $linkedSerials = collect([$item->serialNumber]);
+                                            }
+                                            $requiredSerialCount = $item->requiredSerialCount();
+                                            $linkedCount = $linkedSerials->count();
+                                            $serialsComplete = $requiredSerialCount === 0 || $linkedCount >= $requiredSerialCount;
                                         @endphp
                                         <tr>
                                             <td style="padding: 12px; vertical-align: middle;">
@@ -525,8 +537,13 @@
                                             <td style="padding: 12px; vertical-align: middle;">
                                                 @if(!$canScanSerialNumber)
                                                 <span class="text-muted" style="font-style: italic;">Tidak wajib SN</span>
-                                                @elseif($item->serialNumber)
-                                                <strong style="font-family: monospace; font-size: 1rem; color: #1e3a8a;">{{ $item->serialNumber->serial_number }}</strong>
+                                                @elseif($linkedSerials->isNotEmpty())
+                                                    @foreach($linkedSerials as $sn)
+                                                    <div style="font-family: monospace; font-size: 0.95rem; color: #1e3a8a;">
+                                                        {{ $sn->serial_number }}
+                                                        @if($requiredSerialCount > 1)<small class="text-muted">({{ $loop->iteration }}/{{ $requiredSerialCount }})</small>@endif
+                                                    </div>
+                                                    @endforeach
                                                 @elseif($isOptionalSerialNumber)
                                                 <span class="text-muted" style="font-style: italic;">Opsional - belum ada SN</span>
                                                 @else
@@ -536,27 +553,30 @@
                                             <td style="padding: 12px; vertical-align: middle;">
                                                 @if(!$canScanSerialNumber)
                                                 <span class="badge bg-secondary" style="font-size: 0.85rem; padding: 6px 10px;">Tidak Wajib</span>
-                                                @elseif($item->serialNumber)
-                                                @php
-                                                    $statusClass = 'secondary';
-                                                    $statusText = ucfirst(str_replace('_', ' ', $item->serialNumber->status));
-                                                    if (in_array($item->serialNumber->status, ['ready', 'available'])) {
-                                                        $statusClass = 'success';
-                                                        $statusText = 'Ready';
-                                                    } elseif (in_array($item->serialNumber->status, ['broken', 'damaged'])) {
-                                                        $statusClass = 'danger';
-                                                        $statusText = 'Broken';
-                                                    } elseif (in_array($item->serialNumber->status, ['on_service', 'maintenance'])) {
-                                                        $statusClass = 'warning';
-                                                        $statusText = 'On Service';
-                                                    } elseif ($item->serialNumber->status === 'in_use') {
-                                                        $statusClass = 'info';
-                                                        $statusText = 'In Use';
-                                                    }
-                                                @endphp
-                                                <span class="badge bg-{{ $statusClass }}" style="font-size: 0.85rem; padding: 6px 10px;">
-                                                    {{ $statusText }}
-                                                </span>
+                                                @elseif($linkedSerials->isNotEmpty())
+                                                    @foreach($linkedSerials as $sn)
+                                                    @php
+                                                        $statusClass = 'secondary';
+                                                        $statusText = ucfirst(str_replace('_', ' ', $sn->status));
+                                                        if (in_array($sn->status, ['ready', 'available'])) {
+                                                            $statusClass = 'success';
+                                                            $statusText = 'Ready';
+                                                        } elseif (in_array($sn->status, ['broken', 'damaged'])) {
+                                                            $statusClass = 'danger';
+                                                            $statusText = 'Broken';
+                                                        } elseif (in_array($sn->status, ['on_service', 'maintenance'])) {
+                                                            $statusClass = 'warning';
+                                                            $statusText = 'On Service';
+                                                        } elseif ($sn->status === 'in_use') {
+                                                            $statusClass = 'info';
+                                                            $statusText = 'In Use';
+                                                        }
+                                                    @endphp
+                                                    <div><span class="badge bg-{{ $statusClass }}" style="font-size: 0.8rem; padding: 5px 8px;">{{ $statusText }}</span></div>
+                                                    @endforeach
+                                                    @if(!$serialsComplete)
+                                                    <span class="badge bg-warning" style="font-size: 0.75rem; padding: 4px 6px;">{{ $linkedCount }}/{{ $requiredSerialCount }}</span>
+                                                    @endif
                                                 @elseif($isOptionalSerialNumber)
                                                 <span class="badge bg-info" style="font-size: 0.85rem; padding: 6px 10px;">Opsional</span>
                                                 @else
@@ -564,8 +584,8 @@
                                                 @endif
                                             </td>
                                             <td style="padding: 12px; vertical-align: middle;">
-                                                @if($item->serialNumber && $item->serialNumber->warehouse)
-                                                <small>{{ $item->serialNumber->warehouse->name }}</small>
+                                                @if($linkedSerials->isNotEmpty() && $linkedSerials->first()->warehouse)
+                                                <small>{{ $linkedSerials->first()->warehouse->name }}</small>
                                                 @else
                                                 <small>{{ $issuing->warehouse->name ?? '-' }}</small>
                                                 @endif
@@ -574,9 +594,9 @@
                                                 @if($issuing->status === 'pending')
                                                 @if(!$canScanSerialNumber)
                                                 <span class="text-muted">-</span>
-                                                @elseif(!$item->serialNumber)
-                                                <button class="btn btn-sm btn-primary" onclick="openScanSNModalForItem({{ $item->id }})" title="Scan QR / Input SN">
-                                                    <i class="fas fa-qrcode"></i>
+                                                @elseif(!$serialsComplete)
+                                                <button class="btn btn-sm btn-primary" onclick="openScanSNModalForItem({{ $item->id }})" title="Scan QR / Input SN ({{ $linkedCount }}/{{ $requiredSerialCount }})">
+                                                    <i class="fas fa-qrcode"></i> {{ $linkedCount }}/{{ $requiredSerialCount }}
                                                 </button>
                                                 @else
                                                 <button class="btn btn-sm btn-warning" onclick="openScanSNModalForItem({{ $item->id }})" title="Ubah SN">

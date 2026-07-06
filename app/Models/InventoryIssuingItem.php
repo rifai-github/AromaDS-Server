@@ -53,6 +53,57 @@ class InventoryIssuingItem extends Model
         return $this->belongsTo(SerialNumber::class);
     }
 
+    /**
+     * QA "1 Rental banyak Qty": all serial numbers linked to this row (unit products
+     * with quantity_requested > 1 need one distinct SN per unit). serial_number_id
+     * stays in sync with the first linked row for backward compatibility.
+     */
+    public function serialLinks()
+    {
+        return $this->hasMany(InventoryIssuingItemSerial::class)->orderBy('unit_index');
+    }
+
+    public function serialNumbers()
+    {
+        return $this->belongsToMany(
+            SerialNumber::class,
+            'inventory_issuing_item_serials',
+            'inventory_issuing_item_id',
+            'serial_number_id'
+        )->withPivot(['unit_index'])->orderBy('inventory_issuing_item_serials.unit_index');
+    }
+
+    /**
+     * How many distinct serial numbers this row needs. Unit products need one SN per
+     * physical unit (quantity_requested); aroma/refill batch products only ever need 1
+     * SN regardless of qty (one batch code covers the whole quantity).
+     */
+    public function requiredSerialCount(): int
+    {
+        $product = $this->product;
+        if (!$product || !$product->requiresSerialNumber()) {
+            return 0;
+        }
+
+        if (!$product->requiresUniqueSerialNumber()) {
+            return 1;
+        }
+
+        return max(1, (int) round((float) ($this->quantity_requested ?? 1)));
+    }
+
+    public function linkedSerialCount(): int
+    {
+        return $this->relationLoaded('serialLinks')
+            ? $this->serialLinks->count()
+            : $this->serialLinks()->count();
+    }
+
+    public function hasAllRequiredSerials(): bool
+    {
+        return $this->linkedSerialCount() >= $this->requiredSerialCount();
+    }
+
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by');

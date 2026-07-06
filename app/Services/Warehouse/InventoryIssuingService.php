@@ -192,7 +192,8 @@ class InventoryIssuingService
 
     public function moveSerialNumbersToCustomerForItems(Collection $items, ?int $customerId, ?int $actorId = null, ?string $reissuedToJobNumber = null): int
     {
-        $items->load(['product.productCategory', 'product.productType', 'serialNumber']);
+        // QA "1 Rental banyak Qty": serialLinks carries every SN linked to a qty>1 unit row.
+        $items->load(['product.productCategory', 'product.productType', 'serialNumber', 'serialLinks.serialNumber']);
 
         $serialNumberIds = $this->resolveSerialNumberIdsForItems(
             $items,
@@ -250,7 +251,13 @@ class InventoryIssuingService
             $isUniqueSerial = $item->product?->requiresUniqueSerialNumber() ?? true;
 
             if ($isUniqueSerial || $quantity <= 1) {
-                $resolvedIds[] = (int) $item->serial_number_id;
+                // QA "1 Rental banyak Qty": a unit row with quantity > 1 has N distinct SNs
+                // linked via the pivot table; serial_number_id alone only holds the first.
+                $linkedIds = $item->relationLoaded('serialLinks')
+                    ? $item->serialLinks->pluck('serial_number_id')->map(fn ($id) => (int) $id)->all()
+                    : [];
+
+                $resolvedIds = array_merge($resolvedIds, !empty($linkedIds) ? $linkedIds : [(int) $item->serial_number_id]);
 
                 continue;
             }

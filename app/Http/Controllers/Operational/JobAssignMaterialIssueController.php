@@ -263,10 +263,17 @@ class JobAssignMaterialIssueController extends Controller
         }
 
         $rentalDetails = \App\Models\RentalDetail::query()
-            ->select('id', 'bom_rental_qty')
+            ->select('id', 'master_rental_id', 'bom_rental_qty')
             ->whereIn('id', $rentalDetailIds)
             ->get()
             ->keyBy('id');
+
+        // QA "1 Rental banyak Qty": the BOM target scales with the rental qty. Build a
+        // (room|masterRental) => qty map from the job schedule advice rooms so the target
+        // matches the generated material (which is already scaled by the same multiplier).
+        $rentalQtyMap = $this->buildRentalQuantityMultiplierMap(
+            $jobAssignMaterialIssue->jobAssignSchedule?->jobSchedule
+        );
 
         $groups = [];
         foreach ($materialIssue->items as $item) {
@@ -275,7 +282,14 @@ class JobAssignMaterialIssueController extends Controller
                 continue;
             }
 
-            $targetBomQty = (float) ($rentalDetails->get($rentalDetailId)->bom_rental_qty ?? 0);
+            $rentalDetail = $rentalDetails->get($rentalDetailId);
+            $rentalQtyMultiplier = $this->resolveRentalQtyMultiplier(
+                $rentalQtyMap,
+                $item->room_name,
+                $rentalDetail->master_rental_id ?? null
+            );
+
+            $targetBomQty = (float) ($rentalDetail->bom_rental_qty ?? 0) * $rentalQtyMultiplier;
             if ($targetBomQty <= 0) {
                 continue;
             }
@@ -324,6 +338,58 @@ class JobAssignMaterialIssueController extends Controller
         }
 
         return $errors;
+    }
+
+    /**
+     * QA "1 Rental banyak Qty": build a lookup of the rental quantity multiplier keyed by
+     * "normalized room name|master_rental_id". The multiplier is the JobAdviceRoom
+     * operational quantity (quantity + qty_free) — the number of physical units installed.
+     * Material generation scales BOM/kemasan by the same value, so targets stay in sync.
+     */
+    private function buildRentalQuantityMultiplierMap(?\App\Models\JobSchedule $jobSchedule): array
+    {
+        if (!$jobSchedule) {
+            return [];
+        }
+
+        $jobSchedule->loadMissing([
+            'jobScheduleRooms.jobAdviceRoom',
+            'jobScheduleRooms.jobAdviceRooms',
+        ]);
+
+        $map = [];
+        $register = function ($jaRoom) use (&$map) {
+            if (!$jaRoom || !$jaRoom->rental_product_id) {
+                return;
+            }
+            $key = $this->rentalQtyMapKey($jaRoom->room_name, $jaRoom->rental_product_id);
+            $qty = max(1, (int) round((float) ($jaRoom->operational_quantity ?? 1)));
+            // Keep the largest qty seen for the key (defensive against duplicate advice rows).
+            $map[$key] = max($map[$key] ?? 1, $qty);
+        };
+
+        foreach ($jobSchedule->jobScheduleRooms as $scheduleRoom) {
+            foreach ($scheduleRoom->jobAdviceRooms as $jaRoom) {
+                $register($jaRoom);
+            }
+            $register($scheduleRoom->jobAdviceRoom);
+        }
+
+        return $map;
+    }
+
+    private function rentalQtyMapKey($roomName, $masterRentalId): string
+    {
+        return strtolower(trim((string) $roomName)) . '|' . (int) $masterRentalId;
+    }
+
+    private function resolveRentalQtyMultiplier(array $rentalQtyMap, $roomName, $masterRentalId): int
+    {
+        if (empty($rentalQtyMap) || !$masterRentalId) {
+            return 1;
+        }
+
+        return $rentalQtyMap[$this->rentalQtyMapKey($roomName, $masterRentalId)] ?? 1;
     }
 
     private function extractRentalDetailIdFromMaterialIssueItem($item): ?int
@@ -3222,8 +3288,15 @@ class JobAssignMaterialIssueController extends Controller
                 'allowedProductIdsByRentalDetailId' => [],
                 'branchWarehouseLookup' => [],
                 'warehouseStockLookup' => [],
+                'rentalQtyMap' => [],
             ];
         }
+
+        // QA "1 Rental banyak Qty": qty multiplier per (jobAssignSchedule|room|masterRental).
+        // Blade uses this to scale the displayed "Target" and the client-side validation so
+        // they match the server-side BOM target (validateMaterialIssueBomTargets) and the
+        // material that was generated with the same multiplier.
+        $rentalQtyMap = $this->buildIndexRentalQtyMap($issues);
 
         $items = $issues
             ->pluck('materialIssue')
@@ -3392,7 +3465,55 @@ class JobAssignMaterialIssueController extends Controller
             'allowedProductIdsByRentalDetailId' => $allowedProductIdsByRentalDetailId,
             'branchWarehouseLookup' => $branchWarehouseLookup,
             'warehouseStockLookup' => $warehouseStockLookup,
+            'rentalQtyMap' => $rentalQtyMap,
         ];
+    }
+
+    /**
+     * QA "1 Rental banyak Qty": build a qty-multiplier lookup for the material-assign list.
+     * Key = "jobAssignScheduleId|normalizedRoomName|masterRentalId" => operational qty
+     * (quantity + qty_free). Used by the blade to scale the displayed BOM Target and the
+     * client-side submit validation, mirroring the server-side gate.
+     */
+    private function buildIndexRentalQtyMap($issues): array
+    {
+        $issues->loadMissing([
+            'jobAssignSchedule.jobSchedule.jobScheduleRooms.jobAdviceRoom.contractRental',
+            'jobAssignSchedule.jobSchedule.jobScheduleRooms.jobAdviceRoom.quotationRental',
+            'jobAssignSchedule.jobSchedule.jobScheduleRooms.jobAdviceRoom.quotationDetail',
+            'jobAssignSchedule.jobSchedule.jobScheduleRooms.jobAdviceRooms.contractRental',
+            'jobAssignSchedule.jobSchedule.jobScheduleRooms.jobAdviceRooms.quotationRental',
+            'jobAssignSchedule.jobSchedule.jobScheduleRooms.jobAdviceRooms.quotationDetail',
+        ]);
+
+        $map = [];
+        foreach ($issues as $issue) {
+            $jobAssignScheduleId = $issue->jobAssignSchedule?->id;
+            $jobSchedule = $issue->jobAssignSchedule?->jobSchedule;
+            if (!$jobAssignScheduleId || !$jobSchedule) {
+                continue;
+            }
+
+            $register = function ($jaRoom) use (&$map, $jobAssignScheduleId) {
+                if (!$jaRoom || !$jaRoom->rental_product_id) {
+                    return;
+                }
+                $key = $jobAssignScheduleId . '|'
+                    . strtolower(trim((string) $jaRoom->room_name)) . '|'
+                    . (int) $jaRoom->rental_product_id;
+                $qty = max(1, (int) round((float) ($jaRoom->operational_quantity ?? 1)));
+                $map[$key] = max($map[$key] ?? 1, $qty);
+            };
+
+            foreach ($jobSchedule->jobScheduleRooms as $scheduleRoom) {
+                foreach ($scheduleRoom->jobAdviceRooms as $jaRoom) {
+                    $register($jaRoom);
+                }
+                $register($scheduleRoom->jobAdviceRoom);
+            }
+        }
+
+        return $map;
     }
 
     /**
@@ -4507,16 +4628,22 @@ class JobAssignMaterialIssueController extends Controller
             
             $rental = $jaRoom->rentalProduct;
             if (!$rental) continue;
-            
+
+            // QA "1 Rental banyak Qty": scale the default kemasan/pieces by the rental qty
+            // (quantity + qty_free). When the form sends an explicit quantity it is used as-is
+            // (the UI already shows the scaled value), so this only affects the default path
+            // and stays in sync with autoCreateMaterialIssue.
+            $rentalQtyMultiplier = max(1, (int) round((float) ($jaRoom->operational_quantity ?? 1)));
+
             // Track if we have substituted aroma for THIS room
             $hasSubstitutedAroma = false;
-            
+
             foreach ($rental->rentalDetails as $detail) {
                 $product = $this->resolvePreferredRentalDetailProduct($detail, $rental, $detail->masterProduct);
                 if (!$product) continue;
 
-                $qty = $detail->quantity ?? 0;
-                
+                $qty = ($detail->quantity ?? 0) * $rentalQtyMultiplier;
+
                 if ($qty <= 0) continue;
                 
                 // MOM11: Check if this is aroma type - use quotation's aroma_product_id instead of master rental

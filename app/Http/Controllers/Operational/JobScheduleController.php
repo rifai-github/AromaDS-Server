@@ -6988,8 +6988,13 @@ class JobScheduleController extends Controller
                 }
 
                 $productId = null;
-                $serialNumberId = null;
-                $serialNumberString = null;
+                // QA "1 Rental banyak Qty": a room with qty N units needs N distinct serial
+                // numbers, one per Unit On Wall row. $serialNumberIds/$serialNumberStrings are
+                // ordered lists (index 0 → first unit, index 1 → second unit, ...) instead of
+                // the old single $serialNumberId that silently reused one SN for every unit.
+                $serialNumberIds = [];
+                $serialNumberStrings = [];
+                $unitQuantity = max(0, (int) ceil((float) ($jaRoom->operational_quantity ?? 0)));
 
                 // STEP 1: Prefer what the technician ACTUALLY scanned/verified in the
                 // app (job_schedule_units) over what the warehouse merely issued (WI).
@@ -6998,6 +7003,8 @@ class JobScheduleController extends Controller
                 // (unit swap, technician error, partial issuance). Only registered
                 // scans whose product is genuinely a Unit category count here; a
                 // scanned Refill/Cleaner SN must never resolve a Unit's identity.
+                // Collects ALL distinct scanned unit SNs (up to $unitQuantity), not just the
+                // first one, so qty>1 rooms get one distinct SN per physical unit.
                 if ($installJob) {
                     $scannedUnitRows = \DB::table('job_schedule_units')
                         ->where('job_schedule_id', $installJob->id)
@@ -7009,7 +7016,7 @@ class JobScheduleController extends Controller
                         ->get();
 
                     foreach ($scannedUnitRows as $scannedUnit) {
-                        if (!$scannedUnit->mac) {
+                        if (!$scannedUnit->mac || count($serialNumberIds) >= max(1, $unitQuantity)) {
                             continue;
                         }
 
@@ -7028,19 +7035,23 @@ class JobScheduleController extends Controller
                         }
 
                         $isUnitScan = $snRecord && ($snRecord->masterProduct?->productCategory?->is_unit ?? false);
-                        if ($isUnitScan) {
-                            $productId = $snRecord->master_product_id;
-                            $serialNumberId = $snRecord->id;
-                            $serialNumberString = $snRecord->serial_number;
-                            break;
+                        if ($isUnitScan && !in_array($snRecord->id, $serialNumberIds, true)) {
+                            if (!$productId) {
+                                $productId = $snRecord->master_product_id;
+                            }
+                            $serialNumberIds[] = $snRecord->id;
+                            $serialNumberStrings[$snRecord->id] = $snRecord->serial_number;
                         }
                     }
                 }
 
                 // STEP 2: Fallback to what the warehouse issued (WI) — only used when
-                // the technician never scanned a valid unit SN in the app (e.g. an
-                // older job predating in-app scanning, or an offline-completed job).
-                if (!$productId) {
+                // the technician never scanned enough valid unit SNs in the app (e.g. an
+                // older job predating in-app scanning, an offline-completed job, or a
+                // qty>1 room where only some units were scanned). Fills remaining slots
+                // from every SN linked to the matching WI row (serialLinks pivot covers
+                // qty>1 unit rows; falls back to serial_number_id for legacy single rows).
+                if (count($serialNumberIds) < max(1, $unitQuantity)) {
                     $materialIssues = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function ($q) use ($installJob) {
                         $q->where('job_schedule_id', $installJob->id);
                     })->pluck('issue_number')->toArray();
@@ -7059,7 +7070,7 @@ class JobScheduleController extends Controller
                                 ->whereNotNull('inventory_issuing_items.serial_number_id')
                                 ->whereNotIn('inventory_issuing_items.id', $usedInventoryIssuingItemIds)
                                 ->select('inventory_issuing_items.*')
-                                ->with(['serialNumber'])
+                                ->with(['serialNumber', 'serialLinks.serialNumber'])
                                 ->get();
 
                             $inventoryIssuingItem = $inventoryIssuingItems->first(function ($item) use ($roomName) {
@@ -7071,9 +7082,24 @@ class JobScheduleController extends Controller
                             }) ?? $inventoryIssuingItems->first();
 
                             if ($inventoryIssuingItem) {
-                                $productId = $inventoryIssuingItem->product_id;
-                                $serialNumberId = $inventoryIssuingItem->serial_number_id;
-                                $serialNumberString = $inventoryIssuingItem->serialNumber->serial_number ?? null;
+                                $productId = $productId ?: $inventoryIssuingItem->product_id;
+
+                                $candidateSerials = $inventoryIssuingItem->serialLinks->pluck('serialNumber')->filter();
+                                if ($candidateSerials->isEmpty() && $inventoryIssuingItem->serialNumber) {
+                                    $candidateSerials = collect([$inventoryIssuingItem->serialNumber]);
+                                }
+
+                                foreach ($candidateSerials as $candidateSerial) {
+                                    if (count($serialNumberIds) >= max(1, $unitQuantity)) {
+                                        break;
+                                    }
+                                    if (in_array($candidateSerial->id, $serialNumberIds, true)) {
+                                        continue;
+                                    }
+                                    $serialNumberIds[] = $candidateSerial->id;
+                                    $serialNumberStrings[$candidateSerial->id] = $candidateSerial->serial_number;
+                                }
+
                                 $usedInventoryIssuingItemIds[] = $inventoryIssuingItem->id;
                             }
                         }
@@ -7150,52 +7176,18 @@ class JobScheduleController extends Controller
                 // Serial number should already be found from inventory_issuing_items above
                 // MANDATORY FIX: Skip if no serial number found.
                 // Creating UnitOnWall without SN causes data corruption and makes it hard to track assets.
-                if (!$serialNumberId) {
+                if (empty($serialNumberIds)) {
                     \Log::warning("JA Room {$jaRoom->id}: ⚠️ No serial number found from verified inventory issuing items/materials for product {$productId}. Unit On Wall creation SKIPPED to prevent data corruption.");
-                    continue; 
+                    continue;
                 }
-                
-                // Check if Unit On Wall already exists for this room and rental
-                $existingUnit = \App\Models\UnitOnWall::where('room_id', $roomId)
-                    ->where('rental_id', $rental->id)
-                    ->where('building_id', $installJob->building_id)
-                    ->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall'])
-                    ->first();
-                
-                if ($existingUnit) {
-                    // FIX: strict check on serial_number_id
-                    // Only skip if it's the EXACT SAME unit (same serial number)
-                    if ($existingUnit->serial_number_id == $serialNumberId) {
-                        continue;
-                    } else {
-                        
-                        // MOM: Deactivate the old unit so it doesn't "poison" future jobs (ghost unit)
-                        // This ensures that the Wall only reflects the LATEST installation for this room/rental
-                        $existingUnit->update([
-                            'status' => 'removed',
-                            'notes' => ($existingUnit->notes ?? '') . "\n[AUTO-DEACTIVATED at " . now()->format('Y-m-d H:i:s') . "] Replaced by new installation via job " . $installJob->job_number,
-                            'updated_by' => \Auth::id() ?? \App\Models\User::first()?->id ?? null
-                        ]);
-                        
-                        // If it has a serial number, return IT to ready status as well (as it was just replaced)
-                        // Requirement 5: Also set location back to warehouse
-                        if ($existingUnit->serial_number_id) {
-                            $oldSn = \App\Models\SerialNumber::find($existingUnit->serial_number_id);
-                            if ($oldSn) {
-                                $oldSn->update([
-                                    'status' => 'on_hand_remove',
-                                    'location_type' => 'technician',
-                                    'location_id' => \Auth::id() ?? 1,
-                                    'updated_by' => \Auth::id() ?? 1
-                                ]);
-                            }
-                        }
-                    }
-                }
-                
+
                 // Create Unit On Wall for paid + free quantity from the JA source line.
-                $quantity = max(0, (int) ceil((float) ($jaRoom->operational_quantity ?? 0)));
-                
+                // QA "1 Rental banyak Qty": one distinct SN per physical unit — $quantity units
+                // need $quantity SNs. If fewer SNs were resolved than the qty, only that many
+                // units are created (rest logged, same "skip to prevent corruption" principle
+                // as the old single-SN guard above, now applied per-unit instead of per-room).
+                $quantity = $unitQuantity;
+
                 // Get company_name
                 $companyName = $installJob->company_name ?? null;
                 if (!$companyName && $jobAdvice->customer) {
@@ -7204,16 +7196,36 @@ class JobScheduleController extends Controller
                 if (!$companyName) {
                     $companyName = 'N/A'; // Fallback value
                 }
-                
+
                 for ($i = 0; $i < $quantity; $i++) {
+                    $unitSerialNumberId = $serialNumberIds[$i] ?? null;
+                    if (!$unitSerialNumberId) {
+                        \Log::warning("JA Room {$jaRoom->id}: ⚠️ Unit #" . ($i + 1) . "/{$quantity} has no distinct serial number resolved (only " . count($serialNumberIds) . " SN found). Skipping this unit to prevent data corruption.");
+                        continue;
+                    }
+                    $unitSerialNumberString = $serialNumberStrings[$unitSerialNumberId] ?? null;
+
+                    // Check if Unit On Wall already exists for this exact SN in this room/rental.
+                    $existingUnit = \App\Models\UnitOnWall::where('room_id', $roomId)
+                        ->where('rental_id', $rental->id)
+                        ->where('building_id', $installJob->building_id)
+                        ->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall'])
+                        ->where('serial_number_id', $unitSerialNumberId)
+                        ->first();
+
+                    if ($existingUnit) {
+                        // Same physical unit already on the wall — nothing to do for this slot.
+                        continue;
+                    }
+
                     $unitData = [
                         'customer_id' => $jobAdvice->customer_id,
                         'building_id' => $installJob->building_id,
                         'room_id' => $roomId,
                         'rental_id' => $rental->id,
                         'product_id' => $productId,
-                        'serial_number_id' => $serialNumberId,
-                        'serial_number' => $serialNumberString, // Add serial_number string field
+                        'serial_number_id' => $unitSerialNumberId,
+                        'serial_number' => $unitSerialNumberString, // Add serial_number string field
                         'install_date' => $installJob->schedule_date ?? now()->toDateString(),
                         'status' => 'active',
                         'notes' => "Auto-created from Install Job {$installJob->job_number}. JA: {$jobAdvice->job_advice_number} ({$roomSource})",
@@ -7224,31 +7236,21 @@ class JobScheduleController extends Controller
                         'created_by' => \App\Models\User::first()?->id ?? null, // Use first user or null
                         'updated_by' => \App\Models\User::first()?->id ?? null
                     ];
-                    
+
                     $unit = \App\Models\UnitOnWall::create($unitData);
-                    
-                    // Update serial number status if assigned
-                    if ($serialNumberId) {
-                        $serialNumber = \App\Models\SerialNumber::find($serialNumberId);
-                        if ($serialNumber) {
-                            $serialNumber->update([
-                                'status' => 'in_use', // Update main status field
-                                'location_type' => 'customer', // Set location type to customer (installed at customer location)
-                                'location_id' => $jobAdvice->customer_id, // Set customer ID as location
-                            ]);
-                        }
+
+                    // Update serial number status
+                    $serialNumber = \App\Models\SerialNumber::find($unitSerialNumberId);
+                    if ($serialNumber) {
+                        $serialNumber->update([
+                            'status' => 'in_use', // Update main status field
+                            'location_type' => 'customer', // Set location type to customer (installed at customer location)
+                            'location_id' => $jobAdvice->customer_id, // Set customer ID as location
+                        ]);
                     }
-                    
+
                     $unitsCreated++;
-                    \Log::info("Auto-created Unit On Wall {$unit->id} for Install Job {$installJob->job_number}, JA {$jobAdvice->job_advice_number}" . ($serialNumberString ? " with serial number {$serialNumberString}" : " without serial number"));
-                    
-                    // Only use the first serial number for the first unit
-                    // Reset for next iteration if quantity > 1
-                    if ($i === 0 && $quantity > 1) {
-                        // Find next available serial number for subsequent units
-                        $serialNumberId = null;
-                        $serialNumberString = null;
-                    }
+                    \Log::info("Auto-created Unit On Wall {$unit->id} for Install Job {$installJob->job_number}, JA {$jobAdvice->job_advice_number}" . ($unitSerialNumberString ? " with serial number {$unitSerialNumberString}" : " without serial number"));
                 }
             }
             

@@ -1140,7 +1140,19 @@
                             // --- TARGET MET CALCULATION (Phase 7) ---
                             $rentalDetail = $rentalDetailId ? ($rentalDetailById[$rentalDetailId] ?? null) : null;
                             $bomRentalQty = $rentalDetail ? $rentalDetail->bom_rental_qty : 0;
-                            
+
+                            // QA "1 Rental banyak Qty": scale the BOM target by the rental qty so
+                            // it matches the generated material (kemasan × qty) and the server-side
+                            // BOM validation. Key = jobAssignScheduleId|room|masterRentalId.
+                            $rentalQtyMultiplier = 1;
+                            if ($bomRentalQty > 0 && $rentalDetail && ($rentalDetail->master_rental_id ?? null) && ($item->job_assign_schedule_id ?? null)) {
+                                $qtyKey = $item->job_assign_schedule_id . '|'
+                                    . strtolower(trim((string) $item->room_name)) . '|'
+                                    . (int) $rentalDetail->master_rental_id;
+                                $rentalQtyMultiplier = max(1, (int) (($rentalQtyMap ?? [])[$qtyKey] ?? 1));
+                            }
+                            $bomRentalQty = $bomRentalQty * $rentalQtyMultiplier;
+
                             $groupTotalVolume = 0;
                             if ($rentalDetailId && $items) {
                                 $groupTotalVolume = $items->sum(function($it) use ($rentalDetailId) {

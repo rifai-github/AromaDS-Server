@@ -311,8 +311,14 @@ class InventoryIssuingController extends Controller
         $issuing = InventoryIssuing::with(['inventoryRequest', 'branch', 'warehouse', 'requestedBy', 'issuedBy', 'receivedBy', 'team', 'items.product.productType', 'items.product.productCategory'])
             ->findOrFail($id);
 
-        // Load issuing items with serial numbers
-        $issuing->load(['items.serialNumber.warehouse', 'items.product.productType', 'items.product.productCategory']);
+        // Load issuing items with serial numbers. QA "1 Rental banyak Qty": items.serialLinks
+        // carries every SN linked to a qty>1 unit row (items.serialNumber only holds the first).
+        $issuing->load([
+            'items.serialNumber.warehouse',
+            'items.serialLinks.serialNumber.warehouse',
+            'items.product.productType',
+            'items.product.productCategory',
+        ]);
 
         $itemProductIds = $issuing->items
             ->pluck('product_id')
@@ -554,19 +560,22 @@ class InventoryIssuingController extends Controller
         try {
             DB::beginTransaction();
 
-            $issuing = InventoryIssuing::with(['items.product.productCategory', 'items.product.productType'])->findOrFail($id);
-            
+            $issuing = InventoryIssuing::with(['items.product.productCategory', 'items.product.productType', 'items.serialLinks'])->findOrFail($id);
+
             if ($issuing->status !== 'pending') {
                 DB::rollBack();
                 return back()->with('error', 'Only pending (Un Prepare) issuings can be processed to Ready.');
             }
 
-            // Validasi: Semua item yang butuh SN harus sudah di-scan/isi
+            // Validasi: Semua item yang butuh SN harus sudah di-scan/isi. QA "1 Rental
+            // banyak Qty": unit rows with quantity_requested > 1 need that many distinct
+            // SNs linked, not just one.
             $missingSNItems = [];
             foreach ($issuing->items as $item) {
-                $hasSerialReq = $item->product?->requiresSerialNumber() ?? false;
-                if ($hasSerialReq && !$item->serial_number_id) {
-                    $missingSNItems[] = $item->product->name ?? 'Unknown Product';
+                if (!$item->hasAllRequiredSerials()) {
+                    $required = $item->requiredSerialCount();
+                    $linked = $item->linkedSerialCount();
+                    $missingSNItems[] = ($item->product->name ?? 'Unknown Product') . " ({$linked}/{$required})";
                 }
             }
 
@@ -748,14 +757,21 @@ class InventoryIssuingController extends Controller
     {
         try {
             if ($issuing->status === 'sent') {
+                // QA "1 Rental banyak Qty": pull every linked SN per item (pivot), not just
+                // the first one held in serial_number_id, so all N unit SNs move to on-hand.
                 $serialNumberIds = $issuing->items()
-                    ->with(['product.productCategory', 'product.productType'])
-                    ->whereNotNull('serial_number_id')
+                    ->with(['product.productCategory', 'product.productType', 'serialLinks'])
                     ->get()
                     ->filter(fn ($item) => $item->product?->requiresUniqueSerialNumber() ?? true)
-                    ->pluck('serial_number_id')
+                    ->flatMap(function ($item) {
+                        $ids = $item->serialLinks->pluck('serial_number_id')->all();
+
+                        return !empty($ids) ? $ids : array_filter([$item->serial_number_id]);
+                    })
+                    ->unique()
+                    ->values()
                     ->toArray();
-                
+
                 if (!empty($serialNumberIds)) {
                     \App\Models\SerialNumber::whereIn('id', $serialNumberIds)->update([
                         'status' => 'on_hand',
@@ -1019,9 +1035,9 @@ class InventoryIssuingController extends Controller
                 ], 422);
             }
 
-            $issuingItem = \App\Models\InventoryIssuingItem::with(['product.productCategory', 'product.productType'])
+            $issuingItem = \App\Models\InventoryIssuingItem::with(['product.productCategory', 'product.productType', 'serialLinks'])
                 ->findOrFail($request->issuing_item_id);
-            
+
             if ($issuingItem->inventory_issuing_id != $issuing->id) {
                 DB::rollBack();
                 return response()->json([
@@ -1030,8 +1046,21 @@ class InventoryIssuingController extends Controller
                 ], 422);
             }
 
+            // QA "1 Rental banyak Qty": unit products with quantity_requested > 1 need
+            // one distinct SN per unit. Refuse another scan once the row already has
+            // enough serials linked (aroma/refill batch products only ever need 1).
+            $requiredSerialCount = $issuingItem->requiredSerialCount();
+            $linkedSerialCount = $issuingItem->linkedSerialCount();
+            if ($requiredSerialCount > 0 && $linkedSerialCount >= $requiredSerialCount) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Serial Number untuk item ini sudah lengkap ({$linkedSerialCount}/{$requiredSerialCount})."
+                ], 422);
+            }
+
             $serialNumber = strtoupper(trim($request->serial_number));
-            
+
             // Validasi 1: SN harus ada di serial_numbers table. Batch/refill SN may have
             // duplicate rows, so choose an available row for this item before falling back.
             $sn = $this->findSerialNumberForIssuingScan($serialNumber, $issuing, $issuingItem);
@@ -1134,28 +1163,42 @@ class InventoryIssuingController extends Controller
                 }
             }
 
-            // Link SN ke issuing item (dan isi room_name jika ditemukan)
-            $issuingItem->update([
+            // QA "1 Rental banyak Qty": link SN as the next slot for this item. The pivot
+            // table holds every SN for a qty>1 unit row; serial_number_id is kept in sync
+            // with the first slot for backward compatibility with code reading it directly.
+            $nextUnitIndex = ($issuingItem->serialLinks->max('unit_index') ?? 0) + 1;
+
+            \App\Models\InventoryIssuingItemSerial::create([
+                'inventory_issuing_item_id' => $issuingItem->id,
                 'serial_number_id' => $sn->id,
+                'unit_index' => $nextUnitIndex,
+                'created_by' => Auth::id(),
+            ]);
+
+            $issuingItem->update([
+                'serial_number_id' => $issuingItem->serial_number_id ?? $sn->id,
                 'room_name'        => $roomName ?: $issuingItem->room_name,
                 'updated_by'       => Auth::id()
             ]);
 
+            $linkedSerialCount = $nextUnitIndex;
 
             // Update SN status to in_use (optional, bisa juga tetap available sampai benar-benar terpasang)
             // $sn->update(['status' => 'in_use']);
 
             DB::commit();
 
-            \Log::info("Serial Number {$serialNumber} linked to Inventory Issuing Item {$issuingItem->id} for Issuing {$issuing->issuing_number}");
+            \Log::info("Serial Number {$serialNumber} linked to Inventory Issuing Item {$issuingItem->id} ({$linkedSerialCount}/{$requiredSerialCount}) for Issuing {$issuing->issuing_number}");
 
             return response()->json([
                 'status' => 'success',
-                'message' => "Serial Number {$serialNumber} berhasil divalidasi dan di-link ke item!",
+                'message' => "Serial Number {$serialNumber} berhasil divalidasi dan di-link ke item! ({$linkedSerialCount}/{$requiredSerialCount})",
                 'data' => [
                     'serial_number' => $sn->serial_number,
                     'product_name' => $issuingItem->product->name ?? 'Unknown',
-                    'status' => $sn->status
+                    'status' => $sn->status,
+                    'linked_count' => $linkedSerialCount,
+                    'required_count' => $requiredSerialCount,
                 ]
             ]);
 
@@ -1449,8 +1492,16 @@ public function getUserTeams($userId)
 
     private function findActiveIssuingItemUsingSerial(int $serialNumberId, ?int $exceptItemId = null): ?\App\Models\InventoryIssuingItem
     {
+        // QA "1 Rental banyak Qty": a unit SN can be the 2nd/3rd slot linked only via the
+        // pivot table (serial_number_id column holds just the first slot), so this must
+        // check both to prevent the same SN being scanned into two different WI rows.
         return \App\Models\InventoryIssuingItem::with('inventoryIssuing')
-            ->where('serial_number_id', $serialNumberId)
+            ->where(function ($query) use ($serialNumberId) {
+                $query->where('serial_number_id', $serialNumberId)
+                    ->orWhereHas('serialLinks', function ($linkQuery) use ($serialNumberId) {
+                        $linkQuery->where('serial_number_id', $serialNumberId);
+                    });
+            })
             ->when($exceptItemId, fn ($query) => $query->where('id', '!=', $exceptItemId))
             ->whereHas('inventoryIssuing', function ($query) {
                 $query->whereIn('status', ['pending', 'processed']);
