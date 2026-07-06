@@ -5528,6 +5528,103 @@ class JobScheduleController extends Controller
     }
 
     /**
+     * Find the SerialNumber tied to a returned item, by correlating the
+     * MaterialReturnItem's underlying MaterialIssueItem (job_assign_schedule_id +
+     * product_id + room_name) against InventoryIssuingItem - the same lookup
+     * JobWebCompletionService::processPartialCompletionMaterialReturnItems() uses.
+     * There is no direct FK between MaterialIssueItem and InventoryIssuingItem.
+     */
+    private function findSerialNumberForReturnItem(\App\Models\MaterialReturnItem $item): ?\App\Models\SerialNumber
+    {
+        $materialIssueItem = $item->materialIssueItem;
+        if (!$materialIssueItem || !$materialIssueItem->job_assign_schedule_id) {
+            return null;
+        }
+
+        $issuedItem = \App\Models\InventoryIssuingItem::where('job_assign_schedule_id', $materialIssueItem->job_assign_schedule_id)
+            ->where('product_id', $materialIssueItem->product_id)
+            ->whereRaw('LOWER(TRIM(room_name)) = ?', [strtolower(trim((string) $materialIssueItem->room_name))])
+            ->whereNotNull('serial_number_id')
+            ->whereHas('inventoryIssuing', function ($q) {
+                $q->whereIn('status', ['processed', 'sent', 'received']);
+            })
+            ->latest('id')
+            ->first();
+
+        return $issuedItem ? \App\Models\SerialNumber::find($issuedItem->serial_number_id) : null;
+    }
+
+    /**
+     * Queue a Serial Number-tracked returned item into an InventoryReceiving instead
+     * of crediting WarehouseProduct.quantity directly. Mirrors
+     * JobWebCompletionService::processPartialCompletionMaterialReturnItems(): the SN
+     * moves to status 'pending' + inventory_receiving_id now, and only becomes
+     * 'ready' (stock actually credited) once a warehouse staff finalizes that
+     * Inventory Receiving (InventoryReceivingController::finalize(), which validates
+     * the SN was physically scanned/verified before touching stock).
+     *
+     * Returns the InventoryReceiving used (creating one lazily on first call), or
+     * null if this item has no resolvable Serial Number (falls back to the caller
+     * crediting stock directly, same as a non-serialized item).
+     */
+    private function queueSerialNumberReturnItem(
+        \App\Models\MaterialReturn $materialReturn,
+        \App\Models\MaterialReturnItem $item,
+        \App\Models\Warehouse $warehouse,
+        ?\App\Models\InventoryReceiving &$inventoryReceiving
+    ): bool {
+        $serialNumber = $this->findSerialNumberForReturnItem($item);
+        if (!$serialNumber) {
+            return false;
+        }
+
+        if (!$inventoryReceiving) {
+            $receivingNumber = app(\App\Services\DocumentNumberService::class)
+                ->generate('inventory_receiving', $warehouse->branch_id ? \App\Models\Branch::find($warehouse->branch_id)?->code : null);
+
+            $inventoryReceiving = \App\Models\InventoryReceiving::create([
+                'receiving_number' => $receivingNumber,
+                'reference_no' => $materialReturn->return_number,
+                'branch_id' => $warehouse->branch_id,
+                'received_from' => Auth::id(),
+                'received_by_old' => Auth::id(),
+                'schedule_date' => now()->toDateString(),
+                'status' => 'pending',
+                'notes' => "Auto dari Material Return {$materialReturn->return_number} (item ber-Serial Number, menunggu verifikasi gudang).",
+                'created_by' => Auth::id(),
+                'updated_by' => Auth::id(),
+            ]);
+        }
+
+        \App\Models\InventoryReceivingItem::firstOrCreate(
+            [
+                'inventory_receiving_id' => $inventoryReceiving->id,
+                'master_product_id' => $item->product_id,
+                'notes' => "Return item #{$item->id} dari {$materialReturn->return_number}",
+            ],
+            [
+                'quantity' => $item->quantity,
+                'quantity_received' => 0,
+            ]
+        );
+
+        $existingNotes = trim((string) ($serialNumber->notes ?? ''));
+        $returnNote = "Queued to RR {$inventoryReceiving->receiving_number} from Material Return {$materialReturn->return_number}.";
+
+        $serialNumber->update([
+            'inventory_receiving_id' => $inventoryReceiving->id,
+            'warehouse_id' => $warehouse->id,
+            'status' => 'pending',
+            'location_type' => 'technician',
+            'location_id' => Auth::id(),
+            'notes' => $existingNotes === '' ? $returnNote : $existingNotes."\n".$returnNote,
+            'updated_by' => Auth::id(),
+        ]);
+
+        return true;
+    }
+
+    /**
      * STUDY CASE B1: Complete material return (mark as returned)
      */
     public function completeMaterialReturn(Request $request, JobSchedule $jobSchedule, $returnId)
@@ -5537,7 +5634,7 @@ class JobScheduleController extends Controller
 
             $materialReturn = \App\Models\MaterialReturn::whereIn('job_schedule_id', $this->getMaterialReturnJobScheduleIds($jobSchedule))
                 ->where('id', $returnId)
-                ->with(['items.product', 'warehouse'])
+                ->with(['items.product.productCategory', 'items.product.productType', 'items.materialIssueItem', 'warehouse'])
                 ->firstOrFail();
 
             if ($materialReturn->status !== \App\Models\MaterialReturn::STATUS_APPROVED) {
@@ -5556,6 +5653,7 @@ class JobScheduleController extends Controller
             $warehouse = $materialReturn->warehouse
                 ? app(\App\Services\Warehouse\WarehousePlacementService::class)->resolveForMaterialReturn($materialReturn, $materialReturn->warehouse)
                 : null;
+            $snInventoryReceiving = null;
             if ($warehouse) {
                 foreach ($materialReturn->items as $item) {
                     $product = $item->product;
@@ -5563,6 +5661,18 @@ class JobScheduleController extends Controller
 
                     $qtyToReturn = $item->quantity ?? 0;
                     if ($qtyToReturn <= 0) continue;
+
+                    // Serial Number-tracked (unit) products: don't credit WarehouseProduct
+                    // directly. Queue into an Inventory Receiving instead, matching the
+                    // JobWebCompletionService partial-completion pattern - stock only
+                    // moves once a warehouse staff finalizes that Receiving (which
+                    // validates the SN was actually scanned back in). This is what fixes
+                    // the "SN masih on_hand technisian" issue: completing the return alone
+                    // no longer silently credits stock for units without also moving the SN.
+                    if ($product->requiresSerialNumber()
+                        && $this->queueSerialNumberReturnItem($materialReturn, $item, $warehouse, $snInventoryReceiving)) {
+                        continue;
+                    }
 
                     // Find or create warehouse product record
                     $warehouseProduct = \App\Models\WarehouseProduct::where('warehouse_id', $warehouse->id)
@@ -5667,6 +5777,9 @@ class JobScheduleController extends Controller
             \Log::info("✅ STUDY CASE B1: Completed material return {$materialReturn->return_number} and updated warehouse stock");
 
             $message = 'Material return completed successfully and warehouse stock updated.';
+            if ($snInventoryReceiving) {
+                $message .= " {$snInventoryReceiving->items()->count()} item ber-Serial Number di-queue ke Inventory Receiving {$snInventoryReceiving->receiving_number} (menunggu verifikasi & finalize gudang sebelum stok/SN benar-benar masuk).";
+            }
             if ($forwardedTransfer) {
                 $message .= " Transfer ke gudang pusat dibuat (Draft): {$forwardedTransfer->transfer_number}. Proses pengiriman & penerimaan dilakukan dari menu Inventory Transfer.";
             }
@@ -10011,10 +10124,17 @@ class JobScheduleController extends Controller
 
             // Get rental product (MasterRental) from JobAdviceRoom
             $rentalProduct = $jobAdviceRoom->rentalProduct;
-            
+
             if (!$rentalProduct) {
                 continue;
             }
+
+            // QA "1 Rental banyak Qty": material/unit must scale with the rental qty.
+            // JobAdviceRoom.operational_quantity = quantity + qty_free (physical units to install).
+            // Multiply BOM/kemasan by this so downstream (Material Assign target, Inventory
+            // Issuing qty, Job Schedule material, Inventory Receiving, mobile checklist) all
+            // reflect the true quantity. Legacy single-qty rentals resolve to 1 (no-op).
+            $rentalQtyMultiplier = max(1, (int) round((float) ($jobAdviceRoom->operational_quantity ?? 1)));
 
             // Load rentalDetails (materials/products). Material Issue must mirror
             // these rows exactly; do not append components from quotation/BOM.
@@ -10120,12 +10240,14 @@ class JobScheduleController extends Controller
                         // Qty Issue = Rental Detail Quantity (how many pieces to issue)
                         // BOM Qty = Product BOM Qty (multiplier from master product)
                         // Display "Qty BOM" = Qty Issue × BOM Qty
-                        $qtyIssue = $detail->quantity ?? 1;  // From rental_details.quantity (e.g., 200)
+                        // QA "1 Rental banyak Qty": scale kemasan/pieces by the rental qty so
+                        // qty 2 issues twice the material (and twice the units → 2 serial numbers).
+                        $qtyIssue = ($detail->quantity ?? 1) * $rentalQtyMultiplier;  // rental_details.quantity × rental qty
                         $bomQty = $product->bom_qty ?? ($product->bom_quantity ?? 1);  // From substituted product if applicable
-                        
+
                         $allMaterials[] = [
                             'product' => $product,
-                            'quantity' => $qtyIssue,  // Rental detail quantity (200)
+                            'quantity' => $qtyIssue,  // Rental detail quantity × rental qty
                             'room_name' => $jobAdviceRoom->room_name,
                             'notes' => $notesText,
                             'component_id' => $componentId,

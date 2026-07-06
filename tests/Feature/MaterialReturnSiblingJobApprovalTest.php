@@ -64,9 +64,39 @@ class MaterialReturnSiblingJobApprovalTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('product_categories', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->boolean('is_unit')->nullable();
+            $table->boolean('has_serial_number')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('product_types', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->boolean('is_unit')->nullable();
+            $table->boolean('has_serial_number')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('master_products', function (Blueprint $table) {
             $table->id();
             $table->string('name')->nullable();
+            $table->foreignId('product_category_id')->nullable();
+            $table->foreignId('product_type_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('serial_numbers', function (Blueprint $table) {
+            $table->id();
+            $table->string('status')->nullable();
+            $table->foreignId('warehouse_id')->nullable();
+            $table->foreignId('master_product_id')->nullable();
+            $table->unsignedBigInteger('inventory_receiving_id')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
