@@ -1531,7 +1531,9 @@
                 @if(auth()->user()->canAccessMenuItem('warehouse.inventory-requests'))
                 <li data-tooltip="Inventory Request" class="{{ request()->routeIs('warehouse.inventory-requests.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('warehouse.inventory-requests.index') }}')">Inventory Request</li>
                 @endif
-               <!-- <li data-tooltip="Inventory Transfer" class="{{ request()->routeIs('warehouse.inventory-transfers.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('warehouse.inventory-transfers.index') }}')">Inventory Transfer</li> -->
+                @if(auth()->user()->canAccessMenuItem('warehouse.inventory-transfers'))
+                <li data-tooltip="Inventory Transfer" class="{{ request()->routeIs('warehouse.inventory-transfers.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('warehouse.inventory-transfers.index') }}')">Inventory Transfer</li>
+                @endif
                 
                 <!-- 5. STOCK MANAGEMENT -->
                 <li class="menu-divider"></li>

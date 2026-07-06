@@ -1002,7 +1002,7 @@ function openCreateModal() {
                         </div>
                         <div class="form-group">
                             <label class="form-label">Quantity *</label>
-                            <input type="number" id="new-quantity" class="form-input" step="0.01" min="0.01" placeholder="0">
+                            <input type="number" id="new-quantity" class="form-input" step="1" min="1" placeholder="0">
                         </div>
                         <div class="form-group">
                             <button type="button" class="btn btn-primary btn-sm" onclick="addItemToList()">
@@ -1389,7 +1389,7 @@ function submitForm(event, id = null) {
             if (productSelect.value && quantityInput.value) {
                 items.push({
                     product_id: productSelect.value,
-                    quantity: parseFloat(quantityInput.value)
+                    quantity: parseInt(quantityInput.value, 10)
                 });
             }
         });
@@ -1627,10 +1627,15 @@ function addItemToList() {
         showWarningDialog('Masukkan jumlah yang valid.');
         return;
     }
-    
-    const quantity = parseFloat(quantityInput.value);
+
+    if (!Number.isInteger(parseFloat(quantityInput.value))) {
+        showWarningDialog('Quantity harus berupa angka bulat (tanpa desimal).');
+        return;
+    }
+
+    const quantity = parseInt(quantityInput.value, 10);
     const stock = parseFloat(availableStock.value);
-    
+
     if (quantity > stock) {
         showWarningDialog(`Jumlah tidak boleh melebihi stok tersedia (${stock}).`);
         return;
@@ -1714,10 +1719,18 @@ function removeItemFromList(index) {
 }
 
 function validateStock(inputElement) {
-    const quantity = parseFloat(inputElement.value) || 0;
+    const rawValue = parseFloat(inputElement.value) || 0;
     const stockInput = inputElement.closest('.transfer-item-row').querySelector('.available-stock');
     const availableStock = parseFloat(stockInput.value) || 0;
-    
+
+    if (!Number.isInteger(rawValue)) {
+        showWarningDialog('Quantity harus berupa angka bulat (tanpa desimal).');
+        inputElement.value = Math.trunc(rawValue);
+        return;
+    }
+
+    const quantity = rawValue;
+
     if (quantity > availableStock) {
         showWarningDialog(`Jumlah tidak boleh melebihi stok tersedia (${availableStock}).`);
         inputElement.value = availableStock;
@@ -1742,7 +1755,7 @@ function addTransferItem() {
         </div>
         <div class="form-group">
             <label class="form-label">Quantity *</label>
-            <input type="number" name="items[${transferItemIndex}][quantity]" class="form-input" step="0.01" min="0.01" required onchange="validateStock(this)">
+            <input type="number" name="items[${transferItemIndex}][quantity]" class="form-input" step="1" min="1" required onchange="validateStock(this)">
         </div>
         <div class="form-group">
             <button type="button" class="btn btn-danger btn-sm" onclick="removeTransferItem(this)">
@@ -1795,7 +1808,7 @@ function buildEditTransferItemsHtml(transferItems) {
                 </div>
                 <div class="form-group">
                     <label class="form-label">Quantity *</label>
-                    <input type="number" name="items[0][quantity]" class="form-input" step="0.01" min="0.01" required onchange="validateStock(this)">
+                    <input type="number" name="items[0][quantity]" class="form-input" step="1" min="1" required onchange="validateStock(this)">
                 </div>
                 <div class="form-group">
                     <button type="button" class="btn btn-danger btn-sm" onclick="removeEditTransferItem(this)" style="display: none;">
@@ -1824,7 +1837,7 @@ function buildEditTransferItemsHtml(transferItems) {
                 </div>
                 <div class="form-group">
                     <label class="form-label">Quantity *</label>
-                    <input type="number" name="items[${index}][quantity]" class="form-input" step="0.01" min="0.01" value="${item.quantity || 0}" required onchange="validateStock(this)">
+                    <input type="number" name="items[${index}][quantity]" class="form-input" step="1" min="1" value="${item.quantity || 0}" required onchange="validateStock(this)">
                 </div>
                 <div class="form-group">
                     <button type="button" class="btn btn-danger btn-sm" onclick="removeEditTransferItem(this)" ${transferItems.length === 1 ? 'style="display: none;"' : ''}>
@@ -1926,7 +1939,7 @@ function addEditTransferItem() {
         </div>
         <div class="form-group">
             <label class="form-label">Quantity *</label>
-            <input type="number" name="items[${editTransferItemIndex}][quantity]" class="form-input" step="0.01" min="0.01" required onchange="validateStock(this)">
+            <input type="number" name="items[${editTransferItemIndex}][quantity]" class="form-input" step="1" min="1" required onchange="validateStock(this)">
         </div>
         <div class="form-group">
             <button type="button" class="btn btn-danger btn-sm" onclick="removeEditTransferItem(this)">
