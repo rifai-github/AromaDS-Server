@@ -4610,6 +4610,32 @@ class JobScheduleController extends Controller
             }
 
             $roomName = trim(strtolower($jobScheduleRoom->room_name));
+
+            // Guard: partial-completion (technician left job mid-way) auto-creates its own
+            // MaterialReturn + InventoryReceiving for a room's items (see
+            // JobWebCompletionService::processPartialCompletionMaterialReturnItems). That
+            // path never sets jobScheduleRoom->material_return_id, so the check above
+            // misses it. Creating a second, manual return for the same room here would
+            // double-credit stock once both this return AND the pending Inventory
+            // Receiving get completed/finalized.
+            $partialCompletionReturn = \App\Models\MaterialReturn::whereIn('job_schedule_id', $siblingJobIds)
+                ->whereIn('status', [
+                    \App\Models\MaterialReturn::STATUS_PENDING,
+                    \App\Models\MaterialReturn::STATUS_APPROVED,
+                ])
+                ->where('notes', 'like', '%(Pekerjaan tidak selesai)%')
+                ->whereHas('items', function ($q) use ($roomName) {
+                    $q->whereRaw('LOWER(TRIM(room_name)) = ?', [$roomName]);
+                })
+                ->first();
+
+            if ($partialCompletionReturn) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Room ini sudah punya auto-return dari partial completion ({$partialCompletionReturn->return_number}), menunggu Inventory Receiving-nya di-finalize oleh gudang. Membuat return manual baru untuk room ini berisiko stok dihitung dobel.",
+                ], 422);
+            }
             $materialIssues = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function ($q) use ($actualJobSchedule) {
                     $q->where('job_schedule_id', $actualJobSchedule->id);
                 })
