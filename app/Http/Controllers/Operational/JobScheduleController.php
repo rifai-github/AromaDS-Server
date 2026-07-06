@@ -5456,6 +5456,78 @@ class JobScheduleController extends Controller
     }
 
     /**
+     * Reject a pending material return (e.g. a duplicate created alongside an
+     * existing partial-completion auto-return for the same room). Uses the
+     * pre-existing MaterialReturn::STATUS_REJECTED, which had no route/controller
+     * action wiring it up until now.
+     */
+    public function rejectMaterialReturn(Request $request, JobSchedule $jobSchedule, $returnId)
+    {
+        $user = auth()->user();
+        if (!$user->hasPermission('operational.job-schedules.approve-material-return') &&
+            !$user->hasPermission('operational.job-schedules.approve-material-return.view') &&
+            !$user->hasPermission('operational.job-schedules.approve')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized. Missing permission to reject material return.'
+            ], 403);
+        }
+
+        $request->validate([
+            'rejection_reason' => 'nullable|string|max:1000'
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $materialReturn = \App\Models\MaterialReturn::whereIn('job_schedule_id', $this->getMaterialReturnJobScheduleIds($jobSchedule))
+                ->where('id', $returnId)
+                ->firstOrFail();
+
+            if ($materialReturn->status !== \App\Models\MaterialReturn::STATUS_PENDING) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Material return can only be rejected when status is pending.'
+                ], 422);
+            }
+
+            $materialReturn->update([
+                'status' => \App\Models\MaterialReturn::STATUS_REJECTED,
+                'approval_notes' => $request->rejection_reason,
+                'updated_by' => Auth::id(),
+            ]);
+
+            DB::commit();
+
+            \Log::info("Rejected material return {$materialReturn->return_number}");
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Material return rejected successfully.',
+                'data' => $materialReturn->fresh()->load(['items.product', 'warehouse', 'team'])
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Material return tidak ditemukan untuk job schedule ini.'
+            ], 404);
+        } catch (\Exception $e) {
+            DB::rollback();
+            \Log::error("Failed to reject material return: " . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to reject material return: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * STUDY CASE B1: Complete material return (mark as returned)
      */
     public function completeMaterialReturn(Request $request, JobSchedule $jobSchedule, $returnId)

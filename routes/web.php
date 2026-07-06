@@ -711,6 +711,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
             ->name('job-schedules.save-scanned-unit')
             ->middleware('permission:operational.job-schedules-complete-ba.update,operational.job-schedules.update');
         Route::post('job-schedules/{jobSchedule}/material-returns/{returnId}/approve', [JobScheduleController::class, 'approveMaterialReturn'])->name('job-schedules.material-returns.approve');
+        Route::post('job-schedules/{jobSchedule}/material-returns/{returnId}/reject', [JobScheduleController::class, 'rejectMaterialReturn'])->name('job-schedules.material-returns.reject');
         Route::post('job-schedules/{jobSchedule}/material-returns/{returnId}/complete', [JobScheduleController::class, 'completeMaterialReturn'])->name('job-schedules.material-returns.complete');
         Route::get('job-schedules/{jobSchedule}/material-returns', [JobScheduleController::class, 'getMaterialReturns'])->name('job-schedules.material-returns');
         Route::get('job-schedules/{jobSchedule}/rooms/{roomId}/material-issue-items', [JobScheduleController::class, 'getMaterialIssueItemsForRoom'])->name('job-schedules.rooms.material-issue-items');
