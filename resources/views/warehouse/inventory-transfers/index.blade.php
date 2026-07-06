@@ -1526,7 +1526,7 @@ function submitForm(event, id = null) {
 
         fetchOptions = {
             method: 'POST',
-            headers: { 'X-CSRF-TOKEN': csrfToken },
+            headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken },
             body: formData
         };
     } else {
@@ -1534,6 +1534,7 @@ function submitForm(event, id = null) {
             method: id ? 'PUT' : 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Accept': 'application/json',
                 'X-CSRF-TOKEN': csrfToken
             },
             body: JSON.stringify(data)
