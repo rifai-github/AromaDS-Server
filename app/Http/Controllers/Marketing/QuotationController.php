@@ -56,6 +56,7 @@ class QuotationController extends Controller
                 'updated_by',
                 'updated_at',
                 'revision_number',
+                'is_latest_revision',
                 'customer_id',
                 'prospect_id',
             ])
