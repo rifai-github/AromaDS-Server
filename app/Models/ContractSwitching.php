@@ -293,8 +293,8 @@ class ContractSwitching extends Model
             // Apply Continue TOP Logic
             if (!$this->continue_top) {
                 // User clarified that TOP refers to Frequency (e.g. 1 Bulan 1x), not Payment Method (Cash/Transfer).
-                // So default reset value should be a frequency, likely "1 Bulan" (Monthly).
-                $newContractData['payment_terms'] = '1 Bulan';
+                // `payment_terms` is an ENUM of payment methods (cash/credit_30/...) and must not be
+                // overwritten with a frequency string, or the insert fails with a truncation error.
                 $newContractData['term_of_payment'] = '1 Bulan';
                 \Log::info("Contract Switching: TOP reset to '1 Bulan' for new contract because continue_top is false");
             }
