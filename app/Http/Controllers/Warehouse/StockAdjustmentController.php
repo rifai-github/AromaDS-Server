@@ -608,14 +608,10 @@ class StockAdjustmentController extends Controller
         ]);
 
         if ($validator->fails()) {
-            if ($request->ajax()) {
-                return response()->json([
-                    'status' => 'error',
-                    'errors' => $validator->errors(),
-                ], 422);
-            }
-
-            return back()->withErrors($validator);
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors(),
+            ], 422);
         }
 
         try {
@@ -626,26 +622,18 @@ class StockAdjustmentController extends Controller
 
             DB::commit();
 
-            if ($request->ajax()) {
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Stock adjustment rejected successfully',
-                    'data' => $adjustment->load(['warehouse', 'masterProduct', 'createdBy', 'approvedBy']),
-                ]);
-            }
-
-            return redirect()->route('warehouse.stock-adjustments.show', $adjustment->id)
-                ->with('success', 'Stock adjustment rejected successfully');
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Stock adjustment rejected successfully',
+                'data' => $adjustment->load(['warehouse', 'masterProduct', 'createdBy', 'approvedBy']),
+            ]);
         } catch (\Exception $e) {
             DB::rollback();
-            if ($request->ajax()) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Failed to reject stock adjustment: '.$e->getMessage(),
-                ], 500);
-            }
 
-            return back()->with('error', 'Failed to reject stock adjustment: '.$e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to reject stock adjustment: '.$e->getMessage(),
+            ], 500);
         }
     }
 

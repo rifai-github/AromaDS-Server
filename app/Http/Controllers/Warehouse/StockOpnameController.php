@@ -791,7 +791,7 @@ class StockOpnameController extends Controller
                         'warehouse_id' => $stockOpname->warehouse_id,
                         'reason' => $adjustmentReason,
                         'adjustment_date' => now(),
-                        'status' => 'waiting for approval',
+                        'status' => 'draft',
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id(),
                     ]);
