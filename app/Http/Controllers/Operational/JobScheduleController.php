@@ -5279,6 +5279,20 @@ class JobScheduleController extends Controller
             return 'Return ini sudah berada di gudang pusat, tidak perlu diteruskan.';
         }
 
+        // Safety guard: forwarding a Serial Number-tracked (unit) product to center
+        // via InventoryTransfer does not yet move/update the SerialNumber record
+        // (warehouse_id, status, location_type) - only WarehouseProduct.quantity.
+        // Block until SN movement is implemented, to avoid a unit's SN silently
+        // going out of sync with its real warehouse location.
+        $hasSerializedItem = $materialReturn->items()
+            ->with('product.productCategory', 'product.productType')
+            ->get()
+            ->contains(fn ($item) => $item->product && $item->product->requiresSerialNumber());
+
+        if ($hasSerializedItem) {
+            return 'Return ini mengandung produk ber-Serial Number (unit). Forward ke gudang pusat untuk produk ber-SN belum didukung karena perpindahan SN belum tersinkron otomatis. Gunakan "Simpan di gudang cabang" untuk return ini, atau proses perpindahan SN secara manual.';
+        }
+
         return true;
     }
 
