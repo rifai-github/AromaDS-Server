@@ -622,12 +622,17 @@ class InventoryController extends Controller
                 'transferItems.product:id,name,sku'
             ])->findOrFail($id);
 
-            // Format the transfer_date for HTML date input
-            $transfer->transfer_date = $transfer->transfer_date ? $transfer->transfer_date->format('Y-m-d') : null;
+            // Format transfer_date for the HTML date input as a plain array value.
+            // Assigning a 'Y-m-d' string directly on the model gets re-cast back to a
+            // Carbon date (transfer_date is cast as 'date') and re-serializes as a
+            // UTC ISO timestamp, shifting the displayed date back a day in timezones
+            // ahead of UTC (e.g. WIB). Overwriting after toArray() avoids the re-cast.
+            $data = $transfer->toArray();
+            $data['transfer_date'] = $transfer->transfer_date ? $transfer->transfer_date->format('Y-m-d') : null;
 
             return response()->json([
                 'status' => 'success',
-                'data' => $transfer
+                'data' => $data
             ]);
         } catch (\Exception $e) {
             return response()->json([
