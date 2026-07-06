@@ -653,6 +653,8 @@ class InventoryController extends Controller
             'is_direct_branch_transfer' => 'nullable|boolean',
             'delivery_order_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
             'central_approval_notes' => 'nullable|string|max:1000',
+            'submission_letter_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
+            'delivery_note_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
             'notes' => 'nullable|string|max:1000',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:master_products,id',
@@ -715,6 +717,16 @@ class InventoryController extends Controller
                 'central_approved_by' => $isDirectBranchTransfer ? Auth::id() : null,
                 'central_approved_at' => $isDirectBranchTransfer ? now() : null,
                 'central_approval_notes' => $request->central_approval_notes,
+                'submission_letter_file' => $request->hasFile('submission_letter_file')
+                    ? $request->file('submission_letter_file')->store('inventory-transfers/submission-letter', 'public')
+                    : null,
+                'submission_letter_uploaded_by' => $request->hasFile('submission_letter_file') ? Auth::id() : null,
+                'submission_letter_uploaded_at' => $request->hasFile('submission_letter_file') ? now() : null,
+                'delivery_note_file' => $request->hasFile('delivery_note_file')
+                    ? $request->file('delivery_note_file')->store('inventory-transfers/delivery-note', 'public')
+                    : null,
+                'delivery_note_uploaded_by' => $request->hasFile('delivery_note_file') ? Auth::id() : null,
+                'delivery_note_uploaded_at' => $request->hasFile('delivery_note_file') ? now() : null,
                 'notes' => $request->notes,
                 'created_by' => Auth::id(),
                 'updated_by' => Auth::id()
@@ -764,6 +776,8 @@ class InventoryController extends Controller
             'is_direct_branch_transfer' => 'nullable|boolean',
             'delivery_order_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
             'central_approval_notes' => 'nullable|string|max:1000',
+            'submission_letter_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
+            'delivery_note_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
             'notes' => 'nullable|string|max:1000'
         ]);
 
@@ -804,6 +818,33 @@ class InventoryController extends Controller
                 $deliveryOrderFile = $request->file('delivery_order_file')->store('inventory-transfers/do', 'public');
             }
 
+            // Surat pengajuan (branch's submission letter). Kept once uploaded; only
+            // replaced (and the old file removed) when a new one is attached.
+            $submissionLetterFile = $transfer->submission_letter_file;
+            $submissionLetterUploadedBy = $transfer->submission_letter_uploaded_by;
+            $submissionLetterUploadedAt = $transfer->submission_letter_uploaded_at;
+            if ($request->hasFile('submission_letter_file')) {
+                if ($submissionLetterFile) {
+                    Storage::disk('public')->delete($submissionLetterFile);
+                }
+                $submissionLetterFile = $request->file('submission_letter_file')->store('inventory-transfers/submission-letter', 'public');
+                $submissionLetterUploadedBy = Auth::id();
+                $submissionLetterUploadedAt = now();
+            }
+
+            // Surat jalan (center's dispatch/acknowledgement document for the branch).
+            $deliveryNoteFile = $transfer->delivery_note_file;
+            $deliveryNoteUploadedBy = $transfer->delivery_note_uploaded_by;
+            $deliveryNoteUploadedAt = $transfer->delivery_note_uploaded_at;
+            if ($request->hasFile('delivery_note_file')) {
+                if ($deliveryNoteFile) {
+                    Storage::disk('public')->delete($deliveryNoteFile);
+                }
+                $deliveryNoteFile = $request->file('delivery_note_file')->store('inventory-transfers/delivery-note', 'public');
+                $deliveryNoteUploadedBy = Auth::id();
+                $deliveryNoteUploadedAt = now();
+            }
+
             // When a transfer leaves 'draft' for the first time, stock physically moves
             // (source warehouse -, destination warehouse +). storeTransfer applies this at
             // creation for non-draft transfers; drafts created earlier (e.g. auto-created
@@ -839,6 +880,12 @@ class InventoryController extends Controller
                 'central_approved_by' => $isDirectBranchTransfer ? Auth::id() : null,
                 'central_approved_at' => $isDirectBranchTransfer ? now() : null,
                 'central_approval_notes' => $request->central_approval_notes,
+                'submission_letter_file' => $submissionLetterFile,
+                'submission_letter_uploaded_by' => $submissionLetterUploadedBy,
+                'submission_letter_uploaded_at' => $submissionLetterUploadedAt,
+                'delivery_note_file' => $deliveryNoteFile,
+                'delivery_note_uploaded_by' => $deliveryNoteUploadedBy,
+                'delivery_note_uploaded_at' => $deliveryNoteUploadedAt,
                 'notes' => $request->notes,
                 'updated_by' => Auth::id()
             ]);

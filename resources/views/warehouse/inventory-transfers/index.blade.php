@@ -1043,9 +1043,25 @@ function openCreateModal() {
                     <textarea name="notes" class="form-input" rows="3" placeholder="Masukkan catatan transfer"></textarea>
                 </div>
             </div>
+
+            <div class="modal-section">
+                <div class="modal-section-title">Dokumen</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="form-group">
+                        <label class="form-label">Surat Pengajuan (dari Cabang)</label>
+                        <input type="file" name="submission_letter_file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+                        <p class="text-xs text-gray-500 mt-1">Dokumen pengajuan return dari cabang ke pusat. Opsional, bisa diupload/diganti belakangan.</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Surat Jalan (dari Pusat)</label>
+                        <input type="file" name="delivery_note_file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+                        <p class="text-xs text-gray-500 mt-1">Dokumen surat jalan/acknowledgement dari pusat untuk cabang. Opsional, biasanya diupload saat status Transferred/Received.</p>
+                    </div>
+                </div>
+            </div>
         </form>
     `;
-        
+
         // Add modal footer
         document.getElementById('modalFooter').innerHTML = `
             <button type="button" class="btn btn-secondary" onclick="closeModal()">Batal</button>
@@ -1205,6 +1221,20 @@ function openViewModal(id) {
                             <p class="detail-value">${data.created_at ? new Date(data.created_at).toLocaleString() : '-'}</p>
                         </div>
                     </div>
+
+                    <div class="modal-section">
+                        <div class="modal-section-title">Dokumen</div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="detail-item">
+                                <label class="form-label">Surat Pengajuan (dari Cabang)</label>
+                                <p class="detail-value">${data.submission_letter_file ? `<a href="/storage/${data.submission_letter_file}" target="_blank" class="text-blue-600 underline">Lihat file</a>` : '-'}</p>
+                            </div>
+                            <div class="detail-item">
+                                <label class="form-label">Surat Jalan (dari Pusat)</label>
+                                <p class="detail-value">${data.delivery_note_file ? `<a href="/storage/${data.delivery_note_file}" target="_blank" class="text-blue-600 underline">Lihat file</a>` : '-'}</p>
+                            </div>
+                        </div>
+                    </div>
                 `;
         
             // Add modal footer for view modal
@@ -1336,9 +1366,26 @@ function openEditModal(id) {
                         <textarea name="notes" class="form-input" rows="3" placeholder="Masukkan catatan transfer">${data.notes || ''}</textarea>
                     </div>
                 </div>
+
+                <div class="modal-section">
+                    <div class="modal-section-title">Dokumen</div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="form-group">
+                            <label class="form-label">Surat Pengajuan (dari Cabang)</label>
+                            ${data.submission_letter_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="/storage/${data.submission_letter_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
+                            <input type="file" name="submission_letter_file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Surat Jalan (dari Pusat)</label>
+                            ${data.delivery_note_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="/storage/${data.delivery_note_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
+                            <input type="file" name="delivery_note_file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Upload file baru untuk mengganti dokumen yang sudah ada. Kosongkan jika tidak ingin mengubah.</p>
+                </div>
             </form>
         `;
-        
+
             // Add modal footer for edit modal
             document.getElementById('modalFooter').innerHTML = `
                 <button type="button" class="btn btn-secondary" onclick="closeModal()">Batal</button>
@@ -1405,16 +1452,50 @@ function submitForm(event, id = null) {
     }
     
     const url = id ? `{{ url('warehouse/inventory-transfers/api') }}/${id}/update` : '{{ route('warehouse.inventory-transfers.api.store') }}';
-    const method = id ? 'PUT' : 'POST';
-    
-    fetch(url, {
-        method: method,
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-        },
-        body: JSON.stringify(data)
-    })
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+    // File inputs (submission_letter_file, delivery_note_file, delivery_order_file) can't
+    // be sent through the JSON.stringify(data) path below - a File object doesn't survive
+    // JSON serialization. When any of these actually has a file selected, submit the raw
+    // FormData instead (multipart/form-data, browser-set boundary) so PHP can populate
+    // $_FILES. Requests with no files keep the original JSON path untouched.
+    const fileFieldNames = ['delivery_order_file', 'submission_letter_file', 'delivery_note_file'];
+    const hasFile = fileFieldNames.some(name => {
+        const file = formData.get(name);
+        return file instanceof File && file.size > 0;
+    });
+
+    let fetchOptions;
+    if (hasFile) {
+        // PHP only populates $_FILES for POST bodies, not PUT - use Laravel's method
+        // override (_method field) so an edit still reaches updateTransfer() while the
+        // real HTTP method stays POST.
+        if (id) {
+            formData.set('_method', 'PUT');
+        }
+        formData.delete('items');
+        items.forEach((item, index) => {
+            formData.append(`items[${index}][product_id]`, item.product_id);
+            formData.append(`items[${index}][quantity]`, item.quantity);
+        });
+
+        fetchOptions = {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': csrfToken },
+            body: formData
+        };
+    } else {
+        fetchOptions = {
+            method: id ? 'PUT' : 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken
+            },
+            body: JSON.stringify(data)
+        };
+    }
+
+    fetch(url, fetchOptions)
     .then(response => response.json())
     .then(result => {
         if (result.status === 'success') {

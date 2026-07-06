@@ -24,6 +24,12 @@ class InventoryTransfer extends Model
         'central_approved_by',
         'central_approved_at',
         'central_approval_notes',
+        'submission_letter_file',
+        'submission_letter_uploaded_by',
+        'submission_letter_uploaded_at',
+        'delivery_note_file',
+        'delivery_note_uploaded_by',
+        'delivery_note_uploaded_at',
         'notes',
         'source_type',
         'source_id',
@@ -35,6 +41,8 @@ class InventoryTransfer extends Model
         'transfer_date' => 'date',
         'is_direct_branch_transfer' => 'boolean',
         'central_approved_at' => 'datetime',
+        'submission_letter_uploaded_at' => 'datetime',
+        'delivery_note_uploaded_at' => 'datetime',
     ];
 
     // Relationships
@@ -82,6 +90,18 @@ class InventoryTransfer extends Model
     public function isFromMaterialReturn()
     {
         return $this->source_type === 'material_return';
+    }
+
+    // Surat pengajuan (branch's submission letter requesting the goods leave the branch).
+    public function submissionLetterUploader()
+    {
+        return $this->belongsTo(User::class, 'submission_letter_uploaded_by');
+    }
+
+    // Surat jalan (center's dispatch/acknowledgement document for the branch).
+    public function deliveryNoteUploader()
+    {
+        return $this->belongsTo(User::class, 'delivery_note_uploaded_by');
     }
 
     // Scopes
