@@ -528,12 +528,15 @@ class Contract extends Model
 
     public function getDisplayTermOfPaymentAttribute(): string
     {
-        if ($this->quotation?->terms_of_payment_label) {
-            return $this->quotation->terms_of_payment_label;
-        }
-
+        // Contract's own term_of_payment is authoritative (e.g. reset by Contract Switching
+        // when "Continue TOP" is unchecked) — the quotation label is only a fallback for
+        // contracts that never had their own term_of_payment set.
         if ($this->term_of_payment) {
             return $this->term_of_payment;
+        }
+
+        if ($this->quotation?->terms_of_payment_label) {
+            return $this->quotation->terms_of_payment_label;
         }
 
         $terms = $this->mergeDisplaySources()

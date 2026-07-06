@@ -273,7 +273,15 @@ class ContractSwitching extends Model
             
             // Update customer
             $newContractData['customer_id'] = $this->new_customer_id;
-            
+
+            // Virtual account is customer-specific — carrying over the old customer's VA would
+            // point the new contract's invoices at the wrong account. Use the new customer's own
+            // active VA if one exists; otherwise leave it unset rather than keep the stale one.
+            $newCustomerVirtualAccount = CompanyVirtualAccount::where('customer_id', $this->new_customer_id)
+                ->where('is_active', true)
+                ->value('account_number');
+            $newContractData['virtual_account'] = $newCustomerVirtualAccount;
+
             // Generate new contract number
             $newContractData['contract_number'] = $this->generateNewContractNumber();
             
