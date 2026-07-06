@@ -622,6 +622,91 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
     }
 
     /**
+     * QA bug (kode IF, job 417 "SBY-IF/26-07/0011", job_advice_room 106 "Ruang
+     * 1R1RQ2"): a unit_refill room with quantity=2 whose BOM implies 2 Diffusers
+     * (bom_rental_qty 1 × room quantity 2), but the warehouse only issued ONE
+     * serialized Diffuser. The technician scanned that single Diffuser, yet the
+     * validator kept demanding a second unit scan ("Diffuser (x1)") that no
+     * physical unit existed for — permanently blocking room completion. The
+     * required count must be capped at the number of units actually issued.
+     */
+    public function test_required_unit_count_is_capped_at_the_number_of_units_actually_issued(): void
+    {
+        $jobAdvice = JobAdvice::create(['customer_id' => 7, 'type' => 'install']);
+
+        $job = JobSchedule::create([
+            'job_number' => 'SBY-IF/26-07/0011',
+            'type' => 'install_free',
+            'status' => 'in_progress',
+            'job_advice_id' => $jobAdvice->id,
+        ]);
+
+        $unitCategory = ProductCategory::create(['code' => 'UNIT', 'name' => 'Diffuser', 'is_unit' => true]);
+        $unitProduct = MasterProduct::create(['product_category_id' => $unitCategory->id, 'name' => 'Diffuser 303']);
+
+        $masterRental = 520; // BOM: 1x Diffuser per room-unit
+        \DB::table('rental_details')->insert([
+            'master_rental_id' => $masterRental,
+            'item_type' => 'product',
+            'master_product_id' => $unitProduct->id,
+            'product_category_id' => $unitCategory->id,
+            'bom_rental_qty' => 1,
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Room quantity 2 → BOM-derived requirement is 2 Diffusers...
+        $room = \App\Models\JobAdviceRoom::create([
+            'job_advice_id' => $jobAdvice->id,
+            'rental_product_id' => $masterRental,
+            'room_name' => 'Ruang 1R1RQ2',
+            'quantity' => 2,
+        ]);
+
+        // ...but the warehouse only issued ONE serialized Diffuser.
+        $issuedSn = SerialNumber::create(['serial_number' => 'DIFF3030017', 'master_product_id' => $unitProduct->id, 'status' => 'pending']);
+
+        $materialIssue = MaterialIssue::create(['issue_number' => 'SBY-MI/26-07/0053', 'status' => 'issued']);
+        $jobAssignSchedule = JobAssignSchedule::create(['job_schedule_id' => $job->id, 'status' => 'assigned']);
+        JobAssignMaterialIssue::create([
+            'job_assign_schedule_id' => $jobAssignSchedule->id,
+            'material_issue_id' => $materialIssue->id,
+        ]);
+
+        $inventoryIssuing = InventoryIssuing::create([
+            'issuing_number' => 'SBY-WI/26-07/0053',
+            'reference_no' => $materialIssue->issue_number,
+            'status' => 'sent',
+            'warehouse_id' => 1,
+        ]);
+
+        InventoryIssuingItem::create([
+            'inventory_issuing_id' => $inventoryIssuing->id,
+            'product_id' => $unitProduct->id,
+            'serial_number_id' => $issuedSn->id,
+            'room_name' => 'Ruang 1R1RQ2',
+        ]);
+
+        // Technician scanned the one and only Diffuser that exists.
+        \DB::table('job_schedule_units')->insert([
+            'job_schedule_id' => $job->id,
+            'job_advice_room_id' => $room->id,
+            'mac' => 'DIFF3030017',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $missing = $this->invokeGetMissingUnitSerialNumbersForRoom($job, $room->id, 'Ruang 1R1RQ2');
+
+        $this->assertSame(
+            [],
+            $missing,
+            'Requirement must be capped at the number of units issued; scanning the only issued Diffuser must complete the room.'
+        );
+    }
+
+    /**
      * Bug #72 regression guard: validator must still block completion when the
      * technician has scanned nothing at all for the room's required units.
      * The unknown-scan tolerance added in the fix must not turn the validator

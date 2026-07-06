@@ -3176,7 +3176,25 @@ class JobController extends Controller
             }
         }
 
+        $itemsByCategoryId = $unitItems->groupBy(fn ($item) => $item->serialNumber->masterProduct->product_category_id ?? null);
+
+        // Bug (QA, kode IF): the BOM-derived requirement is bom_rental_qty ×
+        // room.quantity, but the number of serial-tracked units the technician
+        // can actually scan is capped by what the warehouse ISSUED to the room.
+        // When these diverge — e.g. a unit_refill room with quantity=2 whose BOM
+        // implies 2 Diffusers, but only ONE serialized Diffuser was issued — the
+        // validator demanded a second Diffuser scan that no physical unit exists
+        // for, permanently blocking room completion ("Diffuser (x1)"). Cap each
+        // category's requirement at the count of units actually issued so the
+        // room can be completed once every issued unit has been scanned, while
+        // still honouring the per-rental BOM scoping from Bug #25.
+        $effectiveRequiredByCategoryId = [];
         foreach ($requiredQtyByCategoryId as $categoryId => $requiredQty) {
+            $issuedCount = $itemsByCategoryId->get($categoryId, collect())->count();
+            $effectiveRequiredByCategoryId[$categoryId] = min($requiredQty, $issuedCount);
+        }
+
+        foreach ($effectiveRequiredByCategoryId as $categoryId => $requiredQty) {
             while (($scannedCounts[$categoryId] ?? 0) < $requiredQty && ! empty($unknownScans)) {
                 array_shift($unknownScans);
                 $scannedCounts[$categoryId] = ($scannedCounts[$categoryId] ?? 0) + 1;
@@ -3185,10 +3203,8 @@ class JobController extends Controller
 
         $scannedCountByCategoryId = collect($scannedCounts);
 
-        $itemsByCategoryId = $unitItems->groupBy(fn ($item) => $item->serialNumber->masterProduct->product_category_id ?? null);
-
         $missing = [];
-        foreach ($requiredQtyByCategoryId as $categoryId => $requiredQty) {
+        foreach ($effectiveRequiredByCategoryId as $categoryId => $requiredQty) {
             $scannedCount = $scannedCountByCategoryId->get($categoryId, 0);
             $stillNeeded = $requiredQty - $scannedCount;
 
