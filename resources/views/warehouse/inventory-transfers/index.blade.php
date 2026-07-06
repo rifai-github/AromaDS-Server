@@ -1461,7 +1461,19 @@ function submitForm(event, id = null) {
     
     const formData = new FormData(event.target);
     const data = Object.fromEntries(formData.entries());
-    
+
+    // An empty <input type="file"> still produces a (zero-size) File entry in
+    // FormData. Object.fromEntries() + JSON.stringify() turns that into "{}" in the
+    // request body - present, but neither null nor a valid file - which trips
+    // Laravel's 'nullable|file' validation ("field must be a file") even though no
+    // file was actually chosen. Strip these keys entirely when empty so the field is
+    // truly absent, matching what 'nullable' expects.
+    ['delivery_order_file', 'submission_letter_file', 'delivery_note_file'].forEach(name => {
+        if (data[name] instanceof File && data[name].size === 0) {
+            delete data[name];
+        }
+    });
+
     // Use addedItems for create modal, or collect from form for edit modal
     let items = [];
     
