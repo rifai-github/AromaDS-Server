@@ -797,7 +797,7 @@
                                     <div class="info-field">
                                         <div class="info-field-label">Quotation No</div>
                                         <div class="info-field-value">
-                                            @php $jobScheduleQuotation = $jobSchedule->jobAdvice?->contract?->quotation; @endphp
+                                            @php $jobScheduleQuotation = $jobSchedule->jobAdvice?->contract?->quotation ?? ($jobScheduleQuotationFallback ?? null); @endphp
                                             @if($jobScheduleQuotation)
                                                 <a href="{{ route('marketing.quotations.show', $jobScheduleQuotation) }}" target="_blank" rel="noopener noreferrer">{{ $jobSchedule->quotation_number ?? $jobScheduleQuotation->quotation_number ?? '-' }}</a>
                                             @else

@@ -2989,9 +2989,17 @@ class JobScheduleController extends Controller
             ->limit(50)
             ->get();
 
+        // Fallback lookup for Quotation No hyperlink when there's no contract-linked quotation
+        // (e.g. Install Free / Remove Free jobs, which store quotation_number directly without a contract)
+        $jobScheduleQuotationFallback = null;
+        if (! $jobSchedule->jobAdvice?->contract?->quotation && $jobSchedule->quotation_number) {
+            $jobScheduleQuotationFallback = \App\Models\Quotation::where('quotation_number', $jobSchedule->quotation_number)->first();
+        }
+
         return view('operational.job-schedules.show', compact(
-            'jobSchedule', 
-            'materialIssues', 
+            'jobSchedule',
+            'jobScheduleQuotationFallback',
+            'materialIssues',
             'materialIssueItems',
             'serialNumbers', 
             'teamLocations', 
