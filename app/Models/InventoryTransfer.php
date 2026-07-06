@@ -58,6 +58,12 @@ class InventoryTransfer extends Model
         return $this->belongsTo(User::class, 'updated_by');
     }
 
+    // Alias expected by InventoryController::index() eager-load and the index blade view.
+    public function updatedBy()
+    {
+        return $this->belongsTo(User::class, 'updated_by');
+    }
+
     public function transferItems()
     {
         return $this->hasMany(InventoryTransferItem::class);
