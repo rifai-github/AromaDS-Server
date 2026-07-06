@@ -796,7 +796,14 @@
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Quotation No</div>
-                                        <div class="info-field-value">{{ $jobSchedule->quotation_number ?? ($jobSchedule->jobAdvice?->contract?->quotation?->quotation_number ?? '-') }}</div>
+                                        <div class="info-field-value">
+                                            @php $jobScheduleQuotation = $jobSchedule->jobAdvice?->contract?->quotation; @endphp
+                                            @if($jobScheduleQuotation)
+                                                <a href="{{ route('marketing.quotations.show', $jobScheduleQuotation) }}" target="_blank" rel="noopener noreferrer">{{ $jobSchedule->quotation_number ?? $jobScheduleQuotation->quotation_number ?? '-' }}</a>
+                                            @else
+                                                {{ $jobSchedule->quotation_number ?? '-' }}
+                                            @endif
+                                        </div>
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Contract No</div>
