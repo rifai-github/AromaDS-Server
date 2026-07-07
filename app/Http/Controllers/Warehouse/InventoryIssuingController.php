@@ -1051,12 +1051,20 @@ class InventoryIssuingController extends Controller
             // enough serials linked (aroma/refill batch products only ever need 1).
             $requiredSerialCount = $issuingItem->requiredSerialCount();
             $linkedSerialCount = $issuingItem->linkedSerialCount();
+            $isReplacingSingleSlot = false;
             if ($requiredSerialCount > 0 && $linkedSerialCount >= $requiredSerialCount) {
-                DB::rollBack();
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "Serial Number untuk item ini sudah lengkap ({$linkedSerialCount}/{$requiredSerialCount})."
-                ], 422);
+                if ($requiredSerialCount <= 1) {
+                    // Pre-existing "Ubah SN" flow: a row that only ever needs 1 SN (qty 1
+                    // unit, or any aroma/refill batch row) can have its single serial
+                    // replaced by scanning again, same as before this pivot table existed.
+                    $isReplacingSingleSlot = true;
+                } else {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "Serial Number untuk item ini sudah lengkap ({$linkedSerialCount}/{$requiredSerialCount})."
+                    ], 422);
+                }
             }
 
             $serialNumber = strtoupper(trim($request->serial_number));
@@ -1163,10 +1171,19 @@ class InventoryIssuingController extends Controller
                 }
             }
 
+            // "Ubah SN" on a single-slot row (qty 1 unit, or any aroma/refill batch row):
+            // clear the old link first so the new scan replaces it, exactly like the old
+            // unconditional-overwrite behavior before this pivot table existed.
+            if ($isReplacingSingleSlot) {
+                $issuingItem->serialLinks()->delete();
+            }
+
             // QA "1 Rental banyak Qty": link SN as the next slot for this item. The pivot
             // table holds every SN for a qty>1 unit row; serial_number_id is kept in sync
             // with the first slot for backward compatibility with code reading it directly.
-            $nextUnitIndex = ($issuingItem->serialLinks->max('unit_index') ?? 0) + 1;
+            $nextUnitIndex = $isReplacingSingleSlot
+                ? 1
+                : (($issuingItem->serialLinks->max('unit_index') ?? 0) + 1);
 
             \App\Models\InventoryIssuingItemSerial::create([
                 'inventory_issuing_item_id' => $issuingItem->id,
@@ -1176,7 +1193,7 @@ class InventoryIssuingController extends Controller
             ]);
 
             $issuingItem->update([
-                'serial_number_id' => $issuingItem->serial_number_id ?? $sn->id,
+                'serial_number_id' => $isReplacingSingleSlot ? $sn->id : ($issuingItem->serial_number_id ?? $sn->id),
                 'room_name'        => $roomName ?: $issuingItem->room_name,
                 'updated_by'       => Auth::id()
             ]);
