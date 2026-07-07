@@ -192,19 +192,38 @@ class MasterOptionController extends Controller
 
             // Update option details only if options array is provided
             if ($request->has('options') && is_array($request->options)) {
-                // First, delete existing option details
-                $masterOption->optionDetails()->delete();
+                $submittedIds = [];
 
-                // Then create new option details
                 foreach ($request->options as $optionData) {
-                    if (!empty($optionData['option_name']) && !empty($optionData['label'])) {
-                        $masterOption->optionDetails()->create([
-                            'option_name' => $optionData['option_name'],
-                            'label' => $optionData['label'],
-                            'code' => $optionData['code'] ?? null,
-                        ]);
+                    if (empty($optionData['option_name']) || empty($optionData['label'])) {
+                        continue;
+                    }
+
+                    $attributes = [
+                        'option_name' => $optionData['option_name'],
+                        'label' => $optionData['label'],
+                        'code' => $optionData['code'] ?? null,
+                    ];
+
+                    $existingId = $optionData['id'] ?? null;
+                    $optionDetail = $existingId
+                        ? $masterOption->optionDetails()->find($existingId)
+                        : null;
+
+                    if ($optionDetail) {
+                        $optionDetail->fill($attributes);
+                        if ($optionDetail->isDirty()) {
+                            $optionDetail->save();
+                        }
+                        $submittedIds[] = $optionDetail->id;
+                    } else {
+                        $optionDetail = $masterOption->optionDetails()->create($attributes);
+                        $submittedIds[] = $optionDetail->id;
                     }
                 }
+
+                // Remove option details that were deleted from the form
+                $masterOption->optionDetails()->whereNotIn('id', $submittedIds)->delete();
             }
 
             DB::commit();

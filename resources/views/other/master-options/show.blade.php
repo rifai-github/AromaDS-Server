@@ -233,10 +233,10 @@
                                     <td>{{ $optionDetail->code ?? '-' }}</td>
                                     <td>{{ $optionDetail->updated_at ? \Carbon\Carbon::parse($optionDetail->updated_at)->format('d/M/Y H:i') : 'N/A' }}</td>
                                     <td>
-                                        @if($masterOption->updater && $masterOption->updater->name)
-                                            {{ $masterOption->updater->name }}
-                                        @elseif($masterOption->creator && $masterOption->creator->name)
-                                            {{ $masterOption->creator->name }}
+                                        @if($optionDetail->updater && $optionDetail->updater->name)
+                                            {{ $optionDetail->updater->name }}
+                                        @elseif($optionDetail->creator && $optionDetail->creator->name)
+                                            {{ $optionDetail->creator->name }}
                                         @else
                                             N/A
                                         @endif
