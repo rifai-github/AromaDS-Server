@@ -30,7 +30,7 @@ class TaxInvoiceController extends Controller
         // Default: Jika tidak set hirarki, hanya bisa lihat data sendiri
         // Filter by created_by and also by contract.created_by
         $user = Auth::user();
-        if (!$user->hasRoleStartingWith('Management')) {
+        if (!$this->hasUnrestrictedAccessControlData($user)) {
             $accessibleUserIds = $this->getAccessibleUserIds($user);
             $query->where(function($q) use ($accessibleUserIds) {
                 $q->whereIn('created_by', $accessibleUserIds)

@@ -48,7 +48,7 @@ class CommissionController extends Controller
 
         // Apply access control filter (hierarchical data)
         $user = Auth::user();
-        if (!$user->hasRoleStartingWith('Management')) {
+        if (!$this->hasUnrestrictedAccessControlData($user)) {
             $accessibleUserIds = $this->getAccessibleUserIds($user);
             $query->where(function($q) use ($accessibleUserIds) {
                 $q->whereIn('user_id', $accessibleUserIds)
