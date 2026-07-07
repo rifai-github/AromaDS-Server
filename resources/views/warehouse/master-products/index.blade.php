@@ -3040,6 +3040,10 @@ function openImportModal() {
                             <div id="previewContent"></div>
                         </div>
                     </div>
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div class="font-semibold text-blue-900 mb-1">Unduh contoh format:</div>
+                        <a href="/warehouse/master-products/import-template" class="text-blue-700 underline">Template CSV</a>
+                    </div>
                     <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                         <h4 class="font-semibold text-yellow-900 mb-2">📋 CSV Format Requirements:</h4>
                         <ul class="text-sm text-yellow-800 space-y-1 list-disc list-inside">

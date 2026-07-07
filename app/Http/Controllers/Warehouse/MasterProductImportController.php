@@ -11,6 +11,7 @@ use App\Models\WarehouseProduct;
 use App\Models\RentalServiceFrequency;
 use App\Models\User;
 use App\Helpers\UnitHelper;
+use App\Services\Imports\SpreadsheetImportHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -19,6 +20,40 @@ use Illuminate\Support\Str;
 
 class MasterProductImportController extends Controller
 {
+    /** Columns read by parseCsv()/import(), in the order the template exposes them. */
+    private const TEMPLATE_HEADERS = [
+        'ProductCode', 'ProductName', 'ProductType', 'ProductCategory', 'Unit',
+        'PartNo', 'NetWeight', 'GrossWeight', 'LifeTime', 'UnitOrder',
+        'FrequencyService', 'FgTrading', 'FgStockSubstitute', 'FgActive',
+        'Length', 'Width', 'Height', 'Specification', 'Specification2',
+        'QtyBuffer', 'Warehouse', 'UserId',
+    ];
+
+    /**
+     * Download a CSV template with the accepted columns and a sample row.
+     *
+     * Only CSV is offered because import()/parseCsv() only accept .csv/.txt.
+     */
+    public function template()
+    {
+        $sample = [
+            [
+                'PRD0001', 'Dispenser Aroma X', 'DIS', 'Dispenser', 'UNIT',
+                'PN-001', '5.5', '6.2', '3650', 'unit',
+                'monthly', 'N', 'N', 'Y',
+                '30', '20', '40', 'Spesifikasi contoh', '',
+                '5', 'WH-JKT', '',
+            ],
+        ];
+
+        return SpreadsheetImportHelper::downloadTemplate(
+            self::TEMPLATE_HEADERS,
+            $sample,
+            'template-import-master-produk',
+            'csv'
+        );
+    }
+
     /**
      * Preview CSV file before import
      */
