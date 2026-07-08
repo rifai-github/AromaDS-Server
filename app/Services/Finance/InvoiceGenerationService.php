@@ -2,28 +2,28 @@
 
 namespace App\Services\Finance;
 
-use App\Models\Contract;
-use App\Models\Invoice;
-use App\Models\JobReport;
-use App\Models\JobSchedule;
-use App\Models\JobScheduleRoom;
-use App\Models\Customer;
 use App\Models\Building;
-use App\Models\RoomRentalUnit;
-use App\Models\InvoiceFile;
-use App\Models\JobScheduleBaFile;
+use App\Models\Contract;
 use App\Models\ContractFile;
+use App\Models\Invoice;
+use App\Models\InvoiceFile;
+use App\Models\JobSchedule;
+use App\Models\JobScheduleBaFile;
+use App\Models\JobScheduleRoom;
+use App\Services\DocumentNumberService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
-use App\Services\DocumentNumberService;
 
 class InvoiceGenerationService
 {
     private const BILLABLE_COMPLETED_STATUSES = ['completed', 'done_job', 'dpf'];
+
     private const NON_BILLABLE_JOB_STATUSES = ['cancelled', 'suspend', 'meninggalkan_lokasi', 'undone'];
+
     private const NON_BILLABLE_ROOM_STATUSES = ['cancelled', 'suspend', 'undone'];
+
     private const NON_BILLABLE_JOB_TYPES = ['install_free', 'install free', 'remove_free', 'remove free'];
 
     protected $documentNumberService;
@@ -53,7 +53,7 @@ class InvoiceGenerationService
                 return [
                     'success' => false,
                     'message' => 'Invoice generation is on hold for this contract (Hold Invoice is active).',
-                    'hold_invoice' => true
+                    'hold_invoice' => true,
                 ];
             }
 
@@ -61,8 +61,8 @@ class InvoiceGenerationService
             // Before Service: IR/install BA triggers invoice.
             // After Service: CSR/service BA triggers invoice.
             $allJobsCompleted = $this->checkInvoiceTriggerJobsCompletedInPeriod($contract, $periodStart, $periodEnd);
-            
-            if (!$allJobsCompleted) {
+
+            if (! $allJobsCompleted) {
                 DB::rollBack();
 
                 return [
@@ -76,7 +76,7 @@ class InvoiceGenerationService
 
             // NEW: Check BA Files Supported
             if ($contract->ba_files_supported) {
-                if (!$this->checkAllJobsHaveVerifiedBaFiles($contract, $periodStart, $periodEnd)) {
+                if (! $this->checkAllJobsHaveVerifiedBaFiles($contract, $periodStart, $periodEnd)) {
                     DB::rollBack();
 
                     return [
@@ -94,7 +94,7 @@ class InvoiceGenerationService
                 return [
                     'success' => false,
                     'message' => 'Invoice already exists for this rental period',
-                    'existing_invoice' => $existingInvoice
+                    'existing_invoice' => $existingInvoice,
                 ];
             }
 
@@ -123,16 +123,16 @@ class InvoiceGenerationService
                 'message' => 'Invoice auto-generated successfully for rental period',
                 'rental_period' => $rentalPeriod,
                 'period_start' => $periodStart->toDateString(),
-                'period_end' => $periodEnd->toDateString()
+                'period_end' => $periodEnd->toDateString(),
             ];
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Auto invoice generation failed: ' . $e->getMessage());
-            
+            Log::error('Auto invoice generation failed: '.$e->getMessage());
+
             return [
                 'success' => false,
-                'message' => 'Failed to auto-generate invoice: ' . $e->getMessage()
+                'message' => 'Failed to auto-generate invoice: '.$e->getMessage(),
             ];
         }
     }
@@ -176,8 +176,8 @@ class InvoiceGenerationService
             $hasVerifiedBa = JobScheduleBaFile::where('job_schedule_id', $job->id)
                 ->where('verification_status', 'verified')
                 ->exists();
-            
-            if (!$hasVerifiedBa) {
+
+            if (! $hasVerifiedBa) {
                 return false;
             }
         }
@@ -191,9 +191,9 @@ class InvoiceGenerationService
     private function checkExistingInvoice(int $contractId, string $contractNumber, string $rentalPeriod, Carbon $periodStart, Carbon $periodEnd): ?Invoice
     {
         return Invoice::where(function ($query) use ($contractId, $contractNumber) {
-                $query->where('contract_id', $contractId)
-                    ->orWhere('contract_number', $contractNumber);
-            })
+            $query->where('contract_id', $contractId)
+                ->orWhere('contract_number', $contractNumber);
+        })
             ->where('invoice_status', '!=', Invoice::STATUS_CANCELLED)
             ->where('period_invoice', $rentalPeriod)
             ->first();
@@ -230,15 +230,15 @@ class InvoiceGenerationService
     private function getCandidateInvoiceJobsQuery(Contract $contract, Carbon $periodStart, Carbon $periodEnd)
     {
         return JobSchedule::with([
-                'jobAdvice.rooms.rentalProduct',
-                'jobAdvice.rooms.contractRoom.room',
-                'jobAdvice.contract.contractRentals.masterRental',
-                'jobAdvice.contract.contractRooms.room',
-                'jobScheduleRooms.jobAdviceRoom.rentalProduct',
-                'jobScheduleRooms.jobAdviceRoom.contractRoom.room',
-                'jobScheduleRooms.jobAdviceRoom.quotationRoom.room',
-                'jobScheduleRooms.room',
-            ])
+            'jobAdvice.rooms.rentalProduct',
+            'jobAdvice.rooms.contractRoom.room',
+            'jobAdvice.contract.contractRentals.masterRental',
+            'jobAdvice.contract.contractRooms.room',
+            'jobScheduleRooms.jobAdviceRoom.rentalProduct',
+            'jobScheduleRooms.jobAdviceRoom.contractRoom.room',
+            'jobScheduleRooms.jobAdviceRoom.quotationRoom.room',
+            'jobScheduleRooms.room',
+        ])
             ->whereHas('jobAdvice', function ($query) use ($contract) {
                 $query->where('contract_id', $contract->id);
             })
@@ -251,9 +251,22 @@ class InvoiceGenerationService
 
     private function getInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd): \Illuminate\Support\Collection
     {
-        return $this->getCandidateInvoiceJobsQuery($contract, $periodStart, $periodEnd)
-            ->get()
-            ->filter(fn (JobSchedule $jobSchedule) => $this->jobMatchesRentalInvoiceTrigger($contract, $jobSchedule))
+        $candidates = $this->getCandidateInvoiceJobsQuery($contract, $periodStart, $periodEnd)->get();
+
+        // Whether this period contains an actual Install (IR) job. When a free-trial install
+        // (IF) continues straight into the contract with the unit still on the wall, no IR job
+        // is generated for the first period, so the first CSR/service job must become the
+        // Before Service invoice trigger instead (see jobTypeCanInvoiceRentalType()).
+        $periodHasInstallTrigger = $candidates->contains(
+            fn (JobSchedule $jobSchedule) => in_array(
+                $this->normalizeJobType($jobSchedule->type),
+                ['install', 'installation', 'installation_report', 'ir'],
+                true
+            )
+        );
+
+        return $candidates
+            ->filter(fn (JobSchedule $jobSchedule) => $this->jobMatchesRentalInvoiceTrigger($contract, $jobSchedule, $periodHasInstallTrigger))
             ->values();
     }
 
@@ -262,22 +275,23 @@ class InvoiceGenerationService
         return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)
             ->filter(function (JobSchedule $jobSchedule) {
                 return in_array($jobSchedule->status, self::BILLABLE_COMPLETED_STATUSES, true)
-                    && !empty($jobSchedule->ba_date);
+                    && ! empty($jobSchedule->ba_date);
             })
             ->values();
     }
 
-    private function jobMatchesRentalInvoiceTrigger(Contract $contract, JobSchedule $jobSchedule): bool
+    private function jobMatchesRentalInvoiceTrigger(Contract $contract, JobSchedule $jobSchedule, bool $periodHasInstallTrigger = true): bool
     {
         $jobType = $this->normalizeJobType($jobSchedule->type);
         $rentalTypes = $this->getRentalTypesForJob($contract, $jobSchedule);
 
         if ($rentalTypes->isEmpty()) {
             $legacyTriggerTypes = $this->getInvoiceTriggerJobTypes($contract);
+
             return $legacyTriggerTypes === null || in_array($jobType, $legacyTriggerTypes, true);
         }
 
-        return $rentalTypes->contains(fn (string $rentalType) => $this->jobTypeCanInvoiceRentalType($jobType, $rentalType, $contract, $jobSchedule));
+        return $rentalTypes->contains(fn (string $rentalType) => $this->jobTypeCanInvoiceRentalType($jobType, $rentalType, $contract, $jobSchedule, $periodHasInstallTrigger));
     }
 
     private function getRentalTypesForJob(Contract $contract, JobSchedule $jobSchedule): \Illuminate\Support\Collection
@@ -326,24 +340,37 @@ class InvoiceGenerationService
             ->values();
     }
 
-    private function jobTypeCanInvoiceRentalType(string $jobType, string $rentalType, Contract $contract, ?JobSchedule $jobSchedule = null): bool
+    private function jobTypeCanInvoiceRentalType(string $jobType, string $rentalType, Contract $contract, ?JobSchedule $jobSchedule = null, bool $periodHasInstallTrigger = true): bool
     {
         $installTypes = ['install', 'installation', 'installation_report', 'ir'];
         $serviceTypes = ['service', 'service_first', 'service_routine', 'servis', 'csr', 'customer_service_report', 'customer service report'];
 
+        $timing = $this->getInvoiceTiming($contract);
         $isUnitOnly = $rentalType === 'unit_only';
         $isUnitRefillBeforeService = $rentalType === 'unit_refill'
-            && $this->getInvoiceTiming($contract) === 'before_service';
+            && $timing === 'before_service';
 
         if ($isUnitOnly || $isUnitRefillBeforeService) {
             if (in_array($jobType, $installTypes, true)) {
                 return true;
             }
 
-            return in_array($jobType, $serviceTypes, true)
-                && $jobSchedule
-                && is_numeric($jobSchedule->period)
-                && (int) $jobSchedule->period > 1;
+            if (! in_array($jobType, $serviceTypes, true) || ! $jobSchedule) {
+                return false;
+            }
+
+            $period = is_numeric($jobSchedule->period) ? (int) $jobSchedule->period : null;
+
+            // Subsequent periods are always billed off their own service/CSR job.
+            if ($period !== null && $period > 1) {
+                return true;
+            }
+
+            // First period is normally billed off the Install (IR) job. But when a free-trial
+            // install (IF) continued into the contract and the unit stayed on the wall, no IR
+            // job exists in this period — so the first CSR/service job becomes the Before
+            // Service trigger. Gated on Before Service + no IR job to avoid double invoicing.
+            return $timing === 'before_service' && ! $periodHasInstallTrigger;
         }
 
         if (in_array($rentalType, ['unit_refill', 'refill_only'], true)) {
@@ -362,7 +389,7 @@ class InvoiceGenerationService
 
     private function normalizeRentalType($rental): string
     {
-        if (!$rental) {
+        if (! $rental) {
             return '';
         }
 
@@ -384,7 +411,7 @@ class InvoiceGenerationService
             null, // buildingId
             $contract->id // Context for branch detection
         );
-        
+
         // Rule 46: TOP pertama manual (dari contract), selanjutnya mengikuti TOP terakhir
         $previousInvoice = Invoice::where('contract_number', $contract->contract_number)
             ->orderBy('id', 'desc')
@@ -392,8 +419,8 @@ class InvoiceGenerationService
 
         // Determine Payment Terms (TOP in days)
         $rawTerms = $contract->term_of_payment ?? $contract->payment_terms;
-        $paymentTerms = 0; 
-        
+        $paymentTerms = 0;
+
         if (is_numeric($rawTerms)) {
             $paymentTerms = (int) $rawTerms;
         } else {
@@ -414,7 +441,6 @@ class InvoiceGenerationService
             $paymentTerms = $previousInvoice->due_date->diffInDays($previousInvoice->invoice_date);
         }
 
-
         // Pull ba_date from the job that triggers invoice generation for this contract timing.
         $firstJob = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)
             ->sortBy([
@@ -425,7 +451,7 @@ class InvoiceGenerationService
 
         // Determine Invoice Date
         $invoiceDate = $periodEnd; // Default: End of period
-        
+
         if ($firstJob && $firstJob->ba_date) {
             $invoiceDate = Carbon::parse($firstJob->ba_date);
         }
@@ -466,7 +492,7 @@ class InvoiceGenerationService
             'gedung' => $this->getBuildingInfo($contract),
             'alamat_1' => $contract->customer->address ?? '',
             'alamat_2' => $contract->customer->city ?? '',
-            'catatan_internal' => "Auto-generated for rental period: {$rentalPeriod}. " . ($contract->internal_notes ?? ''),
+            'catatan_internal' => "Auto-generated for rental period: {$rentalPeriod}. ".($contract->internal_notes ?? ''),
             'catatan_customer' => "Invoice for services completed in period {$periodStart->format('d/m/Y')} - {$periodEnd->format('d/m/Y')}",
             'pic_finance' => $billingGroup->pic_name ?? $contract->billingGroup->pic_name ?? '',
             'email' => $billingGroup->pic_email ?? $contract->billingGroup->pic_email ?? $contract->customer->email ?? '',
@@ -481,12 +507,12 @@ class InvoiceGenerationService
             'total_paid' => 0,
             'notes' => "Auto-generated invoice for rental period {$rentalPeriod}",
             'terms_conditions' => $contract->terms_conditions ?? '',
-            'created_by' => auth()->id()
+            'created_by' => auth()->id(),
         ]);
 
         $invoice->logActivity(
             'created',
-            'Invoice auto-generated for rental period ' . $rentalPeriod,
+            'Invoice auto-generated for rental period '.$rentalPeriod,
             auth()->id()
         );
 
@@ -508,14 +534,14 @@ class InvoiceGenerationService
                 // Create a unique key for this rental: room + rental product
                 $billingKey = $this->invoiceRentalBillingKey($rental);
 
-                if (!in_array($billingKey, $billedRentals)) {
+                if (! in_array($billingKey, $billedRentals)) {
                     $this->createInvoiceDetail($invoice, $jobSchedule, $rental);
                     $billedRentals[] = $billingKey;
                 } else {
                     Log::debug("Skipping duplicate billing for rental unit in invoice {$invoice->invoice_number}", [
                         'job_no' => $jobSchedule->job_number,
                         'room' => $rental['room_name'],
-                        'rental' => $rental['rental_name']
+                        'rental' => $rental['rental_name'],
                     ]);
                 }
             }
@@ -596,20 +622,19 @@ class InvoiceGenerationService
                     ->where('file_path', str_replace('uploads/', '', $baFile->file_path))
                     ->exists();
 
-                if (!$exists) {
+                if (! $exists) {
                     InvoiceFile::create([
                         'invoice_id' => $invoice->id,
                         'file_type' => 'attachment',
-                        'file_name' => 'BA File - ' . ($baFile->room_name ?: 'Unknown Room') . ' - ' . $baFile->file_name,
+                        'file_name' => 'BA File - '.($baFile->room_name ?: 'Unknown Room').' - '.$baFile->file_name,
                         'file_path' => str_replace('uploads/', '', $baFile->file_path),
                         'description' => "BA File dari Job #{$jobSchedule->job_number} Ruangan {$baFile->room_name}",
-                        'created_by' => auth()->id()
+                        'created_by' => auth()->id(),
                     ]);
                 }
             }
         }
     }
-
 
     /**
      * Get rental details for a specific job
@@ -617,10 +642,12 @@ class InvoiceGenerationService
     private function getRentalDetailsForJob(JobSchedule $jobSchedule): array
     {
         $rentalDetails = [];
-        
+
         // Get contract rentals related to this job
         $contract = $jobSchedule->jobAdvice->contract ?? null;
-        if (!$contract) return [];
+        if (! $contract) {
+            return [];
+        }
 
         $detailsFromScheduleRooms = $this->getRentalDetailsFromJobScheduleRooms($jobSchedule, $contract);
         if ($detailsFromScheduleRooms !== null) {
@@ -641,17 +668,18 @@ class InvoiceGenerationService
 
         // Determine which rooms to bill for this job
         // If job has specific room, only use that. Otherwise use all rooms in contract.
-        $contractRooms = $jobSchedule->room_id 
+        $contractRooms = $jobSchedule->room_id
             ? $contract->contractRooms()->where('room_id', $jobSchedule->room_id)->with(['room'])->get()
             : $contract->contractRooms()->with(['room'])->get();
-        
+
         foreach ($contractRooms as $contractRoom) {
             if ($this->isContractRoomNonBillableForJob($jobSchedule, $contractRoom)) {
-                Log::debug("Skipping non-billable suspended/cancelled room for invoice rental detail", [
+                Log::debug('Skipping non-billable suspended/cancelled room for invoice rental detail', [
                     'job_no' => $jobSchedule->job_number,
                     'contract_room_id' => $contractRoom->id,
                     'room_id' => $contractRoom->room_id,
                 ]);
+
                 continue;
             }
 
@@ -683,11 +711,12 @@ class InvoiceGenerationService
 
         foreach ($scheduleRooms as $scheduleRoom) {
             if ($this->isScheduleRoomNonBillable($scheduleRoom)) {
-                Log::debug("Skipping non-billable suspended/cancelled schedule room for invoice rental detail", [
+                Log::debug('Skipping non-billable suspended/cancelled schedule room for invoice rental detail', [
                     'job_no' => $jobSchedule->job_number,
                     'job_schedule_room_id' => $scheduleRoom->id,
                     'room_id' => $scheduleRoom->room_id,
                 ]);
+
                 continue;
             }
 
@@ -780,32 +809,34 @@ class InvoiceGenerationService
     private function buildRentalDetailFromJobAdviceRoom(JobSchedule $jobSchedule, Contract $contract, $jobAdviceRoom, ?JobScheduleRoom $scheduleRoom = null): ?array
     {
         if ($this->isJobAdviceRoomNonBillableForJob($jobSchedule, $jobAdviceRoom)) {
-            Log::debug("Skipping non-billable suspended/cancelled JA room for invoice rental detail", [
+            Log::debug('Skipping non-billable suspended/cancelled JA room for invoice rental detail', [
                 'job_no' => $jobSchedule->job_number,
                 'job_advice_room_id' => $jobAdviceRoom->id,
                 'contract_room_id' => $jobAdviceRoom->contract_room_id,
             ]);
+
             return null;
         }
 
         $masterRental = $jobAdviceRoom->rentalProduct ?? $jobAdviceRoom->contractRoom?->rental_product;
-        if (!$masterRental) {
+        if (! $masterRental) {
             return null;
         }
 
-        if (!$this->jobTypeCanInvoiceRentalType(
+        if (! $this->jobTypeCanInvoiceRentalType(
             $this->normalizeJobType($jobSchedule->type),
             $this->normalizeRentalType($masterRental),
             $contract,
             $jobSchedule
         )) {
-            Log::debug("Skipping JA room rental detail because job type is not the invoice trigger for this rental type", [
+            Log::debug('Skipping JA room rental detail because job type is not the invoice trigger for this rental type', [
                 'job_no' => $jobSchedule->job_number,
                 'job_type' => $jobSchedule->type,
                 'job_advice_room_id' => $jobAdviceRoom->id,
                 'rental' => $masterRental->rental_name ?? null,
                 'rental_type' => $masterRental->rental_type ?? null,
             ]);
+
             return null;
         }
 
@@ -815,7 +846,7 @@ class InvoiceGenerationService
             ?? null;
 
         $contractRental = $this->findContractRentalForJobAdviceRoom($contract, $jobAdviceRoom, $masterRental->id, $roomId);
-        if (!$contractRental) {
+        if (! $contractRental) {
             return null;
         }
 
@@ -840,17 +871,17 @@ class InvoiceGenerationService
     private function buildRentalDetailFromContractRoom(JobSchedule $jobSchedule, Contract $contract, $contractRoom, ?JobScheduleRoom $scheduleRoom = null): ?array
     {
         $masterRental = $contractRoom->rental_product;
-        if (!$masterRental) {
+        if (! $masterRental) {
             return null;
         }
 
-        if (!$this->jobTypeCanInvoiceRentalType(
+        if (! $this->jobTypeCanInvoiceRentalType(
             $this->normalizeJobType($jobSchedule->type),
             $this->normalizeRentalType($masterRental),
             $contract,
             $jobSchedule
         )) {
-            Log::debug("Skipping rental detail because job type is not the invoice trigger for this rental type", [
+            Log::debug('Skipping rental detail because job type is not the invoice trigger for this rental type', [
                 'job_no' => $jobSchedule->job_number,
                 'job_type' => $jobSchedule->type,
                 'contract_room_id' => $contractRoom->id,
@@ -858,11 +889,12 @@ class InvoiceGenerationService
                 'rental' => $masterRental->rental_name ?? null,
                 'rental_type' => $masterRental->rental_type ?? null,
             ]);
+
             return null;
         }
 
         $contractRental = $this->findContractRentalForRoomAndRental($contract, $masterRental->id, $contractRoom->room_id);
-        if (!$contractRental) {
+        if (! $contractRental) {
             return null;
         }
 
@@ -907,7 +939,7 @@ class InvoiceGenerationService
 
     private function findContractRentalForJobAdviceRoom(Contract $contract, $jobAdviceRoom, int $masterRentalId, ?int $roomId)
     {
-        if (!empty($jobAdviceRoom->contract_rental_id)) {
+        if (! empty($jobAdviceRoom->contract_rental_id)) {
             $contractRental = $contract->contractRentals()
                 ->whereKey($jobAdviceRoom->contract_rental_id)
                 ->first();
@@ -1055,7 +1087,7 @@ class InvoiceGenerationService
             'quantity' => $quantity,
             'unit_price' => $unitPrice,
             'total_price' => $totalPrice,
-            'created_by' => auth()->id()
+            'created_by' => auth()->id(),
         ];
 
         if (\Illuminate\Support\Facades\Schema::hasColumn('invoice_rental_details', 'qty_free')) {
@@ -1076,20 +1108,20 @@ class InvoiceGenerationService
 
         foreach ($contractFiles as $contractFile) {
             $cleanPath = str_replace('uploads/', '', $contractFile->file_path);
-            
+
             // Ensure no double attachment
             $exists = InvoiceFile::where('invoice_id', $invoice->id)
                 ->where('file_path', $cleanPath)
                 ->exists();
 
-            if (!$exists) {
+            if (! $exists) {
                 InvoiceFile::create([
                     'invoice_id' => $invoice->id,
                     'file_type' => 'attachment',
-                    'file_name' => 'Contract File - ' . $contractFile->file_name,
+                    'file_name' => 'Contract File - '.$contractFile->file_name,
                     'file_path' => $cleanPath,
                     'description' => "File Kontrak #{$contract->contract_number}: {$contractFile->file_type}",
-                    'created_by' => auth()->id()
+                    'created_by' => auth()->id(),
                 ]);
             }
         }
@@ -1111,7 +1143,7 @@ class InvoiceGenerationService
             'total_amount' => $totalAmount,
             'grand_total' => $totalAmount,
             'outstanding' => $totalAmount,
-            'total_paid' => 0
+            'total_paid' => 0,
         ])->save();
     }
 
@@ -1129,6 +1161,7 @@ class InvoiceGenerationService
     private function getBuildingInfo(Contract $contract): string
     {
         $buildings = $contract->contractRooms->pluck('roomRentalUnit.building.building_name')->filter()->unique();
+
         return $buildings->implode(', ');
     }
 
@@ -1138,7 +1171,7 @@ class InvoiceGenerationService
     public function generateInvoicesForMultiplePeriods(int $contractId, array $rentalPeriods): array
     {
         $results = [];
-        
+
         foreach ($rentalPeriods as $period) {
             $result = $this->autoGenerateInvoiceForRentalPeriod(
                 $contractId,
@@ -1146,15 +1179,15 @@ class InvoiceGenerationService
                 Carbon::parse($period['period_start']),
                 Carbon::parse($period['period_end'])
             );
-            
+
             $results[] = $result;
         }
-        
+
         return [
             'success' => true,
             'results' => $results,
             'total_periods' => count($rentalPeriods),
-            'successful_generations' => collect($results)->where('success', true)->count()
+            'successful_generations' => collect($results)->where('success', true)->count(),
         ];
     }
 
@@ -1165,15 +1198,15 @@ class InvoiceGenerationService
     {
         $contract = Contract::with('quotation')->findOrFail($contractId);
         $periods = [];
-        
+
         $currentDate = $contract->start_date;
         $endDate = $contract->end_date;
         $periodCounter = 1;
         $periodType = $contract->invoice_period_type ?? 'contract_date';
         $topIntervalMonths = max(1, (int) ($contract->top_interval_months ?? 1));
-        
+
         // Handle "contract_date" & "service" logic (iterate by TOP interval from Start Date)
-        // Note: For "service", the period calculation is same as contract_date, 
+        // Note: For "service", the period calculation is same as contract_date,
         // but the invoice DATE logic in createInvoiceForRentalPeriod differs.
         if ($periodType === 'contract_date' || $periodType === 'service') {
             while ($currentDate <= $endDate) {
@@ -1181,38 +1214,38 @@ class InvoiceGenerationService
                 if ($periodEnd > $endDate) {
                     $periodEnd = $endDate;
                 }
-                
+
                 $periods[] = [
                     'rental_period' => "Period {$periodCounter}",
                     'period_start' => $currentDate->toDateString(),
                     'period_end' => $periodEnd->toDateString(),
-                    'status' => $this->getPeriodStatus($contract, $currentDate, $periodEnd)
+                    'status' => $this->getPeriodStatus($contract, $currentDate, $periodEnd),
                 ];
-                
+
                 $currentDate = $currentDate->copy()->addMonths($topIntervalMonths);
                 $periodCounter++;
             }
-        } 
+        }
         // Handle "monthly" logic (Calendar Month: 1st to End of Month)
         elseif ($periodType === 'monthly') {
             while ($currentDate <= $endDate) {
                 // Determine end of this calendar month
                 $endOfMonth = $currentDate->copy()->endOfMonth();
                 $periodEnd = ($endOfMonth > $endDate) ? $endDate : $endOfMonth;
-                
+
                 $periods[] = [
                     'rental_period' => "Period {$periodCounter}",
                     'period_start' => $currentDate->toDateString(),
                     'period_end' => $periodEnd->toDateString(),
-                    'status' => $this->getPeriodStatus($contract, $currentDate, $periodEnd)
+                    'status' => $this->getPeriodStatus($contract, $currentDate, $periodEnd),
                 ];
-                
+
                 // Next period starts at the beginning of the next month
                 $currentDate = $currentDate->copy()->addMonth()->startOfMonth();
                 $periodCounter++;
             }
         }
-        
+
         return $periods;
     }
 
@@ -1223,7 +1256,7 @@ class InvoiceGenerationService
     {
         $totalJobs = $this->getTotalJobsCount($contract, $periodStart, $periodEnd);
         $completedJobs = $this->getCompletedJobsCount($contract, $periodStart, $periodEnd);
-        
+
         if ($totalJobs === 0) {
             return 'no_jobs';
         } elseif ($completedJobs === $totalJobs) {
@@ -1234,6 +1267,7 @@ class InvoiceGenerationService
             return 'pending';
         }
     }
+
     /**
      * Attempt to auto-generate invoice for a contract if conditions are met
      * (Real-time trigger for Job Completion)
@@ -1243,7 +1277,7 @@ class InvoiceGenerationService
         try {
             // Get all rental periods for this contract
             $periods = $this->getRentalPeriodsForContract($contractId);
-            
+
             foreach ($periods as $period) {
                 // We only care about periods that are fully COMPLETED
                 if ($period['status'] === 'completed') {
@@ -1256,7 +1290,7 @@ class InvoiceGenerationService
                         Carbon::parse($period['period_end'])
                     );
 
-                    if (!$exists) {
+                    if (! $exists) {
                         Log::info("Real-time Invoice Trigger: Attempting to generate invoice for Contract {$contractId}, Period {$period['rental_period']}");
 
                         $result = $this->autoGenerateInvoiceForRentalPeriod(
@@ -1269,7 +1303,7 @@ class InvoiceGenerationService
                         if ($result['success']) {
                             Log::info("Real-time Invoice Trigger: [SUCCESS] Generated Invoice {$result['invoice']->invoice_number}");
                         } else {
-                            Log::warning("Real-time Invoice Trigger: [FAILED] " . $result['message']);
+                            Log::warning('Real-time Invoice Trigger: [FAILED] '.$result['message']);
                         }
                     } elseif ($exists->invoice_status === Invoice::STATUS_DRAFT) {
                         // A room/rental whose job completed after this period's invoice was
@@ -1286,7 +1320,7 @@ class InvoiceGenerationService
             }
 
         } catch (\Exception $e) {
-            Log::error("Real-time Invoice Trigger Error: " . $e->getMessage());
+            Log::error('Real-time Invoice Trigger Error: '.$e->getMessage());
         }
     }
 
@@ -1298,7 +1332,7 @@ class InvoiceGenerationService
     private function refreshDraftInvoiceRentalDetails(Invoice $invoice, Carbon $periodStart, Carbon $periodEnd): void
     {
         $contract = $invoice->contract_id ? Contract::find($invoice->contract_id) : null;
-        if (!$contract) {
+        if (! $contract) {
             return;
         }
 
