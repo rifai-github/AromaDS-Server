@@ -92,10 +92,12 @@
                                 <i class="fas fa-box-open me-1"></i> Tandai Received
                             </button>
                             @endif
+                            @if($transfer->status === 'draft')
                             <button type="button" class="btn btn-sm" onclick="openEditModal({{ $transfer->id }})"
                                 style="background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; font-weight: 600; border-radius: 6px; padding: 6px 14px; cursor: pointer;">
                                 <i class="fas fa-edit me-1"></i> Edit Transfer
                             </button>
+                            @endif
                         </div>
                     </div>
                 </div>

@@ -1294,7 +1294,7 @@ function buildEditTransferItemsHtml(transferItems) {
                 <td style="padding: 8px 12px;">
                     <select name="items[${index}][product_id]" class="form-input product-select" required data-no-select2 data-managed-select data-force-search onchange="updateAvailableStock(this)" style="margin: 0;">
                         <option value="">Pilih Produk</option>
-                        <option value="${item.product_id}" selected>${item.product?.name || 'Unknown Product'}</option>
+                        <option value="${item.master_product_id}" selected>${item.product?.name || 'Unknown Product'}</option>
                     </select>
                 </td>
                 <td style="padding: 8px 12px;">
@@ -1389,23 +1389,6 @@ function loadEditProductsForWarehouse(warehouseId) {
                         $(select).val(currentValue).trigger('change.select2');
                     }
                     updateAvailableStock(select);
-
-                    // Draft transfers never deduct stock, so this row's already-saved
-                    // quantity was never actually reserved in the warehouse - if other
-                    // stock movements happened since this draft was created, the fresh
-                    // reading above can come back lower than (even 0 vs) what this row
-                    // already committed to. Don't let that make the existing quantity
-                    // look "over stock" and block editing/saving.
-                    const row = select.closest('.transfer-item-row');
-                    const qtyInput = row ? row.querySelector('input[name*="[quantity]"]') : null;
-                    const stockInput = row ? row.querySelector('.available-stock') : null;
-                    if (qtyInput && stockInput) {
-                        const committedQty = parseFloat(qtyInput.value) || 0;
-                        const shownStock = parseFloat(stockInput.value) || 0;
-                        if (committedQty > shownStock) {
-                            stockInput.value = committedQty;
-                        }
-                    }
                 }
             });
         }
