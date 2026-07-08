@@ -126,8 +126,7 @@ class WarehouseController extends Controller
                 'data' => [
                     'branches' => $branches,
                     'users' => $users,
-                    'warehouse_types' => $warehouseTypes,
-                    'has_center_warehouse' => Warehouse::hasCenterWarehouse()
+                    'warehouse_types' => $warehouseTypes
                 ]
             ]);
         }
@@ -153,13 +152,6 @@ class WarehouseController extends Controller
             'is_active' => 'required|boolean',
             'is_center' => 'required|boolean',
         ]);
-
-        // Custom validation: Only one center warehouse allowed
-        if ($request->is_center && Warehouse::hasCenterWarehouse()) {
-            $validator->after(function ($validator) {
-                $validator->errors()->add('is_center', 'A center warehouse already exists. Only one center warehouse is allowed.');
-            });
-        }
 
         $isActive = filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN);
         if ($isActive && app(BranchWarehouseResolver::class)->activeCountForBranch($request->branch_id) > 0) {
@@ -265,8 +257,7 @@ class WarehouseController extends Controller
                     'warehouse' => $warehouse->load(['branch', 'warehouseType', 'updatedBy', 'createdBy', 'managerUser', 'admins']),
                     'branches' => $branches,
                     'users' => $users,
-                    'warehouse_types' => $warehouseTypes,
-                    'has_center_warehouse' => Warehouse::hasCenterWarehouse()
+                    'warehouse_types' => $warehouseTypes
                 ]
             ]);
         }
@@ -292,14 +283,6 @@ class WarehouseController extends Controller
             'is_active' => 'required|in:0,1,true,false',
             'is_center' => 'required|in:0,1,true,false',
         ]);
-
-        // Custom validation: Only one center warehouse allowed
-        $isCenter = filter_var($request->is_center, FILTER_VALIDATE_BOOLEAN);
-        if ($isCenter && Warehouse::where('is_center', true)->where('id', '!=', $warehouse->id)->exists()) {
-            $validator->after(function ($validator) {
-                $validator->errors()->add('is_center', 'A center warehouse already exists. Only one center warehouse is allowed.');
-            });
-        }
 
         if ($validator->fails()) {
             if ($request->expectsJson() || $request->is('api/*')) {

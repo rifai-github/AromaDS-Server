@@ -1065,8 +1065,7 @@ function openCreateModal() {
         .then(result => {
             const branches = result.data.branches;
             const users = result.data.users || [];
-            const hasCenterWarehouse = result.data.has_center_warehouse;
-            
+
             document.getElementById('modalBody').innerHTML = `
                 <form id="form" onsubmit="submitForm(event)">
                     <div class="modal-section">
@@ -1102,10 +1101,7 @@ function openCreateModal() {
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="form-group">
                                 <label class="form-label">Center Warehouse</label>
-                                ${hasCenterWarehouse ? 
-                                    '<div class="p-3 bg-gray-100 rounded-lg text-gray-600 text-sm">Center warehouse already exists</div><input type="hidden" name="is_center" value="0">' :
-                                    '<select name="is_center" class="form-input" required><option value="0" selected>No</option><option value="1">Yes</option></select>'
-                                }
+                                <select name="is_center" class="form-input" required><option value="0" selected>No</option><option value="1">Yes</option></select>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Status</label>
@@ -1366,8 +1362,7 @@ function openEditModal(id) {
             const warehouse = data.warehouse;
             const branches = data.branches;
             const users = data.users || [];
-            const hasCenterWarehouse = data.has_center_warehouse;
-            
+
             document.getElementById('modalBody').innerHTML = `
                 <form id="form" onsubmit="submitForm(event, ${id})">
                     <div class="modal-section">
@@ -1403,13 +1398,10 @@ function openEditModal(id) {
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="form-group">
                                 <label class="form-label">Center Warehouse</label>
-                                ${hasCenterWarehouse && !warehouse.is_center ? 
-                                    '<div class="p-3 bg-gray-100 rounded-lg text-gray-600 text-sm">Center warehouse already exists</div><input type="hidden" name="is_center" value="0">' :
-                                    `<select name="is_center" class="form-input" required>
-                                        <option value="0" ${!warehouse.is_center ? 'selected' : ''}>No</option>
-                                        <option value="1" ${warehouse.is_center ? 'selected' : ''}>Yes</option>
-                                    </select>`
-                                }
+                                <select name="is_center" class="form-input" required>
+                                    <option value="0" ${!warehouse.is_center ? 'selected' : ''}>No</option>
+                                    <option value="1" ${warehouse.is_center ? 'selected' : ''}>Yes</option>
+                                </select>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Status</label>

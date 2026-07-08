@@ -206,25 +206,14 @@
                     <!-- Type (Center/Branch) -->
                     <div class="form-group">
                         <label class="form-label required">Type</label>
-                        @php
-                            $hasCenterWarehouse = \App\Models\Warehouse::where('is_center', true)->where('id', '!=', $warehouse->id)->exists();
-                        @endphp
-                        @if($hasCenterWarehouse && !$warehouse->is_center)
-                            <div class="p-3 bg-gray-100 rounded-lg text-gray-600 text-sm mb-2">
-                                Center warehouse already exists
-                            </div>
-                            <input type="hidden" name="is_center" value="0">
-                            <input type="text" class="form-input" value="Branch Warehouse" disabled>
-                        @else
-                            <select name="is_center" class="form-select" required>
-                                <option value="0" {{ old('is_center', $warehouse->is_center) == 0 ? 'selected' : '' }}>
-                                    Branch Warehouse
-                                </option>
-                                <option value="1" {{ old('is_center', $warehouse->is_center) == 1 ? 'selected' : '' }}>
-                                    Center Warehouse
-                                </option>
-                            </select>
-                        @endif
+                        <select name="is_center" class="form-select" required>
+                            <option value="0" {{ old('is_center', $warehouse->is_center) == 0 ? 'selected' : '' }}>
+                                Branch Warehouse
+                            </option>
+                            <option value="1" {{ old('is_center', $warehouse->is_center) == 1 ? 'selected' : '' }}>
+                                Center Warehouse
+                            </option>
+                        </select>
                         @error('is_center')
                             <span class="error-message">{{ $message }}</span>
                         @enderror
