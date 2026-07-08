@@ -981,13 +981,13 @@ function openCreateModal() {
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="form-group">
                         <label class="form-label">From Warehouse *</label>
-                        <select name="from_warehouse_id" id="from_warehouse_id" class="form-input" required onchange="loadTransferWarehouses()">
+                        <select name="from_warehouse_id" id="from_warehouse_id" class="form-input" required data-no-select2 data-managed-select data-force-search onchange="loadTransferWarehouses()">
                             ${warehousesOptions}
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">To Warehouse *</label>
-                        <select name="to_warehouse_id" id="to_warehouse_id" class="form-input" required>
+                        <select name="to_warehouse_id" id="to_warehouse_id" class="form-input" required data-no-select2 data-managed-select data-force-search>
                             <option value="">Pilih Warehouse Asal Terlebih Dahulu</option>
                         </select>
                     </div>
@@ -1003,7 +1003,7 @@ function openCreateModal() {
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div class="form-group">
                             <label class="form-label">Product *</label>
-                            <select id="new-product-select" class="form-input" onchange="updateNewItemStock(this)">
+                            <select id="new-product-select" class="form-input" data-no-select2 data-managed-select data-force-search onchange="updateNewItemStock(this)">
                                 <option value="">Pilih Produk</option>
                             </select>
                         </div>
@@ -1053,18 +1053,24 @@ function openCreateModal() {
                     <label class="form-label">Notes</label>
                     <textarea name="notes" class="form-input" rows="3" placeholder="Masukkan catatan transfer"></textarea>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: #374151; margin-bottom: 4px;">
+                        <input type="checkbox" id="create-is-return" data-target="create-return-section" onchange="toggleReturnReasonSection(this)" style="width: 16px; height: 16px;">
+                        Transfer ini adalah Return dari Cabang ke Pusat
+                    </label>
+                    <p class="text-xs text-gray-500" style="margin-left: 24px;">Centang jika transfer ini mengembalikan barang ke gudang pusat (tanpa job schedule). Baru muncul field alasannya.</p>
+                </div>
+                <div id="create-return-section" class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2" style="display: none;">
                     <div class="form-group">
                         <label class="form-label">Kategori Alasan Return</label>
-                        <select name="return_reason_category" class="form-input">
-                            <option value="">- Bukan return / tidak relevan -</option>
+                        <select name="return_reason_category" class="form-input" data-no-select2>
+                            <option value="">- Pilih kategori -</option>
                             <option value="slow_moving">Slow Moving</option>
                             <option value="near_expired">Near Expired</option>
                             <option value="customer_need_changed">Perubahan Kebutuhan Customer</option>
                             <option value="damaged">Rusak</option>
                             <option value="other">Lainnya</option>
                         </select>
-                        <p class="text-xs text-gray-500 mt-1">Isi jika transfer ini adalah return warehouse cabang ke pusat (tanpa job schedule).</p>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Detail Alasan Return</label>
@@ -1096,6 +1102,9 @@ function openCreateModal() {
             <button type="button" class="btn btn-secondary" onclick="closeModal()">Batal</button>
             <button type="submit" form="form" class="btn btn-primary">Tambah Transfer</button>
         `;
+
+        // Upgrade date field + make warehouse/product dropdowns searchable
+        initTransferModalEnhancements();
     })
     .catch(error => {
         console.error('Error loading data:', error);
@@ -1329,7 +1338,8 @@ function openEditModal(id) {
         if (transferResponse.status === 'success') {
             const data = transferResponse.data;
             const warehouses = warehousesResponse.data || [];
-        
+            const isReturn = !!(data.return_reason_category || data.return_reason);
+
             let warehousesOptions = '<option value="">Pilih Warehouse</option>';
             warehouses.forEach(warehouse => {
                 const selected = (data.from_warehouse_id == warehouse.id || data.fromWarehouse?.id == warehouse.id) ? 'selected' : '';
@@ -1365,13 +1375,13 @@ function openEditModal(id) {
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="form-group">
                             <label class="form-label">From Warehouse *</label>
-                            <select name="from_warehouse_id" id="edit_from_warehouse_id" class="form-input" required onchange="loadEditTransferWarehouses()">
+                            <select name="from_warehouse_id" id="edit_from_warehouse_id" class="form-input" required data-no-select2 data-managed-select data-force-search onchange="loadEditTransferWarehouses()">
                                 ${warehousesOptions}
                             </select>
                         </div>
                         <div class="form-group">
                             <label class="form-label">To Warehouse *</label>
-                            <select name="to_warehouse_id" id="edit_to_warehouse_id" class="form-input" required>
+                            <select name="to_warehouse_id" id="edit_to_warehouse_id" class="form-input" required data-no-select2 data-managed-select data-force-search>
                                 ${toWarehousesOptions}
                             </select>
                         </div>
@@ -1404,11 +1414,18 @@ function openEditModal(id) {
                         <label class="form-label">Notes</label>
                         <textarea name="notes" class="form-input" rows="3" placeholder="Masukkan catatan transfer">${data.notes || ''}</textarea>
                     </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                    <div class="form-group" style="margin-top: 1rem;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: #374151; margin-bottom: 4px;">
+                            <input type="checkbox" id="edit-is-return" data-target="edit-return-section" onchange="toggleReturnReasonSection(this)" style="width: 16px; height: 16px;" ${isReturn ? 'checked' : ''}>
+                            Transfer ini adalah Return dari Cabang ke Pusat
+                        </label>
+                        <p class="text-xs text-gray-500" style="margin-left: 24px;">Centang jika transfer ini mengembalikan barang ke gudang pusat (tanpa job schedule).</p>
+                    </div>
+                    <div id="edit-return-section" class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2" style="display: ${isReturn ? '' : 'none'};">
                         <div class="form-group">
                             <label class="form-label">Kategori Alasan Return</label>
-                            <select name="return_reason_category" class="form-input">
-                                <option value="">- Bukan return / tidak relevan -</option>
+                            <select name="return_reason_category" class="form-input" data-no-select2>
+                                <option value="">- Pilih kategori -</option>
                                 <option value="slow_moving" ${data.return_reason_category == 'slow_moving' ? 'selected' : ''}>Slow Moving</option>
                                 <option value="near_expired" ${data.return_reason_category == 'near_expired' ? 'selected' : ''}>Near Expired</option>
                                 <option value="customer_need_changed" ${data.return_reason_category == 'customer_need_changed' ? 'selected' : ''}>Perubahan Kebutuhan Customer</option>
@@ -1447,6 +1464,16 @@ function openEditModal(id) {
                 <button type="button" class="btn btn-secondary" onclick="closeModal()">Batal</button>
                 <button type="submit" form="form" class="btn btn-primary">Perbarui Transfer</button>
             `;
+
+            // Upgrade date field + make warehouse/product dropdowns searchable
+            initTransferModalEnhancements();
+
+            // Preload product stock for the already-selected source warehouse so the
+            // existing rows show Available Stock without re-picking a warehouse.
+            const editFromId = document.getElementById('edit_from_warehouse_id').value;
+            if (editFromId) {
+                loadEditProductsForWarehouse(editFromId);
+            }
         } else {
             document.getElementById('modalBody').innerHTML = `
                 <div style="text-align: center; padding: 40px;">
@@ -1689,15 +1716,89 @@ function resetAllCheckboxes() {
 // Transfer Items Functions
 let transferItemIndex = 0;
 
+// --- Modal UX helpers: searchable dropdowns, datepicker, conditional sections ---
+
+// select2 dropdowns inside this custom (non-Bootstrap) modal need an un-clipped
+// positioned parent; the fixed full-screen overlay works and never clips.
+function transferModalDropdownParent() {
+    return $('#modalOverlay');
+}
+
+// Init select2 on a single managed select. These carry data-no-select2 so the
+// global auto-init leaves them alone and we fully own their lifecycle (options
+// on these get replaced via innerHTML after AJAX, which would break a select2
+// the global observer had already wrapped).
+function initManagedSelect(selectEl, forceSearch) {
+    if (!window.jQuery || typeof $.fn === 'undefined' || typeof $.fn.select2 === 'undefined') return;
+    const $el = $(selectEl);
+    if ($el.hasClass('select2-hidden-accessible')) {
+        $el.select2('destroy');
+    }
+    $el.select2({
+        dropdownParent: transferModalDropdownParent(),
+        width: '100%',
+        placeholder: (selectEl.options[0] ? selectEl.options[0].text : 'Pilih') || 'Pilih',
+        allowClear: !selectEl.required,
+        minimumResultsForSearch: forceSearch ? 0 : 10
+    });
+}
+
+// Replace a managed select's <option>s without leaving a broken select2 behind.
+function setManagedSelectOptions(selectEl, optionsHtml, forceSearch) {
+    if (!selectEl) return;
+    const $el = window.jQuery ? $(selectEl) : null;
+    if ($el && $el.hasClass('select2-hidden-accessible')) {
+        $el.select2('destroy');
+    }
+    selectEl.innerHTML = optionsHtml;
+    initManagedSelect(selectEl, forceSearch);
+}
+
+// Init all managed selects + upgrade the date field in the current modal body.
+function initTransferModalEnhancements() {
+    const body = document.getElementById('modalBody');
+    if (!body) return;
+    if (window.initFlatpickr) window.initFlatpickr(body);
+    body.querySelectorAll('select[data-managed-select]').forEach(function (sel) {
+        initManagedSelect(sel, sel.hasAttribute('data-force-search'));
+    });
+}
+
+// Show/hide the "Alasan Return" fields based on the toggle checkbox.
+function toggleReturnReasonSection(checkbox) {
+    const section = document.getElementById(checkbox.getAttribute('data-target'));
+    if (!section) return;
+    section.style.display = checkbox.checked ? '' : 'none';
+    if (!checkbox.checked) {
+        const cat = section.querySelector('[name="return_reason_category"]');
+        const reason = section.querySelector('[name="return_reason"]');
+        if (cat) cat.value = '';
+        if (reason) reason.value = '';
+    }
+}
+
+// Fill an edit item row's "Available Stock" from the selected product option.
+// (Referenced by the edit rows' onchange but previously undefined -> JS error.)
+function updateAvailableStock(selectElement) {
+    const row = selectElement.closest('.transfer-item-row');
+    if (!row) return;
+    const stockInput = row.querySelector('.available-stock');
+    const opt = selectElement.options[selectElement.selectedIndex];
+    const stock = opt ? (opt.getAttribute('data-stock') || '0') : '0';
+    if (stockInput) stockInput.value = stock;
+    const qtyInput = row.querySelector('input[name*="[quantity]"]');
+    if (qtyInput) qtyInput.max = stock;
+}
+
 function loadTransferWarehouses() {
     const fromWarehouseId = document.getElementById('from_warehouse_id').value;
     const toWarehouseSelect = document.getElementById('to_warehouse_id');
     
     if (!fromWarehouseId) {
-        toWarehouseSelect.innerHTML = '<option value="">Pilih Warehouse Asal Terlebih Dahulu</option>';
+        setManagedSelectOptions(toWarehouseSelect, '<option value="">Pilih Warehouse Asal Terlebih Dahulu</option>', true);
         return;
     }
-    
+
     // Load transfer warehouses based on business rules
     fetch(`{{ url('warehouse/inventory-transfers/api/transfer-warehouses') }}/${fromWarehouseId}`, {
         headers: {
@@ -1714,8 +1815,8 @@ function loadTransferWarehouses() {
             warehouses.forEach(warehouse => {
                 options += `<option value="${warehouse.id}">${warehouse.name}</option>`;
             });
-            toWarehouseSelect.innerHTML = options;
-            
+            setManagedSelectOptions(toWarehouseSelect, options, true);
+
             // Load products for the from warehouse
             loadProductsForWarehouse(fromWarehouseId);
         }
@@ -1743,8 +1844,8 @@ function loadProductsForWarehouse(warehouseId) {
             products.forEach(product => {
                 options += `<option value="${product.master_product_id}" data-stock="${product.quantity}" data-name="${product.master_product.name}">${product.master_product.name} (${product.quantity})</option>`;
             });
-            
-            productSelect.innerHTML = options;
+
+            setManagedSelectOptions(productSelect, options, true);
         }
     })
     .catch(error => {
@@ -1948,7 +2049,7 @@ function buildEditTransferItemsHtml(transferItems) {
             <div class="transfer-item-row grid grid-cols-1 md:grid-cols-4 gap-4 items-end mb-4">
                 <div class="form-group">
                     <label class="form-label">Product *</label>
-                    <select name="items[0][product_id]" class="form-input product-select" required onchange="updateAvailableStock(this)">
+                    <select name="items[0][product_id]" class="form-input product-select" required data-no-select2 data-managed-select data-force-search onchange="updateAvailableStock(this)">
                         <option value="">Pilih Produk</option>
                     </select>
                 </div>
@@ -1976,7 +2077,7 @@ function buildEditTransferItemsHtml(transferItems) {
             <div class="transfer-item-row grid grid-cols-1 md:grid-cols-4 gap-4 items-end mb-4">
                 <div class="form-group">
                     <label class="form-label">Product *</label>
-                    <select name="items[${index}][product_id]" class="form-input product-select" required onchange="updateAvailableStock(this)">
+                    <select name="items[${index}][product_id]" class="form-input product-select" required data-no-select2 data-managed-select data-force-search onchange="updateAvailableStock(this)">
                         <option value="">Pilih Produk</option>
                         <option value="${item.product_id}" selected>${item.product?.name || 'Unknown Product'}</option>
                     </select>
@@ -2006,10 +2107,10 @@ function loadEditTransferWarehouses() {
     const toWarehouseSelect = document.getElementById('edit_to_warehouse_id');
     
     if (!fromWarehouseId) {
-        toWarehouseSelect.innerHTML = '<option value="">Pilih Warehouse Asal Terlebih Dahulu</option>';
+        setManagedSelectOptions(toWarehouseSelect, '<option value="">Pilih Warehouse Asal Terlebih Dahulu</option>', true);
         return;
     }
-    
+
     // Load transfer warehouses based on business rules
     fetch(`{{ url('warehouse/inventory-transfers/api/transfer-warehouses') }}/${fromWarehouseId}`, {
         headers: {
@@ -2027,8 +2128,8 @@ function loadEditTransferWarehouses() {
                 const selected = document.getElementById('edit_to_warehouse_id').dataset.selectedValue == warehouse.id ? 'selected' : '';
                 options += `<option value="${warehouse.id}" ${selected}>${warehouse.name}</option>`;
             });
-            toWarehouseSelect.innerHTML = options;
-            
+            setManagedSelectOptions(toWarehouseSelect, options, true);
+
             // Load products for the from warehouse
             loadEditProductsForWarehouse(fromWarehouseId);
         }
@@ -2056,12 +2157,23 @@ function loadEditProductsForWarehouse(warehouseId) {
             products.forEach(product => {
                 options += `<option value="${product.master_product_id}" data-stock="${product.quantity}">${product.master_product.name} (${product.quantity})</option>`;
             });
-            
+
             productSelects.forEach(select => {
                 const currentValue = select.value;
-                select.innerHTML = options;
+                // Keep the currently-selected product available even if it's not in
+                // the fresh stock list (e.g. its warehouse stock is now 0).
+                let optionsForSelect = options;
+                const selectedOpt = select.options[select.selectedIndex];
+                if (currentValue && optionsForSelect.indexOf(`value="${currentValue}"`) === -1 && selectedOpt) {
+                    optionsForSelect += `<option value="${currentValue}" data-stock="0">${selectedOpt.textContent}</option>`;
+                }
+                setManagedSelectOptions(select, optionsForSelect, true);
                 if (currentValue) {
                     select.value = currentValue;
+                    if (window.jQuery && $(select).hasClass('select2-hidden-accessible')) {
+                        $(select).val(currentValue).trigger('change.select2');
+                    }
+                    updateAvailableStock(select);
                 }
             });
         }
@@ -2079,7 +2191,7 @@ function addEditTransferItem() {
     newRow.innerHTML = `
         <div class="form-group">
             <label class="form-label">Product *</label>
-            <select name="items[${editTransferItemIndex}][product_id]" class="form-input product-select" required onchange="updateAvailableStock(this)">
+            <select name="items[${editTransferItemIndex}][product_id]" class="form-input product-select" required data-no-select2 data-managed-select data-force-search onchange="updateAvailableStock(this)">
                 <option value="">Pilih Produk</option>
             </select>
         </div>
@@ -2097,9 +2209,12 @@ function addEditTransferItem() {
             </button>
         </div>
     `;
-    
+
     container.appendChild(newRow);
-    
+
+    // Make the new row's product dropdown searchable straight away
+    initManagedSelect(newRow.querySelector('.product-select'), true);
+
     // Load products for the new select
     const fromWarehouseId = document.getElementById('edit_from_warehouse_id').value;
     if (fromWarehouseId) {
