@@ -743,7 +743,7 @@
                                     </span>
                                 </td>
                         <td class="max-w-xs truncate">{{ $transfer->notes ?? '-' }}</td>
-                        <td>{{ $transfer->createdBy->name ?? '-' }}</td>
+                        <td>{{ $transfer->creator->name ?? '-' }}</td>
                         <td>
                             @if($transfer->created_at)
                                 {{ \Carbon\Carbon::parse($transfer->created_at)->format('d/M/Y') }}<br>
