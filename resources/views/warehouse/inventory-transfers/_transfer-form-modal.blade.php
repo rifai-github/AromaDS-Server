@@ -545,26 +545,13 @@ function openCreateModal() {
 
             <div class="modal-section">
                 <div class="modal-section-title">Transfer Details</div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="form-group">
-                        <label class="form-label">Status</label>
-                        <select name="status" class="form-input">
-                            <option value="draft">Draft</option>
-                            <option value="transferred">Transferred</option>
-                            <option value="received">Received</option>
-                        </select>
-                    </div>
-                </div>
+                <input type="hidden" name="status" value="draft">
                 <div class="form-group">
                     <label class="form-label">Notes</label>
                     <textarea name="notes" class="form-input" rows="3" placeholder="Masukkan catatan transfer"></textarea>
                 </div>
-                <div class="form-group" style="margin-top: 1rem;">
-                    <label style="display: flex; align-items: center; gap: 8px; font-weight: 500; color: #374151; margin-bottom: 4px;">
-                        <input type="checkbox" id="create-is-return" data-target="create-return-section" disabled style="width: 16px; height: 16px;">
-                        Transfer ini adalah Return dari Cabang ke Pusat
-                    </label>
-                    <p class="text-xs text-gray-500" style="margin-left: 24px;">Otomatis terdeteksi dari gudang asal (Cabang) → gudang tujuan (Pusat). Field alasan akan muncul otomatis.</p>
+                <div style="display: none;">
+                    <input type="checkbox" id="create-is-return" data-target="create-return-section" disabled>
                 </div>
                 <div id="create-return-section" class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2" style="display: none;">
                     <div class="form-group">
@@ -720,26 +707,13 @@ function openEditModal(id) {
 
                 <div class="modal-section">
                     <div class="modal-section-title">Transfer Details</div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="form-group">
-                            <label class="form-label">Status</label>
-                            <select name="status" class="form-input">
-                                <option value="draft" ${data.status == 'draft' ? 'selected' : ''}>Draft</option>
-                                <option value="transferred" ${data.status == 'transferred' ? 'selected' : ''}>Transferred</option>
-                                <option value="received" ${data.status == 'received' ? 'selected' : ''}>Received</option>
-                            </select>
-                        </div>
-                    </div>
+                    <input type="hidden" name="status" value="${data.status}">
                     <div class="form-group">
                         <label class="form-label">Notes</label>
                         <textarea name="notes" class="form-input" rows="3" placeholder="Masukkan catatan transfer">${data.notes || ''}</textarea>
                     </div>
-                    <div class="form-group" style="margin-top: 1rem;">
-                        <label style="display: flex; align-items: center; gap: 8px; font-weight: 500; color: #374151; margin-bottom: 4px;">
-                            <input type="checkbox" id="edit-is-return" data-target="edit-return-section" disabled style="width: 16px; height: 16px;" ${isReturn ? 'checked' : ''}>
-                            Transfer ini adalah Return dari Cabang ke Pusat
-                        </label>
-                        <p class="text-xs text-gray-500" style="margin-left: 24px;">Otomatis terdeteksi dari gudang asal (Cabang) → gudang tujuan (Pusat).</p>
+                    <div style="display: none;">
+                        <input type="checkbox" id="edit-is-return" data-target="edit-return-section" disabled ${isReturn ? 'checked' : ''}>
                     </div>
                     <div id="edit-return-section" class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2" style="display: ${isReturn ? '' : 'none'};">
                         <div class="form-group">
@@ -1415,6 +1389,23 @@ function loadEditProductsForWarehouse(warehouseId) {
                         $(select).val(currentValue).trigger('change.select2');
                     }
                     updateAvailableStock(select);
+
+                    // Draft transfers never deduct stock, so this row's already-saved
+                    // quantity was never actually reserved in the warehouse - if other
+                    // stock movements happened since this draft was created, the fresh
+                    // reading above can come back lower than (even 0 vs) what this row
+                    // already committed to. Don't let that make the existing quantity
+                    // look "over stock" and block editing/saving.
+                    const row = select.closest('.transfer-item-row');
+                    const qtyInput = row ? row.querySelector('input[name*="[quantity]"]') : null;
+                    const stockInput = row ? row.querySelector('.available-stock') : null;
+                    if (qtyInput && stockInput) {
+                        const committedQty = parseFloat(qtyInput.value) || 0;
+                        const shownStock = parseFloat(stockInput.value) || 0;
+                        if (committedQty > shownStock) {
+                            stockInput.value = committedQty;
+                        }
+                    }
                 }
             });
         }
@@ -1474,5 +1465,73 @@ function removeEditTransferItem(buttonElement) {
     if (remainingRows.length === 1) {
         remainingRows[0].querySelector('.remove-item-btn').style.display = 'none';
     }
+}
+
+// Status is no longer editable from the Add/Edit form - it's draft-by-default on
+// create, and only moves forward one step at a time (draft -> transferred ->
+// received) via this action, normally triggered from the detail page. Reuses the
+// existing update endpoint (which only moves stock on the draft -> non-draft
+// transition) so the stock-moving logic stays in one place.
+function transitionTransferStatus(id, toStatus) {
+    const labels = { transferred: 'Transferred', received: 'Received' };
+    const confirmText = toStatus === 'transferred'
+        ? 'Stok akan berpindah dari gudang asal ke gudang tujuan setelah ini.'
+        : 'Transfer akan ditandai sebagai selesai diterima.';
+
+    showConfirmDialog(
+        `Tandai sebagai ${labels[toStatus] || toStatus}?`,
+        confirmText,
+        'Ya, lanjutkan',
+        'Batal'
+    ).then(confirmed => {
+        if (!confirmed) return;
+
+        fetch(`{{ url('warehouse/inventory-transfers/api/get-transfer') }}/${id}`, {
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                'Accept': 'application/json'
+            },
+            credentials: 'same-origin'
+        })
+        .then(r => r.json())
+        .then(getResult => {
+            if (getResult.status !== 'success') {
+                showErrorDialog('Gagal memuat data transfer terbaru.', 'Gagal');
+                return;
+            }
+            const data = getResult.data;
+            const payload = {
+                transfer_date: data.transfer_date ? data.transfer_date.split('T')[0] : data.transfer_date,
+                from_warehouse_id: data.from_warehouse_id,
+                to_warehouse_id: data.to_warehouse_id,
+                status: toStatus,
+                is_direct_branch_transfer: data.is_direct_branch_transfer ? 1 : 0,
+                central_approval_notes: data.central_approval_notes,
+                notes: data.notes,
+                return_reason: data.return_reason,
+                return_reason_category: data.return_reason_category
+            };
+
+            fetch(`{{ url('warehouse/inventory-transfers/api') }}/${id}/update`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (result.status === 'success') {
+                    location.reload();
+                } else {
+                    showErrorDialog(result.message || 'Gagal memperbarui status.', 'Gagal');
+                }
+            })
+            .catch(() => showErrorDialog('Terjadi kesalahan jaringan.', 'Gagal'));
+        })
+        .catch(() => showErrorDialog('Terjadi kesalahan jaringan.', 'Gagal'));
+    });
 }
 </script>

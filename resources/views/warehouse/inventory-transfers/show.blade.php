@@ -80,7 +80,18 @@
                                 {{ $transfer->transfer_number }} - <span style="font-size: 0.9rem; font-weight: normal;">{{ $transfer->status_text }}</span>
                             </h3>
                         </div>
-                        <div>
+                        <div style="display: flex; gap: 10px;">
+                            @if($transfer->status === 'draft')
+                            <button type="button" class="btn btn-sm" onclick="transitionTransferStatus({{ $transfer->id }}, 'transferred')"
+                                style="background-color: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 600; border-radius: 6px; padding: 6px 14px; cursor: pointer;">
+                                <i class="fas fa-truck me-1"></i> Tandai Transferred
+                            </button>
+                            @elseif($transfer->status === 'transferred')
+                            <button type="button" class="btn btn-sm" onclick="transitionTransferStatus({{ $transfer->id }}, 'received')"
+                                style="background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; font-weight: 600; border-radius: 6px; padding: 6px 14px; cursor: pointer;">
+                                <i class="fas fa-box-open me-1"></i> Tandai Received
+                            </button>
+                            @endif
                             <button type="button" class="btn btn-sm" onclick="openEditModal({{ $transfer->id }})"
                                 style="background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; font-weight: 600; border-radius: 6px; padding: 6px 14px; cursor: pointer;">
                                 <i class="fas fa-edit me-1"></i> Edit Transfer
