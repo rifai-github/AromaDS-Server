@@ -206,7 +206,7 @@
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Surat Pengajuan (Cabang)</div>
                             @if($transfer->submission_letter_file)
-                            <div style="font-size: 1rem;"><a href="/storage/{{ $transfer->submission_letter_file }}" target="_blank" class="text-primary" style="text-decoration: underline;">Lihat file</a></div>
+                            <div style="font-size: 1rem;"><a href="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($transfer->submission_letter_file) }}" target="_blank" class="text-primary" style="text-decoration: underline;">Lihat file</a></div>
                             <div style="font-size: 0.8rem; color: #6c757d; margin-top: 0.25rem;">
                                 {{ $transfer->submissionLetterUploader->name ?? '-' }}
                                 @if($transfer->submission_letter_uploaded_at) &middot; {{ $transfer->submission_letter_uploaded_at->format('d/M/Y H:i') }} @endif
@@ -218,7 +218,7 @@
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Surat Jalan (Pusat)</div>
                             @if($transfer->delivery_note_file)
-                            <div style="font-size: 1rem;"><a href="/storage/{{ $transfer->delivery_note_file }}" target="_blank" class="text-primary" style="text-decoration: underline;">Lihat file</a></div>
+                            <div style="font-size: 1rem;"><a href="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($transfer->delivery_note_file) }}" target="_blank" class="text-primary" style="text-decoration: underline;">Lihat file</a></div>
                             <div style="font-size: 0.8rem; color: #6c757d; margin-top: 0.25rem;">
                                 {{ $transfer->deliveryNoteUploader->name ?? '-' }}
                                 @if($transfer->delivery_note_uploaded_at) &middot; {{ $transfer->delivery_note_uploaded_at->format('d/M/Y H:i') }} @endif
@@ -230,7 +230,7 @@
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Delivery Order (Branch↔Branch)</div>
                             @if($transfer->delivery_order_file)
-                            <div style="font-size: 1rem;"><a href="/storage/{{ $transfer->delivery_order_file }}" target="_blank" class="text-primary" style="text-decoration: underline;">Lihat file</a></div>
+                            <div style="font-size: 1rem;"><a href="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($transfer->delivery_order_file) }}" target="_blank" class="text-primary" style="text-decoration: underline;">Lihat file</a></div>
                             @else
                             <div style="font-size: 1rem; color: #94a3b8;">-</div>
                             @endif

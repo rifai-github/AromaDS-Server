@@ -419,6 +419,13 @@
 </div>
 
 <script>
+// This app stores uploads on the 'public' disk, which is configured (see
+// config/filesystems.php) to live under public/uploads with no /storage
+// symlink - hardcoding "/storage/..." 403s. Storage::disk('public')->url()
+// resolves to the correct base ("/uploads" here) so JS-built file links stay
+// correct even if that base ever changes.
+const transferUploadsBaseUrl = '{{ rtrim(\Illuminate\Support\Facades\Storage::disk('public')->url(''), '/') }}';
+
 // Modal functions
 function openModal(title) {
     document.getElementById('modalTitle').textContent = title;
@@ -739,12 +746,12 @@ function openEditModal(id) {
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="form-group">
                             <label class="form-label">Surat Pengajuan (dari Cabang)</label>
-                            ${data.submission_letter_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="/storage/${data.submission_letter_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
+                            ${data.submission_letter_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="${transferUploadsBaseUrl}/${data.submission_letter_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
                             <input type="file" name="submission_letter_file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Surat Jalan (dari Pusat)</label>
-                            ${data.delivery_note_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="/storage/${data.delivery_note_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
+                            ${data.delivery_note_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="${transferUploadsBaseUrl}/${data.delivery_note_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
                             <input type="file" name="delivery_note_file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
                         </div>
                     </div>
@@ -1567,12 +1574,12 @@ function openDocumentUploadModal(id) {
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="form-group">
                             <label class="form-label">Surat Pengajuan (dari Cabang)</label>
-                            ${data.submission_letter_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="/storage/${data.submission_letter_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
+                            ${data.submission_letter_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="${transferUploadsBaseUrl}/${data.submission_letter_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
                             <input type="file" name="submission_letter_file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Surat Jalan (dari Pusat)</label>
-                            ${data.delivery_note_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="/storage/${data.delivery_note_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
+                            ${data.delivery_note_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="${transferUploadsBaseUrl}/${data.delivery_note_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
                             <input type="file" name="delivery_note_file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
                         </div>
                     </div>
