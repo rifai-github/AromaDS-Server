@@ -642,6 +642,23 @@ class InventoryController extends Controller
         }
     }
 
+    // Inventory Transfer full-page detail (mirrors inventory-requests/show.blade.php layout)
+    public function showTransfer($id)
+    {
+        $transfer = InventoryTransfer::with([
+            'fromWarehouse',
+            'toWarehouse',
+            'creator',
+            'updatedBy',
+            'submissionLetterUploader',
+            'deliveryNoteUploader',
+            'sourceMaterialReturn',
+            'transferItems.product',
+        ])->findOrFail($id);
+
+        return view('warehouse.inventory-transfers.show', ['transfer' => $transfer]);
+    }
+
     // Store new inventory transfer
     public function storeTransfer(Request $request)
     {

@@ -729,7 +729,7 @@
                 <!-- Table Body -->
                     <tbody>
                     @forelse($paginatedTransfers ?? [] as $transfer)
-                    <tr data-id="{{ $transfer->id }}" onclick="openViewModal({{ $transfer->id }})">
+                    <tr data-id="{{ $transfer->id }}" onclick="window.location.href='{{ route('warehouse.inventory-transfers.show', $transfer->id) }}'" style="cursor: pointer;">
                         <td class="text-center">
                             <input type="checkbox" class="row-checkbox w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer" value="{{ $transfer->id }}" onclick="event.stopPropagation()">
                                 </td>
@@ -851,6 +851,17 @@
 // Global variables
 let selectedIdsForRetry = [];
 let successModalTimer = null;
+
+// Auto-open edit modal when arriving from the detail page's "Edit Transfer" button
+document.addEventListener('DOMContentLoaded', function() {
+    const editId = new URLSearchParams(window.location.search).get('edit');
+    if (editId) {
+        openEditModal(editId);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('edit');
+        window.history.replaceState({}, '', url);
+    }
+});
 
 // Select All functionality
 document.getElementById('selectAll').addEventListener('change', function() {

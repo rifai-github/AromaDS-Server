@@ -1317,6 +1317,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
 
         // Main inventory transfers route (must come after ALL other routes to avoid conflicts)
         Route::get('inventory-transfers', [InventoryController::class, 'index'])->name('inventory-transfers.index');
+        Route::get('inventory-transfers/{id}', [InventoryController::class, 'showTransfer'])->name('inventory-transfers.show')->where('id', '[0-9]+');
     });
 
     // System Routes
