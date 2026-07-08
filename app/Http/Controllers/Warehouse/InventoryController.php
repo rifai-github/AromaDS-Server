@@ -765,10 +765,10 @@ class InventoryController extends Controller
                 ]);
             }
 
-            // Update stock if status is not draft
-            if ($request->status !== 'draft') {
-                $this->updateStockForTransfer($transfer);
-            }
+            // A brand-new transfer has no prior state, so treat it as if it started
+            // from 'draft' - creating one directly as transferred/received still
+            // moves whichever stock that status implies.
+            $this->applyStockForTransferStatusChange($transfer, 'draft', $request->status);
 
             DB::commit();
 
@@ -868,14 +868,15 @@ class InventoryController extends Controller
                 $deliveryNoteUploadedAt = now();
             }
 
-            // When a transfer leaves 'draft' for the first time, stock physically moves
-            // (source warehouse -, destination warehouse +). storeTransfer applies this at
-            // creation for non-draft transfers; drafts created earlier (e.g. auto-created
-            // from a branch material return) commit their stock movement here. Validate
-            // source stock first, mirroring storeTransfer.
-            $shouldApplyStock = $oldStatus === 'draft' && $request->status !== 'draft';
+            // Goods leave the source warehouse once a transfer is marked Transferred;
+            // storeTransfer applies this at creation for non-draft transfers, drafts
+            // created earlier (e.g. auto-created from a branch material return) commit
+            // it here. Destination stock is only credited once marked Received - being
+            // merely "Transferred" means the goods are still in transit. Validate
+            // source stock before the source-deducting transition, mirroring storeTransfer.
+            $shouldDeductSource = $oldStatus === 'draft' && in_array($request->status, ['transferred', 'received'], true);
 
-            if ($shouldApplyStock) {
+            if ($shouldDeductSource) {
                 $transfer->load('transferItems');
                 foreach ($transfer->transferItems as $item) {
                     $warehouseProduct = WarehouseProduct::where('warehouse_id', $request->from_warehouse_id)
@@ -915,9 +916,11 @@ class InventoryController extends Controller
                 'updated_by' => Auth::id()
             ]);
 
-            if ($shouldApplyStock) {
-                $this->updateStockForTransfer($transfer->load(['transferItems', 'fromWarehouse', 'toWarehouse']));
-            }
+            $this->applyStockForTransferStatusChange(
+                $transfer->load(['transferItems', 'fromWarehouse', 'toWarehouse']),
+                $oldStatus,
+                $request->status
+            );
 
             DB::commit();
 
@@ -989,43 +992,38 @@ class InventoryController extends Controller
         }
     }
 
-    // Helper method to update stock for transfer
-    private function updateStockForTransfer($transfer)
+    // Applies the stock movement(s) that correspond to a transfer's old -> new
+    // status change. Goods leave the source warehouse once a transfer is marked
+    // Transferred; they only credit the destination warehouse once marked
+    // Received (i.e. physically confirmed arrived) - Transferred alone does not
+    // add stock at the destination, since the goods are still in transit.
+    // $oldStatus is treated as 'draft' for a brand-new transfer (nothing has
+    // moved yet), so creating one directly as transferred/received still moves
+    // the stock that status implies.
+    private function applyStockForTransferStatusChange($transfer, $oldStatus, $newStatus)
+    {
+        if ($oldStatus === 'draft' && in_array($newStatus, ['transferred', 'received'], true)) {
+            $this->deductSourceStockForTransfer($transfer);
+        }
+
+        if (in_array($oldStatus, ['draft', 'transferred'], true) && $newStatus === 'received') {
+            $this->creditDestinationStockForTransfer($transfer);
+        }
+    }
+
+    // Reduce stock from the source warehouse (goods have physically left).
+    private function deductSourceStockForTransfer($transfer)
     {
         foreach ($transfer->transferItems as $item) {
-            // Reduce stock from source warehouse
             $fromWarehouseProduct = WarehouseProduct::where('warehouse_id', $transfer->from_warehouse_id)
                 ->where('master_product_id', $item->master_product_id)
                 ->first();
-            
+
             if ($fromWarehouseProduct) {
                 $fromWarehouseProduct->quantity -= $item->quantity;
                 $fromWarehouseProduct->save();
             }
 
-            // Add stock to destination warehouse
-            $toWarehouseProduct = WarehouseProduct::where('warehouse_id', $transfer->to_warehouse_id)
-                ->where('master_product_id', $item->master_product_id)
-                ->first();
-            
-            if ($toWarehouseProduct) {
-                $toWarehouseProduct->quantity += $item->quantity;
-                $toWarehouseProduct->save();
-            } else {
-                // Create new warehouse product if doesn't exist
-                $masterProduct = MasterProduct::find($item->master_product_id);
-                WarehouseProduct::create([
-                    'warehouse_id' => $transfer->to_warehouse_id,
-                    'master_product_id' => $item->master_product_id,
-                    'quantity' => $item->quantity,
-                    'minimum_stock' => $fromWarehouseProduct->minimum_stock ?? $masterProduct->minimum_stock ?? 0,
-                    'maximum_stock' => $fromWarehouseProduct->maximum_stock ?? $masterProduct->maximum_stock ?? 0,
-                    'created_by' => Auth::id(),
-                    'updated_by' => Auth::id()
-                ]);
-            }
-
-            // Create inventory movement records
             InventoryMovement::create([
                 'movement_no' => 'TRF-' . $transfer->transfer_number,
                 'movement_type' => 'out',
@@ -1039,6 +1037,36 @@ class InventoryController extends Controller
                 'created_by' => Auth::id(),
                 'updated_by' => Auth::id()
             ]);
+        }
+    }
+
+    // Add stock to the destination warehouse (goods confirmed received).
+    private function creditDestinationStockForTransfer($transfer)
+    {
+        foreach ($transfer->transferItems as $item) {
+            $toWarehouseProduct = WarehouseProduct::where('warehouse_id', $transfer->to_warehouse_id)
+                ->where('master_product_id', $item->master_product_id)
+                ->first();
+
+            if ($toWarehouseProduct) {
+                $toWarehouseProduct->quantity += $item->quantity;
+                $toWarehouseProduct->save();
+            } else {
+                // Create new warehouse product if doesn't exist
+                $masterProduct = MasterProduct::find($item->master_product_id);
+                $fromWarehouseProduct = WarehouseProduct::where('warehouse_id', $transfer->from_warehouse_id)
+                    ->where('master_product_id', $item->master_product_id)
+                    ->first();
+                WarehouseProduct::create([
+                    'warehouse_id' => $transfer->to_warehouse_id,
+                    'master_product_id' => $item->master_product_id,
+                    'quantity' => $item->quantity,
+                    'minimum_stock' => $fromWarehouseProduct->minimum_stock ?? $masterProduct->minimum_stock ?? 0,
+                    'maximum_stock' => $fromWarehouseProduct->maximum_stock ?? $masterProduct->maximum_stock ?? 0,
+                    'created_by' => Auth::id(),
+                    'updated_by' => Auth::id()
+                ]);
+            }
 
             InventoryMovement::create([
                 'movement_no' => 'TRF-' . $transfer->transfer_number,

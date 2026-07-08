@@ -1453,13 +1453,15 @@ function removeEditTransferItem(buttonElement) {
 // Status is no longer editable from the Add/Edit form - it's draft-by-default on
 // create, and only moves forward one step at a time (draft -> transferred ->
 // received) via this action, normally triggered from the detail page. Reuses the
-// existing update endpoint (which only moves stock on the draft -> non-draft
-// transition) so the stock-moving logic stays in one place.
+// existing update endpoint (which does the actual stock movement) so the
+// stock-moving logic stays in one place. Stock leaves the source warehouse at
+// Transferred; it only credits the destination warehouse at Received (goods are
+// still in transit while merely "Transferred").
 function transitionTransferStatus(id, toStatus) {
     const labels = { transferred: 'Transferred', received: 'Received' };
     const confirmText = toStatus === 'transferred'
-        ? 'Stok akan berpindah dari gudang asal ke gudang tujuan setelah ini.'
-        : 'Transfer akan ditandai sebagai selesai diterima.';
+        ? 'Stok akan dikurangi dari gudang asal setelah ini (barang dianggap dalam perjalanan).'
+        : 'Stok akan ditambahkan ke gudang tujuan setelah ini (barang dianggap sudah diterima).';
 
     showConfirmDialog(
         `Tandai sebagai ${labels[toStatus] || toStatus}?`,
