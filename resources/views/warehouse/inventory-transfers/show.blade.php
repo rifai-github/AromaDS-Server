@@ -81,10 +81,10 @@
                             </h3>
                         </div>
                         <div>
-                            <a href="{{ route('warehouse.inventory-transfers.index', ['edit' => $transfer->id]) }}" class="btn btn-sm"
-                                style="background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; font-weight: 600; border-radius: 6px; padding: 6px 14px;">
+                            <button type="button" class="btn btn-sm" onclick="openEditModal({{ $transfer->id }})"
+                                style="background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; font-weight: 600; border-radius: 6px; padding: 6px 14px; cursor: pointer;">
                                 <i class="fas fa-edit me-1"></i> Edit Transfer
-                            </a>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -290,5 +290,7 @@
         </div>
     </div>
 </div>
+
+@include('warehouse.inventory-transfers._transfer-form-modal')
 
 @endsection

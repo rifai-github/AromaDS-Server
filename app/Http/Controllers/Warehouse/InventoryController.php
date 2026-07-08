@@ -525,7 +525,7 @@ class InventoryController extends Controller
     public function getWarehouses()
     {
         $warehouses = Warehouse::active()
-            ->select('id', 'name', 'warehouse_code')
+            ->select('id', 'name', 'warehouse_code', 'is_center')
             ->orderBy('name')
             ->get();
 
