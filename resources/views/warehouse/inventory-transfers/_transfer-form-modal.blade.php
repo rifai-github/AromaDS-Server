@@ -1519,4 +1519,119 @@ function transitionTransferStatus(id, toStatus) {
         .catch(() => showErrorDialog('Terjadi kesalahan jaringan.', 'Gagal'));
     });
 }
+
+// Surat Pengajuan / Surat Jalan need to stay uploadable regardless of status -
+// Surat Jalan in particular is normally only available once the transfer has
+// actually left the branch (Transferred) or later, by which point the full
+// Edit form is gone (Edit is Draft-only, since warehouse/items/status
+// shouldn't change after that). This is a small standalone modal that only
+// touches the two document fields, reusing the same update endpoint with the
+// rest of the transfer's current values resent unchanged.
+function openDocumentUploadModal(id) {
+    openModal('Upload Dokumen Transfer');
+    document.getElementById('modalBody').innerHTML = '<div style="text-align: center; padding: 40px;"><div style="display: inline-block; width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite;"></div><p style="margin-top: 16px; color: #666;">Memuat...</p></div>';
+
+    fetch(`{{ url('warehouse/inventory-transfers/api/get-transfer') }}/${id}`, {
+        headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'Accept': 'application/json'
+        },
+        credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.status !== 'success') {
+            document.getElementById('modalBody').innerHTML = `
+                <div style="text-align: center; padding: 40px;">
+                    <p style="color: #e74c3c;">Gagal memuat data transfer.</p>
+                    <button onclick="openDocumentUploadModal(${id})" class="btn btn-primary">Coba Lagi</button>
+                </div>
+            `;
+            return;
+        }
+
+        const data = result.data;
+        document.getElementById('modalBody').innerHTML = `
+            <form id="form" onsubmit="submitDocumentUpload(event, ${id})">
+                <input type="hidden" name="transfer_date" value="${data.transfer_date ? data.transfer_date.split('T')[0] : ''}">
+                <input type="hidden" name="from_warehouse_id" value="${data.from_warehouse_id}">
+                <input type="hidden" name="to_warehouse_id" value="${data.to_warehouse_id}">
+                <input type="hidden" name="status" value="${data.status}">
+                <input type="hidden" name="is_direct_branch_transfer" value="${data.is_direct_branch_transfer ? 1 : 0}">
+                <input type="hidden" name="central_approval_notes" value="${data.central_approval_notes || ''}">
+                <input type="hidden" name="notes" value="${data.notes || ''}">
+                <input type="hidden" name="return_reason" value="${data.return_reason || ''}">
+                <input type="hidden" name="return_reason_category" value="${data.return_reason_category || ''}">
+                <div class="modal-section">
+                    <div class="modal-section-title">Dokumen</div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="form-group">
+                            <label class="form-label">Surat Pengajuan (dari Cabang)</label>
+                            ${data.submission_letter_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="/storage/${data.submission_letter_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
+                            <input type="file" name="submission_letter_file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Surat Jalan (dari Pusat)</label>
+                            ${data.delivery_note_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="/storage/${data.delivery_note_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
+                            <input type="file" name="delivery_note_file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Upload file baru untuk mengganti dokumen yang sudah ada. Kosongkan jika tidak ingin mengubah.</p>
+                </div>
+            </form>
+        `;
+
+        document.getElementById('modalFooter').innerHTML = `
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Batal</button>
+            <button type="submit" form="form" class="btn btn-primary">Upload Dokumen</button>
+        `;
+    })
+    .catch(() => {
+        document.getElementById('modalBody').innerHTML = `
+            <div style="text-align: center; padding: 40px;">
+                <p style="color: #e74c3c;">Gagal memuat data. Silakan coba lagi.</p>
+                <button onclick="openDocumentUploadModal(${id})" class="btn btn-primary">Coba Lagi</button>
+            </div>
+        `;
+    });
+}
+
+function submitDocumentUpload(event, id) {
+    event.preventDefault();
+
+    const formData = new FormData(event.target);
+
+    // Same empty-file-input quirk as submitForm(): a zero-size File entry
+    // survives Object.fromEntries()/FormData but trips Laravel's 'nullable|file'
+    // validation - strip it entirely when nothing was actually chosen.
+    ['submission_letter_file', 'delivery_note_file'].forEach(name => {
+        const file = formData.get(name);
+        if (file instanceof File && file.size === 0) {
+            formData.delete(name);
+        }
+    });
+
+    // PHP only populates $_FILES for POST bodies, not PUT - method-override so
+    // this still reaches updateTransfer() while the real HTTP method stays POST.
+    formData.set('_method', 'PUT');
+
+    fetch(`{{ url('warehouse/inventory-transfers/api') }}/${id}/update`, {
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        },
+        body: formData
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.status === 'success') {
+            closeModal();
+            location.reload();
+        } else {
+            showErrorDialog(result.message || 'Gagal mengupload dokumen.', 'Gagal');
+        }
+    })
+    .catch(() => showErrorDialog('Terjadi kesalahan jaringan.', 'Gagal'));
+}
 </script>

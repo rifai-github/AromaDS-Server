@@ -192,10 +192,14 @@
 
             <!-- Dokumen Section -->
             <div class="card mb-3">
-                <div class="card-header" style="background-color: #f8f9fa; border-bottom: 2px solid #1e3a8a;">
+                <div class="card-header d-flex justify-content-between align-items-center" style="background-color: #f8f9fa; border-bottom: 2px solid #1e3a8a;">
                     <h5 class="card-title mb-0" style="color: #1e3a8a;">
                         <i class="fas fa-file-alt me-2"></i>Dokumen
                     </h5>
+                    <button type="button" class="btn btn-sm" onclick="openDocumentUploadModal({{ $transfer->id }})"
+                        style="background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; font-weight: 600; border-radius: 6px; padding: 4px 12px; cursor: pointer;">
+                        <i class="fas fa-upload me-1"></i> Upload Dokumen
+                    </button>
                 </div>
                 <div class="card-body">
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem;">
