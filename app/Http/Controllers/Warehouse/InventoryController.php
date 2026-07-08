@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Warehouse;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\InventoryIssuing;
 use App\Models\InventoryMovement;
 use App\Models\InventoryReceiving;
+use App\Models\InventoryReceivingItem;
 use App\Models\InventoryRequest;
 use App\Models\InventoryTransfer;
 use App\Models\InventoryTransferItem;
+use App\Models\SerialNumber;
 use App\Models\Warehouse;
 use App\Models\WarehouseProduct;
 use App\Models\MasterProduct;
@@ -656,7 +659,12 @@ class InventoryController extends Controller
             'transferItems.product',
         ])->findOrFail($id);
 
-        return view('warehouse.inventory-transfers.show', ['transfer' => $transfer]);
+        // SN-tracked items get queued into an auto-created Inventory Receiving when
+        // they leave the source warehouse (see queueSerialNumberItemsForTransfer());
+        // surface it so the destination warehouse knows where to go verify/finalize.
+        $serializedReceiving = InventoryReceiving::where('reference_no', $transfer->transfer_number)->first();
+
+        return view('warehouse.inventory-transfers.show', ['transfer' => $transfer, 'serializedReceiving' => $serializedReceiving]);
     }
 
     // Store new inventory transfer
@@ -708,22 +716,12 @@ class InventoryController extends Controller
                 ], 422);
             }
 
-            // Inventory Transfer only moves the WarehouseProduct quantity aggregate -
-            // it never touches SerialNumber records, so SN-tracked units (unit
-            // diffuser/aroma/refill) silently vanish from the destination warehouse's
-            // SN list even though the quantity total looks fine. Block until that's
-            // built (mirrors the same guard already in place for the auto-created
-            // Return-to-Center transfer).
-            $serializedProductNames = $this->serializedProductNamesInItems($request->items);
-            if ($serializedProductNames->isNotEmpty()) {
-                DB::rollBack();
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Transfer produk ber-Serial Number (' . $serializedProductNames->implode(', ') . ') belum didukung di Inventory Transfer - stok berpindah tapi data Serial Number tidak ikut. Gunakan alur Inventory Issuing/Receiving untuk produk ber-SN.'
-                ], 422);
-            }
-
-            // Validate stock availability for each item
+            // Validate stock availability for each item. SN-tracked products (unit
+            // diffuser/aroma/refill) additionally need enough 'ready' SN units, not
+            // just enough aggregate quantity - the actual SN records get queued into
+            // an auto-created Inventory Receiving for the destination warehouse to
+            // verify/finalize (see queueSerialNumberItemsForTransfer()), since
+            // Inventory Transfer's own stock movement never touches SerialNumber rows.
             foreach ($request->items as $item) {
                 $warehouseProduct = WarehouseProduct::where('warehouse_id', $request->from_warehouse_id)
                     ->where('master_product_id', $item['product_id'])
@@ -736,6 +734,22 @@ class InventoryController extends Controller
                         'status' => 'error',
                         'message' => "Stok tidak mencukupi untuk produk {$product->name}. Stok tersedia: " . ($warehouseProduct->quantity ?? 0)
                     ], 422);
+                }
+
+                $product = MasterProduct::with(['productCategory', 'productType'])->find($item['product_id']);
+                if ($product && $product->requiresSerialNumber()) {
+                    $availableSnCount = SerialNumber::where('warehouse_id', $request->from_warehouse_id)
+                        ->where('master_product_id', $item['product_id'])
+                        ->where('status', 'ready')
+                        ->count();
+
+                    if ($availableSnCount < $item['quantity']) {
+                        DB::rollBack();
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => "Serial Number tersedia untuk produk {$product->name} tidak mencukupi. Tersedia: {$availableSnCount}, dibutuhkan: {$item['quantity']}."
+                        ], 422);
+                    }
                 }
             }
 
@@ -785,11 +799,21 @@ class InventoryController extends Controller
             // moves whichever stock that status implies.
             $this->applyStockForTransferStatusChange($transfer, 'draft', $request->status);
 
+            $queuedReceiving = null;
+            if ($request->status !== 'draft') {
+                $queuedReceiving = $this->queueSerialNumberItemsForTransfer($transfer);
+            }
+
             DB::commit();
+
+            $message = 'Inventory transfer created successfully';
+            if ($queuedReceiving) {
+                $message .= ". Item ber-Serial Number di-queue ke Inventory Receiving {$queuedReceiving->receiving_number} (menunggu verifikasi & finalize gudang tujuan).";
+            }
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Inventory transfer created successfully',
+                'message' => $message,
                 'data' => $transfer->load(['fromWarehouse', 'toWarehouse', 'creator', 'transferItems.product'])
             ]);
         } catch (\Exception $e) {
@@ -892,21 +916,7 @@ class InventoryController extends Controller
             $shouldDeductSource = $oldStatus === 'draft' && in_array($request->status, ['transferred', 'received'], true);
 
             if ($shouldDeductSource) {
-                $transfer->load('transferItems');
-
-                // Same SN gap as storeTransfer() - covers transfers that already had
-                // items before this guard existed (e.g. auto-created from a material
-                // return, or added via a since-removed items-editing path).
-                $serializedProductNames = $this->serializedProductNamesInItems(
-                    $transfer->transferItems->map(fn ($item) => ['product_id' => $item->master_product_id])->all()
-                );
-                if ($serializedProductNames->isNotEmpty()) {
-                    DB::rollBack();
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Transfer produk ber-Serial Number (' . $serializedProductNames->implode(', ') . ') belum didukung di Inventory Transfer - stok berpindah tapi data Serial Number tidak ikut. Gunakan alur Inventory Issuing/Receiving untuk produk ber-SN.'
-                    ], 422);
-                }
+                $transfer->load(['transferItems.product.productCategory', 'transferItems.product.productType']);
 
                 foreach ($transfer->transferItems as $item) {
                     $warehouseProduct = WarehouseProduct::where('warehouse_id', $request->from_warehouse_id)
@@ -920,6 +930,24 @@ class InventoryController extends Controller
                             'status' => 'error',
                             'message' => "Stok tidak mencukupi untuk produk " . ($product->name ?? "#{$item->master_product_id}") . ". Stok tersedia: " . ($warehouseProduct->quantity ?? 0)
                         ], 422);
+                    }
+
+                    // SN-tracked products additionally need enough 'ready' SN units at
+                    // the source (see queueSerialNumberItemsForTransfer() for where
+                    // they actually get moved - not by this quantity check).
+                    if ($item->product && $item->product->requiresSerialNumber()) {
+                        $availableSnCount = SerialNumber::where('warehouse_id', $request->from_warehouse_id)
+                            ->where('master_product_id', $item->master_product_id)
+                            ->where('status', 'ready')
+                            ->count();
+
+                        if ($availableSnCount < $item->quantity) {
+                            DB::rollBack();
+                            return response()->json([
+                                'status' => 'error',
+                                'message' => "Serial Number tersedia untuk produk {$item->product->name} tidak mencukupi. Tersedia: {$availableSnCount}, dibutuhkan: {$item->quantity}."
+                            ], 422);
+                        }
                     }
                 }
             }
@@ -952,11 +980,21 @@ class InventoryController extends Controller
                 $request->status
             );
 
+            $queuedReceiving = null;
+            if ($shouldDeductSource) {
+                $queuedReceiving = $this->queueSerialNumberItemsForTransfer($transfer);
+            }
+
             DB::commit();
+
+            $message = 'Inventory transfer updated successfully';
+            if ($queuedReceiving) {
+                $message .= ". Item ber-Serial Number di-queue ke Inventory Receiving {$queuedReceiving->receiving_number} (menunggu verifikasi & finalize gudang tujuan).";
+            }
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Inventory transfer updated successfully',
+                'message' => $message,
                 'data' => $transfer->load(['fromWarehouse', 'toWarehouse', 'creator'])
             ]);
         } catch (\Exception $e) {
@@ -1022,22 +1060,84 @@ class InventoryController extends Controller
         }
     }
 
-    // Names of any Serial Number-tracked products among $items (each with a
-    // 'product_id' key), or an empty collection if none. Used to block Inventory
-    // Transfer from accepting SN-tracked products until it can move their
-    // SerialNumber records, not just the WarehouseProduct quantity aggregate.
-    private function serializedProductNamesInItems(array $items)
+    // Inventory Transfer's own stock movement (deductSourceStockForTransfer /
+    // creditDestinationStockForTransfer) only ever touches the WarehouseProduct
+    // quantity aggregate - it has no concept of which physical units move, so it
+    // can't safely update SerialNumber rows itself. Instead, once a transfer's
+    // SN-tracked items leave the source (see the $shouldDeductSource call site),
+    // this auto-creates an Inventory Receiving at the destination warehouse and
+    // queues the specific SN units into it - mirroring exactly how a branch
+    // material return with SN items gets queued (queueSerialNumberReturnItem() in
+    // JobScheduleController). The destination warehouse then verifies/finalizes
+    // that Receiving through the existing, already-correct SN flow
+    // (InventoryReceivingController::finalize() ->
+    // releaseReceivedSerialNumbersToWarehouse()), which is what actually moves
+    // SerialNumber.warehouse_id and credits WarehouseProduct there - Inventory
+    // Transfer's own "Received" status does NOT credit destination stock for
+    // these items (see creditDestinationStockForTransfer()'s SN skip).
+    //
+    // SN units are auto-picked FIFO (oldest 'ready' unit first) at the source
+    // warehouse - no manual per-unit selection UI.
+    //
+    // Returns the created InventoryReceiving, or null if the transfer has no
+    // SN-tracked items.
+    private function queueSerialNumberItemsForTransfer(InventoryTransfer $transfer)
     {
-        $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
-        if ($productIds->isEmpty()) {
-            return collect();
+        $transfer->loadMissing(['transferItems.product.productCategory', 'transferItems.product.productType', 'toWarehouse']);
+
+        $serializedItems = $transfer->transferItems->filter(
+            fn ($item) => $item->product && $item->product->requiresSerialNumber()
+        );
+
+        if ($serializedItems->isEmpty()) {
+            return null;
         }
 
-        return MasterProduct::whereIn('id', $productIds)
-            ->with(['productCategory', 'productType'])
-            ->get()
-            ->filter(fn ($product) => $product->requiresSerialNumber())
-            ->pluck('name');
+        $toWarehouse = $transfer->toWarehouse;
+
+        $inventoryReceiving = InventoryReceiving::create([
+            'receiving_number' => app(\App\Services\DocumentNumberService::class)->generate(
+                'inventory_receiving',
+                $toWarehouse->branch_id ? Branch::find($toWarehouse->branch_id)?->code : null
+            ),
+            'reference_no' => $transfer->transfer_number,
+            'branch_id' => $toWarehouse->branch_id,
+            'received_from' => Auth::id(),
+            'received_by_old' => Auth::id(),
+            'schedule_date' => now()->toDateString(),
+            'status' => 'pending',
+            'notes' => "Auto dari Inventory Transfer {$transfer->transfer_number} (item ber-Serial Number, menunggu verifikasi & finalize gudang tujuan).",
+            'created_by' => Auth::id(),
+            'updated_by' => Auth::id(),
+        ]);
+
+        foreach ($serializedItems as $item) {
+            InventoryReceivingItem::create([
+                'inventory_receiving_id' => $inventoryReceiving->id,
+                'master_product_id' => $item->master_product_id,
+                'quantity' => $item->quantity,
+                'quantity_received' => 0,
+                'notes' => "Transfer item #{$item->id} dari {$transfer->transfer_number}",
+            ]);
+
+            $pickedSerialNumbers = SerialNumber::where('warehouse_id', $transfer->from_warehouse_id)
+                ->where('master_product_id', $item->master_product_id)
+                ->where('status', 'ready')
+                ->orderBy('created_at')
+                ->limit((int) $item->quantity)
+                ->get();
+
+            foreach ($pickedSerialNumbers as $serialNumber) {
+                $serialNumber->update([
+                    'inventory_receiving_id' => $inventoryReceiving->id,
+                    'warehouse_id' => $toWarehouse->id,
+                    'status' => 'pending',
+                    'updated_by' => Auth::id(),
+                ]);
+            }
+        }
+
+        return $inventoryReceiving;
     }
 
     // Applies the stock movement(s) that correspond to a transfer's old -> new
@@ -1092,6 +1192,16 @@ class InventoryController extends Controller
     private function creditDestinationStockForTransfer($transfer)
     {
         foreach ($transfer->transferItems as $item) {
+            // SN-tracked items don't credit destination stock here - they were
+            // queued into an Inventory Receiving (see
+            // queueSerialNumberItemsForTransfer()) when the transfer left the
+            // source, and only get credited when that Receiving is finalized by
+            // the destination warehouse, so the SerialNumber rows move alongside
+            // the quantity instead of the two silently going out of sync.
+            if ($item->product && $item->product->requiresSerialNumber()) {
+                continue;
+            }
+
             $toWarehouseProduct = WarehouseProduct::where('warehouse_id', $transfer->to_warehouse_id)
                 ->where('master_product_id', $item->master_product_id)
                 ->first();

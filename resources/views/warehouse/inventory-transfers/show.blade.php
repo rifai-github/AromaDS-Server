@@ -103,6 +103,25 @@
                 </div>
             </div>
 
+            @if($serializedReceiving)
+            <!-- Serial Number Queue Notice -->
+            <div class="card mb-3" style="border: 1px solid #bfdbfe; background-color: #eff6ff; border-radius: 10px;">
+                <div class="card-body" style="padding: 1rem 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+                    <div>
+                        <div style="font-weight: 700; color: #1e40af; font-size: 0.95rem;">
+                            <i class="fas fa-barcode me-2"></i>Item ber-Serial Number di-queue ke Inventory Receiving {{ $serializedReceiving->receiving_number }}
+                        </div>
+                        <div style="font-size: 0.85rem; color: #1e40af; margin-top: 0.25rem;">
+                            Status: <strong>{{ ucfirst($serializedReceiving->status) }}</strong> &middot; Stok & Serial Number di gudang tujuan baru masuk setelah Receiving ini diverifikasi & di-finalize.
+                        </div>
+                    </div>
+                    <a href="{{ route('warehouse.inventory-receivings.show', $serializedReceiving->id) }}" class="btn btn-sm" style="background-color: #1e40af; color: white; border-radius: 6px; padding: 6px 14px;">
+                        <i class="fas fa-arrow-right me-1"></i> Buka Inventory Receiving
+                    </a>
+                </div>
+            </div>
+            @endif
+
             <!-- Basic Info Section -->
             <div class="card mb-3">
                 <div class="card-header" style="background-color: #f8f9fa; border-bottom: 2px solid #1e3a8a;">
