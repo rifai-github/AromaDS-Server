@@ -8,28 +8,25 @@ use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
- * Surat pengajuan (branch->center) and surat jalan (center->branch) uploads on
- * InventoryTransfer - QA reported neither existed for the return-to-center flow.
- * Also guards against the bug found while building this: submitForm() in the blade
- * view was JSON.stringify()-ing FormData, which silently drops File objects - fixed
- * separately, but this test locks down the backend half (storeTransfer/updateTransfer
- * actually persisting the uploaded file path).
+ * QA feedback: Inventory Transfer only moves the WarehouseProduct quantity
+ * aggregate - it never touches SerialNumber records - so SN-tracked units
+ * (diffuser/aroma/refill) silently vanish from the destination warehouse's SN
+ * list even though the quantity total looks fine. Blocks Create and the
+ * draft -> transferred/received status transition for SN-tracked products
+ * until real SN movement is built, mirroring the guard already in place for
+ * the auto-created Return-to-Center transfer.
  */
-class InventoryTransferDocumentUploadTest extends TestCase
+class InventoryTransferSerialNumberGuardTest extends TestCase
 {
     protected function setUp(): void
     {
         parent::setUp();
-
-        Storage::fake('public');
 
         Schema::create('users', function (Blueprint $table) {
             $table->id();
@@ -48,11 +45,39 @@ class InventoryTransferDocumentUploadTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('product_categories', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->boolean('has_serial_number')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('product_types', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->boolean('has_serial_number')->default(false);
+            $table->boolean('is_unit')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('master_products', function (Blueprint $table) {
             $table->id();
             $table->string('name')->nullable();
+            $table->foreignId('product_category_id')->nullable();
+            $table->foreignId('product_type_id')->nullable();
             $table->decimal('minimum_stock', 10, 2)->nullable();
             $table->decimal('maximum_stock', 10, 2)->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('serial_numbers', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('master_product_id')->nullable();
+            $table->foreignId('warehouse_id')->nullable();
+            $table->string('status')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -113,121 +138,42 @@ class InventoryTransferDocumentUploadTest extends TestCase
 
         Schema::create('inventory_movements', function (Blueprint $table) {
             $table->id();
+            $table->string('movement_no')->nullable();
+            $table->string('movement_type')->nullable();
             $table->foreignId('warehouse_id')->nullable();
             $table->foreignId('master_product_id')->nullable();
-            $table->string('movement_type')->nullable();
             $table->decimal('quantity', 10, 2)->default(0);
+            $table->decimal('unit_price', 15, 2)->nullable();
+            $table->decimal('total_value', 15, 2)->nullable();
+            $table->date('movement_date')->nullable();
+            $table->string('reference_no')->nullable();
+            $table->string('reference_type')->nullable();
             $table->text('notes')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('updated_by')->nullable();
             $table->timestamps();
         });
 
-        // Needed only because MasterProduct::requiresSerialNumber() (used by the SN
-        // guard in storeTransfer/updateTransfer) falls back to querying this table
-        // when the product has no productCategory/productType set.
-        Schema::create('serial_numbers', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('master_product_id')->nullable();
-            $table->foreignId('warehouse_id')->nullable();
-            $table->string('status')->nullable();
-            $table->timestamps();
-            $table->softDeletes();
-        });
-
         DB::table('users')->insert(['id' => 1, 'name' => 'Admin', 'created_at' => now(), 'updated_at' => now()]);
         Auth::login(User::findOrFail(1));
     }
 
-    private function requestWithFile(string $uri, array $data, array $files): Request
-    {
-        $request = Request::create($uri, 'POST', $data);
-        foreach ($files as $key => $file) {
-            $request->files->set($key, $file);
-        }
-
-        return $request;
-    }
-
-    public function test_store_transfer_persists_submission_letter_and_delivery_note(): void
+    private function makeWarehouses(): array
     {
         $branch = Warehouse::create(['name' => 'Gudang Cabang', 'is_center' => false]);
         $center = Warehouse::create(['name' => 'Gudang Pusat', 'is_center' => true]);
-        DB::table('master_products')->insert(['id' => 1, 'name' => 'Diffuser W300 White', 'created_at' => now(), 'updated_at' => now()]);
+
+        return [$branch, $center];
+    }
+
+    public function test_store_transfer_rejects_serial_number_tracked_product(): void
+    {
+        [$branch, $center] = $this->makeWarehouses();
+
+        DB::table('product_types')->insert(['id' => 1, 'name' => 'Unit Diffuser', 'has_serial_number' => true, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('master_products')->insert(['id' => 1, 'name' => 'Diffuser W300 White', 'product_type_id' => 1, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('warehouse_products')->insert([
-            'warehouse_id' => $branch->id, 'master_product_id' => 1, 'quantity' => 5,
-            'created_at' => now(), 'updated_at' => now(),
-        ]);
-
-        $request = $this->requestWithFile('/warehouse/inventory-transfers/api/store', [
-            'transfer_date' => now()->toDateString(),
-            'from_warehouse_id' => $branch->id,
-            'to_warehouse_id' => $center->id,
-            'status' => 'draft',
-            'items' => [['product_id' => 1, 'quantity' => 2]],
-        ], [
-            'submission_letter_file' => UploadedFile::fake()->create('surat-pengajuan.pdf', 100),
-        ]);
-
-        $response = (new InventoryController())->storeTransfer($request);
-        $payload = json_decode($response->getContent(), true);
-
-        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
-        $this->assertSame('success', $payload['status']);
-
-        $transfer = InventoryTransfer::first();
-        $this->assertNotNull($transfer->submission_letter_file);
-        Storage::disk('public')->assertExists($transfer->submission_letter_file);
-        $this->assertSame(1, $transfer->submission_letter_uploaded_by);
-        $this->assertNull($transfer->delivery_note_file);
-    }
-
-    public function test_update_transfer_persists_delivery_note_via_method_override(): void
-    {
-        $branch = Warehouse::create(['name' => 'Gudang Cabang', 'is_center' => false]);
-        $center = Warehouse::create(['name' => 'Gudang Pusat', 'is_center' => true]);
-        DB::table('master_products')->insert(['id' => 1, 'name' => 'Diffuser W300 White', 'created_at' => now(), 'updated_at' => now()]);
-
-        $transfer = InventoryTransfer::create([
-            'transfer_date' => now()->toDateString(),
-            'from_warehouse_id' => $branch->id,
-            'to_warehouse_id' => $center->id,
-            'status' => 'draft',
-        ]);
-
-        $request = $this->requestWithFile('/warehouse/inventory-transfers/api/'.$transfer->id.'/update', [
-            'transfer_date' => now()->toDateString(),
-            'from_warehouse_id' => $branch->id,
-            'to_warehouse_id' => $center->id,
-            'status' => 'draft',
-        ], [
-            'delivery_note_file' => UploadedFile::fake()->create('surat-jalan.pdf', 100),
-        ]);
-
-        $response = (new InventoryController())->updateTransfer($request, $transfer->id);
-        $payload = json_decode($response->getContent(), true);
-
-        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
-
-        $transfer->refresh();
-        $this->assertNotNull($transfer->delivery_note_file);
-        Storage::disk('public')->assertExists($transfer->delivery_note_file);
-        $this->assertSame(1, $transfer->delivery_note_uploaded_by);
-    }
-
-    /**
-     * Standalone warehouse-to-warehouse return, no job schedule involved: a branch
-     * can already create a direct Branch -> Center transfer (canTransferTo() already
-     * allows it), this locks down the new structured return_reason/category fields
-     * that give it the same audit trail a job-schedule-triggered MaterialReturn has.
-     */
-    public function test_store_transfer_records_return_reason_for_standalone_branch_to_center_return(): void
-    {
-        $branch = Warehouse::create(['name' => 'Gudang Cabang', 'is_center' => false]);
-        $center = Warehouse::create(['name' => 'Gudang Pusat', 'is_center' => true]);
-        DB::table('master_products')->insert(['id' => 1, 'name' => 'Diffuser W300 White', 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('warehouse_products')->insert([
-            'warehouse_id' => $branch->id, 'master_product_id' => 1, 'quantity' => 5,
+            'warehouse_id' => $branch->id, 'master_product_id' => 1, 'quantity' => 10,
             'created_at' => now(), 'updated_at' => now(),
         ]);
 
@@ -237,18 +183,79 @@ class InventoryTransferDocumentUploadTest extends TestCase
             'to_warehouse_id' => $center->id,
             'status' => 'draft',
             'items' => [['product_id' => 1, 'quantity' => 2]],
-            'return_reason_category' => 'damaged',
-            'return_reason' => 'Unit rusak saat pengecekan stok cabang, dikembalikan ke pusat untuk repair.',
         ]);
-
         $response = (new InventoryController())->storeTransfer($request);
         $payload = json_decode($response->getContent(), true);
 
-        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertStringContainsString('Serial Number', $payload['message']);
+        $this->assertSame(0, InventoryTransfer::count(), 'No transfer should have been created.');
+    }
 
+    public function test_store_transfer_allows_non_serial_number_product(): void
+    {
+        [$branch, $center] = $this->makeWarehouses();
+
+        DB::table('master_products')->insert(['id' => 1, 'name' => 'Fragrance Coffee Mix', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('warehouse_products')->insert([
+            'warehouse_id' => $branch->id, 'master_product_id' => 1, 'quantity' => 10,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/warehouse/inventory-transfers/api/store', 'POST', [
+            'transfer_date' => now()->toDateString(),
+            'from_warehouse_id' => $branch->id,
+            'to_warehouse_id' => $center->id,
+            'status' => 'draft',
+            'items' => [['product_id' => 1, 'quantity' => 2]],
+        ]);
+        $response = (new InventoryController())->storeTransfer($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(1, InventoryTransfer::count());
+    }
+
+    public function test_update_transfer_rejects_transitioning_serial_number_item_to_transferred(): void
+    {
+        [$branch, $center] = $this->makeWarehouses();
+
+        // Product starts non-SN so storeTransfer's own guard doesn't block creation
+        // (simulating a transfer that already existed before this guard was added,
+        // or a category later marked as requiring SN).
+        DB::table('master_products')->insert(['id' => 1, 'name' => 'Diffuser W300 White', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('warehouse_products')->insert([
+            'warehouse_id' => $branch->id, 'master_product_id' => 1, 'quantity' => 10,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $storeRequest = Request::create('/warehouse/inventory-transfers/api/store', 'POST', [
+            'transfer_date' => now()->toDateString(),
+            'from_warehouse_id' => $branch->id,
+            'to_warehouse_id' => $center->id,
+            'status' => 'draft',
+            'items' => [['product_id' => 1, 'quantity' => 2]],
+        ]);
+        (new InventoryController())->storeTransfer($storeRequest);
         $transfer = InventoryTransfer::first();
-        $this->assertSame('damaged', $transfer->return_reason_category);
-        $this->assertSame('Unit rusak saat pengecekan stok cabang, dikembalikan ke pusat untuk repair.', $transfer->return_reason);
-        $this->assertNull($transfer->source_type); // not tied to a job-schedule material return
+
+        // Now mark the product as SN-tracked and try to move the transfer forward.
+        DB::table('product_types')->insert(['id' => 1, 'name' => 'Unit Diffuser', 'has_serial_number' => true, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('master_products')->where('id', 1)->update(['product_type_id' => 1]);
+
+        $updateRequest = Request::create("/warehouse/inventory-transfers/api/{$transfer->id}/update", 'PUT', [
+            'transfer_date' => now()->toDateString(),
+            'from_warehouse_id' => $branch->id,
+            'to_warehouse_id' => $center->id,
+            'status' => 'transferred',
+        ]);
+        $response = (new InventoryController())->updateTransfer($updateRequest, $transfer->id);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertStringContainsString('Serial Number', $payload['message']);
+
+        $transfer->refresh();
+        $this->assertSame('draft', $transfer->status, 'Status should not have moved forward.');
+        $this->assertSame(10.0, (float) DB::table('warehouse_products')->where('warehouse_id', $branch->id)->where('master_product_id', 1)->value('quantity'), 'Source stock should be untouched.');
     }
 }

@@ -126,6 +126,18 @@ class InventoryTransferStatusStockMovementTest extends TestCase
             $table->timestamps();
         });
 
+        // Needed only because MasterProduct::requiresSerialNumber() (used by the SN
+        // guard in storeTransfer/updateTransfer) falls back to querying this table
+        // when the product has no productCategory/productType set.
+        Schema::create('serial_numbers', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('master_product_id')->nullable();
+            $table->foreignId('warehouse_id')->nullable();
+            $table->string('status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         DB::table('users')->insert(['id' => 1, 'name' => 'Admin', 'created_at' => now(), 'updated_at' => now()]);
         Auth::login(User::findOrFail(1));
     }

@@ -708,12 +708,27 @@ class InventoryController extends Controller
                 ], 422);
             }
 
+            // Inventory Transfer only moves the WarehouseProduct quantity aggregate -
+            // it never touches SerialNumber records, so SN-tracked units (unit
+            // diffuser/aroma/refill) silently vanish from the destination warehouse's
+            // SN list even though the quantity total looks fine. Block until that's
+            // built (mirrors the same guard already in place for the auto-created
+            // Return-to-Center transfer).
+            $serializedProductNames = $this->serializedProductNamesInItems($request->items);
+            if ($serializedProductNames->isNotEmpty()) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Transfer produk ber-Serial Number (' . $serializedProductNames->implode(', ') . ') belum didukung di Inventory Transfer - stok berpindah tapi data Serial Number tidak ikut. Gunakan alur Inventory Issuing/Receiving untuk produk ber-SN.'
+                ], 422);
+            }
+
             // Validate stock availability for each item
             foreach ($request->items as $item) {
                 $warehouseProduct = WarehouseProduct::where('warehouse_id', $request->from_warehouse_id)
                     ->where('master_product_id', $item['product_id'])
                     ->first();
-                
+
                 if (!$warehouseProduct || $warehouseProduct->quantity < $item['quantity']) {
                     $product = MasterProduct::find($item['product_id']);
                     DB::rollBack();
@@ -878,6 +893,21 @@ class InventoryController extends Controller
 
             if ($shouldDeductSource) {
                 $transfer->load('transferItems');
+
+                // Same SN gap as storeTransfer() - covers transfers that already had
+                // items before this guard existed (e.g. auto-created from a material
+                // return, or added via a since-removed items-editing path).
+                $serializedProductNames = $this->serializedProductNamesInItems(
+                    $transfer->transferItems->map(fn ($item) => ['product_id' => $item->master_product_id])->all()
+                );
+                if ($serializedProductNames->isNotEmpty()) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Transfer produk ber-Serial Number (' . $serializedProductNames->implode(', ') . ') belum didukung di Inventory Transfer - stok berpindah tapi data Serial Number tidak ikut. Gunakan alur Inventory Issuing/Receiving untuk produk ber-SN.'
+                    ], 422);
+                }
+
                 foreach ($transfer->transferItems as $item) {
                     $warehouseProduct = WarehouseProduct::where('warehouse_id', $request->from_warehouse_id)
                         ->where('master_product_id', $item->master_product_id)
@@ -990,6 +1020,24 @@ class InventoryController extends Controller
                 'message' => 'Failed to hide transfers: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    // Names of any Serial Number-tracked products among $items (each with a
+    // 'product_id' key), or an empty collection if none. Used to block Inventory
+    // Transfer from accepting SN-tracked products until it can move their
+    // SerialNumber records, not just the WarehouseProduct quantity aggregate.
+    private function serializedProductNamesInItems(array $items)
+    {
+        $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
+        if ($productIds->isEmpty()) {
+            return collect();
+        }
+
+        return MasterProduct::whereIn('id', $productIds)
+            ->with(['productCategory', 'productType'])
+            ->get()
+            ->filter(fn ($product) => $product->requiresSerialNumber())
+            ->pluck('name');
     }
 
     // Applies the stock movement(s) that correspond to a transfer's old -> new
