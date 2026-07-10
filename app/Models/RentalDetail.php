@@ -63,6 +63,46 @@ class RentalDetail extends Model
         return $this->belongsTo(User::class, 'updated_by');
     }
 
+    /**
+     * XFreqService interval rule (service_frequency_multiplier).
+     *
+     * CONFIRMED client rule (10 Jul 2026): the multiplier is an interval measured
+     * in SERVICE COUNT, not time. A material is replaced at service #n when
+     * (n - 1) % multiplier == 0. Service #1 = install (all materials fresh), so a
+     * multiplier of e.g. 12 means the material recurs at services 1, 13, 25...
+     * A multiplier of 0 = permanent unit (Diffuser/UV): present only at install,
+     * never on a recurring service.
+     *
+     * Backward compatible: a null multiplier (never configured) always returns
+     * true so legacy rentals keep their full-BOM behaviour. An unknown sequence
+     * also returns true (fail-open).
+     *
+     * @param  int|null  $sequence  1-based service ordinal (install = 1)
+     */
+    public function isDueAtServiceSequence(?int $sequence): bool
+    {
+        $multiplier = $this->service_frequency_multiplier;
+
+        // Never configured -> preserve legacy behaviour (always include).
+        if ($multiplier === null) {
+            return true;
+        }
+
+        $multiplier = (int) $multiplier;
+
+        // Permanent unit: only fresh at install (sequence 1), never on recurring service.
+        if ($multiplier === 0) {
+            return $sequence === 1;
+        }
+
+        // Cannot determine the ordinal -> fail open (include).
+        if ($sequence === null || $sequence < 1) {
+            return true;
+        }
+
+        return (($sequence - 1) % $multiplier) === 0;
+    }
+
     // Scopes
     public function scopeByProductType($query, $productTypeId)
     {

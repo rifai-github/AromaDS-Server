@@ -498,7 +498,7 @@
                             <thead>
                                 <tr>
                                     <th data-column="productCategory.name">Product Category</th>
-                                    <th data-column="service_frequency_multiplier" data-type="numeric">Frequency</th>
+                                    <th data-column="service_frequency_multiplier" data-type="numeric" title="Interval penggantian material dalam jumlah service (bukan bulan). Contoh: 6 = diganti tiap 6 kali service. 0 = unit permanen, tidak pernah diganti.">Frequency <i class="fas fa-info-circle text-gray-400" style="font-size: 11px;"></i></th>
                                     <!-- <th data-column="quantity" data-type="numeric">Quantity</th> -->
                                     <th data-column="masterProduct.name">Product</th>
                                     <!-- <th>Package Size</th> -->
@@ -759,8 +759,9 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Frequency (times) <span class="text-red-500">*</span></label>
+                    <label class="form-label">Frequency (tiap N service) <span class="text-red-500">*</span></label>
                     <input type="number" class="form-input" id="service_frequency_multiplier" name="service_frequency_multiplier" value="1" required>
+                    <small class="text-gray-500">Material diganti tiap N kali service (bukan bulan). 0 = unit permanen (tidak pernah diganti).</small>
                 </div>
 
                 <!-- Quantity hidden field, default to 1 -->

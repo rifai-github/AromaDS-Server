@@ -1558,8 +1558,20 @@ class JobAssignMaterialIssueController extends Controller
                 
                 // Use rental_details (sinkron dengan UI Master Rental)
                 \Log::info("🔍 Debug Material Issue Show - Rental: '{$rental->rental_name}' memiliki {$rental->rentalDetails->count()} rental details");
-                
+
+                // XFreqService interval: only show materials due on this service (see
+                // RentalDetail::isDueAtServiceSequence). No-op unless the kill-switch is
+                // on and the rental has XFreqService configured.
+                $intervalJobSchedule = $jobAssignMaterialIssue->jobAssignSchedule->jobSchedule ?? null;
+                $serviceIntervalActive = $intervalJobSchedule
+                    && $intervalJobSchedule->serviceIntervalFilteringActive($rental->rentalDetails);
+                $serviceSequenceNumber = $serviceIntervalActive ? $intervalJobSchedule->getServiceSequenceNumber() : null;
+
                 foreach ($rental->rentalDetails as $detail) {
+                    if ($serviceIntervalActive && !$detail->isDueAtServiceSequence($serviceSequenceNumber)) {
+                        continue;
+                    }
+
                     $product = null;
                     $productCategoryName = $detail->productCategory->name ?? $detail->productType->name ?? null;
                     

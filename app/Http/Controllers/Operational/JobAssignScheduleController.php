@@ -1231,7 +1231,17 @@ class JobAssignScheduleController extends Controller
                                           ($detail->productType && ($detail->productType->is_unit == 1 || $detail->productType->is_unit === true));
                 }
                 
+                // XFreqService interval: for recurring service jobs, only include a
+                // material on the services where it is due (every Nth service). No-op
+                // unless the kill-switch is on and this rental has XFreqService set.
+                $serviceIntervalActive = $jobSchedule->serviceIntervalFilteringActive($rentalDetails);
+                $serviceSequenceNumber = $serviceIntervalActive ? $jobSchedule->getServiceSequenceNumber() : null;
+
                 foreach ($rentalDetails as $detail) {
+                    if ($serviceIntervalActive && !$detail->isDueAtServiceSequence($serviceSequenceNumber)) {
+                        continue;
+                    }
+
                     $product = null;
                     $productTypeName = $detail->productType->name ?? null;
                     $productTypeId = $detail->product_type_id;

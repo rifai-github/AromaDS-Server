@@ -984,6 +984,77 @@ class JobSchedule extends Model
         return $intervalDays;
     }
 
+    /**
+     * Types that occupy a slot in the rental's service timeline. Install counts
+     * as service #1 (all materials fresh at install per the XFreqService rule).
+     */
+    private const SERVICE_SEQUENCE_ANCHOR_TYPES = [
+        'install', 'install_free', 'service', 'service_first', 'service_routine',
+    ];
+
+    /** Recurring service types that the XFreqService interval spreads material across. */
+    private const RECURRING_SERVICE_TYPES = ['service', 'service_first', 'service_routine'];
+
+    private ?int $cachedServiceSequenceNumber = null;
+    private bool $serviceSequenceNumberResolved = false;
+
+    /**
+     * 1-based ordinal of this job within its contract's service timeline, counting
+     * install as #1. Used with RentalDetail::isDueAtServiceSequence() to decide which
+     * materials are due on this service. Computed dynamically (no stored column) so it
+     * works for existing contracts without a backfill. Returns null when not applicable.
+     */
+    public function getServiceSequenceNumber(): ?int
+    {
+        if ($this->serviceSequenceNumberResolved) {
+            return $this->cachedServiceSequenceNumber;
+        }
+        $this->serviceSequenceNumberResolved = true;
+
+        $date = $this->schedule_date ?? $this->expected_date;
+
+        if (!$this->contract_id
+            || !in_array($this->type, self::SERVICE_SEQUENCE_ANCHOR_TYPES, true)
+            || !$date) {
+            return $this->cachedServiceSequenceNumber = null;
+        }
+
+        // Count anchor jobs of the same contract up to and including this one,
+        // ordered by (schedule_date, id). Install = 1, first service = 2, ...
+        return $this->cachedServiceSequenceNumber = static::query()
+            ->where('contract_id', $this->contract_id)
+            ->whereIn('type', self::SERVICE_SEQUENCE_ANCHOR_TYPES)
+            ->where(function ($q) use ($date) {
+                $q->whereDate('schedule_date', '<', $date)
+                    ->orWhere(function ($q2) use ($date) {
+                        $q2->whereDate('schedule_date', $date)
+                            ->where('id', '<=', $this->id ?? PHP_INT_MAX);
+                    });
+            })
+            ->count();
+    }
+
+    /**
+     * Whether the XFreqService per-service material interval filter should be applied
+     * for this job against the given rental details. False (no filtering) unless the
+     * kill-switch is on, this is a recurring service job, and the rental actually has
+     * XFreqService configured (any detail with a multiplier >= 1) — so un-configured
+     * rentals keep their current full-BOM behaviour.
+     */
+    public function serviceIntervalFilteringActive($rentalDetails): bool
+    {
+        if (!config('aroma.xfreq_service_material_filter', false)) {
+            return false;
+        }
+
+        if (!in_array($this->type, self::RECURRING_SERVICE_TYPES, true)) {
+            return false;
+        }
+
+        return collect($rentalDetails)
+            ->contains(fn ($detail) => (int) ($detail->service_frequency_multiplier ?? 0) >= 1);
+    }
+
     public function generateNextServiceDates($months = 6)
     {
         if (!$this->service_interval_days || !$this->schedule_date) {
