@@ -84,22 +84,8 @@ class XFreqServiceIntervalTest extends TestCase
         $this->assertTrue($detail->isDueAtServiceSequence(null), 'unknown ordinal must fail open (include)');
     }
 
-    public function test_filtering_inactive_when_killswitch_off(): void
-    {
-        config(['aroma.xfreq_service_material_filter' => false]);
-
-        $job = new JobSchedule();
-        $job->type = 'service_routine';
-
-        $details = collect([$this->detail(6), $this->detail(0)]);
-
-        $this->assertFalse($job->serviceIntervalFilteringActive($details));
-    }
-
     public function test_filtering_inactive_for_non_service_job(): void
     {
-        config(['aroma.xfreq_service_material_filter' => true]);
-
         $job = new JobSchedule();
         $job->type = 'install';
 
@@ -110,8 +96,6 @@ class XFreqServiceIntervalTest extends TestCase
 
     public function test_filtering_inactive_when_rental_not_configured(): void
     {
-        config(['aroma.xfreq_service_material_filter' => true]);
-
         $job = new JobSchedule();
         $job->type = 'service_routine';
 
@@ -123,8 +107,6 @@ class XFreqServiceIntervalTest extends TestCase
 
     public function test_filtering_active_for_configured_service_job(): void
     {
-        config(['aroma.xfreq_service_material_filter' => true]);
-
         $job = new JobSchedule();
         $job->type = 'service_routine';
 

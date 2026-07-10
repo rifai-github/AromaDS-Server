@@ -1036,17 +1036,13 @@ class JobSchedule extends Model
 
     /**
      * Whether the XFreqService per-service material interval filter should be applied
-     * for this job against the given rental details. False (no filtering) unless the
-     * kill-switch is on, this is a recurring service job, and the rental actually has
-     * XFreqService configured (any detail with a multiplier >= 1) — so un-configured
-     * rentals keep their current full-BOM behaviour.
+     * for this job against the given rental details. False (no filtering) unless this is
+     * a recurring service job and the rental actually has XFreqService configured (any
+     * detail with a multiplier >= 1) — so un-configured rentals keep their current
+     * full-BOM behaviour.
      */
     public function serviceIntervalFilteringActive($rentalDetails): bool
     {
-        if (!config('aroma.xfreq_service_material_filter', false)) {
-            return false;
-        }
-
         if (!in_array($this->type, self::RECURRING_SERVICE_TYPES, true)) {
             return false;
         }
