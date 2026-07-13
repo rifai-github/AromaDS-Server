@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('title', 'Master Term of Payment')
-@section('breadcrumb', 'Home / System / Master Term of Payment')
+@section('breadcrumb', 'Home / Finance / Master Term of Payment')
 
 @section('content')
 <style>

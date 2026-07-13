@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('title', 'Company Virtual Accounts')
-@section('breadcrumb', 'Home / Company / Company Virtual Accounts')
+@section('breadcrumb', 'Home / Company / Company Virtual Account')
 
 @section('content')
 <style>

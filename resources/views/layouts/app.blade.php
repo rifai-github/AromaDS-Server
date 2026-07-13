@@ -1260,8 +1260,6 @@
                     'company.customer-contacts.*',
                     'company.customer-taxes.*',
                     'system.customer-types.*',
-                    'company.company-virtual-accounts.*',
-                    'system.salutations.*',
                     'operational.buildings.*', // Buildings moved to Marketing menu
                     'marketing.master-corporates.*' // Added Master Corporate
                 ];
@@ -1338,12 +1336,6 @@
                 @if(auth()->user()->canAccessMenuItem('marketing.customer-types'))
                 <li data-tooltip="Master Customer Category" class="{{ request()->routeIs('system.customer-types.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.customer-types.index') }}')">Master Customer Category</li>
                 @endif
-                @if(auth()->user()->canAccessMenuItem('company.company-virtual-accounts') || auth()->user()->canAccessMenuItem('marketing.company-virtual-accounts'))
-                <li data-tooltip="Company Virtual Account" class="{{ request()->routeIs('company.company-virtual-accounts.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('company.company-virtual-accounts.index') }}')">Company Virtual Account</li>
-                @endif
-                @if(auth()->user()->canAccessMenuItem('system.salutations'))
-                <li data-tooltip="Master Salutation" class="{{ request()->routeIs('system.salutations.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.salutations.index') }}')">Master Salutation</li>
-                @endif
                 @if(auth()->user()->canAccessMenuItem('operational.master-buildings') || auth()->user()->canAccessMenuItem('marketing.master-buildings'))
                 <li data-tooltip="Master Building" class="{{ request()->routeIs('operational.buildings.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('operational.buildings.index') }}')">Master Building</li>
                 @endif
@@ -1404,8 +1396,26 @@
             @endif
 
             <!-- Finance - Check by permission -->
-            @if(auth()->user()->canAccessModule('finance'))
-            <div class="menu-item has-submenu {{ request()->routeIs('finance.*') ? 'active' : '' }}" onclick="toggleSubmenu(this)">
+            @php
+                // Routes that are in Finance menu but use different route prefixes
+                $financeMenuRoutes = [
+                    'finance.*',
+                    'company.bank-payments.*', // Bank Payment moved to Finance menu
+                    'system.master-term-of-payments.*', // Master TOP moved to Finance menu
+                ];
+                $isFinanceMenuActive = false;
+                foreach ($financeMenuRoutes as $routePattern) {
+                    if (request()->routeIs($routePattern)) {
+                        $isFinanceMenuActive = true;
+                        break;
+                    }
+                }
+                $hasFinanceAccess = auth()->user()->canAccessModule('finance') ||
+                                    auth()->user()->canAccessMenuItem('company.bank-payments') ||
+                                    auth()->user()->canAccessMenuItem('system.master-term-of-payments');
+            @endphp
+            @if($hasFinanceAccess)
+            <div class="menu-item has-submenu {{ $isFinanceMenuActive ? 'active' : '' }}" onclick="toggleSubmenu(this)">
                 <div class="left">
                     <i class="fas fa-calculator"></i>
                     <span>Finance</span>
@@ -1413,12 +1423,17 @@
                 <i class="fas fa-chevron-down arrow"></i>
                 <div class="tooltip">Finance</div>
             </div>
-            <ul class="submenu {{ request()->routeIs('finance.*') ? 'show' : '' }}">
+            <ul class="submenu {{ $isFinanceMenuActive ? 'show' : '' }}">
                 @if(auth()->user()->canAccessMenuItem('finance.invoices'))
                 <li data-tooltip="Invoice" class="{{ request()->routeIs('finance.invoices.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('finance.invoices.index') }}')">Invoice</li>
                 @endif
                 @if(auth()->user()->canAccessMenuItem('finance.invoice-follow-ups'))
                 <li data-tooltip="Invoice - Follow Up" class="{{ request()->routeIs('finance.invoice-follow-ups.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('finance.invoice-follow-ups.index') }}')">Invoice - Follow Up</li>
+                @endif
+                @if(auth()->user()->canAccessMenuItem('company.bank-payments'))
+                    @unless(auth()->user()->hasRole('Marketing') && auth()->user()->position_name === 'Staff')
+                    <li data-tooltip="Bank Payment" class="{{ request()->routeIs('company.bank-payments.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('company.bank-payments.index') }}')">Bank Payment</li>
+                    @endunless
                 @endif
                 @if(auth()->user()->canAccessMenuItem('finance.bank-receipts'))
               <!--  <li data-tooltip="Bank Receipt" class="{{ request()->routeIs('finance.bank-receipts.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('finance.bank-receipts.index') }}')">Bank Receipt</li> -->
@@ -1443,6 +1458,9 @@
                 @endif
                 @if(auth()->user()->canAccessMenuItem('finance.tax-codes'))
                 <li data-tooltip="Kode Pajak" class="{{ request()->routeIs('finance.tax-codes.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('finance.tax-codes.index') }}')">Kode Pajak</li>
+                @endif
+                @if(auth()->user()->canAccessMenuItem('system.master-term-of-payments'))
+                <li data-tooltip="Master Term of Payment" class="{{ request()->routeIs('system.master-term-of-payments.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.master-term-of-payments.index') }}')">Master Term of Payment</li>
                 @endif
                 {{-- <li data-tooltip="Billing Groups" class="{{ request()->routeIs('finance.billing-groups.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('finance.billing-groups.index') }}')">Billing Groups</li> --}}
                 
@@ -1494,7 +1512,6 @@
             </div>
             <ul class="submenu {{ request()->routeIs('warehouse.*') ? 'show' : '' }}">
                 <!-- 1. MASTER DATA SETUP -->
-                <li class="menu-divider"></li>
                 @if(auth()->user()->canAccessMenuItem('warehouse.warehouses'))
                 <li data-tooltip="Warehouses" class="{{ request()->routeIs('warehouse.warehouses.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('warehouse.warehouses.index') }}')">Warehouses</li>
                 @endif
@@ -1570,21 +1587,26 @@
                 $companyMenuRoutes = [
                     'company.branches.*',
                     'company.master-banks.*',
-                    'company.bank-payments.*',
                     'company.master-price-slabs.*',
                     'company.companies.*',
+                    'company.company-virtual-accounts.*', // Company Virtual Account moved from Marketing menu
                     'system.positions.*', // Positions moved to Company menu
+                    'system.departments.*', // Departments moved from System menu
+                    'system.salutations.*', // Salutations moved from Marketing menu
                     'other.master-options.*' // Master Options moved to Company menu
                 ];
                 // Check if user has ANY of the specific Company menu items permissions
                 // Use strict check to prevent empty module if user only has "company.customers.*" (which is in Marketing)
                 $hasCompanyAccess = auth()->user()->canAccessMenuItem('company.branches') ||
                                    auth()->user()->canAccessMenuItem('company.master-banks') ||
-                                   auth()->user()->canAccessMenuItem('company.bank-payments') ||
                                    auth()->user()->canAccessMenuItem('company.master-price-slabs') ||
                                    auth()->user()->canAccessMenuItem('company.companies') ||
                                    auth()->user()->canAccessMenuItem('company.positions') ||
-                                   auth()->user()->canAccessMenuItem('company.master-options');
+                                   auth()->user()->canAccessMenuItem('company.master-options') ||
+                                   auth()->user()->canAccessMenuItem('system.departments') ||
+                                   auth()->user()->canAccessMenuItem('system.salutations') ||
+                                   auth()->user()->canAccessMenuItem('company.company-virtual-accounts') ||
+                                   auth()->user()->canAccessMenuItem('marketing.company-virtual-accounts');
                                    
                 $isCompanyMenuActive = false;
                 foreach ($companyMenuRoutes as $routePattern) {
@@ -1607,8 +1629,14 @@
                 @if(auth()->user()->canAccessMenuItem('company.branches'))
                 <li data-tooltip="Master Branch" class="{{ request()->routeIs('company.branches.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('company.branches.index') }}')">Master Branch</li>
                 @endif
+                @if(auth()->user()->canAccessMenuItem('system.departments'))
+                <li data-tooltip="Master Department" class="{{ request()->routeIs('system.departments.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.departments.index') }}')">Master Department</li>
+                @endif
                 @if(auth()->user()->canAccessMenuItem('company.positions'))
                 <li data-tooltip="Master Position" class="{{ request()->routeIs('system.positions.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.positions.index') }}')">Master Position</li>
+                @endif
+                @if(auth()->user()->canAccessMenuItem('system.salutations'))
+                <li data-tooltip="Master Salutation" class="{{ request()->routeIs('system.salutations.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.salutations.index') }}')">Master Salutation</li>
                 @endif
                 @if(auth()->user()->canAccessMenuItem('company.master-options'))
                 <li data-tooltip="Master Options" class="{{ request()->routeIs('other.master-options.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('other.master-options.index') }}')">Master Options</li>
@@ -1616,10 +1644,8 @@
                 @if(auth()->user()->canAccessMenuItem('company.master-banks'))
                 <li data-tooltip="Master Bank" class="{{ request()->routeIs('company.master-banks.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('company.master-banks.index') }}')">Master Bank</li>
                 @endif
-                @if(auth()->user()->canAccessMenuItem('company.bank-payments'))
-                    @unless(auth()->user()->hasRole('Marketing') && auth()->user()->position_name === 'Staff')
-                    <li data-tooltip="Bank Payment" class="{{ request()->routeIs('company.bank-payments.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('company.bank-payments.index') }}')">Bank Payment</li>
-                    @endunless
+                @if(auth()->user()->canAccessMenuItem('company.company-virtual-accounts') || auth()->user()->canAccessMenuItem('marketing.company-virtual-accounts'))
+                <li data-tooltip="Company Virtual Account" class="{{ request()->routeIs('company.company-virtual-accounts.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('company.company-virtual-accounts.index') }}')">Company Virtual Account</li>
                 @endif
                 @if(auth()->user()->canAccessMenuItem('company.master-price-slabs'))
                 <li data-tooltip="Master Price Slab" class="{{ request()->routeIs('company.master-price-slabs.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('company.master-price-slabs.index') }}')">Master Price Slab</li>
@@ -1632,7 +1658,31 @@
 
             <!-- System - Check by permission -->
             @if(auth()->user()->canAccessModule('system'))
-            <div class="menu-item has-submenu {{ request()->routeIs('system.*', 'audit-trails.*', 'access-control.*', 'settings.system.*') ? 'active' : '' }}" onclick="toggleSubmenu(this)">
+            @php
+                // Explicit list of routes shown in the System menu.
+                // Do NOT use a bare 'system.*' wildcard here: some system.* routes
+                // (customer-types, salutations in Marketing; positions in Company)
+                // are displayed under other menus and would expand two groups at once.
+                $systemMenuRoutes = [
+                    'system.users.*',
+                    'system.roles.*',
+                    'access-control.*',
+                    'system.provinces.*',
+                    'audit-trails.*',
+                    'system.backup-restore.*',
+                    'system.catalyst-import.*',
+                    'settings.system.*',
+                    'emergency-contacts.*',
+                ];
+                $isSystemMenuActive = false;
+                foreach ($systemMenuRoutes as $routePattern) {
+                    if (request()->routeIs($routePattern)) {
+                        $isSystemMenuActive = true;
+                        break;
+                    }
+                }
+            @endphp
+            <div class="menu-item has-submenu {{ $isSystemMenuActive ? 'active' : '' }}" onclick="toggleSubmenu(this)">
                 <div class="left">
                     <i class="fas fa-gear"></i>
                     <span>System</span>
@@ -1640,10 +1690,7 @@
                 <i class="fas fa-chevron-down arrow"></i>
                 <div class="tooltip">System</div>
             </div>
-            <ul class="submenu {{ request()->routeIs('system.*', 'audit-trails.*', 'access-control.*', 'emergency-contacts.*', 'settings.system.*') ? 'show' : '' }}">
-                @if(auth()->user()->canAccessMenuItem('system.departments'))
-                <li data-tooltip="Master Department" class="{{ request()->routeIs('system.departments.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.departments.index') }}')">Master Department</li>
-                @endif
+            <ul class="submenu {{ $isSystemMenuActive ? 'show' : '' }}">
                 @if(auth()->user()->canAccessMenuItem('system.users'))
                 <li data-tooltip="Master Users" class="{{ request()->routeIs('system.users.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.users.index') }}')">Master Users</li>
                 @endif
@@ -1656,9 +1703,6 @@
                 {{-- MOM10: Department Roles and Position Roles hidden - using Individual Role only --}}
                 {{-- <li data-tooltip="Department Roles" class="{{ request()->routeIs('system.department-roles.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.department-roles.index') }}')">Department Roles</li> --}}
                 {{-- <li data-tooltip="Position Roles" class="{{ request()->routeIs('system.position-roles.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.position-roles.index') }}')">Position Roles</li> --}}
-                @if(auth()->user()->canAccessMenuItem('system.master-term-of-payments'))
-                <li data-tooltip="Master Term of Payment" class="{{ request()->routeIs('system.master-term-of-payments.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.master-term-of-payments.index') }}')">Master Term of Payment</li>
-                @endif
                 @if(auth()->user()->canAccessMenuItem('system.provinces'))
                 <li data-tooltip="Master Location" class="{{ request()->routeIs('system.provinces.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.provinces.index') }}')">Master Location</li>
                 @endif

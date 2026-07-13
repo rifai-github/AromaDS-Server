@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('title', 'Customers - Company')
-@section('breadcrumb', 'Home / Company / Customers')
+@section('breadcrumb', 'Home / Marketing / Master Customer')
 
 @section('content')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>

@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('breadcrumb', 'Home / Company / Master Salutation / Create')
+
 @section('content')
 <div class="container-fluid">
     <div class="row">

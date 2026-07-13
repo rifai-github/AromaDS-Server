@@ -1,6 +1,7 @@
 @extends('layouts.app')
 
 @section('title', 'Customer Categories Management')
+@section('breadcrumb', 'Home / Marketing / Master Customer Category')
 
 @section('content')
 <style>

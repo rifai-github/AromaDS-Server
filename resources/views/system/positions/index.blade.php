@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('title', 'Master Position - System')
-@section('breadcrumb', 'Home / System / Master Position')
+@section('breadcrumb', 'Home / Company / Master Position')
 
 @section('content')
 <style>

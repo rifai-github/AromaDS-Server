@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('title', 'Bank Payments')
-@section('breadcrumb', 'Home / Company / Bank Payments')
+@section('breadcrumb', 'Home / Finance / Bank Payment')
 
 @section('content')
 <style>

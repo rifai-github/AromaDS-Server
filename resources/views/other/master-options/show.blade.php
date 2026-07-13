@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('title', 'Master Option Details')
-@section('breadcrumb', 'Home / Other / Master Options / Details')
+@section('breadcrumb', 'Home / Company / Master Options / Details')
 
 @section('content')
 <style>

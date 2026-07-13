@@ -1,6 +1,7 @@
 @extends('layouts.app')
 
 @section('title', 'Customer Category Details')
+@section('breadcrumb', 'Home / Marketing / Master Customer Category / Details')
 
 @section('content')
 <div class="container-fluid">

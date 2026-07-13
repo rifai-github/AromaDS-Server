@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('breadcrumb', 'Home / Company / Master Salutation')
+
 @section('content')
 <style>
     /* Global scroll control */

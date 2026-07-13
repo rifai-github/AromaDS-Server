@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('title', 'Master Department - System')
-@section('breadcrumb', 'Home / System / Master Department')
+@section('breadcrumb', 'Home / Company / Master Department')
 
 @php
 use App\Models\User;
