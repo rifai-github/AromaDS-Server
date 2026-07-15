@@ -92,6 +92,7 @@ class CatalystMasterDataImporter
     private ?array $sourceQuotationRentalRowsCache = null;
     private ?array $sourceQuotationPrimaryBuildingByNumber = null;
     private ?array $sourceQuotationOldContractByNumber = null;
+    private ?array $sourceBillingGroupsByCode = null;
     private array $targetCityLookup = [];
     private array $targetRentalServiceFrequencyLookup = [];
     private array $targetProductCategoryLookup = [];
@@ -2164,6 +2165,25 @@ class CatalystMasterDataImporter
         return $this->sourceQuotationOldContractByNumber = $lookup;
     }
 
+    protected function sourceBillingGroupsByCode(): array
+    {
+        if ($this->sourceBillingGroupsByCode !== null) {
+            return $this->sourceBillingGroupsByCode;
+        }
+
+        $lookup = [];
+        foreach ($this->source()->table('MsBillingGroup')->whereNotNull('BillingCode')->get() as $row) {
+            $code = $this->cleanString($row->BillingCode ?? null);
+            $key = $this->makeKey($code);
+
+            if ($key && !isset($lookup[$key])) {
+                $lookup[$key] = $row;
+            }
+        }
+
+        return $this->sourceBillingGroupsByCode = $lookup;
+    }
+
     protected function cachedTargetRecord(string $table, ?int $id): ?object
     {
         if (!$id) {
@@ -3330,7 +3350,9 @@ class CatalystMasterDataImporter
             }
         }
 
-        return $this->runRows('billing_groups', 'MKTContractDt_billing', array_values($grouped), function(array $item) {
+        $legacyBillingGroups = $this->sourceBillingGroupsByCode();
+
+        return $this->runRows('billing_groups', 'MKTContractDt_billing', array_values($grouped), function(array $item) use ($legacyBillingGroups) {
             $row = $item['row'];
             $contractNo = $this->cleanString($row['TransNmbr'] ?? null);
             $billingCode = $this->cleanString($row['BillingGroup'] ?? null);
@@ -3341,9 +3363,7 @@ class CatalystMasterDataImporter
             }
 
             $contract = DB::table('contracts')->where('id', $contractId)->first();
-            $legacyBilling = $billingCode
-                ? $this->source()->table('MsBillingGroup')->where('BillingCode', $billingCode)->first()
-                : null;
+            $legacyBilling = $billingCode ? ($legacyBillingGroups[$this->makeKey($billingCode)] ?? null) : null;
             $customer = $contract?->customer_id ? DB::table('customers')->where('id', $contract->customer_id)->first() : null;
             $taxPayload = $this->resolveBillingGroupTaxPayload($contract->customer_id ?? null, $row['NPWP'] ?? null, $legacyBilling);
 
