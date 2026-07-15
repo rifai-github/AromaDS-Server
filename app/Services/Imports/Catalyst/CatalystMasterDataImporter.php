@@ -90,6 +90,7 @@ class CatalystMasterDataImporter
     private array $sourceCustomerAddressLookup = [];
     private ?array $sourceQuotationHeadersByNumber = null;
     private ?array $sourceQuotationRentalRowsCache = null;
+    private ?array $sourceQuotationPrimaryBuildingByNumber = null;
     private array $targetCityLookup = [];
     private array $targetRentalServiceFrequencyLookup = [];
     private array $targetProductCategoryLookup = [];
@@ -2120,6 +2121,25 @@ class CatalystMasterDataImporter
             ->all();
     }
 
+    protected function sourceQuotationPrimaryBuildingByNumber(): array
+    {
+        if ($this->sourceQuotationPrimaryBuildingByNumber !== null) {
+            return $this->sourceQuotationPrimaryBuildingByNumber;
+        }
+
+        $lookup = [];
+        foreach ($this->sourceQuotationRentalRows() as $row) {
+            $number = $this->normalizeDocumentNumber($row->TransNmbr ?? null);
+            $building = $this->cleanString($row->Building ?? null);
+
+            if ($number && $building && !isset($lookup[$number])) {
+                $lookup[$number] = $building;
+            }
+        }
+
+        return $this->sourceQuotationPrimaryBuildingByNumber = $lookup;
+    }
+
     protected function cachedTargetRecord(string $table, ?int $id): ?object
     {
         if (!$id) {
@@ -2831,7 +2851,9 @@ class CatalystMasterDataImporter
     protected function quotations(): array
     {
         $headers = array_map(fn ($row) => (array) $row, array_values($this->sourceQuotationHeadersByNumber()));
-        return $this->runRows('quotations', 'MKTQuotationHd', $headers, function(array $row) {
+        $primaryBuildings = $this->sourceQuotationPrimaryBuildingByNumber();
+
+        return $this->runRows('quotations', 'MKTQuotationHd', $headers, function(array $row) use ($primaryBuildings) {
             $sqNo = $this->normalizeDocumentNumber($row['TransNmbr'] ?? null) ?? '';
             $custCode = $this->cleanString($row['Customer'] ?? null);
             if (!$sqNo || !$custCode) {
@@ -2846,10 +2868,7 @@ class CatalystMasterDataImporter
             $marketingId = $salesCode ? $this->findMappedTargetId('MsEmployee', $this->makeKey($salesCode), 'users') : null;
             $branchId = $this->findMappedTargetId('MsBranch', $this->makeKey($row['Branch'] ?? ''), 'branches');
             $customer = $this->cachedTargetRecord('customers', $customerId);
-            $primaryBuildingCode = $this->source()->table('MKTQuotationRental')
-                ->whereNotNull('Building')
-                ->get()
-                ->first(fn ($record) => $this->normalizeDocumentNumber($record->TransNmbr ?? null) === $sqNo)?->Building;
+            $primaryBuildingCode = $primaryBuildings[$sqNo] ?? null;
             $primarySurveyId = $primaryBuildingCode
                 ? $this->findMappedTargetId('MKTQuotationRental_survey', $this->quotationSurveySourceKey($sqNo, $this->cleanString($primaryBuildingCode) ?? ''), 'surveys')
                 : null;
