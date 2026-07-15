@@ -750,6 +750,17 @@ class CatalystMasterDataImporter
         });
     }
 
+    protected function normalizeNitkuBranchCode($value): ?string
+    {
+        $digits = preg_replace('/\\D/', '', (string) $this->cleanString($value));
+
+        if ($digits === '') {
+            return null;
+        }
+
+        return str_pad(substr($digits, -6), 6, '0', STR_PAD_LEFT);
+    }
+
     protected function customer_tax_settings(): array
     {
         return $this->runStep('customer_tax_settings', 'MsCustTaxAddress', 'CustCode', function (array $row) {
@@ -757,6 +768,8 @@ class CatalystMasterDataImporter
             $customerId = $this->findMappedTargetId('MsCustomer', $customerKey, 'customers');
             $sourceKey = $this->makeKey([$customerKey, $row['ItemNo'] ?? null, $row['CustTaxAddress'] ?? null]);
             $taxNumber = $this->cleanString($row['CustTaxNPWP'] ?? null);
+            $fullNitku = $this->cleanString($row['NITKU'] ?? null);
+            $nitkuBranchCode = $this->normalizeNitkuBranchCode($fullNitku);
 
             if (!$customerId || !$sourceKey) {
                 return $this->skippedRow('Customer tax setting could not resolve its customer.', $sourceKey);
@@ -775,7 +788,7 @@ class CatalystMasterDataImporter
                 'tax_address' => $this->cleanString($row['CustTaxAddress'] ?? null),
             ], [
                 'label' => ((int) ($row['ItemNo'] ?? 1)) === 1 ? 'Primary Tax' : 'Tax Address ' . (int) ($row['ItemNo'] ?? 1),
-                'nitku' => $this->cleanString($row['NITKU'] ?? null),
+                'nitku' => $nitkuBranchCode,
                 'tax_name' => $customerName,
                 'tax_type' => 'npwp',
                 'ppn_code' => $customerPpnCode,
@@ -783,7 +796,7 @@ class CatalystMasterDataImporter
                 'description' => $this->buildSourceDescription([
                     'ItemNo' => $row['ItemNo'] ?? null,
                     'CustTaxNIK' => $this->cleanString($row['CustTaxNIK'] ?? null),
-                    'NITKU' => $this->cleanString($row['NITKU'] ?? null),
+                    'NITKU' => $fullNitku,
                     'NPWPcortex' => $this->cleanString($row['NPWPcortex'] ?? null),
                 ]),
                 'status' => $this->yesNoToBool($row['FgActive'] ?? null, true) ? 'active' : 'inactive',
@@ -796,7 +809,7 @@ class CatalystMasterDataImporter
                     'npwp_address' => $this->cleanString($row['CustTaxAddress'] ?? null),
                     'npwp_registration_date' => $this->toDate($row['ExpectedPeriod'] ?? null),
                     'nik' => $this->cleanString($row['CustTaxNIK'] ?? null),
-                    'nitku' => $this->cleanString($row['NITKU'] ?? null),
+                    'nitku' => $fullNitku,
                     'updated_at' => now(),
                 ], fn ($value) => $value !== null)));
             }
