@@ -91,6 +91,7 @@ class CatalystMasterDataImporter
     private ?array $sourceQuotationHeadersByNumber = null;
     private ?array $sourceQuotationRentalRowsCache = null;
     private ?array $sourceQuotationPrimaryBuildingByNumber = null;
+    private ?array $sourceQuotationOldContractByNumber = null;
     private array $targetCityLookup = [];
     private array $targetRentalServiceFrequencyLookup = [];
     private array $targetProductCategoryLookup = [];
@@ -2140,6 +2141,29 @@ class CatalystMasterDataImporter
         return $this->sourceQuotationPrimaryBuildingByNumber = $lookup;
     }
 
+    protected function sourceQuotationOldContractByNumber(): array
+    {
+        if ($this->sourceQuotationOldContractByNumber !== null) {
+            return $this->sourceQuotationOldContractByNumber;
+        }
+
+        $lookup = [];
+        foreach ($this->sourceQuotationRentalRows() as $row) {
+            $number = $this->normalizeDocumentNumber($row->TransNmbr ?? null);
+            $oldContract = $this->cleanString($row->OldContractNo ?? null);
+
+            if (!$number || !$oldContract) {
+                continue;
+            }
+
+            if (!isset($lookup[$number]) || strcasecmp($oldContract, $lookup[$number]) < 0) {
+                $lookup[$number] = $oldContract;
+            }
+        }
+
+        return $this->sourceQuotationOldContractByNumber = $lookup;
+    }
+
     protected function cachedTargetRecord(string $table, ?int $id): ?object
     {
         if (!$id) {
@@ -2284,11 +2308,7 @@ class CatalystMasterDataImporter
 
     protected function resolveQuotationExistingContractId(string $quotationNumber): ?int
     {
-        $legacyContract = $this->source()->table('MKTQuotationRental')
-            ->where('TransNmbr', $quotationNumber)
-            ->whereNotNull('OldContractNo')
-            ->orderBy('OldContractNo')
-            ->value('OldContractNo');
+        $legacyContract = $this->sourceQuotationOldContractByNumber()[$quotationNumber] ?? null;
 
         if (!$legacyContract) {
             return null;
