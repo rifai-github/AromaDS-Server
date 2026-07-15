@@ -1327,6 +1327,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         })->name('dashboard');
         Route::get('backup-restore', [BackupRestoreController::class, 'index'])->name('backup-restore.index')->middleware('permission:system.backup-restore');
         Route::get('catalyst-import', [CatalystImportController::class, 'index'])->name('catalyst-import.index')->middleware('permission:system.backup-restore');
+        Route::get('catalyst-import/status', [CatalystImportController::class, 'status'])->name('catalyst-import.status')->middleware('permission:system.backup-restore');
         Route::post('catalyst-import/run', [CatalystImportController::class, 'run'])->name('catalyst-import.run')->middleware('permission:system.backup-restore.import');
         Route::get('backup-restore/template-all', [BackupRestoreController::class, 'downloadAllTemplates'])->name('backup-restore.template-all')->middleware('permission:system.backup-restore.template');
         Route::get('backup-restore/export-all', [BackupRestoreController::class, 'exportAll'])->name('backup-restore.export-all')->middleware('permission:system.backup-restore.export');

@@ -2,18 +2,58 @@
 
 namespace App\Services\System;
 
-use Symfony\Component\Process\Process;
 use InvalidArgumentException;
+use RuntimeException;
+use Symfony\Component\Process\Process;
 
 class CatalystImportConsoleService
 {
+    public function __construct(protected CatalystMigrationRunService $migrationRunService)
+    {
+    }
+
     public function actions(): array
     {
         return [
+            'check_source_connection' => [
+                'label' => 'Check Source Connection',
+                'description' => 'Verifikasi koneksi SQL Server Catalyst dan pastikan database source bisa dibaca dari server ini.',
+                'group' => 'migration',
+                'execution' => 'sync',
+                'commands' => [
+                    $this->artisanCommand(['catalyst:test-source-connection']),
+                ],
+            ],
+            'migration_full_dry_run' => [
+                'label' => 'Full Migration Dry Run',
+                'description' => 'Jalankan simulasi full import Catalyst di background tanpa menulis perubahan ke database target.',
+                'group' => 'migration',
+                'execution' => 'background',
+                'mode' => 'dry-run',
+            ],
+            'migration_full_apply' => [
+                'label' => 'Backup + Full Migration Apply',
+                'description' => 'Backup MySQL target dulu, lalu jalankan full import Catalyst di background. Wajib konfirmasi karena akan menulis data staging QA.',
+                'group' => 'migration',
+                'execution' => 'background',
+                'mode' => 'apply',
+                'requires_confirmation' => true,
+                'confirmation_value' => 'MIGRASI',
+            ],
+            'migration_audit_health' => [
+                'label' => 'Migration Audit Health',
+                'description' => 'Audit ringkasan hasil sinkronisasi Catalyst yang sudah masuk ke database target.',
+                'group' => 'migration',
+                'execution' => 'sync',
+                'commands' => [
+                    $this->artisanCommand(['catalyst:audit-sync-health']),
+                ],
+            ],
             'bootstrap_fresh_database' => [
                 'label' => 'Bootstrap Fresh Database',
                 'description' => 'One-command flow untuk DB kosong: import core, sync warehouse/rental, import users, lalu audit akhir.',
                 'group' => 'warehouse',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand(['catalyst:bootstrap-fresh']),
                 ],
@@ -22,6 +62,7 @@ class CatalystImportConsoleService
                 'label' => 'Dry Run Warehouse Core',
                 'description' => 'Simulasikan import master warehouse utama: product categories, product types, warehouses, master products, rentals, rental components, dan rental details.',
                 'group' => 'warehouse',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand([
                         'catalyst:import-masters',
@@ -41,6 +82,7 @@ class CatalystImportConsoleService
                 'label' => 'Apply Warehouse Core',
                 'description' => 'Tulis import master warehouse utama ke schema KGI tanpa menyentuh role system.',
                 'group' => 'warehouse',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand([
                         'catalyst:import-masters',
@@ -61,6 +103,7 @@ class CatalystImportConsoleService
                 'label' => 'Warehouse Full Refresh',
                 'description' => 'Jalankan apply warehouse core lalu sinkronisasi relasi warehouse, product category/brand, dan rental details dalam satu flow.',
                 'group' => 'warehouse',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand([
                         'catalyst:import-masters',
@@ -94,6 +137,7 @@ class CatalystImportConsoleService
                 'label' => 'Dry Run System Core',
                 'description' => 'Simulasikan import branch dan department dari Catalyst. Role sengaja tidak ikut dari source.',
                 'group' => 'system',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand([
                         'catalyst:import-masters',
@@ -106,6 +150,7 @@ class CatalystImportConsoleService
                 'label' => 'Apply System Core',
                 'description' => 'Import branch dan department ke system master lokal. Role tetap mengikuti system KGI.',
                 'group' => 'system',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand([
                         'catalyst:import-masters',
@@ -119,6 +164,7 @@ class CatalystImportConsoleService
                 'label' => 'System Users Refresh',
                 'description' => 'Export user dari PinkAds lalu import ke users lokal beserta branch_id, department_id, dan pivot branch_user.',
                 'group' => 'system',
+                'execution' => 'sync',
                 'commands' => [
                     ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_users.ps1')],
                     $this->artisanCommand(['catalyst:import-users-export', '--apply']),
@@ -128,6 +174,7 @@ class CatalystImportConsoleService
                 'label' => 'Customer Completeness Refresh',
                 'description' => 'Export PIC customer dan alamat invoice dari PinkAds lalu sinkronkan customer contacts, Multi PIC, assigned_to, serta district/subdistrict customer.',
                 'group' => 'system',
+                'execution' => 'sync',
                 'commands' => [
                     ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_customer_completeness.ps1')],
                     $this->artisanCommand([
@@ -142,6 +189,7 @@ class CatalystImportConsoleService
                 'label' => 'Customer Payment Defaults Refresh',
                 'description' => 'Export MsPayType dan PaymentTo customer dari PinkAds lalu sinkronkan bank payments source-driven dan default bank payment customer.',
                 'group' => 'system',
+                'execution' => 'sync',
                 'commands' => [
                     ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_payment_defaults.ps1')],
                     $this->artisanCommand([
@@ -156,6 +204,7 @@ class CatalystImportConsoleService
                 'label' => 'Dry Run Customer Payment Defaults',
                 'description' => 'Simulasikan mapping MsPayType ke bank payments dan PaymentTo customer ke default bank payment tanpa menulis ke DB.',
                 'group' => 'system',
+                'execution' => 'sync',
                 'commands' => [
                     ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_payment_defaults.ps1')],
                     $this->artisanCommand([
@@ -169,6 +218,7 @@ class CatalystImportConsoleService
                 'label' => 'Dry Run Customer Completeness',
                 'description' => 'Simulasikan sinkronisasi PIC customer dan alamat invoice dari export Catalyst tanpa menulis ke DB lokal.',
                 'group' => 'system',
+                'execution' => 'sync',
                 'commands' => [
                     ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_customer_completeness.ps1')],
                     $this->artisanCommand([
@@ -182,6 +232,7 @@ class CatalystImportConsoleService
                 'label' => 'Export Users',
                 'description' => 'Export data user, branch assignment, dan department assignment dari PinkAds ke CSV lokal.',
                 'group' => 'users',
+                'execution' => 'sync',
                 'commands' => [
                     ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_users.ps1')],
                 ],
@@ -190,6 +241,7 @@ class CatalystImportConsoleService
                 'label' => 'Dry Run User Import',
                 'description' => 'Simulasikan import user Catalyst dari CSV export tanpa menulis ke tabel users.',
                 'group' => 'users',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand(['catalyst:import-users-export']),
                 ],
@@ -198,6 +250,7 @@ class CatalystImportConsoleService
                 'label' => 'Apply User Import',
                 'description' => 'Import user Catalyst dari CSV export dan sinkronkan branch_id, department_id, serta pivot branch_user.',
                 'group' => 'users',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand(['catalyst:import-users-export', '--apply']),
                 ],
@@ -206,6 +259,7 @@ class CatalystImportConsoleService
                 'label' => 'Export Product-Warehouse Links',
                 'description' => 'Ambil mapping ProductCode ke Warehouse dari SQL Server staging ke CSV lokal.',
                 'group' => 'post_import',
+                'execution' => 'sync',
                 'commands' => [
                     ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_product_warehouse_links.ps1')],
                 ],
@@ -214,6 +268,7 @@ class CatalystImportConsoleService
                 'label' => 'Backfill Product Warehouses',
                 'description' => 'Bentuk relasi produk ke warehouse tanpa memindahkan stok ke master product.',
                 'group' => 'post_import',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand([
                         'catalyst:backfill-product-warehouses',
@@ -225,6 +280,7 @@ class CatalystImportConsoleService
                 'label' => 'Backfill Product Relations',
                 'description' => 'Rapikan product category dan brand/variant ber-confidence tinggi untuk produk impor.',
                 'group' => 'post_import',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand(['catalyst:backfill-product-relations']),
                 ],
@@ -233,6 +289,7 @@ class CatalystImportConsoleService
                 'label' => 'Backfill Rental Details',
                 'description' => 'Lengkapi rental details dan service frequency untuk master rental hasil import.',
                 'group' => 'post_import',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand(['catalyst:backfill-rental-details']),
                 ],
@@ -241,6 +298,7 @@ class CatalystImportConsoleService
                 'label' => 'Run Post-Import Sync',
                 'description' => 'Jalankan export warehouse link, export rental material exact, backfill warehouse, product relations, dan rental details sekaligus.',
                 'group' => 'tools',
+                'execution' => 'sync',
                 'commands' => [
                     ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_product_warehouse_links.ps1')],
                     ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_rental_materials.ps1')],
@@ -261,6 +319,7 @@ class CatalystImportConsoleService
                 'label' => 'Normalize Rental Detail Duplicates',
                 'description' => 'Gabungkan row rental detail impor Catalyst yang dobel secara teknis agar satu component tidak muncul berkali-kali.',
                 'group' => 'tools',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand(['catalyst:normalize-rental-detail-duplicates']),
                 ],
@@ -269,6 +328,7 @@ class CatalystImportConsoleService
                 'label' => 'Export Rental Materials',
                 'description' => 'Export exact material options per rental/component dari MsRentalBOMDt ke CSV lokal.',
                 'group' => 'tools',
+                'execution' => 'sync',
                 'commands' => [
                     ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_rental_materials.ps1')],
                 ],
@@ -277,6 +337,7 @@ class CatalystImportConsoleService
                 'label' => 'Backfill Rental Material Options',
                 'description' => 'Isi exact material options ke rental detail dari export MsRentalBOMDt tanpa menebak-nebak product default.',
                 'group' => 'tools',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand([
                         'catalyst:backfill-rental-material-options',
@@ -288,6 +349,7 @@ class CatalystImportConsoleService
                 'label' => 'Audit Sync Health',
                 'description' => 'Lihat ringkasan kesehatan modul warehouse dan system setelah import berjalan.',
                 'group' => 'tools',
+                'execution' => 'sync',
                 'commands' => [
                     $this->artisanCommand(['catalyst:audit-sync-health']),
                 ],
@@ -303,14 +365,52 @@ class CatalystImportConsoleService
             ->all();
     }
 
-    public function run(string $action): array
+    public function definition(string $action): array
     {
-        $actions = $this->actions();
-        if (!isset($actions[$action])) {
+        $definition = $this->actions()[$action] ?? null;
+
+        if (!$definition) {
             throw new InvalidArgumentException('Unsupported Catalyst import action [' . $action . '].');
         }
 
-        $definition = $actions[$action];
+        return $definition;
+    }
+
+    public function isBackgroundAction(string $action): bool
+    {
+        return ($this->definition($action)['execution'] ?? 'sync') === 'background';
+    }
+
+    public function launchBackground(string $action, ?int $requestedBy = null): array
+    {
+        $definition = $this->definition($action);
+
+        if (($definition['execution'] ?? 'sync') !== 'background') {
+            throw new InvalidArgumentException('Action [' . $action . '] bukan background action.');
+        }
+
+        $logDirectory = storage_path('logs/catalyst');
+        if (!is_dir($logDirectory) && !mkdir($logDirectory, 0775, true) && !is_dir($logDirectory)) {
+            throw new RuntimeException('Folder log Catalyst tidak bisa dibuat: ' . $logDirectory);
+        }
+
+        $run = $this->migrationRunService->createPendingRun($action, $definition, $requestedBy);
+        $logPath = $logDirectory . DIRECTORY_SEPARATOR . 'run-' . $run->id . '.log';
+        $pid = $this->startDetachedRun((int) $run->id, $logPath);
+
+        $this->migrationRunService->markSpawned((int) $run->id, $pid, $logPath);
+
+        return [
+            'run_id' => (int) $run->id,
+            'pid' => $pid,
+            'label' => $definition['label'],
+            'log_path' => $logPath,
+        ];
+    }
+
+    public function run(string $action): array
+    {
+        $definition = $this->definition($action);
         $startedAt = microtime(true);
         $segments = [];
         $success = true;
@@ -363,6 +463,47 @@ class CatalystImportConsoleService
     protected function artisanCommand(array $arguments): array
     {
         return array_merge([PHP_BINARY, 'artisan'], $arguments);
+    }
+
+    protected function startDetachedRun(int $runId, string $logPath): ?int
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            $command = sprintf(
+                'cd /d %s && start "" /B %s artisan catalyst:run-action %d >> %s 2>&1',
+                escapeshellarg(base_path()),
+                escapeshellarg(PHP_BINARY),
+                $runId,
+                escapeshellarg($logPath)
+            );
+
+            $process = new Process(['cmd', '/C', $command], base_path());
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                throw new RuntimeException('Detached Catalyst migration gagal dijalankan di Windows.');
+            }
+
+            return null;
+        }
+
+        $command = sprintf(
+            'cd %s && nohup %s artisan catalyst:run-action %d >> %s 2>&1 & echo $!',
+            escapeshellarg(base_path()),
+            escapeshellarg(PHP_BINARY),
+            $runId,
+            escapeshellarg($logPath)
+        );
+
+        $process = new Process(['bash', '-lc', $command], base_path());
+        $process->run();
+
+        if (!$process->isSuccessful()) {
+            throw new RuntimeException(trim($process->getErrorOutput()) ?: 'Detached Catalyst migration gagal dijalankan.');
+        }
+
+        $pid = trim($process->getOutput());
+
+        return is_numeric($pid) ? (int) $pid : null;
     }
 
     protected function trimOutput(string $output, int $maxLines = 160): string

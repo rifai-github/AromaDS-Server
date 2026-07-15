@@ -71,6 +71,59 @@
         line-height: 1.7;
     }
 
+    .catalyst-active-run {
+        border: 1px solid #bfdbfe;
+        background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+        border-radius: 14px;
+        padding: 18px;
+        display: grid;
+        gap: 14px;
+    }
+
+    .catalyst-active-run-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+    }
+
+    .catalyst-active-run-title {
+        margin: 0;
+        font-size: 18px;
+        color: #0f172a;
+        font-weight: 700;
+    }
+
+    .catalyst-active-run-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+    }
+
+    .catalyst-mini-card {
+        border: 1px solid #dbeafe;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.88);
+        padding: 12px 14px;
+    }
+
+    .catalyst-mini-label {
+        color: #64748b;
+        font-size: 11px;
+        margin: 0 0 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .catalyst-mini-value {
+        margin: 0;
+        color: #0f172a;
+        font-size: 14px;
+        font-weight: 700;
+        word-break: break-word;
+    }
+
     .catalyst-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -139,6 +192,7 @@
         color: #0f172a;
         font-weight: 600;
         text-align: right;
+        word-break: break-word;
     }
 
     .catalyst-action-groups {
@@ -159,6 +213,11 @@
         background: #fff;
     }
 
+    .catalyst-action-card.is-disabled {
+        opacity: 0.62;
+        background: #f8fafc;
+    }
+
     .catalyst-action-card h3 {
         margin: 0 0 8px;
         font-size: 15px;
@@ -171,6 +230,55 @@
         color: #64748b;
         line-height: 1.6;
         min-height: 62px;
+    }
+
+    .catalyst-action-meta {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 0 0 12px;
+    }
+
+    .catalyst-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 5px 9px;
+        font-size: 11px;
+        font-weight: 700;
+        background: #eff6ff;
+        color: #1d4ed8;
+    }
+
+    .catalyst-chip.warning {
+        background: #fff7ed;
+        color: #c2410c;
+    }
+
+    .catalyst-confirm {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+
+    .catalyst-confirm label {
+        font-size: 12px;
+        font-weight: 700;
+        color: #92400e;
+    }
+
+    .catalyst-confirm input {
+        border: 1px solid #f59e0b;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+
+    .catalyst-confirm small {
+        color: #92400e;
+        font-size: 11px;
+        line-height: 1.5;
     }
 
     .catalyst-output {
@@ -240,14 +348,25 @@
     }
 </style>
 
+@php
+    $groupTitles = [
+        'migration' => 'Migration Actions',
+        'warehouse' => 'Warehouse Sync',
+        'system' => 'System Sync',
+        'users' => 'Users Import Tools',
+        'post_import' => 'Post-Import',
+        'tools' => 'Warehouse Tools',
+    ];
+@endphp
+
 <div class="catalyst-shell">
     <div class="catalyst-panel">
         <div class="catalyst-header">
             <div>
                 <h1 class="catalyst-title">Catalyst Import Console</h1>
                 <p class="catalyst-subtitle">
-                    Halaman operator untuk import master data dari database staging SQL Server `PinkAds` ke schema KGI.
-                    Restore `.bak` tetap dilakukan di SQL Server/SSMS, lalu sinkronisasi master dan relasi dijalankan dari sini.
+                    Halaman operator untuk import master data dan data transaksi dari SQL Server `PinkAds` ke schema KGI.
+                    Restore `.bak` tetap dilakukan di SQL Server/SSMS, lalu migrasi ke MySQL QA dijalankan dari sini.
                 </p>
             </div>
             <div class="catalyst-inline-actions">
@@ -257,18 +376,61 @@
         </div>
 
         <div class="catalyst-body">
-                <div class="catalyst-note">
-                Flow aman yang kita pakai sekarang:
-                restore `.bak` ke SQL Server `PinkAds` dulu, jalankan `Dry Run`, kalau hasilnya bersih baru `Apply Import`,
-                lalu lanjut `Post-Import Sync` untuk isi relasi warehouse, product relation, dan rental details.
+            <div class="catalyst-note">
+                Flow aman untuk migrasi besar sekarang:
+                restore `.bak` ke SQL Server `PinkAds` dulu,
+                jalankan `Check Source Connection`,
+                lanjut `Full Migration Dry Run`,
+                lalu kalau hasilnya aman jalankan `Backup + Full Migration Apply`.
+                Action migrasi besar berjalan di background supaya request web tidak timeout.
             </div>
 
             <div class="catalyst-note" style="border-color:#fde68a;background:#fffdf3;">
-                Prioritas migrasi saat ini:
-                `Warehouse` untuk master product, master rental, relasi warehouse, dan rental detail;
-                `System` untuk branch, department, dan user.
-                `Role` sengaja <strong>tidak</strong> diimport dari Catalyst dan tetap mengikuti konfigurasi role milik aplikasi KGI.
+                Role system tetap mengikuti konfigurasi aplikasi KGI.
+                Action `Backup + Full Migration Apply` otomatis membuat backup MySQL target sebelum import mulai,
+                dan satu waktu hanya satu migrasi background yang boleh berjalan.
             </div>
+
+            @if($activeRun)
+                <div class="catalyst-active-run" id="catalyst-active-run" data-status-url="{{ route('system.catalyst-import.status') }}" data-run-id="{{ $activeRun['id'] }}">
+                    <div class="catalyst-active-run-head">
+                        <div>
+                            <h2 class="catalyst-active-run-title">Run Aktif #<span id="active-run-id">{{ $activeRun['id'] }}</span> - <span id="active-run-label">{{ $activeRun['label'] }}</span></h2>
+                            <p class="catalyst-subtitle" style="margin-top:8px;">
+                                Halaman ini auto-refresh status setiap 15 detik selama migrasi berjalan.
+                            </p>
+                        </div>
+                        <span class="catalyst-status {{ strtolower($activeRun['status']) }}" id="active-run-status">{{ strtoupper($activeRun['status']) }}</span>
+                    </div>
+
+                    <div class="catalyst-active-run-meta">
+                        <div class="catalyst-mini-card">
+                            <p class="catalyst-mini-label">Step</p>
+                            <p class="catalyst-mini-value" id="active-run-step">{{ $activeRun['current_step'] ?: '-' }}</p>
+                        </div>
+                        <div class="catalyst-mini-card">
+                            <p class="catalyst-mini-label">Progress</p>
+                            <p class="catalyst-mini-value" id="active-run-progress">{{ $activeRun['progress_message'] ?: '-' }}</p>
+                        </div>
+                        <div class="catalyst-mini-card">
+                            <p class="catalyst-mini-label">Batch</p>
+                            <p class="catalyst-mini-value" id="active-run-batch">{{ $activeRun['batch_id'] ? '#' . $activeRun['batch_id'] : '-' }}</p>
+                        </div>
+                        <div class="catalyst-mini-card">
+                            <p class="catalyst-mini-label">Heartbeat</p>
+                            <p class="catalyst-mini-value" id="active-run-heartbeat">{{ $activeRun['last_heartbeat_at'] ?: '-' }}</p>
+                        </div>
+                        <div class="catalyst-mini-card">
+                            <p class="catalyst-mini-label">Backup</p>
+                            <p class="catalyst-mini-value" id="active-run-backup">{{ $activeRun['backup_path'] ?: '-' }}</p>
+                        </div>
+                        <div class="catalyst-mini-card">
+                            <p class="catalyst-mini-label">Log</p>
+                            <p class="catalyst-mini-value" id="active-run-log">{{ $activeRun['log_path'] ?: '-' }}</p>
+                        </div>
+                    </div>
+                </div>
+            @endif
 
             <div class="catalyst-grid">
                 <div class="catalyst-stat">
@@ -327,24 +489,49 @@
             <div class="catalyst-action-groups">
                 @foreach($actions as $groupKey => $groupActions)
                     <div class="catalyst-card">
-                        <h2 class="catalyst-card-title">
-                            {{
-                                $groupKey === 'warehouse' ? 'Warehouse Sync' :
-                                ($groupKey === 'system' ? 'System Sync' :
-                                ($groupKey === 'users' ? 'Users Import Tools' :
-                                ($groupKey === 'tools' ? 'Warehouse Tools' : 'Catalyst Actions')))
-                            }}
-                        </h2>
+                        <h2 class="catalyst-card-title">{{ $groupTitles[$groupKey] ?? 'Catalyst Actions' }}</h2>
                         <div class="catalyst-action-grid">
                             @foreach($groupActions as $action)
-                                <div class="catalyst-action-card">
+                                @php
+                                    $isBackgroundAction = ($action['execution'] ?? 'sync') === 'background';
+                                    $requiresConfirmation = (bool) ($action['requires_confirmation'] ?? false);
+                                    $disabled = $hasActiveRun && $isBackgroundAction;
+                                    $buttonClass = $isBackgroundAction || str_contains($action['key'], 'apply') || str_contains($action['key'], 'sync')
+                                        ? 'btn btn-primary'
+                                        : 'btn btn-secondary';
+                                @endphp
+
+                                <div class="catalyst-action-card {{ $disabled ? 'is-disabled' : '' }}">
                                     <h3>{{ $action['label'] }}</h3>
                                     <p>{{ $action['description'] }}</p>
+
+                                    <div class="catalyst-action-meta">
+                                        <span class="catalyst-chip">{{ $isBackgroundAction ? 'Background' : 'Sync Request' }}</span>
+                                        @if($requiresConfirmation)
+                                            <span class="catalyst-chip warning">Perlu Konfirmasi</span>
+                                        @endif
+                                    </div>
+
                                     <form method="POST" action="{{ route('system.catalyst-import.run') }}">
                                         @csrf
                                         <input type="hidden" name="action" value="{{ $action['key'] }}">
-                                        <button type="submit" class="btn {{ str_contains($action['key'], 'apply') || str_contains($action['key'], 'sync') ? 'btn-primary' : 'btn-secondary' }}">
-                                            {{ $action['label'] }}
+
+                                        @if($requiresConfirmation)
+                                            <div class="catalyst-confirm">
+                                                <label for="confirmation_{{ $action['key'] }}">Ketik {{ $action['confirmation_value'] ?? 'MIGRASI' }}</label>
+                                                <input
+                                                    id="confirmation_{{ $action['key'] }}"
+                                                    type="text"
+                                                    name="confirmation"
+                                                    placeholder="{{ $action['confirmation_value'] ?? 'MIGRASI' }}"
+                                                    {{ $disabled ? 'disabled' : '' }}
+                                                >
+                                                <small>Action ini akan membuat backup lalu apply migrasi ke database target staging QA.</small>
+                                            </div>
+                                        @endif
+
+                                        <button type="submit" class="{{ $buttonClass }}" {{ $disabled ? 'disabled' : '' }}>
+                                            {{ $disabled ? 'Menunggu Run Aktif Selesai' : $action['label'] }}
                                         </button>
                                     </form>
                                 </div>
@@ -366,6 +553,44 @@
                     <pre class="catalyst-output">{{ $commandResult['output'] ?? '' }}</pre>
                 </div>
             @endif
+
+            <div class="catalyst-card">
+                <h2 class="catalyst-card-title">Recent Migration Runs</h2>
+                <div class="catalyst-table-wrap">
+                    <table class="catalyst-table">
+                        <thead>
+                            <tr>
+                                <th>Run</th>
+                                <th>Action</th>
+                                <th>Status</th>
+                                <th>Batch</th>
+                                <th>Progress</th>
+                                <th>Backup</th>
+                                <th>Started</th>
+                                <th>Finished</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-runs-body">
+                            @forelse($recentRuns as $run)
+                                <tr>
+                                    <td>#{{ $run['id'] }}</td>
+                                    <td>{{ $run['label'] }}</td>
+                                    <td><span class="catalyst-status {{ strtolower($run['status']) }}">{{ strtoupper($run['status']) }}</span></td>
+                                    <td>{{ $run['batch_id'] ? '#' . $run['batch_id'] : '-' }}</td>
+                                    <td>{{ $run['progress_message'] ?: ($run['error_message'] ?: '-') }}</td>
+                                    <td>{{ $run['backup_path'] ?: '-' }}</td>
+                                    <td>{{ $run['started_at'] ?: '-' }}</td>
+                                    <td>{{ $run['finished_at'] ?: '-' }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="8" style="text-align: center; color: #64748b;">Belum ada migration run Catalyst yang tercatat.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
 
             <div class="catalyst-card">
                 <h2 class="catalyst-card-title">Recent Catalyst Batches</h2>
@@ -445,4 +670,76 @@
         </div>
     </div>
 </div>
+
+@if($activeRun)
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const container = document.getElementById('catalyst-active-run');
+            if (!container) {
+                return;
+            }
+
+            const statusUrl = container.dataset.statusUrl;
+            const initialRunId = Number(container.dataset.runId || '0');
+
+            const updateText = function (id, value) {
+                const node = document.getElementById(id);
+                if (node) {
+                    node.textContent = value || '-';
+                }
+            };
+
+            const updateStatusBadge = function (status) {
+                const node = document.getElementById('active-run-status');
+                if (!node) {
+                    return;
+                }
+
+                node.className = 'catalyst-status ' + String(status || 'pending').toLowerCase();
+                node.textContent = String(status || 'pending').toUpperCase();
+            };
+
+            const refresh = async function () {
+                try {
+                    const response = await fetch(statusUrl, {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json'
+                        }
+                    });
+
+                    if (!response.ok) {
+                        return;
+                    }
+
+                    const payload = await response.json();
+                    const activeRun = payload.active_run;
+
+                    if (!activeRun || Number(activeRun.id || 0) !== initialRunId) {
+                        window.location.reload();
+                        return;
+                    }
+
+                    updateStatusBadge(activeRun.status);
+                    updateText('active-run-id', activeRun.id ? String(activeRun.id) : '-');
+                    updateText('active-run-label', activeRun.label);
+                    updateText('active-run-step', activeRun.current_step);
+                    updateText('active-run-progress', activeRun.progress_message);
+                    updateText('active-run-batch', activeRun.batch_id ? '#' + activeRun.batch_id : '-');
+                    updateText('active-run-heartbeat', activeRun.last_heartbeat_at);
+                    updateText('active-run-backup', activeRun.backup_path);
+                    updateText('active-run-log', activeRun.log_path);
+
+                    if (String(activeRun.status).toLowerCase() !== 'running' && String(activeRun.status).toLowerCase() !== 'pending') {
+                        window.location.reload();
+                    }
+                } catch (error) {
+                    console.error('Catalyst status refresh failed', error);
+                }
+            };
+
+            setInterval(refresh, 15000);
+        });
+    </script>
+@endif
 @endsection
