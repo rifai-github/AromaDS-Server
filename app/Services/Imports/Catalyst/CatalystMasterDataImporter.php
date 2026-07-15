@@ -5,6 +5,7 @@ namespace App\Services\Imports\Catalyst;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -2459,6 +2460,11 @@ class CatalystMasterDataImporter
     // Depends: branches, departments (must already be imported)
     // =========================================================================
 
+    protected function newImportedUserPassword(): string
+    {
+        return Hash::make(Str::random(64));
+    }
+
     protected function users(): array
     {
         // Pre-load SAUsers keyed by EmpNumb for quick lookup
@@ -2637,9 +2643,7 @@ class CatalystMasterDataImporter
                 $bpjsDate = null; // sentinel date
             }
 
-            $result = $this->syncRecord('users', 'MsEmployee', $sourceKey, 'users', [
-                'nik' => $empNumb,
-            ], [
+            $userPayload = [
                 'name'             => $name,
                 'username'         => $username,
                 'email'            => $email,
@@ -2666,7 +2670,15 @@ class CatalystMasterDataImporter
                     'JobTitle'   => $this->cleanString($row['JobTitle'] ?? null),
                     'LoginUserId' => $this->cleanString($saUser['UserId'] ?? null),
                 ]),
-            ], $row);
+            ];
+
+            if ($this->apply && !$existingTargetUser) {
+                $userPayload['password'] = $this->newImportedUserPassword();
+            }
+
+            $result = $this->syncRecord('users', 'MsEmployee', $sourceKey, 'users', [
+                'nik' => $empNumb,
+            ], $userPayload, $row);
 
             if ($this->apply && ($result['target_id'] ?? 0) > 0 && Schema::hasTable('branch_user')) {
                 $branchIds = collect($assignedBranchCodes)
@@ -2706,13 +2718,6 @@ class CatalystMasterDataImporter
                         );
                     }
                 }
-            }
-
-            // Set password ONLY on fresh insert (never reset existing user passwords)
-            if ($this->apply && ($result['action'] ?? '') === 'inserted' && ($result['target_id'] ?? 0) > 0) {
-                DB::table('users')->where('id', $result['target_id'])->update([
-                    'password' => \Illuminate\Support\Facades\Hash::make('password123'),
-                ]);
             }
 
             return $result;
