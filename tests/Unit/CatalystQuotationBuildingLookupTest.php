@@ -37,6 +37,11 @@ class CatalystQuotationBuildingLookupTest extends TestCase
             {
                 return $this->sourceQuotationOldContractByNumber();
             }
+
+            public function normalizeDocument($value): ?string
+            {
+                return $this->normalizeDocumentNumber($value);
+            }
         };
 
         $expected = [
@@ -53,6 +58,7 @@ class CatalystQuotationBuildingLookupTest extends TestCase
         $this->assertSame($expected, $importer->primaryBuildings());
         $this->assertSame($expectedOldContracts, $importer->oldContracts());
         $this->assertSame($expectedOldContracts, $importer->oldContracts());
+        $this->assertSame('JKT-SQ/24-07/0154', $importer->normalizeDocument(' jkt-sq//24-07/0154 '));
         $this->assertSame(1, $importer->sourceLoads);
     }
 }

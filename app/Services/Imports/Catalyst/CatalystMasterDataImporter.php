@@ -1911,7 +1911,7 @@ class CatalystMasterDataImporter
         $value = preg_replace('/\s+/', ' ', (string) $value);
         $value = trim((string) $value);
 
-        return $value === '' ? null : $value;
+        return $value === '' ? null : Str::upper($value);
     }
 
     protected function normalizePhoneLike($value): ?string
