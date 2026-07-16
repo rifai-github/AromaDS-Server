@@ -238,14 +238,12 @@ class ContractController extends Controller
 
         $marketingStaff = User::where('department_name', 'Marketing')->get();
 
-        $customers = Customer::all();
-        $quotations = Quotation::where('status', 'Approved')->get();
         $statuses = MasterOption::where('name', 'Contract Status')->first()?->optionDetails ?? collect();
         $types = MasterOption::where('name', 'Contract Type')->first()?->optionDetails ?? collect();
 
         $pagination = $contracts->toArray();
 
-        return view('marketing.contracts.index', compact('contracts', 'marketingStaff', 'customers', 'quotations', 'statuses', 'types', 'pagination'));
+        return view('marketing.contracts.index', compact('contracts', 'marketingStaff', 'statuses', 'types', 'pagination'));
     }
 
     public function create()
