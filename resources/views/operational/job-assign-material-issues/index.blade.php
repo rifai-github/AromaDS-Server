@@ -904,12 +904,11 @@
                 <!-- Filter Building Name -->
                 <div class="flex flex-col gap-1">
                     <label class="text-sm font-medium text-gray-700">Filter Nama Gedung:</label>
-                    <select id="filterBuildingName" name="building_name" class="px-3 py-1.5 border border-gray-300 rounded text-sm w-full" onchange="applyFilters()">
-                        <option value="">Semua Gedung</option>
-                        @foreach($buildings ?? [] as $building)
-                        <option value="{{ $building->nama_gedung }}" {{ request('building_name') == $building->nama_gedung ? 'selected' : '' }}>{{ $building->nama_gedung }}</option>
-                        @endforeach
-                    </select>
+                    <input type="text" id="filterBuildingName" name="building_name"
+                           class="px-3 py-1.5 border border-gray-300 rounded text-sm w-full"
+                           value="{{ request('building_name') }}"
+                           placeholder="Ketik nama gedung..."
+                           onkeydown="if (event.key === 'Enter') applyFilters()">
                 </div>
             </div>
         </div>

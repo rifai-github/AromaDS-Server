@@ -133,13 +133,11 @@ class JobAssignScheduleController extends Controller
         }
 
         $schedules = $query->orderBy('created_at', 'desc')->paginateStd(25);
-        $buildings = $this->getJobAssignScheduleBuildings();
         $teams = $this->getJobAssignScheduleTeams();
-        $customers = $this->getJobAssignScheduleCustomers();
         $jobSchedules = $this->getSchedulableJobSchedules();
         $statistics = $this->getJobAssignScheduleStatistics();
 
-        return view('operational.job-assign-schedules.index', compact('schedules', 'buildings', 'teams', 'customers', 'jobSchedules', 'statistics'));
+        return view('operational.job-assign-schedules.index', compact('schedules', 'teams', 'jobSchedules', 'statistics'));
     }
 
     /**
@@ -1921,9 +1919,7 @@ class JobAssignScheduleController extends Controller
     }
     private function getJobAssignScheduleBuildings()
     {
-        return Cache::remember('job-assign-schedules:buildings', now()->addMinutes(10), function () {
-            return Building::orderBy('nama_gedung')->get(['id', 'name', 'nama_gedung']);
-        });
+        return Building::orderBy('nama_gedung')->get(['id', 'name', 'nama_gedung']);
     }
 
     private function getJobAssignScheduleTeams(bool $forIndex = true)
