@@ -1546,11 +1546,11 @@ function showCompanyCodeModal(currentCode) {
                     </p>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal()">Batal</button>
-                <button type="submit" class="btn btn-primary">Perbarui Company Code</button>
-            </div>
         </form>
+    `;
+    document.getElementById('modalFooter').innerHTML = `
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Batal</button>
+        <button type="submit" form="setCompanyCodeForm" class="btn btn-primary">Perbarui Company Code</button>
     `;
     document.getElementById('modalOverlay').classList.add('show');
     
