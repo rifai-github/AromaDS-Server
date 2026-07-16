@@ -15,6 +15,8 @@ class CatalystImportConsoleServiceTest extends TestCase
         $apply = $service->definition('migration_full_apply');
         $dryRun = $service->definition('migration_full_dry_run');
         $check = $service->definition('check_source_connection');
+        $jobAdviceDryRun = $service->definition('dry_run_job_advices');
+        $jobAdviceApply = $service->definition('apply_job_advices');
 
         $this->assertSame('background', $apply['execution']);
         $this->assertTrue($apply['requires_confirmation']);
@@ -22,5 +24,9 @@ class CatalystImportConsoleServiceTest extends TestCase
 
         $this->assertSame('background', $dryRun['execution']);
         $this->assertSame('sync', $check['execution']);
+        $this->assertSame('sync', $jobAdviceDryRun['execution']);
+        $this->assertSame('sync', $jobAdviceApply['execution']);
+        $this->assertStringContainsString('--step=job_advices', implode(' ', $jobAdviceApply['commands'][0]));
+        $this->assertStringContainsString('--apply', implode(' ', $jobAdviceApply['commands'][0]));
     }
 }

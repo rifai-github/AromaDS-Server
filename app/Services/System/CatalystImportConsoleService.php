@@ -49,6 +49,33 @@ class CatalystImportConsoleService
                     $this->artisanCommand(['catalyst:audit-sync-health']),
                 ],
             ],
+            'dry_run_job_advices' => [
+                'label' => 'Dry Run Job Advice Import',
+                'description' => 'Simulasikan pembentukan Job Advice dan room dari Catalyst MKTContractJobOut tanpa menulis ke database target.',
+                'group' => 'migration',
+                'execution' => 'sync',
+                'commands' => [
+                    $this->artisanCommand([
+                        'catalyst:import-masters',
+                        '--step=job_advices',
+                        '--step=job_advice_rooms',
+                    ]),
+                ],
+            ],
+            'apply_job_advices' => [
+                'label' => 'Apply Job Advice Import',
+                'description' => 'Import Job Advice dan room dari Catalyst MKTContractJobOut berdasarkan contract mapping yang sudah ada.',
+                'group' => 'migration',
+                'execution' => 'sync',
+                'commands' => [
+                    $this->artisanCommand([
+                        'catalyst:import-masters',
+                        '--step=job_advices',
+                        '--step=job_advice_rooms',
+                        '--apply',
+                    ]),
+                ],
+            ],
             'bootstrap_fresh_database' => [
                 'label' => 'Bootstrap Fresh Database',
                 'description' => 'One-command flow untuk DB kosong: import core, sync warehouse/rental, import users, lalu audit akhir.',

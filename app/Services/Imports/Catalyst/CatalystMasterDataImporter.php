@@ -38,6 +38,8 @@ class CatalystMasterDataImporter
         'contract_buildings' => ['billing_groups', 'buildings'],
         'contract_rooms' => ['contracts', 'buildings'],
         'contract_rentals' => ['contracts', 'master_rentals'],
+        'job_advices' => ['contracts'],
+        'job_advice_rooms' => ['job_advices', 'contract_rooms', 'contract_rentals'],
     ];
 
     private array $steps = [
@@ -76,6 +78,8 @@ class CatalystMasterDataImporter
         'contract_buildings',  // depends on: billing_groups, buildings
         'contract_rooms',      // depends on: contracts, buildings
         'contract_rentals',    // depends on: contracts, master_rentals
+        'job_advices',         // depends on: contracts
+        'job_advice_rooms',    // depends on: job_advices, contract_rooms, contract_rentals
     ];
 
     private bool $apply = false;
@@ -3561,5 +3565,214 @@ class CatalystMasterDataImporter
                 'updated_by' => $this->actorId(),
             ], $row);
         });
+    }
+
+    protected function job_advices(): array
+    {
+        $rows = $this->source()->table('MKTContractJobOut')
+            ->whereNotNull('ContractNo')
+            ->orderBy('ContractNo')
+            ->get()
+            ->map(fn ($row) => (array) $row)
+            ->all();
+
+        $grouped = [];
+        foreach ($rows as $row) {
+            $contractNo = $this->normalizeDocumentNumber($row['ContractNo'] ?? null);
+            if ($contractNo && !isset($grouped[$contractNo])) {
+                $row['ContractNo'] = $contractNo;
+                $grouped[$contractNo] = $row;
+            }
+        }
+
+        return $this->runRows('job_advices', 'MKTContractJobOut', array_values($grouped), function (array $row) {
+            $contractNo = $this->normalizeDocumentNumber($row['ContractNo'] ?? null);
+            $sourceKey = $this->makeKey($contractNo);
+            if (!$contractNo || !$sourceKey) {
+                return $this->skippedRow('ContractNo missing.', $sourceKey);
+            }
+
+            $contractId = $this->findMappedTargetId('MKTContractHd', $sourceKey, 'contracts');
+            if (!$contractId) {
+                return $this->failedRow('Contract mapping missing for Job Advice.', $sourceKey);
+            }
+
+            $contract = $this->cachedTargetRecord('contracts', $contractId);
+            if (!$contract) {
+                return $this->failedRow('Target contract missing for Job Advice.', $sourceKey);
+            }
+
+            return $this->syncRecord('job_advices', 'MKTContractJobOut', $sourceKey, 'job_advices', [
+                'job_advice_number' => $this->catalystJobAdviceNumber($contractNo),
+            ], $this->buildCatalystJobAdvicePayload($contract, $contractNo), $row);
+        });
+    }
+
+    protected function job_advice_rooms(): array
+    {
+        $contractRows = $this->source()->table('MKTContractJobOut')
+            ->whereNotNull('ContractNo')
+            ->orderBy('ContractNo')
+            ->get()
+            ->map(fn ($row) => (array) $row)
+            ->all();
+
+        $contractNumbers = [];
+        foreach ($contractRows as $row) {
+            $contractNo = $this->normalizeDocumentNumber($row['ContractNo'] ?? null);
+            if ($contractNo) {
+                $contractNumbers[$contractNo] = $contractNo;
+            }
+        }
+
+        $rows = [];
+        foreach (array_values($contractNumbers) as $contractNo) {
+            $contractId = $this->findMappedTargetId('MKTContractHd', $this->makeKey($contractNo), 'contracts');
+            $jobAdviceId = $this->findMappedTargetId('MKTContractJobOut', $this->makeKey($contractNo), 'job_advices');
+
+            if (!$contractId || !$jobAdviceId) {
+                $rows[] = [
+                    '__contract_no' => $contractNo,
+                    '__skip_reason' => 'Contract or Job Advice mapping missing.',
+                ];
+                continue;
+            }
+
+            $rentals = DB::table('contract_rentals')
+                ->where('contract_id', $contractId)
+                ->orderBy('id')
+                ->get();
+
+            if ($rentals->isEmpty()) {
+                $rows[] = [
+                    '__contract_no' => $contractNo,
+                    '__job_advice_id' => $jobAdviceId,
+                    '__skip_reason' => 'No contract rentals found for Job Advice room import.',
+                ];
+                continue;
+            }
+
+            foreach ($rentals as $contractRental) {
+                $rows[] = [
+                    '__contract_no' => $contractNo,
+                    '__contract_id' => $contractId,
+                    '__job_advice_id' => $jobAdviceId,
+                    '__contract_rental' => $contractRental,
+                ];
+            }
+        }
+
+        return $this->runRows('job_advice_rooms', 'MKTContractJobOut_room', $rows, function (array $row) {
+            $contractNo = $this->normalizeDocumentNumber($row['__contract_no'] ?? null);
+            $sourceKey = $this->makeKey([$contractNo, $row['__contract_rental']->id ?? null]);
+
+            if (!empty($row['__skip_reason'])) {
+                return $this->skippedRow($row['__skip_reason'], $sourceKey);
+            }
+
+            $jobAdviceId = (int) ($row['__job_advice_id'] ?? 0);
+            $contractRental = $row['__contract_rental'] ?? null;
+            if (!$jobAdviceId || !$contractRental) {
+                return $this->failedRow('Job Advice or contract rental missing for room import.', $sourceKey);
+            }
+
+            $contractRoom = $this->findContractRoomForRental($contractRental);
+
+            return $this->syncRecord('job_advice_rooms', 'MKTContractJobOut_room', $sourceKey, 'job_advice_rooms', [
+                'job_advice_id' => $jobAdviceId,
+                'contract_rental_id' => (int) $contractRental->id,
+            ], $this->buildCatalystJobAdviceRoomPayload($contractRental, $contractRoom), [
+                'contract_no' => $contractNo,
+                'contract_rental_id' => (int) $contractRental->id,
+            ]);
+        });
+    }
+
+    protected function catalystJobAdviceNumber(string $contractNo): string
+    {
+        return Str::limit('JA-CATALYST-' . $contractNo, 100, '');
+    }
+
+    protected function buildCatalystJobAdvicePayload(object $contract, string $contractNo): array
+    {
+        $customer = $this->cachedTargetRecord('customers', $contract->customer_id ?? null);
+        $actorId = $contract->marketing_id ?? $this->actorId();
+        $expectedDate = $contract->start_date ?? $contract->contract_date ?? null;
+
+        return [
+            'type' => 'install',
+            'reference_number' => $contract->contract_number ?? $contractNo,
+            'company_name' => $this->cleanString($customer->name ?? null),
+            'contract_id' => $contract->id ?? null,
+            'quotation_id' => $contract->quotation_id ?? null,
+            'customer_id' => $contract->customer_id ?? null,
+            'request_by' => $actorId,
+            'submitted_by' => $actorId,
+            'submitted_at' => now(),
+            'expected_date' => $expectedDate,
+            'first_service_date' => $contract->first_service_date ?? null,
+            'status' => 'approved',
+            'date_approval' => now(),
+            'approved_by' => $actorId,
+            'with_invoicing' => false,
+            'with_materials' => true,
+            'notes' => $this->buildSourceDescription([
+                'ImportedFrom' => 'Catalyst MKTContractJobOut',
+                'ContractNo' => $contractNo,
+            ]),
+            'created_by' => $actorId,
+            'updated_by' => $actorId,
+        ];
+    }
+
+    protected function buildCatalystJobAdviceRoomPayload(object $contractRental, ?object $contractRoom): array
+    {
+        $masterRental = $this->cachedTargetRecord('master_rentals', $contractRental->master_rental_id ?? null);
+        $masterRoom = $contractRoom?->room_id ? $this->cachedTargetRecord('master_rooms', (int) $contractRoom->room_id) : null;
+        $quantity = (int) max(1, ceil((float) ($contractRental->quantity ?? 0)));
+        $qtyFree = (int) max(0, ceil((float) ($contractRental->qty_free ?? 0)));
+
+        return [
+            'contract_room_id' => $contractRoom->id ?? null,
+            'rental_product_id' => $contractRental->master_rental_id ?? null,
+            'room_name' => $this->cleanString($masterRoom->room_name ?? null) ?: 'General',
+            'rental_name' => $this->cleanString($contractRental->rental_alias ?? null)
+                ?: $this->cleanString($masterRental->rental_name ?? null)
+                ?: 'Rental',
+            'quantity' => $quantity,
+            'qty_free' => $qtyFree,
+            'rental_specification_ml' => null,
+            'rental_has_installation' => true,
+            'rental_has_service' => true,
+            'status' => 'pending',
+            'is_trial' => false,
+            'unit_already_installed' => false,
+            'notes' => $this->buildSourceDescription([
+                'ImportedFrom' => 'Catalyst MKTContractJobOut',
+                'ContractRentalId' => $contractRental->id ?? null,
+            ]),
+            'created_by' => $this->actorId(),
+            'updated_by' => $this->actorId(),
+        ];
+    }
+
+    protected function findContractRoomForRental(object $contractRental): ?object
+    {
+        $query = DB::table('contract_rooms')
+            ->where('contract_id', $contractRental->contract_id);
+
+        if (!empty($contractRental->room_id)) {
+            $query->where('room_id', $contractRental->room_id);
+        }
+
+        $room = $query->orderBy('id')->first();
+        if ($room) {
+            return $room;
+        }
+
+        return DB::table('contract_rooms')
+            ->where('contract_id', $contractRental->contract_id)
+            ->orderBy('id')
+            ->first();
     }
 }
