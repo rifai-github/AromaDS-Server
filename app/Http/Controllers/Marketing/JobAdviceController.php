@@ -337,12 +337,6 @@ class JobAdviceController extends Controller
 
         $jobAdvices = $query->orderBy('created_at', 'desc')->paginateStd(25);
         
-        // MOM9: Load approved quotations for Install Free flow (for modal dropdown)
-        $quotations = \App\Models\Quotation::with('customer', 'prospect')
-            ->usable()
-            ->where('status', 'approved')
-            ->get();
-        
         // MOM9: Get selected quotation_id from URL if provided
         $selectedQuotationId = $request->get('quotation_id');
 
@@ -355,7 +349,7 @@ class JobAdviceController extends Controller
         $positions = $positionOption ? $positionOption->optionDetails()->where('is_active', true)->pluck('option_name') : collect();
 
         $pagination = $jobAdvices->toArray();
-        return view('marketing.job-advices.index', compact('jobAdvices', 'quotations', 'selectedQuotationId', 'salutations', 'positions', 'pagination'));
+        return view('marketing.job-advices.index', compact('jobAdvices', 'selectedQuotationId', 'salutations', 'positions', 'pagination'));
     }
 
     public function create(Request $request)

@@ -898,24 +898,9 @@
             </div>
 
             <div id="regenerateContractList" class="regenerate-contract-list">
-                @forelse($invoiceRegenerationContracts as $contract)
-                    @php
-                        $contractSearch = strtolower(($contract['contract_number'] ?? '') . ' ' . ($contract['customer_name'] ?? '') . ' ' . ($contract['payment_method'] ?? ''));
-                    @endphp
-                    <label class="regenerate-contract-option" data-search="{{ $contractSearch }}">
-                        <input type="checkbox" class="regenerate-contract-checkbox" value="{{ $contract['id'] }}">
-                        <span>
-                            <strong>{{ $contract['contract_number'] }}</strong>
-                            <span style="display: block; color: #6b7280; font-size: 12px;">
-                                {{ $contract['customer_name'] }} - {{ $contract['payment_method'] }}
-                            </span>
-                        </span>
-                    </label>
-                @empty
-                    <div style="padding: 18px; color: #6b7280;">
-                        Tidak ada contract active/current dengan job dan BA yang sudah selesai.
-                    </div>
-                @endforelse
+                <div style="padding: 18px; color: #6b7280;">
+                    Contract akan dimuat saat modal dibuka.
+                </div>
             </div>
 
             <div id="regenerateInvoiceResult" class="regenerate-contract-result"></div>
@@ -1024,12 +1009,15 @@ document.addEventListener('change', function(e) {
     }
 });
 
+let regenerateContractsLoaded = false;
+
 function openRegenerateMissingModal() {
     const result = document.getElementById('regenerateInvoiceResult');
     result.classList.remove('show');
     result.innerHTML = '';
     document.getElementById('regenerateMissingModalOverlay').classList.add('show');
     document.body.style.overflow = 'hidden';
+    loadRegenerateContracts();
 }
 
 function closeRegenerateMissingModal() {
@@ -1051,6 +1039,64 @@ function filterRegenerateContracts() {
     document.querySelectorAll('.regenerate-contract-option').forEach(option => {
         const searchableText = option.dataset.search || '';
         option.style.display = searchableText.includes(keyword) ? 'grid' : 'none';
+    });
+}
+
+function renderRegenerateContracts(contracts) {
+    const list = document.getElementById('regenerateContractList');
+
+    if (!Array.isArray(contracts) || contracts.length === 0) {
+        list.innerHTML = '<div style="padding: 18px; color: #6b7280;">Tidak ada contract active/current dengan job dan BA yang sudah selesai.</div>';
+        return;
+    }
+
+    list.innerHTML = contracts.map(contract => {
+        const contractNumber = escapeRegenerateHtml(contract.contract_number || '-');
+        const customerName = escapeRegenerateHtml(contract.customer_name || '-');
+        const paymentMethod = escapeRegenerateHtml(contract.payment_method || '-');
+        const search = `${contractNumber} ${customerName} ${paymentMethod}`.toLowerCase();
+
+        return `
+            <label class="regenerate-contract-option" data-search="${search}">
+                <input type="checkbox" class="regenerate-contract-checkbox" value="${contract.id}">
+                <span>
+                    <strong>${contractNumber}</strong>
+                    <span style="display: block; color: #6b7280; font-size: 12px;">
+                        ${customerName} - ${paymentMethod}
+                    </span>
+                </span>
+            </label>
+        `;
+    }).join('');
+}
+
+function loadRegenerateContracts() {
+    if (regenerateContractsLoaded) {
+        return;
+    }
+
+    const list = document.getElementById('regenerateContractList');
+    list.innerHTML = '<div style="padding: 18px; color: #6b7280;">Loading contract...</div>';
+
+    fetch("{{ route('finance.invoices.regeneration-contracts') }}", {
+        headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(async response => {
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.message || `HTTP error! status: ${response.status}`);
+        }
+        return data;
+    })
+    .then(data => {
+        renderRegenerateContracts(data.data || []);
+        regenerateContractsLoaded = true;
+    })
+    .catch(error => {
+        list.innerHTML = `<div style="padding: 18px; color: #dc2626;">Gagal load contract: ${escapeRegenerateHtml(error.message)}</div>`;
     });
 }
 

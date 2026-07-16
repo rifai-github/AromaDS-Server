@@ -164,17 +164,7 @@ class InvoiceController extends Controller
         $invoices = $query->orderBy('created_at', 'desc')->paginateStd(25);
 
         // Get filter options - optimized queries
-        $contracts = Contract::select('contract_number', 'customer_id')->with('customer:id,name')->get();
-        $invoiceRegenerationContracts = $this->getInvoiceRegenerationContracts()
-            ->map(function (Contract $contract) {
-                return [
-                    'id' => $contract->id,
-                    'contract_number' => $contract->contract_number,
-                    'customer_name' => $contract->customer?->name ?? '-',
-                    'payment_method' => $contract->quotation?->payment_method ?? $contract->quotation?->billing_methods ?? '-',
-                ];
-            })
-            ->values();
+        $invoiceRegenerationContracts = collect();
         $customers = Customer::select('id', 'name')->where('is_active', true)->get();
         $taxSettings = TaxSetting::active()->orderBy('name')->get();
         $defaultVatSetting = TaxSetting::getDefaultPpnSetting();
@@ -203,7 +193,7 @@ class InvoiceController extends Controller
         $statuses = ['draft', 'sent', 'paid', 'overdue', 'cancelled'];
         $paymentMethods = ['virtual_account', 'bank_transfer', 'cash'];
 
-        return view('finance.invoices.index', compact('invoices', 'contracts', 'invoiceRegenerationContracts', 'customers', 'taxSettings', 'defaultVatSetting', 'financeTaxCodeRules', 'statuses', 'paymentMethods'));
+        return view('finance.invoices.index', compact('invoices', 'invoiceRegenerationContracts', 'customers', 'taxSettings', 'defaultVatSetting', 'financeTaxCodeRules', 'statuses', 'paymentMethods'));
     }
 
     private function applyPrintStatusFilter($query, Request $request): void
@@ -257,6 +247,25 @@ class InvoiceController extends Controller
                 }
             })
             ->values();
+    }
+
+    public function getRegenerationContracts()
+    {
+        $contracts = $this->getInvoiceRegenerationContracts()
+            ->map(function (Contract $contract) {
+                return [
+                    'id' => $contract->id,
+                    'contract_number' => $contract->contract_number,
+                    'customer_name' => $contract->customer?->name ?? '-',
+                    'payment_method' => $contract->quotation?->payment_method ?? $contract->quotation?->billing_methods ?? '-',
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $contracts,
+        ]);
     }
 
     public function regenerateMissing(Request $request)

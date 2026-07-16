@@ -893,6 +893,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('invoices/bulk-send', [InvoiceController::class, 'bulkSend'])->name('invoices.bulk-send')->middleware('permission:finance.invoices.update');
         Route::post('invoices/auto-generate', [InvoiceController::class, 'autoGenerateInvoice'])->name('invoices.auto-generate')->middleware('permission:finance.invoices.create');
         Route::get('invoices/contracts-ready', [InvoiceController::class, 'getContractsReadyForInvoice'])->name('invoices.contracts-ready')->middleware('permission:finance.invoices.view');
+        Route::get('invoices/regeneration-contracts', [InvoiceController::class, 'getRegenerationContracts'])->name('invoices.regeneration-contracts')->middleware('permission:finance.invoices.view');
         Route::post('invoices/{invoice}/update-delivery', [InvoiceController::class, 'updateDeliveryInfo'])->name('invoices.update-delivery')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/cancel-faktur', [InvoiceController::class, 'cancelFakturPajak'])->name('invoices.cancel-faktur')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/upload', [InvoiceController::class, 'uploadFile'])->name('invoices.upload');
