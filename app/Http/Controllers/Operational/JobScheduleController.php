@@ -10151,7 +10151,18 @@ class JobScheduleController extends Controller
             $hasSubstitutedAroma = false;
 
             if ($rentalProduct->rentalDetails && $rentalProduct->rentalDetails->isNotEmpty()) {
+                // XFreqService interval: for recurring service jobs, only include a material
+                // on the services where it is due (every Nth service, per
+                // rental_details.service_frequency_multiplier). No-op unless the rental
+                // actually has XFreqService configured (see JobSchedule::serviceIntervalFilteringActive).
+                $serviceIntervalActive = $jobSchedule->serviceIntervalFilteringActive($rentalProduct->rentalDetails);
+                $serviceSequenceNumber = $serviceIntervalActive ? $jobSchedule->getServiceSequenceNumber() : null;
+
                 foreach ($rentalProduct->rentalDetails as $detail) {
+                    if ($serviceIntervalActive && !$detail->isDueAtServiceSequence($serviceSequenceNumber)) {
+                        continue;
+                    }
+
                     $product = $this->resolvePreferredRentalDetailProduct($detail, $rentalProduct, $detail->masterProduct);
                     $isAromaType = $this->isAromaRentalDetail($detail, $product);
 
