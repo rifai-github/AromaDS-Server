@@ -605,12 +605,8 @@ class JobScheduleController extends Controller
         }
 
         [
-            $buildings,
-            $job_advices,
-            $rooms,
             $technicians,
             $teams,
-            $contracts,
         ] = $this->getIndexFilterOptions();
 
         // Check permissions for dropdown actions
@@ -627,8 +623,7 @@ class JobScheduleController extends Controller
         $canAssignTeam = $canUseJobScheduleActions || $user->hasPermission('operational.job-schedules-assign-team.update');
 
         return view('operational.job-schedules.index', compact(
-            'jobSchedules', 'buildings', 'job_advices', 'rooms', 
-            'technicians', 'teams', 'contracts', 'viewMode',
+            'jobSchedules', 'technicians', 'teams', 'viewMode',
             'canSuspend', 'canDPF', 'canUnpostBA', 'canUnpostIssue', 
             'canUnassignTeam', 'canMaterialAssign', 'canUnassignMaterial', 
             'canPrint', 'canAssignTeam'
@@ -859,39 +854,18 @@ class JobScheduleController extends Controller
     private function getIndexFilterOptions(): array
     {
         return [
-            Cache::remember('job-schedules:filters:buildings:v1', now()->addMinutes(10), function () {
-                return Building::withoutGlobalScope('autoFilter')
-                    ->orderBy('nama_gedung')
-                    ->get();
-            }),
-            Cache::remember('job-schedules:filters:job-advices:v1', now()->addMinutes(5), function () {
-                return \App\Models\JobAdvice::withoutGlobalScope('autoFilter')
-                    ->with('customer')
-                    ->whereIn('status', ['approved', 'submitted'])
-                    ->get();
-            }),
-            Cache::remember('job-schedules:filters:rooms:v1', now()->addMinutes(10), function () {
-                return \App\Models\MasterRoom::withoutGlobalScope('autoFilter')
-                    ->orderBy('room_name')
-                    ->get();
-            }),
-            Cache::remember('job-schedules:filters:technicians:v1', now()->addMinutes(5), function () {
+            Cache::remember('job-schedules:filters:technicians:v2', now()->addMinutes(5), function () {
                 return User::withoutGlobalScope('autoFilter')
                     ->where('is_active', true)
                     ->where('roles', 'technician')
                     ->orderBy('name')
-                    ->get();
+                    ->get(['id', 'name']);
             }),
-            Cache::remember('job-schedules:filters:teams:v1', now()->addMinutes(5), function () {
+            Cache::remember('job-schedules:filters:teams:v2', now()->addMinutes(5), function () {
                 return Team::withoutGlobalScope('autoFilter')
                     ->where('active_status', true)
                     ->orderBy('team_name')
-                    ->get();
-            }),
-            Cache::remember('job-schedules:filters:contracts:v1', now()->addMinutes(10), function () {
-                return \App\Models\Contract::withoutGlobalScope('autoFilter')
-                    ->orderBy('contract_number')
-                    ->get();
+                    ->get(['id', 'team_name']);
             }),
         ];
     }
