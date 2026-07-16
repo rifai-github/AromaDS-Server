@@ -3118,12 +3118,14 @@ function executeSubmitIssue(materialIssueIds, forceContinue) {
             let errorMessage = data.message || 'Gagal submit material issue.';
             let errorsHtml = '';
             let warningsHtml = '';
+            const responseErrors = data.errors || data.data?.errors || [];
+            const responseWarnings = data.warnings || data.data?.warnings || [];
             
             // Show errors if any
-            if (data.errors && data.errors.length > 0) {
+            if (responseErrors.length > 0) {
                 // Convert \n to <br> for better HTML display
                 errorsHtml = '<div class="mt-3 p-3 bg-red-50 border border-red-200 rounded"><strong>Detail Error:</strong><ul class="mt-2 list-disc list-inside text-sm">' + 
-                    data.errors.map(e => {
+                    responseErrors.map(e => {
                         // Convert newlines to <br> and preserve formatting
                         let formattedError = e.replace(/\n/g, '<br>');
                         return `<li style="white-space: pre-wrap;">${formattedError}</li>`;
@@ -3132,9 +3134,9 @@ function executeSubmitIssue(materialIssueIds, forceContinue) {
             }
             
             // Show warnings if any
-            if (data.warnings && data.warnings.length > 0) {
+            if (responseWarnings.length > 0) {
                 warningsHtml = '<div class="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded"><strong>Warnings:</strong><ul class="mt-2 list-disc list-inside text-sm">' + 
-                    data.warnings.map(w => `<li>${w}</li>`).join('') + 
+                    responseWarnings.map(w => `<li>${w}</li>`).join('') +
                     '</ul></div>';
             }
             
@@ -3158,7 +3160,7 @@ function executeSubmitIssue(materialIssueIds, forceContinue) {
                 // Check if it's stock-related error for better title
                 let title = 'Gagal!';
                 let icon = 'error';
-                if (data.errors && data.errors.some(e => e.includes('Stock tidak cukup') || e.includes('stock'))) {
+                if (responseErrors.some(e => e.includes('Stock tidak cukup') || e.includes('stock'))) {
                     title = 'Stock Tidak Mencukupi!';
                     icon = 'warning';
                 }

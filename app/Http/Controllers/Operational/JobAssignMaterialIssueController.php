@@ -631,10 +631,12 @@ class JobAssignMaterialIssueController extends Controller
     {
         $roomName = strtolower(trim((string) ($item->room_name ?? '')));
         $rentalName = strtolower(trim((string) ($this->extractSavedItemRentalName($item->notes ?? null) ?? '')));
+        $componentId = $this->extractSavedItemComponentId($item->notes ?? null);
 
         return implode('|', [
             $roomName !== '' ? $roomName : '-',
             $rentalName !== '' ? $rentalName : '-',
+            $componentId ?: '-',
         ]);
     }
 

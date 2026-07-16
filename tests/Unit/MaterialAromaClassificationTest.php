@@ -230,6 +230,53 @@ class MaterialAromaClassificationTest extends TestCase
         $this->assertSame([], $errors);
     }
 
+    public function test_job_assign_material_issue_allows_different_material_families_for_different_components(): void
+    {
+        $controller = new JobAssignMaterialIssueController();
+        $method = (new ReflectionClass($controller))->getMethod('validateMaterialIssueItemsProductConsistency');
+        $method->setAccessible(true);
+
+        $fragrance = $this->product('Fragrance Lemongrass Mix 100 ml', 'REFLEMONGRASS100', 'REFILL', 'REFILL', 'Signature');
+        $fragrance->id = 41;
+
+        $cleaner = $this->product('All Purpose Cleaner 100 ml', 'REFAPCLEANER100', 'REFILL', 'REFILL');
+        $cleaner->id = 42;
+
+        $fragranceItem = $this->materialIssueItem('Ruang 1', 'Rental 3 x 1Bln', '35', $fragrance);
+        $fragranceItem->notes = 'Room: Ruang 1, Rental: Rental 3 x 1Bln, RentalDetailID: 35';
+        $cleanerItem = $this->materialIssueItem('Ruang 1', 'Rental 3 x 1Bln', '36', $cleaner);
+        $cleanerItem->notes = 'Room: Ruang 1, Rental: Rental 3 x 1Bln, RentalDetailID: 36';
+
+        $errors = $method->invoke($controller, collect([
+            $fragranceItem,
+            $cleanerItem,
+        ]), 'MI-TEST');
+
+        $this->assertSame([], $errors);
+    }
+
+    public function test_job_assign_material_issue_keeps_legacy_grouping_when_component_id_is_missing(): void
+    {
+        $controller = new JobAssignMaterialIssueController();
+        $method = (new ReflectionClass($controller))->getMethod('validateMaterialIssueItemsProductConsistency');
+        $method->setAccessible(true);
+
+        $lemongrass = $this->product('Fragrance Lemongrass Mix 100 ml', 'LEM-MIX-100', 'Aroma Refill', null);
+        $lemongrass->id = 51;
+
+        $coffee = $this->product('Fragrance Coffee Mix More 100 ml', 'COF-MIX-100', 'Aroma Refill', null);
+        $coffee->id = 52;
+
+        $firstItem = $this->materialIssueItem('Ruang VIP', 'ADS W300', 'unused', $lemongrass);
+        $firstItem->notes = 'Room: Ruang VIP, Rental: ADS W300';
+        $secondItem = $this->materialIssueItem('Ruang VIP', 'ADS W300', 'unused', $coffee, true);
+        $secondItem->notes = 'Room: Ruang VIP, Rental: ADS W300, [Copied]';
+
+        $errors = $method->invoke($controller, collect([$firstItem, $secondItem]), 'MI-TEST');
+
+        $this->assertNotEmpty($errors);
+    }
+
     public function test_job_schedule_uses_selected_material_list_product_when_detail_has_no_default_product(): void
     {
         $controller = new JobScheduleController();
