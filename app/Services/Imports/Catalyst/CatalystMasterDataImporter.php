@@ -38,8 +38,8 @@ class CatalystMasterDataImporter
         'contract_buildings' => ['billing_groups', 'buildings'],
         'contract_rooms' => ['contracts', 'buildings'],
         'contract_rentals' => ['contracts', 'master_rentals'],
-        'job_advices' => ['contracts'],
-        'job_advice_rooms' => ['job_advices', 'contract_rooms', 'contract_rentals'],
+        'job_advices' => ['contracts', 'quotations'],
+        'job_advice_rooms' => ['job_advices', 'contract_rooms', 'contract_rentals', 'quotation_rooms', 'quotation_rentals'],
     ];
 
     private array $steps = [
@@ -78,8 +78,8 @@ class CatalystMasterDataImporter
         'contract_buildings',  // depends on: billing_groups, buildings
         'contract_rooms',      // depends on: contracts, buildings
         'contract_rentals',    // depends on: contracts, master_rentals
-        'job_advices',         // depends on: contracts
-        'job_advice_rooms',    // depends on: job_advices, contract_rooms, contract_rentals
+        'job_advices',         // depends on: contracts, quotations
+        'job_advice_rooms',    // depends on: job_advices and contract/quotation rooms + rentals
     ];
 
     private bool $apply = false;
@@ -3592,19 +3592,23 @@ class CatalystMasterDataImporter
                 return $this->skippedRow('ContractNo missing.', $sourceKey);
             }
 
-            $contractId = $this->findMappedTargetId('MKTContractHd', $sourceKey, 'contracts');
-            if (!$contractId) {
-                return $this->failedRow('Contract mapping missing for Job Advice.', $sourceKey);
+            $source = $this->resolveCatalystJobAdviceSource($contractNo);
+            if (!$source) {
+                return $this->failedRow('Contract or quotation mapping missing for Job Advice.', $sourceKey);
             }
 
-            $contract = $this->cachedTargetRecord('contracts', $contractId);
-            if (!$contract) {
-                return $this->failedRow('Target contract missing for Job Advice.', $sourceKey);
+            $target = $this->cachedTargetRecord($source['target_table'], $source['target_id']);
+            if (!$target) {
+                return $this->failedRow('Target ' . $source['type'] . ' missing for Job Advice.', $sourceKey);
             }
+
+            $payload = $source['type'] === 'contract'
+                ? $this->buildCatalystJobAdvicePayload($target, $contractNo, $source['document_number'])
+                : $this->buildCatalystQuotationJobAdvicePayload($target, $contractNo, $source['document_number']);
 
             return $this->syncRecord('job_advices', 'MKTContractJobOut', $sourceKey, 'job_advices', [
                 'job_advice_number' => $this->catalystJobAdviceNumber($contractNo),
-            ], $this->buildCatalystJobAdvicePayload($contract, $contractNo), $row);
+            ], $payload, $row);
         });
     }
 
@@ -3627,19 +3631,22 @@ class CatalystMasterDataImporter
 
         $rows = [];
         foreach (array_values($contractNumbers) as $contractNo) {
-            $contractId = $this->findMappedTargetId('MKTContractHd', $this->makeKey($contractNo), 'contracts');
+            $source = $this->resolveCatalystJobAdviceSource($contractNo);
             $jobAdviceId = $this->findMappedTargetId('MKTContractJobOut', $this->makeKey($contractNo), 'job_advices');
 
-            if (!$contractId || !$jobAdviceId) {
+            if (!$source || !$jobAdviceId) {
                 $rows[] = [
                     '__contract_no' => $contractNo,
-                    '__skip_reason' => 'Contract or Job Advice mapping missing.',
+                    '__skip_reason' => 'Contract/quotation or Job Advice mapping missing.',
                 ];
                 continue;
             }
 
-            $rentals = DB::table('contract_rentals')
-                ->where('contract_id', $contractId)
+            $isContract = $source['type'] === 'contract';
+            $rentalTable = $isContract ? 'contract_rentals' : 'quotation_rentals';
+            $parentColumn = $isContract ? 'contract_id' : 'quotation_id';
+            $rentals = DB::table($rentalTable)
+                ->where($parentColumn, $source['target_id'])
                 ->orderBy('id')
                 ->get();
 
@@ -3647,45 +3654,114 @@ class CatalystMasterDataImporter
                 $rows[] = [
                     '__contract_no' => $contractNo,
                     '__job_advice_id' => $jobAdviceId,
-                    '__skip_reason' => 'No contract rentals found for Job Advice room import.',
+                    '__skip_reason' => 'No ' . $source['type'] . ' rentals found for Job Advice room import.',
                 ];
                 continue;
             }
 
-            foreach ($rentals as $contractRental) {
+            foreach ($rentals as $rental) {
                 $rows[] = [
                     '__contract_no' => $contractNo,
-                    '__contract_id' => $contractId,
+                    '__source_type' => $source['type'],
                     '__job_advice_id' => $jobAdviceId,
-                    '__contract_rental' => $contractRental,
+                    '__rental' => $rental,
                 ];
             }
         }
 
         return $this->runRows('job_advice_rooms', 'MKTContractJobOut_room', $rows, function (array $row) {
             $contractNo = $this->normalizeDocumentNumber($row['__contract_no'] ?? null);
-            $sourceKey = $this->makeKey([$contractNo, $row['__contract_rental']->id ?? null]);
+            $sourceType = $row['__source_type'] ?? null;
+            $rental = $row['__rental'] ?? null;
+            // Preserve the source key shape used by the original contract-only importer.
+            // A Job Advice resolves to only one source type, so the type is not needed for uniqueness.
+            $sourceKey = $this->makeKey([$contractNo, $rental->id ?? null]);
 
             if (!empty($row['__skip_reason'])) {
                 return $this->skippedRow($row['__skip_reason'], $sourceKey);
             }
 
             $jobAdviceId = (int) ($row['__job_advice_id'] ?? 0);
-            $contractRental = $row['__contract_rental'] ?? null;
-            if (!$jobAdviceId || !$contractRental) {
-                return $this->failedRow('Job Advice or contract rental missing for room import.', $sourceKey);
+            if (!$jobAdviceId || !$rental || !in_array($sourceType, ['contract', 'quotation'], true)) {
+                return $this->failedRow('Job Advice or source rental missing for room import.', $sourceKey);
             }
 
-            $contractRoom = $this->findContractRoomForRental($contractRental);
+            if ($sourceType === 'contract') {
+                $contractRoom = $this->findContractRoomForRental($rental);
+                $match = [
+                    'job_advice_id' => $jobAdviceId,
+                    'contract_rental_id' => (int) $rental->id,
+                ];
+                $payload = $this->buildCatalystJobAdviceRoomPayload($rental, $contractRoom);
+            } else {
+                $quotationRoom = $this->findQuotationRoomForRental($rental);
+                $match = [
+                    'job_advice_id' => $jobAdviceId,
+                    'quotation_rental_id' => (int) $rental->id,
+                ];
+                $payload = $this->buildCatalystQuotationJobAdviceRoomPayload($rental, $quotationRoom);
+            }
 
-            return $this->syncRecord('job_advice_rooms', 'MKTContractJobOut_room', $sourceKey, 'job_advice_rooms', [
-                'job_advice_id' => $jobAdviceId,
-                'contract_rental_id' => (int) $contractRental->id,
-            ], $this->buildCatalystJobAdviceRoomPayload($contractRental, $contractRoom), [
+            return $this->syncRecord('job_advice_rooms', 'MKTContractJobOut_room', $sourceKey, 'job_advice_rooms', $match, $payload, [
                 'contract_no' => $contractNo,
-                'contract_rental_id' => (int) $contractRental->id,
+                'source_type' => $sourceType,
+                'source_rental_id' => (int) $rental->id,
             ]);
         });
+    }
+
+    protected function catalystJobAdviceDocumentCandidates(string $documentNumber): array
+    {
+        $original = $this->normalizeDocumentNumber($documentNumber);
+        if (!$original) {
+            return [];
+        }
+
+        $candidates = [$original];
+        $withoutTrailingDots = rtrim($original, ". \t\n\r\0\x0B");
+        if ($withoutTrailingDots !== '') {
+            $candidates[] = $withoutTrailingDots;
+        }
+
+        foreach (array_values(array_unique($candidates)) as $candidate) {
+            $withoutRevision = preg_replace('/\s*-\d+$/', '', $candidate);
+            if ($withoutRevision !== null && $withoutRevision !== '') {
+                $candidates[] = rtrim($withoutRevision);
+            }
+        }
+
+        return array_values(array_unique(array_filter($candidates)));
+    }
+
+    protected function resolveCatalystJobAdviceSource(string $documentNumber): ?array
+    {
+        $candidates = $this->catalystJobAdviceDocumentCandidates($documentNumber);
+
+        foreach ($candidates as $candidate) {
+            $targetId = $this->findMappedTargetId('MKTContractHd', $this->makeKey($candidate), 'contracts');
+            if ($targetId) {
+                return [
+                    'type' => 'contract',
+                    'target_table' => 'contracts',
+                    'target_id' => $targetId,
+                    'document_number' => $candidate,
+                ];
+            }
+        }
+
+        foreach ($candidates as $candidate) {
+            $targetId = $this->findMappedTargetId('MKTQuotationHd', $this->makeKey($candidate), 'quotations');
+            if ($targetId) {
+                return [
+                    'type' => 'quotation',
+                    'target_table' => 'quotations',
+                    'target_id' => $targetId,
+                    'document_number' => $candidate,
+                ];
+            }
+        }
+
+        return null;
     }
 
     protected function catalystJobAdviceNumber(string $contractNo): string
@@ -3693,7 +3769,7 @@ class CatalystMasterDataImporter
         return Str::limit('JA-CATALYST-' . $contractNo, 100, '');
     }
 
-    protected function buildCatalystJobAdvicePayload(object $contract, string $contractNo): array
+    protected function buildCatalystJobAdvicePayload(object $contract, string $contractNo, ?string $resolvedDocumentNumber = null): array
     {
         $customer = $this->cachedTargetRecord('customers', $contract->customer_id ?? null);
         $actorId = $contract->marketing_id ?? $this->actorId();
@@ -3719,6 +3795,42 @@ class CatalystMasterDataImporter
             'notes' => $this->buildSourceDescription([
                 'ImportedFrom' => 'Catalyst MKTContractJobOut',
                 'ContractNo' => $contractNo,
+                'ResolvedDocumentNumber' => $resolvedDocumentNumber ?: $contractNo,
+                'ResolvedSourceType' => 'contract',
+            ]),
+            'created_by' => $actorId,
+            'updated_by' => $actorId,
+        ];
+    }
+
+    protected function buildCatalystQuotationJobAdvicePayload(object $quotation, string $sourceDocumentNumber, ?string $resolvedDocumentNumber = null): array
+    {
+        $customer = $this->cachedTargetRecord('customers', $quotation->customer_id ?? null);
+        $actorId = $quotation->marketing_id ?? $this->actorId();
+
+        return [
+            'type' => 'install',
+            'reference_number' => $quotation->quotation_number ?? ($resolvedDocumentNumber ?: $sourceDocumentNumber),
+            'company_name' => $this->cleanString($quotation->company_name ?? null)
+                ?: $this->cleanString($customer->name ?? null),
+            'contract_id' => null,
+            'quotation_id' => $quotation->id ?? null,
+            'customer_id' => $quotation->customer_id ?? null,
+            'request_by' => $actorId,
+            'submitted_by' => $actorId,
+            'submitted_at' => now(),
+            'expected_date' => $quotation->quotation_date ?? null,
+            'first_service_date' => null,
+            'status' => 'approved',
+            'date_approval' => now(),
+            'approved_by' => $actorId,
+            'with_invoicing' => false,
+            'with_materials' => true,
+            'notes' => $this->buildSourceDescription([
+                'ImportedFrom' => 'Catalyst MKTContractJobOut',
+                'ContractNo' => $sourceDocumentNumber,
+                'ResolvedDocumentNumber' => $resolvedDocumentNumber ?: $sourceDocumentNumber,
+                'ResolvedSourceType' => 'quotation',
             ]),
             'created_by' => $actorId,
             'updated_by' => $actorId,
@@ -3756,6 +3868,42 @@ class CatalystMasterDataImporter
         ];
     }
 
+    protected function buildCatalystQuotationJobAdviceRoomPayload(object $quotationRental, ?object $quotationRoom): array
+    {
+        $masterRental = $this->cachedTargetRecord('master_rentals', $quotationRental->master_rental_id ?? null);
+        $masterRoom = $quotationRoom?->room_id ? $this->cachedTargetRecord('master_rooms', (int) $quotationRoom->room_id) : null;
+        $quantity = (int) max(1, ceil((float) ($quotationRental->quantity ?? 0)));
+        $qtyFree = (int) max(0, ceil((float) ($quotationRental->qty_free ?? 0)));
+
+        return [
+            'contract_room_id' => null,
+            'quotation_room_id' => $quotationRoom->id ?? null,
+            'contract_rental_id' => null,
+            'quotation_rental_id' => $quotationRental->id ?? null,
+            'rental_product_id' => $quotationRental->master_rental_id ?? null,
+            'room_name' => $this->cleanString($quotationRoom->room_name ?? null)
+                ?: $this->cleanString($masterRoom->room_name ?? null)
+                ?: 'General',
+            'rental_name' => $this->cleanString($quotationRental->aroma_name ?? null)
+                ?: $this->cleanString($masterRental->rental_name ?? null)
+                ?: 'Rental',
+            'quantity' => $quantity,
+            'qty_free' => $qtyFree,
+            'rental_specification_ml' => null,
+            'rental_has_installation' => true,
+            'rental_has_service' => true,
+            'status' => 'pending',
+            'is_trial' => false,
+            'unit_already_installed' => false,
+            'notes' => $this->buildSourceDescription([
+                'ImportedFrom' => 'Catalyst MKTContractJobOut',
+                'QuotationRentalId' => $quotationRental->id ?? null,
+            ]),
+            'created_by' => $this->actorId(),
+            'updated_by' => $this->actorId(),
+        ];
+    }
+
     protected function findContractRoomForRental(object $contractRental): ?object
     {
         $query = DB::table('contract_rooms')
@@ -3772,6 +3920,24 @@ class CatalystMasterDataImporter
 
         return DB::table('contract_rooms')
             ->where('contract_id', $contractRental->contract_id)
+            ->orderBy('id')
+            ->first();
+    }
+
+    protected function findQuotationRoomForRental(object $quotationRental): ?object
+    {
+        if (!empty($quotationRental->quotation_room_id)) {
+            $room = DB::table('quotation_rooms')
+                ->where('id', $quotationRental->quotation_room_id)
+                ->where('quotation_id', $quotationRental->quotation_id)
+                ->first();
+            if ($room) {
+                return $room;
+            }
+        }
+
+        return DB::table('quotation_rooms')
+            ->where('quotation_id', $quotationRental->quotation_id)
             ->orderBy('id')
             ->first();
     }

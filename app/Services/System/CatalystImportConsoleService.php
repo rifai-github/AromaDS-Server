@@ -64,7 +64,7 @@ class CatalystImportConsoleService
             ],
             'apply_job_advices' => [
                 'label' => 'Apply Job Advice Import',
-                'description' => 'Import Job Advice dan room dari Catalyst MKTContractJobOut berdasarkan contract mapping yang sudah ada.',
+                'description' => 'Import Job Advice dan room dari Catalyst MKTContractJobOut berdasarkan mapping contract atau quotation yang sudah ada.',
                 'group' => 'migration',
                 'execution' => 'sync',
                 'commands' => [
