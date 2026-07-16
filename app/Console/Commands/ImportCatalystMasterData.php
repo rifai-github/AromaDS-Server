@@ -10,6 +10,7 @@ class ImportCatalystMasterData extends Command
 {
     protected $signature = 'catalyst:import-masters
                             {--step=* : Limit import to one or more steps}
+                            {--exact-steps : Run only the requested steps without expanding dependencies}
                             {--apply : Persist changes to target tables}
                             {--batch-name= : Optional batch label}
                             {--chunk= : Override chunk size}
@@ -31,6 +32,7 @@ class ImportCatalystMasterData extends Command
                 requestedSteps: (array) $this->option('step'),
                 apply: (bool) $this->option('apply'),
                 batchName: $this->option('batch-name') ?: null,
+                exactSteps: (bool) $this->option('exact-steps'),
                 progressCallback: function (string $step, array $summary): void {
                     $stats = $summary['stats'] ?? [];
 

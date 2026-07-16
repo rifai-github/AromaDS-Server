@@ -27,6 +27,19 @@ class CatalystJobAdviceImportMappingTest extends TestCase
         $this->assertLessThan(array_search('job_advice_rooms', $steps, true), array_search('quotation_rentals', $steps, true));
     }
 
+    public function test_job_advice_steps_can_run_exactly_without_dependency_expansion(): void
+    {
+        $importer = $this->importer();
+
+        $steps = $importer->resolveRequestedSteps(['job_advice_rooms', 'job_advices'], false);
+
+        $this->assertSame(['job_advices', 'job_advice_rooms'], $steps);
+        $this->assertNotContains('contracts', $steps);
+        $this->assertNotContains('quotations', $steps);
+        $this->assertNotContains('quotation_rooms', $steps);
+        $this->assertNotContains('quotation_rentals', $steps);
+    }
+
     public function test_it_builds_stable_catalyst_job_advice_header_payload(): void
     {
         $importer = $this->importer();
@@ -184,9 +197,9 @@ class CatalystJobAdviceImportMappingTest extends TestCase
         {
             public array $mappedTargets = [];
 
-            public function resolveRequestedSteps(array $steps): array
+            public function resolveRequestedSteps(array $steps, bool $includeDependencies = true): array
             {
-                return $this->resolveSteps($steps);
+                return $this->resolveSteps($steps, $includeDependencies);
             }
 
             public function jobAdviceNumber(string $contractNo): string

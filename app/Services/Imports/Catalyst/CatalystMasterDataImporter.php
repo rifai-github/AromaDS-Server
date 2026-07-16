@@ -114,7 +114,7 @@ class CatalystMasterDataImporter
     private ?int $actorUserId = null;
     private ?int $defaultImportCompanyId = null;
 
-    public function run(array $requestedSteps = [], bool $apply = false, ?string $batchName = null, ?callable $progressCallback = null): array
+    public function run(array $requestedSteps = [], bool $apply = false, ?string $batchName = null, bool $exactSteps = false, ?callable $progressCallback = null): array
     {
         if (!extension_loaded('sqlsrv') && !extension_loaded('pdo_sqlsrv')) {
             throw new RuntimeException('PHP extension sqlsrv / pdo_sqlsrv belum aktif di CLI.');
@@ -125,7 +125,7 @@ class CatalystMasterDataImporter
         $this->heartbeatEvery = max(250, $this->chunkSize);
         $this->progressCallback = $progressCallback;
 
-        $steps = $this->resolveSteps($requestedSteps);
+        $steps = $this->resolveSteps($requestedSteps, ! $exactSteps);
         $this->source()->getPdo();
         $this->ensureImportMapIndexes();
         $this->loadSourceLookups();
@@ -139,7 +139,7 @@ class CatalystMasterDataImporter
             'mode' => $apply ? 'apply' : 'dry-run',
             'status' => 'running',
             'steps' => json_encode($steps),
-            'options' => json_encode(['chunk_size' => $this->chunkSize]),
+            'options' => json_encode(['chunk_size' => $this->chunkSize, 'exact_steps' => $exactSteps]),
             'started_at' => now(),
             'created_by' => $this->actorId(),
             'created_at' => now(),
@@ -1805,10 +1805,19 @@ class CatalystMasterDataImporter
             : (str_contains($value, 'ud') ? 'ud' : 'other'));
     }
 
-    protected function resolveSteps(array $requestedSteps): array
+    protected function resolveSteps(array $requestedSteps, bool $includeDependencies = true): array
     {
         if ($requestedSteps === []) {
             return $this->steps;
+        }
+
+        if (! $includeDependencies) {
+            $steps = array_values(array_intersect($this->steps, $requestedSteps));
+            if ($steps === []) {
+                throw new RuntimeException('No valid import steps were requested.');
+            }
+
+            return $steps;
         }
 
         $resolved = [];

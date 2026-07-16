@@ -27,7 +27,9 @@ class CatalystImportConsoleServiceTest extends TestCase
         $this->assertSame('sync', $jobAdviceDryRun['execution']);
         $this->assertSame('sync', $jobAdviceApply['execution']);
         $this->assertStringContainsString('contract atau quotation', $jobAdviceApply['description']);
+        $this->assertStringContainsString('--exact-steps', implode(' ', $jobAdviceDryRun['commands'][0]));
         $this->assertStringContainsString('--step=job_advices', implode(' ', $jobAdviceApply['commands'][0]));
+        $this->assertStringContainsString('--exact-steps', implode(' ', $jobAdviceApply['commands'][0]));
         $this->assertStringContainsString('--apply', implode(' ', $jobAdviceApply['commands'][0]));
     }
 }

@@ -51,7 +51,7 @@ class CatalystImportConsoleService
             ],
             'dry_run_job_advices' => [
                 'label' => 'Dry Run Job Advice Import',
-                'description' => 'Simulasikan pembentukan Job Advice dan room dari Catalyst MKTContractJobOut tanpa menulis ke database target.',
+                'description' => 'Simulasikan pembentukan Job Advice dan room dari Catalyst MKTContractJobOut tanpa menulis ke database target dan tanpa mengulang dependency import.',
                 'group' => 'migration',
                 'execution' => 'sync',
                 'commands' => [
@@ -59,12 +59,13 @@ class CatalystImportConsoleService
                         'catalyst:import-masters',
                         '--step=job_advices',
                         '--step=job_advice_rooms',
+                        '--exact-steps',
                     ]),
                 ],
             ],
             'apply_job_advices' => [
                 'label' => 'Apply Job Advice Import',
-                'description' => 'Import Job Advice dan room dari Catalyst MKTContractJobOut berdasarkan mapping contract atau quotation yang sudah ada.',
+                'description' => 'Import Job Advice dan room dari Catalyst MKTContractJobOut berdasarkan mapping contract atau quotation yang sudah ada tanpa mengulang dependency import.',
                 'group' => 'migration',
                 'execution' => 'sync',
                 'commands' => [
@@ -72,6 +73,7 @@ class CatalystImportConsoleService
                         'catalyst:import-masters',
                         '--step=job_advices',
                         '--step=job_advice_rooms',
+                        '--exact-steps',
                         '--apply',
                     ]),
                 ],
