@@ -1296,33 +1296,16 @@ class InventoryRequestController extends Controller
             return [collect(), null];
         }
 
-        $branches = $user->assignedBranches()
-            ->select('branches.id', 'branches.name', 'branches.code', 'branches.is_active')
-            ->where('branches.is_active', true)
+        // Semua branch aktif (termasuk Pusat) dapat dipilih, konsisten dengan
+        // filter branch di halaman index dan modul lain. Branch user tetap
+        // dipakai sebagai default terpilih.
+        $branches = Branch::select('id', 'name', 'code', 'is_active')
+            ->where('is_active', true)
             ->orderBy('name')
             ->get();
 
-        if ($branches->isEmpty() && $user->branch_id) {
-            $branches = Branch::where('id', $user->branch_id)
-                ->select('id', 'name', 'code', 'is_active')
-                ->where('is_active', true)
-                ->get();
-        } elseif ($user->branch_id && !$branches->contains('id', $user->branch_id)) {
-            $primaryBranch = Branch::where('id', $user->branch_id)
-                ->select('id', 'name', 'code', 'is_active')
-                ->where('is_active', true)
-                ->first();
-
-            if ($primaryBranch) {
-                $branches->prepend($primaryBranch);
-            }
-        }
-
-        $branches = $branches->unique('id')->values();
-
-        $primaryBranchId = $branches->first(function ($branch) use ($user) {
-            return $branch->id === $user->branch_id || (bool) optional($branch->pivot)->is_primary;
-        })?->id ?? $branches->first()?->id;
+        $primaryBranchId = $branches->firstWhere('id', $user->branch_id)?->id
+            ?? $branches->first()?->id;
 
         return [$branches, $primaryBranchId];
     }
