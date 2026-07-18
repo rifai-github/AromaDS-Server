@@ -1630,6 +1630,14 @@ function submitForm(event, id = null) {
     
     const formData = new FormData(event.target);
     const data = Object.fromEntries(formData.entries());
+
+    // Preserve all selected invoices. Object.fromEntries() only keeps the
+    // final value when multiple checkboxes use the same field name.
+    const invoiceIds = formData.getAll('invoice_ids[]');
+    delete data['invoice_ids[]'];
+    if (invoiceIds.length > 0) {
+        data.invoice_ids = invoiceIds;
+    }
     
     const url = id ? `/finance/tax-file-exports/${id}` : '/finance/tax-file-exports';
     const method = id ? 'PUT' : 'POST';
@@ -1641,12 +1649,29 @@ function submitForm(event, id = null) {
     fetch(url, {
         method: 'POST',
         headers: {
+            'Accept': 'application/json',
             'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest'
         },
         body: JSON.stringify(data)
     })
-    .then(response => response.json())
+    .then(async response => {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            throw new Error(`Server returned an invalid response (${response.status}).`);
+        }
+
+        const result = await response.json();
+        if (!response.ok) {
+            const validationMessage = result.errors
+                ? Object.values(result.errors).flat().join('\n')
+                : null;
+            throw new Error(validationMessage || result.message || 'Terjadi kesalahan.');
+        }
+
+        return result;
+    })
     .then(result => {
         if (result.status === 'success') {
             closeModal();
@@ -1657,7 +1682,7 @@ function submitForm(event, id = null) {
     })
     .catch(error => {
         console.error('Error:', error);
-        showErrorModal('Terjadi kesalahan.');
+        showErrorModal(error.message || 'Terjadi kesalahan.');
     });
 }
 

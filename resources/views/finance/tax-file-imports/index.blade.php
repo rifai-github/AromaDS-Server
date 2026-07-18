@@ -1295,11 +1295,28 @@ function submitForm(event, id = null) {
     fetch(url, {
         method: 'POST',
         headers: {
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest'
         },
         body: formData
     })
-    .then(response => response.json())
+    .then(async response => {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            throw new Error(`Server returned an invalid response (${response.status}).`);
+        }
+
+        const result = await response.json();
+        if (!response.ok) {
+            const validationMessage = result.errors
+                ? Object.values(result.errors).flat().join('\n')
+                : null;
+            throw new Error(validationMessage || result.message || 'Terjadi kesalahan.');
+        }
+
+        return result;
+    })
     .then(result => {
         if (result.status === 'success') {
             closeModal();
@@ -1310,7 +1327,7 @@ function submitForm(event, id = null) {
     })
     .catch(error => {
         console.error('Error:', error);
-        showErrorModal('Terjadi kesalahan.');
+        showErrorModal(error.message || 'Terjadi kesalahan.');
     });
 }
 
