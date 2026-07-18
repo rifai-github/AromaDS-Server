@@ -151,7 +151,7 @@ class SurveyController extends Controller
             ->get();
         $prospects = Prospect::where('status', '!=', 'closed_lost')->get();
         $provinces = IndonesiaRegion::getProvinces();
-        $buildings = \App\Models\Building::with('customers')->get();
+        $buildings = collect();
 
         $pagination = $surveys->toArray();
         return view('marketing.surveys.index', compact('surveys', 'surveyors', 'prospects', 'provinces', 'buildings', 'pagination'));

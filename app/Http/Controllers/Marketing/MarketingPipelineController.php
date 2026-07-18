@@ -128,23 +128,15 @@ class MarketingPipelineController extends Controller
         $teams = Team::where('active_status', true)->orderBy('team_name')->get();
         $departments = Department::where('is_active', true)->orderBy('name')->get();
         
-        // Get all document lists for dropdowns (will be filtered by customer on client-side)
-        // EXCLUDE DRAFT STATUS documents
-        $contracts = Contract::with('customer')
-            ->where('contract_status', '!=', 'draft')
-            ->orderBy('contract_number')->get();
-        $quotations = \App\Models\Quotation::with('customer')
-            ->where('status', '!=', 'draft')
-            ->orderBy('quotation_number')->get();
-        $surveys = \App\Models\Survey::with('customer')
-            ->where('status', '!=', 'draft')
-            ->orderBy('survey_number')->get();
-        $job_advices = \App\Models\JobAdvice::with('customer')
-            ->where('status', '!=', 'draft')
-            ->orderBy('job_advice_number')->get();
-        
-        $customers = Customer::where('is_active', true)->orderBy('name')->get();
-        $buildings = Building::where('status_update', true)->orderBy('name')->get(); // Only active buildings
+        // Keep the index page light. These legacy modal dropdowns can be very large
+        // and previously exhausted PHP memory before the paginated list could render.
+        $contracts = collect();
+        $quotations = collect();
+        $surveys = collect();
+        $job_advices = collect();
+
+        $customers = collect();
+        $buildings = collect();
         $provinces = Province::orderBy('name')->get(); // For add building modal
 
         // Data for Comprehensive Customer Create Modal
@@ -152,7 +144,7 @@ class MarketingPipelineController extends Controller
         $customerTypes = CustomerType::active()->orderBy('name')->get();
         $ppnCodes = Customer::getPpnCodes();
         $bankPayments = BankPayment::active()->with('bank')->orderBy('account_name')->get();
-        $allContacts = CustomerContact::active()->orderBy('name')->get();
+        $allContacts = collect();
         $salutations = \App\Models\OptionDetail::byMasterOption(13)->where('is_active', true)->orderBy('option_name')->get();
         $positions = \App\Models\OptionDetail::byMasterOption(1)->where('is_active', true)->orderBy('option_name')->get();
 
