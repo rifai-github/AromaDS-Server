@@ -982,6 +982,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('tax-file-imports/{taxFileImport}/error-log', [TaxFileImportController::class, 'downloadErrorLog'])->name('tax-file-imports.error-log');
         Route::resource('tax-file-exports', TaxFileExportController::class);
         Route::post('tax-file-exports/bulk-delete', [TaxFileExportController::class, 'bulkDelete'])->name('tax-file-exports.bulk-delete');
+        Route::get('tax-file-exports/{taxFileExport}/download', [TaxFileExportController::class, 'download'])->name('tax-file-exports.download');
         Route::post('tax-file-exports/{taxFileExport}/generate-espt', [TaxFileExportController::class, 'generateESPTExport'])->name('tax-file-exports.generate-espt');
 
         // Tax Management routes for new models
