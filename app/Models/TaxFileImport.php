@@ -11,6 +11,18 @@ class TaxFileImport extends Model
 {
     use HasFactory, SoftDeletes;
 
+    public const DELIMITER_COMMA = ',';
+
+    public const DELIMITER_SEMICOLON = ';';
+
+    public const DELIMITER_TAB = '\t';
+
+    public const DELIMITERS = [
+        self::DELIMITER_COMMA,
+        self::DELIMITER_SEMICOLON,
+        self::DELIMITER_TAB,
+    ];
+
     protected $fillable = [
         'import_number',
         'file_name',
@@ -182,10 +194,11 @@ class TaxFileImport extends Model
     public function getDelimiterLabelAttribute()
     {
         switch ($this->delimiter) {
-            case ',':
+            case self::DELIMITER_COMMA:
                 return 'Comma (,)';
-            case ';':
+            case self::DELIMITER_SEMICOLON:
                 return 'Semicolon (;)';
+            case self::DELIMITER_TAB:
             case "\t":
                 return 'Tab';
             default:

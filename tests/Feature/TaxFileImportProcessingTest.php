@@ -6,6 +6,7 @@ use App\Http\Controllers\Finance\TaxFileImportController;
 use App\Models\TaxFileImport;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use ReflectionMethod;
@@ -14,6 +15,8 @@ use Tests\TestCase;
 class TaxFileImportProcessingTest extends TestCase
 {
     private string $testFilePath;
+
+    private array $uploadedImportFiles = [];
 
     protected function setUp(): void
     {
@@ -24,6 +27,7 @@ class TaxFileImportProcessingTest extends TestCase
             $table->string('import_number');
             $table->string('file_name');
             $table->date('import_date');
+            $table->foreignId('bank_id')->nullable();
             $table->string('file_format');
             $table->unsignedInteger('total_records')->default(0);
             $table->unsignedInteger('success_count')->default(0);
@@ -127,6 +131,12 @@ class TaxFileImportProcessingTest extends TestCase
             unlink($this->testFilePath);
         }
 
+        foreach ($this->uploadedImportFiles as $uploadedImportFile) {
+            if (file_exists($uploadedImportFile)) {
+                unlink($uploadedImportFile);
+            }
+        }
+
         Schema::dropIfExists('tax_invoices');
         Schema::dropIfExists('invoices');
         Schema::dropIfExists('tax_file_import_details');
@@ -170,6 +180,48 @@ class TaxFileImportProcessingTest extends TestCase
         $this->assertSame(2, $import->success_count);
         $this->assertSame(1, $import->failed_count);
         $this->assertTrue((bool) DB::table('tax_invoices')->where('id', 1)->value('approved'));
+    }
+
+    public function test_process_import_converts_tab_token_to_tab_character(): void
+    {
+        $tabFilePath = public_path('uploads/tax-file-imports/tax-file-import-processing-tab-test.csv');
+        file_put_contents(
+            $tabFilePath,
+            "invoice_number\tcoretax_status\nINV-002\tPending\n",
+        );
+
+        try {
+            $importId = DB::table('tax_file_imports')->insertGetId([
+                'import_number' => 'TFI-TEST-TAB-001',
+                'file_name' => basename($tabFilePath),
+                'import_date' => '2026-07-19',
+                'file_format' => 'csv',
+                'skip_header' => true,
+                'delimiter' => TaxFileImport::DELIMITER_TAB,
+                'status' => 'processing',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $method = new ReflectionMethod(TaxFileImportController::class, 'processImportFile');
+            $method->invoke(
+                app(TaxFileImportController::class),
+                TaxFileImport::findOrFail($importId),
+                'tax-file-imports/'.basename($tabFilePath),
+            );
+
+            $detail = DB::table('tax_file_import_details')->sole();
+            $import = TaxFileImport::findOrFail($importId);
+
+            $this->assertSame('INV-002', $detail->invoice_number);
+            $this->assertSame('warning', $detail->status);
+            $this->assertSame('completed', $import->status);
+            $this->assertSame(1, $import->success_count);
+        } finally {
+            if (file_exists($tabFilePath)) {
+                unlink($tabFilePath);
+            }
+        }
     }
 
     public function test_show_page_renders_current_import_detail_fields(): void
@@ -226,5 +278,44 @@ class TaxFileImportProcessingTest extends TestCase
         $response->assertSee('INV-001');
         $response->assertSee('TAX-001');
         $response->assertSee('Matched with Invoice: INV-001');
+    }
+
+    public function test_store_accepts_each_supported_delimiter(): void
+    {
+        $delimiters = [
+            'comma' => TaxFileImport::DELIMITER_COMMA,
+            'semicolon' => TaxFileImport::DELIMITER_SEMICOLON,
+            'tab' => TaxFileImport::DELIMITER_TAB,
+        ];
+
+        foreach ($delimiters as $label => $delimiter) {
+            $file = UploadedFile::fake()->create(
+                "delimiter-{$label}.csv",
+                1,
+                'text/csv',
+            );
+
+            $response = $this
+                ->withoutMiddleware()
+                ->withHeaders([
+                    'Accept' => 'application/json',
+                    'X-Requested-With' => 'XMLHttpRequest',
+                ])
+                ->post(route('finance.tax-file-imports.store'), [
+                    'file' => $file,
+                    'auto_process' => '0',
+                    'skip_header' => '1',
+                    'delimiter' => $delimiter,
+                    'notes' => "delimiter-test-{$label}",
+                ]);
+
+            $response->assertOk();
+            $response->assertJsonPath('status', 'success');
+
+            $import = TaxFileImport::where('notes', "delimiter-test-{$label}")->firstOrFail();
+
+            $this->assertSame($delimiter, $import->delimiter);
+            $this->uploadedImportFiles[] = public_path('uploads/tax-file-imports/'.$import->file_name);
+        }
     }
 }

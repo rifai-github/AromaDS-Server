@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class TaxFileImportController extends Controller
 {
@@ -79,7 +80,7 @@ class TaxFileImportController extends Controller
             'file' => 'required|file|mimes:csv,xlsx,xls|max:10240', // 10MB max
             'auto_process' => 'boolean',
             'skip_header' => 'boolean',
-            'delimiter' => 'required|in:,,;,\t',
+            'delimiter' => ['required', Rule::in(TaxFileImport::DELIMITERS)],
             'notes' => 'nullable|string|max:1000',
         ]);
 
@@ -187,7 +188,7 @@ class TaxFileImportController extends Controller
             'status' => 'required|in:pending,processing,completed,failed',
             'auto_process' => 'boolean',
             'skip_header' => 'boolean',
-            'delimiter' => 'required|in:,,;,\t',
+            'delimiter' => ['required', Rule::in(TaxFileImport::DELIMITERS)],
             'notes' => 'nullable|string|max:1000',
         ]);
 
@@ -412,7 +413,9 @@ class TaxFileImportController extends Controller
                 // CSV manual parsing based on delimiter
                 $handle = fopen($fullPath, 'r');
                 $delimiter = $import->delimiter ?: ',';
-                if ($delimiter === '\t') $delimiter = "\t";
+                if ($delimiter === TaxFileImport::DELIMITER_TAB) {
+                    $delimiter = "\t";
+                }
                 
                 while (($row = fgetcsv($handle, 0, $delimiter)) !== FALSE) {
                     $data[] = $row;

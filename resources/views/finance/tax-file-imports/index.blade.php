@@ -1059,7 +1059,7 @@ function openCreateModal() {
                         <select name="delimiter" class="form-input">
                             <option value=",">Comma (,)</option>
                             <option value=";">Semicolon (;)</option>
-                            <option value="	">Tab</option>
+                            <option value="\\t">Tab</option>
                         </select>
                     </div>
                     <div class="form-group" style="grid-column: 1 / -1;">
@@ -1155,7 +1155,7 @@ function openViewModal(id) {
                         </div>
                         <div class="detail-item">
                             <label class="form-label">Delimiter</label>
-                            <p class="detail-value">${data.data.delimiter === ',' ? 'Comma (,)' : data.data.delimiter === ';' ? 'Semicolon (;)' : data.data.delimiter === '\t' ? 'Tab' : data.data.delimiter || '-'}</p>
+                            <p class="detail-value">${data.data.delimiter === ',' ? 'Comma (,)' : data.data.delimiter === ';' ? 'Semicolon (;)' : (data.data.delimiter === '\\t' || data.data.delimiter === '\t') ? 'Tab' : data.data.delimiter || '-'}</p>
                         </div>
                     </div>
                 </div>
@@ -1251,7 +1251,7 @@ function openEditModal(id) {
                                 <select name="delimiter" class="form-input">
                                     <option value="," ${data.data.delimiter === ',' ? 'selected' : ''}>Comma (,)</option>
                                     <option value=";" ${data.data.delimiter === ';' ? 'selected' : ''}>Semicolon (;)</option>
-                                    <option value="	" ${data.data.delimiter === '\t' ? 'selected' : ''}>Tab</option>
+                                    <option value="\\t" ${(data.data.delimiter === '\\t' || data.data.delimiter === '\t') ? 'selected' : ''}>Tab</option>
                                 </select>
                             </div>
                             <div class="form-group" style="grid-column: 1 / -1;">
