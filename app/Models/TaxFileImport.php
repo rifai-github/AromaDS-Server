@@ -49,7 +49,7 @@ class TaxFileImport extends Model
     // Relationships
     public function details()
     {
-        return $this->hasMany(TaxFileImportDetail::class);
+        return $this->hasMany(\App\Models\Finance\TaxFileImportDetail::class);
     }
 
     public function bank()

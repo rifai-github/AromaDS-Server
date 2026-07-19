@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
 use App\Http\Traits\AccessControlFilterTrait;
+use App\Models\Finance\TaxFileImportDetail;
 use App\Models\TaxFileImport;
 use App\Models\Bank;
 use Illuminate\Http\Request;
@@ -434,7 +435,6 @@ class TaxFileImportController extends Controller
 
             foreach ($data as $row) {
                 $foundInvoice = null;
-                $invoiceNumberStr = '';
                 $isApprovedInFile = false;
                 $statusFound = '';
 
@@ -454,9 +454,6 @@ class TaxFileImportController extends Controller
                             ->orWhere('tax_number', $cellValue)
                             ->first();
                         
-                        if ($foundInvoice) {
-                            $invoiceNumberStr = $cellValue;
-                        }
                     }
 
                     // 2. Check for APPROVAL keyword
@@ -472,7 +469,7 @@ class TaxFileImportController extends Controller
                 }
 
                 if ($foundInvoice) {
-                    $status = 'valid';
+                    $status = $isApprovedInFile ? 'approved' : 'warning';
                     $notes = 'Matched with Invoice: ' . $foundInvoice->invoice_number;
                     
                     if ($isApprovedInFile) {
@@ -485,27 +482,32 @@ class TaxFileImportController extends Controller
                         }
                     }
 
-                    \App\Models\TaxFileImportDetail::create([
+                    TaxFileImportDetail::create([
                         'tax_file_import_id' => $import->id,
-                        'tax_invoice_number' => $foundInvoice->faktur_pajak ?? $foundInvoice->invoice_number,
-                        'customer_name' => $foundInvoice->customer->name ?? 'Unknown',
-                        'customer_tax_number' => $foundInvoice->tax_number ?? $foundInvoice->npwp_number,
-                        'taxable_amount' => $foundInvoice->subtotal ?? 0,
+                        'invoice_number' => $foundInvoice->invoice_number,
+                        'tax_number' => $foundInvoice->tax_number
+                            ?? $foundInvoice->faktur_pajak
+                            ?? $foundInvoice->npwp_number
+                            ?? 'N/A',
+                        'tax_date' => $foundInvoice->invoice_date ?? $import->import_date ?? now(),
                         'tax_amount' => $foundInvoice->tax_amount ?? 0,
-                        'total_amount' => $foundInvoice->total_amount ?? 0,
-                        'invoice_date' => $foundInvoice->invoice_date,
                         'status' => $status,
-                        'notes' => $notes
+                        'remarks' => $notes,
+                        'created_by' => Auth::id(),
                     ]);
                     $successCount++;
                 } else {
                     // Log fail row
-                    \App\Models\TaxFileImportDetail::create([
+                    TaxFileImportDetail::create([
                         'tax_file_import_id' => $import->id,
-                        'tax_invoice_number' => 'N/A',
-                        'status' => 'invalid',
-                        'error_message' => 'No matching invoice found for row.',
-                        'notes' => 'Raw data: ' . implode('|', $row) . ($isApprovedInFile ? ' [File says: ' . $statusFound . ']' : '')
+                        'invoice_number' => 'N/A',
+                        'tax_number' => 'N/A',
+                        'tax_date' => $import->import_date ?? now(),
+                        'tax_amount' => 0,
+                        'status' => 'rejected',
+                        'remarks' => 'No matching invoice found for row. Raw data: ' . implode('|', $row)
+                            . ($isApprovedInFile ? ' [File says: ' . $statusFound . ']' : ''),
+                        'created_by' => Auth::id(),
                     ]);
                     $failedCount++;
                 }
