@@ -3043,7 +3043,34 @@ class JobController extends Controller
             });
         }
 
-        $unitItems = $unitItemsQuery->with('serialNumber')->get();
+        // Expand one qty-N issuing row into N serial-backed entries. The legacy
+        // serial_number_id column contains only slot #1; all slots live in
+        // inventory_issuing_item_serials (serialLinks).
+        $unitItemRelations = ['serialNumber.masterProduct.productCategory'];
+        if (\Illuminate\Support\Facades\Schema::hasTable('inventory_issuing_item_serials')) {
+            $unitItemRelations[] = 'serialLinks.serialNumber.masterProduct.productCategory';
+        }
+
+        $unitItems = $unitItemsQuery
+            ->with($unitItemRelations)
+            ->get()
+            ->flatMap(function ($item) {
+                $linkedSerials = $item->relationLoaded('serialLinks')
+                    ? $item->serialLinks->pluck('serialNumber')->filter()->values()
+                    : collect();
+
+                if ($linkedSerials->isEmpty() && $item->serialNumber) {
+                    $linkedSerials = collect([$item->serialNumber]);
+                }
+
+                return $linkedSerials->map(function ($serialNumber) use ($item) {
+                    $serialBackedItem = clone $item;
+                    $serialBackedItem->setRelation('serialNumber', $serialNumber);
+
+                    return $serialBackedItem;
+                });
+            })
+            ->values();
 
         if ($unitItems->isEmpty()) {
             return [];
@@ -5427,24 +5454,44 @@ class JobController extends Controller
         // Now get inventory issuing items with the serial number
         $serialNumber = null;
         if (!empty($inventoryIssuingIds)) {
+            $inventoryIssuingItemRelations = [
+                'serialNumber.masterProduct.productType',
+                'serialNumber.warehouse',
+                'product',
+                'inventoryIssuing',
+            ];
+            if (\Illuminate\Support\Facades\Schema::hasTable('inventory_issuing_item_serials')) {
+                $inventoryIssuingItemRelations[] = 'serialLinks.serialNumber.masterProduct.productType';
+                $inventoryIssuingItemRelations[] = 'serialLinks.serialNumber.warehouse';
+            }
+
             // Get all inventory issuing items with serial numbers
             $inventoryIssuingItems = \App\Models\InventoryIssuingItem::whereIn('inventory_issuing_id', $inventoryIssuingIds)
                 ->whereNotNull('serial_number_id')
-                ->with(['serialNumber.masterProduct.productType', 'serialNumber.warehouse', 'product', 'inventoryIssuing'])
+                ->with($inventoryIssuingItemRelations)
                 ->get();
             
             // Find the matching SN (case-insensitive, trim whitespace)
             $serialNumberInputNormalized = trim(strtoupper($serialNumberInput));
-            $inventoryIssuingItem = $inventoryIssuingItems->first(function($item) use ($serialNumberInputNormalized) {
-                if (!$item->serialNumber) {
-                    return false;
+            $matchedSerialNumber = null;
+            $inventoryIssuingItem = $inventoryIssuingItems->first(function($item) use ($serialNumberInputNormalized, &$matchedSerialNumber) {
+                $linkedSerials = $item->relationLoaded('serialLinks')
+                    ? $item->serialLinks->pluck('serialNumber')->filter()
+                    : collect();
+
+                if ($linkedSerials->isEmpty() && $item->serialNumber) {
+                    $linkedSerials = collect([$item->serialNumber]);
                 }
-                $itemSnNormalized = trim(strtoupper($item->serialNumber->serial_number ?? ''));
-                return $itemSnNormalized === $serialNumberInputNormalized;
+
+                $matchedSerialNumber = $linkedSerials->first(function ($serialNumber) use ($serialNumberInputNormalized) {
+                    return trim(strtoupper((string) $serialNumber->serial_number)) === $serialNumberInputNormalized;
+                });
+
+                return $matchedSerialNumber !== null;
             });
             
-            if ($inventoryIssuingItem && $inventoryIssuingItem->serialNumber) {
-                $serialNumber = $inventoryIssuingItem->serialNumber;
+            if ($inventoryIssuingItem && $matchedSerialNumber) {
+                $serialNumber = $matchedSerialNumber;
                 $serialNumber->load(['masterProduct.productType', 'warehouse']);
                 
                 // MANDATORY FIX: Strict Checks for Install Jobs
@@ -5583,7 +5630,19 @@ class JobController extends Controller
             } else {
                 \Log::warning("Serial number {$serialNumberInput} NOT FOUND in verified materials", [
                     'total_items_checked' => $inventoryIssuingItems->count(),
-                    'available_sns' => $inventoryIssuingItems->pluck('serialNumber.serial_number')->filter()->values()->toArray(),
+                    'available_sns' => $inventoryIssuingItems
+                        ->flatMap(function ($item) {
+                            $linkedSerials = $item->relationLoaded('serialLinks')
+                                ? $item->serialLinks->pluck('serialNumber.serial_number')->filter()
+                                : collect();
+
+                            return $linkedSerials->isNotEmpty()
+                                ? $linkedSerials
+                                : collect([$item->serialNumber?->serial_number])->filter();
+                        })
+                        ->unique()
+                        ->values()
+                        ->toArray(),
                 ]);
             }
         } else {

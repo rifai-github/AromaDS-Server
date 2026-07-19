@@ -149,6 +149,15 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('inventory_issuing_item_serials', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('inventory_issuing_item_id');
+            $table->foreignId('serial_number_id');
+            $table->integer('unit_index')->default(1);
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->timestamps();
+        });
+
         Schema::create('product_types', function (Blueprint $table) {
             $table->id();
             $table->string('name')->nullable();
@@ -192,6 +201,7 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
         Schema::dropIfExists('rental_details');
         Schema::dropIfExists('job_advice_rooms');
         Schema::dropIfExists('product_types');
+        Schema::dropIfExists('inventory_issuing_item_serials');
         Schema::dropIfExists('inventory_issuing_items');
         Schema::dropIfExists('inventory_issuings');
         Schema::dropIfExists('job_assign_material_issues');
@@ -326,6 +336,102 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
         $missing = $this->invokeGetMissingUnitSerialNumbersForRoom($job, 410, 'Studio 1');
 
         $this->assertSame([], $missing);
+    }
+
+    public function test_qty_two_unit_item_requires_both_serial_links_before_room_can_complete(): void
+    {
+        $jobAdvice = JobAdvice::create(['customer_id' => 7, 'type' => 'install']);
+        $job = JobSchedule::create([
+            'job_number' => 'SBY-IR/26-07/0063',
+            'type' => 'install',
+            'status' => 'in_progress',
+            'job_advice_id' => $jobAdvice->id,
+        ]);
+
+        $unitCategory = ProductCategory::create(['code' => 'UNIT', 'name' => 'Diffuser', 'is_unit' => true]);
+        $unitProduct = MasterProduct::create(['product_category_id' => $unitCategory->id, 'name' => 'Diffuser 303']);
+        $rentalId = 6301;
+
+        \DB::table('rental_details')->insert([
+            'master_rental_id' => $rentalId,
+            'item_type' => 'product',
+            'master_product_id' => $unitProduct->id,
+            'product_category_id' => $unitCategory->id,
+            'bom_rental_qty' => 1,
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $room = \App\Models\JobAdviceRoom::create([
+            'job_advice_id' => $jobAdvice->id,
+            'rental_product_id' => $rentalId,
+            'room_name' => 'Ruang 1 Room 1 Rental QTY 2',
+            'quantity' => 2,
+        ]);
+
+        $firstSn = SerialNumber::create(['serial_number' => 'DIFF3030021', 'master_product_id' => $unitProduct->id, 'status' => 'pending']);
+        $secondSn = SerialNumber::create(['serial_number' => 'DIFF3030022', 'master_product_id' => $unitProduct->id, 'status' => 'pending']);
+        $materialIssue = MaterialIssue::create(['issue_number' => 'SBY-MI/26-07/0063', 'status' => 'issued']);
+        $jobAssignSchedule = JobAssignSchedule::create(['job_schedule_id' => $job->id, 'status' => 'assigned']);
+        JobAssignMaterialIssue::create([
+            'job_assign_schedule_id' => $jobAssignSchedule->id,
+            'material_issue_id' => $materialIssue->id,
+        ]);
+
+        $inventoryIssuing = InventoryIssuing::create([
+            'issuing_number' => 'SBY-WI/26-07/0063',
+            'reference_no' => $materialIssue->issue_number,
+            'status' => 'sent',
+            'warehouse_id' => 1,
+        ]);
+
+        $item = InventoryIssuingItem::create([
+            'inventory_issuing_id' => $inventoryIssuing->id,
+            'product_id' => $unitProduct->id,
+            'serial_number_id' => $firstSn->id,
+            'room_name' => $room->room_name,
+            'quantity_requested' => 2,
+            'quantity_issued' => 2,
+        ]);
+
+        \DB::table('inventory_issuing_item_serials')->insert([
+            [
+                'inventory_issuing_item_id' => $item->id,
+                'serial_number_id' => $firstSn->id,
+                'unit_index' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'inventory_issuing_item_id' => $item->id,
+                'serial_number_id' => $secondSn->id,
+                'unit_index' => 2,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        \DB::table('job_schedule_units')->insert([
+            'job_schedule_id' => $job->id,
+            'job_advice_room_id' => $room->id,
+            'mac' => $firstSn->serial_number,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $missingAfterOneScan = $this->invokeGetMissingUnitSerialNumbersForRoom($job, $room->id, $room->room_name);
+        $this->assertArrayHasKey('Diffuser (x1)', $missingAfterOneScan);
+
+        \DB::table('job_schedule_units')->insert([
+            'job_schedule_id' => $job->id,
+            'job_advice_room_id' => $room->id,
+            'mac' => $secondSn->serial_number,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->assertSame([], $this->invokeGetMissingUnitSerialNumbersForRoom($job, $room->id, $room->room_name));
     }
 
     /**
