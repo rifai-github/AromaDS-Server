@@ -1012,8 +1012,12 @@ class JobSchedule extends Model
         $this->serviceSequenceNumberResolved = true;
 
         $date = $this->schedule_date ?? $this->expected_date;
+        // job_schedules has no contract_id column of its own — contract linkage
+        // only exists via job_advices.contract_id, so it must be resolved through
+        // the jobAdvice relation (not $this->contract_id, which is always null).
+        $contractId = $this->jobAdvice?->contract_id;
 
-        if (!$this->contract_id
+        if (!$contractId
             || !in_array($this->type, self::SERVICE_SEQUENCE_ANCHOR_TYPES, true)
             || !$date) {
             return $this->cachedServiceSequenceNumber = null;
@@ -1022,7 +1026,7 @@ class JobSchedule extends Model
         // Count anchor jobs of the same contract up to and including this one,
         // ordered by (schedule_date, id). Install = 1, first service = 2, ...
         return $this->cachedServiceSequenceNumber = static::query()
-            ->where('contract_id', $this->contract_id)
+            ->whereHas('jobAdvice', fn ($q) => $q->where('contract_id', $contractId))
             ->whereIn('type', self::SERVICE_SEQUENCE_ANCHOR_TYPES)
             ->where(function ($q) use ($date) {
                 $q->whereDate('schedule_date', '<', $date)
