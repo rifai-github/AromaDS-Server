@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Finance\TaxFileImportController;
 use App\Models\TaxFileImport;
+use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -169,5 +170,61 @@ class TaxFileImportProcessingTest extends TestCase
         $this->assertSame(2, $import->success_count);
         $this->assertSame(1, $import->failed_count);
         $this->assertTrue((bool) DB::table('tax_invoices')->where('id', 1)->value('approved'));
+    }
+
+    public function test_show_page_renders_current_import_detail_fields(): void
+    {
+        $user = new User([
+            'name' => 'QA Finance User',
+            'email' => 'qa.finance@example.test',
+            'department_name' => 'Finance',
+            'position_name' => 'Manager',
+        ]);
+        $user->id = 999;
+        $user->exists = true;
+        $user->setRelation('roles', collect());
+        $user->setRelation('permissions', collect());
+        $this->actingAs($user);
+
+        $importId = DB::table('tax_file_imports')->insertGetId([
+            'import_number' => 'TFI-TEST-SHOW-001',
+            'file_name' => 'coretax-result.xlsx',
+            'import_date' => '2026-07-19',
+            'file_format' => 'xlsx',
+            'total_records' => 1,
+            'success_count' => 1,
+            'failed_count' => 0,
+            'success_rate' => 100,
+            'skip_header' => true,
+            'delimiter' => ';',
+            'status' => 'completed',
+            'processed_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('tax_file_import_details')->insert([
+            'tax_file_import_id' => $importId,
+            'invoice_number' => 'INV-001',
+            'tax_number' => 'TAX-001',
+            'tax_date' => '2026-07-19',
+            'tax_amount' => 110000,
+            'status' => 'approved',
+            'remarks' => 'Matched with Invoice: INV-001',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->withoutMiddleware()->get(
+            route('finance.tax-file-imports.show', $importId),
+        );
+
+        $response->assertOk();
+        $response->assertViewIs('finance.tax-file-imports.show');
+        $response->assertSee('TFI-TEST-SHOW-001');
+        $response->assertSee('coretax-result.xlsx');
+        $response->assertSee('INV-001');
+        $response->assertSee('TAX-001');
+        $response->assertSee('Matched with Invoice: INV-001');
     }
 }
