@@ -680,28 +680,33 @@ class QuotationWizardController extends Controller
             $internalPics = collect();
             $selectedSurveys = request()->get('survey_ids', []);
             $customerContacts = collect();
+            $customerIds = collect();
 
             if (!empty($selectedSurveys)) {
-                $cacheKey = 'quotation-wizard:pic-contacts:' . md5(json_encode(array_values($selectedSurveys)));
+                $customerIds = Survey::whereIn('id', $selectedSurveys)
+                    ->pluck('customer_id');
+            } elseif (request()->filled('existing_contract_id')) {
+                $renewalContract = Contract::findRenewalSource(request()->get('existing_contract_id'));
+                $customerIds = collect([$renewalContract?->customer_id]);
+            }
 
-                $customerContacts = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($selectedSurveys) {
-                    $customerIds = Survey::whereIn('id', $selectedSurveys)
-                        ->pluck('customer_id')
-                        ->unique()
-                        ->filter()
-                        ->toArray();
+            $customerIds = $customerIds
+                ->filter()
+                ->unique()
+                ->sort()
+                ->values();
 
-                    if (empty($customerIds)) {
-                        return collect();
-                    }
+            if ($customerIds->isNotEmpty()) {
+                $cacheKey = 'quotation-wizard:pic-contacts:' . md5(json_encode($customerIds->all()));
 
+                $customerContacts = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($customerIds) {
                     $legacyContacts = CustomerContact::with('customer')
-                        ->whereIn('customer_id', $customerIds)
+                        ->whereIn('customer_id', $customerIds->all())
                         ->where('is_active', true)
                         ->get();
 
                     $multiPicContacts = CustomerContact::whereHas('customers', function ($q) use ($customerIds) {
-                            $q->whereIn('customers.id', $customerIds);
+                            $q->whereIn('customers.id', $customerIds->all());
                         })
                         ->where('is_active', true)
                         ->get();

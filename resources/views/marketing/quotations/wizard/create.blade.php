@@ -2436,9 +2436,12 @@ $(document).ready(function() {
     function loadPicContacts() {
         console.log('Loading PIC contacts...');
         const selectedSurveys = $('#survey_tags').val() || [];
+        const renewalContractId = $('#quotation_type').val() === 'renewal'
+            ? $('#existing_contract_id').val()
+            : null;
         const picSelect = $('#pic_quotation');
         
-        if (selectedSurveys.length === 0) {
+        if (selectedSurveys.length === 0 && !renewalContractId) {
             picSelect.html('<option value="">Pilih survey terlebih dahulu...</option>');
             return;
         }
@@ -2451,7 +2454,10 @@ $(document).ready(function() {
         $.ajax({
             url: '{{ route("marketing.quotations.wizard.get-pic-contacts") }}',
             method: 'GET',
-            data: { survey_ids: selectedSurveys },
+            data: {
+                survey_ids: selectedSurveys,
+                existing_contract_id: renewalContractId
+            },
             success: function(response) {
                 console.log('PIC contacts loaded:', response);
                 picSelect.empty().append('<option value="">Pilih PIC Customer...</option>');
