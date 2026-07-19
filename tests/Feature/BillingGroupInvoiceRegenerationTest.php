@@ -49,10 +49,23 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('quotations', function (Blueprint $table) {
+            $table->id();
+            $table->string('payment_method')->nullable();
+            $table->string('billing_methods')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('contracts', function (Blueprint $table) {
             $table->id();
             $table->string('contract_number')->nullable();
             $table->foreignId('customer_id')->nullable();
+            $table->foreignId('quotation_id')->nullable();
+            $table->string('contract_status')->nullable();
+            $table->string('status')->nullable();
+            $table->boolean('hold_invoice')->default(false);
+            $table->boolean('ba_files_supported')->default(false);
             $table->string('payment_terms')->nullable();
             $table->string('ppn_code')->nullable();
             $table->date('start_date')->nullable();
@@ -160,6 +173,7 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->integer('period')->nullable();
             $table->date('schedule_date')->nullable();
             $table->date('ba_date')->nullable();
+            $table->text('internal_notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -219,6 +233,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->decimal('total_paid', 12, 2)->default(0);
             $table->decimal('outstanding', 12, 2)->default(0);
             $table->string('tax_code')->nullable();
+            $table->string('npwp_number')->nullable();
+            $table->string('tax_address')->nullable();
             $table->boolean('tax_obligation')->default(false);
             $table->string('invoice_status')->nullable();
             $table->string('status')->nullable();
@@ -282,6 +298,7 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'buildings',
             'billing_groups',
             'contracts',
+            'quotations',
             'customers',
             'users',
         ] as $table) {
@@ -1178,6 +1195,130 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
         $this->assertSame(['JKT-IR/26-05/0005'], $triggerJobs->pluck('job_number')->values()->all());
         $this->assertSame('ADS Unit Only', $detailMethod->invoke($service, $installJob->fresh('jobAdvice.rooms.rentalProduct'))[0]['rental_name']);
         $this->assertSame([], $detailMethod->invoke($service, $serviceJob->fresh('jobAdvice.rooms.rentalProduct')));
+    }
+
+    public function test_before_service_trial_continuation_is_ready_while_first_csr_is_unstarted(): void
+    {
+        [$contract, $installJob, $serviceJob] = $this->makeContractWithRentalFlow(
+            rentalType: 'unit_refill',
+            rentalName: 'ADS Trial Continuation',
+            installJobNo: 'SBY-IF/26-07/0012',
+            serviceJobNo: 'SBY-CSR/26-07/0048'
+        );
+
+        $quotationId = DB::table('quotations')->insertGetId([
+            'payment_method' => 'Before Service',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $contract->update([
+            'quotation_id' => $quotationId,
+            'contract_status' => 'active',
+            'start_date' => '2026-05-01',
+            'end_date' => '2026-05-31',
+        ]);
+        $installJob->update([
+            'type' => 'install_free',
+            'status' => 'done_job',
+        ]);
+        $serviceJob->update([
+            'type' => 'service_first',
+            'status' => 'scheduled',
+            'period' => 1,
+            'ba_date' => null,
+            'internal_notes' => 'Auto-generated first CSR from contract activation: SBY-JA/26-07/0048 | Room: Ruang IF Before Service',
+        ]);
+
+        $contract = $contract->fresh(['quotation', 'contractRentals.masterRental', 'contractRooms.room']);
+
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+            public function generate(
+                string $documentType,
+                ?string $branchCode = null,
+                ?int $buildingId = null,
+                ?int $contractId = null,
+                ?int $quotationId = null,
+                ?int $surveyId = null,
+                ?int $warehouseId = null,
+                ?int $branchId = null,
+                \DateTimeInterface|string|null $documentDate = null
+            ): string {
+                return 'SBY-INV/26-05/0099';
+            }
+        });
+        $readyMethod = new \ReflectionMethod($service, 'getReadyInvoiceTriggerJobsInPeriod');
+        $readyMethod->setAccessible(true);
+        $completedMethod = new \ReflectionMethod($service, 'getCompletedInvoiceTriggerJobsInPeriod');
+        $completedMethod->setAccessible(true);
+        $detailMethod = new \ReflectionMethod($service, 'getRentalDetailsForJob');
+        $detailMethod->setAccessible(true);
+
+        $periodStart = Carbon::parse('2026-05-01');
+        $periodEnd = Carbon::parse('2026-05-31');
+
+        $this->assertSame([], $completedMethod->invoke($service, $contract, $periodStart, $periodEnd)->all());
+        $this->assertSame(
+            ['SBY-CSR/26-07/0048'],
+            $readyMethod->invoke($service, $contract, $periodStart, $periodEnd)->pluck('job_number')->all()
+        );
+        $this->assertSame(
+            'ADS Trial Continuation',
+            $detailMethod->invoke($service, $serviceJob->fresh('jobAdvice.rooms.rentalProduct'))[0]['rental_name']
+        );
+
+        $result = $service->autoGenerateInvoiceForRentalPeriod($contract->id, 'Period 1', $periodStart, $periodEnd);
+
+        $this->assertTrue($result['success'], $result['message']);
+        $this->assertDatabaseHas('invoices', [
+            'contract_id' => $contract->id,
+            'period_invoice' => 'Period 1',
+            'invoice_status' => 'draft',
+        ]);
+        $this->assertDatabaseHas('invoice_rental_details', [
+            'job_no' => 'SBY-CSR/26-07/0048',
+            'rental_name' => 'ADS Trial Continuation',
+            'total_price' => 2000000,
+        ]);
+    }
+
+    public function test_after_service_trial_continuation_still_waits_for_csr_completion(): void
+    {
+        [$contract, $installJob, $serviceJob] = $this->makeContractWithRentalFlow(
+            rentalType: 'unit_refill',
+            rentalName: 'ADS Trial Continuation',
+            installJobNo: 'SBY-IF/26-07/0013',
+            serviceJobNo: 'SBY-CSR/26-07/0049'
+        );
+
+        $installJob->update([
+            'type' => 'install_free',
+            'status' => 'done_job',
+        ]);
+        $serviceJob->update([
+            'type' => 'service_first',
+            'status' => 'scheduled',
+            'period' => 1,
+            'ba_date' => null,
+            'internal_notes' => 'Auto-generated first CSR from contract activation: SBY-JA/26-07/0049 | Room: Ruang IF After Service',
+        ]);
+
+        $contract->setRelation('quotation', new \App\Models\Quotation([
+            'payment_method' => 'After Service',
+        ]));
+
+        $service = new InvoiceGenerationService(new DocumentNumberService);
+        $readyMethod = new \ReflectionMethod($service, 'getReadyInvoiceTriggerJobsInPeriod');
+        $readyMethod->setAccessible(true);
+
+        $this->assertSame(
+            [],
+            $readyMethod->invoke(
+                $service,
+                $contract,
+                Carbon::parse('2026-05-01'),
+                Carbon::parse('2026-05-31')
+            )->all()
+        );
     }
 
     public function test_rental_period_invoice_uses_unit_only_check_after_install_period(): void

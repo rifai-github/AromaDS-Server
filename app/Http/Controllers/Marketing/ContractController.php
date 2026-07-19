@@ -1891,6 +1891,11 @@ class ContractController extends Controller
             $createdOnWallCsrCount = app(ContractOnWallCsrService::class)
                 ->createForContract($contract->refresh(), Auth::id(), 'approved');
 
+            if ($createdOnWallCsrCount > 0) {
+                app(\App\Services\Finance\InvoiceGenerationService::class)
+                    ->attemptAutoInvoiceForContract($contract->id);
+            }
+
             // Log the action
             Log::info("Contract {$contract->contract_number} approved by user ".Auth::id(), [
                 'created_on_wall_csr_count' => $createdOnWallCsrCount,
@@ -2048,6 +2053,11 @@ class ContractController extends Controller
             $this->completeRenewalSourceContractLink($contract);
             $createdOnWallCsrCount = app(ContractOnWallCsrService::class)
                 ->createForContract($contract->refresh(), Auth::id(), 'posted');
+
+            if ($createdOnWallCsrCount > 0) {
+                app(\App\Services\Finance\InvoiceGenerationService::class)
+                    ->attemptAutoInvoiceForContract($contract->id);
+            }
 
             // Auto-generate schedule if applicable
             if ($contract->canGenerateSchedule()) {

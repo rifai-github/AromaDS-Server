@@ -143,7 +143,7 @@ class InvoiceGenerationService
     private function checkInvoiceTriggerJobsCompletedInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd): bool
     {
         $totalJobs = $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
-        $completedJobs = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
+        $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
 
         return $totalJobs > 0 && $totalJobs === $completedJobs;
     }
@@ -153,7 +153,7 @@ class InvoiceGenerationService
      */
     private function getCompletedJobsCount(Contract $contract, Carbon $periodStart, Carbon $periodEnd): int
     {
-        return $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
+        return $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
     }
 
     /**
@@ -169,7 +169,7 @@ class InvoiceGenerationService
      */
     private function checkAllJobsHaveVerifiedBaFiles(Contract $contract, Carbon $periodStart, Carbon $periodEnd): bool
     {
-        $completedJobs = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
+        $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
 
         foreach ($completedJobs as $job) {
             // Check if job has at least one verified BA file
@@ -278,6 +278,64 @@ class InvoiceGenerationService
                     && ! empty($jobSchedule->ba_date);
             })
             ->values();
+    }
+
+    /**
+     * Jobs that make an invoice period ready and provide its rental-detail scope.
+     *
+     * A first CSR created by ContractOnWallCsrService is a special Before Service
+     * continuation: that service only creates the CSR after finding a completed
+     * Install Free/installation source for the same quotation and room. The CSR is
+     * therefore intentionally invoice-ready while it is still unstarted.
+     */
+    private function getReadyInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd): \Illuminate\Support\Collection
+    {
+        return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)
+            ->filter(function (JobSchedule $jobSchedule) use ($contract) {
+                $isCompletedWithBa = in_array($jobSchedule->status, self::BILLABLE_COMPLETED_STATUSES, true)
+                    && ! empty($jobSchedule->ba_date);
+
+                return $isCompletedWithBa
+                    || $this->isPendingBeforeServiceTrialContinuation($contract, $jobSchedule);
+            })
+            ->values();
+    }
+
+    private function isPendingBeforeServiceTrialContinuation(Contract $contract, JobSchedule $jobSchedule): bool
+    {
+        $contractStatus = strtolower(trim((string) ($contract->contract_status ?? $contract->status ?? '')));
+        if ($contractStatus !== '' && $contractStatus !== 'active') {
+            return false;
+        }
+
+        return $this->isBeforeServiceTrialContinuation($contract, $jobSchedule)
+            && in_array(strtolower(trim((string) $jobSchedule->status)), ['scheduled', 'new_job'], true);
+    }
+
+    private function isBeforeServiceTrialContinuation(Contract $contract, JobSchedule $jobSchedule): bool
+    {
+        if ($this->getInvoiceTiming($contract) !== 'before_service') {
+            return false;
+        }
+
+        if (! in_array($this->normalizeJobType($jobSchedule->type), [
+            'service',
+            'service_first',
+            'service_routine',
+            'csr',
+            'customer_service_report',
+        ], true)) {
+            return false;
+        }
+
+        if ((int) ($jobSchedule->period ?? 0) !== 1) {
+            return false;
+        }
+
+        return str_contains(
+            strtolower((string) $jobSchedule->internal_notes),
+            'auto-generated first csr from contract activation'
+        );
     }
 
     private function jobMatchesRentalInvoiceTrigger(Contract $contract, JobSchedule $jobSchedule, bool $periodHasInstallTrigger = true): bool
@@ -442,7 +500,7 @@ class InvoiceGenerationService
         }
 
         // Pull ba_date from the job that triggers invoice generation for this contract timing.
-        $firstJob = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)
+        $firstJob = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)
             ->sortBy([
                 ['schedule_date', 'asc'],
                 ['id', 'asc'],
@@ -524,7 +582,7 @@ class InvoiceGenerationService
      */
     private function createInvoiceDetailsFromJobs(Invoice $invoice, Contract $contract, Carbon $periodStart, Carbon $periodEnd, array $billedRentals = []): \Illuminate\Database\Eloquent\Collection
     {
-        $completedJobs = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
+        $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
 
         foreach ($completedJobs as $jobSchedule) {
             // Get rental details for this job
@@ -571,7 +629,7 @@ class InvoiceGenerationService
 
         $periodStart = Carbon::parse($invoice->invoice_date)->startOfMonth();
         $periodEnd = Carbon::parse($invoice->invoice_date)->endOfMonth();
-        $completedJobs = $this->getCompletedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
+        $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
         $expected = [];
         $billedRentals = [];
 
@@ -827,7 +885,8 @@ class InvoiceGenerationService
             $this->normalizeJobType($jobSchedule->type),
             $this->normalizeRentalType($masterRental),
             $contract,
-            $jobSchedule
+            $jobSchedule,
+            ! $this->isBeforeServiceTrialContinuation($contract, $jobSchedule)
         )) {
             Log::debug('Skipping JA room rental detail because job type is not the invoice trigger for this rental type', [
                 'job_no' => $jobSchedule->job_number,
@@ -879,7 +938,8 @@ class InvoiceGenerationService
             $this->normalizeJobType($jobSchedule->type),
             $this->normalizeRentalType($masterRental),
             $contract,
-            $jobSchedule
+            $jobSchedule,
+            ! $this->isBeforeServiceTrialContinuation($contract, $jobSchedule)
         )) {
             Log::debug('Skipping rental detail because job type is not the invoice trigger for this rental type', [
                 'job_no' => $jobSchedule->job_number,
