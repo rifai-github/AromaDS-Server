@@ -4,14 +4,15 @@ namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
 use App\Http\Traits\AccessControlFilterTrait;
+use App\Models\Finance\Invoice;
 use App\Models\TaxFileExport;
-use App\Models\TaxInvoice;
 use App\Models\Customer;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Carbon\Carbon;
 
 class TaxFileExportController extends Controller
@@ -93,8 +94,10 @@ class TaxFileExportController extends Controller
      */
     public function create()
     {
-        // Get available tax invoices for selection
-        $taxInvoices = TaxInvoice::with('customer')
+        // Only approved invoices are eligible for tax file exports.
+        $taxInvoices = Invoice::with('customer')
+            ->where('invoice_status', Invoice::STATUS_APPROVED)
+            ->whereNotNull('invoice_date')
             ->orderBy('invoice_date', 'desc')
             ->get()
             ->map(function($invoice) {
@@ -103,7 +106,7 @@ class TaxFileExportController extends Controller
                     'invoice_number' => $invoice->invoice_number,
                     'invoice_date' => $invoice->invoice_date ?  $invoice->invoice_date->format('Y-m-d') : null,
                     'customer_name' => $invoice->customer ? $invoice->customer->name : null,
-                    'formatted_total_amount' => $invoice->formatted_total_amount ?? null,
+                    'formatted_total_amount' => 'Rp ' . number_format($invoice->grand_total ?? $invoice->total_amount ?? 0, 0, ',', '.'),
                 ];
             });
         
@@ -125,8 +128,18 @@ class TaxFileExportController extends Controller
         $request->validate([
             'export_date' => 'required|date',
             'export_type' => 'required|in:monthly,quarterly,yearly,custom',
-            'period_from' => 'required|date',
-            'period_to' => 'required|date|after_or_equal:period_from',
+            'selection_mode' => 'required|in:date_range,specific_invoices',
+            'period_from' => 'required_if:selection_mode,date_range|nullable|date',
+            'period_to' => 'required_if:selection_mode,date_range|nullable|date|after_or_equal:period_from',
+            'invoice_ids' => 'required_if:selection_mode,specific_invoices|nullable|array|min:1',
+            'invoice_ids.*' => [
+                'integer',
+                'distinct',
+                Rule::exists('invoices', 'id')
+                    ->where('invoice_status', Invoice::STATUS_APPROVED)
+                    ->whereNotNull('invoice_date')
+                    ->whereNull('deleted_at'),
+            ],
             'file_format' => 'required|in:csv,xlsx,pdf',
             'include_details' => 'boolean',
             'notes' => 'nullable|string|max:1000',
@@ -142,11 +155,12 @@ class TaxFileExportController extends Controller
             $periodTo = $request->period_to;
 
             // Handle specific invoice selection
-            if ($request->selection_mode === 'specific_invoices' && $request->filled('invoice_ids')) {
+            if ($request->selection_mode === 'specific_invoices') {
                 $filterParameters['invoice_ids'] = $request->invoice_ids;
                 
                 // Auto-calculate period from selected invoices
-                $invoices = TaxInvoice::whereIn('id', $request->invoice_ids)
+                $invoices = Invoice::where('invoice_status', Invoice::STATUS_APPROVED)
+                    ->whereIn('id', $request->invoice_ids)
                     ->select('invoice_date')
                     ->get();
                 
@@ -242,7 +256,9 @@ class TaxFileExportController extends Controller
         }
 
         $customers = Customer::orderBy('customer_name')->get();
-        $taxInvoices = TaxInvoice::orderBy('created_at', 'desc')->get();
+        $taxInvoices = Invoice::where('invoice_status', Invoice::STATUS_APPROVED)
+            ->orderBy('invoice_date', 'desc')
+            ->get();
 
         return view('finance.tax-file-exports.edit', compact('taxFileExport', 'customers', 'taxInvoices'));
     }
@@ -501,22 +517,52 @@ class TaxFileExportController extends Controller
      */
     private function generateESPTData(TaxFileExport $taxFileExport)
     {
-        // This is a placeholder for actual e-SPT data generation
-        // In real implementation, you would query invoices and format according to e-SPT requirements
-        
-        $data = [];
-        
-        // Header row for e-SPT CSV
-        $data[] = [
+        $data = [[
             'NPWP', 'Nama', 'Alamat', 'Tanggal Faktur', 'Nomor Faktur', 
             'DPP', 'PPN', 'Keterangan'
-        ];
+        ]];
 
-        // Sample data - replace with actual invoice data
-        $data[] = [
-            '123456789012345', 'PT Sample Customer', 'Jl. Sample No. 1', 
-            '2025-01-01', 'INV-001', '1000000', '110000', 'Sample Invoice'
-        ];
+        $filterParameters = $taxFileExport->getFilterParametersArray();
+        $invoiceIds = $filterParameters['invoice_ids'] ?? [];
+
+        $query = Invoice::with('customer')
+            ->where('invoice_status', Invoice::STATUS_APPROVED)
+            ->whereNotNull('invoice_date');
+
+        if (!empty($invoiceIds)) {
+            $query->whereIn('id', $invoiceIds);
+        } else {
+            $query->whereBetween('invoice_date', [
+                $taxFileExport->period_from->toDateString(),
+                $taxFileExport->period_to->toDateString(),
+            ]);
+        }
+
+        $invoices = $query
+            ->orderBy('invoice_date')
+            ->orderBy('invoice_number')
+            ->get();
+
+        if ($invoices->isEmpty()) {
+            throw new \RuntimeException('No approved invoices found for the selected export criteria.');
+        }
+
+        foreach ($invoices as $invoice) {
+            $customer = $invoice->customer;
+
+            $data[] = [
+                $invoice->npwp_number ?: ($customer?->npwp ?? ''),
+                $customer?->name ?? '',
+                $invoice->tax_address
+                    ?: ($customer?->npwp_address
+                        ?: ($invoice->billing_address ?: ($customer?->address ?? ''))),
+                $invoice->invoice_date->format('Y-m-d'),
+                $invoice->invoice_number,
+                (string) ($invoice->subtotal_after_discount ?? $invoice->subtotal ?? 0),
+                (string) ($invoice->tax_amount ?? 0),
+                $invoice->additional_notes ?: ($invoice->period_invoice ?? ''),
+            ];
+        }
 
         return $data;
     }
