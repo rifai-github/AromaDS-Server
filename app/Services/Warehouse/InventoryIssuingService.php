@@ -170,7 +170,12 @@ class InventoryIssuingService
 
     public function moveSerialNumbersToTechnician(InventoryIssuing $issuing, int $technicianId, ?int $actorId = null): int
     {
-        $issuing->loadMissing(['items.product.productCategory', 'items.product.productType', 'items.serialNumber']);
+        $relations = ['items.product.productCategory', 'items.product.productType', 'items.serialNumber'];
+        if (\Illuminate\Support\Facades\Schema::hasTable('inventory_issuing_item_serials')) {
+            $relations[] = 'items.serialLinks.serialNumber';
+        }
+
+        $issuing->loadMissing($relations);
 
         $serialNumberIds = $this->resolveSerialNumberIdsForItems(
             $issuing->items,

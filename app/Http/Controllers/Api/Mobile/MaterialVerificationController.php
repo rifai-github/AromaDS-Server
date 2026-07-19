@@ -36,6 +36,9 @@ class MaterialVerificationController extends Controller
                 'materials.*.verified' => 'required|boolean',
                 'materials.*.serial_number' => 'nullable|string', // SN yang di-scan (optional)
                 'materials.*.serial_number_id' => 'nullable|exists:serial_numbers,id', // ID SN yang di-scan (optional)
+                'materials.*.serial_numbers' => 'nullable|array',
+                'materials.*.serial_numbers.*.serial_number' => 'required_with:materials.*.serial_numbers|string',
+                'materials.*.serial_numbers.*.serial_number_id' => 'required_with:materials.*.serial_numbers|exists:serial_numbers,id',
             ]);
 
             DB::beginTransaction();
@@ -52,7 +55,12 @@ class MaterialVerificationController extends Controller
             }
             
             // Get inventory issuing
-            $inventoryIssuing = InventoryIssuing::with('items')->findOrFail($request->inventory_issuing_id);
+            $inventoryIssuing = InventoryIssuing::with([
+                'items.product.productCategory',
+                'items.product.productType',
+                'items.serialNumber',
+                'items.serialLinks.serialNumber',
+            ])->findOrFail($request->inventory_issuing_id);
             
             // Verify that this inventory issuing belongs to this job
             if ($inventoryIssuing->reference_no !== $jobSchedule->material_issue_number) {
@@ -176,7 +184,63 @@ class MaterialVerificationController extends Controller
                 // to distribute the quantity if grouped items were sent as one
                 $siblingItems = InventoryIssuingItem::where('inventory_issuing_id', $inventoryIssuing->id)
                     ->where('product_id', $item->product_id)
+                    ->with([
+                        'product.productCategory',
+                        'product.productType',
+                        'serialNumber',
+                        'serialLinks.serialNumber',
+                    ])
                     ->get();
+
+                $requiredSerialCount = $siblingItems->sum(fn ($siblingItem) => $siblingItem->requiredSerialCount());
+                $preparedSerials = $this->linkedSerialNumbersForItems($siblingItems);
+                $preparedSerialIds = $preparedSerials->pluck('id')->map(fn ($id) => (int) $id)->values();
+                $submittedSerialIds = $this->submittedSerialIds($material);
+
+                if ($requiredSerialCount > 0) {
+                    if ($preparedSerialIds->count() < $requiredSerialCount) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => "Inventory Issuing {$inventoryIssuing->issuing_number} baru memiliki {$preparedSerialIds->count()} dari {$requiredSerialCount} Serial Number untuk {$item->product?->name}. Gudang harus melengkapi SN terlebih dahulu.",
+                            'code' => 'ISSUING_SERIALS_INCOMPLETE',
+                        ], 422);
+                    }
+
+                    $missingSerialIds = $preparedSerialIds->diff($submittedSerialIds);
+                    $unexpectedSerialIds = $submittedSerialIds->diff($preparedSerialIds);
+                    if ($submittedSerialIds->count() !== $requiredSerialCount || $missingSerialIds->isNotEmpty() || $unexpectedSerialIds->isNotEmpty()) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => "Wajib scan {$requiredSerialCount} Serial Number yang sudah disiapkan untuk {$item->product?->name}. Terdeteksi {$submittedSerialIds->count()} dari {$requiredSerialCount}.",
+                            'code' => 'MATERIAL_SERIALS_INCOMPLETE',
+                            'data' => [
+                                'required_serial_count' => $requiredSerialCount,
+                                'scanned_serial_count' => $submittedSerialIds->count(),
+                                'expected_serial_numbers' => $preparedSerials->pluck('serial_number')->values(),
+                            ],
+                        ], 422);
+                    }
+
+                    foreach ($preparedSerials as $preparedSerial) {
+                        $isAlreadyHeldByTechnician = $preparedSerial->status === 'on_hand'
+                            && $preparedSerial->location_type === 'technician'
+                            && (int) $preparedSerial->location_id === (int) auth()->id();
+
+                        if (! app(SerialNumberIssuingLinkService::class)->isReadyInWarehouse($preparedSerial) && ! $isAlreadyHeldByTechnician) {
+                            DB::rollBack();
+
+                            return response()->json([
+                                'status' => 'error',
+                                'message' => "Serial Number {$preparedSerial->serial_number} tidak siap di warehouse atau masih aktif di Unit On Wall.",
+                                'code' => 'INVALID_SERIAL_NUMBER_STATE',
+                            ], 400);
+                        }
+                    }
+                }
                 
                 $totalReceivedToDistribute = $material['quantity_received'];
                 
@@ -199,46 +263,6 @@ class MaterialVerificationController extends Controller
                     // Try extract from notes first
                     if ($sItem->notes && preg_match('/Room:\s*([^\s,]+)/i', $sItem->notes, $matches)) {
                         $itemRoomName = trim($matches[1]);
-                    }
-                    
-                    // Link serial number if provided (Only for the first item that needs it or if matching room)
-                    // Note: Serial Number in grouping is tricky, but usually technician scans one by one.
-                    // If grouped, we apply the scanned SN to the first available slot for that product.
-                    if (!empty($material['serial_number_id']) && $take > 0 && !$sItem->serial_number_id) {
-                        $serialNumber = \App\Models\SerialNumber::find($material['serial_number_id']);
-                        
-                        if ($serialNumber && $serialNumber->master_product_id == $sItem->product_id) {
-                            $serialLinkService = app(SerialNumberIssuingLinkService::class);
-
-                            if (! $serialLinkService->isReadyInWarehouse($serialNumber)) {
-                                DB::rollBack();
-
-                                return response()->json([
-                                    'status' => 'error',
-                                    'message' => "Serial Number {$serialNumber->serial_number} tidak siap di warehouse atau masih aktif di Unit On Wall.",
-                                    'code' => 'INVALID_SERIAL_NUMBER_STATE',
-                                ], 400);
-                            }
-
-                            if ($serialLinkService->requiresExclusiveLink($serialNumber)) {
-                                $serialLinkService->releaseStaleLinks($serialNumber, $sItem->id, auth()->id());
-
-                                $preparedLink = $serialLinkService->findPreparedLink($serialNumber->id, $sItem->id);
-                                if ($preparedLink) {
-                                    DB::rollBack();
-
-                                    return response()->json([
-                                        'status' => 'error',
-                                        'message' => "Serial Number {$serialNumber->serial_number} masih dipakai di Inventory Issuing {$preparedLink->inventoryIssuing?->issuing_number}. Tidak bisa dipakai di dua WI yang masih disiapkan.",
-                                        'code' => 'SERIAL_NUMBER_RESERVED',
-                                    ], 400);
-                                }
-                            }
-
-                            // Link SN to issuing item
-                            $updateData['serial_number_id'] = $serialNumber->id;
-                            Log::info("Linking serial number {$serialNumber->serial_number} to inventory issuing item {$sItem->id}");
-                        }
                     }
                     
                     $sItem->update($updateData);
@@ -405,7 +429,12 @@ class MaterialVerificationController extends Controller
                 ], 404);
             }
             
-            $inventoryIssuing = InventoryIssuing::with(['items.product'])
+            $inventoryIssuing = InventoryIssuing::with([
+                'items.product.productCategory',
+                'items.product.productType',
+                'items.serialNumber',
+                'items.serialLinks.serialNumber',
+            ])
                 ->where('reference_no', $materialIssue->issue_number)
                 ->first();
             
@@ -435,8 +464,14 @@ class MaterialVerificationController extends Controller
             // Status 'sent' or 'received' means verification/pickup is complete.
             $alreadyVerified = in_array($inventoryIssuing->status, ['sent', 'received']);
             
-            $materials = $inventoryIssuing->items->groupBy('product_id')->map(function($group) use ($roomNameMap) {
+            $materials = $inventoryIssuing->items->groupBy('product_id')->map(function($group) use ($roomNameMap, $alreadyVerified) {
                 $first = $group->first();
+                $requiredSerialCount = $group->sum(fn ($item) => $item->requiredSerialCount());
+                $preparedSerials = $this->linkedSerialNumbersForItems($group);
+                $serialPayload = $preparedSerials->map(fn ($serialNumber) => [
+                    'serial_number_id' => $serialNumber->id,
+                    'serial_number' => $serialNumber->serial_number,
+                ])->values();
                 
                 // Aggregate room names for all items in this product group
                 $rooms = [];
@@ -471,6 +506,9 @@ class MaterialVerificationController extends Controller
                     'unit' => $first->product->unit ?? 'pcs',
                     'notes' => $group->pluck('notes')->filter()->unique()->implode(', '),
                     'room_name' => !empty($uniqueRooms) ? implode(', ', $uniqueRooms) : null,
+                    'required_serial_count' => $requiredSerialCount,
+                    'serial_numbers' => $serialPayload,
+                    'scanned_serial_numbers' => $alreadyVerified ? $serialPayload : [],
                 ];
             })->values();
             
@@ -497,5 +535,34 @@ class MaterialVerificationController extends Controller
                 'message' => 'Terjadi kesalahan: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function linkedSerialNumbersForItems($items)
+    {
+        return collect($items)->flatMap(function ($item) {
+            $linkedSerials = $item->relationLoaded('serialLinks')
+                ? $item->serialLinks->pluck('serialNumber')->filter()
+                : collect();
+
+            if ($linkedSerials->isEmpty() && $item->serialNumber) {
+                $linkedSerials = collect([$item->serialNumber]);
+            }
+
+            return $linkedSerials;
+        })->filter()->unique('id')->values();
+    }
+
+    private function submittedSerialIds(array $material)
+    {
+        $serialIds = collect($material['serial_numbers'] ?? [])
+            ->pluck('serial_number_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id);
+
+        if (! empty($material['serial_number_id'])) {
+            $serialIds->push((int) $material['serial_number_id']);
+        }
+
+        return $serialIds->unique()->values();
     }
 }

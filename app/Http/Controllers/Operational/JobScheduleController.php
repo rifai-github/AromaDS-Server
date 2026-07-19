@@ -2494,6 +2494,13 @@ class JobScheduleController extends Controller
         $webIssuedMaterialRows = $inventoryIssuings
             ->flatMap(function ($issuing) {
                 return $issuing->items->map(function ($item) use ($issuing) {
+                    $linkedSerials = $item->relationLoaded('serialLinks')
+                        ? $item->serialLinks->pluck('serialNumber')->filter()
+                        : collect();
+                    if ($linkedSerials->isEmpty() && $item->serialNumber) {
+                        $linkedSerials = collect([$item->serialNumber]);
+                    }
+
                     return [
                         'issuing_number' => $issuing->issuing_number ?? ('ISU-' . $issuing->id),
                         'reference_no' => $issuing->reference_no,
@@ -2504,7 +2511,7 @@ class JobScheduleController extends Controller
                         'quantity_requested' => $item->quantity_requested,
                         'quantity_issued' => $item->quantity_issued,
                         'quantity_received' => $item->quantity_received,
-                        'serial_number' => $item->serialNumber?->serial_number,
+                        'serial_number' => $linkedSerials->pluck('serial_number')->filter()->unique()->implode(', '),
                         'warehouse' => $issuing->warehouse?->name,
                         'team' => $issuing->team?->team_code ?? $issuing->team?->team_name,
                     ];

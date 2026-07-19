@@ -515,14 +515,25 @@ class WarehouseController extends Controller
                     $displayUpdatedAt = $issuing->received_at ?? $displayUpdatedAt;
 
                     // Get SNs yang di-scan di issuing ini untuk product ini
+                    $issuingItemRelations = ['serialNumber'];
+                    if (\Illuminate\Support\Facades\Schema::hasTable('inventory_issuing_item_serials')) {
+                        $issuingItemRelations[] = 'serialLinks.serialNumber';
+                    }
+
                     $issuingItems = \App\Models\InventoryIssuingItem::where('inventory_issuing_id', $issuing->id)
                         ->where('product_id', $productId)
                         ->whereNotNull('serial_number_id')
-                        ->with('serialNumber')
+                        ->with($issuingItemRelations)
                         ->get();
                     
-                    $sns = $issuingItems->map(function($item) {
-                        return $item->serialNumber->serial_number ?? null;
+                    $sns = $issuingItems->flatMap(function($item) {
+                        $linkedSerials = $item->relationLoaded('serialLinks')
+                            ? $item->serialLinks->pluck('serialNumber.serial_number')->filter()
+                            : collect();
+
+                        return $linkedSerials->isNotEmpty()
+                            ? $linkedSerials
+                            : collect([$item->serialNumber?->serial_number])->filter();
                     })->filter()->unique()->values()->toArray();
                     
                     if (!empty($sns)) {

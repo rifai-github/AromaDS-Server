@@ -99,6 +99,15 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('inventory_issuing_item_serials', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('inventory_issuing_item_id');
+            $table->foreignId('serial_number_id');
+            $table->integer('unit_index')->default(1);
+            $table->foreignId('created_by')->nullable();
+            $table->timestamps();
+        });
+
         Schema::create('serial_numbers', function (Blueprint $table) {
             $table->id();
             $table->string('serial_number')->nullable();
@@ -143,6 +152,7 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
         foreach ([
             'unit_on_walls',
             'serial_numbers',
+            'inventory_issuing_item_serials',
             'inventory_issuing_items',
             'inventory_issuings',
             'warehouses',
@@ -463,6 +473,90 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
                 'status' => 'in_use',
                 'location_type' => 'customer',
                 'location_id' => 77,
+            ]);
+        }
+    }
+
+    public function test_qty_two_unit_serial_links_both_move_to_technician(): void
+    {
+        $this->seedProduct(12, 102, 'Diffuser W300 White', hasSerialNumber: true, isUnit: true);
+        $this->actingAs(User::findOrFail(1));
+
+        DB::table('serial_numbers')->insert([
+            [
+                'id' => 511,
+                'serial_number' => 'DW300W2606011',
+                'master_product_id' => 102,
+                'warehouse_id' => 1,
+                'status' => 'ready',
+                'location_type' => 'warehouse',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 512,
+                'serial_number' => 'DW300W2606012',
+                'master_product_id' => 102,
+                'warehouse_id' => 1,
+                'status' => 'ready',
+                'location_type' => 'warehouse',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('inventory_issuings')->insert([
+            'id' => 11,
+            'issuing_number' => 'SBY-WI/26-07/0067',
+            'warehouse_id' => 1,
+            'received_by' => 1,
+            'status' => 'processed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_issuing_items')->insert([
+            'id' => 111,
+            'inventory_issuing_id' => 11,
+            'product_id' => 102,
+            'serial_number_id' => 511,
+            'quantity_requested' => 2,
+            'quantity_issued' => 2,
+            'quantity_received' => 2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_issuing_item_serials')->insert([
+            [
+                'inventory_issuing_item_id' => 111,
+                'serial_number_id' => 511,
+                'unit_index' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'inventory_issuing_item_id' => 111,
+                'serial_number_id' => 512,
+                'unit_index' => 2,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $updated = app(InventoryIssuingService::class)->moveSerialNumbersToTechnician(
+            InventoryIssuing::findOrFail(11),
+            1,
+            1
+        );
+
+        $this->assertSame(2, $updated);
+        foreach ([511, 512] as $serialNumberId) {
+            $this->assertDatabaseHas('serial_numbers', [
+                'id' => $serialNumberId,
+                'status' => 'on_hand',
+                'location_type' => 'technician',
+                'location_id' => 1,
             ]);
         }
     }

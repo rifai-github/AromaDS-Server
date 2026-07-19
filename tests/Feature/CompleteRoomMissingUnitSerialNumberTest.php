@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Api\Mobile\JobController;
+use App\Http\Controllers\Api\Mobile\MaterialVerificationController;
 use App\Models\InventoryIssuing;
 use App\Models\InventoryIssuingItem;
 use App\Models\JobAdvice;
@@ -14,6 +15,7 @@ use App\Models\MaterialIssue;
 use App\Models\ProductCategory;
 use App\Models\SerialNumber;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -97,6 +99,8 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             $table->foreignId('product_category_id')->nullable();
             $table->foreignId('product_type_id')->nullable();
             $table->string('name')->nullable();
+            $table->string('sku')->nullable();
+            $table->string('unit')->nullable();
             $table->unsignedBigInteger('created_by')->nullable();
             $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamps();
@@ -107,6 +111,16 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             $table->id();
             $table->string('issue_number')->nullable();
             $table->string('status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('material_issue_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('material_issue_id')->nullable();
+            $table->unsignedBigInteger('product_id')->nullable();
+            $table->string('room_name')->nullable();
+            $table->text('notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -133,6 +147,9 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             $table->string('reference_no')->nullable();
             $table->string('status')->nullable();
             $table->unsignedBigInteger('warehouse_id')->nullable();
+            $table->unsignedBigInteger('received_by')->nullable();
+            $table->date('issue_date')->nullable();
+            $table->timestamp('received_at')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -207,6 +224,7 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
         Schema::dropIfExists('job_assign_material_issues');
         Schema::dropIfExists('job_assign_schedules');
         Schema::dropIfExists('material_issues');
+        Schema::dropIfExists('material_issue_items');
         Schema::dropIfExists('master_products');
         Schema::dropIfExists('product_categories');
         Schema::dropIfExists('serial_numbers');
@@ -432,6 +450,77 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
         ]);
 
         $this->assertSame([], $this->invokeGetMissingUnitSerialNumbersForRoom($job, $room->id, $room->room_name));
+    }
+
+    public function test_material_verification_exposes_two_prepared_serials_and_rejects_only_one_scan(): void
+    {
+        $jobAdvice = JobAdvice::create(['customer_id' => 7, 'type' => 'install']);
+        $job = JobSchedule::create([
+            'job_number' => 'SBY-IR/26-07/0016',
+            'type' => 'install',
+            'status' => 'barang_siap_diambil',
+            'job_advice_id' => $jobAdvice->id,
+        ]);
+
+        $unitCategory = ProductCategory::create(['code' => 'UNIT', 'name' => 'Diffuser', 'is_unit' => true]);
+        $unitProduct = MasterProduct::create([
+            'product_category_id' => $unitCategory->id,
+            'name' => 'Diffuser W300 White',
+            'sku' => 'DW300W',
+            'unit' => 'pcs',
+        ]);
+        $firstSn = SerialNumber::create(['serial_number' => 'DW300W2606011', 'master_product_id' => $unitProduct->id, 'status' => 'ready']);
+        $secondSn = SerialNumber::create(['serial_number' => 'DW300W2606012', 'master_product_id' => $unitProduct->id, 'status' => 'ready']);
+        $materialIssue = MaterialIssue::create(['issue_number' => 'SBY-MI/26-07/0078', 'status' => 'issued']);
+        $jobAssignSchedule = JobAssignSchedule::create(['job_schedule_id' => $job->id, 'status' => 'assigned']);
+        JobAssignMaterialIssue::create([
+            'job_assign_schedule_id' => $jobAssignSchedule->id,
+            'material_issue_id' => $materialIssue->id,
+        ]);
+
+        $issuing = InventoryIssuing::create([
+            'issuing_number' => 'SBY-WI/26-07/0067',
+            'reference_no' => $materialIssue->issue_number,
+            'status' => 'processed',
+            'warehouse_id' => 1,
+            'issue_date' => now()->toDateString(),
+        ]);
+        $item = InventoryIssuingItem::create([
+            'inventory_issuing_id' => $issuing->id,
+            'product_id' => $unitProduct->id,
+            'serial_number_id' => $firstSn->id,
+            'room_name' => 'Ruang 1 Room 1 Rental QTY 2',
+            'quantity_requested' => 2,
+            'quantity_issued' => 2,
+        ]);
+        \DB::table('inventory_issuing_item_serials')->insert([
+            ['inventory_issuing_item_id' => $item->id, 'serial_number_id' => $firstSn->id, 'unit_index' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['inventory_issuing_item_id' => $item->id, 'serial_number_id' => $secondSn->id, 'unit_index' => 2, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $controller = app(MaterialVerificationController::class);
+        $materialsResponse = $controller->getMaterialsForVerification($job->id);
+        $materialsPayload = $materialsResponse->getData(true);
+        $materialPayload = $materialsPayload['data']['materials'][0];
+
+        $this->assertSame(2, $materialPayload['required_serial_count']);
+        $this->assertSame(['DW300W2606011', 'DW300W2606012'], array_column($materialPayload['serial_numbers'], 'serial_number'));
+
+        $verifyResponse = $controller->verifyMaterials(Request::create('/', 'POST', [
+            'inventory_issuing_id' => $issuing->id,
+            'materials' => [[
+                'item_id' => $item->id,
+                'quantity_received' => 2,
+                'verified' => true,
+                'serial_numbers' => [[
+                    'serial_number_id' => $firstSn->id,
+                    'serial_number' => $firstSn->serial_number,
+                ]],
+            ]],
+        ]), $job->id);
+
+        $this->assertSame(422, $verifyResponse->getStatusCode());
+        $this->assertSame('MATERIAL_SERIALS_INCOMPLETE', $verifyResponse->getData(true)['code']);
     }
 
     /**

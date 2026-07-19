@@ -1420,7 +1420,26 @@
                                                     <td class="text-end">{{ $issuingItem->quantity_requested ?? 0 }}</td>
                                                     <td class="text-end">{{ $issuingItem->quantity_issued ?? 0 }}</td>
                                                     <td class="text-end">{{ $issuingItem->quantity_received ?? 0 }}</td>
-                                                    <td>{{ $issuingItem->serialNumber?->serial_number ?? '-' }}</td>
+                                                    @php
+                                                        $issuingSerials = $issuingItem->relationLoaded('serialLinks')
+                                                            ? $issuingItem->serialLinks->pluck('serialNumber')->filter()
+                                                            : collect();
+                                                        if ($issuingSerials->isEmpty() && $issuingItem->serialNumber) {
+                                                            $issuingSerials = collect([$issuingItem->serialNumber]);
+                                                        }
+                                                        $issuingSerialLabels = $issuingSerials
+                                                            ->pluck('serial_number')
+                                                            ->filter()
+                                                            ->unique()
+                                                            ->values();
+                                                    @endphp
+                                                    <td>
+                                                        @forelse($issuingSerialLabels as $serialLabel)
+                                                            <div>{{ $serialLabel }}</div>
+                                                        @empty
+                                                            -
+                                                        @endforelse
+                                                    </td>
                                                     <td>{{ $issuing->warehouse?->name ?? '-' }}</td>
                                                     <td>{{ $issuing->team?->team_code ?? $issuing->team?->team_name ?? '-' }}</td>
                                                 </tr>
