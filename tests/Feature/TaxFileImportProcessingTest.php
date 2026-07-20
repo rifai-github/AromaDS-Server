@@ -24,7 +24,7 @@ class TaxFileImportProcessingTest extends TestCase
 
         Schema::create('tax_file_imports', function (Blueprint $table) {
             $table->id();
-            $table->string('import_number');
+            $table->string('import_number')->unique();
             $table->string('file_name');
             $table->date('import_date');
             $table->foreignId('bank_id')->nullable();
@@ -316,6 +316,86 @@ class TaxFileImportProcessingTest extends TestCase
 
             $this->assertSame($delimiter, $import->delimiter);
             $this->uploadedImportFiles[] = public_path('uploads/tax-file-imports/'.$import->file_name);
+        }
+    }
+
+    public function test_import_number_sequence_includes_soft_deleted_records(): void
+    {
+        $date = now()->format('Ymd');
+
+        DB::table('tax_file_imports')->insert([
+            [
+                'import_number' => "TFI-{$date}-0001",
+                'file_name' => 'deleted-1.csv',
+                'import_date' => now()->toDateString(),
+                'file_format' => 'csv',
+                'delimiter' => TaxFileImport::DELIMITER_COMMA,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+                'deleted_at' => now(),
+            ],
+            [
+                'import_number' => "TFI-{$date}-0002",
+                'file_name' => 'deleted-2.csv',
+                'import_date' => now()->toDateString(),
+                'file_format' => 'csv',
+                'delimiter' => TaxFileImport::DELIMITER_COMMA,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+                'deleted_at' => now(),
+            ],
+        ]);
+
+        $this->assertSame("TFI-{$date}-0003", TaxFileImport::generateImportNumber());
+    }
+
+    public function test_failed_store_removes_uploaded_file(): void
+    {
+        $originalFileName = 'orphan-cleanup-test.csv';
+        $uploadPattern = public_path('uploads/tax-file-imports/*_'.$originalFileName);
+
+        foreach (glob($uploadPattern) ?: [] as $existingFile) {
+            unlink($existingFile);
+        }
+
+        DB::statement(<<<'SQL'
+            CREATE TRIGGER fail_tax_file_import_insert
+            BEFORE INSERT ON tax_file_imports
+            BEGIN
+                SELECT RAISE(ABORT, 'forced insert failure');
+            END
+        SQL);
+
+        try {
+            $response = $this
+                ->withoutMiddleware()
+                ->withHeaders([
+                    'Accept' => 'application/json',
+                    'X-Requested-With' => 'XMLHttpRequest',
+                ])
+                ->post(route('finance.tax-file-imports.store'), [
+                    'file' => UploadedFile::fake()->create(
+                        $originalFileName,
+                        1,
+                        'text/csv',
+                    ),
+                    'auto_process' => '0',
+                    'skip_header' => '1',
+                    'delimiter' => TaxFileImport::DELIMITER_COMMA,
+                ]);
+
+            $response->assertServerError();
+            $response->assertJsonPath('status', 'error');
+            $this->assertSame([], glob($uploadPattern) ?: []);
+            $this->assertDatabaseCount('tax_file_imports', 0);
+        } finally {
+            DB::statement('DROP TRIGGER IF EXISTS fail_tax_file_import_insert');
+
+            foreach (glob($uploadPattern) ?: [] as $orphanedFile) {
+                unlink($orphanedFile);
+            }
         }
     }
 }

@@ -84,6 +84,9 @@ class TaxFileImportController extends Controller
             'notes' => 'nullable|string|max:1000',
         ]);
 
+        $uploadedFilePath = null;
+        $transactionCommitted = false;
+
         try {
             DB::beginTransaction();
 
@@ -101,6 +104,7 @@ class TaxFileImportController extends Controller
             }
             
             // Move file to public/uploads directory
+            $uploadedFilePath = $fullPath.DIRECTORY_SEPARATOR.$fileName;
             $file->move($fullPath, $fileName);
 
             $import = TaxFileImport::create([
@@ -127,6 +131,7 @@ class TaxFileImportController extends Controller
             }
 
             DB::commit();
+            $transactionCommitted = true;
 
             if ($request->ajax()) {
                 return response()->json([
@@ -138,8 +143,14 @@ class TaxFileImportController extends Controller
 
             return redirect()->route('tax-file-imports.index')
                 ->with('success', 'Tax file import created successfully.');
-        } catch (\Exception $e) {
-            DB::rollback();
+        } catch (\Throwable $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            if (! $transactionCommitted && $uploadedFilePath && file_exists($uploadedFilePath)) {
+                unlink($uploadedFilePath);
+            }
             
             if ($request->ajax()) {
                 return response()->json([

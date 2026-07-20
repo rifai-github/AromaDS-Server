@@ -271,9 +271,18 @@ class TaxFileImport extends Model
     {
         $prefix = 'TFI';
         $date = date('Ymd');
-        $count = self::whereDate('created_at', today())->count() + 1;
-        
-        return $prefix . '-' . $date . '-' . str_pad($count, 4, '0', STR_PAD_LEFT);
+        $numberPrefix = $prefix.'-'.$date.'-';
+
+        $lastSequence = self::withTrashed()
+            ->where('import_number', 'like', $numberPrefix.'%')
+            ->pluck('import_number')
+            ->reduce(function (int $highest, string $importNumber) use ($numberPrefix): int {
+                $sequence = (int) str_replace($numberPrefix, '', $importNumber);
+
+                return max($highest, $sequence);
+            }, 0);
+
+        return $numberPrefix.str_pad($lastSequence + 1, 4, '0', STR_PAD_LEFT);
     }
 
     // Mutators
