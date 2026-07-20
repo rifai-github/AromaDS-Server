@@ -77,11 +77,20 @@ class TaxFileImportController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'file' => 'required|file|mimes:csv,xlsx,xls|max:10240', // 10MB max
+            'file' => [
+                'required',
+                'file',
+                'extensions:csv,xlsx,xls',
+                'mimetypes:text/plain,text/csv,application/csv,text/comma-separated-values,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,application/x-ole-storage,application/octet-stream',
+                'max:10240', // 10MB max
+            ],
             'auto_process' => 'boolean',
             'skip_header' => 'boolean',
             'delimiter' => ['required', Rule::in(TaxFileImport::DELIMITERS)],
             'notes' => 'nullable|string|max:1000',
+        ], [
+            'file.extensions' => 'The file field must be a file of type: csv, xlsx, xls.',
+            'file.mimetypes' => 'The file field must be a valid CSV, XLSX, or XLS file.',
         ]);
 
         $uploadedFilePath = null;

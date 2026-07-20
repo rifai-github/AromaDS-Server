@@ -319,6 +319,51 @@ class TaxFileImportProcessingTest extends TestCase
         }
     }
 
+    public function test_store_accepts_exported_csv_detected_as_plain_text(): void
+    {
+        $temporaryCsvPath = tempnam(sys_get_temp_dir(), 'tfe-export-');
+        file_put_contents(
+            $temporaryCsvPath,
+            implode("\n", [
+                'NPWP,Nama,Alamat,"Tanggal Faktur","Nomor Faktur",DPP,PPN,Keterangan',
+                '0002026072072026,XYZ,"Jalan Pajak Raya Manunggal Surabaya Raya",2026-07-03,SBY-INV/26-07/0002,300000.00,33000.00,"Period 2"',
+            ])."\n",
+        );
+
+        $file = new UploadedFile(
+            $temporaryCsvPath,
+            'TFE-20260720-0001.csv',
+            'text/csv',
+            null,
+            true,
+        );
+
+        $this->assertSame('text/plain', $file->getMimeType());
+
+        $response = $this
+            ->withoutMiddleware()
+            ->withHeaders([
+                'Accept' => 'application/json',
+                'X-Requested-With' => 'XMLHttpRequest',
+            ])
+            ->post(route('finance.tax-file-imports.store'), [
+                'file' => $file,
+                'auto_process' => '0',
+                'skip_header' => '1',
+                'delimiter' => TaxFileImport::DELIMITER_COMMA,
+                'notes' => 'plain-text-csv-upload-test',
+            ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('status', 'success');
+
+        $import = TaxFileImport::where('notes', 'plain-text-csv-upload-test')->firstOrFail();
+
+        $this->assertSame('csv', $import->file_format);
+        $this->assertSame(TaxFileImport::DELIMITER_COMMA, $import->delimiter);
+        $this->uploadedImportFiles[] = public_path('uploads/tax-file-imports/'.$import->file_name);
+    }
+
     public function test_import_number_sequence_includes_soft_deleted_records(): void
     {
         $date = now()->format('Ymd');
