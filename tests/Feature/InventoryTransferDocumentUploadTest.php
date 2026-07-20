@@ -41,6 +41,7 @@ class InventoryTransferDocumentUploadTest extends TestCase
         Schema::create('warehouses', function (Blueprint $table) {
             $table->id();
             $table->string('name')->nullable();
+            $table->string('warehouse_code')->nullable();
             $table->foreignId('branch_id')->nullable();
             $table->boolean('is_active')->default(true);
             $table->boolean('is_center')->default(false);
@@ -250,5 +251,79 @@ class InventoryTransferDocumentUploadTest extends TestCase
         $this->assertSame('damaged', $transfer->return_reason_category);
         $this->assertSame('Unit rusak saat pengecekan stok cabang, dikembalikan ke pusat untuk repair.', $transfer->return_reason);
         $this->assertNull($transfer->source_type); // not tied to a job-schedule material return
+    }
+
+    public function test_center_can_transfer_to_the_same_center_warehouse(): void
+    {
+        $center = Warehouse::create(['name' => 'Gudang PUSAT', 'is_center' => true]);
+        DB::table('master_products')->insert(['id' => 1, 'name' => 'Diffuser W300 White', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('warehouse_products')->insert([
+            'warehouse_id' => $center->id, 'master_product_id' => 1, 'quantity' => 5,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $request = Request::create('/warehouse/inventory-transfers/api/store', 'POST', [
+            'transfer_date' => now()->toDateString(),
+            'from_warehouse_id' => $center->id,
+            'to_warehouse_id' => $center->id,
+            'status' => 'draft',
+            'items' => [['product_id' => 1, 'quantity' => 1]],
+        ]);
+
+        $response = (new InventoryController())->storeTransfer($request);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
+        $this->assertSame($center->id, InventoryTransfer::firstOrFail()->to_warehouse_id);
+    }
+
+    public function test_destination_dropdown_follows_center_routing_rules(): void
+    {
+        $center = Warehouse::create(['name' => 'Gudang PUSAT', 'is_center' => true]);
+        $branchA = Warehouse::create(['name' => 'Gudang Cabang A', 'is_center' => false]);
+        $branchB = Warehouse::create(['name' => 'Gudang Cabang B', 'is_center' => false]);
+        $controller = new InventoryController;
+
+        $centerPayload = $controller->getTransferWarehouses($center->id)->getData(true);
+        $centerDestinationIds = collect($centerPayload['data'])->pluck('id')->all();
+
+        $this->assertContains($center->id, $centerDestinationIds);
+        $this->assertContains($branchA->id, $centerDestinationIds);
+        $this->assertContains($branchB->id, $centerDestinationIds);
+
+        $branchPayload = $controller->getTransferWarehouses($branchA->id)->getData(true);
+        $branchDestinationIds = collect($branchPayload['data'])->pluck('id')->all();
+
+        $this->assertSame([$center->id], $branchDestinationIds);
+    }
+
+    public function test_branch_cannot_transfer_directly_to_another_branch(): void
+    {
+        $fromBranch = Warehouse::create(['name' => 'Gudang Cabang A', 'is_center' => false]);
+        $toBranch = Warehouse::create(['name' => 'Gudang Cabang B', 'is_center' => false]);
+        DB::table('master_products')->insert(['id' => 1, 'name' => 'Diffuser W300 White', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('warehouse_products')->insert([
+            'warehouse_id' => $fromBranch->id, 'master_product_id' => 1, 'quantity' => 5,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $request = $this->requestWithFile('/warehouse/inventory-transfers/api/store', [
+            'transfer_date' => now()->toDateString(),
+            'from_warehouse_id' => $fromBranch->id,
+            'to_warehouse_id' => $toBranch->id,
+            'status' => 'draft',
+            'is_direct_branch_transfer' => 1,
+            'central_approval_notes' => 'Approved',
+            'items' => [['product_id' => 1, 'quantity' => 1]],
+        ], [
+            'delivery_order_file' => UploadedFile::fake()->create('delivery-order.pdf', 100),
+        ]);
+
+        $response = (new InventoryController())->storeTransfer($request);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertSame('Transfer dari gudang cabang harus melalui Gudang PUSAT.', $payload['message']);
+        $this->assertDatabaseCount('inventory_transfers', 0);
     }
 }

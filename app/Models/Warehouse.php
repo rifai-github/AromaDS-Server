@@ -132,16 +132,13 @@ class Warehouse extends Model
 
     public function canTransferTo($targetWarehouse)
     {
-        // Transfer rules: Center ↔ Branch only, no Branch ↔ Branch
-        if ($this->isCenter() && $targetWarehouse->isBranch()) {
-            return true; // Center to Branch
+        // Center can transfer to any warehouse, including a center warehouse.
+        // A branch must always route its transfer through a center warehouse.
+        if ($this->isCenter()) {
+            return true;
         }
-        
-        if ($this->isBranch() && $targetWarehouse->isCenter()) {
-            return true; // Branch to Center
-        }
-        
-        return false; // Branch to Branch or Center to Center not allowed
+
+        return $targetWarehouse->isCenter();
     }
 
     public function scopeByName($query, $name)

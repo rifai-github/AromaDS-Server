@@ -673,7 +673,7 @@ class InventoryController extends Controller
         $request->validate([
             'transfer_date' => 'required|date',
             'from_warehouse_id' => 'required|exists:warehouses,id',
-            'to_warehouse_id' => 'required|exists:warehouses,id|different:from_warehouse_id',
+            'to_warehouse_id' => 'required|exists:warehouses,id',
             'status' => 'required|in:draft,transferred,received',
             'is_direct_branch_transfer' => 'nullable|boolean',
             'delivery_order_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
@@ -691,7 +691,7 @@ class InventoryController extends Controller
         try {
             DB::beginTransaction();
 
-            // Validate transfer rules (Center ↔ Branch only)
+            // Center may transfer to any warehouse. A branch must transfer to center.
             $fromWarehouse = Warehouse::findOrFail($request->from_warehouse_id);
             $toWarehouse = Warehouse::findOrFail($request->to_warehouse_id);
             
@@ -699,13 +699,11 @@ class InventoryController extends Controller
             $isDirectBranchTransfer = $request->boolean('is_direct_branch_transfer');
 
             if (!$fromWarehouse->canTransferTo($toWarehouse)) {
-                if (! $isBranchToBranch || ! $isDirectBranchTransfer || ! $request->hasFile('delivery_order_file') || ! $request->filled('central_approval_notes')) {
-                    DB::rollBack();
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Transfer antar Branch hanya boleh dengan approval pusat dan upload DO.'
-                    ], 422);
-                }
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Transfer dari gudang cabang harus melalui Gudang PUSAT.'
+                ], 422);
             }
 
             if ($isDirectBranchTransfer && ! $isBranchToBranch) {
@@ -831,7 +829,7 @@ class InventoryController extends Controller
         $request->validate([
             'transfer_date' => 'required|date',
             'from_warehouse_id' => 'required|exists:warehouses,id',
-            'to_warehouse_id' => 'required|exists:warehouses,id|different:from_warehouse_id',
+            'to_warehouse_id' => 'required|exists:warehouses,id',
             'status' => 'required|in:draft,transferred,received',
             'is_direct_branch_transfer' => 'nullable|boolean',
             'delivery_order_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
@@ -855,13 +853,11 @@ class InventoryController extends Controller
             $isDirectBranchTransfer = $request->boolean('is_direct_branch_transfer');
 
             if (!$fromWarehouse->canTransferTo($toWarehouse)) {
-                if (! $isBranchToBranch || ! $isDirectBranchTransfer || (! $request->hasFile('delivery_order_file') && ! $transfer->delivery_order_file) || ! $request->filled('central_approval_notes')) {
-                    DB::rollBack();
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Transfer antar Branch hanya boleh dengan approval pusat dan upload DO.'
-                    ], 422);
-                }
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Transfer dari gudang cabang harus melalui Gudang PUSAT.'
+                ], 422);
             }
 
             if ($isDirectBranchTransfer && ! $isBranchToBranch) {
