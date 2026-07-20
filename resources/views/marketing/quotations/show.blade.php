@@ -1067,18 +1067,6 @@ function updateQuotationDate(newDate, input = document.getElementById('quotation
 
 // Finalize quotation function with operational area validation
 async function finalizeQuotation() {
-    // Show loading while checking operational area
-    Swal.fire({
-        title: 'Memvalidasi...',
-        text: 'Mengecek operational area',
-        icon: 'info',
-        allowOutsideClick: false,
-        showConfirmButton: false,
-        didOpen: () => {
-            Swal.showLoading();
-        }
-    });
-    
     try {
         // Get building ID from quotation's surveys
         @php
@@ -1092,10 +1080,23 @@ async function finalizeQuotation() {
         const surveyId = {{ $surveyId ?? 'null' }};
         
         if (!surveyId) {
-            // If no survey, skip validation and proceed
+            // Renewals without a survey do not need the validation loader.
+            // Opening it here leaves SweetAlert's confirm button hidden.
             proceedWithFinalize();
             return;
         }
+
+        // Show loading only when an operational-area request will be made.
+        Swal.fire({
+            title: 'Memvalidasi...',
+            text: 'Mengecek operational area',
+            icon: 'info',
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
         
         // Check if building's city is in operational area
         const response = await fetch(`/operational/api/check-operational-area-by-survey/${surveyId}`);
