@@ -1888,6 +1888,12 @@ function loadContracts(marketingId = null) {
     
     const contractSelect = document.getElementById('contract_id');
     if (!contractSelect) return;
+
+    const requestToken = ++contractDropdownRequestToken;
+    const requestedMarketingId = marketingId ? String(marketingId) : '';
+    const isSameMarketing = requestedMarketingId === contractDropdownMarketingId;
+    const previouslySelectedContractId = isSameMarketing ? String(contractSelect.value || '') : '';
+    contractDropdownMarketingId = requestedMarketingId;
     
     // Clear and disable if no marketing selected (unless Admin)
     if (!marketingId && !isAdmin) {
@@ -1897,7 +1903,9 @@ function loadContracts(marketingId = null) {
     }
     
     contractSelect.disabled = false;
-    contractSelect.innerHTML = '<option value="">Loading...</option>';
+    if (!previouslySelectedContractId) {
+        contractSelect.innerHTML = '<option value="">Loading...</option>';
+    }
     
     // Build URL with marketing filter if provided
     const baseUrl = '/api/contracts/dropdown';
@@ -1922,6 +1930,12 @@ function loadContracts(marketingId = null) {
         return response.json();
     })
     .then(data => {
+        // A newer Request By/loadContracts call already owns the dropdown.
+        // Ignore this stale response so it cannot erase a selection made meanwhile.
+        if (requestToken !== contractDropdownRequestToken) {
+            return data;
+        }
+
         console.log(`Contracts data:`, data);
         contractSelect.innerHTML = '<option value="">Select Contract</option>';
         
@@ -1967,6 +1981,12 @@ function loadContracts(marketingId = null) {
             console.log(`No active contracts found for marketing ${marketingId}`);
         }
 
+        const canRestorePreviousContract = previouslySelectedContractId
+            && filteredContracts.some(contract => String(contract.id) === previouslySelectedContractId);
+        if (canRestorePreviousContract) {
+            contractSelect.value = previouslySelectedContractId;
+        }
+
         // Initialize/Refresh Select2 for Contracts
         if (typeof $ !== 'undefined' && typeof $.fn.select2 !== 'undefined') {
             $(contractSelect).select2({
@@ -1979,6 +1999,10 @@ function loadContracts(marketingId = null) {
         return data;
     })
     .catch(error => {
+        if (requestToken !== contractDropdownRequestToken) {
+            return null;
+        }
+
         console.error(`Error loading contracts:`, error);
         contractSelect.innerHTML = '<option value="">Error Loading Contracts</option>';
         throw error;
@@ -2364,6 +2388,8 @@ let contractJobAdviceJqueryBound = false;
 let extraOnWallRequestToken = 0;
 let extraUnitApplying = false;
 let extraUnitRestoring = false;
+let contractDropdownRequestToken = 0;
+let contractDropdownMarketingId = null;
 let contractRoomsRequestToken = 0;
 // Fallback lookup so PIC loading still works if a contract/quotation <option>'s
 // data-customer-id attribute is ever missing/stale (e.g. DOM not fully settled when change fires).

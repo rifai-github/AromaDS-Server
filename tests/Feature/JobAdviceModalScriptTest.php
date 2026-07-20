@@ -93,6 +93,26 @@ class JobAdviceModalScriptTest extends TestCase
         );
     }
 
+    public function test_contract_dropdown_ignores_stale_responses_and_preserves_selection(): void
+    {
+        // Bug: overlapping Contract dropdown requests could resolve out of order and
+        // rebuild the <select> after the user had already chosen a Contract.
+        $view = file_get_contents(resource_path('views/marketing/job-advices/index.blade.php'));
+
+        $this->assertStringContainsString('let contractDropdownRequestToken = 0;', $view);
+        $this->assertStringContainsString('let contractDropdownMarketingId = null;', $view);
+        $this->assertStringContainsString('const requestToken = ++contractDropdownRequestToken;', $view);
+        $this->assertGreaterThanOrEqual(
+            2,
+            substr_count($view, 'if (requestToken !== contractDropdownRequestToken) {')
+        );
+        $this->assertStringContainsString(
+            "const previouslySelectedContractId = isSameMarketing ? String(contractSelect.value || '') : '';",
+            $view
+        );
+        $this->assertStringContainsString('contractSelect.value = previouslySelectedContractId;', $view);
+    }
+
     public function test_pic_loading_falls_back_to_in_memory_customer_id_map(): void
     {
         // Bug: PIC dropdown could stay empty after selecting a Contract/Quotation if the
