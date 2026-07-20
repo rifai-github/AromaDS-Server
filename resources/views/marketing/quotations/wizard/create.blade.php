@@ -4218,6 +4218,12 @@ $(document).ready(function() {
                 customerName = firstSurveyOption.data('customer') || '-';
                 customerType = firstSurveyOption.data('company-type') || '-';
             }
+        } else if (quotation_type === 'renewal' && window.renewalContractData) {
+            var renewalCustomer = window.renewalContractData.customer || {};
+            customerName = renewalCustomer.name || '-';
+            customerType = renewalCustomer.company_type
+                ? String(renewalCustomer.company_type).toUpperCase()
+                : '-';
         }
 
         var surveyListHtml = '';
@@ -4226,6 +4232,31 @@ $(document).ready(function() {
             var option = $('#survey_tags option[value="' + id + '"]');
             var text = option.text() || ('Survey ID: ' + id);
             surveyListHtml += '<li>' + text + '</li>';
+        }
+
+        if (!surveyListHtml && quotation_type === 'renewal' && window.renewalContractData) {
+            var renewalSurveyNumbers = [];
+            var renewalSurveys = Array.isArray(window.renewalContractData.surveys)
+                ? window.renewalContractData.surveys
+                : [];
+
+            renewalSurveys.forEach(function(survey) {
+                if (survey && survey.survey_number && !renewalSurveyNumbers.includes(survey.survey_number)) {
+                    renewalSurveyNumbers.push(survey.survey_number);
+                }
+            });
+
+            if (renewalSurveyNumbers.length === 0 && window.renewalContractData.survey_number) {
+                renewalSurveyNumbers.push(window.renewalContractData.survey_number);
+            }
+
+            renewalSurveyNumbers.forEach(function(surveyNumber) {
+                surveyListHtml += '<li>' + surveyNumber + '</li>';
+            });
+        }
+
+        if (!surveyListHtml) {
+            surveyListHtml = '<li>-</li>';
         }
 
         var contractNumber = '';
