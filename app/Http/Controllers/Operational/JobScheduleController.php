@@ -2589,32 +2589,8 @@ class JobScheduleController extends Controller
                     $unitOnWallQuery->whereIn('rental_id', $rentalIds);
                 }
 
-                // MOM: Strict Install-Remove Mirroring
-                $installJobSns = [];
-                try {
-                    $installJob = \App\Models\JobSchedule::where('job_advice_id', $jobAdvice->id)
-                        ->whereIn('type', ['install', 'Install', 'install_free', 'Install Free'])
-                        ->whereIn('status', ['completed', 'done_job'])
-                        ->first();
-                        
-                    if ($installJob) {
-                        $materialIssues = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function($q) use ($installJob) {
-                            $q->where('job_schedule_id', $installJob->id);
-                        })->pluck('issue_number')->toArray();
-                        
-                        if (!empty($materialIssues)) {
-                            // Using DB join for absolute certainty in SQL execution
-                            $installJobSns = \DB::table('inventory_issuing_items')
-                                ->join('inventory_issuings', 'inventory_issuing_items.inventory_issuing_id', '=', 'inventory_issuings.id')
-                                ->whereIn('inventory_issuings.reference_no', $materialIssues)
-                                ->whereNotNull('inventory_issuing_items.serial_number_id')
-                                ->pluck('inventory_issuing_items.serial_number_id')
-                                ->toArray();
-                        }
-                    }
-                } catch (\Exception $e) {
-                    \Log::error("Failed to fetch Install Job SNs: " . $e->getMessage());
-                }
+                $renewalSourceContract = $this->resolveRenewalSourceContractForJobAdvice($jobAdvice);
+                $installJobSns = $this->getInstalledSerialNumberIdsForRemoveJob($jobSchedule, $jobAdvice, $renewalSourceContract);
 
                 // MOM: Strict Install-Remove Mirroring
                 // If we found specific SNs that were installed via the related install job in this JA, 
@@ -2635,6 +2611,10 @@ class JobScheduleController extends Controller
                         ->get();
                     
                     \Log::info("Job {$jobSchedule->job_number}: Filtered UnitOnWall by " . count($installJobSns) . " SNs from related Install Job.");
+                } elseif ($renewalSourceContract) {
+                    $unitOnWalls = collect();
+
+                    \Log::warning("Job {$jobSchedule->job_number}: Renewal source contract {$renewalSourceContract->contract_number} has no installed SNs available for Remove.");
                 } else {
                     // Fallback to room-based if no install job found (e.g. manually created remove job)
                     $unitOnWalls = $unitOnWallQuery
@@ -2651,7 +2631,7 @@ class JobScheduleController extends Controller
                 })->filter(); // Remove null values
                 
                 // If no serial_number_id found, try using serial_number string field directly
-                if ($serialNumbers->isEmpty()) {
+                if ($serialNumbers->isEmpty() && !$renewalSourceContract) {
                     $unitOnWallsDirect = $unitOnWallQuery
                         ->whereNotNull('serial_number')
                         ->get();
@@ -7377,30 +7357,12 @@ class JobScheduleController extends Controller
                 
             \Log::info("Assigned Room IDs for this removal job: " . implode(', ', $assignedJobAdviceRoomIds));
             
-            // MOM: Strict Install-Remove Mirroring - Find serial numbers from the related install job
-            $installJobSns = [];
-            try {
-                $installJob = \App\Models\JobSchedule::where('job_advice_id', $jobAdvice->id)
-                    ->whereIn('type', ['install', 'Install', 'install_free', 'Install Free'])
-                    ->whereIn('status', ['completed', 'done_job', 'done job'])
-                    ->first();
-                    
-                if ($installJob) {
-                    $materialIssueNumbers = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function($q) use ($installJob) {
-                        $q->where('job_schedule_id', $installJob->id);
-                    })->pluck('issue_number')->toArray();
-                    
-                    if (!empty($materialIssueNumbers)) {
-                        $installJobSns = \DB::table('inventory_issuing_items')
-                            ->join('inventory_issuings', 'inventory_issuing_items.inventory_issuing_id', '=', 'inventory_issuings.id')
-                            ->whereIn('inventory_issuings.reference_no', $materialIssueNumbers)
-                            ->whereNotNull('inventory_issuing_items.serial_number_id')
-                            ->pluck('inventory_issuing_items.serial_number_id')
-                            ->toArray();
-                    }
-                }
-            } catch (\Exception $e) {
-                \Log::error("Failed to fetch Install Job SNs in autoRemoveUnitOnWall: " . $e->getMessage());
+            $renewalSourceContract = $this->resolveRenewalSourceContractForJobAdvice($jobAdvice);
+            $installJobSns = $this->getInstalledSerialNumberIdsForRemoveJob($removeJob, $jobAdvice, $renewalSourceContract);
+
+            if ($renewalSourceContract && empty($installJobSns)) {
+                \Log::warning("Remove Job {$removeJob->job_number}: Renewal source contract {$renewalSourceContract->contract_number} has no installed SNs available. Skipping Unit On Wall auto-remove to avoid removing unrelated units.");
+                return;
             }
 
             // Remove/hide Unit On Wall for each room in Job Advice
@@ -7912,6 +7874,119 @@ class JobScheduleController extends Controller
                 });
             })
             ->exists();
+    }
+
+    private function resolveRenewalSourceContractForJobAdvice($jobAdvice): ?Contract
+    {
+        if (!$jobAdvice) {
+            return null;
+        }
+
+        $jobAdvice->loadMissing('contract.quotation');
+
+        $contract = $jobAdvice->contract;
+        $quotation = $contract?->quotation;
+
+        if (
+            !$contract
+            || !$quotation
+            || $quotation->quotation_type !== 'renewal'
+            || !$quotation->existing_contract_id
+        ) {
+            return null;
+        }
+
+        $sourceContract = Contract::findRenewalSource($quotation->existing_contract_id);
+
+        return $sourceContract && (int) $sourceContract->id !== (int) $contract->id
+            ? $sourceContract
+            : null;
+    }
+
+    private function getInstalledSerialNumberIdsForRemoveJob(JobSchedule $removeJob, $jobAdvice, ?Contract $renewalSourceContract = null): array
+    {
+        if (!$jobAdvice) {
+            return [];
+        }
+
+        try {
+            $jobAdviceIds = collect([$jobAdvice->id]);
+
+            if ($renewalSourceContract) {
+                $sourceJobAdviceIds = \App\Models\JobAdvice::where('contract_id', $renewalSourceContract->id)
+                    ->pluck('id');
+
+                $jobAdviceIds = $sourceJobAdviceIds->merge($jobAdviceIds);
+            }
+
+            $jobAdviceIds = $jobAdviceIds
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+            if ($jobAdviceIds->isEmpty()) {
+                return [];
+            }
+
+            $installJobIds = \App\Models\JobSchedule::whereIn('job_advice_id', $jobAdviceIds->all())
+                ->whereIn(DB::raw('LOWER(type)'), ['install', 'install_free'])
+                ->whereIn(DB::raw('LOWER(status)'), ['completed', 'done_job', 'done job'])
+                ->orderBy('id')
+                ->pluck('id');
+
+            if ($installJobIds->isEmpty()) {
+                return [];
+            }
+
+            $materialIssueNumbers = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function ($query) use ($installJobIds) {
+                    $query->whereIn('job_schedule_id', $installJobIds->all());
+                })
+                ->pluck('issue_number')
+                ->filter()
+                ->unique()
+                ->values();
+
+            if ($materialIssueNumbers->isEmpty()) {
+                return [];
+            }
+
+            return $this->getSerialNumberIdsFromInventoryIssuingReferences($materialIssueNumbers->all());
+        } catch (\Exception $e) {
+            \Log::error("Failed to fetch installed SNs for Remove Job {$removeJob->job_number}: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    private function getSerialNumberIdsFromInventoryIssuingReferences(array $referenceNumbers): array
+    {
+        if (empty($referenceNumbers)) {
+            return [];
+        }
+
+        $serialNumberIds = DB::table('inventory_issuing_items')
+            ->join('inventory_issuings', 'inventory_issuing_items.inventory_issuing_id', '=', 'inventory_issuings.id')
+            ->whereIn('inventory_issuings.reference_no', $referenceNumbers)
+            ->whereNotNull('inventory_issuing_items.serial_number_id')
+            ->pluck('inventory_issuing_items.serial_number_id');
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('inventory_issuing_item_serials')) {
+            $linkedSerialNumberIds = DB::table('inventory_issuing_item_serials')
+                ->join('inventory_issuing_items', 'inventory_issuing_item_serials.inventory_issuing_item_id', '=', 'inventory_issuing_items.id')
+                ->join('inventory_issuings', 'inventory_issuing_items.inventory_issuing_id', '=', 'inventory_issuings.id')
+                ->whereIn('inventory_issuings.reference_no', $referenceNumbers)
+                ->whereNotNull('inventory_issuing_item_serials.serial_number_id')
+                ->pluck('inventory_issuing_item_serials.serial_number_id');
+
+            $serialNumberIds = $serialNumberIds->merge($linkedSerialNumberIds);
+        }
+
+        return $serialNumberIds
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function activeUnitOnWallStatusesForScheduling(): array
