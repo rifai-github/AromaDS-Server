@@ -1171,7 +1171,9 @@ class LostUnitReportController extends Controller
             
             // Calculate Tax based on Customer Tax Obligation
             $taxObligation = $contract->customer->tax_obligation ?? false;
-            $taxAmount = $taxObligation ? ($unitPrice * 0.11) : 0;
+            $taxAmount = $taxObligation
+                ? ($unitPrice * \App\Models\TaxSetting::getEffectivePpnRate())
+                : 0;
             $grandTotal = $unitPrice + $taxAmount;
 
             // Helper to get Billing Group

@@ -7,6 +7,7 @@ use App\Models\Contract;
 use App\Models\Finance\Invoice;
 use App\Models\JobSchedule;
 use App\Models\JobScheduleRoom;
+use App\Models\TaxSetting;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -129,7 +130,9 @@ class BillingGroupService
 
         // Calculate Tax based on Customer Tax Obligation
         $taxObligation = $contract->customer->tax_obligation ?? false;
-        $taxAmount = $taxObligation ? ($billingGroup->billing_amount * 0.11) : 0;
+        $taxAmount = $taxObligation
+            ? ($billingGroup->billing_amount * TaxSetting::getEffectivePpnRate($billingDate))
+            : 0;
         $totalAmount = $billingGroup->billing_amount + $taxAmount;
 
         $invoice = Invoice::create([
@@ -744,7 +747,9 @@ class BillingGroupService
     private function syncInvoiceTotalsFromDetails(Invoice $invoice): void
     {
         $subtotal = (float) $invoice->invoiceDetails()->sum('total_price') + (float) $invoice->invoiceRentalDetails()->sum('total_price');
-        $taxAmount = $invoice->tax_obligation ? round($subtotal * 0.11, 2) : 0;
+        $taxAmount = $invoice->tax_obligation
+            ? round($subtotal * TaxSetting::getEffectivePpnRate($invoice->invoice_date), 2)
+            : 0;
         $grandTotal = $subtotal + $taxAmount;
         $totalPaid = (float) ($invoice->total_paid ?? 0);
 

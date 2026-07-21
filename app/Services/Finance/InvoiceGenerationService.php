@@ -10,6 +10,7 @@ use App\Models\InvoiceFile;
 use App\Models\JobSchedule;
 use App\Models\JobScheduleBaFile;
 use App\Models\JobScheduleRoom;
+use App\Models\TaxSetting;
 use App\Services\DocumentNumberService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -1193,7 +1194,7 @@ class InvoiceGenerationService
     private function updateInvoiceTotals(Invoice $invoice): void
     {
         $subtotal = $invoice->invoiceDetails()->sum('total_price') + $invoice->invoiceRentalDetails()->sum('total_price');
-        $taxRate = $invoice->tax_obligation ? 0.11 : 0; // 11% tax if tax obligation
+        $taxRate = $invoice->tax_obligation ? TaxSetting::getEffectivePpnRate($invoice->invoice_date) : 0;
         $taxAmount = $subtotal * $taxRate;
         $totalAmount = $subtotal + $taxAmount;
 

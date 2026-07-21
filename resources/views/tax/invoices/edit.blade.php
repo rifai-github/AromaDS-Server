@@ -229,7 +229,8 @@
 <script>
 function calculateTax() {
     const subtotal = parseFloat(document.getElementById('subtotal').value) || 0;
-    const taxRate = 0.11; // 11% PPN
+    // Mirrors TaxSetting::getEffectivePpnRate() so the preview matches the server.
+    const taxRate = {{ \App\Models\TaxSetting::getEffectivePpnRate() }};
     const taxAmount = subtotal * taxRate;
     const totalAmount = subtotal + taxAmount;
     

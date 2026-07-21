@@ -6,11 +6,18 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 use App\Http\Traits\AutoFilterable;
 
 class TaxSetting extends Model
 {
     use HasFactory, SoftDeletes, AutoFilterable;
+
+    /**
+     * Rate used when no effective default VAT setting is configured. Matches
+     * the value that was previously hardcoded across the invoicing services.
+     */
+    public const FALLBACK_PPN_RATE = 0.11;
 
     protected $fillable = [
         'name',
@@ -231,10 +238,38 @@ class TaxSetting extends Model
             ->first();
     }
 
+    /**
+     * PPN rate as a multiplier (e.g. 0.11 for 11%) taken from the effective
+     * default VAT setting. Falls back to the long-standing 11% when no
+     * effective setting exists so invoicing never silently drops tax.
+     */
+    public static function getEffectivePpnRate($date = null): float
+    {
+        $setting = $date
+            ? static::query()
+                ->active()
+                ->default()
+                ->where('tax_type', 'vat')
+                ->effective($date)
+                ->orderBy('effective_date', 'desc')
+                ->first()
+            : static::getDefaultPpnSetting();
+
+        if (! $setting) {
+            Log::warning('No effective default PPN tax setting found; falling back to 11%.', [
+                'date' => $date ? (string) $date : 'now',
+            ]);
+
+            return self::FALLBACK_PPN_RATE;
+        }
+
+        return (float) $setting->tax_rate / 100;
+    }
+
     public function isEffective($date = null)
     {
         $date = $date ?? now();
-        return $this->effective_date <= $date && 
+        return $this->effective_date <= $date &&
                ($this->end_date === null || $this->end_date >= $date);
     }
 
