@@ -115,11 +115,11 @@ class CompanyVirtualAccount extends Model
      *   2. digits-only exact (tolerates separators/spacing from the bank)
      *   3. zero-padding difference only (e.g. '000007' vs '7')
      *
-     * Steps 2 and 3 are ambiguity-safe: they resolve only when exactly one
-     * account matches, because a wrong hit would credit another customer's
-     * payment. QA data has two such ambiguous pairs ('7', '4321'), both
-     * involving an inactive row, so inactive accounts are only consulted
-     * when no active account matches.
+     * Precision always outranks activeness: an exact hit wins even when it is
+     * inactive, because '000007' and '7' are different accounts belonging to
+     * different customers, and letting a looser tier answer first would credit
+     * the payment to the wrong one. Activeness only breaks ties *within* a
+     * tier, and a tie that stays ambiguous is refused rather than guessed.
      */
     public static function resolveByAccountNumber(?string $incoming): ?self
     {
@@ -130,52 +130,53 @@ class CompanyVirtualAccount extends Model
         }
 
         $digits = preg_replace('/\D/', '', $incoming);
+        $unpadded = ltrim($digits, '0');
 
-        foreach ([true, false] as $activeOnly) {
-            $base = fn () => static::query()->when($activeOnly, fn ($q) => $q->where('is_active', true));
+        $tiers = [
+            'exact' => fn () => static::query()->where('account_number', $incoming)->get(),
+        ];
 
-            $exact = $base()->where('account_number', $incoming)->get();
-            if ($exact->count() === 1) {
-                return $exact->first();
+        if ($digits !== '') {
+            $tiers['digits'] = fn () => static::query()
+                ->whereRaw("REPLACE(REPLACE(account_number, ' ', ''), '-', '') = ?", [$digits])
+                ->get();
+        }
+
+        if ($unpadded !== '') {
+            // Compared in PHP so the rule behaves identically on MySQL and on the
+            // SQLite test database (TRIM(LEADING ...) is MySQL-only).
+            $tiers['padding'] = fn () => static::query()
+                ->where('account_number', 'like', '%'.$unpadded)
+                ->get()
+                ->filter(function ($candidate) use ($unpadded) {
+                    $candidateDigits = preg_replace('/\D/', '', (string) $candidate->account_number);
+
+                    return ltrim($candidateDigits, '0') === $unpadded;
+                })
+                ->values();
+        }
+
+        foreach ($tiers as $tier => $lookup) {
+            $matches = $lookup();
+
+            if ($matches->count() === 1) {
+                return $matches->first();
             }
 
-            if ($digits === '') {
-                continue;
-            }
+            if ($matches->count() > 1) {
+                $active = $matches->where('is_active', true)->values();
 
-            $byDigits = $base()->whereRaw("REPLACE(REPLACE(account_number, ' ', ''), '-', '') = ?", [$digits])->get();
-            if ($byDigits->count() === 1) {
-                return $byDigits->first();
-            }
-
-            // Same number, different leading-zero padding. Compared in PHP so the
-            // rule behaves identically on MySQL and on the SQLite test database
-            // (TRIM(LEADING ...) is MySQL-only).
-            $unpadded = ltrim($digits, '0');
-            if ($unpadded !== '') {
-                $byPadding = $base()
-                    ->where('account_number', 'like', '%'.$unpadded)
-                    ->get()
-                    ->filter(function ($candidate) use ($unpadded) {
-                        $candidateDigits = preg_replace('/\D/', '', (string) $candidate->account_number);
-
-                        return ltrim($candidateDigits, '0') === $unpadded;
-                    })
-                    ->values();
-
-                if ($byPadding->count() === 1) {
-                    return $byPadding->first();
+                if ($active->count() === 1) {
+                    return $active->first();
                 }
 
-                if ($byPadding->count() > 1) {
-                    Log::warning('VA number is ambiguous; refusing to guess.', [
-                        'incoming' => $incoming,
-                        'active_only' => $activeOnly,
-                        'candidates' => $byPadding->pluck('account_number', 'id')->all(),
-                    ]);
+                Log::warning('VA number is ambiguous; refusing to guess.', [
+                    'incoming' => $incoming,
+                    'tier' => $tier,
+                    'candidates' => $matches->pluck('account_number', 'id')->all(),
+                ]);
 
-                    return null;
-                }
+                return null;
             }
         }
 

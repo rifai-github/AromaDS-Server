@@ -93,13 +93,29 @@ class CompanyVirtualAccountResolveTest extends TestCase
         $this->assertNull(CompanyVirtualAccount::resolveByAccountNumber('00000000000000007'));
     }
 
-    public function test_prefers_an_active_account_over_an_inactive_one(): void
+    public function test_prefers_an_active_account_when_a_single_tier_is_tied(): void
     {
-        $this->makeVa('000007', ['customer_id' => 5233, 'is_active' => false]);
-        $active = $this->makeVa('7', ['customer_id' => 410, 'is_active' => true]);
+        // Two rows that are indistinguishable at the padding tier; only one is active.
+        $this->makeVa('0000000000000009', ['customer_id' => 5233, 'is_active' => false]);
+        $active = $this->makeVa('00000009', ['customer_id' => 410, 'is_active' => true]);
 
-        // Ambiguous across all rows, but unambiguous among active ones.
-        $this->assertSame($active->id, CompanyVirtualAccount::resolveByAccountNumber('0000007')?->id);
+        $this->assertSame($active->id, CompanyVirtualAccount::resolveByAccountNumber('9')?->id);
+    }
+
+    /**
+     * Regression: real QA data has inactive '000007' (customer 5233) next to
+     * active '7' (customer 410). Preferring active accounts before honouring an
+     * exact match sent '000007' to the wrong customer.
+     */
+    public function test_exact_match_wins_even_when_that_account_is_inactive(): void
+    {
+        $inactiveExact = $this->makeVa('000007', ['customer_id' => 5233, 'is_active' => false]);
+        $this->makeVa('7', ['customer_id' => 410, 'is_active' => true]);
+
+        $resolved = CompanyVirtualAccount::resolveByAccountNumber('000007');
+
+        $this->assertSame($inactiveExact->id, $resolved?->id);
+        $this->assertSame(5233, $resolved?->customer_id);
     }
 
     public function test_still_resolves_an_inactive_account_when_it_is_the_only_match(): void
