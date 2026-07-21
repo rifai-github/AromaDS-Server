@@ -311,8 +311,7 @@ class MasterRentalController extends Controller
             ->orderBy('name')
             ->get();
 
-        $productCategories = ProductCategory::where('is_active', true)
-            ->whereNotNull('parent_id')
+        $productCategories = ProductCategory::availableForRentalDetail()
             ->orderBy('name')
             ->get();
 

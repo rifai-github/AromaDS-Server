@@ -89,6 +89,24 @@ class ProductCategory extends Model
         return $query->whereNull('parent_id');
     }
 
+    /**
+     * Categories that can be selected as a master-rental detail.
+     *
+     * Child categories remain selectable as before. A root category is also
+     * selectable when products are assigned directly to it, because in that
+     * case it acts as both a hierarchy parent and an operational category.
+     */
+    public function scopeAvailableForRentalDetail($query)
+    {
+        return $query
+            ->where('is_active', true)
+            ->where(function ($categoryQuery) {
+                $categoryQuery
+                    ->whereNotNull('parent_id')
+                    ->orWhereHas('masterProducts', fn ($productQuery) => $productQuery->where('is_active', true));
+            });
+    }
+
     public function scopeOrdered($query)
     {
         return $query->orderBy('sort_order')->orderBy('name');
