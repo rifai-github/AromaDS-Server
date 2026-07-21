@@ -295,7 +295,7 @@ class InventoryIssuingService
             return [];
         }
 
-        $offset = $this->resolveBatchSerialOffset($item, $serialNumber);
+        $offset = $this->resolveBatchSerialOffset($item, $serialNumber, $candidateIds);
         $allocatedIds = array_slice($candidateIds, $offset, $quantity);
 
         $allowedIds = SerialNumber::query()
@@ -314,9 +314,23 @@ class InventoryIssuingService
         ));
     }
 
-    private function resolveBatchSerialOffset($item, string $serialNumber): int
+    /**
+     * How many of $candidateIds are already claimed by earlier, still-active
+     * issuing items for this batch serial code.
+     *
+     * $candidateIds only contains SN rows currently in a live status (ready/
+     * available/on_hand/in_use) -- retired or otherwise dead rows are already
+     * excluded from it. The offset must be counted the same way: a prior
+     * issuing that consumed a row which has SINCE been retired no longer
+     * occupies a slot in the live pool, so it must not count toward the
+     * offset either. Counting raw historical quantity instead (irrespective
+     * of whether the SN row it pointed at is still live) desyncs the offset
+     * from the pool and causes array_slice() to skip live rows that should
+     * still be allocated to this item.
+     */
+    private function resolveBatchSerialOffset($item, string $serialNumber, array $candidateIds): int
     {
-        if (!$item->id || !$item->product_id) {
+        if (!$item->id || !$item->product_id || empty($candidateIds)) {
             return 0;
         }
 
@@ -324,6 +338,7 @@ class InventoryIssuingService
             ->where('id', '<', $item->id)
             ->where('product_id', $item->product_id)
             ->whereNotNull('serial_number_id')
+            ->whereIn('serial_number_id', $candidateIds)
             ->whereHas('serialNumber', function ($query) use ($serialNumber) {
                 $query->where('serial_number', $serialNumber);
             })
