@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
 use App\Models\BankReceipt;
+use App\Models\CompanyVirtualAccount;
 use App\Models\Invoice;
-use App\Models\VirtualAccount;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -39,24 +39,42 @@ class BankWebhookController extends Controller
 
             DB::beginTransaction();
 
-            // Find virtual account
-            $virtualAccount = VirtualAccount::where('va_number', $request->virtual_account_number)->first();
-            
+            // Resolve the VA against company_virtual_accounts, the master that
+            // actually holds VA numbers. The legacy `virtual_accounts` table is
+            // empty, so looking there could never match a real payment.
+            $virtualAccount = CompanyVirtualAccount::resolveByAccountNumber($request->virtual_account_number);
+
             if (!$virtualAccount) {
-                Log::warning("Virtual Account not found: {$request->virtual_account_number}");
+                // Log the raw value: stored numbers vary in width, so an unmatched
+                // payment is the evidence needed to reconcile formats with the bank.
+                Log::warning('Virtual Account not found for incoming bank payment.', [
+                    'virtual_account_number' => $request->virtual_account_number,
+                    'transaction_id' => $request->transaction_id,
+                    'amount' => $request->amount,
+                ]);
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Virtual Account not found'
                 ], 404);
             }
 
-            // Find invoice by virtual account
-            $invoice = Invoice::where('virtual_account_number', $request->virtual_account_number)
+            // Find the outstanding invoice for the customer this VA belongs to.
+            // Matching on invoices.virtual_account_number alone is not viable:
+            // that column is never populated by invoice generation.
+            $invoice = Invoice::where('customer_id', $virtualAccount->customer_id)
                 ->where('invoice_status', '!=', 'paid')
+                ->orderBy('invoice_date')
                 ->first();
 
             if (!$invoice) {
-                Log::warning("Invoice not found for VA: {$request->virtual_account_number}");
+                Log::warning('No outstanding invoice for resolved Virtual Account.', [
+                    'virtual_account_number' => $request->virtual_account_number,
+                    'resolved_account_number' => $virtualAccount->account_number,
+                    'customer_id' => $virtualAccount->customer_id,
+                    'transaction_id' => $request->transaction_id,
+                ]);
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Invoice not found'
@@ -78,7 +96,8 @@ class BankWebhookController extends Controller
                 'receipt_date' => now(),
                 'customer_id' => $invoice->customer_id,
                 'invoice_reference' => $invoice->invoice_number,
-                'bank_id' => $virtualAccount->bank_id,
+                // CompanyVirtualAccount points at a bank_payment, which carries the bank_id.
+                'bank_id' => optional($virtualAccount->bankPayment)->bank_id,
                 'account_number' => $request->virtual_account_number,
                 'account_holder_name' => $request->customer_name ?? $invoice->customer->name,
                 'amount' => $request->amount,

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Log;
 use App\Http\Traits\AutoFilterable;
 
 class CompanyVirtualAccount extends Model
@@ -100,6 +101,85 @@ class CompanyVirtualAccount extends Model
     public function getFormattedAccountNumberAttribute()
     {
         return $this->account_number ? str_pad($this->account_number, 16, '0', STR_PAD_LEFT) : null;
+    }
+
+    /**
+     * Resolve an incoming bank VA number to its account.
+     *
+     * Stored numbers are whatever was entered/imported, with no single width:
+     * most legacy Catalyst rows are 6 digits while newer generated ones are 11,
+     * so the incoming value is matched as given rather than reformatted.
+     *
+     * Matching goes strictly narrowest-first:
+     *   1. exact string, as stored
+     *   2. digits-only exact (tolerates separators/spacing from the bank)
+     *   3. zero-padding difference only (e.g. '000007' vs '7')
+     *
+     * Steps 2 and 3 are ambiguity-safe: they resolve only when exactly one
+     * account matches, because a wrong hit would credit another customer's
+     * payment. QA data has two such ambiguous pairs ('7', '4321'), both
+     * involving an inactive row, so inactive accounts are only consulted
+     * when no active account matches.
+     */
+    public static function resolveByAccountNumber(?string $incoming): ?self
+    {
+        $incoming = trim((string) $incoming);
+
+        if ($incoming === '') {
+            return null;
+        }
+
+        $digits = preg_replace('/\D/', '', $incoming);
+
+        foreach ([true, false] as $activeOnly) {
+            $base = fn () => static::query()->when($activeOnly, fn ($q) => $q->where('is_active', true));
+
+            $exact = $base()->where('account_number', $incoming)->get();
+            if ($exact->count() === 1) {
+                return $exact->first();
+            }
+
+            if ($digits === '') {
+                continue;
+            }
+
+            $byDigits = $base()->whereRaw("REPLACE(REPLACE(account_number, ' ', ''), '-', '') = ?", [$digits])->get();
+            if ($byDigits->count() === 1) {
+                return $byDigits->first();
+            }
+
+            // Same number, different leading-zero padding. Compared in PHP so the
+            // rule behaves identically on MySQL and on the SQLite test database
+            // (TRIM(LEADING ...) is MySQL-only).
+            $unpadded = ltrim($digits, '0');
+            if ($unpadded !== '') {
+                $byPadding = $base()
+                    ->where('account_number', 'like', '%'.$unpadded)
+                    ->get()
+                    ->filter(function ($candidate) use ($unpadded) {
+                        $candidateDigits = preg_replace('/\D/', '', (string) $candidate->account_number);
+
+                        return ltrim($candidateDigits, '0') === $unpadded;
+                    })
+                    ->values();
+
+                if ($byPadding->count() === 1) {
+                    return $byPadding->first();
+                }
+
+                if ($byPadding->count() > 1) {
+                    Log::warning('VA number is ambiguous; refusing to guess.', [
+                        'incoming' => $incoming,
+                        'active_only' => $activeOnly,
+                        'candidates' => $byPadding->pluck('account_number', 'id')->all(),
+                    ]);
+
+                    return null;
+                }
+            }
+        }
+
+        return null;
     }
 
     // Business Logic Methods
