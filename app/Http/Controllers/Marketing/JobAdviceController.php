@@ -536,8 +536,9 @@ class JobAdviceController extends Controller
                 $customerId = $contract->customer_id;
                 $companyName = $contract->customer->name;
                 
-                // Extra Job Advice is contract-based, so keep the visible reference consistent.
-                if (empty($referenceNumber) && $jaType === 'extra') {
+                // Extra and Remove Job Advices are contract-based, so keep the visible reference
+                // pointing at the Contract (CA) rather than the original Quotation (SQ).
+                if (empty($referenceNumber) && ($jaType === 'extra' || str_contains($jaType, 'remove'))) {
                     $referenceNumber = $contract->contract_number;
                 }
 
