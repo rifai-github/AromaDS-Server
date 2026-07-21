@@ -117,14 +117,21 @@ class BranchController extends Controller
             'is_active' => 'nullable'
         ]);
 
-        // Custom Validation: Check if city is already used by another branch
-        $existingBranch = Branch::where('city_id', $request->city_id)->first();
-        if ($existingBranch) {
-            $cityName = \App\Models\City::find($request->city_id)->name ?? 'Unknown City';
-            return response()->json([
-                'status' => 'error',
-                'message' => "Kota {$cityName} sudah digunakan pada branch {$existingBranch->name}"
-            ], 422);
+        // Custom Validation: Check if city is already used by another branch.
+        // A warehouse-only branch is allowed to share a city with an office/both branch
+        // (a branch and its warehouse can legitimately sit in the same city) — duplicates
+        // are only blocked when both branches are non-warehouse-only (office/both).
+        if ($request->address_type !== 'warehouse') {
+            $existingBranch = Branch::where('city_id', $request->city_id)
+                ->where('address_type', '!=', 'warehouse')
+                ->first();
+            if ($existingBranch) {
+                $cityName = \App\Models\City::find($request->city_id)->name ?? 'Unknown City';
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Kota {$cityName} sudah digunakan pada branch {$existingBranch->name}"
+                ], 422);
+            }
         }
 
         try {
@@ -278,9 +285,14 @@ class BranchController extends Controller
             'is_active' => 'nullable'
         ]);
 
-        // Custom Validation: Check if city is already used by another branch (Only if city changed)
-        if ($request->city_id != $branch->city_id) {
-            $existingBranch = Branch::where('city_id', $request->city_id)->where('id', '!=', $branch->id)->first();
+        // Custom Validation: Check if city is already used by another branch (Only if city changed).
+        // Same exemption as store(): warehouse-only branches may share a city with an
+        // office/both branch; duplicates are only blocked between non-warehouse-only branches.
+        if ($request->city_id != $branch->city_id && $request->address_type !== 'warehouse') {
+            $existingBranch = Branch::where('city_id', $request->city_id)
+                ->where('id', '!=', $branch->id)
+                ->where('address_type', '!=', 'warehouse')
+                ->first();
             if ($existingBranch) {
                 $cityName = \App\Models\City::find($request->city_id)->name ?? 'Unknown City';
                 return response()->json([
