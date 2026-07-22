@@ -2,14 +2,14 @@
 
 namespace App\Models;
 
+use App\Http\Traits\AutoFilterable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Http\Traits\AutoFilterable;
 
 class BankReceipt extends Model
 {
-    use HasFactory, SoftDeletes, AutoFilterable;
+    use AutoFilterable, HasFactory, SoftDeletes;
 
     protected $fillable = [
         'receipt_number',
@@ -26,7 +26,7 @@ class BankReceipt extends Model
         'receipt_image',
         'notes',
         'created_by',
-        'updated_by'
+        'updated_by',
     ];
 
     protected $casts = [
@@ -91,5 +91,31 @@ class BankReceipt extends Model
     public function getFormattedReceiptDateAttribute()
     {
         return $this->receipt_date ? $this->receipt_date->format('d/m/Y') : '-';
+    }
+
+    /**
+     * Generate the next webhook-style receipt number for a date.
+     *
+     * The caller must hold the shared receipt-number lock until the new receipt
+     * is committed so concurrent webhook workers cannot reserve the same number.
+     */
+    public static function generateWebhookReceiptNumber($date = null): string
+    {
+        $date = $date ? \Illuminate\Support\Carbon::parse($date) : now();
+        $prefix = 'BR-'.$date->format('Ymd').'-';
+
+        $lastNumber = static::withTrashed()
+            ->where('receipt_number', 'like', $prefix.'%')
+            ->orderByDesc('receipt_number')
+            ->value('receipt_number');
+
+        $sequence = $lastNumber ? ((int) substr($lastNumber, -4)) + 1 : 1;
+
+        do {
+            $receiptNumber = $prefix.str_pad((string) $sequence, 4, '0', STR_PAD_LEFT);
+            $sequence++;
+        } while (static::withTrashed()->where('receipt_number', $receiptNumber)->exists());
+
+        return $receiptNumber;
     }
 }

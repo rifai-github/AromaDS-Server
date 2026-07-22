@@ -7,6 +7,7 @@ use App\Models\BankReceipt;
 use App\Models\CompanyVirtualAccount;
 use App\Models\Invoice;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -18,13 +19,18 @@ class BankWebhookController extends Controller
      */
     public function handleVirtualAccountPayment(Request $request)
     {
+        $transactionLock = null;
+        $transactionLockAcquired = false;
+        $receiptNumberLock = null;
+        $receiptNumberLockAcquired = false;
+
         try {
             // Validate webhook data
             $validator = Validator::make($request->all(), [
                 'virtual_account_number' => 'required|string',
                 'amount' => 'required|numeric|min:0',
                 'payment_date' => 'required|date',
-                'transaction_id' => 'required|string',
+                'transaction_id' => 'required|string|max:255',
                 'bank_reference' => 'nullable|string',
                 'customer_name' => 'nullable|string',
             ]);
@@ -33,18 +39,46 @@ class BankWebhookController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Invalid webhook data',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 400);
             }
 
-            DB::beginTransaction();
+            $transactionId = trim((string) $request->transaction_id);
+            $transactionLock = Cache::lock(
+                'bank-webhook:va-payment:'.hash('sha256', $transactionId),
+                30
+            );
+            $transactionLockAcquired = $transactionLock->block(5);
+
+            $webhookNotes = "Auto-generated from bank webhook. Transaction ID: {$transactionId}";
+            $existingReceipt = BankReceipt::where('notes', $webhookNotes)->first();
+
+            if ($existingReceipt) {
+                Log::info('Duplicate bank webhook acknowledged without reprocessing.', [
+                    'transaction_id' => $transactionId,
+                    'receipt_number' => $existingReceipt->receipt_number,
+                    'invoice_reference' => $existingReceipt->invoice_reference,
+                ]);
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Payment already processed',
+                    'data' => [
+                        'invoice_number' => $existingReceipt->invoice_reference,
+                        'receipt_number' => $existingReceipt->receipt_number,
+                        'amount' => $existingReceipt->amount,
+                        'status' => 'paid',
+                        'duplicate' => true,
+                    ],
+                ]);
+            }
 
             // Resolve the VA against company_virtual_accounts, the master that
             // actually holds VA numbers. The legacy `virtual_accounts` table is
             // empty, so looking there could never match a real payment.
             $virtualAccount = CompanyVirtualAccount::resolveByAccountNumber($request->virtual_account_number);
 
-            if (!$virtualAccount) {
+            if (! $virtualAccount) {
                 // Log the raw value: stored numbers vary in width, so an unmatched
                 // payment is the evidence needed to reconcile formats with the bank.
                 Log::warning('Virtual Account not found for incoming bank payment.', [
@@ -55,7 +89,7 @@ class BankWebhookController extends Controller
 
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Virtual Account not found'
+                    'message' => 'Virtual Account not found',
                 ], 404);
             }
 
@@ -67,7 +101,7 @@ class BankWebhookController extends Controller
                 ->orderBy('invoice_date')
                 ->first();
 
-            if (!$invoice) {
+            if (! $invoice) {
                 Log::warning('No outstanding invoice for resolved Virtual Account.', [
                     'virtual_account_number' => $request->virtual_account_number,
                     'resolved_account_number' => $virtualAccount->account_number,
@@ -77,22 +111,28 @@ class BankWebhookController extends Controller
 
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Invoice not found'
+                    'message' => 'Invoice not found',
                 ], 404);
             }
 
             // Validate payment amount
             if ($request->amount != $invoice->total_amount) {
                 Log::warning("Payment amount mismatch for VA {$request->virtual_account_number}: Expected {$invoice->total_amount}, Received {$request->amount}");
+
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Payment amount mismatch'
+                    'message' => 'Payment amount mismatch',
                 ], 400);
             }
 
+            $receiptNumberLock = Cache::lock('bank-receipts:webhook-number', 30);
+            $receiptNumberLockAcquired = $receiptNumberLock->block(5);
+
+            DB::beginTransaction();
+
             // Create bank receipt record
             $bankReceipt = BankReceipt::create([
-                'receipt_number' => 'BR-' . date('Ymd') . '-' . str_pad(BankReceipt::count() + 1, 4, '0', STR_PAD_LEFT),
+                'receipt_number' => BankReceipt::generateWebhookReceiptNumber(),
                 'receipt_date' => now(),
                 'customer_id' => $invoice->customer_id,
                 'invoice_reference' => $invoice->invoice_number,
@@ -104,7 +144,7 @@ class BankWebhookController extends Controller
                 'payment_date' => $request->payment_date,
                 'payment_method' => 'transfer',
                 'status' => 'verified', // Auto-verify from bank webhook
-                'notes' => "Auto-generated from bank webhook. Transaction ID: {$request->transaction_id}",
+                'notes' => $webhookNotes,
                 'created_by' => 1, // System user
                 'updated_by' => 1,
             ]);
@@ -127,10 +167,10 @@ class BankWebhookController extends Controller
 
             // AUTO-CALCULATE COMMISSION (Berdasarkan BRD)
             try {
-                $commissionService = new \App\Services\Finance\CommissionCalculationService();
+                $commissionService = new \App\Services\Finance\CommissionCalculationService;
                 $cashReceiptDate = $request->payment_date ?? now()->toDateString();
                 $result = $commissionService->calculateCommissionOnCashReceipt($invoice, $cashReceiptDate);
-                
+
                 if ($result['success']) {
                     $amount = isset($result['commission']) ? ($result['commission']->final_amount ?? 'N/A') : 'N/A';
                     Log::info("Commission calculated for invoice {$invoice->invoice_number} via bank webhook: {$amount}");
@@ -138,7 +178,7 @@ class BankWebhookController extends Controller
                     Log::warning("Commission calculation skipped for invoice {$invoice->invoice_number}: {$result['message']}");
                 }
             } catch (\Exception $e) {
-                Log::error("Failed to calculate commission for invoice {$invoice->invoice_number}: " . $e->getMessage());
+                Log::error("Failed to calculate commission for invoice {$invoice->invoice_number}: ".$e->getMessage());
                 // Don't fail the transaction if commission calculation fails
             }
 
@@ -153,18 +193,28 @@ class BankWebhookController extends Controller
                     'invoice_number' => $invoice->invoice_number,
                     'receipt_number' => $bankReceipt->receipt_number,
                     'amount' => $request->amount,
-                    'status' => 'paid'
-                ]
+                    'status' => 'paid',
+                ],
             ]);
 
         } catch (\Exception $e) {
-            DB::rollback();
-            Log::error("Bank webhook processing failed: " . $e->getMessage());
-            
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            Log::error('Bank webhook processing failed: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to process payment: ' . $e->getMessage()
+                'message' => 'Failed to process payment: '.$e->getMessage(),
             ], 500);
+        } finally {
+            if ($transactionLockAcquired && $transactionLock) {
+                $transactionLock->release();
+            }
+
+            if ($receiptNumberLockAcquired && $receiptNumberLock) {
+                $receiptNumberLock->release();
+            }
         }
     }
 
@@ -182,7 +232,7 @@ class BankWebhookController extends Controller
             if ($validator->fails()) {
                 return response()->json([
                     'status' => 'error',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
@@ -197,7 +247,7 @@ class BankWebhookController extends Controller
             // If verified, update invoice status
             if ($request->status === 'verified') {
                 $invoice = Invoice::where('invoice_number', $bankReceipt->invoice_reference)->first();
-                
+
                 if ($invoice && $invoice->invoice_status !== 'paid') {
                     $invoice->update([
                         'invoice_status' => 'paid',
@@ -216,10 +266,10 @@ class BankWebhookController extends Controller
 
                     // AUTO-CALCULATE COMMISSION on cash receipt
                     try {
-                        $commissionService = new \App\Services\Finance\CommissionCalculationService();
+                        $commissionService = new \App\Services\Finance\CommissionCalculationService;
                         $cashReceiptDate = $bankReceipt->payment_date ?? now()->toDateString();
                         $result = $commissionService->calculateCommissionOnCashReceipt($invoice, $cashReceiptDate);
-                        
+
                         if ($result['success']) {
                             $amount = isset($result['commission']) ? ($result['commission']->final_amount ?? 'N/A') : 'N/A';
                             Log::info("Commission calculated for invoice {$invoice->invoice_number} via bank receipt verification: {$amount}");
@@ -227,7 +277,7 @@ class BankWebhookController extends Controller
                             Log::warning("Commission calculation skipped for invoice {$invoice->invoice_number}: {$result['message']}");
                         }
                     } catch (\Exception $e) {
-                        Log::error("Failed to calculate commission for invoice {$invoice->invoice_number}: " . $e->getMessage());
+                        Log::error("Failed to calculate commission for invoice {$invoice->invoice_number}: ".$e->getMessage());
                         // Don't fail the transaction if commission calculation fails
                     }
                 }
@@ -238,20 +288,22 @@ class BankWebhookController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Bank receipt verification completed successfully',
-                'data' => $bankReceipt->fresh()
+                'data' => $bankReceipt->fresh(),
             ]);
 
         } catch (\Exception $e) {
             DB::rollback();
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to verify bank receipt: ' . $e->getMessage()
+                'message' => 'Failed to verify bank receipt: '.$e->getMessage(),
             ], 500);
         }
     }
 
     /**
      * Trigger auto commission calculation when invoice is paid (Berdasarkan BRD)
+     *
      * @deprecated Use CommissionCalculationService::calculateCommissionOnCashReceipt instead
      */
     private function triggerAutoCommissionCalculation(Invoice $invoice)
@@ -259,10 +311,10 @@ class BankWebhookController extends Controller
         // This method is kept for backward compatibility but logic has been moved to service
         // Use CommissionCalculationService::calculateCommissionOnCashReceipt instead
         try {
-            $commissionService = new \App\Services\Finance\CommissionCalculationService();
+            $commissionService = new \App\Services\Finance\CommissionCalculationService;
             $cashReceiptDate = $invoice->payment_date ?? now()->toDateString();
             $result = $commissionService->calculateCommissionOnCashReceipt($invoice, $cashReceiptDate);
-            
+
             if ($result['success']) {
                 $amount = isset($result['commission']) ? ($result['commission']->final_amount ?? 'N/A') : 'N/A';
                 Log::info("Commission calculated for invoice {$invoice->invoice_number}: {$amount}");
@@ -270,7 +322,7 @@ class BankWebhookController extends Controller
                 Log::warning("Commission calculation skipped for invoice {$invoice->invoice_number}: {$result['message']}");
             }
         } catch (\Exception $e) {
-            Log::error("Failed to trigger auto commission calculation for invoice {$invoice->invoice_number}: " . $e->getMessage());
+            Log::error("Failed to trigger auto commission calculation for invoice {$invoice->invoice_number}: ".$e->getMessage());
         }
     }
 
@@ -282,7 +334,7 @@ class BankWebhookController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => 'Bank webhook endpoint is active',
-            'timestamp' => now()->toISOString()
+            'timestamp' => now()->toISOString(),
         ]);
     }
 }
