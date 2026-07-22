@@ -1,71 +1,67 @@
 <?php
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
-use App\Http\Controllers\Marketing\ProspectController;
-use App\Http\Controllers\Marketing\SurveyController;
-use App\Http\Controllers\Marketing\QuotationController;
-use App\Http\Controllers\Marketing\ContractController;
-use App\Http\Controllers\Marketing\JobAdviceController;
-use App\Http\Controllers\Marketing\LostUnitReportController;
-use App\Http\Controllers\Marketing\SalesActivityController;
-use App\Http\Controllers\Operational\JobScheduleController;
-use App\Http\Controllers\Operational\TeamController;
-use App\Http\Controllers\Operational\BuildingController;
-use App\Http\Controllers\Operational\MasterRoomController;
-use App\Http\Controllers\Operational\RoomRentalUnitController;
-use App\Http\Controllers\Operational\JobAssignScheduleController;
-use App\Http\Controllers\Operational\JobAssignMaterialIssueController;
-use App\Http\Controllers\Operational\JobReportController;
-use App\Http\Controllers\Operational\TechnicianLocationController;
-use App\Http\Controllers\Operational\JobRouteController;
-use App\Http\Controllers\Operational\ServiceHistoryController;
-use App\Http\Controllers\Operational\UnitInstallationController;
-use App\Http\Controllers\Operational\JobSignatureController;
-use App\Http\Controllers\Operational\TemperatureRecordController;
-use App\Http\Controllers\Api\Mobile\OperationalController;
 use App\Http\Controllers\Api\Mobile\JobController;
+use App\Http\Controllers\Api\Mobile\OperationalController;
 use App\Http\Controllers\Api\MobileController;
 use App\Http\Controllers\Api\RegionController;
 use App\Http\Controllers\Api\UserPhotoController;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\Company\AccessManagementController;
+use App\Http\Controllers\Company\BankPaymentController;
+use App\Http\Controllers\Company\BranchController;
+use App\Http\Controllers\Company\CompanyController;
+use App\Http\Controllers\Company\CompanyVirtualAccountController;
+use App\Http\Controllers\Company\CustomerController;
+use App\Http\Controllers\Company\CustomerTaxController;
+use App\Http\Controllers\Company\MasterPriceSlabController;
+use App\Http\Controllers\Company\SupplierController;
+use App\Http\Controllers\Finance\BankReceiptController;
 use App\Http\Controllers\Finance\InvoiceController;
 use App\Http\Controllers\Finance\InvoiceFollowUpController;
-use App\Http\Controllers\Finance\BankReceiptController;
-use App\Http\Controllers\Finance\VirtualAccountImportController;
-use App\Http\Controllers\Finance\VirtualAccountExportController;
-use App\Http\Controllers\Finance\TaxSettingController;
-use App\Http\Controllers\Finance\TaxFileImportController;
 use App\Http\Controllers\Finance\TaxFileExportController;
-use App\Http\Controllers\Warehouse\InventoryIssuingController;
-use App\Http\Controllers\Warehouse\InventoryReceivingController;
-use App\Http\Controllers\Warehouse\InventoryRequestController;
-use App\Http\Controllers\Warehouse\ProductTypeController;
-use App\Http\Controllers\Warehouse\MasterProductController;
-use App\Http\Controllers\Warehouse\MasterRentalController;
-use App\Http\Controllers\Warehouse\StockOpnameController;
-use App\Http\Controllers\Warehouse\StockAdjustmentController;
-use App\Http\Controllers\Warehouse\SerialNumberController;
-use App\Http\Controllers\Warehouse\UnitOnWallController;
-use App\Http\Controllers\System\UserController;
-use App\Http\Controllers\System\DepartmentController;
-use App\Http\Controllers\System\ProvinceController;
-use App\Http\Controllers\System\NotificationController;
-use App\Http\Controllers\Company\CompanyController;
-use App\Http\Controllers\Company\BranchController;
-use App\Http\Controllers\Company\CustomerController;
-use App\Http\Controllers\Company\CustomerContactController;
-use App\Http\Controllers\Company\SupplierController;
-use App\Http\Controllers\Company\CustomerTaxController;
-use App\Http\Controllers\Company\CompanyVirtualAccountController;
-use App\Http\Controllers\Company\BankPaymentController;
-use App\Http\Controllers\Company\MasterPriceSlabController;
-use App\Http\Controllers\Company\AccessManagementController;
+use App\Http\Controllers\Finance\TaxFileImportController;
+use App\Http\Controllers\Finance\TaxSettingController;
+use App\Http\Controllers\Finance\VirtualAccountExportController;
+use App\Http\Controllers\Finance\VirtualAccountImportController;
+use App\Http\Controllers\Marketing\ContractController;
+use App\Http\Controllers\Marketing\JobAdviceController;
+use App\Http\Controllers\Marketing\LostUnitReportController;
+use App\Http\Controllers\Marketing\ProspectController;
+use App\Http\Controllers\Marketing\QuotationController;
+use App\Http\Controllers\Marketing\SalesActivityController;
+use App\Http\Controllers\Marketing\SurveyController;
+use App\Http\Controllers\Operational\BuildingController;
+use App\Http\Controllers\Operational\JobAssignMaterialIssueController;
+use App\Http\Controllers\Operational\JobAssignScheduleController;
+use App\Http\Controllers\Operational\JobReportController;
+use App\Http\Controllers\Operational\JobRouteController;
+use App\Http\Controllers\Operational\JobScheduleController;
+use App\Http\Controllers\Operational\JobSignatureController;
+use App\Http\Controllers\Operational\MasterRoomController;
+use App\Http\Controllers\Operational\RoomRentalUnitController;
+use App\Http\Controllers\Operational\ServiceHistoryController;
+use App\Http\Controllers\Operational\TeamController;
+use App\Http\Controllers\Operational\TechnicianLocationController;
+use App\Http\Controllers\Operational\TemperatureRecordController;
+use App\Http\Controllers\Operational\UnitInstallationController;
 use App\Http\Controllers\Other\HakAksesController;
 use App\Http\Controllers\Other\MasterOptionController;
 use App\Http\Controllers\Settings\ThemeSettingController;
-
-
+use App\Http\Controllers\System\DepartmentController;
+use App\Http\Controllers\System\NotificationController;
+use App\Http\Controllers\System\ProvinceController;
+use App\Http\Controllers\System\UserController;
+use App\Http\Controllers\Warehouse\InventoryIssuingController;
+use App\Http\Controllers\Warehouse\InventoryReceivingController;
+use App\Http\Controllers\Warehouse\InventoryRequestController;
+use App\Http\Controllers\Warehouse\MasterProductController;
+use App\Http\Controllers\Warehouse\MasterRentalController;
+use App\Http\Controllers\Warehouse\ProductTypeController;
+use App\Http\Controllers\Warehouse\SerialNumberController;
+use App\Http\Controllers\Warehouse\StockAdjustmentController;
+use App\Http\Controllers\Warehouse\StockOpnameController;
+use App\Http\Controllers\Warehouse\UnitOnWallController;
+use Illuminate\Support\Facades\Route;
 
 // Public API Routes
 Route::post('/login', [AuthController::class, 'apiLogin'])->name('api.login');
@@ -123,12 +119,13 @@ Route::get('master-rentals', [App\Http\Controllers\Warehouse\MasterRentalControl
 Route::get('master-products', [App\Http\Controllers\Warehouse\MasterProductController::class, 'index'])->name('api.master-products');
 Route::get('quotations/{id}/rental-products', [App\Http\Controllers\Marketing\QuotationController::class, 'getRentalProducts'])->name('api.quotations.rental-products');
 Route::get('teams', [App\Http\Controllers\Operational\TeamController::class, 'index'])->name('api.teams');
-Route::get('teams-test', function() {
+Route::get('teams-test', function () {
     $teams = \App\Models\Team::where('active_status', '1')->get();
+
     return response()->json([
         'status' => 'success',
         'data' => $teams,
-        'count' => $teams->count()
+        'count' => $teams->count(),
     ]);
 })->name('api.teams.test');
 
@@ -137,15 +134,15 @@ Route::prefix('v1/location')->name('location.')->group(function () {
     Route::get('provinces', [App\Http\Controllers\System\ProvinceController::class, 'getProvinces'])->name('provinces');
     Route::get('cities', [App\Http\Controllers\System\ProvinceController::class, 'getCities'])->name('cities');
     Route::get('districts', [App\Http\Controllers\System\ProvinceController::class, 'getDistricts'])->name('districts');
-        Route::get('subdistricts', [App\Http\Controllers\System\ProvinceController::class, 'getSubdistricts'])->name('subdistricts');
-        Route::get('subdistricts/{subdistrictId}', [App\Http\Controllers\System\ProvinceController::class, 'showSubdistrict'])->name('subdistricts.show');
+    Route::get('subdistricts', [App\Http\Controllers\System\ProvinceController::class, 'getSubdistricts'])->name('subdistricts');
+    Route::get('subdistricts/{subdistrictId}', [App\Http\Controllers\System\ProvinceController::class, 'showSubdistrict'])->name('subdistricts.show');
 });
 
 // Protected API Routes
 Route::middleware('auth:sanctum')->group(function () {
     // Dashboard API
     Route::get('/dashboard', [AuthController::class, 'apiDashboard'])->name('api.dashboard');
-    
+
     // Mobile API Routes
     Route::prefix('v1/mobile')->name('mobile.')->group(function () {
         Route::get('jobs/today', [App\Http\Controllers\Api\Mobile\JobController::class, 'getTodayJobs'])->name('jobs.today');
@@ -155,11 +152,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('jobs/{jobScheduleId}/rooms', [App\Http\Controllers\Api\Mobile\JobController::class, 'getJobRooms'])->name('jobs.rooms');
         Route::get('jobs/{jobScheduleId}/materials', [App\Http\Controllers\Api\Mobile\JobController::class, 'getJobMaterials'])->name('jobs.materials');
         Route::post('jobs/{jobScheduleId}/materials/confirm', [App\Http\Controllers\Api\Mobile\JobController::class, 'confirmMaterials'])->name('jobs.materials.confirm');
-        
+
         // Material Verification (Warehouse Pickup)
         Route::get('jobs/{jobScheduleId}/materials/verification', [App\Http\Controllers\Api\Mobile\MaterialVerificationController::class, 'getMaterialsForVerification'])->name('jobs.materials.verification');
         Route::post('jobs/{jobScheduleId}/materials/verify', [App\Http\Controllers\Api\Mobile\MaterialVerificationController::class, 'verifyMaterials'])->name('jobs.materials.verify');
-        
+
         Route::post('jobs/{jobScheduleId}/arrived', [App\Http\Controllers\Api\Mobile\JobController::class, 'arrivedAtLocation'])->name('jobs.arrived');
         Route::post('jobs/{jobScheduleId}/start', [App\Http\Controllers\Api\Mobile\JobController::class, 'startWork'])->name('jobs.start');
         Route::post('rooms/{roomId}/complete', [App\Http\Controllers\Api\Mobile\JobController::class, 'completeRoom'])->name('rooms.complete');
@@ -175,13 +172,13 @@ Route::middleware('auth:sanctum')->group(function () {
         // record which trial bottle was installed without changing the aroma.
         Route::get('products/install-free-sizes', [App\Http\Controllers\Api\Mobile\JobController::class, 'installFreeSizeOptions'])->name('products.install-free-sizes');
     });
-    
+
     // User Photo API Route (with authentication)
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('user/photo', [UserPhotoController::class, 'show'])->name('user.photo');
         Route::get('user/{userId}/photo', [UserPhotoController::class, 'show'])->name('user.photo.id');
     });
-    
+
     // Marketing API Routes
     Route::prefix('v1/marketing')->name('api.marketing.')->group(function () {
         Route::apiResource('prospects', ProspectController::class);
@@ -209,20 +206,19 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('job-schedules/{id}/material-return', [JobScheduleController::class, 'handleMaterialReturn'])->name('job-schedules.material-return');
         Route::post('job-schedules/{id}/resolve-force-majeure', [JobScheduleController::class, 'resolveForceMajeure'])->name('job-schedules.resolve-force-majeure');
         Route::get('job-schedules/force-majeure/stats', [JobScheduleController::class, 'getForceMajeureStats'])->name('job-schedules.force-majeure-stats');
-        
+
         // Enhanced Job Management API Routes
         Route::post('job-schedules/{jobSchedule}/assign-team', [JobScheduleController::class, 'assignToTeam'])->name('job-schedules.assign-team');
         Route::get('job-schedules/{jobSchedule}/assignments', [JobScheduleController::class, 'getAssignments'])->name('job-schedules.assignments');
         Route::post('job-assignments/{assignment}/accept', [JobScheduleController::class, 'acceptAssignment'])->name('job-assignments.accept');
         Route::post('job-assignments/{assignment}/start', [JobScheduleController::class, 'startAssignment'])->name('job-assignments.start');
         Route::post('job-assignments/{assignment}/complete', [JobScheduleController::class, 'completeAssignment'])->name('job-assignments.complete');
-        
+
         // Material Management API Routes
         Route::get('job-schedules/{jobSchedule}/materials', [JobScheduleController::class, 'getMaterials'])->name('job-schedules.materials');
         Route::post('job-schedules/{jobSchedule}/materials', [JobScheduleController::class, 'addMaterial'])->name('job-schedules.materials.add');
         Route::post('job-materials/{material}/issue', [JobScheduleController::class, 'issueMaterial'])->name('job-materials.issue');
         Route::post('job-materials/{material}/return', [JobScheduleController::class, 'returnMaterial'])->name('job-materials.return');
-        
 
         // Upload routes (OperationalController)
 
@@ -230,21 +226,15 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::post('/upload/signature', [OperationalController::class, 'uploadSignature'])->name('upload.signature');
 
-        
-
         // Temperature recording
 
         Route::post('/temperature/record', [OperationalController::class, 'recordTemperature'])->name('temperature.record');
-
-        
 
         // Additional job routes with {id} parameter (JobController)
 
         Route::post('/jobs/{id}/upload-photo', [JobController::class, 'uploadPhoto'])->name('jobs.upload-photo-alt');
 
         Route::post('/jobs/{id}/signature', [JobController::class, 'submitSignature'])->name('jobs.signature-alt');
-
-        
 
         // New GPS and Serial Number routes
 
@@ -254,14 +244,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/jobs/{id}/detail', [JobController::class, 'getJobDetail'])->name('jobs.detail-alt');
 
-        
-
-        
         // Periodic Job Management API Routes
         Route::post('periodic-jobs', [JobScheduleController::class, 'createPeriodicJob'])->name('periodic-jobs.create');
         Route::get('periodic-jobs', [JobScheduleController::class, 'getPeriodicJobs'])->name('periodic-jobs.index');
         Route::post('periodic-jobs/generate', [JobScheduleController::class, 'generatePeriodicJobs'])->name('periodic-jobs.generate');
-        
+
         Route::apiResource('teams', TeamController::class);
         Route::get('teams/{team}/edit', [TeamController::class, 'edit'])->name('teams.edit');
         Route::apiResource('buildings', BuildingController::class);
@@ -272,18 +259,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('job-assign-schedules', JobAssignScheduleController::class);
         Route::post('job-assign-schedules/bulk-delete', [JobAssignScheduleController::class, 'bulkDelete'])->name('job-assign-schedules.bulk-delete');
         Route::apiResource('job-assign-material-issues', JobAssignMaterialIssueController::class);
-        
+
         // New operational endpoints
         Route::apiResource('job-reports', JobReportController::class);
         Route::post('job-reports/bulk-delete', [JobReportController::class, 'bulkDelete'])->name('job-reports.bulk-delete');
-        
+
         Route::apiResource('technician-locations', TechnicianLocationController::class);
         Route::get('technician-locations/technicians', [TechnicianLocationController::class, 'getTechnicians'])->name('technician-locations.technicians');
         Route::get('technician-locations/latest/{technicianId}', [TechnicianLocationController::class, 'getLatestLocation'])->name('technician-locations.latest');
         Route::get('technician-locations/within-radius', [TechnicianLocationController::class, 'getLocationsWithinRadius'])->name('technician-locations.within-radius');
         Route::get('technician-locations/tracking/{technicianId}', [TechnicianLocationController::class, 'getTechnicianTracking'])->name('technician-locations.tracking');
         Route::post('technician-locations/bulk-delete', [TechnicianLocationController::class, 'bulkDelete'])->name('technician-locations.bulk-delete');
-        
+
         Route::apiResource('job-routes', JobRouteController::class);
         Route::apiResource('service-histories', ServiceHistoryController::class);
         Route::apiResource('unit-installations', UnitInstallationController::class);
@@ -328,14 +315,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('master-products/statistics', [MasterProductController::class, 'getProductStatistics'])->name('master-products.statistics')->middleware('permission:master-products.view');
         Route::get('master-products/by-type', [MasterProductController::class, 'getProductsByType'])->name('master-products.by-type')->middleware('permission:master-products.view');
         Route::get('master-products/search', [MasterProductController::class, 'searchProducts'])->name('master-products.search')->middleware('permission:master-products.view');
-        
+
         Route::apiResource('master-rentals', MasterRentalController::class)->middleware('permission:master-rentals.view');
         Route::post('master-rentals/bulk-delete', [MasterRentalController::class, 'bulkDelete'])->name('master-rentals.bulk-delete')->middleware('permission:master-rentals.delete');
         Route::post('master-rentals/{masterRental}/toggle-status', [MasterRentalController::class, 'toggleStatus'])->name('master-rentals.toggle-status')->middleware('permission:master-rentals.edit');
         Route::get('master-rentals/statistics', [MasterRentalController::class, 'getRentalStatistics'])->name('master-rentals.statistics')->middleware('permission:master-rentals.view');
         Route::get('master-rentals/by-category', [MasterRentalController::class, 'getRentalsByCategory'])->name('master-rentals.by-category')->middleware('permission:master-rentals.view');
         Route::get('master-rentals/search', [MasterRentalController::class, 'searchRentals'])->name('master-rentals.search')->middleware('permission:master-rentals.view');
-        Route::apiResource('stock-opnames', StockOpnameController::class)->middleware('permission:stock-opnames.view');
+        Route::apiResource('stock-opnames', StockOpnameController::class)
+            ->middleware('permission:stock-opnames.view')
+            ->middlewareFor('store', 'permission:stock-opnames.create')
+            ->middlewareFor('update', 'permission:stock-opnames.edit')
+            ->middlewareFor('destroy', 'permission:stock-opnames.delete');
         Route::post('stock-opnames/bulk-delete', [StockOpnameController::class, 'bulkDelete'])->name('stock-opnames.bulk-delete')->middleware('permission:stock-opnames.delete');
         Route::post('stock-opnames/{stockOpname}/start', [StockOpnameController::class, 'start'])->name('stock-opnames.start')->middleware('permission:stock-opnames.edit');
         Route::post('stock-opnames/{stockOpname}/complete', [StockOpnameController::class, 'complete'])->name('stock-opnames.complete')->middleware('permission:stock-opnames.edit');
@@ -361,8 +352,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('provinces', ProvinceController::class);
         Route::apiResource('notifications', NotificationController::class);
     });
-
-
 
     // Company API Routes
     Route::prefix('v1/company')->name('api.company.')->group(function () {
@@ -401,7 +390,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('companies/search', [CompanyController::class, 'searchCompanies'])->name('companies.search')->middleware('permission:companies.view');
         Route::get('companies/by-province', [CompanyController::class, 'getCompaniesByProvince'])->name('companies.by-province')->middleware('permission:companies.view');
         Route::get('companies/list', [CompanyController::class, 'getCompanies'])->name('companies.list')->middleware('permission:companies.view');
-        
+
         // Branch Management
         Route::apiResource('branches', BranchController::class)->middleware('permission:branches.view');
         Route::get('branches/{branch}/settings', [BranchController::class, 'settings'])->name('branches.settings')->middleware('permission:branches.view');
@@ -416,7 +405,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('branches/statistics', [BranchController::class, 'getStatistics'])->name('branches.statistics')->middleware('permission:branches.view');
         Route::get('branches/search', [BranchController::class, 'searchBranches'])->name('branches.search')->middleware('permission:branches.view');
         Route::get('branches/by-company', [BranchController::class, 'getBranchesByCompany'])->name('branches.by-company')->middleware('permission:branches.view');
-        
+
         // Customer Management
         Route::apiResource('customers', CustomerController::class)->middleware('permission:customers.view');
         Route::get('customers/{customer}/credit-limits', [CustomerController::class, 'creditLimits'])->name('customers.credit-limits')->middleware('permission:customers.view');
@@ -433,7 +422,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('customers/statistics', [CustomerController::class, 'getStatistics'])->name('customers.statistics')->middleware('permission:customers.view');
         Route::get('customers/search', [CustomerController::class, 'searchCustomers'])->name('customers.search')->middleware('permission:customers.view');
         Route::get('customers/by-company', [CustomerController::class, 'getCustomersByCompany'])->name('customers.by-company')->middleware('permission:customers.view');
-        
+
         // Supplier Management
         Route::apiResource('suppliers', SupplierController::class)->middleware('permission:suppliers.view');
         Route::get('suppliers/{supplier}/credit-limits', [SupplierController::class, 'creditLimits'])->name('suppliers.credit-limits');
@@ -450,12 +439,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('suppliers/statistics', [SupplierController::class, 'getStatistics'])->name('suppliers.statistics');
         Route::get('suppliers/search', [SupplierController::class, 'searchSuppliers'])->name('suppliers.search');
         Route::get('suppliers/by-company', [SupplierController::class, 'getSuppliersByCompany'])->name('suppliers.by-company');
-        
+
         // Legacy routes
         Route::apiResource('customer-taxes', CustomerTaxController::class)->middleware('permission:customer-taxes.view');
         Route::post('customer-taxes/bulk-delete', [CustomerTaxController::class, 'bulkDelete'])->name('customer-taxes.bulk-delete')->middleware('permission:customer-taxes.delete');
         Route::post('customer-taxes/{customerTax}/toggle-status', [CustomerTaxController::class, 'toggleStatus'])->name('customer-taxes.toggle-status')->middleware('permission:customer-taxes.edit');
-        
+
         // Get active tax number for invoice snapshot (per report-mom5.md)
         Route::get('customers/{customerId}/active-tax-number', [CustomerTaxController::class, 'getActiveTaxNumber'])->name('customers.active-tax-number');
         Route::apiResource('company-virtual-accounts', CompanyVirtualAccountController::class)->middleware('permission:company-virtual-accounts.view');
@@ -477,7 +466,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1/other')->name('api.other.')->group(function () {
         Route::apiResource('hak-akses', HakAksesController::class);
         Route::apiResource('master-options', MasterOptionController::class);
-        
+
         // Customer Portal API
         Route::prefix('customer-portal')->group(function () {
             Route::get('/', [App\Http\Controllers\Api\Other\CustomerPortalApiController::class, 'index']);
@@ -496,47 +485,47 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('theme-settings', ThemeSettingController::class);
     });
 
-        // Mobile App Routes (Legacy - for backward compatibility)
-        Route::prefix('v1/mobile')->name('legacy-mobile.')->group(function () {
-            // NOTE: Commented out duplicate routes - using new JobController instead
-            // Route::get('/jobs/today', [OperationalController::class, 'getTodayJobs'])->name('jobs.today');
-            // Route::get('/jobs/{id}', [OperationalController::class, 'getJobDetail'])->name('jobs.detail');
-            
-            // Enhanced Job Management for Mobile
-            Route::get('/jobs/{id}/assignments', [App\Http\Controllers\Operational\JobScheduleController::class, 'getAssignments'])->name('jobs.assignments');
-            Route::post('/jobs/{id}/assign-team', [App\Http\Controllers\Operational\JobScheduleController::class, 'assignToTeam'])->name('jobs.assign-team');
-            Route::post('/job-assignments/{assignment}/accept', [App\Http\Controllers\Operational\JobScheduleController::class, 'acceptAssignment'])->name('job-assignments.accept');
-            Route::post('/job-assignments/{assignment}/start', [App\Http\Controllers\Operational\JobScheduleController::class, 'startAssignment'])->name('job-assignments.start');
-            Route::post('/job-assignments/{assignment}/complete', [App\Http\Controllers\Operational\JobScheduleController::class, 'completeAssignment'])->name('job-assignments.complete');
-            
-            // Material Management for Mobile (LEGACY - commented to avoid conflict with new mobile API)
-            // Route::get('/jobs/{id}/materials', [App\Http\Controllers\Operational\JobScheduleController::class, 'getMaterials'])->name('jobs.materials');
-            Route::post('/jobs/{id}/materials', [App\Http\Controllers\Operational\JobScheduleController::class, 'addMaterial'])->name('jobs.materials.add');
-            Route::post('/job-materials/{material}/issue', [App\Http\Controllers\Operational\JobScheduleController::class, 'issueMaterial'])->name('job-materials.issue');
-            Route::post('/job-materials/{material}/return', [App\Http\Controllers\Operational\JobScheduleController::class, 'returnMaterial'])->name('job-materials.return');
-        
+    // Mobile App Routes (Legacy - for backward compatibility)
+    Route::prefix('v1/mobile')->name('legacy-mobile.')->group(function () {
+        // NOTE: Commented out duplicate routes - using new JobController instead
+        // Route::get('/jobs/today', [OperationalController::class, 'getTodayJobs'])->name('jobs.today');
+        // Route::get('/jobs/{id}', [OperationalController::class, 'getJobDetail'])->name('jobs.detail');
+
+        // Enhanced Job Management for Mobile
+        Route::get('/jobs/{id}/assignments', [App\Http\Controllers\Operational\JobScheduleController::class, 'getAssignments'])->name('jobs.assignments');
+        Route::post('/jobs/{id}/assign-team', [App\Http\Controllers\Operational\JobScheduleController::class, 'assignToTeam'])->name('jobs.assign-team');
+        Route::post('/job-assignments/{assignment}/accept', [App\Http\Controllers\Operational\JobScheduleController::class, 'acceptAssignment'])->name('job-assignments.accept');
+        Route::post('/job-assignments/{assignment}/start', [App\Http\Controllers\Operational\JobScheduleController::class, 'startAssignment'])->name('job-assignments.start');
+        Route::post('/job-assignments/{assignment}/complete', [App\Http\Controllers\Operational\JobScheduleController::class, 'completeAssignment'])->name('job-assignments.complete');
+
+        // Material Management for Mobile (LEGACY - commented to avoid conflict with new mobile API)
+        // Route::get('/jobs/{id}/materials', [App\Http\Controllers\Operational\JobScheduleController::class, 'getMaterials'])->name('jobs.materials');
+        Route::post('/jobs/{id}/materials', [App\Http\Controllers\Operational\JobScheduleController::class, 'addMaterial'])->name('jobs.materials.add');
+        Route::post('/job-materials/{material}/issue', [App\Http\Controllers\Operational\JobScheduleController::class, 'issueMaterial'])->name('job-materials.issue');
+        Route::post('/job-materials/{material}/return', [App\Http\Controllers\Operational\JobScheduleController::class, 'returnMaterial'])->name('job-materials.return');
+
         // Location Tracking (as per BRD)
         Route::post('/location/update', [App\Http\Controllers\Operational\TechnicianLocationController::class, 'mobileUpdateLocation'])->name('location.update');
         Route::get('/location/latest/{technicianId}', [App\Http\Controllers\Operational\TechnicianLocationController::class, 'getLatestLocation'])->name('location.latest');
         Route::get('/location/tracking/{technicianId}', [App\Http\Controllers\Operational\TechnicianLocationController::class, 'getTechnicianTracking'])->name('location.tracking');
         Route::post('/jobs/{id}/start', [OperationalController::class, 'startJob'])->name('jobs.start');
         Route::post('/jobs/{id}/complete', [OperationalController::class, 'completeJob'])->name('jobs.complete');
-        
+
         // Force Majeure Management (Mobile)
         Route::post('/jobs/{id}/force-majeure', [OperationalController::class, 'reportForceMajeure'])->name('jobs.force-majeure');
         Route::post('/jobs/{id}/material-return', [OperationalController::class, 'handleMaterialReturn'])->name('jobs.material-return');
         // Job Reports
         Route::post('/job-reports', [OperationalController::class, 'submitJobReport'])->name('job-reports.submit');
-        
+
         // File Uploads
         Route::post('/jobs/{id}/upload-photo', [JobController::class, 'uploadPhoto']);
         Route::post('/jobs/{id}/signature', [JobController::class, 'submitSignature']);
         Route::post('/units/scan-qr', [JobController::class, 'getUnitByQrCode'])->name('units.scan-qr');
         Route::post('/units/save-scanned', [JobController::class, 'saveScannedUnit'])->name('units.save-scanned');
-        
+
         // Temperature Recording
-// ... (rest of the code remains the same)
-        
+        // ... (rest of the code remains the same)
+
         // Profile & Statistics
         Route::get('/profile', [OperationalController::class, 'getTechnicianProfile'])->name('profile');
         Route::get('/statistics', [OperationalController::class, 'getJobStatistics'])->name('statistics');
@@ -546,7 +535,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1/reports')->name('api.reports.')->group(function () {
         // Dashboard Report
         Route::get('/dashboard/statistics', [App\Http\Controllers\Reports\DashboardReportController::class, 'getStatistics'])->name('dashboard.statistics');
-        
+
         // Operational Reports
         Route::prefix('operational')->name('operational.')->group(function () {
             Route::get('/statistics', [App\Http\Controllers\Reports\OperationalReportController::class, 'getOperationalStatistics'])->name('statistics');
@@ -556,7 +545,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/team-performance', [App\Http\Controllers\Reports\OperationalReportController::class, 'teamPerformanceReport'])->name('team-performance');
             Route::get('/customer-service', [App\Http\Controllers\Reports\OperationalReportController::class, 'customerServiceReport'])->name('customer-service');
         });
-        
+
         // Financial Reports
         Route::prefix('financial')->name('financial.')->group(function () {
             Route::get('/statistics', [App\Http\Controllers\Reports\FinancialReportController::class, 'getFinancialStatistics'])->name('statistics');
@@ -567,7 +556,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/revenue', [App\Http\Controllers\Reports\FinancialReportController::class, 'revenueReport'])->name('revenue');
             Route::get('/customer', [App\Http\Controllers\Reports\FinancialReportController::class, 'customerFinancialReport'])->name('customer');
         });
-        
+
         // Inventory Reports
         Route::prefix('inventory')->name('inventory.')->group(function () {
             Route::get('/statistics', [App\Http\Controllers\Reports\InventoryReportController::class, 'getInventoryStatistics'])->name('statistics');
@@ -579,7 +568,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/stock-movement', [App\Http\Controllers\Reports\InventoryReportController::class, 'stockMovementReport'])->name('stock-movement');
             Route::get('/low-stock-alert', [App\Http\Controllers\Reports\InventoryReportController::class, 'lowStockAlertReport'])->name('low-stock-alert');
         });
-        
+
         // Customer Reports
         Route::prefix('customer')->name('customer.')->group(function () {
             Route::get('/statistics', [App\Http\Controllers\Reports\CustomerReportController::class, 'getCustomerStatistics'])->name('statistics');
@@ -587,7 +576,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/activity', [App\Http\Controllers\Reports\CustomerReportController::class, 'customerActivityReport'])->name('activity');
             Route::get('/financial', [App\Http\Controllers\Reports\CustomerReportController::class, 'customerFinancialReport'])->name('financial');
         });
-        
+
         // HR Reports
         Route::prefix('hr')->name('hr.')->group(function () {
             Route::get('/statistics', [App\Http\Controllers\Reports\HrReportController::class, 'getHrStatistics'])->name('statistics');
@@ -609,74 +598,78 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('mobile')->name('mobile-app.')->group(function () {
         // Public routes (no authentication required)
         Route::post('/login', [MobileController::class, 'login'])->name('login');
-        
+
         // Protected routes (authentication required)
         Route::middleware('auth:sanctum')->group(function () {
             // Authentication
             Route::post('/logout', [MobileController::class, 'logout'])->name('logout');
-            
+
             // Dashboard
             Route::get('/dashboard', [MobileController::class, 'dashboard'])->name('dashboard');
-            
+
             // Job Reports
             Route::get('/job-reports', [MobileController::class, 'jobReports'])->name('job-reports');
             Route::put('/job-reports/{id}/status', [MobileController::class, 'updateJobStatus'])->name('job-reports.update-status');
-            
+
             // Maintenance Schedules
             Route::get('/maintenance-schedules', [MobileController::class, 'maintenanceSchedules'])->name('maintenance-schedules');
             Route::put('/maintenance-schedules/{id}/status', [MobileController::class, 'updateMaintenanceStatus'])->name('maintenance-schedules.update-status');
-            
+
             // Emergency Contacts
             Route::get('/emergency-contacts', [MobileController::class, 'emergencyContacts'])->name('emergency-contacts');
             Route::post('/emergency-logs', [MobileController::class, 'createEmergencyLog'])->name('emergency-logs.create');
-            
+
             // User Profile
             Route::get('/profile', [MobileController::class, 'profile'])->name('profile');
             Route::put('/profile', [MobileController::class, 'updateProfile'])->name('profile.update');
-            
+
             // Offline Sync
             Route::post('/sync', [MobileController::class, 'syncOfflineData'])->name('sync');
             Route::get('/offline-data', [MobileController::class, 'getOfflineData'])->name('offline-data');
         });
-        
+
         // Health check endpoint
         Route::get('/health', function () {
             return response()->json([
                 'status' => 'success',
                 'message' => 'Mobile API is running',
                 'timestamp' => now()->toISOString(),
-                'version' => '1.0.0'
+                'version' => '1.0.0',
             ]);
         })->name('health');
-        });
     });
+});
 
 // Location cascade API routes
-Route::get('/cities/{provinceId}', function($provinceId) {
+Route::get('/cities/{provinceId}', function ($provinceId) {
     $cities = \App\Models\City::where('province_id', $provinceId)
         ->orderBy('name')
         ->get(['id', 'name']);
+
     return response()->json($cities);
 });
 
-Route::get('/districts/{cityId}', function($cityId) {
+Route::get('/districts/{cityId}', function ($cityId) {
     $districts = \App\Models\District::where('city_id', $cityId)
         ->orderBy('name')
         ->get(['id', 'name']);
+
     return response()->json($districts);
 });
 
-Route::get('/subdistricts/{districtId}', function($districtId) {
+Route::get('/subdistricts/{districtId}', function ($districtId) {
     $subdistricts = \App\Models\Subdistrict::where('district_id', $districtId)
         ->orderBy('name')
         ->get(['id', 'name']);
+
     return response()->json($subdistricts);
 });
 
-Route::get('/subdistricts/{subdistrictId}/postal-code', function($subdistrictId) {
+Route::get('/subdistricts/{subdistrictId}/postal-code', function ($subdistrictId) {
     $subdistrict = \App\Models\Subdistrict::find($subdistrictId);
+
     return response()->json([
-        'postal_code' => $subdistrict ? $subdistrict->postal_code : null
+        'postal_code' => $subdistrict ? $subdistrict->postal_code : null,
     ]);
 });
 
@@ -686,17 +679,17 @@ Route::prefix('v1/mobile')->middleware('auth:sanctum')->group(function () {
     Route::post('/jobs/{id}/arrived-at-location', [App\Http\Controllers\Api\Mobile\JobController::class, 'arrivedAtLocation']);
     Route::post('/jobs/{id}/validate-serial-number', [App\Http\Controllers\Api\Mobile\JobController::class, 'validateSerialNumber']);
     Route::get('/jobs/{id}/detail', [App\Http\Controllers\Api\Mobile\JobController::class, 'getJobDetail']);
-    
+
     // Unit routes
     Route::post('/units/scan-qr', [App\Http\Controllers\Api\Mobile\JobController::class, 'getUnitByQrCode'])->name('units.scan-qr');
     Route::post('/units/save-scanned', [App\Http\Controllers\Api\Mobile\JobController::class, 'saveScannedUnit'])->name('units.save-scanned');
-    
+
     // Serial Number routes (for material checking)
     Route::post('/serial-numbers/check', [App\Http\Controllers\Api\Mobile\SerialNumberController::class, 'getBySerialNumber'])->name('serial-numbers.check');
-    
+
     // Job verification route
     Route::post('/jobs/{jobScheduleId}/verify', [App\Http\Controllers\Api\Mobile\JobController::class, 'verifyJob'])->name('jobs.verify');
-    
+
     // Leave location route
     Route::post('/jobs/{id}/leave', [App\Http\Controllers\Api\Mobile\JobController::class, 'leaveLocation'])->name('jobs.leave');
 });

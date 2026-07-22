@@ -178,6 +178,13 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
+            [
+                'id' => 9,
+                'name' => 'warehouse.stock-opnames.create',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
         DB::table('user_roles')->insert([
@@ -328,6 +335,32 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
         $this->assertStringContainsString('unpostForm', $html);
     }
 
+    public function test_stock_opname_index_hides_create_action_without_create_permission(): void
+    {
+        Auth::login(User::findOrFail(10));
+
+        $html = $this->renderStockOpnameIndex();
+
+        $this->assertStringNotContainsString('Add New Opname', $html);
+    }
+
+    public function test_stock_opname_index_shows_create_action_with_create_permission(): void
+    {
+        DB::table('role_permissions')->insert([
+            'role_id' => 5,
+            'permission_id' => 9,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Auth::login(User::findOrFail(10));
+
+        $html = $this->renderStockOpnameIndex();
+
+        $this->assertStringContainsString('Add New Opname', $html);
+        $this->assertStringContainsString('onclick="openCreateModal()"', $html);
+    }
+
     public function test_unpost_returns_approved_opname_to_draft(): void
     {
         Auth::login(User::findOrFail(10));
@@ -402,5 +435,13 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
         return app(StockOpnameController::class)
             ->show(StockOpname::findOrFail(20))
             ->render();
+    }
+
+    private function renderStockOpnameIndex(): string
+    {
+        return view('warehouse.stock-opnames.index', [
+            'stockOpnames' => StockOpname::query()->paginate(25),
+            'managedWarehouse' => null,
+        ])->render();
     }
 }

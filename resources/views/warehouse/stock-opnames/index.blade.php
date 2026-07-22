@@ -5,6 +5,7 @@
 
 @section('content')
 @php
+    $canCreateStockOpname = auth()->user()->hasPermission('warehouse.stock-opnames.create');
     $canDeleteStockOpname = auth()->user()->hasPermission('warehouse.stock-opnames.delete');
     $canApprove = auth()->user()->hasPermission('warehouse.stock-opnames.approve');
     $canUpdate = auth()->user()->hasPermission('warehouse.stock-opnames.update');
@@ -720,11 +721,13 @@
             </div>
             
             <div class="flex flex-row justify-end items-center">
+                @if($canCreateStockOpname)
                 <button class="btn btn-primary" onclick="openCreateModal()">
                     <i class="fas fa-plus"></i>
                     <span class="hidden md:inline">Add New Opname</span>
                     <span class="md:hidden">Add</span>
                 </button>
+                @endif
             </div>
         </div>
 
