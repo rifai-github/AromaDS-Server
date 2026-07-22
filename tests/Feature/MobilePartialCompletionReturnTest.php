@@ -395,6 +395,20 @@ class MobilePartialCompletionReturnTest extends TestCase
             'updated_at' => now(),
         ]);
 
+        DB::table('teams')->insert([
+            'id' => 12,
+            'name' => 'Tim Teknisi Test',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('team_members')->insert([
+            'team_id' => 12,
+            'user_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         Auth::login(User::findOrFail(1));
     }
 
@@ -511,13 +525,6 @@ class MobilePartialCompletionReturnTest extends TestCase
             'status' => 'processed',
             'updated_at' => now(),
         ]);
-        DB::table('team_members')->insert([
-            'team_id' => 12,
-            'user_id' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
         $request = Request::create('/api/v1/mobile/jobs/10/arrived-at-location', 'POST', [
             'latitude' => -6.1910233,
             'longitude' => 106.7625460,
@@ -565,12 +572,6 @@ class MobilePartialCompletionReturnTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        DB::table('teams')->insert([
-            'id' => 12,
-            'name' => 'Tim Surabaya',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
         DB::table('job_assign_schedules')->insert([
             'id' => 21,
             'job_schedule_id' => 11,
@@ -579,13 +580,6 @@ class MobilePartialCompletionReturnTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        DB::table('team_members')->insert([
-            'team_id' => 12,
-            'user_id' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
         $request = Request::create('/api/v1/mobile/jobs/11/arrived-at-location', 'POST', [
             'latitude' => -6.1910233,
             'longitude' => 106.7625460,
@@ -927,12 +921,33 @@ class MobilePartialCompletionReturnTest extends TestCase
         ]);
 
         DB::table('job_schedule_rooms')->insert([
-            'id' => 210,
+            [
+                'id' => 209,
+                'job_schedule_id' => 20,
+                'job_advice_room_id' => 80,
+                'room_name' => 'Lobby',
+                'room_id' => 800,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 210,
+                'job_schedule_id' => 21,
+                'job_advice_room_id' => 80,
+                'room_name' => 'Lobby',
+                'room_id' => 800,
+                'status' => 'completed',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 21,
             'job_schedule_id' => 21,
-            'job_advice_room_id' => 80,
-            'room_name' => 'Lobby',
-            'room_id' => 800,
-            'status' => 'completed',
+            'team_id' => 12,
+            'status' => 'assigned',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -1117,6 +1132,7 @@ class MobilePartialCompletionReturnTest extends TestCase
         DB::table('job_assign_schedules')->insert([
             'id' => 20,
             'job_schedule_id' => 10,
+            'team_id' => 12,
             'status' => 'assigned',
             'created_at' => now(),
             'updated_at' => now(),

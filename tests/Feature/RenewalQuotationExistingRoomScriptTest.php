@@ -134,7 +134,7 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('$this->ensureQuotationRenewalCanProceed($quotation, true);', $controller);
         $this->assertStringContainsString('private function ensureQuotationRenewalCanProceed(Quotation $quotation, bool $allowPendingOperationalWork = false): void', $controller);
         $this->assertStringContainsString('if ($allowPendingOperationalWork) {', $controller);
-        $this->assertStringContainsString('$blockReason = $contract->getRenewalBlockReason();', $controller);
+        $this->assertStringContainsString('$blockReason = $contract->getRenewalBlockReason(null, $exceptQuotationId);', $controller);
         $this->assertMatchesRegularExpression(
             '/private function generateContractFromQuotation\(Quotation \$quotation\).*?\$this->ensureQuotationRenewalCanProceed\(\$quotation\);/s',
             $controller

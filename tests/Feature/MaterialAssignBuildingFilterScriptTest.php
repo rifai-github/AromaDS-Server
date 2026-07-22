@@ -14,12 +14,12 @@ class MaterialAssignBuildingFilterScriptTest extends TestCase
         $this->assertStringContainsString('Filter Nama Gedung:', $view);
         $this->assertStringContainsString('id="filterBuildingName"', $view);
         $this->assertStringContainsString('name="building_name"', $view);
-        $this->assertStringContainsString('Semua Gedung', $view);
+        $this->assertStringContainsString('placeholder="Ketik nama gedung..."', $view);
         $this->assertStringContainsString("params.set('building_name', buildingName)", $view);
         $this->assertStringNotContainsString('id="filterTeamCode"', $view);
         $this->assertStringNotContainsString('Filter Team Name:', $view);
 
-        $this->assertStringContainsString("'buildings'", $controller);
-        $this->assertStringContainsString('job-assign-material-issues:index:buildings', $controller);
+        $this->assertStringContainsString("if (\$request->filled('building_name'))", $controller);
+        $this->assertStringContainsString("where('nama_gedung', 'like'", $controller);
     }
 }

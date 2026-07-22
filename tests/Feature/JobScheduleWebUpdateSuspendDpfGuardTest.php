@@ -4,11 +4,33 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Operational\JobScheduleController;
 use App\Models\JobSchedule;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 use ReflectionMethod;
 use Tests\TestCase;
 
 class JobScheduleWebUpdateSuspendDpfGuardTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Schema::create('job_schedule_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_id')->nullable();
+            $table->string('status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+    }
+
+    protected function tearDown(): void
+    {
+        Schema::dropIfExists('job_schedule_rooms');
+
+        parent::tearDown();
+    }
+
     /**
      * The generic web "Edit Job Schedule" form (PUT job-schedules/{id}) accepts
      * `status` directly and saves via JobSchedule::update(), bypassing the
@@ -49,6 +71,6 @@ class JobScheduleWebUpdateSuspendDpfGuardTest extends TestCase
         $method = new ReflectionMethod(JobScheduleController::class, 'validateWebCompletionTransition');
         $method->setAccessible(true);
 
-        return $method->invoke(new JobScheduleController(), $job, $targetStatus);
+        return $method->invoke(new JobScheduleController, $job, $targetStatus);
     }
 }

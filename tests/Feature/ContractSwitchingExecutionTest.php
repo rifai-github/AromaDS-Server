@@ -24,6 +24,15 @@ class ContractSwitchingExecutionTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('company_virtual_accounts', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('customer_id')->nullable();
+            $table->string('account_number')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('contracts', function (Blueprint $table) {
             $table->id();
             $table->string('contract_number')->nullable();
@@ -34,6 +43,7 @@ class ContractSwitchingExecutionTest extends TestCase
             $table->string('term_of_payment')->nullable();
             $table->string('status')->nullable();
             $table->string('contract_status')->nullable();
+            $table->string('virtual_account')->nullable();
             $table->text('notes')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('updated_by')->nullable();
@@ -234,6 +244,7 @@ class ContractSwitchingExecutionTest extends TestCase
             'contract_rooms',
             'contracts',
             'customers',
+            'company_virtual_accounts',
         ] as $table) {
             Schema::dropIfExists($table);
         }
@@ -323,7 +334,7 @@ class ContractSwitchingExecutionTest extends TestCase
 
         $this->assertSame('2026-07-01', $newContract->start_date->toDateString());
         $this->assertSame('2027-06-30', $newContract->end_date->toDateString());
-        $this->assertSame('1 Bulan', $newContract->payment_terms);
+        $this->assertSame('3 Bulan', $newContract->payment_terms);
         $this->assertSame('1 Bulan', $newContract->term_of_payment);
     }
 

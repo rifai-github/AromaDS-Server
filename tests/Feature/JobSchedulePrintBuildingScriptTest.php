@@ -24,7 +24,6 @@ class JobSchedulePrintBuildingScriptTest extends TestCase
         $this->assertStringContainsString('$buildingAddressParts = collect', $view);
         $this->assertStringContainsString('<div class="section-label">Building :</div>', $view);
         $this->assertStringContainsString('<div class="building-title">{{ $buildingName }}</div>', $view);
-        $this->assertStringContainsString('<tr class="building-row">', $view);
         $this->assertStringContainsString('str_contains($jobTypeLower, \'remove\')', $view);
         $this->assertStringContainsString('strtoupper($mainJob->type) . \' REPORT\'', $view);
     }

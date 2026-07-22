@@ -67,6 +67,14 @@ class InventoryIssuingDeleteReopensMaterialAssignTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('material_issue_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('material_issue_id')->nullable();
+            $table->foreignId('job_assign_schedule_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('inventory_issuings', function (Blueprint $table) {
             $table->id();
             $table->string('issuing_number')->nullable();
@@ -134,6 +142,7 @@ class InventoryIssuingDeleteReopensMaterialAssignTest extends TestCase
         Schema::dropIfExists('inventory_receivings');
         Schema::dropIfExists('inventory_issuing_items');
         Schema::dropIfExists('inventory_issuings');
+        Schema::dropIfExists('material_issue_items');
         Schema::dropIfExists('job_assign_material_issues');
         Schema::dropIfExists('material_issues');
         Schema::dropIfExists('job_assign_schedules');

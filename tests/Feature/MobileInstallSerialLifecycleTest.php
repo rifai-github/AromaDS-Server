@@ -35,6 +35,13 @@ class MobileInstallSerialLifecycleTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('job_advice_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_advice_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('job_schedule_units', function (Blueprint $table) {
             $table->id();
             $table->foreignId('job_schedule_id')->nullable();
@@ -68,6 +75,7 @@ class MobileInstallSerialLifecycleTest extends TestCase
     {
         Schema::dropIfExists('serial_numbers');
         Schema::dropIfExists('job_schedule_units');
+        Schema::dropIfExists('job_advice_rooms');
         Schema::dropIfExists('job_schedules');
         Schema::dropIfExists('job_advices');
 
