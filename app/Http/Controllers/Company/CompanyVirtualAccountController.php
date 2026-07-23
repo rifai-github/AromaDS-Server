@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Company;
 
 use App\Http\Controllers\Controller;
-use App\Models\CompanyVirtualAccount;
+use App\Http\Traits\ColumnFilterTrait;
 use App\Models\BankPayment;
 use App\Models\Company;
 use App\Models\CompanySetting;
-use App\Http\Traits\ColumnFilterTrait;
+use App\Models\CompanyVirtualAccount;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 class CompanyVirtualAccountController extends Controller
 {
     use ColumnFilterTrait;
+
     /**
      * Display a listing of the resource.
      */
@@ -59,19 +60,19 @@ class CompanyVirtualAccountController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('account_number', 'like', "%{$search}%")
-                  ->orWhere('account_name', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%")
-                  ->orWhereHas('company', function ($companyQuery) use ($search) {
-                      $companyQuery->where('name', 'like', "%{$search}%");
-                  })
-                  ->orWhereHas('customer', function ($customerQuery) use ($search) {
-                      $customerQuery->where('name', 'like', "%{$search}%");
-                  });
+                    ->orWhere('account_name', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhereHas('company', function ($companyQuery) use ($search) {
+                        $companyQuery->where('name', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('customer', function ($customerQuery) use ($search) {
+                        $customerQuery->where('name', 'like', "%{$search}%");
+                    });
             });
         }
 
         $virtualAccounts = $query->orderBy('created_at', 'desc')->paginateStd(25);
-        $companies = Company::orderBy('name')->get(); 
+        $companies = Company::orderBy('name')->get();
         $customers = \App\Models\Customer::orderBy('name')->where('is_active', true)->get();
         // Only show ACTIVE bank payments in the dropdown
         $banks = BankPayment::with('bank')->where('is_active', true)->orderBy('account_name')->get();
@@ -88,7 +89,7 @@ class CompanyVirtualAccountController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => $virtualAccounts,
-                'statistics' => $statistics
+                'statistics' => $statistics,
             ]);
         }
 
@@ -109,7 +110,7 @@ class CompanyVirtualAccountController extends Controller
                 'status' => 'success',
                 'customers' => $customers,
                 'companies' => $companies,
-                'banks' => $banks
+                'banks' => $banks,
             ]);
         }
 
@@ -137,39 +138,20 @@ class CompanyVirtualAccountController extends Controller
 
             // Use the selected Bank Payment from the dropdown
             $bankPayment = BankPayment::findOrFail($request->bank_payment_id);
-            
-            if (!$bankPayment->is_active) {
-                throw new \Exception("Bank Payment yang Anda pilih sedang tidak aktif.");
+
+            if (! $bankPayment->is_active) {
+                throw new \Exception('Bank Payment yang Anda pilih sedang tidak aktif.');
             }
 
             $customer = \App\Models\Customer::findOrFail($request->customer_id);
 
-            // Construct Full VA Number: Prefix (from Bank) + Suffix (User Input)
-            $prefix = $bankPayment->bank_va_number ?? '';
-            // User input in 'account_number' is treated as suffix if prefix exists
-            $suffix = $request->account_number;
-            
-            // Clean inputs to be safe
-            $prefix = preg_replace('/\D/', '', $prefix);
-            $suffix = preg_replace('/\D/', '', $suffix);
-
-            $fullAccountNumber = $prefix . $suffix;
-            // $totalLength = strlen($fullAccountNumber); // Not used for validation anymore
-            
-            // Expected length from DB is treated as SUFFIX LENGTH based on user requirement
-            $expectedSuffixLength = $bankPayment->length ?? 0;
-            $currentSuffixLength = strlen($suffix);
-
-            // Validate Length
-            if ($expectedSuffixLength > 0 && $currentSuffixLength != $expectedSuffixLength) {
-                throw new \Exception("Validasi Gagal: Panjang Suffix VA harus {$expectedSuffixLength} digit. (Input Anda: {$currentSuffixLength} digit)");
-            }
+            $fullAccountNumber = $this->normalizeAccountNumberForBank($request->account_number, $bankPayment);
 
             // Validate Uniqueness manually
             $exists = CompanyVirtualAccount::where('account_number', $fullAccountNumber)
                 ->where('bank_payment_id', $bankPayment->id)
                 ->exists();
-            
+
             if ($exists) {
                 throw new \Exception("Validasi Gagal: VA Number {$fullAccountNumber} sudah digunakan untuk bank ini.");
             }
@@ -180,7 +162,7 @@ class CompanyVirtualAccountController extends Controller
                 'bank_payment_id' => $bankPayment->id, // Use Default Bank ID
                 'account_number' => $fullAccountNumber,
                 'account_name' => $request->account_name ?: $customer->name, // Use Alias Name if provided
-                'description' => $customer->customer_code . ' - ' . $customer->name,
+                'description' => $customer->customer_code.' - '.$customer->name,
                 'daily_limit' => $request->daily_limit,
                 'monthly_limit' => $request->monthly_limit,
                 'is_active' => $request->is_active,
@@ -195,7 +177,7 @@ class CompanyVirtualAccountController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Company virtual account created successfully.',
-                    'data' => $virtualAccount->load(['bankPayment', 'customer', 'createdBy'])
+                    'data' => $virtualAccount->load(['bankPayment', 'customer', 'createdBy']),
                 ]);
             }
 
@@ -203,16 +185,16 @@ class CompanyVirtualAccountController extends Controller
                 ->with('success', 'Company virtual account created successfully.');
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             // Return JSON for AJAX requests
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to create company virtual account: ' . $e->getMessage()
+                    'message' => 'Failed to create company virtual account: '.$e->getMessage(),
                 ], 422);
             }
-            
-            return back()->with('error', 'Failed to create company virtual account: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to create company virtual account: '.$e->getMessage());
         }
     }
 
@@ -230,11 +212,11 @@ class CompanyVirtualAccountController extends Controller
         ];
 
         // Return JSON for AJAX requests or as fallback
-        if (request()->ajax() || !view()->exists('company.company-virtual-accounts.show')) {
+        if (request()->ajax() || ! view()->exists('company.company-virtual-accounts.show')) {
             return response()->json([
                 'status' => 'success',
                 'data' => $companyVirtualAccount,
-                'statistics' => $statistics
+                'statistics' => $statistics,
             ]);
         }
 
@@ -251,12 +233,12 @@ class CompanyVirtualAccountController extends Controller
         $banks = BankPayment::with('bank')->where('is_active', true)->orderBy('account_name')->get();
 
         // Return JSON for AJAX requests or as fallback
-        if (request()->ajax() || !view()->exists('company.company-virtual-accounts.edit')) {
+        if (request()->ajax() || ! view()->exists('company.company-virtual-accounts.edit')) {
             return response()->json([
                 'status' => 'success',
                 'data' => $companyVirtualAccount,
                 'customers' => $customers,
-                'banks' => $banks
+                'banks' => $banks,
             ]);
         }
 
@@ -271,7 +253,7 @@ class CompanyVirtualAccountController extends Controller
         $request->validate([
             'customer_id' => 'required|exists:customers,id',
             'bank_payment_id' => 'required|exists:bank_payments,id',
-            'account_number' => 'required|string|max:100|unique:company_virtual_accounts,account_number,' . $companyVirtualAccount->id,
+            'account_number' => 'required|string|max:100',
             'account_name' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'daily_limit' => 'nullable|numeric|min:0',
@@ -283,10 +265,27 @@ class CompanyVirtualAccountController extends Controller
         try {
             DB::beginTransaction();
 
+            $bankPayment = BankPayment::findOrFail($request->bank_payment_id);
+
+            if (! $bankPayment->is_active) {
+                throw new \Exception('Bank Payment yang Anda pilih sedang tidak aktif.');
+            }
+
+            $fullAccountNumber = $this->normalizeAccountNumberForBank($request->account_number, $bankPayment);
+
+            $exists = CompanyVirtualAccount::where('account_number', $fullAccountNumber)
+                ->where('bank_payment_id', $bankPayment->id)
+                ->whereKeyNot($companyVirtualAccount->id)
+                ->exists();
+
+            if ($exists) {
+                throw new \Exception("Validasi Gagal: VA Number {$fullAccountNumber} sudah digunakan untuk bank ini.");
+            }
+
             $companyVirtualAccount->update([
                 'customer_id' => $request->customer_id,
-                'bank_payment_id' => $request->bank_payment_id,
-                'account_number' => $request->account_number,
+                'bank_payment_id' => $bankPayment->id,
+                'account_number' => $fullAccountNumber,
                 'account_name' => $request->account_name ?: $companyVirtualAccount->account_name,
                 'description' => $request->description,
                 'daily_limit' => $request->daily_limit,
@@ -303,7 +302,7 @@ class CompanyVirtualAccountController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Company virtual account updated successfully.',
-                    'data' => $companyVirtualAccount->load(['bankPayment', 'company', 'createdBy', 'updatedBy'])
+                    'data' => $companyVirtualAccount->load(['bankPayment', 'company', 'createdBy', 'updatedBy']),
                 ]);
             }
 
@@ -311,17 +310,53 @@ class CompanyVirtualAccountController extends Controller
                 ->with('success', 'Company virtual account updated successfully.');
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             // Return JSON for AJAX requests
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to update company virtual account: ' . $e->getMessage()
+                    'message' => 'Failed to update company virtual account: '.$e->getMessage(),
                 ], 422);
             }
-            
-            return back()->with('error', 'Failed to update company virtual account: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to update company virtual account: '.$e->getMessage());
         }
+    }
+
+    /**
+     * Normalize VA input consistently for create and edit.
+     *
+     * The create form sends the suffix, while the edit form historically sends
+     * the full account number. Accept both so existing edited VAs do not get a
+     * duplicated bank prefix, then store the same canonical full number.
+     */
+    private function normalizeAccountNumberForBank(?string $accountNumber, BankPayment $bankPayment): string
+    {
+        $prefix = preg_replace('/\D/', '', (string) ($bankPayment->bank_va_number ?? ''));
+        $digits = preg_replace('/\D/', '', (string) $accountNumber);
+
+        if ($digits === '') {
+            throw new \Exception('Validasi Gagal: VA Number wajib diisi.');
+        }
+
+        $expectedSuffixLength = (int) ($bankPayment->length ?? 0);
+        $suffix = $digits;
+
+        if ($prefix !== '' && str_starts_with($digits, $prefix)) {
+            $candidateSuffix = substr($digits, strlen($prefix));
+
+            if ($expectedSuffixLength === 0 || strlen($candidateSuffix) === $expectedSuffixLength) {
+                $suffix = $candidateSuffix;
+            }
+        }
+
+        $currentSuffixLength = strlen($suffix);
+
+        if ($expectedSuffixLength > 0 && $currentSuffixLength !== $expectedSuffixLength) {
+            throw new \Exception("Validasi Gagal: Panjang Suffix VA harus {$expectedSuffixLength} digit. (Input Anda: {$currentSuffixLength} digit)");
+        }
+
+        return $prefix.$suffix;
     }
 
     /**
@@ -340,7 +375,7 @@ class CompanyVirtualAccountController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Company virtual account deleted successfully.'
+                    'message' => 'Company virtual account deleted successfully.',
                 ]);
             }
 
@@ -348,16 +383,16 @@ class CompanyVirtualAccountController extends Controller
                 ->with('success', 'Company virtual account deleted successfully.');
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             // Return JSON for AJAX requests
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete company virtual account: ' . $e->getMessage()
+                    'message' => 'Failed to delete company virtual account: '.$e->getMessage(),
                 ], 422);
             }
-            
-            return back()->with('error', 'Failed to delete company virtual account: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to delete company virtual account: '.$e->getMessage());
         }
     }
 
@@ -368,7 +403,7 @@ class CompanyVirtualAccountController extends Controller
     {
         $request->validate([
             'ids' => 'required|array',
-            'ids.*' => 'exists:company_virtual_accounts,id'
+            'ids.*' => 'exists:company_virtual_accounts,id',
         ]);
 
         try {
@@ -382,7 +417,7 @@ class CompanyVirtualAccountController extends Controller
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => "Successfully deleted {$deletedCount} virtual account(s)."
+                    'message' => "Successfully deleted {$deletedCount} virtual account(s).",
                 ]);
             }
 
@@ -390,16 +425,16 @@ class CompanyVirtualAccountController extends Controller
                 ->with('success', "Successfully deleted {$deletedCount} virtual account(s).");
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             // Return JSON for AJAX requests
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete virtual accounts: ' . $e->getMessage()
+                    'message' => 'Failed to delete virtual accounts: '.$e->getMessage(),
                 ], 422);
             }
-            
-            return back()->with('error', 'Failed to delete virtual accounts: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to delete virtual accounts: '.$e->getMessage());
         }
     }
 
@@ -410,13 +445,13 @@ class CompanyVirtualAccountController extends Controller
     {
         try {
             $companyVirtualAccount->update([
-                'is_active' => !$companyVirtualAccount->is_active,
+                'is_active' => ! $companyVirtualAccount->is_active,
                 'updated_by' => Auth::id(),
             ]);
 
             return back()->with('success', 'Account status updated successfully.');
         } catch (\Exception $e) {
-            return back()->with('error', 'Failed to update account status: ' . $e->getMessage());
+            return back()->with('error', 'Failed to update account status: '.$e->getMessage());
         }
     }
 
@@ -433,7 +468,7 @@ class CompanyVirtualAccountController extends Controller
 
             return back()->with('success', 'Account suspended successfully.');
         } catch (\Exception $e) {
-            return back()->with('error', 'Failed to suspend account: ' . $e->getMessage());
+            return back()->with('error', 'Failed to suspend account: '.$e->getMessage());
         }
     }
 
@@ -450,7 +485,7 @@ class CompanyVirtualAccountController extends Controller
 
             return back()->with('success', 'Account activated successfully.');
         } catch (\Exception $e) {
-            return back()->with('error', 'Failed to activate account: ' . $e->getMessage());
+            return back()->with('error', 'Failed to activate account: '.$e->getMessage());
         }
     }
 
@@ -537,8 +572,8 @@ class CompanyVirtualAccountController extends Controller
         $virtualAccounts = CompanyVirtualAccount::where('is_active', true)
             ->where(function ($q) use ($request) {
                 $q->where('account_number', 'like', "%{$request->search}%")
-                  ->orWhere('account_name', 'like', "%{$request->search}%")
-                  ->orWhere('description', 'like', "%{$request->search}%");
+                    ->orWhere('account_name', 'like', "%{$request->search}%")
+                    ->orWhere('description', 'like', "%{$request->search}%");
             })
             ->with(['bankPayment', 'company'])
             ->orderBy('account_name')
@@ -558,26 +593,26 @@ class CompanyVirtualAccountController extends Controller
     {
         try {
             $companyCode = CompanyVirtualAccount::getCompanyCode();
-            
+
             \Log::info('CompanyVirtualAccountController: getCompanyCode called', [
                 'company_code' => $companyCode,
-                'user_id' => Auth::id()
+                'user_id' => Auth::id(),
             ]);
-            
+
             return response()->json([
                 'status' => 'success',
-                'company_code' => $companyCode
+                'company_code' => $companyCode,
             ]);
         } catch (\Exception $e) {
             \Log::error('CompanyVirtualAccountController: getCompanyCode error', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
-            
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to get company code: ' . $e->getMessage(),
-                'company_code' => '88997' // Fallback to default
+                'message' => 'Failed to get company code: '.$e->getMessage(),
+                'company_code' => '88997', // Fallback to default
             ], 500);
         }
     }
@@ -588,13 +623,13 @@ class CompanyVirtualAccountController extends Controller
     public function setCompanyCode(Request $request)
     {
         $request->validate([
-            'company_code' => 'required|string|size:5|regex:/^[0-9]{5}$/'
+            'company_code' => 'required|string|size:5|regex:/^[0-9]{5}$/',
         ]);
 
         try {
             $companyId = 7; // Default company ID
             $companyCode = $request->company_code;
-            
+
             // Save to CompanySetting
             CompanySetting::set(
                 $companyId,
@@ -602,19 +637,20 @@ class CompanyVirtualAccountController extends Controller
                 $companyCode,
                 'Virtual Account Company Code (5 digits)'
             );
-            
-            \Log::info("VA Company Code updated to: {$companyCode} by user " . Auth::id());
-            
+
+            \Log::info("VA Company Code updated to: {$companyCode} by user ".Auth::id());
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Company code updated successfully',
-                'company_code' => $companyCode
+                'company_code' => $companyCode,
             ]);
         } catch (\Exception $e) {
-            \Log::error("Failed to update VA company code: " . $e->getMessage());
+            \Log::error('Failed to update VA company code: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to update company code: ' . $e->getMessage()
+                'message' => 'Failed to update company code: '.$e->getMessage(),
             ], 500);
         }
     }

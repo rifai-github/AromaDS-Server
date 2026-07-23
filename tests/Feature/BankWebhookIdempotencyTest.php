@@ -159,6 +159,16 @@ class BankWebhookIdempotencyTest extends TestCase
         ], DB::table('bank_receipts')->orderBy('id')->pluck('receipt_number')->all());
     }
 
+    public function test_receipt_stores_resolved_company_va_number_not_bank_payload_padding(): void
+    {
+        $response = app(BankWebhookController::class)->handleVirtualAccountPayment(
+            $this->webhookRequest(['virtual_account_number' => '0000000000999998'])
+        );
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('999998', DB::table('bank_receipts')->value('account_number'));
+    }
+
     public function test_receipt_failure_rolls_back_invoice_payment(): void
     {
         $originalDispatcher = BankReceipt::getEventDispatcher();

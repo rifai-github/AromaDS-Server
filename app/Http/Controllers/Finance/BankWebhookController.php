@@ -132,13 +132,13 @@ class BankWebhookController extends Controller
 
             // Create bank receipt record
             $bankReceipt = BankReceipt::create([
-                'receipt_number' => BankReceipt::generateWebhookReceiptNumber(),
+                'receipt_number' => BankReceipt::generateWebhookReceiptNumber($request->payment_date),
                 'receipt_date' => now(),
                 'customer_id' => $invoice->customer_id,
                 'invoice_reference' => $invoice->invoice_number,
                 // CompanyVirtualAccount points at a bank_payment, which carries the bank_id.
                 'bank_id' => optional($virtualAccount->bankPayment)->bank_id,
-                'account_number' => $request->virtual_account_number,
+                'account_number' => $virtualAccount->account_number,
                 'account_holder_name' => $request->customer_name ?? $invoice->customer->name,
                 'amount' => $request->amount,
                 'payment_date' => $request->payment_date,
