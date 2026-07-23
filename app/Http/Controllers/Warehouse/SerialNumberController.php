@@ -3,32 +3,40 @@
 namespace App\Http\Controllers\Warehouse;
 
 use App\Http\Controllers\Controller;
+use App\Http\Traits\AccessControlFilterTrait;
+use App\Models\InventoryMovement;
+use App\Models\MasterProduct;
 use App\Models\SerialNumber;
 use App\Models\Warehouse;
-use App\Models\MasterProduct;
 use App\Models\WarehouseProduct;
-use App\Models\InventoryMovement;
 use App\Services\Warehouse\WarehousePlacementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use App\Http\Traits\AccessControlFilterTrait;
 
 class SerialNumberController extends Controller
 {
-    use \App\Http\Traits\ColumnFilterTrait;
     use AccessControlFilterTrait;
+    use \App\Http\Traits\ColumnFilterTrait;
+
+    private function normalizedSerialExists(string $serialNumber, ?int $excludeId = null): bool
+    {
+        return SerialNumber::query()
+            ->whereNormalizedSerialNumber($serialNumber)
+            ->when($excludeId, fn ($query) => $query->where('id', '!=', $excludeId))
+            ->exists();
+    }
 
     public function index(Request $request)
     {
         $query = SerialNumber::with([
-            'warehouse', 
-            'masterProduct', 
-            'createdBy', 
+            'warehouse',
+            'masterProduct',
+            'createdBy',
             'updatedBy',
-            'unitOnWalls' => function($q) {
+            'unitOnWalls' => function ($q) {
                 $q->where('status', 'active'); // Only load active unit on walls for location type derivation
-            }
+            },
         ]);
 
         // Apply Access Control
@@ -66,8 +74,8 @@ class SerialNumberController extends Controller
         if ($request->has('filter.status')) {
             $status = $request->input('filter.status');
             if (is_string($status)) {
-                 $normalizedStatus = str_replace([' ', '-'], '_', strtolower(trim($status)));
-                 $request->merge(['filter' => array_merge($request->input('filter'), ['status' => $normalizedStatus])]);
+                $normalizedStatus = str_replace([' ', '-'], '_', strtolower(trim($status)));
+                $request->merge(['filter' => array_merge($request->input('filter'), ['status' => $normalizedStatus])]);
             }
         }
 
@@ -80,7 +88,7 @@ class SerialNumberController extends Controller
         if ($request->ajax()) {
             return response()->json([
                 'status' => 'success',
-                'data' => $serialNumbers
+                'data' => $serialNumbers,
             ]);
         }
 
@@ -89,7 +97,7 @@ class SerialNumberController extends Controller
             ->where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name', 'sku', 'packaging_size_id']);
-        
+
         $warehouses = \App\Models\Warehouse::where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name']);
@@ -101,18 +109,18 @@ class SerialNumberController extends Controller
     {
         $warehouses = Warehouse::where('is_active', true)->get();
         $products = MasterProduct::where('is_active', true)->get();
-        
+
         // Return JSON for AJAX requests
         if (request()->ajax()) {
             return response()->json([
                 'status' => 'success',
                 'data' => [
                     'warehouses' => $warehouses,
-                    'products' => $products
-                ]
+                    'products' => $products,
+                ],
             ]);
         }
-        
+
         return view('warehouse.serial-numbers.create', compact('warehouses', 'products'));
     }
 
@@ -121,11 +129,22 @@ class SerialNumberController extends Controller
         $request->validate([
             'warehouse_id' => 'nullable|exists:warehouses,id',
             'master_product_id' => 'required|exists:master_products,id',
-            'serial_number' => 'required|string|max:100|unique:serial_numbers',
+            'serial_number' => 'required|string|max:100',
             'status' => 'required|in:ready,broken,on_service,in_use,retired,available,maintenance,damaged,on_hand,on_hand_remove', // Include legacy statuses for backward compatibility
             'condition_status' => 'nullable|in:new,second_ready,damaged',
             'notes' => 'nullable|string',
         ]);
+
+        $normalizedSerial = SerialNumber::normalizeSerialCode($request->serial_number);
+        if ($this->normalizedSerialExists($normalizedSerial)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Serial Number sudah ada di sistem: {$normalizedSerial}",
+                'errors' => [
+                    'serial_number' => ["Serial Number sudah ada di sistem: {$normalizedSerial}"],
+                ],
+            ], 422);
+        }
 
         try {
             DB::beginTransaction();
@@ -133,7 +152,7 @@ class SerialNumberController extends Controller
             $serialNumber = SerialNumber::create([
                 'warehouse_id' => $request->warehouse_id,
                 'master_product_id' => $request->master_product_id,
-                'serial_number' => strtoupper($request->serial_number),
+                'serial_number' => $normalizedSerial,
                 'status' => $request->status,
                 'condition_status' => $request->condition_status
                     ?: (in_array($request->status, ['broken', 'damaged', 'retired'], true)
@@ -143,7 +162,7 @@ class SerialNumberController extends Controller
                 'location_id' => null,
                 'notes' => $request->notes,
                 'created_by' => Auth::id(),
-                'updated_by' => Auth::id()
+                'updated_by' => Auth::id(),
             ]);
 
             DB::commit();
@@ -153,7 +172,7 @@ class SerialNumberController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Serial Number created successfully.',
-                    'data' => $serialNumber->load(['warehouse', 'masterProduct', 'createdBy', 'updatedBy'])
+                    'data' => $serialNumber->load(['warehouse', 'masterProduct', 'createdBy', 'updatedBy']),
                 ]);
             }
 
@@ -161,16 +180,16 @@ class SerialNumberController extends Controller
                 ->with('success', 'Serial Number berhasil dibuat.');
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             // Return JSON for AJAX requests
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to create serial number: ' . $e->getMessage()
+                    'message' => 'Failed to create serial number: '.$e->getMessage(),
                 ], 422);
             }
-            
-            return back()->withInput()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+
+            return back()->withInput()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -178,9 +197,9 @@ class SerialNumberController extends Controller
     {
         // 1. Loading basic relationships
         $serialNumber->load([
-            'warehouse', 
-            'masterProduct', 
-            'createdBy', 
+            'warehouse',
+            'masterProduct',
+            'createdBy',
             'updatedBy',
             'inventoryReceiving',
         ]);
@@ -189,7 +208,7 @@ class SerialNumberController extends Controller
         $unitOnWalls = \App\Models\UnitOnWall::where('serial_number_id', $serialNumber->id)
             ->with(['customer', 'building', 'room', 'product'])
             ->get();
-        
+
         // 3. Get Installation & Service Histories via UnitOnWallHistory
         $uowIds = $unitOnWalls->pluck('id');
         $allUowHistories = \App\Models\UnitOnWallHistory::whereIn('unit_on_wall_id', $uowIds)
@@ -197,13 +216,13 @@ class SerialNumberController extends Controller
             ->orderBy('action_date', 'desc')
             ->orderBy('created_at', 'desc')
             ->get();
-            
+
         $installHistories = collect();
         $serviceHistories = collect();
-        
+
         // Add explicit histories from UnitOnWallHistory
         foreach ($allUowHistories as $h) {
-            $historyObj = (object)[
+            $historyObj = (object) [
                 'action' => $h->action,
                 'action_date' => $h->action_date,
                 'customer_name' => $h->customer_name,
@@ -213,9 +232,9 @@ class SerialNumberController extends Controller
                 'job_schedule_id' => $h->job_schedule_id,
                 'notes' => $h->notes,
                 'badge' => $h->getActionBadgeClass(),
-                'label' => $h->getActionLabel()
+                'label' => $h->getActionLabel(),
             ];
-            
+
             if (in_array($h->action, ['install', 'remove'])) {
                 $installHistories->push($historyObj);
             } elseif (in_array($h->action, ['service', 'service_first', 'service_extra', 'csr'])) {
@@ -227,18 +246,18 @@ class SerialNumberController extends Controller
                 $serviceHistories->push($historyObj);
             }
         }
-        
+
         // Fallback: Add virtual history from UnitOnWall records if no history exists for them
         foreach ($unitOnWalls as $uow) {
-            $hasHistory = $installHistories->contains(fn($h) => $h->customer_name == $uow->customer_name && $h->action == 'install');
-            if (!$hasHistory && $uow->install_date) {
+            $hasHistory = $installHistories->contains(fn ($h) => $h->customer_name == $uow->customer_name && $h->action == 'install');
+            if (! $hasHistory && $uow->install_date) {
                 // Try to extract job number from notes
                 $jobNo = null;
                 if ($uow->notes && preg_match('/JKT-[A-Z]+\/\d{2}-\d{2}\/\d{4}/', $uow->notes, $matches)) {
                     $jobNo = $matches[0];
                 }
-                
-                $installHistories->push((object)[
+
+                $installHistories->push((object) [
                     'action' => 'install',
                     'action_date' => $uow->install_date,
                     'customer_name' => $uow->customer_name,
@@ -248,12 +267,12 @@ class SerialNumberController extends Controller
                     'job_schedule_id' => null,
                     'notes' => $uow->notes,
                     'badge' => 'success',
-                    'label' => 'Installed (System Record)'
+                    'label' => 'Installed (System Record)',
                 ]);
 
                 // If currently active, it's installed. If removed, we might want to show removal too.
                 if ($uow->status === 'removed' && $uow->updated_at) {
-                    $installHistories->push((object)[
+                    $installHistories->push((object) [
                         'action' => 'remove',
                         'action_date' => $uow->updated_at,
                         'customer_name' => $uow->customer_name,
@@ -263,7 +282,7 @@ class SerialNumberController extends Controller
                         'job_schedule_id' => null,
                         'notes' => 'Auto-removed by system',
                         'badge' => 'danger',
-                        'label' => 'Removed'
+                        'label' => 'Removed',
                     ]);
                 }
             }
@@ -273,25 +292,25 @@ class SerialNumberController extends Controller
         $unitInstalls = \App\Models\UnitInstallation::where('serial_number', $serialNumber->serial_number)
             ->with(['jobSchedule', 'room.building'])
             ->get();
-            
+
         foreach ($unitInstalls as $ui) {
-            $installHistories->push((object)[
+            $installHistories->push((object) [
                 'action' => $ui->status,
                 'action_date' => $ui->install_date,
                 'customer_name' => $ui->jobSchedule->company_name ?? '-',
-                'location' => ($ui->room->building->nama_gedung ?? '-') . ' - ' . ($ui->room->room_name ?? '-'),
+                'location' => ($ui->room->building->nama_gedung ?? '-').' - '.($ui->room->room_name ?? '-'),
                 'technician_name' => $ui->jobSchedule->assignedTechnician->name ?? '-',
                 'job_schedule_number' => $ui->jobSchedule->job_number ?? '-',
                 'job_schedule_id' => $ui->job_schedule_id,
                 'notes' => $ui->installation_notes,
                 'badge' => $ui->status == 'installed' ? 'success' : 'warning',
-                'label' => ucfirst($ui->status)
+                'label' => ucfirst($ui->status),
             ]);
         }
-        
+
         $installHistories = $installHistories->sortByDesc('action_date');
         $serviceHistories = $serviceHistories->sortByDesc('action_date');
-        
+
         // 4. Get Repair Histories (linked directly to SerialNumber)
         $repairHistories = \App\Models\UnitRepair::where('unit_id', $serialNumber->id)
             ->with(['repairedBy', 'reportedBy'])
@@ -300,54 +319,54 @@ class SerialNumberController extends Controller
 
         // 5. Get Scanning/Movement Histories (Receiving, Issuing, etc.)
         $movementHistories = collect();
-        
+
         // Receiving
         if ($serialNumber->inventoryReceiving) {
-            $movementHistories->push((object)[
+            $movementHistories->push((object) [
                 'date' => $serialNumber->inventoryReceiving->receive_date ?? $serialNumber->created_at,
                 'action' => 'diterima',
                 'label' => 'Inventory Receiving',
                 'badge' => 'success',
-                'notes' => 'Received at ' . ($serialNumber->warehouse->name ?? 'Warehouse'),
+                'notes' => 'Received at '.($serialNumber->warehouse->name ?? 'Warehouse'),
                 'reference' => $serialNumber->inventoryReceiving->receiving_number,
-                'user' => $serialNumber->createdBy->name ?? '-'
+                'user' => $serialNumber->createdBy->name ?? '-',
             ]);
         }
-        
+
         // Issuing
         $issuingItems = \App\Models\InventoryIssuingItem::where('serial_number_id', $serialNumber->id)
             ->with(['inventoryIssuing', 'createdBy'])
             ->get();
-            
-        foreach($issuingItems as $item) {
-            $movementHistories->push((object)[
+
+        foreach ($issuingItems as $item) {
+            $movementHistories->push((object) [
                 'date' => $item->inventoryIssuing->issue_date ?? $item->created_at,
                 'action' => 'dikeluarkan',
                 'label' => 'Inventory Issuing',
                 'badge' => 'warning',
-                'notes' => 'Issued for ' . ($item->inventoryIssuing->notes ?? 'Stock Movement'),
+                'notes' => 'Issued for '.($item->inventoryIssuing->notes ?? 'Stock Movement'),
                 'reference' => $item->inventoryIssuing->issuing_number,
-                'user' => $item->createdBy->name ?? '-'
+                'user' => $item->createdBy->name ?? '-',
             ]);
         }
-        
+
         // Stock Opname Scans
         $opnameDetails = \App\Models\StockOpnameDetail::whereJsonContains('scanned_serial_numbers', $serialNumber->serial_number)
             ->with(['stockOpname.warehouse', 'stockOpname.createdBy'])
             ->get();
-            
-        foreach($opnameDetails as $detail) {
-            $movementHistories->push((object)[
+
+        foreach ($opnameDetails as $detail) {
+            $movementHistories->push((object) [
                 'date' => $detail->stockOpname->opname_date ?? $detail->created_at,
                 'action' => 'di_scan',
                 'label' => 'Stock Opname Scan',
                 'badge' => 'info',
-                'notes' => 'Scanned during opname at ' . ($detail->stockOpname->warehouse->name ?? 'Warehouse'),
+                'notes' => 'Scanned during opname at '.($detail->stockOpname->warehouse->name ?? 'Warehouse'),
                 'reference' => $detail->stockOpname->opname_no,
-                'user' => $detail->stockOpname->createdBy->name ?? '-'
+                'user' => $detail->stockOpname->createdBy->name ?? '-',
             ]);
         }
-        
+
         $movementHistories = $movementHistories->sortByDesc('date');
 
         // Check if has WiFi (from any active unit on wall)
@@ -360,17 +379,17 @@ class SerialNumberController extends Controller
         if (request()->ajax()) {
             return response()->json([
                 'status' => 'success',
-                'data' => $serialNumber
+                'data' => $serialNumber,
             ]);
         }
-        
+
         // Return view for non-AJAX requests
         return view('warehouse.serial-numbers.show', compact(
-            'serialNumber', 
-            'unitOnWalls', 
-            'installHistories', 
-            'serviceHistories', 
-            'repairHistories', 
+            'serialNumber',
+            'unitOnWalls',
+            'installHistories',
+            'serviceHistories',
+            'repairHistories',
             'movementHistories',
             'hasWifi',
             'unitOnWall'
@@ -382,7 +401,7 @@ class SerialNumberController extends Controller
         $serialNumber->load(['warehouse', 'masterProduct', 'createdBy', 'updatedBy']);
         $warehouses = Warehouse::where('is_active', true)->get();
         $products = MasterProduct::where('is_active', true)->get();
-        
+
         // Return JSON for AJAX requests (modal system)
         if (request()->ajax()) {
             return response()->json([
@@ -390,11 +409,11 @@ class SerialNumberController extends Controller
                 'data' => [
                     'serialNumber' => $serialNumber,
                     'warehouses' => $warehouses,
-                    'products' => $products
-                ]
+                    'products' => $products,
+                ],
             ]);
         }
-        
+
         // For non-AJAX requests, redirect to index with error message
         return redirect()->route('warehouse.serial-numbers.index')
             ->with('error', 'Please use the modal system to edit serial numbers.');
@@ -404,7 +423,7 @@ class SerialNumberController extends Controller
     {
         // Allow partial updates (only status and notes for edit from show page)
         $rules = [];
-        
+
         if ($request->has('status')) {
             $rules['status'] = 'required|in:ready,broken,on_service,in_use,retired,available,maintenance,damaged,on_hand,on_hand_remove'; // Include legacy statuses
         }
@@ -412,17 +431,17 @@ class SerialNumberController extends Controller
         if ($request->has('condition_status')) {
             $rules['condition_status'] = 'nullable|in:new,second_ready,damaged';
         }
-        
+
         if ($request->has('notes')) {
             $rules['notes'] = 'nullable|string|max:1000';
         }
-        
+
         // Full update (if all fields provided)
         if ($request->has('warehouse_id') && $request->has('master_product_id') && $request->has('serial_number')) {
             $rules = array_merge($rules, [
                 'warehouse_id' => 'required|exists:warehouses,id',
                 'master_product_id' => 'required|exists:master_products,id',
-                'serial_number' => 'required|string|max:100|unique:serial_numbers,serial_number,' . $serialNumber->id,
+                'serial_number' => 'required|string|max:100',
                 'location_type' => 'nullable|in:warehouse,customer,technician',
                 'location_id' => 'nullable|integer',
             ]);
@@ -430,13 +449,26 @@ class SerialNumberController extends Controller
 
         $request->validate($rules);
 
+        if ($request->has('serial_number')) {
+            $normalizedSerial = SerialNumber::normalizeSerialCode($request->serial_number);
+            if ($this->normalizedSerialExists($normalizedSerial, $serialNumber->id)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Serial Number sudah ada di sistem: {$normalizedSerial}",
+                    'errors' => [
+                        'serial_number' => ["Serial Number sudah ada di sistem: {$normalizedSerial}"],
+                    ],
+                ], 422);
+            }
+        }
+
         try {
             DB::beginTransaction();
 
             $oldWarehouse = $serialNumber->warehouse;
 
             $updateData = [
-                'updated_by' => Auth::id()
+                'updated_by' => Auth::id(),
             ];
 
             // Only update fields that are provided
@@ -449,7 +481,7 @@ class SerialNumberController extends Controller
             } elseif ($request->has('status') && in_array($request->status, ['broken', 'damaged', 'retired'], true)) {
                 $updateData['condition_status'] = SerialNumber::CONDITION_DAMAGED;
             }
-            
+
             if ($request->has('notes')) {
                 $updateData['notes'] = $request->notes;
             }
@@ -458,19 +490,19 @@ class SerialNumberController extends Controller
             if ($request->has('warehouse_id')) {
                 $updateData['warehouse_id'] = $request->warehouse_id;
             }
-            
+
             if ($request->has('master_product_id')) {
                 $updateData['master_product_id'] = $request->master_product_id;
             }
-            
+
             if ($request->has('serial_number')) {
-                $updateData['serial_number'] = strtoupper($request->serial_number);
+                $updateData['serial_number'] = SerialNumber::normalizeSerialCode($request->serial_number);
             }
-            
+
             if ($request->has('location_type')) {
                 $updateData['location_type'] = $request->location_type;
             }
-            
+
             if ($request->has('location_id')) {
                 $updateData['location_id'] = $request->location_id;
             }
@@ -488,7 +520,7 @@ class SerialNumberController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Serial Number updated successfully.',
-                    'data' => $serialNumber->load(['warehouse', 'masterProduct', 'createdBy', 'updatedBy'])
+                    'data' => $serialNumber->load(['warehouse', 'masterProduct', 'createdBy', 'updatedBy']),
                 ]);
             }
 
@@ -496,16 +528,16 @@ class SerialNumberController extends Controller
                 ->with('success', 'Serial Number berhasil diperbarui.');
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             // Return JSON for AJAX requests
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to update serial number: ' . $e->getMessage()
+                    'message' => 'Failed to update serial number: '.$e->getMessage(),
                 ], 422);
             }
-            
-            return back()->withInput()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+
+            return back()->withInput()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -565,7 +597,7 @@ class SerialNumberController extends Controller
         ]);
 
         $referenceNo = $serialNumber->serial_number;
-        $movementNo = 'SN-DMG-' . $serialNumber->id . '-' . now()->format('YmdHis');
+        $movementNo = 'SN-DMG-'.$serialNumber->id.'-'.now()->format('YmdHis');
         $productName = $serialNumber->masterProduct?->name ?? "Product ID: {$productId}";
 
         if ($deductedSourceStock) {
@@ -577,7 +609,7 @@ class SerialNumberController extends Controller
                 'movement_date' => now()->toDateString(),
                 'reference_no' => $referenceNo,
                 'reference_type' => 'serial_number_status_update',
-                'movement_no' => $movementNo . '-OUT',
+                'movement_no' => $movementNo.'-OUT',
                 'notes' => "Serial Number marked broken. Moved {$referenceNo} ({$productName}) to {$targetWarehouse->name}.",
                 'created_by' => $actorId,
                 'updated_by' => $actorId,
@@ -592,7 +624,7 @@ class SerialNumberController extends Controller
             'movement_date' => now()->toDateString(),
             'reference_no' => $referenceNo,
             'reference_type' => 'serial_number_status_update',
-            'movement_no' => $movementNo . '-IN',
+            'movement_no' => $movementNo.'-IN',
             'notes' => "Serial Number marked broken. Received {$referenceNo} ({$productName}) from {$sourceWarehouse->name}.",
             'created_by' => $actorId,
             'updated_by' => $actorId,
@@ -608,7 +640,7 @@ class SerialNumberController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Serial Number deleted successfully.'
+                    'message' => 'Serial Number deleted successfully.',
                 ]);
             }
 
@@ -619,11 +651,11 @@ class SerialNumberController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete serial number: ' . $e->getMessage()
+                    'message' => 'Failed to delete serial number: '.$e->getMessage(),
                 ], 422);
             }
-            
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -634,7 +666,7 @@ class SerialNumberController extends Controller
     {
         $request->validate([
             'ids' => 'required|array',
-            'ids.*' => 'exists:serial_numbers,id'
+            'ids.*' => 'exists:serial_numbers,id',
         ]);
 
         try {
@@ -648,7 +680,7 @@ class SerialNumberController extends Controller
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => "Successfully deleted {$deletedCount} serial number(s)."
+                    'message' => "Successfully deleted {$deletedCount} serial number(s).",
                 ]);
             }
 
@@ -656,16 +688,16 @@ class SerialNumberController extends Controller
                 ->with('success', "Successfully deleted {$deletedCount} serial number(s).");
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             // Return JSON for AJAX requests
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete serial numbers: ' . $e->getMessage()
+                    'message' => 'Failed to delete serial numbers: '.$e->getMessage(),
                 ], 422);
             }
-            
-            return back()->with('error', 'Failed to delete serial numbers: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to delete serial numbers: '.$e->getMessage());
         }
     }
 
@@ -675,11 +707,12 @@ class SerialNumberController extends Controller
             'serial_number' => 'required|string|max:100',
         ]);
 
-        $serialNumber = SerialNumber::where('serial_number', $request->serial_number)
+        $serialNumber = SerialNumber::query()
+            ->whereNormalizedSerialNumber($request->serial_number)
             ->with(['warehouse', 'masterProduct', 'createdBy', 'updatedBy'])
             ->first();
 
-        if (!$serialNumber) {
+        if (! $serialNumber) {
             return response()->json([
                 'found' => false,
                 'message' => 'Serial number tidak ditemukan.',
@@ -709,7 +742,7 @@ class SerialNumberController extends Controller
 
             // Check if product has serial number requirement
             $product = MasterProduct::find($request->product_id);
-            if (!$product->has_serial_number) {
+            if (! $product->has_serial_number) {
                 throw new \Exception('Produk ini tidak memerlukan serial number.');
             }
 
@@ -718,12 +751,12 @@ class SerialNumberController extends Controller
             $createdCount = 0;
 
             for ($i = 0; $i < $count; $i++) {
-                $serialNo = $startSerial . str_pad($i + 1, 3, '0', STR_PAD_LEFT);
-                
+                $serialNo = $startSerial.str_pad($i + 1, 3, '0', STR_PAD_LEFT);
+
                 // Check if serial number already exists
                 $exists = SerialNumber::where('serial_no', $serialNo)->exists();
-                
-                if (!$exists) {
+
+                if (! $exists) {
                     SerialNumber::create([
                         'warehouse_id' => $request->warehouse_id,
                         'product_id' => $request->product_id,
@@ -742,7 +775,8 @@ class SerialNumberController extends Controller
             return back()->with('success', "Berhasil membuat {$createdCount} serial number.");
         } catch (\Exception $e) {
             DB::rollback();
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -768,7 +802,8 @@ class SerialNumberController extends Controller
             return back()->with('success', 'Serial Number berhasil ditransfer.');
         } catch (\Exception $e) {
             DB::rollback();
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -787,7 +822,7 @@ class SerialNumberController extends Controller
 
             return back()->with('success', 'Status Serial Number berhasil diperbarui.');
         } catch (\Exception $e) {
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 
@@ -818,7 +853,8 @@ class SerialNumberController extends Controller
             return back()->with('success', "Berhasil mengimpor {$importedCount} serial number.");
         } catch (\Exception $e) {
             DB::rollback();
-            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+
+            return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
     }
 

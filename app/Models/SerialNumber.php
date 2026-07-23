@@ -2,17 +2,19 @@
 
 namespace App\Models;
 
+use App\Http\Traits\AutoFilterable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Http\Traits\AutoFilterable;
 
 class SerialNumber extends Model
 {
-    use HasFactory, SoftDeletes, AutoFilterable;
+    use AutoFilterable, HasFactory, SoftDeletes;
 
     public const CONDITION_NEW = 'new';
+
     public const CONDITION_SECOND_READY = 'second_ready';
+
     public const CONDITION_DAMAGED = 'damaged';
 
     public const CONDITION_LABELS = [
@@ -32,14 +34,14 @@ class SerialNumber extends Model
         'master_product_id',
         'inventory_receiving_id',
         'created_by',
-        'updated_by'
+        'updated_by',
     ];
 
     protected $casts = [
         'status' => 'string',
         'condition_status' => 'string',
         'location_type' => 'string',
-        'location_id' => 'integer'
+        'location_id' => 'integer',
     ];
 
     // Relationships
@@ -92,6 +94,16 @@ class SerialNumber extends Model
     public function scopeBySerialNumber($query, $serialNumber)
     {
         return $query->where('serial_number', 'like', "%{$serialNumber}%");
+    }
+
+    public static function normalizeSerialCode(?string $serialNumber): string
+    {
+        return strtoupper(trim((string) $serialNumber));
+    }
+
+    public function scopeWhereNormalizedSerialNumber($query, string $serialNumber)
+    {
+        return $query->whereRaw('UPPER(TRIM(serial_number)) = ?', [self::normalizeSerialCode($serialNumber)]);
     }
 
     public function scopeByStatus($query, $status)
@@ -194,8 +206,9 @@ class SerialNumber extends Model
             'in_use' => 'In Customer',
             'retired' => 'Retired',
             'on_hand' => 'On Hand - Teknisi',
-            'on_hand_remove' => 'On Hand Remove - Teknisi'
+            'on_hand_remove' => 'On Hand Remove - Teknisi',
         ];
+
         return $statuses[$this->status] ?? ucfirst(str_replace('_', ' ', $this->status));
     }
 
@@ -242,8 +255,9 @@ class SerialNumber extends Model
         $types = [
             'warehouse' => 'Warehouse',
             'customer' => 'Customer',
-            'technician' => 'Technician'
+            'technician' => 'Technician',
         ];
+
         return $types[$this->location_type] ?? $this->location_type;
     }
 
@@ -262,13 +276,13 @@ class SerialNumber extends Model
         // 1. If SN is in an active unit_on_wall (installed at customer), location is 'customer'
         // Check if relationship is already loaded first (to avoid N+1 queries)
         if ($this->relationLoaded('unitOnWalls')) {
-            $activeUnitOnWall = $this->unitOnWalls->first(function($uow) {
+            $activeUnitOnWall = $this->unitOnWalls->first(function ($uow) {
                 return $uow->status === 'active';
             });
         } else {
             $activeUnitOnWall = $this->unitOnWalls()->where('status', 'active')->first();
         }
-        
+
         if ($activeUnitOnWall) {
             return 'customer';
         }
@@ -290,9 +304,10 @@ class SerialNumber extends Model
         $types = [
             'warehouse' => 'Warehouse',
             'customer' => 'Customer',
-            'technician' => 'Technician'
+            'technician' => 'Technician',
         ];
         $effectiveType = $this->effective_location_type;
+
         return $types[$effectiveType] ?? ucfirst($effectiveType);
     }
 
@@ -353,6 +368,6 @@ class SerialNumber extends Model
 
     public function getFullNameAttribute()
     {
-        return $this->serial_number . ' - ' . ($this->masterProduct->name ?? 'Unknown') . ' - ' . ($this->warehouse->name ?? 'Unknown');
+        return $this->serial_number.' - '.($this->masterProduct->name ?? 'Unknown').' - '.($this->warehouse->name ?? 'Unknown');
     }
 }

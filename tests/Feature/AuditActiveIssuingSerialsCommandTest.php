@@ -34,18 +34,22 @@ class AuditActiveIssuingSerialsCommandTest extends TestCase
         DB::table('serial_numbers')->insert([
             ['id' => 1, 'serial_number' => 'SN-DUP-001'],
             ['id' => 2, 'serial_number' => 'SN-OK-002'],
+            ['id' => 3, 'serial_number' => ' sn-dup-001 '],
         ]);
 
         DB::table('inventory_issuings')->insert([
             ['id' => 10, 'issuing_number' => 'JKT-WI/001', 'status' => 'pending'],
             ['id' => 11, 'issuing_number' => 'JKT-WI/002', 'status' => 'sent'],
             ['id' => 12, 'issuing_number' => 'JKT-WI/003', 'status' => 'completed'],
+            ['id' => 13, 'issuing_number' => 'JKT-WI/004', 'status' => 'processed'],
         ]);
 
         DB::table('inventory_issuing_items')->insert([
             ['id' => 20, 'inventory_issuing_id' => 10, 'serial_number_id' => 1],
             ['id' => 21, 'inventory_issuing_id' => 11, 'serial_number_id' => 1],
             ['id' => 22, 'inventory_issuing_id' => 12, 'serial_number_id' => 2],
+            ['id' => 23, 'inventory_issuing_id' => 13, 'serial_number_id' => 3],
+            ['id' => 24, 'inventory_issuing_id' => 10, 'serial_number_id' => 1],
         ]);
     }
 
@@ -69,8 +73,27 @@ class AuditActiveIssuingSerialsCommandTest extends TestCase
         $this->assertStringContainsString('SN-DUP-001', $output);
         $this->assertStringContainsString('JKT-WI/001 (pending)', $output);
         $this->assertStringContainsString('JKT-WI/002 (sent)', $output);
+        $this->assertStringContainsString('JKT-WI/004 (processed)', $output);
         $this->assertStringNotContainsString('SN-OK-002', $output);
         $this->assertSame($before, DB::table('inventory_issuing_items')->orderBy('id')->get()->toJson());
+    }
+
+    public function test_command_groups_conflicts_by_normalized_serial_code(): void
+    {
+        $exitCode = Artisan::call('warehouse:audit-active-issuing-serials', ['--format' => 'json']);
+        preg_match('/\[[\s\S]*\]/', Artisan::output(), $matches);
+        $rows = json_decode($matches[0], true, flags: JSON_THROW_ON_ERROR);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertCount(1, $rows);
+        $this->assertSame('SN-DUP-001', $rows[0]['serial_number']);
+        $this->assertSame(2, $rows[0]['master_rows']);
+        $this->assertSame(4, $rows[0]['active_item_links']);
+        $this->assertSame(3, $rows[0]['active_issuings']);
+        $this->assertSame(2, $rows[0]['duplicate_same_issuing_links']);
+        $this->assertStringContainsString('duplicate_master_rows', $rows[0]['issue_types']);
+        $this->assertStringContainsString('duplicate_active_issuings', $rows[0]['issue_types']);
+        $this->assertStringContainsString('duplicate_links_same_issuing', $rows[0]['issue_types']);
     }
 
     public function test_command_can_filter_one_serial_case_insensitively(): void

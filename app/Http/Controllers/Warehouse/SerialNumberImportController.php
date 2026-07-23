@@ -79,7 +79,7 @@ class SerialNumberImportController extends Controller
 
         foreach ($rows as $index => $row) {
             $rowNo = $index + 2; // +1 for 0-index, +1 for header
-            $serial = strtoupper(trim($row['serial_number'] ?? ''));
+            $serial = SerialNumber::normalizeSerialCode($row['serial_number'] ?? '');
 
             if ($serial === '') {
                 $preview['errors'][] = "Baris {$rowNo}: serial_number kosong";
@@ -89,7 +89,7 @@ class SerialNumberImportController extends Controller
 
             $duplicateInFile = isset($seen[$serial]);
             $seen[$serial] = true;
-            $existsInDb = SerialNumber::where('serial_number', $serial)->exists();
+            $existsInDb = SerialNumber::whereNormalizedSerialNumber($serial)->exists();
 
             if ($duplicateInFile) {
                 $preview['errors'][] = "Baris {$rowNo}: serial_number duplikat di dalam file ({$serial})";
@@ -147,7 +147,7 @@ class SerialNumberImportController extends Controller
                     $rowNo = $index + 2;
 
                     try {
-                        $serial = strtoupper(trim($row['serial_number'] ?? ''));
+                        $serial = SerialNumber::normalizeSerialCode($row['serial_number'] ?? '');
                         if ($serial === '') {
                             throw new \Exception('serial_number wajib diisi');
                         }
@@ -157,7 +157,7 @@ class SerialNumberImportController extends Controller
                         }
                         $seen[$serial] = true;
 
-                        if (SerialNumber::where('serial_number', $serial)->exists()) {
+                        if (SerialNumber::whereNormalizedSerialNumber($serial)->exists()) {
                             throw new \Exception("serial_number sudah ada di sistem: {$serial}");
                         }
 

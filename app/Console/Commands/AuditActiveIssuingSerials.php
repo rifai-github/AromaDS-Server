@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\SerialNumber;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -22,7 +23,7 @@ class AuditActiveIssuingSerials extends Command
             return self::INVALID;
         }
 
-        $serialFilter = strtoupper(trim((string) $this->option('serial')));
+        $serialFilter = SerialNumber::normalizeSerialCode((string) $this->option('serial'));
         $activeStatuses = ['pending', 'processed', 'sent'];
 
         $duplicates = DB::table('inventory_issuing_items as iii')
@@ -31,24 +32,50 @@ class AuditActiveIssuingSerials extends Command
             ->whereNotNull('iii.serial_number_id')
             ->whereIn('ii.status', $activeStatuses)
             ->when($serialFilter !== '', fn ($query) => $query->whereRaw('UPPER(TRIM(sn.serial_number)) = ?', [$serialFilter]))
-            ->selectRaw('sn.id as serial_id, sn.serial_number, COUNT(*) as active_links')
-            ->groupBy('sn.id', 'sn.serial_number')
-            ->havingRaw('COUNT(*) > 1')
-            ->orderBy('sn.serial_number')
+            ->selectRaw('UPPER(TRIM(sn.serial_number)) as serial_number')
+            ->selectRaw('COUNT(DISTINCT sn.id) as master_rows')
+            ->selectRaw('COUNT(*) as active_item_links')
+            ->selectRaw('COUNT(DISTINCT ii.id) as active_issuings')
+            ->groupByRaw('UPPER(TRIM(sn.serial_number))')
+            ->havingRaw('COUNT(*) > 1 OR COUNT(DISTINCT sn.id) > 1 OR COUNT(DISTINCT ii.id) > 1')
+            ->orderBy('serial_number')
             ->get()
             ->map(function ($duplicate) use ($activeStatuses) {
                 $issuings = DB::table('inventory_issuing_items as iii')
                     ->join('inventory_issuings as ii', 'ii.id', '=', 'iii.inventory_issuing_id')
-                    ->where('iii.serial_number_id', $duplicate->serial_id)
+                    ->join('serial_numbers as sn', 'sn.id', '=', 'iii.serial_number_id')
+                    ->whereRaw('UPPER(TRIM(sn.serial_number)) = ?', [$duplicate->serial_number])
                     ->whereIn('ii.status', $activeStatuses)
                     ->orderBy('ii.issuing_number')
-                    ->get(['ii.issuing_number', 'ii.status'])
+                    ->distinct()
+                    ->get(['ii.id', 'ii.issuing_number', 'ii.status'])
                     ->map(fn ($issuing) => "{$issuing->issuing_number} ({$issuing->status})")
                     ->implode('; ');
 
+                $duplicateSameIssuingLinks = DB::table('inventory_issuing_items as iii')
+                    ->join('inventory_issuings as ii', 'ii.id', '=', 'iii.inventory_issuing_id')
+                    ->join('serial_numbers as sn', 'sn.id', '=', 'iii.serial_number_id')
+                    ->whereRaw('UPPER(TRIM(sn.serial_number)) = ?', [$duplicate->serial_number])
+                    ->whereIn('ii.status', $activeStatuses)
+                    ->selectRaw('ii.id, COUNT(*) as link_count')
+                    ->groupBy('ii.id')
+                    ->havingRaw('COUNT(*) > 1')
+                    ->get()
+                    ->sum(fn ($row) => (int) $row->link_count);
+
+                $issueTypes = collect([
+                    ((int) $duplicate->master_rows > 1) ? 'duplicate_master_rows' : null,
+                    ((int) $duplicate->active_issuings > 1) ? 'duplicate_active_issuings' : null,
+                    ($duplicateSameIssuingLinks > 0) ? 'duplicate_links_same_issuing' : null,
+                ])->filter()->values()->all();
+
                 return [
                     'serial_number' => $duplicate->serial_number,
-                    'active_links' => (int) $duplicate->active_links,
+                    'master_rows' => (int) $duplicate->master_rows,
+                    'active_item_links' => (int) $duplicate->active_item_links,
+                    'active_issuings' => (int) $duplicate->active_issuings,
+                    'duplicate_same_issuing_links' => (int) $duplicateSameIssuingLinks,
+                    'issue_types' => implode(', ', $issueTypes),
                     'issuings' => $issuings,
                 ];
             })
@@ -59,7 +86,15 @@ class AuditActiveIssuingSerials extends Command
         } elseif ($duplicates->isEmpty()) {
             $this->info('Tidak ada duplikasi SN pada Inventory Issuing aktif.');
         } else {
-            $this->table(['Serial Number', 'Tautan Aktif', 'Inventory Issuing'], $duplicates->all());
+            $this->table([
+                'Serial Number',
+                'Master Rows',
+                'Active Item Links',
+                'Active Issuings',
+                'Same Issuing Duplicate Links',
+                'Issue Types',
+                'Inventory Issuing',
+            ], $duplicates->all());
         }
 
         $this->newLine();
