@@ -5,14 +5,16 @@
 
 @section('content')
 @php
-    $canCreateStockOpname = auth()->user()->hasPermission('warehouse.stock-opnames.create');
-    $canDeleteStockOpname = auth()->user()->hasPermission('warehouse.stock-opnames.delete');
-    $canApprove = auth()->user()->hasPermission('warehouse.stock-opnames.approve');
-    $canUpdate = auth()->user()->hasPermission('warehouse.stock-opnames.update');
+    $stockOpnameUser = auth()->user();
+    $hasStockOpnamePermissionBypass = $stockOpnameUser->hasRole('Admin')
+        || $stockOpnameUser->hasRole('super_admin')
+        || $stockOpnameUser->hasRoleStartingWith('Management');
+    $canCreateStockOpname = $hasStockOpnamePermissionBypass || $stockOpnameUser->hasPermission('warehouse.stock-opnames.create');
+    $canDeleteStockOpname = $hasStockOpnamePermissionBypass || $stockOpnameUser->hasPermission('warehouse.stock-opnames.delete');
+    $canApprove = $hasStockOpnamePermissionBypass || $stockOpnameUser->hasPermission('warehouse.stock-opnames.approve');
+    $canUpdate = $hasStockOpnamePermissionBypass || $stockOpnameUser->hasPermission('warehouse.stock-opnames.update');
     $canViewSystemStock = auth()->user()->hasPermission('warehouse.stock-opnames.view-system-stock')
-        || auth()->user()->hasRole('Admin')
-        || auth()->user()->hasRole('super_admin')
-        || auth()->user()->hasRoleStartingWith('Management');
+        || $hasStockOpnamePermissionBypass;
 @endphp
 <style>
     /* Global overflow control */

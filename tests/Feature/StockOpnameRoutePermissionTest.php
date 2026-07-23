@@ -26,9 +26,37 @@ class StockOpnameRoutePermissionTest extends TestCase
     public static function routePermissionProvider(): array
     {
         return [
+            'list stock opnames' => [
+                'warehouse.stock-opnames.index',
+                'warehouse.stock-opnames.view',
+            ],
+            'show stock opname' => [
+                'warehouse.stock-opnames.show',
+                'warehouse.stock-opnames.view',
+            ],
+            'stock opname dashboard' => [
+                'warehouse.stock-opnames.dashboard',
+                'warehouse.stock-opnames.view',
+            ],
+            'export stock opname stock' => [
+                'warehouse.stock-opnames.export-stock',
+                'warehouse.stock-opnames.view',
+            ],
             'create stock opname' => [
                 'warehouse.stock-opnames.store',
                 'warehouse.stock-opnames.create',
+            ],
+            'start stock opname' => [
+                'warehouse.stock-opnames.start',
+                'warehouse.stock-opnames.update',
+            ],
+            'complete stock opname' => [
+                'warehouse.stock-opnames.complete',
+                'warehouse.stock-opnames.update',
+            ],
+            'submit stock opname' => [
+                'warehouse.stock-opnames.submit',
+                'warehouse.stock-opnames.update',
             ],
             'update stock opname' => [
                 'warehouse.stock-opnames.update',
@@ -38,6 +66,10 @@ class StockOpnameRoutePermissionTest extends TestCase
                 'warehouse.stock-opnames.destroy',
                 'warehouse.stock-opnames.delete',
             ],
+            'bulk delete stock opname' => [
+                'warehouse.stock-opnames.bulk-delete',
+                'warehouse.stock-opnames.delete',
+            ],
             'approve stock opname' => [
                 'warehouse.stock-opnames.approve',
                 'warehouse.stock-opnames.approve',
@@ -45,6 +77,26 @@ class StockOpnameRoutePermissionTest extends TestCase
             'unpost stock opname' => [
                 'warehouse.stock-opnames.unpost',
                 'warehouse.stock-opnames.approve',
+            ],
+            'import stock opname stock' => [
+                'warehouse.stock-opnames.import-stock',
+                'warehouse.stock-opnames.update',
+            ],
+            'create stock opname adjustment' => [
+                'warehouse.stock-opnames.create-adjustment',
+                'warehouse.stock-opnames.update',
+            ],
+            'update stock opname detail' => [
+                'warehouse.stock-opnames.details.update',
+                'warehouse.stock-opnames.update',
+            ],
+            'legacy list stock opname' => [
+                'warehouse.stocks.index',
+                'warehouse.stock-opnames.view',
+            ],
+            'legacy show stock opname' => [
+                'warehouse.stocks.show',
+                'warehouse.stock-opnames.view',
             ],
             'legacy create stock opname' => [
                 'warehouse.stocks.store',

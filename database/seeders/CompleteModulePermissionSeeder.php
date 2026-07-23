@@ -232,6 +232,7 @@ class CompleteModulePermissionSeeder extends Seeder
             'warehouse.inventory-transfers.receive' => 'Mark Inventory Transfers as Received',
 
             'warehouse.stock-opnames' => 'Access Stock Opnames',
+            'warehouse.stock-opnames.view' => 'View Stock Opnames',
             'warehouse.stock-opnames.create' => 'Create Stock Opnames',
             'warehouse.stock-opnames.update' => 'Update Stock Opnames',
             'warehouse.stock-opnames.delete' => 'Delete Stock Opnames',
@@ -499,6 +500,9 @@ class CompleteModulePermissionSeeder extends Seeder
                 'warehouse.inventory-transfers.transfer',
                 'warehouse.inventory-transfers.receive',
                 'warehouse.stock-opnames',
+                'warehouse.stock-opnames.view',
+                'warehouse.stock-opnames.create',
+                'warehouse.stock-opnames.update',
                 'warehouse.stock-adjustments',
                 'warehouse.serial-numbers',
                 'warehouse.unit-on-walls',
