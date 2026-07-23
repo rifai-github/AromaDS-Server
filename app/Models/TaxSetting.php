@@ -2,16 +2,16 @@
 
 namespace App\Models;
 
+use App\Http\Traits\AutoFilterable;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
-use App\Http\Traits\AutoFilterable;
 
 class TaxSetting extends Model
 {
-    use HasFactory, SoftDeletes, AutoFilterable;
+    use AutoFilterable, HasFactory, SoftDeletes;
 
     /**
      * Rate used when no effective default VAT setting is configured. Matches
@@ -37,7 +37,7 @@ class TaxSetting extends Model
         'maximum_amount',
         'notes',
         'created_by',
-        'updated_by'
+        'updated_by',
     ];
 
     protected $casts = [
@@ -51,7 +51,7 @@ class TaxSetting extends Model
         'decimal_places' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
-        'deleted_at' => 'datetime'
+        'deleted_at' => 'datetime',
     ];
 
     // Relationships
@@ -96,20 +96,21 @@ class TaxSetting extends Model
     public function scopeEffective($query, $date = null)
     {
         $date = $date ?? now();
+
         return $query->where('effective_date', '<=', $date)
-                    ->where(function($q) use ($date) {
-                        $q->whereNull('end_date')
-                          ->orWhere('end_date', '>=', $date);
-                    });
+            ->where(function ($q) use ($date) {
+                $q->whereNull('end_date')
+                    ->orWhere('end_date', '>=', $date);
+            });
     }
 
     public function scopeSearch($query, $search)
     {
-        return $query->where(function($q) use ($search) {
+        return $query->where(function ($q) use ($search) {
             $q->where('name', 'like', "%{$search}%")
-              ->orWhere('tax_code', 'like', "%{$search}%")
-              ->orWhere('description', 'like', "%{$search}%")
-              ->orWhere('notes', 'like', "%{$search}%");
+                ->orWhere('tax_code', 'like', "%{$search}%")
+                ->orWhere('description', 'like', "%{$search}%")
+                ->orWhere('notes', 'like', "%{$search}%");
         });
     }
 
@@ -138,9 +139,9 @@ class TaxSetting extends Model
     {
         $badges = [
             'active' => '<span class="status-badge status-active">Active</span>',
-            'inactive' => '<span class="status-badge status-inactive">Inactive</span>'
+            'inactive' => '<span class="status-badge status-inactive">Inactive</span>',
         ];
-        
+
         return $badges[$this->status] ?? '<span class="status-badge status-inactive">Unknown</span>';
     }
 
@@ -151,9 +152,9 @@ class TaxSetting extends Model
             'sales' => 'Sales Tax',
             'vat' => 'VAT',
             'withholding' => 'Withholding Tax',
-            'other' => 'Other'
+            'other' => 'Other',
         ];
-        
+
         return $labels[$this->tax_type] ?? ucfirst($this->tax_type);
     }
 
@@ -162,9 +163,9 @@ class TaxSetting extends Model
         $labels = [
             'percentage' => 'Percentage',
             'fixed' => 'Fixed Amount',
-            'tiered' => 'Tiered'
+            'tiered' => 'Tiered',
         ];
-        
+
         return $labels[$this->calculation_method] ?? ucfirst($this->calculation_method);
     }
 
@@ -174,25 +175,25 @@ class TaxSetting extends Model
             'nearest' => 'Nearest',
             'up' => 'Round Up',
             'down' => 'Round Down',
-            'none' => 'No Rounding'
+            'none' => 'No Rounding',
         ];
-        
+
         return $labels[$this->rounding_method] ?? ucfirst($this->rounding_method);
     }
 
     public function getFormattedTaxRateAttribute()
     {
-        return number_format($this->tax_rate, 2) . '%';
+        return number_format($this->tax_rate, 2).'%';
     }
 
     public function getFormattedMinimumAmountAttribute()
     {
-        return $this->minimum_amount ? 'Rp ' . number_format($this->minimum_amount, 0, ',', '.') : '-';
+        return $this->minimum_amount ? 'Rp '.number_format($this->minimum_amount, 0, ',', '.') : '-';
     }
 
     public function getFormattedMaximumAmountAttribute()
     {
-        return $this->maximum_amount ? 'Rp ' . number_format($this->maximum_amount, 0, ',', '.') : '-';
+        return $this->maximum_amount ? 'Rp '.number_format($this->maximum_amount, 0, ',', '.') : '-';
     }
 
     // Mutators
@@ -227,13 +228,13 @@ class TaxSetting extends Model
         return $this->status === 'active';
     }
 
-    public static function getDefaultPpnSetting(): ?self
+    public static function getDefaultPpnSetting($date = null): ?self
     {
         return static::query()
             ->active()
             ->default()
             ->where('tax_type', 'vat')
-            ->effective()
+            ->effective($date)
             ->orderBy('effective_date', 'desc')
             ->first();
     }
@@ -245,15 +246,7 @@ class TaxSetting extends Model
      */
     public static function getEffectivePpnRate($date = null): float
     {
-        $setting = $date
-            ? static::query()
-                ->active()
-                ->default()
-                ->where('tax_type', 'vat')
-                ->effective($date)
-                ->orderBy('effective_date', 'desc')
-                ->first()
-            : static::getDefaultPpnSetting();
+        $setting = static::getDefaultPpnSetting($date);
 
         if (! $setting) {
             Log::warning('No effective default PPN tax setting found; falling back to 11%.', [
@@ -269,6 +262,7 @@ class TaxSetting extends Model
     public function isEffective($date = null)
     {
         $date = $date ?? now();
+
         return $this->effective_date <= $date &&
                ($this->end_date === null || $this->end_date >= $date);
     }
@@ -277,13 +271,13 @@ class TaxSetting extends Model
     {
         // Check if this tax setting is being used by any invoices
         $invoiceCount = \App\Models\Invoice::where('tax_setting_id', $this->id)->count();
-        
+
         return $invoiceCount === 0;
     }
 
     public function getTaxAmount($baseAmount)
     {
-        if (!$this->isEffective()) {
+        if (! $this->isEffective()) {
             return 0;
         }
 

@@ -968,10 +968,27 @@
         'id' => $defaultVatSetting->id,
         'name' => $defaultVatSetting->name,
         'tax_rate' => (float) $defaultVatSetting->tax_rate,
+        'effective_date' => optional($defaultVatSetting->effective_date)->format('Y-m-d'),
+        'end_date' => optional($defaultVatSetting->end_date)->format('Y-m-d'),
     ] : null;
+    $defaultVatSettingsData = \App\Models\TaxSetting::active()
+        ->default()
+        ->where('tax_type', 'vat')
+        ->orderBy('effective_date')
+        ->get()
+        ->map(fn ($setting) => [
+            'id' => $setting->id,
+            'name' => $setting->name,
+            'tax_rate' => (float) $setting->tax_rate,
+            'effective_date' => optional($setting->effective_date)->format('Y-m-d'),
+            'end_date' => optional($setting->end_date)->format('Y-m-d'),
+        ])
+        ->values();
 @endphp
 <script>
 const defaultVatSetting = @json($defaultVatSettingData);
+const defaultVatSettings = @json($defaultVatSettingsData);
+const fallbackVatRate = 11;
 const financeTaxCodeRules = @json($financeTaxCodeRules ?? []);
 </script>
 
@@ -1218,12 +1235,28 @@ function getTaxRule(code) {
     return code ? (financeTaxCodeRules[code] || null) : null;
 }
 
-function getDefaultVatLabel() {
-    if (!defaultVatSetting) {
-        return 'Default PPN belum diatur';
+function resolveDefaultVatSetting(invoiceDate = '') {
+    if (!invoiceDate || !Array.isArray(defaultVatSettings) || defaultVatSettings.length === 0) {
+        return defaultVatSetting;
     }
 
-    return `${defaultVatSetting.name} (${parseFloat(defaultVatSetting.tax_rate || 0).toFixed(2)}%)`;
+    return defaultVatSettings
+        .filter(setting => {
+            const startsOk = !setting.effective_date || setting.effective_date <= invoiceDate;
+            const endsOk = !setting.end_date || setting.end_date >= invoiceDate;
+            return startsOk && endsOk;
+        })
+        .slice(-1)[0] || null;
+}
+
+function getDefaultVatLabel(invoiceDate = '') {
+    const setting = resolveDefaultVatSetting(invoiceDate);
+
+    if (!setting) {
+        return `Default PPN belum diatur — fallback ${fallbackVatRate.toFixed(2)}%`;
+    }
+
+    return `${setting.name} (${parseFloat(setting.tax_rate || 0).toFixed(2)}%)`;
 }
 
 function buildTaxRuleNote(rule) {
@@ -1241,11 +1274,13 @@ function buildTaxRuleNote(rule) {
 function updateTaxPreview(prefix = '') {
     const subtotal = parseFloat(getTaxField(prefix, 'subtotal')?.value) || 0;
     const discount = parseFloat(getTaxField(prefix, 'discount_amount')?.value) || 0;
+    const invoiceDate = getTaxField(prefix, 'invoice_date')?.value || '';
+    const vatSetting = resolveDefaultVatSetting(invoiceDate);
     const taxCode = getTaxField(prefix, 'tax_code')?.value || '';
     const rule = getTaxRule(taxCode);
     const subtotalAfterDiscount = Math.max(subtotal - discount, 0);
-    const taxRate = (rule && rule.applies_ppn_to_invoice && defaultVatSetting)
-        ? parseFloat(defaultVatSetting.tax_rate || 0)
+    const taxRate = (rule && rule.applies_ppn_to_invoice)
+        ? parseFloat(vatSetting?.tax_rate || fallbackVatRate)
         : 0;
     const taxAmount = subtotalAfterDiscount * taxRate / 100;
     const grandTotal = subtotalAfterDiscount + taxAmount;
@@ -1258,7 +1293,7 @@ function updateTaxPreview(prefix = '') {
     const taxSettingDisplayField = getTaxField(prefix, 'tax_setting_display');
 
     if (taxSettingField) {
-        taxSettingField.value = defaultVatSetting?.id || '';
+        taxSettingField.value = vatSetting?.id || '';
     }
 
     if (taxRateField) {
@@ -1274,7 +1309,7 @@ function updateTaxPreview(prefix = '') {
     }
 
     if (taxSettingDisplayField) {
-        taxSettingDisplayField.value = getDefaultVatLabel();
+        taxSettingDisplayField.value = getDefaultVatLabel(invoiceDate);
     }
 
     if (noteField) {
@@ -1313,7 +1348,7 @@ function openCreateModal() {
             </div>
             <div class="form-group">
                 <label class="form-label">Invoice Date *</label>
-                <input type="date" name="invoice_date" class="form-input" required>
+                <input type="date" name="invoice_date" id="invoice_date" class="form-input" required onchange="calculateTotal()">
             </div>
             <div class="form-group">
                 <label class="form-label">Due Date *</label>
@@ -1341,7 +1376,7 @@ function openCreateModal() {
             <div class="form-group">
                 <label class="form-label">Default PPN</label>
                 <input type="text" id="tax_setting_display" class="form-input" value="${getDefaultVatLabel()}" readonly style="background-color: #f9fafb; color: #6b7280;">
-                <small class="text-gray-500 text-xs">Tarif PPN diambil dari Tax Setting default yang aktif.</small>
+                <small class="text-gray-500 text-xs">Tarif PPN diambil dari Tax Setting default yang aktif pada tanggal invoice.</small>
             </div>
             <div class="form-group">
                 <label class="form-label">Rule Pajak</label>
@@ -1545,6 +1580,8 @@ function openEditModal(id) {
                 const data = response.data;
                 const customers = response.customers;
                 const taxSettings = response.taxSettings;
+                const invoiceDateValue = data.invoice_date ? data.invoice_date.split('T')[0] : '';
+                const editDefaultVatSetting = resolveDefaultVatSetting(invoiceDateValue);
                 
                 document.getElementById('modalTitle').textContent = 'Edit Invoice';
                 document.getElementById('modalBody').innerHTML = `
@@ -1571,14 +1608,14 @@ function openEditModal(id) {
                         </div>
                         <div class="form-group">
                             <label class="form-label">Default PPN</label>
-                            <input type="text" id="edit_tax_setting_display" class="form-input" value="${getDefaultVatLabel()}" readonly style="background-color: #f9fafb; color: #6b7280;">
+                            <input type="text" id="edit_tax_setting_display" class="form-input" value="${getDefaultVatLabel(invoiceDateValue)}" readonly style="background-color: #f9fafb; color: #6b7280;">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Rule Pajak</label>
                             <textarea id="edit_tax_rule_note" class="form-input" rows="3" readonly style="background-color: #f9fafb; color: #6b7280;"></textarea>
                         </div>
-                        <input type="hidden" name="tax_setting_id" id="edit_tax_setting_id" value="${defaultVatSetting?.id || data.tax_setting_id || ''}">
-                        <input type="hidden" name="tax_rate" id="edit_tax_rate" value="${defaultVatSetting?.tax_rate || data.tax_setting?.tax_rate || data.tax_rate || ''}">
+                        <input type="hidden" name="tax_setting_id" id="edit_tax_setting_id" value="${editDefaultVatSetting?.id || data.tax_setting_id || ''}">
+                        <input type="hidden" name="tax_rate" id="edit_tax_rate" value="${editDefaultVatSetting?.tax_rate || data.tax_setting?.tax_rate || data.tax_rate || ''}">
                         <input type="hidden" name="tax_address" id="edit_tax_address" value="${data.tax_address || ''}">
                         <div class="form-group">
                             <label class="form-label">Tax Number</label>
@@ -1592,7 +1629,7 @@ function openEditModal(id) {
                         </div>
                         <div class="form-group">
                             <label class="form-label">Invoice Date *</label>
-                            <input type="date" name="invoice_date" class="form-input" value="${data.invoice_date ? data.invoice_date.split('T')[0] : ''}" required>
+                            <input type="date" name="invoice_date" id="edit_invoice_date" class="form-input" value="${invoiceDateValue}" required onchange="calculateEditTotal()">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Due Date *</label>

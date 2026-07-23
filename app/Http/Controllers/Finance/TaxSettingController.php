@@ -3,15 +3,15 @@
 namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
-use App\Models\TaxSetting;
 use App\Http\Traits\ColumnFilterTrait;
-use Illuminate\Http\Request;
+use App\Models\TaxSetting;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\View\View;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\View\View;
 
 class TaxSettingController extends Controller
 {
@@ -93,7 +93,7 @@ class TaxSettingController extends Controller
             'decimal_places' => 'required|integer|min:0|max:4',
             'minimum_amount' => 'nullable|numeric|min:0',
             'maximum_amount' => 'nullable|numeric|min:0|gte:minimum_amount',
-            'notes' => 'nullable|string|max:1000'
+            'notes' => 'nullable|string|max:1000',
         ]);
 
         if ($validator->fails()) {
@@ -101,10 +101,23 @@ class TaxSettingController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
+
             return back()->withErrors($validator)->withInput();
+        }
+
+        if ($overlapMessage = $this->defaultVatWindowOverlapError($request)) {
+            if ($request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $overlapMessage,
+                    'errors' => ['is_default' => [$overlapMessage]],
+                ], 422);
+            }
+
+            return back()->withErrors(['is_default' => $overlapMessage])->withInput();
         }
 
         try {
@@ -138,7 +151,7 @@ class TaxSettingController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Tax setting created successfully.',
-                    'data' => $taxSetting->load('createdBy')
+                    'data' => $taxSetting->load('createdBy'),
                 ]);
             }
 
@@ -146,15 +159,15 @@ class TaxSettingController extends Controller
                 ->with('success', 'Tax setting created successfully.');
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to create tax setting: ' . $e->getMessage()
+                    'message' => 'Failed to create tax setting: '.$e->getMessage(),
                 ], 500);
             }
-            
-            return back()->with('error', 'Failed to create tax setting: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to create tax setting: '.$e->getMessage());
         }
     }
 
@@ -164,7 +177,7 @@ class TaxSettingController extends Controller
     public function show(TaxSetting $taxSetting)
     {
         $taxSetting->load(['createdBy', 'updatedBy']);
-        
+
         if (request()->ajax()) {
             // Add accessor data to response
             $taxSettingData = $taxSetting->toArray();
@@ -180,13 +193,13 @@ class TaxSettingController extends Controller
             $taxSettingData['status_badge'] = $taxSetting->status_badge;
             $taxSettingData['formatted_minimum_amount'] = $taxSetting->formatted_minimum_amount;
             $taxSettingData['formatted_maximum_amount'] = $taxSetting->formatted_maximum_amount;
-            
+
             return response()->json([
                 'status' => 'success',
-                'data' => $taxSettingData
+                'data' => $taxSettingData,
             ]);
         }
-        
+
         return view('finance.tax-settings.show', compact('taxSetting'));
     }
 
@@ -196,7 +209,7 @@ class TaxSettingController extends Controller
     public function edit(TaxSetting $taxSetting)
     {
         $taxSetting->load(['createdBy', 'updatedBy']);
-        
+
         if (request()->ajax()) {
             // Add accessor data to response
             $taxSettingData = $taxSetting->toArray();
@@ -212,13 +225,13 @@ class TaxSettingController extends Controller
             $taxSettingData['status_badge'] = $taxSetting->status_badge;
             $taxSettingData['formatted_minimum_amount'] = $taxSetting->formatted_minimum_amount;
             $taxSettingData['formatted_maximum_amount'] = $taxSetting->formatted_maximum_amount;
-            
+
             return response()->json([
                 'status' => 'success',
-                'data' => $taxSettingData
+                'data' => $taxSettingData,
             ]);
         }
-        
+
         return view('finance.tax-settings.edit', compact('taxSetting'));
     }
 
@@ -229,7 +242,7 @@ class TaxSettingController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'tax_code' => 'required|string|max:20|unique:tax_settings,tax_code,' . $taxSetting->id,
+            'tax_code' => 'required|string|max:20|unique:tax_settings,tax_code,'.$taxSetting->id,
             'tax_type' => 'required|in:income,sales,vat,withholding,other',
             'tax_rate' => 'required|numeric|min:0|max:100',
             'is_default' => 'nullable|boolean',
@@ -243,7 +256,7 @@ class TaxSettingController extends Controller
             'decimal_places' => 'required|integer|min:0|max:4',
             'minimum_amount' => 'nullable|numeric|min:0',
             'maximum_amount' => 'nullable|numeric|min:0|gte:minimum_amount',
-            'notes' => 'nullable|string|max:1000'
+            'notes' => 'nullable|string|max:1000',
         ]);
 
         if ($validator->fails()) {
@@ -251,10 +264,23 @@ class TaxSettingController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
+
             return back()->withErrors($validator)->withInput();
+        }
+
+        if ($overlapMessage = $this->defaultVatWindowOverlapError($request, $taxSetting->id)) {
+            if ($request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $overlapMessage,
+                    'errors' => ['is_default' => [$overlapMessage]],
+                ], 422);
+            }
+
+            return back()->withErrors(['is_default' => $overlapMessage])->withInput();
         }
 
         try {
@@ -288,7 +314,7 @@ class TaxSettingController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Tax setting updated successfully.',
-                    'data' => $taxSetting->load('updatedBy')
+                    'data' => $taxSetting->load('updatedBy'),
                 ]);
             }
 
@@ -296,15 +322,15 @@ class TaxSettingController extends Controller
                 ->with('success', 'Tax setting updated successfully.');
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to update tax setting: ' . $e->getMessage()
+                    'message' => 'Failed to update tax setting: '.$e->getMessage(),
                 ], 500);
             }
-            
-            return back()->with('error', 'Failed to update tax setting: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to update tax setting: '.$e->getMessage());
         }
     }
 
@@ -314,13 +340,14 @@ class TaxSettingController extends Controller
     public function destroy(TaxSetting $taxSetting)
     {
         try {
-            if (!$taxSetting->canBeDeleted()) {
+            if (! $taxSetting->canBeDeleted()) {
                 if (request()->ajax()) {
                     return response()->json([
                         'status' => 'error',
-                        'message' => 'Cannot delete tax setting that is being used by invoices.'
+                        'message' => 'Cannot delete tax setting that is being used by invoices.',
                     ], 422);
                 }
+
                 return back()->with('error', 'Cannot delete tax setting that is being used by invoices.');
             }
 
@@ -329,7 +356,7 @@ class TaxSettingController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Tax setting deleted successfully.'
+                    'message' => 'Tax setting deleted successfully.',
                 ]);
             }
 
@@ -339,11 +366,11 @@ class TaxSettingController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete tax setting: ' . $e->getMessage()
+                    'message' => 'Failed to delete tax setting: '.$e->getMessage(),
                 ], 500);
             }
-            
-            return back()->with('error', 'Failed to delete tax setting: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to delete tax setting: '.$e->getMessage());
         }
     }
 
@@ -354,7 +381,7 @@ class TaxSettingController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'tax_setting_ids' => 'required|array|min:1',
-            'tax_setting_ids.*' => 'exists:tax_settings,id'
+            'tax_setting_ids.*' => 'exists:tax_settings,id',
         ]);
 
         if ($validator->fails()) {
@@ -362,9 +389,10 @@ class TaxSettingController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
+
             return back()->withErrors($validator);
         }
 
@@ -391,22 +419,22 @@ class TaxSettingController extends Controller
                     'status' => 'success',
                     'message' => "Successfully deleted {$deletedCount} tax settings.",
                     'count' => $deletedCount,
-                    'errors' => $errors
+                    'errors' => $errors,
                 ]);
             }
 
             return back()->with('success', "Successfully deleted {$deletedCount} tax settings.");
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete tax settings: ' . $e->getMessage()
+                    'message' => 'Failed to delete tax settings: '.$e->getMessage(),
                 ], 500);
             }
-            
-            return back()->with('error', 'Failed to delete tax settings: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to delete tax settings: '.$e->getMessage());
         }
     }
 
@@ -421,7 +449,7 @@ class TaxSettingController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Tax setting activated successfully.'
+                    'message' => 'Tax setting activated successfully.',
                 ]);
             }
 
@@ -430,11 +458,11 @@ class TaxSettingController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to activate tax setting: ' . $e->getMessage()
+                    'message' => 'Failed to activate tax setting: '.$e->getMessage(),
                 ], 500);
             }
-            
-            return back()->with('error', 'Failed to activate tax setting: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to activate tax setting: '.$e->getMessage());
         }
     }
 
@@ -449,7 +477,7 @@ class TaxSettingController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Tax setting deactivated successfully.'
+                    'message' => 'Tax setting deactivated successfully.',
                 ]);
             }
 
@@ -458,11 +486,11 @@ class TaxSettingController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to deactivate tax setting: ' . $e->getMessage()
+                    'message' => 'Failed to deactivate tax setting: '.$e->getMessage(),
                 ], 500);
             }
-            
-            return back()->with('error', 'Failed to deactivate tax setting: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to deactivate tax setting: '.$e->getMessage());
         }
     }
 
@@ -480,17 +508,17 @@ class TaxSettingController extends Controller
                     ->groupBy('tax_type')
                     ->get()
                     ->pluck('count', 'tax_type'),
-                'recent' => TaxSetting::where('created_at', '>=', now()->subDays(30))->count()
+                'recent' => TaxSetting::where('created_at', '>=', now()->subDays(30))->count(),
             ];
-            
+
             return response()->json([
                 'status' => 'success',
-                'data' => $statistics
+                'data' => $statistics,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to get statistics: ' . $e->getMessage()
+                'message' => 'Failed to get statistics: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -515,22 +543,22 @@ class TaxSettingController extends Controller
 
         $taxSettings = $query->get();
 
-        $filename = 'tax_settings_' . date('Y-m-d_H-i-s') . '.csv';
+        $filename = 'tax_settings_'.date('Y-m-d_H-i-s').'.csv';
 
         $headers = [
             'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ];
 
-        $callback = function() use ($taxSettings) {
+        $callback = function () use ($taxSettings) {
             $file = fopen('php://output', 'w');
-            
+
             // CSV Headers
             fputcsv($file, [
                 'ID', 'Name', 'Tax Code', 'Tax Type', 'Tax Rate (%)', 'Description',
                 'Effective Date', 'End Date', 'Status', 'Is Compound', 'Calculation Method',
                 'Rounding Method', 'Decimal Places', 'Minimum Amount', 'Maximum Amount',
-                'Notes', 'Created By', 'Created At', 'Updated By', 'Updated At'
+                'Notes', 'Created By', 'Created At', 'Updated By', 'Updated At',
             ]);
 
             // CSV Data
@@ -555,7 +583,7 @@ class TaxSettingController extends Controller
                     $setting->createdBy->name ?? '-',
                     $setting->formatted_created_at,
                     $setting->updatedBy->name ?? '-',
-                    $setting->formatted_updated_at
+                    $setting->formatted_updated_at,
                 ]);
             }
 
@@ -563,6 +591,42 @@ class TaxSettingController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    private function defaultVatWindowOverlapError(Request $request, ?int $excludeId = null): ?string
+    {
+        if (! $request->boolean('is_default')
+            || $request->input('tax_type') !== 'vat'
+            || $request->input('status') !== 'active'
+        ) {
+            return null;
+        }
+
+        $startDate = Carbon::parse($request->input('effective_date'))->toDateString();
+        $endDate = $request->filled('end_date')
+            ? Carbon::parse($request->input('end_date'))->toDateString()
+            : null;
+
+        $overlappingDefault = TaxSetting::query()
+            ->where('tax_type', 'vat')
+            ->where('status', 'active')
+            ->where('is_default', true)
+            ->when($excludeId, fn ($query) => $query->where('id', '!=', $excludeId))
+            ->where('effective_date', '<=', $endDate ?? '9999-12-31')
+            ->where(function ($query) use ($startDate) {
+                $query->whereNull('end_date')
+                    ->orWhere('end_date', '>=', $startDate);
+            })
+            ->orderByDesc('effective_date')
+            ->first();
+
+        if (! $overlappingDefault) {
+            return null;
+        }
+
+        $period = $overlappingDefault->formatted_effective_date.' s/d '.$overlappingDefault->formatted_end_date;
+
+        return "Default PPN sudah ada untuk periode yang beririsan ({$overlappingDefault->name}: {$period}). Tutup end date setting lama atau gunakan periode efektif berbeda.";
     }
 
     private function syncDefaultTaxSetting(TaxSetting $taxSetting, bool $shouldBeDefault): void
@@ -575,20 +639,11 @@ class TaxSettingController extends Controller
             return;
         }
 
-        if (!$shouldBeDefault) {
+        if (! $shouldBeDefault) {
             return;
         }
 
-        TaxSetting::query()
-            ->where('id', '!=', $taxSetting->id)
-            ->where('tax_type', 'vat')
-            ->where('is_default', true)
-            ->update([
-                'is_default' => false,
-                'updated_at' => now(),
-            ]);
-
-        if ($taxSetting->tax_type === 'vat' && !$taxSetting->is_default) {
+        if ($taxSetting->tax_type === 'vat' && ! $taxSetting->is_default) {
             $taxSetting->forceFill(['is_default' => true])->saveQuietly();
         }
     }

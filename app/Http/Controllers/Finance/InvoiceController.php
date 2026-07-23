@@ -3,32 +3,30 @@
 namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
-use App\Http\Traits\ColumnFilterTrait;
 use App\Http\Traits\AccessControlFilterTrait;
-use App\Models\Finance\Invoice;
-use App\Models\Finance\InvoiceDetail;
-use App\Models\Finance\InvoiceRentalDetail;
-use App\Models\Finance\InvoiceFile;
-use App\Models\Finance\InvoiceActivity;
+use App\Http\Traits\ColumnFilterTrait;
 use App\Models\Contract;
 use App\Models\Customer;
 use App\Models\CustomerTax;
+use App\Models\Finance\Invoice;
+use App\Models\Finance\InvoiceActivity;
+use App\Models\Finance\InvoiceFile;
 use App\Models\FinanceTaxCode;
-use App\Models\User;
 use App\Models\TaxSetting;
-use App\Services\Finance\InvoiceGenerationService;
+use App\Models\User;
 use App\Services\DocumentNumberService;
+use App\Services\Finance\InvoiceGenerationService;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Database\Eloquent\Model as EloquentModel;
-use Carbon\Carbon;
+use Illuminate\Support\Facades\Validator;
 
 class InvoiceController extends Controller
 {
-    use ColumnFilterTrait, AccessControlFilterTrait;
-    
+    use AccessControlFilterTrait, ColumnFilterTrait;
+
     public function index(Request $request)
     {
         $query = Invoice::with(['contract.billingGroup', 'contract.quotation.survey', 'billingGroup', 'customer:id,name,address,city', 'creator:id,name', 'updater:id,name', 'jobSchedules:id,job_number,contract_number']);
@@ -37,27 +35,27 @@ class InvoiceController extends Controller
         // Default: Jika tidak set hirarki, hanya bisa lihat data sendiri
         // Filter by created_by and also by contract.created_by
         $user = Auth::user();
-        if (!$this->hasUnrestrictedAccessControlData($user)) {
+        if (! $this->hasUnrestrictedAccessControlData($user)) {
             $accessibleUserIds = $this->getAccessibleUserIds($user);
-            $query->where(function($q) use ($accessibleUserIds) {
+            $query->where(function ($q) use ($accessibleUserIds) {
                 $q->whereIn('created_by', $accessibleUserIds)
-                  ->orWhereHas('contract', function($subQ) use ($accessibleUserIds) {
-                      $subQ->whereIn('created_by', $accessibleUserIds)
-                           ->orWhereIn('marketing_id', $accessibleUserIds);
-                  });
+                    ->orWhereHas('contract', function ($subQ) use ($accessibleUserIds) {
+                        $subQ->whereIn('created_by', $accessibleUserIds)
+                            ->orWhereIn('marketing_id', $accessibleUserIds);
+                    });
             });
         }
 
         // Apply filters (skip if using column-specific filters)
-        if ($request->filled('search') && !$request->has('filter')) {
+        if ($request->filled('search') && ! $request->has('filter')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('invoice_number', 'like', '%' . $search . '%')
-                  ->orWhere('contract_number', 'like', '%' . $search . '%')
+            $query->where(function ($q) use ($search) {
+                $q->where('invoice_number', 'like', '%'.$search.'%')
+                    ->orWhere('contract_number', 'like', '%'.$search.'%')
                   // Add job number search from invoiceRentalDetails
-                  ->orWhereHas('invoiceRentalDetails', function($subQ) use ($search) {
-                      $subQ->where('job_no', 'LIKE', "%{$search}%");
-                  });
+                    ->orWhereHas('invoiceRentalDetails', function ($subQ) use ($search) {
+                        $subQ->where('job_no', 'LIKE', "%{$search}%");
+                    });
             });
         }
 
@@ -65,26 +63,50 @@ class InvoiceController extends Controller
         try {
             // Capture flat structure filters
             $customFilters = [];
-            if ($request->has('invoice_number')) $customFilters['invoice_number'] = $request->invoice_number;
-            if ($request->has('contract_number')) $customFilters['contract_number'] = $request->contract_number;
-            if ($request->has('invoice_date')) $customFilters['invoice_date'] = $request->invoice_date;
-            if ($request->has('due_date')) $customFilters['due_date'] = $request->due_date;
-            if ($request->has('subtotal')) $customFilters['subtotal'] = $request->subtotal;
-            if ($request->has('tax_amount')) $customFilters['tax_amount'] = $request->tax_amount;
-            if ($request->has('grand_total')) $customFilters['grand_total'] = $request->grand_total;
-            if ($request->has('total_paid')) $customFilters['total_paid'] = $request->total_paid;
-            if ($request->has('outstanding')) $customFilters['outstanding'] = $request->outstanding;
-            if ($request->has('invoice_status')) $customFilters['invoice_status'] = $request->invoice_status;
-            if ($request->has('payment_method')) $customFilters['payment_method'] = $request->payment_method;
-            if ($request->has('created_at')) $customFilters['created_at'] = $request->created_at;
+            if ($request->has('invoice_number')) {
+                $customFilters['invoice_number'] = $request->invoice_number;
+            }
+            if ($request->has('contract_number')) {
+                $customFilters['contract_number'] = $request->contract_number;
+            }
+            if ($request->has('invoice_date')) {
+                $customFilters['invoice_date'] = $request->invoice_date;
+            }
+            if ($request->has('due_date')) {
+                $customFilters['due_date'] = $request->due_date;
+            }
+            if ($request->has('subtotal')) {
+                $customFilters['subtotal'] = $request->subtotal;
+            }
+            if ($request->has('tax_amount')) {
+                $customFilters['tax_amount'] = $request->tax_amount;
+            }
+            if ($request->has('grand_total')) {
+                $customFilters['grand_total'] = $request->grand_total;
+            }
+            if ($request->has('total_paid')) {
+                $customFilters['total_paid'] = $request->total_paid;
+            }
+            if ($request->has('outstanding')) {
+                $customFilters['outstanding'] = $request->outstanding;
+            }
+            if ($request->has('invoice_status')) {
+                $customFilters['invoice_status'] = $request->invoice_status;
+            }
+            if ($request->has('payment_method')) {
+                $customFilters['payment_method'] = $request->payment_method;
+            }
+            if ($request->has('created_at')) {
+                $customFilters['created_at'] = $request->created_at;
+            }
 
             // Skip AutoFilter for manually handled columns to avoid conflicts
-            if (!empty($customFilters)) {
+            if (! empty($customFilters)) {
                 $request->merge([
                     '_skip_auto_filter' => array_merge(
                         $request->input('_skip_auto_filter', []),
                         array_fill_keys(array_keys($customFilters), true)
-                    )
+                    ),
                 ]);
             }
 
@@ -92,72 +114,72 @@ class InvoiceController extends Controller
                 // 0 => checkbox
                 1 => ['column' => 'invoice_number'],
                 'invoice_number' => ['column' => 'invoice_number'],
-                
+
                 3 => ['column' => 'contract_number'],
                 'contract_number' => ['column' => 'contract_number'],
-                
+
                 4 => ['relation' => 'customer', 'column' => 'name'],
                 'customer.name' => ['relation' => 'customer', 'column' => 'name'],
-                
+
                 5 => ['column' => 'invoice_date', 'type' => 'date'],
                 'invoice_date' => ['column' => 'invoice_date', 'type' => 'date'],
-                
+
                 6 => ['column' => 'due_date', 'type' => 'date'],
                 'due_date' => ['column' => 'due_date', 'type' => 'date'],
-                
+
                 7 => ['column' => 'subtotal'],
                 'subtotal' => ['column' => 'subtotal'],
-                
+
                 8 => ['column' => 'tax_amount'],
                 'tax_amount' => ['column' => 'tax_amount'],
-                
+
                 9 => ['column' => 'total_amount'],
                 'grand_total' => ['column' => 'total_amount'],
-                
+
                 10 => ['column' => 'total_paid'],
                 'total_paid' => ['column' => 'total_paid'],
-                
+
                 11 => ['column' => 'outstanding'],
                 'outstanding' => ['column' => 'outstanding'],
-                
+
                 12 => ['column' => 'invoice_status'],
                 'invoice_status' => ['column' => 'invoice_status'],
-                
+
                 13 => ['column' => 'payment_method'],
                 'payment_method' => ['column' => 'payment_method'],
-                
+
                 14 => ['relation' => 'creator', 'column' => 'name'],
                 'creator.name' => ['relation' => 'creator', 'column' => 'name'],
-                
+
                 15 => ['column' => 'created_at', 'type' => 'date'],
                 'created_at' => ['column' => 'created_at', 'type' => 'date'],
             ], $customFilters);
         } catch (\Exception $e) {
             \Log::error('Error applying column filters in InvoiceController', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
         }
 
-        if ($request->filled('status') && !$request->has('filter')) {
+        if ($request->filled('status') && ! $request->has('filter')) {
             $query->where('invoice_status', $request->status);
         }
 
-        if ($request->filled('contract') && !$request->has('filter')) {
+        if ($request->filled('contract') && ! $request->has('filter')) {
             $query->where('contract_number', $request->contract);
         }
 
-        if ($request->filled('date_from') && !$request->has('filter')) {
+        if ($request->filled('date_from') && ! $request->has('filter')) {
             $query->where('invoice_date', '>=', $request->date_from);
         }
 
-        if ($request->filled('date_to') && !$request->has('filter')) {
+        if ($request->filled('date_to') && ! $request->has('filter')) {
             $query->where('invoice_date', '<=', $request->date_to);
         }
 
         $this->applyPrintStatusFilter($query, $request);
 
-        if ($request->filled('payment_method') && !$request->has('filter')) {
+        if ($request->filled('payment_method') && ! $request->has('filter')) {
             $query->where('payment_method', $request->payment_method);
         }
 
@@ -317,6 +339,7 @@ class InvoiceController extends Controller
                         'status' => 'skipped',
                         'message' => 'Tidak ada periode invoice yang bisa dicek.',
                     ];
+
                     continue;
                 }
 
@@ -331,6 +354,7 @@ class InvoiceController extends Controller
                             'status' => 'skipped',
                             'message' => 'Syarat invoice belum terpenuhi.',
                         ];
+
                         continue;
                     }
 
@@ -349,6 +373,7 @@ class InvoiceController extends Controller
                             'status' => 'generated',
                             'message' => $result['invoice']->invoice_number ?? 'Invoice berhasil dibuat.',
                         ];
+
                         continue;
                     }
 
@@ -440,7 +465,7 @@ class InvoiceController extends Controller
 
     public function store(Request $request)
     {
-        
+
         $validator = Validator::make($request->all(), [
             'contract_number' => 'nullable|exists:contracts,contract_number',
             'invoice_number' => 'nullable|string|max:50',
@@ -480,7 +505,7 @@ class InvoiceController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -492,7 +517,8 @@ class InvoiceController extends Controller
                 $customer,
                 (float) $request->subtotal,
                 (float) ($request->discount_amount ?? 0),
-                $request->tax_code
+                $request->tax_code,
+                $request->invoice_date
             );
 
             $contract = $request->contract_number
@@ -552,7 +578,7 @@ class InvoiceController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Invoice created successfully',
-                'data' => $invoice
+                'data' => $invoice,
             ]);
         } catch (\Exception $e) {
             DB::rollback();
@@ -560,11 +586,12 @@ class InvoiceController extends Controller
                 'message' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Error creating invoice: ' . $e->getMessage()
+                'message' => 'Error creating invoice: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -575,21 +602,21 @@ class InvoiceController extends Controller
         $regenerationContext = $this->resolveInvoiceRegenerationContext($invoice);
 
         $invoice->load([
-            'invoiceDetails.updater', 
+            'invoiceDetails.updater',
             'invoiceRentalDetails.masterRental',
             'invoiceRentalDetails.updater',
             'invoiceRentalDetails.jobSchedule.room',
-            'invoiceFiles.creator', 
-            'invoiceActivities.creator', 
+            'invoiceFiles.creator',
+            'invoiceActivities.creator',
             'bankReceipts.creator',
-            'contract.billingGroup', 
+            'contract.billingGroup',
             'customer',
             'updater',
-            'invoiceFollowUps' => function($query) {
+            'invoiceFollowUps' => function ($query) {
                 $query->with('creator')
-                      ->orderBy('follow_up_date', 'desc')
-                      ->orderBy('created_at', 'desc');
-            }
+                    ->orderBy('follow_up_date', 'desc')
+                    ->orderBy('created_at', 'desc');
+            },
         ]);
 
         // Aggregate Files Logic using helper
@@ -611,14 +638,14 @@ class InvoiceController extends Controller
         $dateOptions = [];
         if ($invoice->invoice_status === 'draft' && $invoice->contract) {
             $contract = $invoice->contract;
-            
+
             // 1. First Service
             $firstServiceDate = $contract->calculateInvoiceDate('first_service');
             if ($firstServiceDate) {
                 $dateOptions['first_service'] = [
-                    'label' => $firstServiceDate->format('d M Y') . ' (First Service)',
+                    'label' => $firstServiceDate->format('d M Y').' (First Service)',
                     'value' => 'first_service',
-                    'date' => $firstServiceDate->format('Y-m-d')
+                    'date' => $firstServiceDate->format('Y-m-d'),
                 ];
             }
 
@@ -626,30 +653,30 @@ class InvoiceController extends Controller
             $contractDate = $contract->calculateInvoiceDate('contract_date');
             if ($contractDate) {
                 $dateOptions['contract_date'] = [
-                    'label' => $contractDate->format('d M Y') . ' (Contract Date)',
+                    'label' => $contractDate->format('d M Y').' (Contract Date)',
                     'value' => 'contract_date',
-                    'date' => $contractDate->format('Y-m-d')
+                    'date' => $contractDate->format('Y-m-d'),
                 ];
             }
 
             // 3. Monthly Range (formerly End of Month)
-            // For End of Month, we need a base date. 
+            // For End of Month, we need a base date.
             // If invoice has a date, use it. If not, use Today.
             $baseDate = $invoice->invoice_date ?? now();
             $endOfMonthDate = $contract->calculateInvoiceDate('end_of_month', null, $baseDate);
-            
+
             if ($endOfMonthDate) {
                 $startOfMonth = $endOfMonthDate->copy()->startOfMonth();
-                $rangeLabel = $startOfMonth->format('d M Y') . ' - ' . $endOfMonthDate->format('d M Y');
-                
+                $rangeLabel = $startOfMonth->format('d M Y').' - '.$endOfMonthDate->format('d M Y');
+
                 $dateOptions['end_of_month'] = [
-                    'label' => $rangeLabel . ' (Monthly Range)',
+                    'label' => $rangeLabel.' (Monthly Range)',
                     'value' => 'end_of_month',
-                    'date' => $endOfMonthDate->format('Y-m-d')
+                    'date' => $endOfMonthDate->format('Y-m-d'),
                 ];
             }
         }
-        
+
         return view('finance.invoices.show', compact('invoice', 'files', 'dateOptions', 'regenerationContext'));
     }
 
@@ -662,13 +689,13 @@ class InvoiceController extends Controller
 
         // 1. Invoice Files (Directly attached)
         // Ensure relation is loaded
-        if (!$invoice->relationLoaded('invoiceFiles')) {
+        if (! $invoice->relationLoaded('invoiceFiles')) {
             $invoice->load('invoiceFiles.creator');
         }
 
         foreach ($invoice->invoiceFiles as $f) {
-            $allFiles->push((object)[
-                'id' => 'inv-' . $f->id,
+            $allFiles->push((object) [
+                'id' => 'inv-'.$f->id,
                 'invoice_number' => $invoice->invoice_number,
                 'file_type_label' => $f->file_type_label ?? strtoupper($f->file_type),
                 'file_name' => $f->file_name,
@@ -679,7 +706,7 @@ class InvoiceController extends Controller
                 'updated_at' => $f->updated_at,
                 'uploaded_by_name' => $f->creator->name ?? 'System',
                 'source_badge' => '<span class="badge bg-primary">Invoice</span>',
-                'is_downloadable' => true
+                'is_downloadable' => true,
             ]);
         }
 
@@ -691,10 +718,10 @@ class InvoiceController extends Controller
                 ->get();
 
             foreach ($contractFiles as $f) {
-                $allFiles->push((object)[
-                    'id' => 'cont-' . $f->id,
+                $allFiles->push((object) [
+                    'id' => 'cont-'.$f->id,
                     'invoice_number' => $invoice->invoice_number,
-                    'file_type_label' => 'CONTRACT - ' . strtoupper($f->file_type),
+                    'file_type_label' => 'CONTRACT - '.strtoupper($f->file_type),
                     'file_name' => $f->file_name,
                     'file_path' => $f->file_path, // Needed for download
                     'file_url' => route('finance.invoices.download-attachment', ['type' => 'cont', 'id' => $f->id]),
@@ -702,7 +729,7 @@ class InvoiceController extends Controller
                     'updated_at' => $f->verified_at ?? $f->uploaded_at,
                     'uploaded_by_name' => $f->uploader->name ?? 'System',
                     'source_badge' => '<span class="badge bg-info">Contract</span>',
-                    'is_downloadable' => true
+                    'is_downloadable' => true,
                 ]);
             }
 
@@ -713,8 +740,8 @@ class InvoiceController extends Controller
                 $periodNum = $m[1];
                 $query->where('period', $periodNum);
             }
-            
-            $jobSchedules = $query->with(['baFiles' => function($q) {
+
+            $jobSchedules = $query->with(['baFiles' => function ($q) {
                 $q->where('verification_status', 'verified')->with('uploader');
             }, 'room', 'assignedTechnician', 'jobAssignSchedules.team'])->get();
 
@@ -723,50 +750,54 @@ class InvoiceController extends Controller
             foreach ($groupedByJob as $jobNumber => $schedules) {
                 $mainJob = $schedules->first();
                 $isCsr = in_array($mainJob->type, ['service_first', 'service']);
-                
+
                 // Collect all technicians and teams for this job group
                 $technicians = collect();
                 $teams = collect();
-                foreach($schedules as $sch) {
-                    if ($sch->assignedTechnician) $technicians->push($sch->assignedTechnician->name);
-                    foreach($sch->jobAssignSchedules as $assign) {
-                        if ($assign->team) $teams->push($assign->team->team_name);
+                foreach ($schedules as $sch) {
+                    if ($sch->assignedTechnician) {
+                        $technicians->push($sch->assignedTechnician->name);
+                    }
+                    foreach ($sch->jobAssignSchedules as $assign) {
+                        if ($assign->team) {
+                            $teams->push($assign->team->team_name);
+                        }
                     }
                 }
                 $techDisplay = $technicians->merge($teams)->unique()->filter()->implode(', ');
 
                 // 3a. Add System CSR if Job is CSR and Done
                 if ($isCsr && in_array($mainJob->status, ['done_job', 'completed'])) {
-                    $allFiles->push((object)[
-                        'id' => 'sys-csr-' . $mainJob->id,
+                    $allFiles->push((object) [
+                        'id' => 'sys-csr-'.$mainJob->id,
                         'invoice_number' => $invoice->invoice_number,
                         'file_type_label' => 'CSR - SYSTEM GENERATED',
                         'file_name' => "Print_{$jobNumber}.pdf",
-                        'file_path' => null, 
+                        'file_path' => null,
                         'file_url' => route('operational.job-schedules.print-csr', ['ids' => $mainJob->id, 'view_mode' => 'job']),
-                        'description' => "System generated report for Job #{$jobNumber}. Teams: " . ($techDisplay ?: '-'),
+                        'description' => "System generated report for Job #{$jobNumber}. Teams: ".($techDisplay ?: '-'),
                         'updated_at' => $schedules->max('updated_at'),
                         'uploaded_by_name' => 'System',
                         'source_badge' => '<span class="badge bg-success">System Report</span>',
-                        'is_downloadable' => true
+                        'is_downloadable' => true,
                     ]);
                 }
 
                 // 3b. Add uploaded BA Files
                 foreach ($schedules as $sch) {
                     foreach ($sch->baFiles as $f) {
-                        $allFiles->push((object)[
-                            'id' => 'ba-' . $f->id,
+                        $allFiles->push((object) [
+                            'id' => 'ba-'.$f->id,
                             'invoice_number' => $invoice->invoice_number,
-                            'file_type_label' => strtoupper($isCsr ? 'CSR' : 'BA') . ' - ' . strtoupper($f->file_type),
+                            'file_type_label' => strtoupper($isCsr ? 'CSR' : 'BA').' - '.strtoupper($f->file_type),
                             'file_name' => $f->file_name,
                             'file_path' => $f->file_path,
                             'file_url' => route('finance.invoices.download-attachment', ['type' => 'ba', 'id' => $f->id]),
-                            'description' => "Job #{$jobNumber} (Room: " . ($sch->room->room_name ?? 'General Area') . "). Technician: " . ($f->uploader->name ?? '-'),
+                            'description' => "Job #{$jobNumber} (Room: ".($sch->room->room_name ?? 'General Area').'). Technician: '.($f->uploader->name ?? '-'),
                             'updated_at' => $f->updated_at,
                             'uploaded_by_name' => $f->uploader->name ?? 'System',
-                            'source_badge' => '<span class="badge ' . ($isCsr ? 'bg-indigo text-white' : 'bg-warning text-dark') . '">Job File</span>',
-                            'is_downloadable' => true
+                            'source_badge' => '<span class="badge '.($isCsr ? 'bg-indigo text-white' : 'bg-warning text-dark').'">Job File</span>',
+                            'is_downloadable' => true,
                         ]);
                     }
                 }
@@ -815,7 +846,9 @@ class InvoiceController extends Controller
      */
     private function resolveAttachmentPath($dbPath)
     {
-        if (!$dbPath) return null;
+        if (! $dbPath) {
+            return null;
+        }
 
         // Clean path for easier concatenation
         $basePath = ltrim($dbPath, '/');
@@ -824,14 +857,14 @@ class InvoiceController extends Controller
         }
 
         $possiblePaths = [
-            storage_path('app/public/' . $basePath),
-            storage_path('app/private/public/' . $basePath),
-            storage_path('app/' . $basePath),
-            storage_path('app/public/' . $dbPath),
-            public_path('storage/' . $basePath),
-            public_path('storage/' . $dbPath),
-            public_path('uploads/' . basename($dbPath)),
-            base_path('storage/app/public/' . $basePath)
+            storage_path('app/public/'.$basePath),
+            storage_path('app/private/public/'.$basePath),
+            storage_path('app/'.$basePath),
+            storage_path('app/public/'.$dbPath),
+            public_path('storage/'.$basePath),
+            public_path('storage/'.$dbPath),
+            public_path('uploads/'.basename($dbPath)),
+            base_path('storage/app/public/'.$basePath),
         ];
 
         foreach ($possiblePaths as $p) {
@@ -839,7 +872,7 @@ class InvoiceController extends Controller
                 return $p;
             }
         }
-        
+
         // Final fallback: check the exact DB string as an absolute path
         if (file_exists($dbPath) && is_file($dbPath)) {
             return $dbPath;
@@ -865,18 +898,20 @@ class InvoiceController extends Controller
             $fileModel = \App\Models\JobScheduleBaFile::find($id);
         }
 
-        if (!$fileModel) abort(404, 'File record not found.');
+        if (! $fileModel) {
+            abort(404, 'File record not found.');
+        }
 
         // Robust Path Resolution (Using Helper)
         $filePath = $this->resolveAttachmentPath($fileModel->file_path);
 
-        if (!$filePath) {
-             \Log::error("Download failed - File not found: " . json_encode([
-                 'type' => $type,
-                 'id' => $id,
-                 'db_path' => $fileModel->file_path
-             ]));
-             abort(404, 'File not found on server.');
+        if (! $filePath) {
+            \Log::error('Download failed - File not found: '.json_encode([
+                'type' => $type,
+                'id' => $id,
+                'db_path' => $fileModel->file_path,
+            ]));
+            abort(404, 'File not found on server.');
         }
 
         return response()->download($filePath, $fileModel->file_name);
@@ -904,28 +939,28 @@ class InvoiceController extends Controller
             ]);
 
             $deliveryNotes = collect([
-                isset($validated['kirim']) ? 'Method: ' . $validated['kirim'] : null,
-                isset($validated['dikirim_oleh']) ? 'Sent by: ' . $validated['dikirim_oleh'] : null,
-                isset($validated['dikirim_pada']) ? 'Sent at: ' . $validated['dikirim_pada'] : null,
-                isset($validated['diterima_oleh']) ? 'Received by: ' . $validated['diterima_oleh'] : null,
-                isset($validated['pada']) ? 'Received at: ' . $validated['pada'] : null,
-                isset($validated['catatan_pengiriman']) ? 'Notes: ' . $validated['catatan_pengiriman'] : null,
+                isset($validated['kirim']) ? 'Method: '.$validated['kirim'] : null,
+                isset($validated['dikirim_oleh']) ? 'Sent by: '.$validated['dikirim_oleh'] : null,
+                isset($validated['dikirim_pada']) ? 'Sent at: '.$validated['dikirim_pada'] : null,
+                isset($validated['diterima_oleh']) ? 'Received by: '.$validated['diterima_oleh'] : null,
+                isset($validated['pada']) ? 'Received at: '.$validated['pada'] : null,
+                isset($validated['catatan_pengiriman']) ? 'Notes: '.$validated['catatan_pengiriman'] : null,
             ])->filter()->implode("\n");
 
             $invoice->logActivity(
                 'updated',
-                'Delivery information updated' . ($deliveryNotes ? "\n" . $deliveryNotes : ''),
+                'Delivery information updated'.($deliveryNotes ? "\n".$deliveryNotes : ''),
                 Auth::id()
             );
 
             return response()->json([
                 'success' => true,
-                'message' => 'Delivery information updated successfully'
+                'message' => 'Delivery information updated successfully',
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Error updating delivery information: ' . $e->getMessage()
+                'message' => 'Error updating delivery information: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -946,7 +981,7 @@ class InvoiceController extends Controller
             if ($invoice->taxSetting) {
                 $data['tax_setting'] = $invoice->taxSetting->toArray();
             }
-            
+
             return response()->json([
                 'success' => true,
                 'data' => $data,
@@ -954,7 +989,7 @@ class InvoiceController extends Controller
                 'taxSettings' => $taxSettings,
                 'contracts' => $contracts,
                 'statuses' => $statuses,
-                'paymentMethods' => $paymentMethods
+                'paymentMethods' => $paymentMethods,
             ]);
         }
 
@@ -964,7 +999,7 @@ class InvoiceController extends Controller
 
     public function update(Request $request, Invoice $invoice)
     {
-        
+
         $validator = Validator::make($request->all(), [
             'contract_number' => 'nullable|exists:contracts,contract_number',
             'invoice_number' => 'nullable|string|max:50',
@@ -1004,7 +1039,7 @@ class InvoiceController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -1016,7 +1051,8 @@ class InvoiceController extends Controller
                 $customer,
                 (float) $request->subtotal,
                 (float) ($request->discount_amount ?? 0),
-                $request->tax_code
+                $request->tax_code,
+                $request->invoice_date
             );
 
             $invoice->update([
@@ -1069,7 +1105,7 @@ class InvoiceController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Invoice updated successfully',
-                'data' => $invoice->load(['customer', 'taxSetting'])
+                'data' => $invoice->load(['customer', 'taxSetting']),
             ]);
         } catch (\Exception $e) {
             DB::rollback();
@@ -1077,24 +1113,27 @@ class InvoiceController extends Controller
                 'message' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Error updating invoice: ' . $e->getMessage()
+                'message' => 'Error updating invoice: '.$e->getMessage(),
             ], 500);
         }
     }
 
-    private function buildInvoiceTaxPayload(Customer $customer, float $subtotal, float $discountAmount = 0, ?string $requestedTaxCode = null): array
+    private function buildInvoiceTaxPayload(Customer $customer, float $subtotal, float $discountAmount = 0, ?string $requestedTaxCode = null, $invoiceDate = null): array
     {
+        $taxDate = $invoiceDate ? Carbon::parse($invoiceDate) : now();
+
         $customerTax = CustomerTax::query()
             ->where('customer_id', $customer->id)
             ->where('is_active', true)
-            ->where('effective_date', '<=', now())
-            ->where(function ($query) {
+            ->where('effective_date', '<=', $taxDate)
+            ->where(function ($query) use ($taxDate) {
                 $query->whereNull('expiry_date')
-                    ->orWhere('expiry_date', '>=', now());
+                    ->orWhere('expiry_date', '>=', $taxDate);
             })
             ->orderByDesc('effective_date')
             ->orderByDesc('id')
@@ -1110,17 +1149,17 @@ class InvoiceController extends Controller
             ->where('is_active', true)
             ->first();
 
-        if (!$financeTaxCode) {
+        if (! $financeTaxCode) {
             $financeTaxCode = FinanceTaxCode::query()
                 ->where('code', '01')
                 ->where('is_active', true)
                 ->first();
         }
 
-        $defaultVatSetting = TaxSetting::getDefaultPpnSetting();
+        $defaultVatSetting = TaxSetting::getDefaultPpnSetting($taxDate);
         $subtotalAfterDiscount = max(round($subtotal - $discountAmount, 2), 0);
-        $shouldApplyPpn = $financeTaxCode?->appliesPpnToInvoice() && $defaultVatSetting;
-        $taxRate = $shouldApplyPpn ? (float) $defaultVatSetting->tax_rate : 0;
+        $shouldApplyPpn = (bool) $financeTaxCode?->appliesPpnToInvoice();
+        $taxRate = $shouldApplyPpn ? TaxSetting::getEffectivePpnRate($taxDate) * 100 : 0;
         $taxAmount = round($subtotalAfterDiscount * ($taxRate / 100), 2);
         $grandTotal = round($subtotalAfterDiscount + $taxAmount, 2);
 
@@ -1155,7 +1194,7 @@ class InvoiceController extends Controller
 
         $invoice->loadMissing('customer');
 
-        if (!$invoice->customer) {
+        if (! $invoice->customer) {
             return;
         }
 
@@ -1164,7 +1203,8 @@ class InvoiceController extends Controller
             $invoice->customer,
             $subtotal,
             (float) ($invoice->discount_amount ?? 0),
-            $invoice->tax_code
+            $invoice->tax_code,
+            $invoice->invoice_date
         );
 
         $expectedOutstanding = max($taxPayload['grand_total'] - ((float) $invoice->total_paid), 0);
@@ -1180,7 +1220,7 @@ class InvoiceController extends Controller
             || (string) ($invoice->tax_address ?? '') !== (string) ($taxPayload['tax_address'] ?? '')
             || round((float) $invoice->outstanding, 2) !== round($expectedOutstanding, 2);
 
-        if (!$shouldSync) {
+        if (! $shouldSync) {
             return;
         }
 
@@ -1205,14 +1245,15 @@ class InvoiceController extends Controller
     {
         try {
             $invoice->delete();
+
             return response()->json([
                 'status' => 'success',
-                'message' => 'Invoice deleted successfully'
+                'message' => 'Invoice deleted successfully',
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Error deleting invoice: ' . $e->getMessage()
+                'message' => 'Error deleting invoice: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1239,7 +1280,7 @@ class InvoiceController extends Controller
             'sent' => $sent_invoices,
             'paid' => $paid_invoices,
             'overdue' => $overdue_invoices,
-            'cancelled' => $cancelled_invoices
+            'cancelled' => $cancelled_invoices,
         ];
 
         return view('finance.dashboard', compact(
@@ -1265,28 +1306,29 @@ class InvoiceController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'ids' => 'required|array',
-            'ids.*' => 'exists:invoices,id'
+            'ids.*' => 'exists:invoices,id',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid data provided',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
         try {
             $count = Invoice::whereIn('id', $request->ids)->delete(); // Soft delete
+
             return response()->json([
                 'success' => true,
                 'message' => "Successfully deleted {$count} invoice(s)",
-                'count' => $count
+                'count' => $count,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error deleting invoices: ' . $e->getMessage()
+                'message' => 'Error deleting invoices: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1295,26 +1337,26 @@ class InvoiceController extends Controller
     {
         // Rule 44: invoice must be approved, have tax number, and have PDF file
         $allowedStatuses = ['approved', 'tax_approved', 'paid'];
-        if (!in_array($invoice->invoice_status, $allowedStatuses)) {
+        if (! in_array($invoice->invoice_status, $allowedStatuses)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Invoice must be in Approved or Tax Approved status before sending email.'
+                'message' => 'Invoice must be in Approved or Tax Approved status before sending email.',
             ], 422);
         }
 
         if (empty($invoice->faktur_pajak)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Faktur Pajak number is missing.'
+                'message' => 'Faktur Pajak number is missing.',
             ], 422);
         }
 
         // Check for PDF file (Assuming type 'faktur_pajak' or similar)
         $hasPdf = $invoice->invoiceFiles()->where('file_name', 'like', '%.pdf')->exists();
-        if (!$hasPdf) {
+        if (! $hasPdf) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Faktur Pajak PDF file is missing.'
+                'message' => 'Faktur Pajak PDF file is missing.',
             ], 422);
         }
 
@@ -1322,9 +1364,9 @@ class InvoiceController extends Controller
             $invoice->update([
                 'invoice_status' => 'sent',
                 'is_emailed' => true,
-                'emailed_at' => now()
+                'emailed_at' => now(),
             ]);
-            
+
             // Create activity log
             $invoice->invoiceActivities()->create([
                 'activity_type' => 'sent',
@@ -1334,12 +1376,12 @@ class InvoiceController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Invoice sent successfully'
+                'message' => 'Invoice sent successfully',
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Error sending invoice: ' . $e->getMessage()
+                'message' => 'Error sending invoice: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1350,13 +1392,13 @@ class InvoiceController extends Controller
             DB::beginTransaction();
 
             $oldStatus = $invoice->invoice_status;
-            
+
             $invoice->update([
                 'invoice_status' => 'paid',
                 'total_paid' => $invoice->grand_total,
-                'outstanding' => 0
+                'outstanding' => 0,
             ]);
-            
+
             // Create activity log
             InvoiceActivity::create([
                 'invoice_id' => $invoice->id,
@@ -1374,13 +1416,14 @@ class InvoiceController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Invoice marked as paid successfully'
+                'message' => 'Invoice marked as paid successfully',
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Error marking invoice as paid: ' . $e->getMessage()
+                'message' => 'Error marking invoice as paid: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1390,25 +1433,25 @@ class InvoiceController extends Controller
         $request->validate([
             'file' => 'required|file|mimes:pdf,jpg,jpeg,png,doc,docx,xls,xlsx|max:10240', // 10MB
             'file_category' => 'required|in:tax_invoice,attachment',
-            'description' => 'nullable|string'
+            'description' => 'nullable|string',
         ]);
 
         try {
             $file = $request->file('file');
             $category = $request->file_category;
-            
+
             // Upload Logic
             $originalName = $file->getClientOriginalName();
             $extension = $file->getClientOriginalExtension();
-            $fileName = time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
-            $filePath = 'uploads/invoices/' . $invoice->id . '/' . $fileName;
-            
+            $fileName = time().'_'.preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+            $filePath = 'uploads/invoices/'.$invoice->id.'/'.$fileName;
+
             // Store file
-            $file->storeAs('public/uploads/invoices/' . $invoice->id, $fileName);
-            $publicPath = 'uploads/invoices/' . $invoice->id . '/' . $fileName;
+            $file->storeAs('public/uploads/invoices/'.$invoice->id, $fileName);
+            $publicPath = 'uploads/invoices/'.$invoice->id.'/'.$fileName;
 
             // Create InvoiceFile record
-            $invoiceFile = new \App\Models\Finance\InvoiceFile();
+            $invoiceFile = new \App\Models\Finance\InvoiceFile;
             $invoiceFile->invoice_id = $invoice->id;
             $invoiceFile->file_name = $originalName;
             $invoiceFile->file_path = $publicPath;
@@ -1418,8 +1461,8 @@ class InvoiceController extends Controller
             $invoiceFile->updated_by = auth()->id();
 
             if ($category === 'tax_invoice') {
-                $invoiceFile->description = $invoiceFile->description ? $invoiceFile->description . ' (Faktur Pajak)' : 'Faktur Pajak';
-                
+                $invoiceFile->description = $invoiceFile->description ? $invoiceFile->description.' (Faktur Pajak)' : 'Faktur Pajak';
+
                 // Update Invoice specific fields
                 $invoice->faktur_pajak = $originalName; // Store filename as reference
                 // $invoice->faktur_pajak_status = 'uploaded'; // Assuming logic exists, but let's stick to user request "trigger"
@@ -1431,14 +1474,15 @@ class InvoiceController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'File uploaded successfully.',
-                'data' => $invoiceFile
+                'data' => $invoiceFile,
             ]);
 
         } catch (\Exception $e) {
-            \Log::error('Error uploading invoice file: ' . $e->getMessage());
+            \Log::error('Error uploading invoice file: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to upload file: ' . $e->getMessage()
+                'message' => 'Failed to upload file: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1447,13 +1491,13 @@ class InvoiceController extends Controller
     {
         $request->validate([
             'file_ids' => 'nullable|array',
-            'file_ids.*' => 'string'
+            'file_ids.*' => 'string',
         ]);
 
         $hasExplicitFileSelection = $request->has('file_ids');
-        $isHeaderPrint = $request->query('inline') === 'true' && !$hasExplicitFileSelection;
+        $isHeaderPrint = $request->query('inline') === 'true' && ! $hasExplicitFileSelection;
         $selectedIds = $request->input('file_ids', []);
-        
+
         // If no files selected (e.g. from Print button), auto-select ALL files
         if (empty($selectedIds)) {
             $allFiles = $this->getAllInvoiceAttachments($invoice);
@@ -1485,9 +1529,9 @@ class InvoiceController extends Controller
                 'contract.branch.invoiceAuthorizedByUser',
                 'contractById.branch.invoiceAuthorizedByUser',
                 'bankReceipts',
-                'taxSetting'
+                'taxSetting',
             ]);
-            
+
             // Generate PDF using existing view.
             // enable_php is required for the in-template page_text() page-numbering script.
             $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('finance.invoices.print_template', compact('invoice'))
@@ -1495,8 +1539,8 @@ class InvoiceController extends Controller
             $invoicePdfContent = $pdf->output();
 
             // Save temp invoice PDF
-            $tempInvoicePath = storage_path('app/temp/invoice_' . $invoice->id . '_' . time() . '.pdf');
-            if (!file_exists(dirname($tempInvoicePath))) {
+            $tempInvoicePath = storage_path('app/temp/invoice_'.$invoice->id.'_'.time().'.pdf');
+            if (! file_exists(dirname($tempInvoicePath))) {
                 mkdir(dirname($tempInvoicePath), 0755, true);
             }
             file_put_contents($tempInvoicePath, $invoicePdfContent);
@@ -1504,9 +1548,9 @@ class InvoiceController extends Controller
             // 2. Prepare paths for Node.js script
             $mergePaths = [$tempInvoicePath];
 
-            // 3. (REMOVED) Static CSR Generation block was here. 
+            // 3. (REMOVED) Static CSR Generation block was here.
             // Now handled dynamically in Step 4 below based on selectedIds (including sys-csr virtual IDs).
-            
+
             $generatedTempPdfs = []; // Track generated PDFs to cleanup later
 
             // 4. Collect Additional Attachments
@@ -1526,21 +1570,22 @@ class InvoiceController extends Controller
 
                             // Match grouping logic from JobScheduleController.printCsr
                             $groupedJobs = $jobs->groupBy('job_number');
-                            
+
                             $csrPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('operational.job-schedules.pdf-csr-invoice', [
                                 'groupedJobs' => $groupedJobs,
-                                'selectedRoomIds' => null
+                                'selectedRoomIds' => null,
                             ]);
-                            
-                            $tempCsrPath = storage_path('app/temp/dyn_csr_' . $jobId . '_' . time() . '.pdf');
+
+                            $tempCsrPath = storage_path('app/temp/dyn_csr_'.$jobId.'_'.time().'.pdf');
                             file_put_contents($tempCsrPath, $csrPdf->output());
-                            
+
                             $mergePaths[] = $tempCsrPath;
                             $generatedTempPdfs[] = $tempCsrPath;
                         }
                     } catch (\Exception $e) {
-                        \Log::warning("Failed to include Sys CSR $id in merge: " . $e->getMessage());
+                        \Log::warning("Failed to include Sys CSR $id in merge: ".$e->getMessage());
                     }
+
                     continue;
                 }
 
@@ -1567,7 +1612,7 @@ class InvoiceController extends Controller
 
             if ($isHeaderPrint) {
                 $receiptPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('finance.invoices.delivery_receipt_pdf', compact('invoice'));
-                $tempReceiptPath = storage_path('app/temp/delivery_receipt_' . $invoice->id . '_' . time() . '.pdf');
+                $tempReceiptPath = storage_path('app/temp/delivery_receipt_'.$invoice->id.'_'.time().'.pdf');
                 file_put_contents($tempReceiptPath, $receiptPdf->output());
 
                 $mergePaths[] = $tempReceiptPath;
@@ -1575,29 +1620,33 @@ class InvoiceController extends Controller
             }
 
             // 5. Call Node.js script to merge
-            $tempOutputPath = storage_path('app/temp/merged_' . $invoice->id . '_' . time() . '.pdf');
+            $tempOutputPath = storage_path('app/temp/merged_'.$invoice->id.'_'.time().'.pdf');
             $scriptPath = base_path('app/Scripts/pdf-merge.js');
-            
+
             // Escape paths for shell
             $escapedOutput = escapeshellarg($tempOutputPath);
             $escapedInputs = array_map('escapeshellarg', $mergePaths);
-            $command = "node $scriptPath $escapedOutput " . implode(' ', $escapedInputs);
-            
-            exec($command . " 2>&1", $output, $returnVar);
+            $command = "node $scriptPath $escapedOutput ".implode(' ', $escapedInputs);
+
+            exec($command.' 2>&1', $output, $returnVar);
 
             // Cleanup temp PDFs
-            if (file_exists($tempInvoicePath)) unlink($tempInvoicePath);
+            if (file_exists($tempInvoicePath)) {
+                unlink($tempInvoicePath);
+            }
             foreach ($generatedTempPdfs as $tp) {
-                if (file_exists($tp)) unlink($tp);
+                if (file_exists($tp)) {
+                    unlink($tp);
+                }
             }
 
             if ($returnVar !== 0) {
                 $errorMsg = implode("\n", $output);
-                throw new \Exception("Node.js merge failed ($returnVar): " . $errorMsg);
+                throw new \Exception("Node.js merge failed ($returnVar): ".$errorMsg);
             }
 
-            if (!file_exists($tempOutputPath)) {
-                throw new \Exception("Merged PDF output file not created.");
+            if (! file_exists($tempOutputPath)) {
+                throw new \Exception('Merged PDF output file not created.');
             }
 
             // Mark as printed
@@ -1613,26 +1662,29 @@ class InvoiceController extends Controller
 
             // 6. Serve Merged PDF
             $sanitizedNumber = preg_replace('/[^a-zA-Z0-9_-]/', '_', $invoice->invoice_number);
-            $outputFilename = 'Invoice_Combined_' . $sanitizedNumber . '.pdf';
+            $outputFilename = 'Invoice_Combined_'.$sanitizedNumber.'.pdf';
 
-            $response = response()->stream(function() use ($tempOutputPath) {
+            $response = response()->stream(function () use ($tempOutputPath) {
                 $stream = fopen($tempOutputPath, 'rb');
                 fpassthru($stream);
                 fclose($stream);
                 // Unlink after streaming
-                if (file_exists($tempOutputPath)) unlink($tempOutputPath);
+                if (file_exists($tempOutputPath)) {
+                    unlink($tempOutputPath);
+                }
             }, 200, [
                 'Content-Type' => 'application/pdf',
-                'Content-Disposition' => ($request->query('inline') === 'true' ? 'inline' : 'attachment') . '; filename="' . $outputFilename . '"',
+                'Content-Disposition' => ($request->query('inline') === 'true' ? 'inline' : 'attachment').'; filename="'.$outputFilename.'"',
             ]);
 
             return $response;
 
         } catch (\Exception $e) {
-            \Log::error('Error generating combined PDF: ' . $e->getMessage());
+            \Log::error('Error generating combined PDF: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Error generating combined PDF: ' . $e->getMessage()
+                'message' => 'Error generating combined PDF: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1644,7 +1696,7 @@ class InvoiceController extends Controller
     {
         try {
             $invoice->update([
-                'faktur_pajak_status' => 'cancelled'
+                'faktur_pajak_status' => 'cancelled',
             ]);
 
             $invoice->invoiceActivities()->create([
@@ -1655,12 +1707,12 @@ class InvoiceController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Faktur Pajak cancelled successfully'
+                'message' => 'Faktur Pajak cancelled successfully',
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error cancelling Faktur Pajak: ' . $e->getMessage()
+                'message' => 'Error cancelling Faktur Pajak: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1670,7 +1722,7 @@ class InvoiceController extends Controller
         if ($invoice->invoice_status !== 'draft') {
             return response()->json([
                 'success' => false,
-                'message' => 'Only Draft invoices can be approved.'
+                'message' => 'Only Draft invoices can be approved.',
             ], 422);
         }
 
@@ -1678,7 +1730,7 @@ class InvoiceController extends Controller
             DB::beginTransaction();
 
             $invoice->update([
-                'invoice_status' => 'approved'
+                'invoice_status' => 'approved',
             ]);
 
             $invoice->invoiceActivities()->create([
@@ -1691,13 +1743,14 @@ class InvoiceController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Invoice approved successfully'
+                'message' => 'Invoice approved successfully',
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+
             return response()->json([
                 'success' => false,
-                'message' => 'Error approving invoice: ' . $e->getMessage()
+                'message' => 'Error approving invoice: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1707,7 +1760,7 @@ class InvoiceController extends Controller
         if ($invoice->invoice_status !== 'approved') {
             return response()->json([
                 'success' => false,
-                'message' => 'Only Approved invoices can be Tax Approved.'
+                'message' => 'Only Approved invoices can be Tax Approved.',
             ], 422);
         }
 
@@ -1715,7 +1768,7 @@ class InvoiceController extends Controller
             DB::beginTransaction();
 
             $invoice->update([
-                'invoice_status' => 'tax_approved'
+                'invoice_status' => 'tax_approved',
             ]);
 
             $invoice->invoiceActivities()->create([
@@ -1728,13 +1781,14 @@ class InvoiceController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Invoice tax approved successfully'
+                'message' => 'Invoice tax approved successfully',
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+
             return response()->json([
                 'success' => false,
-                'message' => 'Error tax approving invoice: ' . $e->getMessage()
+                'message' => 'Error tax approving invoice: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1742,10 +1796,10 @@ class InvoiceController extends Controller
     public function cancel(Invoice $invoice)
     {
         // Rule 43: cancellation only if no faktur or faktur cancelled
-        if (!$invoice->canCancel()) {
+        if (! $invoice->canCancel()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Cannot cancel invoice. Please cancel the Faktur Pajak first.'
+                'message' => 'Cannot cancel invoice. Please cancel the Faktur Pajak first.',
             ], 422);
         }
 
@@ -1756,7 +1810,7 @@ class InvoiceController extends Controller
                 'invoice_status' => 'cancelled',
                 'status' => 'cancelled',
             ]);
-            
+
             $invoice->invoiceActivities()->create([
                 'activity_type' => 'cancelled',
                 'notes' => 'Invoice cancelled',
@@ -1768,7 +1822,7 @@ class InvoiceController extends Controller
             return response()->json([
                 'success' => true,
                 'status' => 'success',
-                'message' => 'Invoice cancelled successfully'
+                'message' => 'Invoice cancelled successfully',
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -1776,7 +1830,7 @@ class InvoiceController extends Controller
             return response()->json([
                 'success' => false,
                 'status' => 'error',
-                'message' => 'Error cancelling invoice: ' . $e->getMessage()
+                'message' => 'Error cancelling invoice: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1788,10 +1842,10 @@ class InvoiceController extends Controller
     public function reloadTaxData(Invoice $invoice)
     {
         // Validasi: hanya draft dan faktur pajak belum di-upload
-        if ($invoice->invoice_status !== 'draft' || !empty($invoice->faktur_pajak)) {
+        if ($invoice->invoice_status !== 'draft' || ! empty($invoice->faktur_pajak)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Tax data can only be reloaded for draft invoices without tax invoice.'
+                'message' => 'Tax data can only be reloaded for draft invoices without tax invoice.',
             ], 422);
         }
 
@@ -1800,7 +1854,8 @@ class InvoiceController extends Controller
                 $invoice->customer,
                 (float) $invoice->subtotal,
                 (float) ($invoice->discount_amount ?? 0),
-                $invoice->tax_code
+                $invoice->tax_code,
+                $invoice->invoice_date
             );
 
             $invoice->update([
@@ -1814,7 +1869,7 @@ class InvoiceController extends Controller
                 'grand_total' => $taxPayload['grand_total'],
                 'total_amount' => $taxPayload['grand_total'],
                 'outstanding' => max($taxPayload['grand_total'] - ($invoice->total_paid ?? 0), 0),
-                'updated_by' => Auth::id()
+                'updated_by' => Auth::id(),
             ]);
 
             return response()->json([
@@ -1827,12 +1882,12 @@ class InvoiceController extends Controller
                     'tax_address' => $invoice->tax_address,
                     'tax_amount' => $invoice->tax_amount,
                     'grand_total' => $invoice->grand_total,
-                ]
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error reloading tax data: ' . $e->getMessage()
+                'message' => 'Error reloading tax data: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1858,15 +1913,16 @@ class InvoiceController extends Controller
         if (empty($invoice->dikirim_oleh) || empty($invoice->pada)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Delivery information (Dikirim Oleh & Diterima Pada) must be completed first.'
+                'message' => 'Delivery information (Dikirim Oleh & Diterima Pada) must be completed first.',
             ], 422);
         }
-        
+
         $invoice->load(['customer', 'invoiceDetails', 'invoiceRentalDetails', 'contract']);
 
         // Generate PDF tanda terima
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('finance.invoices.delivery_receipt_pdf', compact('invoice'));
-        $filename = 'TandaTerima_' . str_replace(['/', '\\'], '-', $invoice->invoice_number) . '.pdf';
+        $filename = 'TandaTerima_'.str_replace(['/', '\\'], '-', $invoice->invoice_number).'.pdf';
+
         return $pdf->download($filename);
     }
 
@@ -1874,14 +1930,14 @@ class InvoiceController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'ids' => 'required|array',
-            'ids.*' => 'exists:invoices,id'
+            'ids.*' => 'exists:invoices,id',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid data provided',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -1891,21 +1947,21 @@ class InvoiceController extends Controller
 
             foreach ($invoices as $invoice) {
                 $invoice->update(['invoice_status' => 'sent']);
-                
+
                 $invoice->logActivity('sent', 'Invoice sent to customer', Auth::id());
-                
+
                 $count++;
             }
 
             return response()->json([
                 'success' => true,
                 'message' => "Successfully sent {$count} invoice(s)",
-                'count' => $count
+                'count' => $count,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error sending invoices: ' . $e->getMessage()
+                'message' => 'Error sending invoices: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1917,17 +1973,16 @@ class InvoiceController extends Controller
         // Apply same filters as index
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('invoice_number', 'like', '%' . $search . '%')
-                  ->orWhere('po_number', 'like', '%' . $search . '%')
-                  ->orWhere('contract_number', 'like', '%' . $search . '%');
+            $query->where(function ($q) use ($search) {
+                $q->where('invoice_number', 'like', '%'.$search.'%')
+                    ->orWhere('po_number', 'like', '%'.$search.'%')
+                    ->orWhere('contract_number', 'like', '%'.$search.'%');
             });
         }
 
         if ($request->filled('status')) {
             $query->where('invoice_status', $request->status);
         }
-
 
         if ($request->filled('contract')) {
             $query->where('contract_number', $request->contract);
@@ -1944,14 +1999,14 @@ class InvoiceController extends Controller
         $invoices = $query->orderBy('created_at', 'desc')->get();
 
         // Generate CSV
-        $filename = 'invoices_' . date('Y-m-d_H-i-s') . '.csv';
+        $filename = 'invoices_'.date('Y-m-d_H-i-s').'.csv';
 
         $headers = [
             'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ];
 
-        $callback = function() use ($invoices) {
+        $callback = function () use ($invoices) {
             $file = fopen('php://output', 'w');
 
             // CSV headers
@@ -1970,7 +2025,7 @@ class InvoiceController extends Controller
                 'Outstanding',
                 'Payment Method',
                 'Created By',
-                'Created Date'
+                'Created Date',
             ]);
 
             foreach ($invoices as $invoice) {
@@ -1989,7 +2044,7 @@ class InvoiceController extends Controller
                     $invoice->outstanding,
                     $invoice->payment_method,
                     $invoice->creator->name ?? '',
-                    $invoice->created_at->format('Y-m-d H:i:s')
+                    $invoice->created_at->format('Y-m-d H:i:s'),
                 ]);
             }
 
@@ -2009,25 +2064,25 @@ class InvoiceController extends Controller
                 'contract_id' => 'required|exists:contracts,id',
                 'rental_period' => 'required|string',
                 'period_start' => 'required|date',
-                'period_end' => 'required|date'
+                'period_end' => 'required|date',
             ]);
 
             $contract = Contract::with(['customer', 'quotation'])->find($request->contract_id);
-            
-            if (!$contract) {
+
+            if (! $contract) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Contract not found'
+                    'message' => 'Contract not found',
                 ], 404);
             }
 
             // Check if all jobs in the rental period are completed
             $completedJobs = $this->checkAllJobsCompleted($contract->id, $request->period_start, $request->period_end);
-            
-            if (!$completedJobs) {
+
+            if (! $completedJobs) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Not all jobs in the rental period are completed yet'
+                    'message' => 'Not all jobs in the rental period are completed yet',
                 ], 422);
             }
 
@@ -2037,10 +2092,12 @@ class InvoiceController extends Controller
             // Create invoice
             // Calculate Invoice Date based on Contract Preference
             $invoiceDate = $contract->calculateInvoiceDate() ?? now();
-            
+
             // Calculate Due Date based on terms
             $term = (int) ($contract->term_of_payment ?? 30);
-            if ($term <= 0) $term = 30;
+            if ($term <= 0) {
+                $term = 30;
+            }
             $dueDate = $invoiceDate->copy()->addDays($term);
 
             // Create invoice
@@ -2057,27 +2114,27 @@ class InvoiceController extends Controller
                 'subtotal' => $contract->contract_value ?? 0,
                 'tax_amount' => 0,
                 'total_amount' => $contract->contract_value ?? 0,
-                'notes' => 'Auto-generated after all jobs completed for period: ' . $request->rental_period,
+                'notes' => 'Auto-generated after all jobs completed for period: '.$request->rental_period,
                 'created_by' => Auth::id(),
-                'updated_by' => Auth::id()
+                'updated_by' => Auth::id(),
             ]);
 
             $invoice->logActivity(
                 'created',
-                'Invoice auto-generated after all jobs completed for period: ' . $request->rental_period,
+                'Invoice auto-generated after all jobs completed for period: '.$request->rental_period,
                 Auth::id()
             );
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Invoice auto-generated successfully after all jobs completed',
-                'data' => $invoice->load(['contract', 'creator'])
+                'data' => $invoice->load(['contract', 'creator']),
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to auto-generate invoice: ' . $e->getMessage()
+                'message' => 'Failed to auto-generate invoice: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -2089,7 +2146,7 @@ class InvoiceController extends Controller
     {
         // This is a simplified check - in real implementation, you would check actual job completion status
         // For now, we'll assume jobs are completed if they exist in the period
-        
+
         $jobsInPeriod = DB::table('job_schedules')
             ->join('job_advices', 'job_schedules.job_advice_id', '=', 'job_advices.id')
             ->where('job_advices.contract_id', $contractId)
@@ -2124,19 +2181,19 @@ class InvoiceController extends Controller
                         'contract_value' => $contract->contract_value,
                         'start_date' => $contract->start_date,
                         'end_date' => $contract->end_date,
-                        'rental_period' => $contract->quotation->rental_period ?? '12 months'
+                        'rental_period' => $contract->quotation->rental_period ?? '12 months',
                     ];
                 });
 
             return response()->json([
                 'status' => 'success',
-                'data' => $contracts
+                'data' => $contracts,
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to get contracts ready for invoice: ' . $e->getMessage()
+                'message' => 'Failed to get contracts ready for invoice: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -2149,29 +2206,32 @@ class InvoiceController extends Controller
         try {
             // Check if invoice is paid within 180 days (BRD requirement)
             $daysSinceInvoice = now()->diffInDays($invoice->invoice_date);
-            
+
             if ($daysSinceInvoice > 180) {
                 \Log::info("Commission calculation skipped for invoice {$invoice->invoice_number}: Payment after 180 days");
+
                 return;
             }
 
             // Get contract and marketing user
             $contract = $invoice->contract;
-            if (!$contract) {
+            if (! $contract) {
                 \Log::info("No contract found for invoice {$invoice->invoice_number}");
+
                 return;
             }
 
             $marketingUser = $contract->marketing_id ? \App\Models\User::find($contract->marketing_id) : null;
-            if (!$marketingUser) {
+            if (! $marketingUser) {
                 \Log::info("No marketing user found for contract {$contract->contract_number}");
+
                 return;
             }
 
             // Use CommissionCalculationService to calculate commission on cash receipt
-            $commissionService = new \App\Services\Finance\CommissionCalculationService();
+            $commissionService = new \App\Services\Finance\CommissionCalculationService;
             $cashReceiptDate = now(); // Use current date as cash receipt date
-            
+
             $result = $commissionService->calculateCommissionOnCashReceipt(
                 $invoice,
                 $cashReceiptDate->toDateString()
@@ -2184,7 +2244,7 @@ class InvoiceController extends Controller
             }
 
         } catch (\Exception $e) {
-            \Log::error("Failed to trigger auto commission calculation for invoice {$invoice->invoice_number}: " . $e->getMessage());
+            \Log::error("Failed to trigger auto commission calculation for invoice {$invoice->invoice_number}: ".$e->getMessage());
             // Don't throw exception to avoid breaking the main workflow
         }
     }
@@ -2199,11 +2259,11 @@ class InvoiceController extends Controller
                 'contract_id' => 'required|exists:contracts,id',
                 'rental_period' => 'required|string',
                 'period_start' => 'required|date',
-                'period_end' => 'required|date'
+                'period_end' => 'required|date',
             ]);
 
             $invoiceGenerationService = app(InvoiceGenerationService::class);
-            
+
             $result = $invoiceGenerationService->autoGenerateInvoiceForRentalPeriod(
                 $request->contract_id,
                 $request->rental_period,
@@ -2219,21 +2279,21 @@ class InvoiceController extends Controller
                         'invoice' => $result['invoice'],
                         'rental_period' => $result['rental_period'],
                         'period_start' => $result['period_start'],
-                        'period_end' => $result['period_end']
-                    ]
+                        'period_end' => $result['period_end'],
+                    ],
                 ]);
             } else {
                 return response()->json([
                     'status' => 'error',
                     'message' => $result['message'],
-                    'data' => $result
+                    'data' => $result,
                 ], 422);
             }
 
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to auto-generate invoice: ' . $e->getMessage()
+                'message' => 'Failed to auto-generate invoice: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -2245,7 +2305,7 @@ class InvoiceController extends Controller
     {
         try {
             $request->validate([
-                'contract_id' => 'required|exists:contracts,id'
+                'contract_id' => 'required|exists:contracts,id',
             ]);
 
             $invoiceGenerationService = app(InvoiceGenerationService::class);
@@ -2253,13 +2313,13 @@ class InvoiceController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $periods
+                'data' => $periods,
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to get rental periods: ' . $e->getMessage()
+                'message' => 'Failed to get rental periods: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -2275,11 +2335,11 @@ class InvoiceController extends Controller
                 'rental_periods' => 'required|array',
                 'rental_periods.*.rental_period' => 'required|string',
                 'rental_periods.*.period_start' => 'required|date',
-                'rental_periods.*.period_end' => 'required|date'
+                'rental_periods.*.period_end' => 'required|date',
             ]);
 
             $invoiceGenerationService = app(InvoiceGenerationService::class);
-            
+
             $result = $invoiceGenerationService->generateInvoicesForMultiplePeriods(
                 $request->contract_id,
                 $request->rental_periods
@@ -2288,13 +2348,13 @@ class InvoiceController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Invoice generation completed',
-                'data' => $result
+                'data' => $result,
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to generate invoices for multiple periods: ' . $e->getMessage()
+                'message' => 'Failed to generate invoices for multiple periods: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -2303,8 +2363,8 @@ class InvoiceController extends Controller
     {
         $invoice = Invoice::findOrFail($id);
         $contract = $invoice->contract;
-        
-        if (!$contract) {
+
+        if (! $contract) {
             return response()->json(['success' => false, 'message' => 'Contract not found']);
         }
 
@@ -2319,21 +2379,23 @@ class InvoiceController extends Controller
 
         if ($newDate) {
             $invoice->invoice_date = $newDate;
-            
+
             // Update Due Date based on contract terms
             $term = (int) ($contract->term_of_payment ?? 30);
-            if ($term <= 0) $term = 30;
+            if ($term <= 0) {
+                $term = 30;
+            }
             $invoice->due_date = $newDate->copy()->addDays($term);
-            
+
             $invoice->save();
 
             return response()->json([
-                'success' => true, 
+                'success' => true,
                 'message' => 'Invoice date preference updated.',
-                'new_date' => $newDate->format('Y-m-d')
+                'new_date' => $newDate->format('Y-m-d'),
             ]);
         }
-        
+
         return response()->json(['success' => false, 'message' => 'Could not calculate a valid date based on preference.']);
     }
 
@@ -2344,20 +2406,20 @@ class InvoiceController extends Controller
     {
         return response()->json([
             'status' => 'error',
-            'message' => 'Harga rental invoice mengikuti kontrak dan tidak dapat diedit dari invoice.'
+            'message' => 'Harga rental invoice mengikuti kontrak dan tidak dapat diedit dari invoice.',
         ], 403);
     }
 
     public function updateDiscount(Request $request, Invoice $invoice)
     {
         $request->validate([
-            'discount_amount' => 'required|numeric|min:0'
+            'discount_amount' => 'required|numeric|min:0',
         ]);
 
         if ($invoice->invoice_status !== 'draft') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Hanya invoice dengan status Draft yang dapat diedit.'
+                'message' => 'Hanya invoice dengan status Draft yang dapat diedit.',
             ], 403);
         }
 
@@ -2369,7 +2431,8 @@ class InvoiceController extends Controller
                 $invoice->customer,
                 $subtotal,
                 $discountAmount,
-                $invoice->tax_code
+                $invoice->tax_code,
+                $invoice->invoice_date
             );
 
             $invoice->update([
@@ -2407,13 +2470,14 @@ class InvoiceController extends Controller
                 'grand_total' => $invoice->grand_total,
                 'formatted_grand_total' => number_format($invoice->grand_total, 0, ',', '.'),
                 'outstanding' => $invoice->outstanding,
-                'formatted_outstanding' => number_format($invoice->outstanding, 0, ',', '.')
+                'formatted_outstanding' => number_format($invoice->outstanding, 0, ',', '.'),
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to update discount: ' . $e->getMessage()
+                'message' => 'Failed to update discount: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -2422,7 +2486,7 @@ class InvoiceController extends Controller
     {
         $context = $this->resolveInvoiceRegenerationContext($invoice);
 
-        if (!$context['can_regenerate']) {
+        if (! $context['can_regenerate']) {
             return response()->json([
                 'success' => false,
                 'message' => $context['message'] ?? 'Invoice ini tidak bisa diregenerate.',
@@ -2447,7 +2511,7 @@ class InvoiceController extends Controller
                     );
             }
 
-            if (!$result['success']) {
+            if (! $result['success']) {
                 return response()->json([
                     'success' => false,
                     'message' => $result['message'] ?? 'Regenerate invoice gagal.',
@@ -2459,19 +2523,19 @@ class InvoiceController extends Controller
 
             $invoice->invoiceActivities()->create([
                 'activity_type' => 'updated',
-                'notes' => 'Invoice regenerated to ' . ($newInvoice->invoice_number ?? 'new invoice'),
+                'notes' => 'Invoice regenerated to '.($newInvoice->invoice_number ?? 'new invoice'),
                 'created_by' => Auth::id(),
             ]);
 
             $newInvoice->invoiceActivities()->create([
                 'activity_type' => 'created',
-                'notes' => 'Invoice regenerated from cancelled invoice ' . $invoice->invoice_number,
+                'notes' => 'Invoice regenerated from cancelled invoice '.$invoice->invoice_number,
                 'created_by' => Auth::id(),
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Invoice berhasil diregenerate menjadi ' . $newInvoice->invoice_number,
+                'message' => 'Invoice berhasil diregenerate menjadi '.$newInvoice->invoice_number,
                 'data' => [
                     'invoice_id' => $newInvoice->id,
                     'invoice_number' => $newInvoice->invoice_number,
@@ -2480,7 +2544,7 @@ class InvoiceController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error regenerate invoice: ' . $e->getMessage(),
+                'message' => 'Error regenerate invoice: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -2491,28 +2555,28 @@ class InvoiceController extends Controller
     public function updateNotes(Request $request, Invoice $invoice)
     {
         $request->validate([
-            'additional_notes' => 'nullable|string|max:1000'
+            'additional_notes' => 'nullable|string|max:1000',
         ]);
-        
+
         // Only allow update if invoice is draft
         if ($invoice->invoice_status !== 'draft') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Hanya invoice dengan status Draft yang dapat diedit.'
+                'message' => 'Hanya invoice dengan status Draft yang dapat diedit.',
             ], 403);
         }
-        
+
         $invoice->update([
             'additional_notes' => $request->additional_notes,
-            'updated_by' => Auth::id()
+            'updated_by' => Auth::id(),
         ]);
-        
+
         return response()->json([
             'status' => 'success',
-            'message' => 'Notes updated successfully'
+            'message' => 'Notes updated successfully',
         ]);
     }
-    
+
     /**
      * Update invoice internal notes (AJAX)
      */
@@ -2522,22 +2586,22 @@ class InvoiceController extends Controller
         if ($invoice->invoice_status !== 'draft') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Hanya invoice dengan status Draft yang dapat diedit.'
+                'message' => 'Hanya invoice dengan status Draft yang dapat diedit.',
             ], 403);
         }
-        
+
         $request->validate([
-            'internal_notes' => 'nullable|string'
+            'internal_notes' => 'nullable|string',
         ]);
-        
+
         $invoice->update([
             'internal_notes' => $request->internal_notes,
-            'updated_by' => Auth::id()
+            'updated_by' => Auth::id(),
         ]);
-        
+
         return response()->json([
             'status' => 'success',
-            'message' => 'Internal notes updated successfully'
+            'message' => 'Internal notes updated successfully',
         ]);
     }
 
@@ -2576,7 +2640,7 @@ class InvoiceController extends Controller
             if ($existingInvoice) {
                 return [
                     'can_regenerate' => false,
-                    'message' => 'Invoice pengganti sudah ada: ' . $existingInvoice->invoice_number,
+                    'message' => 'Invoice pengganti sudah ada: '.$existingInvoice->invoice_number,
                 ];
             }
 
@@ -2589,7 +2653,7 @@ class InvoiceController extends Controller
         }
 
         $contract = $invoice->contract;
-        if (!$contract || empty($invoice->period_invoice)) {
+        if (! $contract || empty($invoice->period_invoice)) {
             return [
                 'can_regenerate' => false,
                 'message' => 'Regenerate hanya tersedia untuk invoice otomatis yang punya billing group atau periode invoice.',
@@ -2599,7 +2663,7 @@ class InvoiceController extends Controller
         $period = collect(app(InvoiceGenerationService::class)->getRentalPeriodsForContract($contract->id))
             ->firstWhere('rental_period', $invoice->period_invoice);
 
-        if (!$period || empty($period['period_start']) || empty($period['period_end'])) {
+        if (! $period || empty($period['period_start']) || empty($period['period_end'])) {
             return [
                 'can_regenerate' => false,
                 'message' => 'Periode invoice tidak bisa dipetakan ulang untuk regenerate.',
@@ -2607,9 +2671,9 @@ class InvoiceController extends Controller
         }
 
         $existingInvoice = Invoice::where(function ($query) use ($contract, $invoice) {
-                $query->where('contract_id', $contract->id)
-                    ->orWhere('contract_number', $invoice->contract_number);
-            })
+            $query->where('contract_id', $contract->id)
+                ->orWhere('contract_number', $invoice->contract_number);
+        })
             ->where('id', '!=', $invoice->id)
             ->where('invoice_status', '!=', Invoice::STATUS_CANCELLED)
             ->where('period_invoice', $invoice->period_invoice)
@@ -2618,7 +2682,7 @@ class InvoiceController extends Controller
         if ($existingInvoice) {
             return [
                 'can_regenerate' => false,
-                'message' => 'Invoice pengganti sudah ada: ' . $existingInvoice->invoice_number,
+                'message' => 'Invoice pengganti sudah ada: '.$existingInvoice->invoice_number,
             ];
         }
 
