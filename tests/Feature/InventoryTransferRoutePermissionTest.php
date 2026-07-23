@@ -26,8 +26,8 @@ class InventoryTransferRoutePermissionTest extends TestCase
             ['warehouse.inventory-transfers.submit-approval', 'warehouse.inventory-transfers.submit,warehouse.inventory-transfers.submit.create,warehouse.inventory-transfers.submit.approve'],
             ['warehouse.inventory-transfers.approve', 'warehouse.inventory-transfers.approve'],
             ['warehouse.inventory-transfers.reject', 'warehouse.inventory-transfers.reject'],
-            ['warehouse.inventory-transfers.mark-transferred', 'warehouse.inventory-transfers.transfer'],
-            ['warehouse.inventory-transfers.mark-received', 'warehouse.inventory-transfers.receive'],
+            ['warehouse.inventory-transfers.mark-transferred', 'warehouse.inventory-transfers.transfer,warehouse.inventory-transfers.transfer.create,warehouse.inventory-transfers.transfer.approve'],
+            ['warehouse.inventory-transfers.mark-received', 'warehouse.inventory-transfers.receive,warehouse.inventory-transfers.receive.create,warehouse.inventory-transfers.receive.approve'],
             ['warehouse.inventory-transfers.documents', 'warehouse.inventory-transfers.update'],
             ['warehouse.inventory-transfers.api.delete', 'warehouse.inventory-transfers.delete'],
         ];

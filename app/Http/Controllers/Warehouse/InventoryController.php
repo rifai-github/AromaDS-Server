@@ -1215,6 +1215,10 @@ class InventoryController extends Controller
 
     public function markTransferAsTransferred(InventoryTransfer $inventoryTransfer)
     {
+        if (! $inventoryTransfer->userCanMarkTransferredFromSource(Auth::user())) {
+            return response()->json(['status' => 'error', 'message' => 'Hanya user cabang asal atau pusat yang dapat menandai transfer sebagai Transferred.'], 403);
+        }
+
         if ($inventoryTransfer->status !== 'draft') {
             return response()->json(['status' => 'error', 'message' => 'Hanya transfer Draft yang dapat ditandai Transferred.'], 422);
         }
@@ -1255,6 +1259,10 @@ class InventoryController extends Controller
 
     public function markTransferAsReceived(InventoryTransfer $inventoryTransfer)
     {
+        if (! $inventoryTransfer->userCanMarkReceivedAtDestination(Auth::user())) {
+            return response()->json(['status' => 'error', 'message' => 'Hanya user cabang tujuan atau pusat yang dapat menandai transfer sebagai Received.'], 403);
+        }
+
         if ($inventoryTransfer->status !== 'transferred') {
             return response()->json(['status' => 'error', 'message' => 'Hanya transfer Transferred yang dapat diterima.'], 422);
         }

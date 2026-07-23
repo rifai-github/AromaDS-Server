@@ -17,8 +17,10 @@
     $canSubmitTransfer = $hasTransferPermissionBypass || $transferUser->hasAnyPermission($submitTransferPermissions);
     $canApproveTransfer = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.approve');
     $canRejectTransfer = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.reject');
-    $canMarkTransferred = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.transfer');
-    $canMarkReceived = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.receive');
+    $canMarkTransferred = ($hasTransferPermissionBypass || $transferUser->hasAnyPermission(\App\Models\InventoryTransfer::MARK_TRANSFERRED_PERMISSIONS))
+        && $transfer->userCanMarkTransferredFromSource($transferUser);
+    $canMarkReceived = ($hasTransferPermissionBypass || $transferUser->hasAnyPermission(\App\Models\InventoryTransfer::MARK_RECEIVED_PERMISSIONS))
+        && $transfer->userCanMarkReceivedAtDestination($transferUser);
     $canUpdateTransfer = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.update');
 @endphp
 

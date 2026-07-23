@@ -39,6 +39,7 @@ class InventoryTransferStatusStockMovementTest extends TestCase
             $table->id();
             $table->string('name')->nullable();
             $table->foreignId('branch_id')->nullable();
+            $table->foreignId('manager')->nullable();
             $table->boolean('is_active')->default(true);
             $table->boolean('is_center')->default(false);
             $table->timestamps();
@@ -160,8 +161,8 @@ class InventoryTransferStatusStockMovementTest extends TestCase
 
     private function makeWarehouses(): array
     {
-        $branch = Warehouse::create(['name' => 'Gudang Cabang', 'is_center' => false]);
-        $center = Warehouse::create(['name' => 'Gudang Pusat', 'is_center' => true]);
+        $branch = Warehouse::create(['name' => 'Gudang Cabang', 'is_center' => false, 'manager' => 1]);
+        $center = Warehouse::create(['name' => 'Gudang Pusat', 'is_center' => true, 'manager' => 1]);
 
         DB::table('master_products')->insert(['id' => 1, 'name' => 'Diffuser W300 White', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('warehouse_products')->insert([

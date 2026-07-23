@@ -29,6 +29,7 @@ class InventoryTransferBranchApprovalWorkflowTest extends TestCase
             $table->id();
             $table->string('name');
             $table->foreignId('branch_id')->nullable();
+            $table->foreignId('manager')->nullable();
             $table->boolean('is_active')->default(true);
             $table->boolean('is_center')->default(false);
             $table->timestamps();
@@ -145,6 +146,7 @@ class InventoryTransferBranchApprovalWorkflowTest extends TestCase
     {
         $source = Warehouse::create(['name' => 'Cabang Jakarta', 'branch_id' => 10, 'is_center' => false]);
         $destination = Warehouse::create(['name' => 'Cabang Bandung', 'branch_id' => 20, 'is_center' => false]);
+        Warehouse::create(['name' => 'Gudang Pusat', 'manager' => 2, 'is_center' => true]);
         DB::table('warehouse_products')->insert([
             'warehouse_id' => $source->id,
             'master_product_id' => 1,
@@ -162,7 +164,8 @@ class InventoryTransferBranchApprovalWorkflowTest extends TestCase
             'items' => [['product_id' => 1, 'quantity' => 4]],
         ]));
 
-        $this->assertSame(200, $response->getStatusCode());
+        $payload = json_decode($response->getContent(), true);
+        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
         $transfer = InventoryTransfer::firstOrFail();
         $this->assertTrue($transfer->is_direct_branch_transfer);
         $this->assertSame('draft', $transfer->status);

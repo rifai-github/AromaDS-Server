@@ -55,6 +55,7 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
             $table->id();
             $table->string('name')->nullable();
             $table->foreignId('branch_id')->nullable();
+            $table->foreignId('manager')->nullable();
             $table->boolean('is_active')->default(true);
             $table->boolean('is_center')->default(false);
             $table->timestamps();
@@ -231,8 +232,8 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
     private function makeWarehouses(): array
     {
         $branchRow = DB::table('branches')->insertGetId(['name' => 'Cabang Surabaya', 'code' => 'SBY', 'created_at' => now(), 'updated_at' => now()]);
-        $branch = Warehouse::create(['name' => 'Gudang Cabang', 'is_center' => false, 'branch_id' => $branchRow]);
-        $center = Warehouse::create(['name' => 'Gudang Pusat', 'is_center' => true]);
+        $branch = Warehouse::create(['name' => 'Gudang Cabang', 'is_center' => false, 'branch_id' => $branchRow, 'manager' => 1]);
+        $center = Warehouse::create(['name' => 'Gudang Pusat', 'is_center' => true, 'manager' => 1]);
 
         return [$branch, $center];
     }
