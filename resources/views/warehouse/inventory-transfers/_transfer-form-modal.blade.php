@@ -1478,53 +1478,53 @@ function transitionTransferStatus(id, toStatus) {
     ).then(confirmed => {
         if (!confirmed) return;
 
-        fetch(`{{ url('warehouse/inventory-transfers/api/get-transfer') }}/${id}`, {
-            headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                'Accept': 'application/json'
-            },
-            credentials: 'same-origin'
-        })
-        .then(r => r.json())
-        .then(getResult => {
-            if (getResult.status !== 'success') {
-                showErrorDialog('Gagal memuat data transfer terbaru.', 'Gagal');
-                return;
-            }
-            const data = getResult.data;
-            const payload = {
-                transfer_date: data.transfer_date ? data.transfer_date.split('T')[0] : data.transfer_date,
-                from_warehouse_id: data.from_warehouse_id,
-                to_warehouse_id: data.to_warehouse_id,
-                status: toStatus,
-                is_direct_branch_transfer: data.is_direct_branch_transfer ? 1 : 0,
-                central_approval_notes: data.central_approval_notes,
-                notes: data.notes,
-                return_reason: data.return_reason,
-                return_reason_category: data.return_reason_category
-            };
-
-            fetch(`{{ url('warehouse/inventory-transfers/api') }}/${id}/update`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-                },
-                body: JSON.stringify(payload)
-            })
-            .then(r => r.json())
-            .then(result => {
-                if (result.status === 'success') {
-                    location.reload();
-                } else {
-                    showErrorDialog(result.message || 'Gagal memperbarui status.', 'Gagal');
-                }
-            })
-            .catch(() => showErrorDialog('Terjadi kesalahan jaringan.', 'Gagal'));
-        })
-        .catch(() => showErrorDialog('Terjadi kesalahan jaringan.', 'Gagal'));
+        const endpoint = toStatus === 'transferred' ? 'mark-transferred' : 'mark-received';
+        postTransferAction(`{{ url('warehouse/inventory-transfers') }}/${id}/${endpoint}`, {});
     });
+}
+
+function postTransferAction(url, payload) {
+    return fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        },
+        body: JSON.stringify(payload || {})
+    }).then(async response => {
+        const result = await response.json();
+        if (!response.ok || result.status !== 'success') {
+            showErrorDialog(result.message || 'Action transfer gagal.', 'Gagal');
+            return null;
+        }
+        location.reload();
+        return result;
+    }).catch(() => {
+        showErrorDialog('Terjadi kesalahan jaringan.', 'Gagal');
+        return null;
+    });
+}
+
+function submitTransferApproval(id) {
+    showConfirmDialog('Ajukan approval pusat?', 'Setelah diajukan, detail transfer dikunci sampai disetujui atau ditolak.', 'Ya, ajukan', 'Batal')
+        .then(confirmed => confirmed && postTransferAction(`{{ url('warehouse/inventory-transfers') }}/${id}/submit-approval`, {}));
+}
+
+function approveTransfer(id) {
+    const notes = window.prompt('Catatan approval (opsional):', '');
+    if (notes === null) return;
+    postTransferAction(`{{ url('warehouse/inventory-transfers') }}/${id}/approve`, { notes });
+}
+
+function rejectTransfer(id) {
+    const reason = window.prompt('Alasan penolakan (wajib):', '');
+    if (reason === null) return;
+    if (!reason.trim()) {
+        showErrorDialog('Alasan penolakan wajib diisi.', 'Belum lengkap');
+        return;
+    }
+    postTransferAction(`{{ url('warehouse/inventory-transfers') }}/${id}/reject`, { reason: reason.trim() });
 }
 
 // Surat Pengajuan / Surat Jalan need to stay uploadable regardless of status -
@@ -1582,6 +1582,11 @@ function openDocumentUploadModal(id) {
                             ${data.delivery_note_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="${transferUploadsBaseUrl}/${data.delivery_note_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
                             <input type="file" name="delivery_note_file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
                         </div>
+                        <div class="form-group">
+                            <label class="form-label">Delivery Order (DO)</label>
+                            ${data.delivery_order_file ? `<p class="text-xs text-gray-600 mb-1">Sudah ada: <a href="${transferUploadsBaseUrl}/${data.delivery_order_file}" target="_blank" class="text-blue-600 underline">Lihat file</a></p>` : ''}
+                            <input type="file" name="delivery_order_file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+                        </div>
                     </div>
                     <p class="text-xs text-gray-500 mt-1">Upload file baru untuk mengganti dokumen yang sudah ada. Kosongkan jika tidak ingin mengubah.</p>
                 </div>
@@ -1611,18 +1616,14 @@ function submitDocumentUpload(event, id) {
     // Same empty-file-input quirk as submitForm(): a zero-size File entry
     // survives Object.fromEntries()/FormData but trips Laravel's 'nullable|file'
     // validation - strip it entirely when nothing was actually chosen.
-    ['submission_letter_file', 'delivery_note_file'].forEach(name => {
+    ['submission_letter_file', 'delivery_note_file', 'delivery_order_file'].forEach(name => {
         const file = formData.get(name);
         if (file instanceof File && file.size === 0) {
             formData.delete(name);
         }
     });
 
-    // PHP only populates $_FILES for POST bodies, not PUT - method-override so
-    // this still reaches updateTransfer() while the real HTTP method stays POST.
-    formData.set('_method', 'PUT');
-
-    fetch(`{{ url('warehouse/inventory-transfers/api') }}/${id}/update`, {
+    fetch(`{{ url('warehouse/inventory-transfers') }}/${id}/documents`, {
         method: 'POST',
         headers: {
             'Accept': 'application/json',

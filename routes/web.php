@@ -1145,15 +1145,21 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::delete('inventory-requests/{inventoryRequest}/remove-item/{itemId}', [InventoryRequestController::class, 'removeItem'])->name('inventory-requests.remove-item')->middleware('permission:warehouse.inventory-requests.update');
 
         // Inventory Transfer API routes (must be before main route to avoid conflicts)
-        Route::get('inventory-transfers/api/warehouses', [InventoryController::class, 'getWarehouses'])->name('inventory-transfers.api.warehouses');
-        Route::get('inventory-transfers/api/transfer-warehouses/{fromWarehouseId?}', [InventoryController::class, 'getTransferWarehouses'])->name('inventory-transfers.api.transfer-warehouses');
-        Route::get('inventory-transfers/api/products/{warehouseId}', [InventoryController::class, 'getProductsWithStock'])->name('inventory-transfers.api.products');
-        Route::get('inventory-transfers/api/users', [InventoryController::class, 'getUsers'])->name('inventory-transfers.api.users');
-        Route::get('inventory-transfers/api/get-transfer/{id}', [InventoryController::class, 'getTransfer'])->name('inventory-transfers.api.get-transfer');
-        Route::post('inventory-transfers/api/store', [InventoryController::class, 'storeTransfer'])->name('inventory-transfers.api.store');
-        Route::put('inventory-transfers/api/{id}/update', [InventoryController::class, 'updateTransfer'])->name('inventory-transfers.api.update');
-        Route::delete('inventory-transfers/api/{id}/delete', [InventoryController::class, 'deleteTransfer'])->name('inventory-transfers.api.delete');
-        Route::post('inventory-transfers/api/bulk-delete', [InventoryController::class, 'bulkDeleteTransfers'])->name('inventory-transfers.api.bulk-delete');
+        Route::get('inventory-transfers/api/warehouses', [InventoryController::class, 'getWarehouses'])->name('inventory-transfers.api.warehouses')->middleware('permission:warehouse.inventory-transfers.view');
+        Route::get('inventory-transfers/api/transfer-warehouses/{fromWarehouseId?}', [InventoryController::class, 'getTransferWarehouses'])->name('inventory-transfers.api.transfer-warehouses')->middleware('permission:warehouse.inventory-transfers.view');
+        Route::get('inventory-transfers/api/products/{warehouseId}', [InventoryController::class, 'getProductsWithStock'])->name('inventory-transfers.api.products')->middleware('permission:warehouse.inventory-transfers.view');
+        Route::get('inventory-transfers/api/users', [InventoryController::class, 'getUsers'])->name('inventory-transfers.api.users')->middleware('permission:warehouse.inventory-transfers.view');
+        Route::get('inventory-transfers/api/get-transfer/{id}', [InventoryController::class, 'getTransfer'])->name('inventory-transfers.api.get-transfer')->middleware('permission:warehouse.inventory-transfers.view');
+        Route::post('inventory-transfers/api/store', [InventoryController::class, 'storeTransfer'])->name('inventory-transfers.api.store')->middleware('permission:warehouse.inventory-transfers.create');
+        Route::put('inventory-transfers/api/{id}/update', [InventoryController::class, 'updateTransfer'])->name('inventory-transfers.api.update')->middleware('permission:warehouse.inventory-transfers.update');
+        Route::post('inventory-transfers/{inventoryTransfer}/submit-approval', [InventoryController::class, 'submitTransferForApproval'])->name('inventory-transfers.submit-approval')->middleware('permission:warehouse.inventory-transfers.submit');
+        Route::post('inventory-transfers/{inventoryTransfer}/approve', [InventoryController::class, 'approveTransfer'])->name('inventory-transfers.approve')->middleware('permission:warehouse.inventory-transfers.approve');
+        Route::post('inventory-transfers/{inventoryTransfer}/reject', [InventoryController::class, 'rejectTransfer'])->name('inventory-transfers.reject')->middleware('permission:warehouse.inventory-transfers.reject');
+        Route::post('inventory-transfers/{inventoryTransfer}/mark-transferred', [InventoryController::class, 'markTransferAsTransferred'])->name('inventory-transfers.mark-transferred')->middleware('permission:warehouse.inventory-transfers.transfer');
+        Route::post('inventory-transfers/{inventoryTransfer}/mark-received', [InventoryController::class, 'markTransferAsReceived'])->name('inventory-transfers.mark-received')->middleware('permission:warehouse.inventory-transfers.receive');
+        Route::post('inventory-transfers/{inventoryTransfer}/documents', [InventoryController::class, 'updateTransferDocuments'])->name('inventory-transfers.documents')->middleware('permission:warehouse.inventory-transfers.update');
+        Route::delete('inventory-transfers/api/{id}/delete', [InventoryController::class, 'deleteTransfer'])->name('inventory-transfers.api.delete')->middleware('permission:warehouse.inventory-transfers.delete');
+        Route::post('inventory-transfers/api/bulk-delete', [InventoryController::class, 'bulkDeleteTransfers'])->name('inventory-transfers.api.bulk-delete')->middleware('permission:warehouse.inventory-transfers.delete');
 
         Route::resource('product-types', ProductTypeController::class)->middleware('permission:warehouse.product-types.view');
         Route::post('product-types/bulk-delete', [ProductTypeController::class, 'bulkDelete'])->name('product-types.bulk-delete')->middleware('permission:warehouse.product-types.delete');
@@ -1328,8 +1334,8 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         });
 
         // Main inventory transfers route (must come after ALL other routes to avoid conflicts)
-        Route::get('inventory-transfers', [InventoryController::class, 'index'])->name('inventory-transfers.index');
-        Route::get('inventory-transfers/{id}', [InventoryController::class, 'showTransfer'])->name('inventory-transfers.show')->where('id', '[0-9]+');
+        Route::get('inventory-transfers', [InventoryController::class, 'index'])->name('inventory-transfers.index')->middleware('permission:warehouse.inventory-transfers.view');
+        Route::get('inventory-transfers/{id}', [InventoryController::class, 'showTransfer'])->name('inventory-transfers.show')->where('id', '[0-9]+')->middleware('permission:warehouse.inventory-transfers.view');
     });
 
     // System Routes

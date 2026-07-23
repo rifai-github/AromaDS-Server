@@ -19,11 +19,17 @@ class InventoryTransfer extends Model
         'to_warehouse_id',
         'transfer_date',
         'status',
+        'approval_status',
         'is_direct_branch_transfer',
         'delivery_order_file',
         'central_approved_by',
         'central_approved_at',
         'central_approval_notes',
+        'submitted_for_approval_by',
+        'submitted_for_approval_at',
+        'central_rejected_by',
+        'central_rejected_at',
+        'central_rejection_reason',
         'submission_letter_file',
         'submission_letter_uploaded_by',
         'submission_letter_uploaded_at',
@@ -43,6 +49,8 @@ class InventoryTransfer extends Model
         'transfer_date' => 'date',
         'is_direct_branch_transfer' => 'boolean',
         'central_approved_at' => 'datetime',
+        'submitted_for_approval_at' => 'datetime',
+        'central_rejected_at' => 'datetime',
         'submission_letter_uploaded_at' => 'datetime',
         'delivery_note_uploaded_at' => 'datetime',
     ];
@@ -77,6 +85,42 @@ class InventoryTransfer extends Model
     public function transferItems()
     {
         return $this->hasMany(InventoryTransferItem::class);
+    }
+
+    public function approvalHistories()
+    {
+        return $this->hasMany(InventoryTransferApprovalHistory::class)->latest('id');
+    }
+
+    public function centralApprover()
+    {
+        return $this->belongsTo(User::class, 'central_approved_by');
+    }
+
+    public function approvalSubmitter()
+    {
+        return $this->belongsTo(User::class, 'submitted_for_approval_by');
+    }
+
+    public function centralRejector()
+    {
+        return $this->belongsTo(User::class, 'central_rejected_by');
+    }
+
+    public function requiresCentralApproval(): bool
+    {
+        return (bool) $this->is_direct_branch_transfer;
+    }
+
+    public function getApprovalStatusTextAttribute(): string
+    {
+        return match ($this->approval_status) {
+            'not_required' => 'Tidak diperlukan',
+            'pending' => 'Menunggu approval pusat',
+            'approved' => 'Disetujui pusat',
+            'rejected' => 'Ditolak pusat',
+            default => 'Draft approval',
+        };
     }
 
     /**

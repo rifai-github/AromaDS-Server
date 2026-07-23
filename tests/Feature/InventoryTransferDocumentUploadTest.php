@@ -78,11 +78,17 @@ class InventoryTransferDocumentUploadTest extends TestCase
             $table->foreignId('to_warehouse_id');
             $table->date('transfer_date')->nullable();
             $table->string('status')->default('draft');
+            $table->string('approval_status')->default('not_required');
             $table->boolean('is_direct_branch_transfer')->default(false);
             $table->string('delivery_order_file')->nullable();
             $table->unsignedBigInteger('central_approved_by')->nullable();
             $table->timestamp('central_approved_at')->nullable();
             $table->text('central_approval_notes')->nullable();
+            $table->unsignedBigInteger('submitted_for_approval_by')->nullable();
+            $table->timestamp('submitted_for_approval_at')->nullable();
+            $table->unsignedBigInteger('central_rejected_by')->nullable();
+            $table->timestamp('central_rejected_at')->nullable();
+            $table->text('central_rejection_reason')->nullable();
             $table->string('submission_letter_file')->nullable();
             $table->unsignedBigInteger('submission_letter_uploaded_by')->nullable();
             $table->timestamp('submission_letter_uploaded_at')->nullable();
@@ -170,7 +176,7 @@ class InventoryTransferDocumentUploadTest extends TestCase
             'submission_letter_file' => UploadedFile::fake()->create('surat-pengajuan.pdf', 100),
         ]);
 
-        $response = (new InventoryController())->storeTransfer($request);
+        $response = (new InventoryController)->storeTransfer($request);
         $payload = json_decode($response->getContent(), true);
 
         $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
@@ -205,7 +211,7 @@ class InventoryTransferDocumentUploadTest extends TestCase
             'delivery_note_file' => UploadedFile::fake()->create('surat-jalan.pdf', 100),
         ]);
 
-        $response = (new InventoryController())->updateTransfer($request, $transfer->id);
+        $response = (new InventoryController)->updateTransfer($request, $transfer->id);
         $payload = json_decode($response->getContent(), true);
 
         $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
@@ -242,7 +248,7 @@ class InventoryTransferDocumentUploadTest extends TestCase
             'return_reason' => 'Unit rusak saat pengecekan stok cabang, dikembalikan ke pusat untuk repair.',
         ]);
 
-        $response = (new InventoryController())->storeTransfer($request);
+        $response = (new InventoryController)->storeTransfer($request);
         $payload = json_decode($response->getContent(), true);
 
         $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
@@ -270,7 +276,7 @@ class InventoryTransferDocumentUploadTest extends TestCase
             'items' => [['product_id' => 1, 'quantity' => 1]],
         ]);
 
-        $response = (new InventoryController())->storeTransfer($request);
+        $response = (new InventoryController)->storeTransfer($request);
         $payload = json_decode($response->getContent(), true);
 
         $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
@@ -294,10 +300,12 @@ class InventoryTransferDocumentUploadTest extends TestCase
         $branchPayload = $controller->getTransferWarehouses($branchA->id)->getData(true);
         $branchDestinationIds = collect($branchPayload['data'])->pluck('id')->all();
 
-        $this->assertSame([$center->id], $branchDestinationIds);
+        $this->assertContains($center->id, $branchDestinationIds);
+        $this->assertContains($branchB->id, $branchDestinationIds);
+        $this->assertNotContains($branchA->id, $branchDestinationIds);
     }
 
-    public function test_branch_cannot_transfer_directly_to_another_branch(): void
+    public function test_branch_transfer_is_created_as_unapproved_draft_even_when_client_sends_approval_fields(): void
     {
         $fromBranch = Warehouse::create(['name' => 'Gudang Cabang A', 'is_center' => false]);
         $toBranch = Warehouse::create(['name' => 'Gudang Cabang B', 'is_center' => false]);
@@ -319,11 +327,15 @@ class InventoryTransferDocumentUploadTest extends TestCase
             'delivery_order_file' => UploadedFile::fake()->create('delivery-order.pdf', 100),
         ]);
 
-        $response = (new InventoryController())->storeTransfer($request);
+        $response = (new InventoryController)->storeTransfer($request);
         $payload = json_decode($response->getContent(), true);
 
-        $this->assertSame(422, $response->getStatusCode());
-        $this->assertSame('Transfer dari gudang cabang harus melalui Gudang PUSAT.', $payload['message']);
-        $this->assertDatabaseCount('inventory_transfers', 0);
+        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
+        $transfer = InventoryTransfer::firstOrFail();
+        $this->assertTrue($transfer->is_direct_branch_transfer);
+        $this->assertSame('draft', $transfer->status);
+        $this->assertSame('draft', $transfer->approval_status);
+        $this->assertNull($transfer->central_approved_by);
+        $this->assertNull($transfer->central_approval_notes);
     }
 }

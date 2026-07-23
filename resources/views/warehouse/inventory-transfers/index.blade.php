@@ -4,6 +4,14 @@
 @section('breadcrumb', 'Home / Warehouse / Inventory Transfers')
 
 @section('content')
+@php
+    $transferUser = auth()->user();
+    $hasTransferPermissionBypass = $transferUser->hasRole('Admin')
+        || $transferUser->hasRole('super_admin')
+        || $transferUser->hasRoleStartingWith('Management');
+    $canCreateTransfer = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.create');
+    $canDeleteTransfer = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.delete');
+@endphp
 <style>
     /* Global overflow control */
     html, body {
@@ -675,11 +683,13 @@
                 </div>
             
             <div class="flex flex-row justify-end items-center">
+                @if($canCreateTransfer)
                 <button class="btn btn-primary" onclick="openCreateModal()">
                         <i class="fas fa-plus"></i>
                     <span class="hidden md:inline">Add New Transfer</span>
                     <span class="md:hidden">Add New</span>
-                    </button>
+                </button>
+                @endif
                 </div>
             </div>
 
@@ -696,10 +706,12 @@
             </div>
 
                 <!-- Delete Button -->
+                @if($canDeleteTransfer)
                 <button class="btn btn-secondary btn-sm ml-4" onclick="deleteSelected()">
                         <i class="fas fa-trash"></i>
                         <span>Hapus</span>
-                    </button>
+                </button>
+                @endif
             </div>
 
             </div>
@@ -718,6 +730,7 @@
                             <th data-column="fromWarehouse.name">From Warehouse</th>
                             <th data-column="toWarehouse.name">To Warehouse</th>
                             <th data-column="status">Status</th>
+                            <th data-column="approval_status">Approval</th>
                             <th data-column="notes">Notes</th>
                             <th data-column="createdBy__name">Created By</th>
                             <th data-column="created_at" data-type="date">Created At</th>
@@ -742,6 +755,11 @@
                                 {{ ucfirst(str_replace('-', ' ', $transfer->status ?? 'N/A')) }}
                                     </span>
                                 </td>
+                        <td>
+                            <span class="px-2 py-1 text-xs rounded-full {{ $transfer->approval_status === 'approved' ? 'bg-green-100 text-green-800' : ($transfer->approval_status === 'rejected' ? 'bg-red-100 text-red-800' : ($transfer->approval_status === 'pending' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700')) }}">
+                                {{ $transfer->approval_status_text }}
+                            </span>
+                        </td>
                         <td class="max-w-xs truncate">{{ $transfer->notes ?? '-' }}</td>
                         <td>{{ $transfer->creator->name ?? '-' }}</td>
                         <td>
@@ -764,7 +782,7 @@
                             </tr>
                         @empty
                             <tr>
-                        <td colspan="7" class="p-8 text-center">
+                        <td colspan="12" class="p-8 text-center">
                             <p class="text-lg text-gray-600">Belum ada inventory transfer</p>
                                 </td>
                             </tr>

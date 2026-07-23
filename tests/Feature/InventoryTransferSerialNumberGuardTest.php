@@ -126,11 +126,17 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
             $table->foreignId('to_warehouse_id');
             $table->date('transfer_date')->nullable();
             $table->string('status')->default('draft');
+            $table->string('approval_status')->default('not_required');
             $table->boolean('is_direct_branch_transfer')->default(false);
             $table->string('delivery_order_file')->nullable();
             $table->unsignedBigInteger('central_approved_by')->nullable();
             $table->timestamp('central_approved_at')->nullable();
             $table->text('central_approval_notes')->nullable();
+            $table->unsignedBigInteger('submitted_for_approval_by')->nullable();
+            $table->timestamp('submitted_for_approval_at')->nullable();
+            $table->unsignedBigInteger('central_rejected_by')->nullable();
+            $table->timestamp('central_rejected_at')->nullable();
+            $table->text('central_rejection_reason')->nullable();
             $table->string('submission_letter_file')->nullable();
             $table->unsignedBigInteger('submission_letter_uploaded_by')->nullable();
             $table->timestamp('submission_letter_uploaded_at')->nullable();
@@ -158,6 +164,16 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
             $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
+        });
+
+        Schema::create('inventory_transfer_approval_histories', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('inventory_transfer_id');
+            $table->string('action');
+            $table->foreignId('actor_id')->nullable();
+            $table->text('notes')->nullable();
+            $table->json('snapshot')->nullable();
+            $table->timestamps();
         });
 
         Schema::create('inventory_movements', function (Blueprint $table) {
@@ -235,7 +251,7 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
                 'master_product_id' => 1,
                 'warehouse_id' => $branchWarehouseId,
                 'status' => 'ready',
-                'serial_number' => 'SN-' . str_pad((string) $i, 4, '0', STR_PAD_LEFT),
+                'serial_number' => 'SN-'.str_pad((string) $i, 4, '0', STR_PAD_LEFT),
             ]);
         }
 
@@ -247,7 +263,7 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
         [$branch, $center] = $this->makeWarehouses();
         $productId = $this->makeSerialNumberProduct($branch->id, 5);
 
-        $storeResponse = (new InventoryController())->storeTransfer(Request::create('/warehouse/inventory-transfers/api/store', 'POST', [
+        $storeResponse = (new InventoryController)->storeTransfer(Request::create('/warehouse/inventory-transfers/api/store', 'POST', [
             'transfer_date' => now()->toDateString(),
             'from_warehouse_id' => $branch->id,
             'to_warehouse_id' => $center->id,
@@ -257,14 +273,7 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
         $this->assertSame(200, $storeResponse->getStatusCode(), json_decode($storeResponse->getContent(), true)['message'] ?? '');
         $transfer = InventoryTransfer::first();
 
-        $response = (new InventoryController())->updateTransfer(Request::create(
-            "/warehouse/inventory-transfers/api/{$transfer->id}/update", 'PUT', [
-                'transfer_date' => now()->toDateString(),
-                'from_warehouse_id' => $branch->id,
-                'to_warehouse_id' => $center->id,
-                'status' => 'transferred',
-            ]
-        ), $transfer->id);
+        $response = (new InventoryController)->markTransferAsTransferred($transfer);
         $payload = json_decode($response->getContent(), true);
         $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? '');
         $this->assertStringContainsString('Serial Number', $payload['message']);
@@ -303,7 +312,7 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
             'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        (new InventoryController())->storeTransfer(Request::create('/warehouse/inventory-transfers/api/store', 'POST', [
+        (new InventoryController)->storeTransfer(Request::create('/warehouse/inventory-transfers/api/store', 'POST', [
             'transfer_date' => now()->toDateString(),
             'from_warehouse_id' => $branch->id,
             'to_warehouse_id' => $center->id,
@@ -315,23 +324,9 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
         ]));
         $transfer = InventoryTransfer::first();
 
-        (new InventoryController())->updateTransfer(Request::create(
-            "/warehouse/inventory-transfers/api/{$transfer->id}/update", 'PUT', [
-                'transfer_date' => now()->toDateString(),
-                'from_warehouse_id' => $branch->id,
-                'to_warehouse_id' => $center->id,
-                'status' => 'transferred',
-            ]
-        ), $transfer->id);
+        (new InventoryController)->markTransferAsTransferred($transfer);
 
-        $response = (new InventoryController())->updateTransfer(Request::create(
-            "/warehouse/inventory-transfers/api/{$transfer->id}/update", 'PUT', [
-                'transfer_date' => now()->toDateString(),
-                'from_warehouse_id' => $branch->id,
-                'to_warehouse_id' => $center->id,
-                'status' => 'received',
-            ]
-        ), $transfer->id);
+        $response = (new InventoryController)->markTransferAsReceived($transfer->fresh());
         $this->assertSame(200, $response->getStatusCode());
 
         // Non-SN product credited normally at Received.
@@ -347,7 +342,7 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
         [$branch, $center] = $this->makeWarehouses();
         $productId = $this->makeSerialNumberProduct($branch->id, 2);
 
-        (new InventoryController())->storeTransfer(Request::create('/warehouse/inventory-transfers/api/store', 'POST', [
+        (new InventoryController)->storeTransfer(Request::create('/warehouse/inventory-transfers/api/store', 'POST', [
             'transfer_date' => now()->toDateString(),
             'from_warehouse_id' => $branch->id,
             'to_warehouse_id' => $center->id,
@@ -359,14 +354,7 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
         // Simulate 1 of the 2 units getting used elsewhere between drafting and transferring.
         SerialNumber::where('warehouse_id', $branch->id)->first()->update(['status' => 'in_use']);
 
-        $response = (new InventoryController())->updateTransfer(Request::create(
-            "/warehouse/inventory-transfers/api/{$transfer->id}/update", 'PUT', [
-                'transfer_date' => now()->toDateString(),
-                'from_warehouse_id' => $branch->id,
-                'to_warehouse_id' => $center->id,
-                'status' => 'transferred',
-            ]
-        ), $transfer->id);
+        $response = (new InventoryController)->markTransferAsTransferred($transfer);
         $payload = json_decode($response->getContent(), true);
 
         $this->assertSame(422, $response->getStatusCode());

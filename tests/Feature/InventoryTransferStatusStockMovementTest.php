@@ -74,11 +74,17 @@ class InventoryTransferStatusStockMovementTest extends TestCase
             $table->foreignId('to_warehouse_id');
             $table->date('transfer_date')->nullable();
             $table->string('status')->default('draft');
+            $table->string('approval_status')->default('not_required');
             $table->boolean('is_direct_branch_transfer')->default(false);
             $table->string('delivery_order_file')->nullable();
             $table->unsignedBigInteger('central_approved_by')->nullable();
             $table->timestamp('central_approved_at')->nullable();
             $table->text('central_approval_notes')->nullable();
+            $table->unsignedBigInteger('submitted_for_approval_by')->nullable();
+            $table->timestamp('submitted_for_approval_at')->nullable();
+            $table->unsignedBigInteger('central_rejected_by')->nullable();
+            $table->timestamp('central_rejected_at')->nullable();
+            $table->text('central_rejection_reason')->nullable();
             $table->string('submission_letter_file')->nullable();
             $table->unsignedBigInteger('submission_letter_uploaded_by')->nullable();
             $table->timestamp('submission_letter_uploaded_at')->nullable();
@@ -106,6 +112,16 @@ class InventoryTransferStatusStockMovementTest extends TestCase
             $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
+        });
+
+        Schema::create('inventory_transfer_approval_histories', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('inventory_transfer_id');
+            $table->string('action');
+            $table->foreignId('actor_id')->nullable();
+            $table->text('notes')->nullable();
+            $table->json('snapshot')->nullable();
+            $table->timestamps();
         });
 
         Schema::create('inventory_movements', function (Blueprint $table) {
@@ -175,7 +191,7 @@ class InventoryTransferStatusStockMovementTest extends TestCase
             'status' => 'draft',
             'items' => [['product_id' => 1, 'quantity' => 4]],
         ]);
-        $response = (new InventoryController())->storeTransfer($request);
+        $response = (new InventoryController)->storeTransfer($request);
         $transfer = InventoryTransfer::first();
         $this->assertSame(200, $response->getStatusCode());
 
@@ -183,13 +199,7 @@ class InventoryTransferStatusStockMovementTest extends TestCase
         $this->assertSame(10.0, $this->warehouseStock($branch->id));
         $this->assertSame(0.0, $this->warehouseStock($center->id));
 
-        $updateRequest = Request::create("/warehouse/inventory-transfers/api/{$transfer->id}/update", 'PUT', [
-            'transfer_date' => now()->toDateString(),
-            'from_warehouse_id' => $branch->id,
-            'to_warehouse_id' => $center->id,
-            'status' => 'transferred',
-        ]);
-        $updateResponse = (new InventoryController())->updateTransfer($updateRequest, $transfer->id);
+        $updateResponse = (new InventoryController)->markTransferAsTransferred($transfer);
         $payload = json_decode($updateResponse->getContent(), true);
         $this->assertSame(200, $updateResponse->getStatusCode(), $payload['message'] ?? 'no message');
 
@@ -210,29 +220,15 @@ class InventoryTransferStatusStockMovementTest extends TestCase
             'status' => 'draft',
             'items' => [['product_id' => 1, 'quantity' => 4]],
         ]);
-        (new InventoryController())->storeTransfer($request);
+        (new InventoryController)->storeTransfer($request);
         $transfer = InventoryTransfer::first();
 
         // draft -> transferred (source deducted, per the other test).
-        (new InventoryController())->updateTransfer(Request::create(
-            "/warehouse/inventory-transfers/api/{$transfer->id}/update", 'PUT', [
-                'transfer_date' => now()->toDateString(),
-                'from_warehouse_id' => $branch->id,
-                'to_warehouse_id' => $center->id,
-                'status' => 'transferred',
-            ]
-        ), $transfer->id);
+        (new InventoryController)->markTransferAsTransferred($transfer);
 
         // transferred -> received: destination should now gain the stock, and
         // the source should NOT be deducted a second time.
-        $response = (new InventoryController())->updateTransfer(Request::create(
-            "/warehouse/inventory-transfers/api/{$transfer->id}/update", 'PUT', [
-                'transfer_date' => now()->toDateString(),
-                'from_warehouse_id' => $branch->id,
-                'to_warehouse_id' => $center->id,
-                'status' => 'received',
-            ]
-        ), $transfer->id);
+        $response = (new InventoryController)->markTransferAsReceived($transfer->fresh());
         $payload = json_decode($response->getContent(), true);
         $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
 
@@ -254,7 +250,7 @@ class InventoryTransferStatusStockMovementTest extends TestCase
             'status' => 'received',
             'items' => [['product_id' => 1, 'quantity' => 4]],
         ]);
-        $response = (new InventoryController())->storeTransfer($request);
+        $response = (new InventoryController)->storeTransfer($request);
         $payload = json_decode($response->getContent(), true);
         $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
 

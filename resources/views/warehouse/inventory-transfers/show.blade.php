@@ -4,6 +4,19 @@
 
 @section('content')
 
+@php
+    $transferUser = auth()->user();
+    $hasTransferPermissionBypass = $transferUser->hasRole('Admin')
+        || $transferUser->hasRole('super_admin')
+        || $transferUser->hasRoleStartingWith('Management');
+    $canSubmitTransfer = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.submit');
+    $canApproveTransfer = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.approve');
+    $canRejectTransfer = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.reject');
+    $canMarkTransferred = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.transfer');
+    $canMarkReceived = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.receive');
+    $canUpdateTransfer = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.update');
+@endphp
+
 <style>
     .container-fluid {
         padding: 0 !important;
@@ -81,18 +94,33 @@
                             </h3>
                         </div>
                         <div style="display: flex; gap: 10px;">
-                            @if($transfer->status === 'draft')
+                            @if($transfer->requiresCentralApproval() && in_array($transfer->approval_status, ['draft', 'rejected']) && $canSubmitTransfer)
+                            <button type="button" class="btn btn-sm btn-light" onclick="submitTransferApproval({{ $transfer->id }})">
+                                <i class="fas fa-paper-plane me-1"></i> Ajukan Approval
+                            </button>
+                            @endif
+                            @if($transfer->requiresCentralApproval() && $transfer->approval_status === 'pending' && $canApproveTransfer && (int) $transfer->created_by !== (int) auth()->id())
+                            <button type="button" class="btn btn-sm btn-success" onclick="approveTransfer({{ $transfer->id }})">
+                                <i class="fas fa-check me-1"></i> Approve
+                            </button>
+                            @endif
+                            @if($transfer->requiresCentralApproval() && $transfer->approval_status === 'pending' && $canRejectTransfer)
+                            <button type="button" class="btn btn-sm btn-danger" onclick="rejectTransfer({{ $transfer->id }})">
+                                <i class="fas fa-times me-1"></i> Reject
+                            </button>
+                            @endif
+                            @if($transfer->status === 'draft' && (!$transfer->requiresCentralApproval() || $transfer->approval_status === 'approved') && $canMarkTransferred)
                             <button type="button" class="btn btn-sm" onclick="transitionTransferStatus({{ $transfer->id }}, 'transferred')"
                                 style="background-color: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 600; border-radius: 6px; padding: 6px 14px; cursor: pointer;">
                                 <i class="fas fa-truck me-1"></i> Tandai Transferred
                             </button>
-                            @elseif($transfer->status === 'transferred')
+                            @elseif($transfer->status === 'transferred' && $canMarkReceived)
                             <button type="button" class="btn btn-sm" onclick="transitionTransferStatus({{ $transfer->id }}, 'received')"
                                 style="background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; font-weight: 600; border-radius: 6px; padding: 6px 14px; cursor: pointer;">
                                 <i class="fas fa-box-open me-1"></i> Tandai Received
                             </button>
                             @endif
-                            @if($transfer->status === 'draft')
+                            @if($transfer->status === 'draft' && in_array($transfer->approval_status, ['not_required', 'draft', 'rejected']) && $canUpdateTransfer)
                             <button type="button" class="btn btn-sm" onclick="openEditModal({{ $transfer->id }})"
                                 style="background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; font-weight: 600; border-radius: 6px; padding: 6px 14px; cursor: pointer;">
                                 <i class="fas fa-edit me-1"></i> Edit Transfer
@@ -150,7 +178,7 @@
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Direct Branch Transfer</div>
-                            <div style="font-size: 1rem; color: #212529;">{{ $transfer->is_direct_branch_transfer ? 'Ya' : 'Tidak' }}</div>
+                            <div style="font-size: 1rem; color: #212529;">{{ $transfer->is_direct_branch_transfer ? 'Ya — perlu approval pusat' : 'Tidak' }}</div>
                         </div>
 
                         <!-- Row 2 -->
@@ -176,6 +204,36 @@
                     </div>
                 </div>
             </div>
+
+            @if($transfer->requiresCentralApproval())
+            <div class="card mb-3" style="border: 1px solid #cbd5e1; background: #f8fafc;">
+                <div class="card-header" style="background: #0f172a; color: white;">
+                    <h5 class="card-title mb-0" style="color: white;"><i class="fas fa-shield-alt me-2"></i>Approval Pusat</h5>
+                </div>
+                <div class="card-body">
+                    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.5rem;">
+                        <div><div class="text-muted text-uppercase" style="font-size:.72rem;font-weight:700;">Status</div><div style="font-weight:700;margin-top:.35rem;">{{ $transfer->approval_status_text }}</div></div>
+                        <div><div class="text-muted text-uppercase" style="font-size:.72rem;font-weight:700;">Diajukan oleh</div><div style="margin-top:.35rem;">{{ $transfer->approvalSubmitter->name ?? '-' }} @if($transfer->submitted_for_approval_at)<br><small>{{ $transfer->submitted_for_approval_at->format('d/M/Y H:i') }}</small>@endif</div></div>
+                        <div><div class="text-muted text-uppercase" style="font-size:.72rem;font-weight:700;">Keputusan pusat</div><div style="margin-top:.35rem;">{{ $transfer->centralApprover->name ?? $transfer->centralRejector->name ?? '-' }}</div></div>
+                    </div>
+                    @if($transfer->central_rejection_reason)
+                    <div class="alert alert-danger mt-3 mb-0"><strong>Alasan penolakan:</strong> {{ $transfer->central_rejection_reason }}</div>
+                    @elseif($transfer->central_approval_notes)
+                    <div class="alert alert-success mt-3 mb-0"><strong>Catatan approval:</strong> {{ $transfer->central_approval_notes }}</div>
+                    @endif
+                    @if($transfer->approvalHistories->isNotEmpty())
+                    <div class="mt-4"><div class="text-muted text-uppercase mb-2" style="font-size:.72rem;font-weight:700;">Audit trail</div>
+                        @foreach($transfer->approvalHistories as $history)
+                        <div style="display:flex;gap:1rem;padding:.65rem 0;border-top:1px solid #e2e8f0;">
+                            <strong style="min-width:105px;">{{ ucfirst($history->action) }}</strong>
+                            <span>{{ $history->actor->name ?? 'System' }} · {{ $history->created_at->format('d/M/Y H:i') }} @if($history->notes) — {{ $history->notes }} @endif</span>
+                        </div>
+                        @endforeach
+                    </div>
+                    @endif
+                </div>
+            </div>
+            @endif
 
             @php
                 $reasonLabels = [
@@ -215,10 +273,12 @@
                     <h5 class="card-title mb-0" style="color: #1e3a8a;">
                         <i class="fas fa-file-alt me-2"></i>Dokumen
                     </h5>
+                    @if($canUpdateTransfer)
                     <button type="button" class="btn btn-sm" onclick="openDocumentUploadModal({{ $transfer->id }})"
                         style="background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; font-weight: 600; border-radius: 6px; padding: 4px 12px; cursor: pointer;">
                         <i class="fas fa-upload me-1"></i> Upload Dokumen
                     </button>
+                    @endif
                 </div>
                 <div class="card-body">
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem;">
