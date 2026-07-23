@@ -9,7 +9,12 @@
     $hasTransferPermissionBypass = $transferUser->hasRole('Admin')
         || $transferUser->hasRole('super_admin')
         || $transferUser->hasRoleStartingWith('Management');
-    $canSubmitTransfer = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.submit');
+    $submitTransferPermissions = [
+        'warehouse.inventory-transfers.submit',
+        'warehouse.inventory-transfers.submit.create',
+        'warehouse.inventory-transfers.submit.approve',
+    ];
+    $canSubmitTransfer = $hasTransferPermissionBypass || $transferUser->hasAnyPermission($submitTransferPermissions);
     $canApproveTransfer = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.approve');
     $canRejectTransfer = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.reject');
     $canMarkTransferred = $hasTransferPermissionBypass || $transferUser->hasPermission('warehouse.inventory-transfers.transfer');
