@@ -69,11 +69,39 @@ class JobAdviceRentalFlowTest extends TestCase
     public function test_remove_flow_is_limited_to_active_on_wall_units_with_serial_numbers(): void
     {
         $controller = file_get_contents(app_path('Http/Controllers/Marketing/JobAdviceController.php'));
+        $filterMethod = $this->extractMethodSource($controller, 'filterRemoveRoomsWithActiveOnWallUnits');
 
         $this->assertStringContainsString('filterRemoveRoomsWithActiveOnWallUnits', $controller);
         $this->assertStringContainsString('No active Unit On Wall with serial number found for remove Job Advice', $controller);
-        $this->assertStringContainsString('whereNotNull(\'serial_number_id\')', $controller);
+        $this->assertStringContainsString('whereNotNull(\'serial_number_id\')', $filterMethod);
+        $this->assertStringNotContainsString('orWhereNotNull(\'serial_number\')', $filterMethod);
         $this->assertStringContainsString("return 'room_' . \$roomId;", $controller);
+    }
+
+    private function extractMethodSource(string $source, string $methodName): string
+    {
+        $start = strpos($source, 'private function ' . $methodName);
+        $this->assertNotFalse($start, "Method {$methodName} not found in controller source.");
+
+        $braceStart = strpos($source, '{', $start);
+        $this->assertNotFalse($braceStart, "Method {$methodName} body not found in controller source.");
+
+        $depth = 0;
+        $length = strlen($source);
+
+        for ($index = $braceStart; $index < $length; $index++) {
+            if ($source[$index] === '{') {
+                $depth++;
+            } elseif ($source[$index] === '}') {
+                $depth--;
+
+                if ($depth === 0) {
+                    return substr($source, $start, $index - $start + 1);
+                }
+            }
+        }
+
+        $this->fail("Method {$methodName} body is not balanced.");
     }
 
     private function makeRoomWithRentalType(string $rentalType): JobAdviceRoom

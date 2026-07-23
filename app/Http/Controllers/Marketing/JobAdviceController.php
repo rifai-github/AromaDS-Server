@@ -3459,10 +3459,7 @@ class JobAdviceController extends Controller
                     ->where('room_id', $roomId)
                     ->where('rental_id', $rentalId)
                     ->whereIn('status', $activeStatuses)
-                    ->where(function ($query) {
-                        $query->whereNotNull('serial_number_id')
-                            ->orWhereNotNull('serial_number');
-                    })
+                    ->whereNotNull('serial_number_id')
                     ->exists();
             })
             ->unique(function ($jaRoom) {
