@@ -868,6 +868,9 @@ class InventoryController extends Controller
             'notes' => 'nullable|string|max:1000',
             'return_reason' => 'nullable|string|max:1000',
             'return_reason_category' => 'nullable|in:slow_moving,near_expired,customer_need_changed,damaged,other',
+            'items' => 'sometimes|array|min:1',
+            'items.*.product_id' => 'required_with:items|exists:master_products,id',
+            'items.*.quantity' => 'required_with:items|integer|min:1',
         ]);
 
         try {
@@ -917,6 +920,41 @@ class InventoryController extends Controller
                     'status' => 'error',
                     'message' => 'Gunakan action Transferred/Received untuk mengubah status logistik.',
                 ], 422);
+            }
+
+            if ($request->has('items')) {
+                foreach ($request->items as $item) {
+                    $warehouseProduct = WarehouseProduct::where('warehouse_id', $request->from_warehouse_id)
+                        ->where('master_product_id', $item['product_id'])
+                        ->first();
+
+                    if (! $warehouseProduct || $warehouseProduct->quantity < $item['quantity']) {
+                        $product = MasterProduct::find($item['product_id']);
+                        DB::rollBack();
+
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Stok tidak mencukupi untuk produk '.($product->name ?? "#{$item['product_id']}").'. Stok tersedia: '.($warehouseProduct->quantity ?? 0),
+                        ], 422);
+                    }
+
+                    $product = MasterProduct::with(['productCategory', 'productType'])->find($item['product_id']);
+                    if ($product && $product->requiresSerialNumber()) {
+                        $availableSnCount = SerialNumber::where('warehouse_id', $request->from_warehouse_id)
+                            ->where('master_product_id', $item['product_id'])
+                            ->where('status', 'ready')
+                            ->count();
+
+                        if ($availableSnCount < $item['quantity']) {
+                            DB::rollBack();
+
+                            return response()->json([
+                                'status' => 'error',
+                                'message' => "Serial Number tersedia untuk produk {$product->name} tidak mencukupi. Tersedia: {$availableSnCount}, dibutuhkan: {$item['quantity']}.",
+                            ], 422);
+                        }
+                    }
+                }
             }
 
             $deliveryOrderFile = $transfer->delivery_order_file;
@@ -1028,6 +1066,20 @@ class InventoryController extends Controller
                 'return_reason_category' => $request->return_reason_category,
                 'updated_by' => Auth::id(),
             ]);
+
+            if ($request->has('items')) {
+                $transfer->transferItems()->delete();
+                foreach ($request->items as $item) {
+                    InventoryTransferItem::create([
+                        'inventory_transfer_id' => $transfer->id,
+                        'master_product_id' => $item['product_id'],
+                        'quantity' => $item['quantity'],
+                        'notes' => $item['notes'] ?? null,
+                        'created_by' => Auth::id(),
+                        'updated_by' => Auth::id(),
+                    ]);
+                }
+            }
 
             $this->applyStockForTransferStatusChange(
                 $transfer->load(['transferItems', 'fromWarehouse', 'toWarehouse']),

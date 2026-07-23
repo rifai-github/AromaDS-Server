@@ -222,6 +222,55 @@ class InventoryTransferDocumentUploadTest extends TestCase
         $this->assertSame(1, $transfer->delivery_note_uploaded_by);
     }
 
+    public function test_update_transfer_replaces_items_for_editable_draft_transfer(): void
+    {
+        $branch = Warehouse::create(['name' => 'Gudang Cabang', 'is_center' => false]);
+        $center = Warehouse::create(['name' => 'Gudang Pusat', 'is_center' => true]);
+        DB::table('master_products')->insert([
+            ['id' => 1, 'name' => 'Diffuser Lama', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 2, 'name' => 'Diffuser Baru', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('warehouse_products')->insert([
+            ['warehouse_id' => $branch->id, 'master_product_id' => 1, 'quantity' => 5, 'created_at' => now(), 'updated_at' => now()],
+            ['warehouse_id' => $branch->id, 'master_product_id' => 2, 'quantity' => 8, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $transfer = InventoryTransfer::create([
+            'transfer_date' => now()->toDateString(),
+            'from_warehouse_id' => $branch->id,
+            'to_warehouse_id' => $center->id,
+            'status' => 'draft',
+            'approval_status' => 'not_required',
+        ]);
+        $transfer->transferItems()->create([
+            'master_product_id' => 1,
+            'quantity' => 2,
+            'created_by' => 1,
+            'updated_by' => 1,
+        ]);
+
+        $request = Request::create('/warehouse/inventory-transfers/api/'.$transfer->id.'/update', 'PUT', [
+            'transfer_date' => now()->toDateString(),
+            'from_warehouse_id' => $branch->id,
+            'to_warehouse_id' => $center->id,
+            'status' => 'draft',
+            'items' => [
+                ['product_id' => 2, 'quantity' => 3],
+            ],
+        ]);
+
+        $response = (new InventoryController)->updateTransfer($request, $transfer->id);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
+        $this->assertSame(
+            [[2, 3]],
+            $transfer->fresh()->transferItems()->orderBy('id')->get(['master_product_id', 'quantity'])
+                ->map(fn ($item) => [(int) $item->master_product_id, (int) $item->quantity])
+                ->all()
+        );
+    }
+
     /**
      * Standalone warehouse-to-warehouse return, no job schedule involved: a branch
      * can already create a direct Branch -> Center transfer (canTransferTo() already

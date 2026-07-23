@@ -903,12 +903,12 @@ function submitForm(event, id = null) {
             closeModal();
             location.reload();
         } else {
-            showErrorDialog('Gagal', result.message || 'Terjadi kesalahan.');
+            showErrorDialog(result.message || 'Terjadi kesalahan.', 'Gagal');
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        showErrorDialog('Gagal', 'Terjadi kesalahan.');
+        showErrorDialog('Terjadi kesalahan.', 'Gagal');
     });
 }
 
