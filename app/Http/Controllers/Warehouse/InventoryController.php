@@ -1281,7 +1281,13 @@ class InventoryController extends Controller
             'delivery_order_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120',
         ]);
 
-        if (! $request->hasAnyFile()) {
+        $hasTransferDocumentFile = collect([
+            'submission_letter_file',
+            'delivery_note_file',
+            'delivery_order_file',
+        ])->contains(fn ($field) => $request->hasFile($field));
+
+        if (! $hasTransferDocumentFile) {
             return response()->json(['status' => 'error', 'message' => 'Pilih minimal satu dokumen untuk diupload.'], 422);
         }
 

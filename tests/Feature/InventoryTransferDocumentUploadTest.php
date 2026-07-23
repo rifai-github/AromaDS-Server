@@ -222,6 +222,60 @@ class InventoryTransferDocumentUploadTest extends TestCase
         $this->assertSame(1, $transfer->delivery_note_uploaded_by);
     }
 
+    public function test_document_endpoint_uploads_delivery_note_and_delivery_order(): void
+    {
+        $branch = Warehouse::create(['name' => 'Gudang Cabang', 'is_center' => false]);
+        $center = Warehouse::create(['name' => 'Gudang Pusat', 'is_center' => true]);
+
+        $transfer = InventoryTransfer::create([
+            'transfer_date' => now()->toDateString(),
+            'from_warehouse_id' => $branch->id,
+            'to_warehouse_id' => $center->id,
+            'status' => 'draft',
+        ]);
+
+        $request = $this->requestWithFile("/warehouse/inventory-transfers/{$transfer->id}/documents", [], [
+            'delivery_note_file' => UploadedFile::fake()->create('surat-jalan.pdf', 100),
+            'delivery_order_file' => UploadedFile::fake()->create('delivery-order.pdf', 100),
+        ]);
+
+        $response = (new InventoryController)->updateTransferDocuments($request, $transfer);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
+        $this->assertSame('success', $payload['status']);
+
+        $transfer->refresh();
+        $this->assertNotNull($transfer->delivery_note_file);
+        $this->assertNotNull($transfer->delivery_order_file);
+        Storage::disk('public')->assertExists($transfer->delivery_note_file);
+        Storage::disk('public')->assertExists($transfer->delivery_order_file);
+        $this->assertSame(1, $transfer->delivery_note_uploaded_by);
+        $this->assertNotNull($transfer->delivery_note_uploaded_at);
+    }
+
+    public function test_document_endpoint_requires_at_least_one_file(): void
+    {
+        $branch = Warehouse::create(['name' => 'Gudang Cabang', 'is_center' => false]);
+        $center = Warehouse::create(['name' => 'Gudang Pusat', 'is_center' => true]);
+
+        $transfer = InventoryTransfer::create([
+            'transfer_date' => now()->toDateString(),
+            'from_warehouse_id' => $branch->id,
+            'to_warehouse_id' => $center->id,
+            'status' => 'draft',
+        ]);
+
+        $request = Request::create("/warehouse/inventory-transfers/{$transfer->id}/documents", 'POST');
+
+        $response = (new InventoryController)->updateTransferDocuments($request, $transfer);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertSame('error', $payload['status']);
+        $this->assertSame('Pilih minimal satu dokumen untuk diupload.', $payload['message']);
+    }
+
     public function test_update_transfer_replaces_items_for_editable_draft_transfer(): void
     {
         $branch = Warehouse::create(['name' => 'Gudang Cabang', 'is_center' => false]);
