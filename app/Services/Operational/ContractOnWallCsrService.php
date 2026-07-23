@@ -193,9 +193,16 @@ class ContractOnWallCsrService
 
     private function hasCompletedInstallSourceForContract(Contract $contract, $contractRoom, UnitOnWall $unitOnWall): bool
     {
-        $quotationNumber = $contract->quotation?->quotation_number;
+        $sourceContracts = $this->unitOnWallInstallSourceContracts($contract);
+        $sourceContractIds = $sourceContracts->pluck('id')->filter()->unique()->values();
+        $sourceQuotationIds = $sourceContracts->pluck('quotation_id')->filter()->unique()->values();
+        $sourceQuotationNumbers = $sourceContracts
+            ->map(fn (Contract $sourceContract) => $sourceContract->quotation?->quotation_number)
+            ->filter()
+            ->unique()
+            ->values();
 
-        if (! $contract->quotation_id && ! $quotationNumber) {
+        if ($sourceContractIds->isEmpty() && $sourceQuotationIds->isEmpty() && $sourceQuotationNumbers->isEmpty()) {
             return false;
         }
 
@@ -207,20 +214,20 @@ class ContractOnWallCsrService
         return JobSchedule::query()
             ->whereIn(DB::raw("LOWER(REPLACE(COALESCE(type, ''), ' ', '_'))"), ['install', 'install_free', 'if'])
             ->whereIn('status', ['completed', 'done_job', 'selesai'])
-            ->where(function ($sourceQuery) use ($contract, $quotationNumber) {
-                if ($quotationNumber) {
-                    $sourceQuery->where('quotation_number', $quotationNumber);
+            ->where(function ($sourceQuery) use ($sourceContractIds, $sourceQuotationIds, $sourceQuotationNumbers) {
+                if ($sourceQuotationNumbers->isNotEmpty()) {
+                    $sourceQuery->whereIn('quotation_number', $sourceQuotationNumbers->all());
                 }
 
-                if ($contract->quotation_id) {
-                    $sourceQuery->orWhereHas('jobAdvice', function ($jobAdviceQuery) use ($contract) {
-                        $jobAdviceQuery->where('quotation_id', $contract->quotation_id);
+                if ($sourceQuotationIds->isNotEmpty()) {
+                    $sourceQuery->orWhereHas('jobAdvice', function ($jobAdviceQuery) use ($sourceQuotationIds) {
+                        $jobAdviceQuery->whereIn('quotation_id', $sourceQuotationIds->all());
                     });
                 }
 
-                if ($contract->id) {
-                    $sourceQuery->orWhereHas('jobAdvice', function ($jobAdviceQuery) use ($contract) {
-                        $jobAdviceQuery->where('contract_id', $contract->id);
+                if ($sourceContractIds->isNotEmpty()) {
+                    $sourceQuery->orWhereHas('jobAdvice', function ($jobAdviceQuery) use ($sourceContractIds) {
+                        $jobAdviceQuery->whereIn('contract_id', $sourceContractIds->all());
                     });
                 }
             })
@@ -241,6 +248,26 @@ class ContractOnWallCsrService
                 }
             })
             ->exists();
+    }
+
+    private function unitOnWallInstallSourceContracts(Contract $contract): Collection
+    {
+        $sources = collect([$contract]);
+        $quotation = $contract->quotation;
+
+        if ($quotation?->quotation_type === 'renewal' && $quotation->existing_contract_id) {
+            $oldContract = Contract::findRenewalSource($quotation->existing_contract_id);
+            if ($oldContract) {
+                $oldContract->loadMissing('quotation');
+                $sources->push($oldContract);
+            }
+        }
+
+        return $sources
+            ->filter()
+            ->each->loadMissing('quotation')
+            ->unique('id')
+            ->values();
     }
 
     private function activeServiceScheduleExists(Contract $contract, $contractRoom): bool

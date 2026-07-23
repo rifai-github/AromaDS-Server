@@ -2132,10 +2132,17 @@ class ContractController extends Controller
             "Contract di-renewal ke {$contract->contract_number}"
         );
 
+        if ($oldContract->contract_status !== 'completed') {
+            $oldContract->update([
+                'contract_status' => 'completed',
+                'updated_by' => Auth::id(),
+            ]);
+        }
+
         Log::info('Renewal source contract linked to successor', [
             'old_contract_id' => $oldContract->id,
             'old_contract_number' => $oldContract->contract_number,
-            'old_contract_status' => $oldContract->contract_status,
+            'old_contract_status' => $oldContract->fresh()->contract_status,
             'new_contract_id' => $contract->id,
             'new_contract_number' => $contract->contract_number,
             'cancelled_job_schedules' => $cancelledJobs,

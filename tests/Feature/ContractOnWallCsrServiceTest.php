@@ -177,6 +177,66 @@ class ContractOnWallCsrServiceTest extends TestCase
         ]);
     }
 
+    public function test_it_creates_first_csr_for_renewal_contract_from_old_contract_unit_on_wall(): void
+    {
+        $this->seedContractWithOnWallRoom();
+
+        DB::table('quotations')->insert([
+            'id' => 2,
+            'quotation_number' => 'JKT-SQ/26-05/0002',
+            'quotation_type' => 'renewal',
+            'existing_contract_id' => 1,
+            'survey_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contracts')->insert([
+            'id' => 2,
+            'contract_number' => 'JKT-CA/26-05/0002',
+            'customer_id' => 1,
+            'quotation_id' => 2,
+            'contract_status' => 'active',
+            'first_service_date' => '2026-05-15',
+            'start_date' => '2026-05-15',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contract_rooms')->insert([
+            'id' => 2,
+            'contract_id' => 2,
+            'room_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contract_rentals')->insert([
+            'id' => 3,
+            'contract_id' => 2,
+            'master_rental_id' => 1,
+            'room_id' => 1,
+            'rental_alias' => 'Aroma On Wall Renewal',
+            'quantity' => 1,
+            'unit_price' => 100,
+            'total_price' => 100,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $createdCount = app(ContractOnWallCsrService::class)->createForContract(Contract::findOrFail(2), 7, 'approved');
+
+        $this->assertSame(1, $createdCount);
+        $this->assertDatabaseHas('job_advices', [
+            'contract_id' => 2,
+            'quotation_id' => 2,
+            'type' => 'service',
+        ]);
+        $this->assertDatabaseHas('job_schedules', [
+            'contract_number' => 'JKT-CA/26-05/0002',
+            'quotation_number' => 'JKT-SQ/26-05/0002',
+            'type' => 'service_first',
+            'room_id' => 1,
+        ]);
+    }
+
     private function createSchema(): void
     {
         Schema::create('customers', function (Blueprint $table) {
@@ -214,6 +274,8 @@ class ContractOnWallCsrServiceTest extends TestCase
         Schema::create('quotations', function (Blueprint $table) {
             $table->id();
             $table->string('quotation_number')->nullable();
+            $table->string('quotation_type')->nullable();
+            $table->foreignId('existing_contract_id')->nullable();
             $table->foreignId('survey_id')->nullable();
             $table->timestamps();
             $table->softDeletes();
