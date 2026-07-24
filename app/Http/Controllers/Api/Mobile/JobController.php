@@ -4809,8 +4809,13 @@ class JobController extends Controller
                 
                 // AUTO-REMOVE/HIDE UNIT ON WALL when remove job is completed
                 // "ketika remove job sudah selesai, unit on wall akan otomatis ter-hide/removed"
-                // Trigger only if status changed from non-completed to completed/done_job
-                if (in_array(strtolower($job->type), ['remove', 'rv', 'remove_free', 'remove free', 'rf']) && !in_array($oldStatus, ['completed', 'done_job']) && in_array($job->status, ['completed', 'done_job'])) {
+                // Deliberately NOT gated on $oldStatus (unlike the create-side block above):
+                // autoRemoveUnitOnWall() only touches UnitOnWall rows still in an active-ish
+                // status, so re-running it is a no-op once the unit is already removed. Gating
+                // on "status just changed" let a retried/replayed request that found the job
+                // already done_job silently skip this with no error — matching web's
+                // JobScheduleController::runCompletionAutomation(), which has no such gate.
+                if (in_array(strtolower($job->type), ['remove', 'rv', 'remove_free', 'remove free', 'rf']) && in_array($job->status, ['completed', 'done_job'])) {
                     try {
                         if (!isset($jobScheduleController)) {
                             $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
