@@ -33,7 +33,17 @@ class InventoryController extends Controller
         // Apply access control filter
         $user = Auth::user();
         $query = InventoryTransfer::with(['fromWarehouse', 'toWarehouse', 'creator', 'updatedBy']);
-        $query = $this->applyAccessControlFilter($query, null, 'created_by', null, 'fromWarehouse.branch_id', function ($q) use ($user) {
+        $accessibleBranchIds = $this->getInventoryTransferAccessibleBranchIds($user);
+
+        $query = $this->applyAccessControlFilter($query, null, 'created_by', null, null, function ($q) use ($user, $accessibleBranchIds) {
+            if (! empty($accessibleBranchIds)) {
+                $q->orWhereHas('fromWarehouse', function ($warehouseQuery) use ($accessibleBranchIds) {
+                    $warehouseQuery->whereIn('branch_id', $accessibleBranchIds);
+                })->orWhereHas('toWarehouse', function ($warehouseQuery) use ($accessibleBranchIds) {
+                    $warehouseQuery->whereIn('branch_id', $accessibleBranchIds);
+                });
+            }
+
             // Logic for Warehouse Manager on either from or to warehouse
             $managedWarehouseIds = \App\Models\Warehouse::where('manager', $user->id)
                 ->where('is_active', true)
@@ -67,6 +77,41 @@ class InventoryController extends Controller
         $paginatedTransfers = $query->paginateStd(25);
 
         return view('warehouse.inventory-transfers.index', compact('paginatedTransfers'));
+    }
+
+    protected function getInventoryTransferAccessibleBranchIds(User $user): array
+    {
+        $branchIds = [];
+
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('user_access_levels')) {
+                $branchAccess = $user->accessLevels()
+                    ->where('access_type', 'branch')
+                    ->where('is_active', true)
+                    ->first();
+
+                if ($branchAccess) {
+                    $config = $branchAccess->access_config ?? [];
+                    $branchIds = array_merge($branchIds, $config['allowed_branches'] ?? []);
+
+                    if (empty($branchIds) && $user->branch_id) {
+                        $branchIds[] = $user->branch_id;
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // Keep the list usable in focused tests or partial schemas.
+        }
+
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('branch_user')) {
+                $branchIds = array_merge($branchIds, $user->assignedBranches()->pluck('branches.id')->all());
+            }
+        } catch (\Throwable) {
+            // Ignore optional multi-branch data when the pivot is unavailable.
+        }
+
+        return array_values(array_unique(array_filter(array_map('intval', $branchIds))));
     }
 
     // Inventory Issuing
