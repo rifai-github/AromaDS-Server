@@ -62,15 +62,25 @@ class StockAdjustmentController extends Controller
 
     private function resolveWarehouseFromRequest(Request $request): Warehouse
     {
-        $branchId = $request->branch_id;
+        // The create form always submits a specific warehouse_id (it's a
+        // required <select>, populated from all active warehouses - a branch
+        // can legitimately have several, e.g. separate "barang baru / bekas /
+        // rusak / spare part / on wall" warehouses under one branch). Honor
+        // that exact pick; only fall back to "the one active warehouse for
+        // this branch" when the caller didn't name a warehouse at all -
+        // BranchWarehouseResolver assumes exactly one, which does not hold
+        // once a branch has more than one active warehouse.
+        if ($request->filled('warehouse_id')) {
+            $warehouse = Warehouse::where('id', $request->warehouse_id)
+                ->where('is_active', true)
+                ->first();
 
-        if (! $branchId && $request->warehouse_id) {
-            $branchId = Warehouse::find($request->warehouse_id)?->branch_id;
+            if ($warehouse) {
+                return $warehouse;
+            }
         }
 
-        if (! $branchId) {
-            $branchId = Auth::user()?->branch_id;
-        }
+        $branchId = $request->branch_id ?? Auth::user()?->branch_id;
 
         return app(BranchWarehouseResolver::class)->resolveActiveForBranch($branchId);
     }
