@@ -558,7 +558,11 @@ class WarehouseController extends Controller
             return [
                 'id' => $movement->id,
                 'date' => $movement->created_at,
-                'adjustment' => $movement->quantity,
+                // quantity is always stored unsigned (magnitude); movement_type
+                // carries direction. 'out' is the only decrementing type
+                // (WarehouseProduct::decrement() vs increment() elsewhere) - sign
+                // it here so the +/- shown matches what actually happened to stock.
+                'adjustment' => $movement->movement_type === 'out' ? -abs($movement->quantity) : abs($movement->quantity),
                 'description' => $description,
                 'updated_by' => $displayUserName,
                 'updated_at' => $displayUpdatedAt,
