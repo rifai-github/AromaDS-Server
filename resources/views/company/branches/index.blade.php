@@ -889,6 +889,7 @@
                         <th data-column="name">Branch Name</th>
                         <!-- Company column hidden - default to PT Pink Services Indonesia -->
                         <th data-column="address_type">Address Type</th>
+                        <th data-column="is_head_office">Head Office</th>
                         <th data-column="province__name">Province</th>
                         <th data-column="city__name">City</th>
                         <th data-column="phone_1|phone_2">Phone</th>
@@ -926,6 +927,11 @@
                             @endphp
                             <span class="px-2 py-1 text-xs rounded-full {{ $addressTypeColor }}">
                                 {{ ucfirst($branch->address_type ?? '-') }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="px-2 py-1 text-xs rounded-full {{ $branch->is_head_office ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800' }}">
+                                {{ $branch->is_head_office ? 'Pusat' : 'Cabang' }}
                             </span>
                         </td>
                         <td>{{ $branch->province->name ?? '-' }}</td>
@@ -1283,12 +1289,18 @@ function openCreateModal() {
                                 <input type="checkbox" name="is_active" value="1" checked> Is Active
                             </label>
                         </div>
+                        <div class="form-group">
+                            <label class="form-label">
+                                <input type="checkbox" name="is_head_office" value="1"> Kantor Pusat (Head Office)
+                            </label>
+                            <p class="text-xs text-gray-500 mt-1">Boleh berbagi kota dengan branch cabang biasa.</p>
+                        </div>
                     </div>
                 </div>
             </div>
         </form>
     `;
-    
+
     document.getElementById('modalFooter').innerHTML = `
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         <button type="submit" form="form" class="btn btn-primary">Create Branch</button>
@@ -1325,9 +1337,13 @@ function openViewModal(id) {
                                     <label class="form-label">Address Type</label>
                                     <div class="detail-value">${branch.address_type ? branch.address_type.charAt(0).toUpperCase() + branch.address_type.slice(1) : '-'}</div>
                                 </div>
+                                <div class="detail-item">
+                                    <label class="form-label">Head Office</label>
+                                    <div class="detail-value">${branch.is_head_office ? 'Pusat' : 'Cabang'}</div>
+                                </div>
                             </div>
                         </div>
-                        
+
                         <div class="modal-section">
                             <h3 class="modal-section-title">Address Information</h3>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1690,6 +1706,12 @@ function openEditModal(id) {
                                             <input type="checkbox" name="is_active" value="1" ${branch.is_active ? 'checked' : ''}> Is Active
                                         </label>
                                     </div>
+                                    <div class="form-group">
+                                        <label class="form-label">
+                                            <input type="checkbox" name="is_head_office" value="1" ${branch.is_head_office ? 'checked' : ''}> Kantor Pusat (Head Office)
+                                        </label>
+                                        <p class="text-xs text-gray-500 mt-1">Boleh berbagi kota dengan branch cabang biasa.</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1752,7 +1774,13 @@ function submitForm(event, id = null) {
     } else {
         data.is_active = '0';
     }
-    
+
+    if (data.is_head_office === '1' || data.is_head_office === 1 || data.is_head_office === true) {
+        data.is_head_office = '1';
+    } else {
+        data.is_head_office = '0';
+    }
+
     const url = id ? `/company/branches/${id}` : '/company/branches';
     const method = id ? 'PUT' : 'POST';
     

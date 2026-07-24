@@ -94,7 +94,16 @@ class BranchController extends Controller
         } else {
             $isActive = (int)$isActive;
         }
-        
+
+        $isHeadOffice = $request->is_head_office;
+        if (is_string($isHeadOffice)) {
+            $isHeadOffice = in_array(strtolower($isHeadOffice), ['1', 'true', 'yes', 'on']) ? 1 : 0;
+        } elseif (is_bool($isHeadOffice)) {
+            $isHeadOffice = $isHeadOffice ? 1 : 0;
+        } else {
+            $isHeadOffice = (int)$isHeadOffice;
+        }
+
         $request->validate([
             'company_id' => 'required|exists:companies,id',
             'name' => 'required|string|max:255',
@@ -113,6 +122,7 @@ class BranchController extends Controller
             'postal_code' => 'nullable|string|max:10',
             'has_warehouse' => 'nullable',
             'is_taxable' => 'nullable',
+            'is_head_office' => 'nullable',
             'invoice_authorized_by_user_id' => 'nullable|exists:users,id',
             'is_active' => 'nullable'
         ]);
@@ -121,9 +131,13 @@ class BranchController extends Controller
         // A warehouse-only branch is allowed to share a city with an office/both branch
         // (a branch and its warehouse can legitimately sit in the same city) — duplicates
         // are only blocked when both branches are non-warehouse-only (office/both).
-        if ($request->address_type !== 'warehouse') {
+        // A head office (Branch Pusat) is also exempt: it may share a city with a regular
+        // branch cabang, since a head office legitimately co-locates with a local branch.
+        // Two regular (non-head-office) branches still cannot share the same city.
+        if (! $isHeadOffice && $request->address_type !== 'warehouse') {
             $existingBranch = Branch::where('city_id', $request->city_id)
                 ->where('address_type', '!=', 'warehouse')
+                ->where('is_head_office', false)
                 ->first();
             if ($existingBranch) {
                 $cityName = \App\Models\City::find($request->city_id)->name ?? 'Unknown City';
@@ -155,6 +169,7 @@ class BranchController extends Controller
                 'postal_code' => $request->postal_code,
                 'has_warehouse' => $hasWarehouse,
                 'is_taxable' => $isTaxable,
+                'is_head_office' => $isHeadOffice,
                 'is_active' => $isActive,
                 'created_by' => Auth::id()
             ];
@@ -262,7 +277,16 @@ class BranchController extends Controller
         } else {
             $isActive = (int)$isActive;
         }
-        
+
+        $isHeadOffice = $request->is_head_office;
+        if (is_string($isHeadOffice)) {
+            $isHeadOffice = in_array(strtolower($isHeadOffice), ['1', 'true', 'yes', 'on']) ? 1 : 0;
+        } elseif (is_bool($isHeadOffice)) {
+            $isHeadOffice = $isHeadOffice ? 1 : 0;
+        } else {
+            $isHeadOffice = (int)$isHeadOffice;
+        }
+
         $request->validate([
             'company_id' => 'required|exists:companies,id',
             'name' => 'required|string|max:255',
@@ -281,17 +305,21 @@ class BranchController extends Controller
             'postal_code' => 'nullable|string|max:10',
             'has_warehouse' => 'nullable',
             'is_taxable' => 'nullable',
+            'is_head_office' => 'nullable',
             'invoice_authorized_by_user_id' => 'nullable|exists:users,id',
             'is_active' => 'nullable'
         ]);
 
         // Custom Validation: Check if city is already used by another branch (Only if city changed).
         // Same exemption as store(): warehouse-only branches may share a city with an
-        // office/both branch; duplicates are only blocked between non-warehouse-only branches.
-        if ($request->city_id != $branch->city_id && $request->address_type !== 'warehouse') {
+        // office/both branch, and a head office (Branch Pusat) may share a city with a
+        // regular branch cabang; duplicates are only blocked between two regular
+        // (non-warehouse, non-head-office) branches.
+        if ($request->city_id != $branch->city_id && ! $isHeadOffice && $request->address_type !== 'warehouse') {
             $existingBranch = Branch::where('city_id', $request->city_id)
                 ->where('id', '!=', $branch->id)
                 ->where('address_type', '!=', 'warehouse')
+                ->where('is_head_office', false)
                 ->first();
             if ($existingBranch) {
                 $cityName = \App\Models\City::find($request->city_id)->name ?? 'Unknown City';
@@ -323,6 +351,7 @@ class BranchController extends Controller
                 'postal_code' => $request->postal_code,
                 'has_warehouse' => $hasWarehouse,
                 'is_taxable' => $isTaxable,
+                'is_head_office' => $isHeadOffice,
                 'is_active' => $isActive,
                 'updated_by' => Auth::id()
             ];

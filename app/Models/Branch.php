@@ -17,6 +17,7 @@ class Branch extends Model
         'code',
         'name',
         'address_type',
+        'is_head_office',
         'address_1',
         'address_2',
         'phone_1',
@@ -39,7 +40,8 @@ class Branch extends Model
     protected $casts = [
         'has_warehouse' => 'boolean',
         'is_taxable' => 'boolean',
-        'is_active' => 'boolean'
+        'is_active' => 'boolean',
+        'is_head_office' => 'boolean'
     ];
 
     // Relationships
