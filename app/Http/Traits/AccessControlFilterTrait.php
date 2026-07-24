@@ -64,9 +64,16 @@ trait AccessControlFilterTrait
             if (empty($branchIds) && $user->branch_id) {
                 $branchIds = [$user->branch_id];
             }
-        } else {
-             // Logic baru: Jika tidak ada Access Level Branch, kita tidak otomatis set branchIds
-             // Kecuali jika nanti dibutuhkan fallback. Saat ini ikut logic existing.
+        } elseif ($user->branch_id) {
+            // No explicit branch AccessLevel row configured for this user. Fall back
+            // to their own users.branch_id so they can at least see data scoped to
+            // their own branch/warehouse - mirrors
+            // InventoryTransfer::userCanActForWarehouse(), which already treats
+            // users.branch_id as authoritative for warehouse transfer actions. Without
+            // this, a user whose only "access" is users.branch_id (e.g. a Warehouse
+            // Pusat Manager with no access_levels row) could act on records in their
+            // own branch but never see them in any list using this trait.
+            $branchIds = [$user->branch_id];
         }
         
         // Get all user IDs that this user can access (Hierarchy + Peer)
