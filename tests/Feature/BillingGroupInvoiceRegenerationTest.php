@@ -41,10 +41,57 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->text('address')->nullable();
             $table->string('email')->nullable();
             $table->boolean('tax_obligation')->default(false);
+            $table->string('ppn_code')->nullable();
+            $table->string('npwp')->nullable();
+            $table->string('npwp_address')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('updated_by')->nullable();
             $table->foreignId('update_by_1')->nullable();
             $table->timestamp('update_at_1')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        // PPN applicability is resolved from these three tables via
+        // InvoiceTaxResolver, so invoice generation needs them present.
+        Schema::create('customer_tax_settings', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('customer_id');
+            $table->string('ppn_code')->nullable();
+            $table->string('tax_number')->nullable();
+            $table->string('tax_address')->nullable();
+            $table->date('effective_date')->nullable();
+            $table->date('expiry_date')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('finance_tax_codes', function (Blueprint $table) {
+            $table->id();
+            $table->string('code');
+            $table->string('description')->nullable();
+            $table->text('ppn_status')->nullable();
+            $table->string('invoice_status')->nullable();
+            $table->string('faktur_pajak_status')->nullable();
+            $table->string('customer_status')->nullable();
+            $table->integer('sort_order')->default(0);
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
+
+        Schema::create('tax_settings', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->string('tax_code')->nullable();
+            $table->string('tax_type')->nullable();
+            $table->decimal('tax_rate', 8, 2)->default(0);
+            $table->boolean('is_default')->default(false);
+            $table->date('effective_date')->nullable();
+            $table->date('end_date')->nullable();
+            $table->string('status')->default('active');
             $table->timestamps();
             $table->softDeletes();
         });
@@ -232,9 +279,12 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->decimal('grand_total', 12, 2)->default(0);
             $table->decimal('total_paid', 12, 2)->default(0);
             $table->decimal('outstanding', 12, 2)->default(0);
+            $table->unsignedBigInteger('tax_setting_id')->nullable();
             $table->string('tax_code')->nullable();
+            $table->string('tax_number')->nullable();
             $table->string('npwp_number')->nullable();
             $table->string('tax_address')->nullable();
+            $table->decimal('subtotal_after_discount', 12, 2)->default(0);
             $table->boolean('tax_obligation')->default(false);
             $table->string('invoice_status')->nullable();
             $table->string('status')->nullable();
@@ -299,6 +349,9 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'billing_groups',
             'contracts',
             'quotations',
+            'tax_settings',
+            'finance_tax_codes',
+            'customer_tax_settings',
             'customers',
             'users',
         ] as $table) {

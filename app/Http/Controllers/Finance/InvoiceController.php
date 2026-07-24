@@ -7,7 +7,6 @@ use App\Http\Traits\AccessControlFilterTrait;
 use App\Http\Traits\ColumnFilterTrait;
 use App\Models\Contract;
 use App\Models\Customer;
-use App\Models\CustomerTax;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceActivity;
 use App\Models\Finance\InvoiceFile;
@@ -16,6 +15,7 @@ use App\Models\TaxSetting;
 use App\Models\User;
 use App\Services\DocumentNumberService;
 use App\Services\Finance\InvoiceGenerationService;
+use App\Services\Finance\InvoiceTaxResolver;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Http\Request;
@@ -538,7 +538,7 @@ class InvoiceController extends Controller
                 'invoice_status' => $request->invoice_status,
                 'invoice_date' => $request->invoice_date,
                 'due_date' => $request->due_date,
-                'tax_obligation' => $request->tax_obligation ?? false,
+                'tax_obligation' => $taxPayload['applies_ppn'],
                 'tax_setting_id' => $taxPayload['tax_setting_id'],
                 'tax_code' => $taxPayload['tax_code'],
                 'tax_number' => $taxPayload['tax_number'],
@@ -598,7 +598,6 @@ class InvoiceController extends Controller
 
     public function show(Invoice $invoice)
     {
-        $this->syncDraftInvoiceFinancialSnapshot($invoice);
         $regenerationContext = $this->resolveInvoiceRegenerationContext($invoice);
 
         $invoice->load([
@@ -967,8 +966,6 @@ class InvoiceController extends Controller
 
     public function edit(Invoice $invoice)
     {
-        $this->syncDraftInvoiceFinancialSnapshot($invoice);
-
         $contracts = Contract::select('contract_number', 'customer_id')->with('customer:id,name')->get();
         $customers = Customer::select('id', 'name')->where('is_active', true)->get();
         $taxSettings = TaxSetting::active()->get();
@@ -1065,7 +1062,7 @@ class InvoiceController extends Controller
                 'invoice_status' => $request->invoice_status,
                 'invoice_date' => $request->invoice_date,
                 'due_date' => $request->due_date,
-                'tax_obligation' => $request->tax_obligation ?? false,
+                'tax_obligation' => $taxPayload['applies_ppn'],
                 'tax_setting_id' => $taxPayload['tax_setting_id'],
                 'tax_code' => $taxPayload['tax_code'],
                 'tax_number' => $taxPayload['tax_number'],
@@ -1125,54 +1122,28 @@ class InvoiceController extends Controller
 
     private function buildInvoiceTaxPayload(Customer $customer, float $subtotal, float $discountAmount = 0, ?string $requestedTaxCode = null, $invoiceDate = null): array
     {
-        $taxDate = $invoiceDate ? Carbon::parse($invoiceDate) : now();
+        $resolver = app(InvoiceTaxResolver::class);
+        $context = $resolver->resolve($customer, $requestedTaxCode, $invoiceDate);
 
-        $customerTax = CustomerTax::query()
-            ->where('customer_id', $customer->id)
-            ->where('is_active', true)
-            ->where('effective_date', '<=', $taxDate)
-            ->where(function ($query) use ($taxDate) {
-                $query->whereNull('expiry_date')
-                    ->orWhere('expiry_date', '>=', $taxDate);
-            })
-            ->orderByDesc('effective_date')
-            ->orderByDesc('id')
-            ->first();
+        $customerTax = $context['customer_tax'];
+        $financeTaxCode = $context['finance_tax_code'];
+        $defaultVatSetting = $context['default_vat_setting'];
 
-        $resolvedTaxCode = $requestedTaxCode
-            ?: $customerTax?->ppn_code
-            ?: $customer->ppn_code
-            ?: '01';
-
-        $financeTaxCode = FinanceTaxCode::query()
-            ->where('code', $resolvedTaxCode)
-            ->where('is_active', true)
-            ->first();
-
-        if (! $financeTaxCode) {
-            $financeTaxCode = FinanceTaxCode::query()
-                ->where('code', '01')
-                ->where('is_active', true)
-                ->first();
-        }
-
-        $defaultVatSetting = TaxSetting::getDefaultPpnSetting($taxDate);
         $subtotalAfterDiscount = max(round($subtotal - $discountAmount, 2), 0);
-        $shouldApplyPpn = (bool) $financeTaxCode?->appliesPpnToInvoice();
-        $taxRate = $shouldApplyPpn ? TaxSetting::getEffectivePpnRate($taxDate) * 100 : 0;
-        $taxAmount = round($subtotalAfterDiscount * ($taxRate / 100), 2);
+        $taxAmount = $resolver->taxAmount($subtotalAfterDiscount, $context);
         $grandTotal = round($subtotalAfterDiscount + $taxAmount, 2);
 
         return [
             'tax_setting_id' => $defaultVatSetting?->id,
-            'tax_code' => $financeTaxCode?->code ?: $resolvedTaxCode,
+            'tax_code' => $context['tax_code'],
             'tax_number' => $customerTax?->tax_number ?: $customer->npwp,
             'npwp_number' => $customerTax?->tax_number ?: $customer->npwp,
             'tax_address' => $customerTax?->tax_address ?: ($customer->npwp_address ?: $customer->address),
             'subtotal_after_discount' => $subtotalAfterDiscount,
-            'tax_rate' => $taxRate,
+            'tax_rate' => $context['rate'] * 100,
             'tax_amount' => $taxAmount,
             'grand_total' => $grandTotal,
+            'applies_ppn' => $context['applies_ppn'],
             'finance_tax_code' => $financeTaxCode,
             'default_vat_setting' => $defaultVatSetting,
         ];
@@ -1184,6 +1155,42 @@ class InvoiceController extends Controller
         $detailSubtotal = (float) $invoice->invoiceDetails()->sum('total_price');
 
         return round($rentalSubtotal + $detailSubtotal, 2);
+    }
+
+    /**
+     * Explicitly recalculate a draft invoice's financial snapshot.
+     *
+     * This used to run from show()/edit(), which meant merely opening an
+     * invoice rewrote its tax_amount, grand_total and outstanding. It is now
+     * an explicit, permission-gated action.
+     */
+    public function recalculate(Invoice $invoice)
+    {
+        if ($invoice->invoice_status !== 'draft') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Hanya invoice dengan status Draft yang dapat dihitung ulang.',
+            ], 403);
+        }
+
+        $this->syncDraftInvoiceFinancialSnapshot($invoice);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Nilai invoice berhasil dihitung ulang.',
+            'data' => [
+                'subtotal' => $invoice->subtotal,
+                'discount_amount' => $invoice->discount_amount,
+                'subtotal_after_discount' => $invoice->subtotal_after_discount,
+                'tax_amount' => $invoice->tax_amount,
+                'grand_total' => $invoice->grand_total,
+                'outstanding' => $invoice->outstanding,
+                'formatted_subtotal' => number_format((float) $invoice->subtotal, 0, ',', '.'),
+                'formatted_tax' => number_format((float) $invoice->tax_amount, 0, ',', '.'),
+                'formatted_grand_total' => number_format((float) $invoice->grand_total, 0, ',', '.'),
+                'formatted_outstanding' => number_format((float) $invoice->outstanding, 0, ',', '.'),
+            ],
+        ]);
     }
 
     private function syncDraftInvoiceFinancialSnapshot(Invoice $invoice): void

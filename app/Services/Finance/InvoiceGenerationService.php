@@ -10,7 +10,6 @@ use App\Models\InvoiceFile;
 use App\Models\JobSchedule;
 use App\Models\JobScheduleBaFile;
 use App\Models\JobScheduleRoom;
-use App\Models\TaxSetting;
 use App\Services\DocumentNumberService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -542,7 +541,9 @@ class InvoiceGenerationService
             'invoice_date' => $invoiceDate->toDateString(),
             'due_date' => $dueDate->toDateString(),
             'ba_date' => $firstJob ? $firstJob->ba_date : null,
-            'tax_obligation' => $contract->customer->tax_obligation ?? false,
+            // Seed only — updateInvoiceTotals() resolves the authoritative value
+            // from the customer's tax code via InvoiceTaxResolver.
+            'tax_obligation' => false,
             'tax_code' => $contract->ppn_code,
             'npwp_number' => $billingGroup->npwp_number ?? null,
             'tax_number' => $billingGroup->tax_number ?? null,
@@ -1194,12 +1195,18 @@ class InvoiceGenerationService
     private function updateInvoiceTotals(Invoice $invoice): void
     {
         $subtotal = $invoice->invoiceDetails()->sum('total_price') + $invoice->invoiceRentalDetails()->sum('total_price');
-        $taxRate = $invoice->tax_obligation ? TaxSetting::getEffectivePpnRate($invoice->invoice_date) : 0;
-        $taxAmount = $subtotal * $taxRate;
-        $totalAmount = $subtotal + $taxAmount;
+
+        $resolver = app(InvoiceTaxResolver::class);
+        $invoice->loadMissing('customer');
+        $context = $resolver->resolve($invoice->customer, $invoice->tax_code, $invoice->invoice_date);
+        $taxAmount = $resolver->taxAmount((float) $subtotal, $context);
+        $totalAmount = round($subtotal + $taxAmount, 2);
 
         $invoice->forceFill([
             'subtotal' => $subtotal,
+            'tax_setting_id' => $context['default_vat_setting']?->id,
+            'tax_code' => $context['tax_code'],
+            'tax_obligation' => $context['applies_ppn'],
             'tax_amount' => $taxAmount,
             'total_amount' => $totalAmount,
             'grand_total' => $totalAmount,

@@ -54,6 +54,7 @@ class Invoice extends Model
         'created_by',
         'updated_by',
         'faktur_pajak',
+        'tax_setting_id',
         'tax_code',
         'npwp_number',
         'tax_address',

@@ -1169,12 +1169,13 @@ class LostUnitReportController extends Controller
                 $contract->id
             );
             
-            // Calculate Tax based on Customer Tax Obligation
-            $taxObligation = $contract->customer->tax_obligation ?? false;
-            $taxAmount = $taxObligation
-                ? ($unitPrice * \App\Models\TaxSetting::getEffectivePpnRate())
-                : 0;
-            $grandTotal = $unitPrice + $taxAmount;
+            // PPN applicability comes from the customer's tax code, not a boolean flag.
+            $invoiceDate = now();
+            $taxResolver = app(\App\Services\Finance\InvoiceTaxResolver::class);
+            $taxContext = $taxResolver->resolve($contract->customer, $contract->ppn_code, $invoiceDate);
+            $taxObligation = $taxContext['applies_ppn'];
+            $taxAmount = $taxResolver->taxAmount((float) $unitPrice, $taxContext);
+            $grandTotal = round($unitPrice + $taxAmount, 2);
 
             // Helper to get Billing Group
             $billingGroup = $contract->billingGroup;
@@ -1189,13 +1190,14 @@ class LostUnitReportController extends Controller
                 'billing_address' => $billingGroup->pic_address ?? $contract->customer->address ?? '',
                 'pic_finance' => $billingGroup->pic_name ?? '',
                 'email' => $billingGroup->pic_email ?? $contract->customer->email ?? '',
-                'invoice_date' => now(),
-                'due_date' => now()->addDays(30),
+                'invoice_date' => $invoiceDate,
+                'due_date' => $invoiceDate->copy()->addDays(30),
                 'subtotal' => $unitPrice,
                 'tax_amount' => $taxAmount,
                 'grand_total' => $grandTotal,
                 'total_amount' => $grandTotal,
-                'tax_code' => $contract->ppn_code,
+                'tax_setting_id' => $taxContext['default_vat_setting']?->id,
+                'tax_code' => $taxContext['tax_code'],
                 'kirim' => $billingGroup->invoice_type ?? 'manual',
                 'invoice_status' => \App\Models\Finance\Invoice::STATUS_DRAFT,
                 'status' => \App\Models\Finance\Invoice::STATUS_DRAFT,

@@ -326,7 +326,6 @@
         $taxCodeRule = $invoice->tax_code
             ? \App\Models\FinanceTaxCode::where('code', $invoice->tax_code)->first()
             : null;
-        $taxRate = (float) ($invoice->taxSetting->tax_rate ?? 0);
         $showTaxRow = $invoice->tax_amount > 0 || ($taxCodeRule && $taxCodeRule->hasZeroTaxPrint());
 
         $invoiceBranch = $invoice->resolvedInvoiceBranch();

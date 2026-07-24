@@ -32,6 +32,7 @@ class Invoice extends Model
         'invoice_date',
         'due_date',
         'tax_obligation',
+        'tax_setting_id',
         'tax_code',
         'tax_number',
         'npwp_number',

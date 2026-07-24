@@ -7,7 +7,6 @@ use App\Models\Contract;
 use App\Models\Finance\Invoice;
 use App\Models\JobSchedule;
 use App\Models\JobScheduleRoom;
-use App\Models\TaxSetting;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -128,12 +127,12 @@ class BillingGroupService
         $paymentTerms = is_numeric($contract->payment_terms) ? (int)$contract->payment_terms : 30;
         $dueDate = $this->calculateDueDate($billingDate, $paymentTerms);
 
-        // Calculate Tax based on Customer Tax Obligation
-        $taxObligation = $contract->customer->tax_obligation ?? false;
-        $taxAmount = $taxObligation
-            ? ($billingGroup->billing_amount * TaxSetting::getEffectivePpnRate($billingDate))
-            : 0;
-        $totalAmount = $billingGroup->billing_amount + $taxAmount;
+        // PPN applicability comes from the customer's tax code, not a boolean flag.
+        $resolver = app(InvoiceTaxResolver::class);
+        $taxContext = $resolver->resolve($contract->customer, $contract->ppn_code, $billingDate);
+        $taxObligation = $taxContext['applies_ppn'];
+        $taxAmount = $resolver->taxAmount((float) $billingGroup->billing_amount, $taxContext);
+        $totalAmount = round($billingGroup->billing_amount + $taxAmount, 2);
 
         $invoice = Invoice::create([
             'invoice_number' => $this->documentNumberService->generate(
@@ -155,7 +154,8 @@ class BillingGroupService
             'tax_amount' => $taxAmount,
             'total_amount' => $totalAmount,
             'grand_total' => $totalAmount,
-            'tax_code' => $contract->ppn_code,
+            'tax_setting_id' => $taxContext['default_vat_setting']?->id,
+            'tax_code' => $taxContext['tax_code'],
             'kirim' => $billingGroup->invoice_type ?? 'manual',
             'tax_obligation' => $taxObligation,
             'invoice_status' => Invoice::STATUS_DRAFT,
@@ -747,14 +747,19 @@ class BillingGroupService
     private function syncInvoiceTotalsFromDetails(Invoice $invoice): void
     {
         $subtotal = (float) $invoice->invoiceDetails()->sum('total_price') + (float) $invoice->invoiceRentalDetails()->sum('total_price');
-        $taxAmount = $invoice->tax_obligation
-            ? round($subtotal * TaxSetting::getEffectivePpnRate($invoice->invoice_date), 2)
-            : 0;
-        $grandTotal = $subtotal + $taxAmount;
+
+        $resolver = app(InvoiceTaxResolver::class);
+        $invoice->loadMissing('customer');
+        $context = $resolver->resolve($invoice->customer, $invoice->tax_code, $invoice->invoice_date);
+        $taxAmount = $resolver->taxAmount($subtotal, $context);
+        $grandTotal = round($subtotal + $taxAmount, 2);
         $totalPaid = (float) ($invoice->total_paid ?? 0);
 
         $invoice->update([
             'subtotal' => $subtotal,
+            'tax_setting_id' => $context['default_vat_setting']?->id,
+            'tax_code' => $context['tax_code'],
+            'tax_obligation' => $context['applies_ppn'],
             'tax_amount' => $taxAmount,
             'total_amount' => $grandTotal,
             'grand_total' => $grandTotal,
