@@ -227,7 +227,29 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
             $table->softDeletes();
         });
 
+        // Only needed by InventoryReceivingController::finalize()'s
+        // releaseReceivedSerialNumbersToWarehouse(), which unconditionally builds
+        // a whereDoesntHave('unitOnWalls', ...) subquery.
+        Schema::create('unit_on_walls', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('serial_number_id')->nullable();
+            $table->string('status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        // finalize() unconditionally looks up InventoryRequest by reference_no.
+        Schema::create('inventory_requests', function (Blueprint $table) {
+            $table->id();
+            $table->string('request_number')->nullable();
+            $table->string('status')->nullable();
+            $table->timestamp('completed_at')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         DB::table('users')->insert(['id' => 1, 'name' => 'Admin', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('users')->insert(['id' => 2, 'name' => 'Receiver', 'created_at' => now(), 'updated_at' => now()]);
         Auth::login(User::findOrFail(1));
     }
 
@@ -366,5 +388,44 @@ class InventoryTransferSerialNumberGuardTest extends TestCase
         $transfer->refresh();
         $this->assertSame('draft', $transfer->status);
         $this->assertSame(2.0, (float) DB::table('warehouse_products')->where('warehouse_id', $branch->id)->where('master_product_id', $productId)->value('quantity'), 'Source stock must not move when the transition is rejected.');
+    }
+
+    /**
+     * Bug: the auto-queued Receiving used to stamp received_from/received_by_old
+     * with Auth::id() at the point markTransferAsTransferred() runs - that's the
+     * SENDER (whoever marks the transfer as sent), not whoever actually receives
+     * it. The "Diterima Oleh" (Received By) column showed the sender's name on a
+     * record nobody had received yet. Fixed by leaving both null until finalize(),
+     * which now stamps whoever actually finalizes it.
+     */
+    public function test_finalize_stamps_the_finalizing_user_not_the_original_transfer_sender(): void
+    {
+        [$branch, $center] = $this->makeWarehouses();
+        $productId = $this->makeSerialNumberProduct($branch->id, 2);
+
+        (new InventoryController)->storeTransfer(Request::create('/warehouse/inventory-transfers/api/store', 'POST', [
+            'transfer_date' => now()->toDateString(),
+            'from_warehouse_id' => $branch->id,
+            'to_warehouse_id' => $center->id,
+            'status' => 'draft',
+            'items' => [['product_id' => $productId, 'quantity' => 2]],
+        ]));
+        $transfer = InventoryTransfer::first();
+
+        // User 1 (the sender) marks it Transferred.
+        (new InventoryController)->markTransferAsTransferred($transfer);
+
+        $receiving = InventoryReceiving::where('reference_no', $transfer->transfer_number)->first();
+        $this->assertNull($receiving->received_from, 'Auto-queued receiving must not default "received by" to the sender.');
+        $this->assertNull($receiving->received_by_old);
+
+        // A different user (the actual receiver at the destination) finalizes it.
+        Auth::login(User::findOrFail(2));
+        app(\App\Http\Controllers\Warehouse\InventoryReceivingController::class)->finalize($receiving->fresh());
+
+        $receiving->refresh();
+        $this->assertSame('received', $receiving->status);
+        $this->assertSame(2, $receiving->received_from);
+        $this->assertSame(2, $receiving->received_by_old);
     }
 }

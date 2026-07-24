@@ -1055,10 +1055,15 @@ class InventoryReceivingController extends Controller
                 \Log::info("Updated {$updatedSNCount} Serial Numbers to 'ready' status for Receiving {$inventoryReceiving->receiving_number}");
             }
 
-            // Update receiving status
+            // Update receiving status. received_from/received_by_old default to
+            // whoever finalizes, unless someone already picked a specific receiver
+            // via the "pending" edit modal (e.g. auto-queued transfer receivings are
+            // created with these unset — see InventoryController::queueSerialNumberItemsForTransfer()).
             $inventoryReceiving->update([
                 'status' => 'received',
                 'receive_date' => now(),
+                'received_from' => $inventoryReceiving->received_from ?? Auth::id(),
+                'received_by_old' => $inventoryReceiving->received_by_old ?? Auth::id(),
                 'updated_by' => Auth::id(),
             ]);
 

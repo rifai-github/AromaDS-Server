@@ -1545,8 +1545,11 @@ class InventoryController extends Controller
             ),
             'reference_no' => $transfer->transfer_number,
             'branch_id' => $toWarehouse->branch_id,
-            'received_from' => Auth::id(),
-            'received_by_old' => Auth::id(),
+            // NOT received_from/received_by_old here: this record is auto-created when
+            // the SENDER marks the transfer Transferred, so Auth::id() at this point is
+            // the sender, not whoever will actually receive it at the destination. Leave
+            // both null; finalize() below stamps them with whoever finalizes, and the
+            // "pending" edit modal lets someone pick a different receiver before that.
             'schedule_date' => now()->toDateString(),
             'status' => 'pending',
             'notes' => "Auto dari Inventory Transfer {$transfer->transfer_number} (item ber-Serial Number, menunggu verifikasi & finalize gudang tujuan).",
