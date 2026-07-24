@@ -323,15 +323,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('master-rentals/by-category', [MasterRentalController::class, 'getRentalsByCategory'])->name('master-rentals.by-category')->middleware('permission:master-rentals.view');
         Route::get('master-rentals/search', [MasterRentalController::class, 'searchRentals'])->name('master-rentals.search')->middleware('permission:master-rentals.view');
         Route::apiResource('stock-opnames', StockOpnameController::class)
-            ->middleware('permission:stock-opnames.view')
-            ->middlewareFor('store', 'permission:stock-opnames.create')
-            ->middlewareFor('update', 'permission:stock-opnames.edit')
-            ->middlewareFor('destroy', 'permission:stock-opnames.delete');
-        Route::post('stock-opnames/bulk-delete', [StockOpnameController::class, 'bulkDelete'])->name('stock-opnames.bulk-delete')->middleware('permission:stock-opnames.delete');
-        Route::post('stock-opnames/{stockOpname}/start', [StockOpnameController::class, 'start'])->name('stock-opnames.start')->middleware('permission:stock-opnames.edit');
-        Route::post('stock-opnames/{stockOpname}/complete', [StockOpnameController::class, 'complete'])->name('stock-opnames.complete')->middleware('permission:stock-opnames.edit');
-        Route::post('stock-opnames/{stockOpname}/approve', [StockOpnameController::class, 'approve'])->name('stock-opnames.approve')->middleware('permission:stock-opnames.edit');
-        Route::get('stock-opnames/dashboard', [StockOpnameController::class, 'dashboard'])->name('stock-opnames.dashboard')->middleware('permission:stock-opnames.view');
+            ->middleware('permission:warehouse.stock-opnames.view')
+            ->middlewareFor('store', 'permission:warehouse.stock-opnames.create')
+            ->middlewareFor('update', 'permission:warehouse.stock-opnames.update')
+            ->middlewareFor('destroy', 'permission:warehouse.stock-opnames.delete');
+        Route::post('stock-opnames/bulk-delete', [StockOpnameController::class, 'bulkDelete'])->name('stock-opnames.bulk-delete')->middleware('permission:warehouse.stock-opnames.delete');
+        Route::post('stock-opnames/{stockOpname}/start', [StockOpnameController::class, 'start'])->name('stock-opnames.start')->middleware('permission:warehouse.stock-opnames.update');
+        Route::post('stock-opnames/{stockOpname}/complete', [StockOpnameController::class, 'complete'])->name('stock-opnames.complete')->middleware('permission:warehouse.stock-opnames.update');
+        Route::post('stock-opnames/{stockOpname}/approve', [StockOpnameController::class, 'approve'])->name('stock-opnames.approve')->middleware('permission:warehouse.stock-opnames.approve');
+        Route::get('stock-opnames/dashboard', [StockOpnameController::class, 'dashboard'])->name('stock-opnames.dashboard')->middleware('permission:warehouse.stock-opnames.view');
         Route::apiResource('stock-adjustments', StockAdjustmentController::class)->middleware('permission:stock-adjustments.view');
         Route::post('stock-adjustments/bulk-delete', [StockAdjustmentController::class, 'bulkDelete'])->name('stock-adjustments.bulk-delete')->middleware('permission:stock-adjustments.delete');
         Route::post('stock-adjustments/{stock_adjustment}/approve', [StockAdjustmentController::class, 'approve'])->name('stock-adjustments.approve')->middleware('permission:stock-adjustments.edit');

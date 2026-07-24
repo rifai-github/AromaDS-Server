@@ -185,6 +185,13 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
+            [
+                'id' => 10,
+                'name' => 'warehouse.stock-opnames.update',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
         DB::table('user_roles')->insert([
@@ -359,6 +366,48 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
 
         $this->assertStringContainsString('Add New Opname', $html);
         $this->assertStringContainsString('onclick="openCreateModal()"', $html);
+    }
+
+    public function test_stock_opname_detail_hides_update_actions_without_update_permission(): void
+    {
+        Auth::login(User::findOrFail(10));
+
+        $draftHtml = $this->renderStockOpname('draft');
+        $this->assertStringNotContainsString('Start Opname', $draftHtml);
+
+        $inProgressHtml = $this->renderStockOpname('in-progress');
+        $this->assertStringContainsString('Export Stock', $inProgressHtml);
+        $this->assertStringNotContainsString('Import Stock', $inProgressHtml);
+        $this->assertStringNotContainsString('Complete Opname', $inProgressHtml);
+        $this->assertStringNotContainsString('class="form-control text-center physical-input font-weight-bold"', $inProgressHtml);
+        $this->assertStringNotContainsString('onclick="openQRModal(', $inProgressHtml);
+
+        $approvedHtml = $this->renderStockOpname('approved');
+        $this->assertStringNotContainsString('Create Stock Adjustment', $approvedHtml);
+    }
+
+    public function test_stock_opname_detail_shows_update_actions_with_update_permission(): void
+    {
+        DB::table('role_permissions')->insert([
+            'role_id' => 5,
+            'permission_id' => 10,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Auth::login(User::findOrFail(10));
+
+        $draftHtml = $this->renderStockOpname('draft');
+        $this->assertStringContainsString('Start Opname', $draftHtml);
+
+        $inProgressHtml = $this->renderStockOpname('in-progress');
+        $this->assertStringContainsString('Import Stock', $inProgressHtml);
+        $this->assertStringContainsString('Complete Opname', $inProgressHtml);
+        $this->assertStringContainsString('class="form-control text-center physical-input font-weight-bold"', $inProgressHtml);
+        $this->assertStringContainsString('onclick="openQRModal(', $inProgressHtml);
+
+        $approvedHtml = $this->renderStockOpname('approved');
+        $this->assertStringContainsString('Create Stock Adjustment', $approvedHtml);
     }
 
     public function test_unpost_returns_approved_opname_to_draft(): void

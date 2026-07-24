@@ -112,19 +112,19 @@ class StockOpnameRoutePermissionTest extends TestCase
             ],
             'api create stock opname' => [
                 'api.warehouse.stock-opnames.store',
-                'stock-opnames.create',
+                'warehouse.stock-opnames.create',
             ],
             'api update stock opname' => [
                 'api.warehouse.stock-opnames.update',
-                'stock-opnames.edit',
+                'warehouse.stock-opnames.update',
             ],
             'api delete stock opname' => [
                 'api.warehouse.stock-opnames.destroy',
-                'stock-opnames.delete',
+                'warehouse.stock-opnames.delete',
             ],
             'api approve stock opname' => [
                 'api.warehouse.stock-opnames.approve',
-                'stock-opnames.edit',
+                'warehouse.stock-opnames.approve',
             ],
         ];
     }

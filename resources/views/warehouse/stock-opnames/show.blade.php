@@ -6,14 +6,15 @@
 
 @php
     $user = auth()->user();
-    $canApprove = $user->hasPermission('warehouse.stock-opnames.approve')
-        || $user->hasRole('Admin')
+    $hasStockOpnamePermissionBypass = $user->hasRole('Admin')
         || $user->hasRole('super_admin')
         || $user->hasRoleStartingWith('Management');
+    $canApprove = $hasStockOpnamePermissionBypass
+        || $user->hasPermission('warehouse.stock-opnames.approve');
+    $canUpdate = $hasStockOpnamePermissionBypass
+        || $user->hasPermission('warehouse.stock-opnames.update');
     $canViewSystemStock = $user->hasPermission('warehouse.stock-opnames.view-system-stock')
-        || $user->hasRole('Admin')
-        || $user->hasRole('super_admin')
-        || $user->hasRoleStartingWith('Management');
+        || $hasStockOpnamePermissionBypass;
 @endphp
 
 <style>
@@ -43,7 +44,7 @@
                             </h3>
                         </div>
                         <div>
-                            @if($stockOpname->status === 'draft')
+                            @if($stockOpname->status === 'draft' && $canUpdate)
                             <form action="{{ route('warehouse.stock-opnames.start', $stockOpname->id) }}" method="POST" class="d-inline">
                                 @csrf
                                 <button type="submit" class="btn btn-success btn-sm">
@@ -56,12 +57,14 @@
                             <a href="{{ route('warehouse.stock-opnames.export-stock', $stockOpname->id) }}" class="btn btn-success btn-sm me-1">
                                 <i class="fas fa-file-download"></i> Export Stock
                             </a>
+                            @if($canUpdate)
                             <button type="button" class="btn btn-primary btn-sm me-1" onclick="openImportModal()">
                                 <i class="fas fa-file-upload"></i> Import Stock
                             </button>
                             <button type="button" class="btn btn-warning btn-sm" onclick="openCompleteModal()">
                                 <i class="fas fa-check-circle"></i> Complete Opname
                             </button>
+                            @endif
                             @endif
 
                             @if($stockOpname->status === 'waiting for approval' && $canApprove)
@@ -76,9 +79,11 @@
                                 <i class="fas fa-undo"></i> Unpost
                             </button>
                             @endif
+                            @if($canUpdate)
                             <button type="button" class="btn btn-info btn-sm" onclick="createStockAdjustment()">
                                 <i class="fas fa-exchange-alt"></i> Create Stock Adjustment
                             </button>
+                            @endif
                             @endif
                         </div>
                     </div>
@@ -256,7 +261,7 @@
                                     </td>
                                     @endif
                                     <td class="text-center" style="vertical-align: middle; padding: 12px;">
-                                        @if($stockOpname->status === 'in-progress')
+                                        @if($stockOpname->status === 'in-progress' && $canUpdate)
                                         <div class="d-flex justify-content-center align-items-center">
                                             <div class="input-group input-group-sm" style="width: 160px;">
                                                 <input type="number" 
