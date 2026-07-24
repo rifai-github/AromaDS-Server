@@ -78,6 +78,8 @@ class InventoryTransferStatusStockMovementTest extends TestCase
             $table->string('approval_status')->default('not_required');
             $table->boolean('is_direct_branch_transfer')->default(false);
             $table->string('delivery_order_file')->nullable();
+            $table->unsignedBigInteger('delivery_order_uploaded_by')->nullable();
+            $table->timestamp('delivery_order_uploaded_at')->nullable();
             $table->unsignedBigInteger('central_approved_by')->nullable();
             $table->timestamp('central_approved_at')->nullable();
             $table->text('central_approval_notes')->nullable();

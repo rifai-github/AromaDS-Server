@@ -81,6 +81,8 @@ class InventoryTransferDocumentUploadTest extends TestCase
             $table->string('approval_status')->default('not_required');
             $table->boolean('is_direct_branch_transfer')->default(false);
             $table->string('delivery_order_file')->nullable();
+            $table->unsignedBigInteger('delivery_order_uploaded_by')->nullable();
+            $table->timestamp('delivery_order_uploaded_at')->nullable();
             $table->unsignedBigInteger('central_approved_by')->nullable();
             $table->timestamp('central_approved_at')->nullable();
             $table->text('central_approval_notes')->nullable();
@@ -252,6 +254,8 @@ class InventoryTransferDocumentUploadTest extends TestCase
         Storage::disk('public')->assertExists($transfer->delivery_order_file);
         $this->assertSame(1, $transfer->delivery_note_uploaded_by);
         $this->assertNotNull($transfer->delivery_note_uploaded_at);
+        $this->assertSame(1, $transfer->delivery_order_uploaded_by);
+        $this->assertNotNull($transfer->delivery_order_uploaded_at);
     }
 
     public function test_document_endpoint_requires_at_least_one_file(): void

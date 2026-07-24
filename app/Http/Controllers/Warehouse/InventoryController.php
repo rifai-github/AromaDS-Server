@@ -833,6 +833,8 @@ class InventoryController extends Controller
                 'delivery_order_file' => $request->hasFile('delivery_order_file')
                     ? $request->file('delivery_order_file')->store('inventory-transfers/do', 'public')
                     : null,
+                'delivery_order_uploaded_by' => $request->hasFile('delivery_order_file') ? Auth::id() : null,
+                'delivery_order_uploaded_at' => $request->hasFile('delivery_order_file') ? now() : null,
                 'central_approved_by' => null,
                 'central_approved_at' => null,
                 'central_approval_notes' => null,
@@ -1003,11 +1005,15 @@ class InventoryController extends Controller
             }
 
             $deliveryOrderFile = $transfer->delivery_order_file;
+            $deliveryOrderUploadedBy = $transfer->delivery_order_uploaded_by;
+            $deliveryOrderUploadedAt = $transfer->delivery_order_uploaded_at;
             if ($request->hasFile('delivery_order_file')) {
                 if ($deliveryOrderFile) {
                     Storage::disk('public')->delete($deliveryOrderFile);
                 }
                 $deliveryOrderFile = $request->file('delivery_order_file')->store('inventory-transfers/do', 'public');
+                $deliveryOrderUploadedBy = Auth::id();
+                $deliveryOrderUploadedAt = now();
             }
 
             // Surat pengajuan (branch's submission letter). Kept once uploaded; only
@@ -1092,6 +1098,8 @@ class InventoryController extends Controller
                 'is_direct_branch_transfer' => $isDirectBranchTransfer,
                 'approval_status' => $isDirectBranchTransfer ? 'draft' : 'not_required',
                 'delivery_order_file' => $deliveryOrderFile,
+                'delivery_order_uploaded_by' => $deliveryOrderUploadedBy,
+                'delivery_order_uploaded_at' => $deliveryOrderUploadedAt,
                 'central_approved_by' => null,
                 'central_approved_at' => null,
                 'central_approval_notes' => null,
@@ -1348,7 +1356,7 @@ class InventoryController extends Controller
         foreach ([
             'submission_letter_file' => ['inventory-transfers/submission-letter', 'submission_letter_uploaded_by', 'submission_letter_uploaded_at'],
             'delivery_note_file' => ['inventory-transfers/delivery-note', 'delivery_note_uploaded_by', 'delivery_note_uploaded_at'],
-            'delivery_order_file' => ['inventory-transfers/do', null, null],
+            'delivery_order_file' => ['inventory-transfers/do', 'delivery_order_uploaded_by', 'delivery_order_uploaded_at'],
         ] as $field => [$directory, $userField, $timeField]) {
             if (! $request->hasFile($field)) {
                 continue;

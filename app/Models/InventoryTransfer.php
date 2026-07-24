@@ -36,6 +36,8 @@ class InventoryTransfer extends Model
         'approval_status',
         'is_direct_branch_transfer',
         'delivery_order_file',
+        'delivery_order_uploaded_by',
+        'delivery_order_uploaded_at',
         'central_approved_by',
         'central_approved_at',
         'central_approval_notes',
@@ -62,6 +64,7 @@ class InventoryTransfer extends Model
     protected $casts = [
         'transfer_date' => 'date',
         'is_direct_branch_transfer' => 'boolean',
+        'delivery_order_uploaded_at' => 'datetime',
         'central_approved_at' => 'datetime',
         'submitted_for_approval_at' => 'datetime',
         'central_rejected_at' => 'datetime',
@@ -288,6 +291,11 @@ class InventoryTransfer extends Model
     public function deliveryNoteUploader()
     {
         return $this->belongsTo(User::class, 'delivery_note_uploaded_by');
+    }
+
+    public function deliveryOrderUploader()
+    {
+        return $this->belongsTo(User::class, 'delivery_order_uploaded_by');
     }
 
     // Scopes

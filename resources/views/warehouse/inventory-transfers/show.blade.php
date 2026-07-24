@@ -317,6 +317,10 @@
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Delivery Order (Branch↔Branch)</div>
                             @if($transfer->delivery_order_file)
                             <div style="font-size: 1rem;"><a href="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($transfer->delivery_order_file) }}" target="_blank" class="text-primary" style="text-decoration: underline;">Lihat file</a></div>
+                            <div style="font-size: 0.8rem; color: #6c757d; margin-top: 0.25rem;">
+                                {{ $transfer->deliveryOrderUploader->name ?? '-' }}
+                                @if($transfer->delivery_order_uploaded_at) &middot; {{ $transfer->delivery_order_uploaded_at->format('d/M/Y H:i') }} @endif
+                            </div>
                             @else
                             <div style="font-size: 1rem; color: #94a3b8;">-</div>
                             @endif
