@@ -503,6 +503,8 @@ class BranchController extends Controller
     /**
      * Auto-create a default warehouse for a branch when "Has Warehouse" is enabled.
      * Skips creation if the branch already has at least one warehouse.
+     * A head office (Branch Pusat) gets a Central Warehouse; a regular branch
+     * gets a Branch Warehouse.
      */
     private function createWarehouseForBranch(Branch $branch): ?Warehouse
     {
@@ -511,15 +513,17 @@ class BranchController extends Controller
             return null;
         }
 
+        $isCenter = (bool) $branch->is_head_office;
+
         return Warehouse::create([
             'warehouse_code' => $this->generateWarehouseCode(),
             'name' => 'Gudang ' . $branch->name,
             'branch_id' => $branch->id,
-            'warehouse_type_id' => $this->resolveBranchWarehouseTypeId(),
+            'warehouse_type_id' => $this->resolveBranchWarehouseTypeId($isCenter),
             'address' => $branch->address_1,
             'phone' => $branch->phone_1,
             'is_active' => true,
-            'is_center' => false,
+            'is_center' => $isCenter,
             'created_by' => Auth::id(),
             'updated_by' => Auth::id(),
         ]);
@@ -546,19 +550,24 @@ class BranchController extends Controller
     }
 
     /**
-     * Resolve (or create) the default "Branch Warehouse" type id.
-     * Mirrors WarehouseController::resolveDefaultWarehouseTypeId for the non-center case.
+     * Resolve (or create) the default "Branch Warehouse" / "Central Warehouse" type id.
+     * Mirrors WarehouseController::resolveDefaultWarehouseTypeId.
      */
-    private function resolveBranchWarehouseTypeId(): int
+    private function resolveBranchWarehouseTypeId(bool $isCenter = false): int
     {
-        $type = WarehouseType::where('code', 'BRANCH')->first()
-            ?: WarehouseType::where('name', 'Branch Warehouse')->first();
+        $code = $isCenter ? 'CENTER' : 'BRANCH';
+        $name = $isCenter ? 'Central Warehouse' : 'Branch Warehouse';
+
+        $type = WarehouseType::where('code', $code)->first()
+            ?: WarehouseType::where('name', $name)->first();
 
         if (! $type) {
             $type = WarehouseType::create([
-                'code' => 'BRANCH',
-                'name' => 'Branch Warehouse',
-                'description' => 'Default type for single warehouse per branch flow.',
+                'code' => $code,
+                'name' => $name,
+                'description' => $isCenter
+                    ? 'Default type for central warehouse locations.'
+                    : 'Default type for single warehouse per branch flow.',
                 'is_active' => true,
             ]);
         }
