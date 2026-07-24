@@ -1670,7 +1670,7 @@ class InventoryController extends Controller
                 'movement_date' => $transfer->transfer_date,
                 'reference_no' => $transfer->transfer_number,
                 'reference_type' => 'inventory_transfer',
-                'notes' => "Transfer masuk dari {$transfer->fromWarehouse->name}",
+                'notes' => "Transfer masuk langsung dari Inventory Transfer {$transfer->transfer_number} ({$transfer->fromWarehouse->name} ke {$transfer->toWarehouse->name}) - item tanpa Serial Number.",
                 'created_by' => Auth::id(),
                 'updated_by' => Auth::id(),
             ]);

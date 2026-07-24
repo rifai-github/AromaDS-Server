@@ -362,25 +362,49 @@
                     </h5>
                 </div>
                 <div class="card-body p-0">
+                    <div style="margin: 1rem 1.5rem; padding: 0.85rem 1rem; border: 1px solid #bfdbfe; background: #eff6ff; color: #1e40af; border-radius: 8px;">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Item ber-Serial Number diproses lewat Inventory Receiving untuk verifikasi SN.
+                        Item tanpa Serial Number langsung masuk ke warehouse tujuan saat transfer berstatus <strong>Received</strong>, dengan referensi nomor transfer <strong>{{ $transfer->transfer_number }}</strong>.
+                    </div>
                     <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
-                        <table class="table table-bordered table-striped" style="min-width: 700px;">
+                        <table class="table table-bordered table-striped" style="min-width: 900px;">
                             <thead>
                                 <tr>
                                     <th>Product</th>
                                     <th>SKU</th>
                                     <th>Quantity</th>
+                                    <th>Alur Masuk Tujuan</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @forelse($transfer->transferItems as $item)
+                                @php
+                                    $requiresSerialNumber = $item->product?->requiresSerialNumber() ?? false;
+                                @endphp
                                 <tr>
                                     <td>{{ $item->product->name ?? '-' }}</td>
                                     <td>{{ $item->product->sku ?? '-' }}</td>
                                     <td>{{ number_format($item->quantity, 0) }}</td>
+                                    <td>
+                                        @if($requiresSerialNumber)
+                                            <span class="badge" style="background-color: #dbeafe; color: #1d4ed8; padding: 0.45rem 0.65rem;">
+                                                Lewat Inventory Receiving
+                                            </span>
+                                            @if($serializedReceiving)
+                                                <br><small class="text-muted">Receiving: {{ $serializedReceiving->receiving_number }}</small>
+                                            @endif
+                                        @else
+                                            <span class="badge" style="background-color: #dcfce7; color: #15803d; padding: 0.45rem 0.65rem;">
+                                                Langsung masuk saat Received
+                                            </span>
+                                            <br><small class="text-muted">Ref: {{ $transfer->transfer_number }}</small>
+                                        @endif
+                                    </td>
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="3" class="text-center text-muted">
+                                    <td colspan="4" class="text-center text-muted">
                                         <i class="fas fa-info-circle me-2"></i>No items found.
                                     </td>
                                 </tr>

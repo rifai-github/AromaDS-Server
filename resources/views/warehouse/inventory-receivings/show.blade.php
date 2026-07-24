@@ -4,6 +4,10 @@
 
 @section('content')
 
+@php
+    $isInventoryTransferReceiving = \Illuminate\Support\Str::startsWith((string) $receiving->reference_no, 'TR-');
+@endphp
+
 <style>
     .container-fluid {
         padding: 0 !important;
@@ -218,6 +222,13 @@
                             </h5>
                         </div>
                         <div class="card-body">
+                            @if($isInventoryTransferReceiving)
+                            <div style="margin-bottom: 1rem; padding: 0.85rem 1rem; border: 1px solid #bfdbfe; background: #eff6ff; color: #1e40af; border-radius: 8px;">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Receiving ini hanya untuk verifikasi item ber-Serial Number dari Inventory Transfer
+                                <strong>{{ $receiving->reference_no }}</strong>. Item tanpa Serial Number langsung masuk ke warehouse tujuan saat transfer ditandai <strong>Received</strong>.
+                            </div>
+                            @endif
                             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 2rem;">
                                 <!-- Row 1 -->
                                 <div>
@@ -314,6 +325,13 @@
                             </div>
                         </div>
                         <div class="card-body p-0">
+                            @if($isInventoryTransferReceiving)
+                            <div style="margin: 1rem 1.5rem; padding: 0.85rem 1rem; border: 1px solid #bfdbfe; background: #eff6ff; color: #1e40af; border-radius: 8px;">
+                                <i class="fas fa-barcode me-2"></i>
+                                Daftar produk di sini adalah item yang perlu verifikasi Serial Number dari transfer
+                                <strong>{{ $receiving->reference_no }}</strong>.
+                            </div>
+                            @endif
                             <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
                                 <table class="table table-bordered table-striped" style="min-width: 1000px; white-space: nowrap;">
                                     <thead>
