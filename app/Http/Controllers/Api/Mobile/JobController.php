@@ -4656,11 +4656,43 @@ class JobController extends Controller
                     ], 422);
                 }
 
-                // Complete only the current schedule. Related schedules under the same job_number
-                // represent separate IR/CSR/IF/RV/RF work and must be finished independently.
+                // Complete the current schedule. Schedules under the same job_number with a
+                // DIFFERENT type (IR/CSR/IF/RV/RF) represent separate work and must still be
+                // finished independently via their own verification.
                 $job->status = 'done_job';
                 $job->completed_at = now();
                 $job->save();
+
+                // Multi-room jobs are stored as one job_schedules row PER ROOM, all sharing the
+                // same job_number + type (see JobAdviceController::createJobScheduleForRoom,
+                // "SAME job_number for all rooms"). JobMaterialCompletionService::resolveRelatedJobs
+                // already groups by job_number+type when finalizing materials, so a single BA
+                // submission is meant to close the whole grouped job. Without this cascade, a
+                // sibling room whose own work was finished (areAllRoomsCompleted() true) but whose
+                // card wasn't the one tapped for "Verifikasi Pekerjaan" stayed stuck at
+                // teknisi_selesai_pengerjaan forever, even though the mobile list already showed
+                // the group as fully completed.
+                $siblingSchedules = JobSchedule::where('job_number', $job->job_number)
+                    ->where('type', $job->type)
+                    ->where('id', '!=', $job->id)
+                    ->whereNotIn('status', ['done_job', 'completed', 'selesai', 'undone', 'suspend', 'dpf'])
+                    ->lockForUpdate()
+                    ->get();
+
+                foreach ($siblingSchedules as $sibling) {
+                    $sibling->unsetRelation('jobScheduleRooms');
+                    if (!$sibling->areAllRoomsCompleted()) {
+                        continue; // sibling's own room work isn't finished yet; leave its status as-is
+                    }
+
+                    $sibling->status = 'done_job';
+                    $sibling->completed_at = now();
+                    $sibling->ba_date = $sibling->ba_date ?: $job->ba_date;
+                    $sibling->ba_number = $sibling->ba_number ?: $job->ba_number;
+                    $sibling->updated_by = Auth::id();
+                    $sibling->save();
+                }
+
                 $this->finalizeMobileJobMaterials($job);
                 // Note: verified_at column doesn't exist in job_schedules table
                 // Verification is tracked via JobReport table instead
