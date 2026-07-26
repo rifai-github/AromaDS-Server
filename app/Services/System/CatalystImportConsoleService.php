@@ -491,16 +491,18 @@ class CatalystImportConsoleService
 
     protected function artisanCommand(array $arguments): array
     {
-        return array_merge([PHP_BINARY, 'artisan'], $arguments);
+        return array_merge([$this->phpBinary(), 'artisan'], $arguments);
     }
 
     protected function startDetachedRun(int $runId, string $logPath): ?int
     {
+        $phpBinary = $this->phpBinary();
+
         if (PHP_OS_FAMILY === 'Windows') {
             $command = sprintf(
                 'cd /d %s && start "" /B %s artisan catalyst:run-action %d >> %s 2>&1',
                 escapeshellarg(base_path()),
-                escapeshellarg(PHP_BINARY),
+                escapeshellarg($phpBinary),
                 $runId,
                 escapeshellarg($logPath)
             );
@@ -518,7 +520,7 @@ class CatalystImportConsoleService
         $command = sprintf(
             'cd %s && nohup %s artisan catalyst:run-action %d >> %s 2>&1 & echo $!',
             escapeshellarg(base_path()),
-            escapeshellarg(PHP_BINARY),
+            escapeshellarg($phpBinary),
             $runId,
             escapeshellarg($logPath)
         );
@@ -533,6 +535,23 @@ class CatalystImportConsoleService
         $pid = trim($process->getOutput());
 
         return is_numeric($pid) ? (int) $pid : null;
+    }
+
+    protected function phpBinary(): string
+    {
+        $configured = trim((string) config('catalyst-import.php_binary', ''));
+
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        $binaryName = basename(str_replace('\\', '/', PHP_BINARY));
+
+        if (PHP_OS_FAMILY !== 'Windows' && str_contains($binaryName, 'php-fpm') && is_executable('/usr/bin/php')) {
+            return '/usr/bin/php';
+        }
+
+        return PHP_BINARY;
     }
 
     protected function trimOutput(string $output, int $maxLines = 160): string

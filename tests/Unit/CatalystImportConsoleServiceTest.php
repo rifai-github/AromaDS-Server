@@ -32,4 +32,16 @@ class CatalystImportConsoleServiceTest extends TestCase
         $this->assertStringContainsString('--exact-steps', implode(' ', $jobAdviceApply['commands'][0]));
         $this->assertStringContainsString('--apply', implode(' ', $jobAdviceApply['commands'][0]));
     }
+
+    public function test_artisan_commands_use_configured_php_binary_when_available(): void
+    {
+        config(['catalyst-import.php_binary' => '/usr/bin/php']);
+
+        $service = new CatalystImportConsoleService(app(CatalystMigrationRunService::class));
+        $check = $service->definition('check_source_connection');
+
+        $this->assertSame('/usr/bin/php', $check['commands'][0][0]);
+        $this->assertSame('artisan', $check['commands'][0][1]);
+        $this->assertSame('catalyst:test-source-connection', $check['commands'][0][2]);
+    }
 }

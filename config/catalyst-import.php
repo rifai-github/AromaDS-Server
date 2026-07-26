@@ -2,6 +2,7 @@
 
 return [
     'connection_name' => env('CATALYST_IMPORT_CONNECTION', 'catalyst_import'),
+    'php_binary' => env('CATALYST_IMPORT_PHP_BINARY', ''),
 
     'source' => [
         'driver' => env('CATALYST_SOURCE_DRIVER', 'sqlsrv'),
