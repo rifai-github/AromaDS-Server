@@ -177,10 +177,16 @@ class SurveyWizardController extends Controller
      */
     public function create()
     {
-        extract($this->getSurveyWizardFormData());
+        extract($this->getSurveyWizardFormData(includeStaffAndCustomers: false));
+
+        // Marketing staff and customer selects are populated via AJAX
+        // (get-marketing-staff / get-customers) once the page loads, so we
+        // only need the current user pre-selected here instead of eager
+        // loading all users/customers into the page on every request.
+        $marketingStaff = collect([Auth::user()])->filter();
 
         return view('marketing.surveys.wizard.create', compact(
-            'marketingStaff', 'customers', 'companyTypes', 
+            'marketingStaff', 'customers', 'companyTypes',
             'roomTypes', 'floors', 'intensities', 'installationTypes',
             'salutations', 'positions', 'provinces', 'addressTypes', 'companyOptions'
         ));

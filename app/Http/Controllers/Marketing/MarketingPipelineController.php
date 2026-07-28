@@ -507,6 +507,37 @@ class MarketingPipelineController extends Controller
     }
 
     /**
+     * Search customers (Master Customer) for the pipeline create/edit dropdown.
+     * Kept as a lightweight, paginated-search endpoint instead of eager-loading
+     * every customer into the index page (see commit cc06a7c).
+     */
+    public function searchCustomers(Request $request)
+    {
+        $search = trim((string) $request->get('q', ''));
+
+        $customers = Customer::where('is_active', true)
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where('name', 'like', '%' . $search . '%');
+            })
+            ->orderBy('name')
+            ->limit(20)
+            ->get(['id', 'name', 'npwp', 'npwp_address', 'address'])
+            ->map(function (Customer $customer) {
+                $address = $customer->npwp_address ?? $customer->address ?? '';
+                $shortAddress = Str::limit($address, 30);
+                $npwp = $customer->npwp ?? '-';
+
+                return [
+                    'id' => $customer->id,
+                    'name' => $customer->name,
+                    'text' => "{$customer->name} - {$npwp} - {$shortAddress}",
+                ];
+            });
+
+        return response()->json($customers);
+    }
+
+    /**
      * Get employees by branch and team for pipeline assignment
      */
     public function getEmployeesByBranchAndTeam(Request $request)

@@ -1647,9 +1647,6 @@ function openCreateModal() {
                 <div style="display: flex; gap: 8px;">
                     <select class="form-input select2-customer" id="customer_id" name="customer_id" style="flex: 1;" required>
                         <option value="">Pilih atau ketik disini..</option>
-                        @foreach($customers as $customer)
-                            <option value="{{ $customer->id }}" data-name="{{ $customer->name }}">{{ $customer->name }} - {{ $customer->npwp ?? '-' }} - {{ \Illuminate\Support\Str::limit($customer->npwp_address ?? $customer->address, 30) }}</option>
-                        @endforeach
                     </select>
                     <button type="button" class="btn btn-success btn-sm" onclick="openCreateCustomerModal()" style="height: 38px; width: 40px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                         <i class="fas fa-plus"></i>
@@ -1844,7 +1841,38 @@ function openCreateModal() {
             $('.select2-customer').select2({
                 placeholder: 'Pilih atau ketik untuk mencari customer...',
                 allowClear: true,
-                dropdownParent: $('body')
+                minimumInputLength: 0,
+                dropdownParent: $('body'),
+                ajax: {
+                    url: '{{ route("marketing.pipeline.customers.search") }}',
+                    dataType: 'json',
+                    delay: 250,
+                    cache: false,
+                    data: function(params) {
+                        return { q: params.term || '' };
+                    },
+                    processResults: function(data) {
+                        return {
+                            results: $.map(data || [], function(customer) {
+                                return {
+                                    id: customer.id,
+                                    text: customer.text || customer.name,
+                                    name: customer.name
+                                };
+                            })
+                        };
+                    }
+                }
+            });
+
+            // Stash the plain customer name (without NPWP/address) onto the
+            // selected <option> so the 'change' handler below can read it via
+            // data('name') for both AJAX-searched and manually-created customers.
+            $('#customer_id').on('select2:select', function(e) {
+                const data = e.params.data;
+                if (data && data.name) {
+                    $(this).find('option[value="' + data.id + '"]').attr('data-name', data.name);
+                }
             });
             
             $('.select2-building').select2({
