@@ -419,7 +419,9 @@ function openViewModal(id) {
     openModal('Detail Bank');
     document.getElementById('modalBody').innerHTML = '<div class="text-center py-10"><i class="fas fa-spinner fa-spin text-2xl text-[#214589]"></i></div>';
     
-    fetch(`/company/master-banks/${id}`)
+    fetch(`/company/master-banks/${id}`, {
+        headers: { 'Accept': 'application/json' }
+    })
         .then(r => r.json())
         .then(res => {
             const b = res.data;
@@ -464,7 +466,9 @@ function openViewModal(id) {
 }
 
 function openEditModal(id) {
-    fetch(`/company/master-banks/${id}/edit`)
+    fetch(`/company/master-banks/${id}/edit`, {
+        headers: { 'Accept': 'application/json' }
+    })
         .then(r => r.json())
         .then(res => {
             const b = res.data;
