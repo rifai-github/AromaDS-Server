@@ -1185,6 +1185,7 @@ $(document).ready(function() {
                 allowClear: true
             });
             initializeCustomerSelect2();
+            initializeMarketingStaffSelect2();
             console.log('Select2 initialized successfully on', $('.select2').length, 'elements');
             return true;
         } else {
@@ -1222,6 +1223,42 @@ $(document).ready(function() {
                                 id: customer.id,
                                 text: customer.text || customer.name,
                                 company_type: customer.company_type || '',
+                            };
+                        })
+                    };
+                }
+            }
+        });
+    }
+
+    function initializeMarketingStaffSelect2() {
+        const staffSelect = $('#marketing_staff_id');
+        if (!staffSelect.length || typeof $.fn.select2 === 'undefined') {
+            return;
+        }
+
+        if (staffSelect.hasClass('select2-hidden-accessible')) {
+            staffSelect.select2('destroy');
+        }
+
+        staffSelect.select2({
+            placeholder: 'Pilih Marketing Staff',
+            allowClear: true,
+            minimumInputLength: 0,
+            ajax: {
+                url: '{{ route("marketing.surveys.wizard.get-marketing-staff") }}',
+                dataType: 'json',
+                delay: 250,
+                cache: false,
+                data: function(params) {
+                    return { q: params.term || '' };
+                },
+                processResults: function(data) {
+                    return {
+                        results: $.map(data || [], function(staff) {
+                            return {
+                                id: staff.id,
+                                text: staff.name
                             };
                         })
                     };

@@ -2132,15 +2132,20 @@ class SurveyWizardController extends Controller
         }
     }
     
-    private function getSurveyWizardFormData(): array
+    private function getSurveyWizardFormData(bool $includeStaffAndCustomers = true): array
     {
-        $marketingStaff = Cache::remember('survey-wizard:marketing-staff', now()->addMinutes(10), function () {
-            return User::where('is_active', true)->orderBy('name')->get(['id', 'name', 'salutation']);
-        });
+        $marketingStaff = collect();
+        $customers = collect();
 
-        $customers = Cache::remember('survey-wizard:customers', now()->addMinutes(5), function () {
-            return Customer::with('customerTaxSettings')->get();
-        });
+        if ($includeStaffAndCustomers) {
+            $marketingStaff = Cache::remember('survey-wizard:marketing-staff', now()->addMinutes(10), function () {
+                return User::where('is_active', true)->orderBy('name')->get(['id', 'name', 'salutation']);
+            });
+
+            $customers = Cache::remember('survey-wizard:customers', now()->addMinutes(5), function () {
+                return Customer::with('customerTaxSettings')->get();
+            });
+        }
 
         $companyTypes = Cache::remember('survey-wizard:company-types', now()->addMinutes(10), function () {
             return CustomerType::active()->orderBy('name')->get();
