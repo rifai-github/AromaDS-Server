@@ -1645,9 +1645,11 @@ function openCreateModal() {
             <div class="form-group">
                 <label class="form-label">Nama Perusahaan (Customer) *</label>
                 <div style="display: flex; gap: 8px;">
-                    <select class="form-input select2-customer" id="customer_id" name="customer_id" style="flex: 1;" required>
-                        <option value="">Pilih atau ketik disini..</option>
-                    </select>
+                    <div style="flex: 1; min-width: 0;">
+                        <select class="form-input select2-customer" id="customer_id" name="customer_id" style="width: 100%;" required>
+                            <option value="">Pilih atau ketik disini..</option>
+                        </select>
+                    </div>
                     <button type="button" class="btn btn-success btn-sm" onclick="openCreateCustomerModal()" style="height: 38px; width: 40px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                         <i class="fas fa-plus"></i>
                     </button>
@@ -1659,18 +1661,11 @@ function openCreateModal() {
             <div class="form-group">
                 <label class="form-label">Nama PIC *</label>
                 <div style="display: flex; gap: 8px;">
-                    <select class="form-input select2-contact" id="pic_name_select" name="pic_name_select" style="flex: 1;" required>
-                        <option value="">Pilih customer dulu..</option>
-                        @foreach($allContacts as $contact)
-                            @php
-                                $displayName = ($contact->salutation ? $contact->salutation . ' ' : '') . $contact->name;
-                            @endphp
-                            <option value="{{ $displayName }}" 
-                                    data-customer-id="{{ $contact->customer_id }}"
-                                    data-phone="{{ $contact->phone }}"
-                                    data-email="{{ $contact->email }}">{{ $displayName }}</option>
-                        @endforeach
-                    </select>
+                    <div style="flex: 1; min-width: 0;">
+                        <select class="form-input select2-contact" id="pic_name_select" name="pic_name_select" style="width: 100%;" required>
+                            <option value="">Pilih customer dulu..</option>
+                        </select>
+                    </div>
                     <button type="button" class="btn btn-success btn-sm" onclick="openQuickContactModal()" style="height: 38px; width: 40px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                         <i class="fas fa-plus"></i>
                     </button>
@@ -1694,12 +1689,14 @@ function openCreateModal() {
             <div class="form-group">
                 <label class="form-label">Building</label>
                 <div style="display: flex; gap: 8px;">
-                    <select class="form-input select2-building" id="building_id" name="building_id" style="flex: 1;">
-                        <option value="">Pilih atau ketik disini..</option>
-                        @foreach($buildings as $building)
-                            <option value="{{ $building->id }}" data-name="{{ $building->name }}" data-address="{{ $building->alamat_1 ?? $building->address }}" data-address2="{{ $building->alamat_2 }}">{{ $building->name }}</option>
-                        @endforeach
-                    </select>
+                    <div style="flex: 1; min-width: 0;">
+                        <select class="form-input select2-building" id="building_id" name="building_id" style="width: 100%;">
+                            <option value="">Pilih atau ketik disini..</option>
+                            @foreach($buildings as $building)
+                                <option value="{{ $building->id }}" data-name="{{ $building->name }}" data-address="{{ $building->alamat_1 ?? $building->address }}" data-address2="{{ $building->alamat_2 }}">{{ $building->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                     <button type="button" class="btn btn-success btn-sm" onclick="showAddBuildingModal()" style="height: 38px; width: 40px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                         <i class="fas fa-plus"></i>
                     </button>
@@ -1970,12 +1967,14 @@ function openEditModal(id) {
                             <div class="form-group">
                                 <label class="form-label">Building</label>
                                 <div style="display: flex; gap: 8px;">
-                                    <select class="form-input select2-building-edit" id="building_id_edit" name="building_id" style="flex: 1;">
-                                        <option value="">Pilih atau ketik disini..</option>
-                                        @foreach($buildings as $building)
-                                            <option value="{{ $building->id }}" data-name="{{ $building->name }}" data-address="{{ $building->alamat_1 ?? $building->address }}" data-address2="{{ $building->alamat_2 }}" ${data.building_id == {{ $building->id }} ? 'selected' : ''}>{{ $building->name }}</option>
-                                        @endforeach
-                                    </select>
+                                    <div style="flex: 1; min-width: 0;">
+                                        <select class="form-input select2-building-edit" id="building_id_edit" name="building_id" style="width: 100%;">
+                                            <option value="">Pilih atau ketik disini..</option>
+                                            @foreach($buildings as $building)
+                                                <option value="{{ $building->id }}" data-name="{{ $building->name }}" data-address="{{ $building->alamat_1 ?? $building->address }}" data-address2="{{ $building->alamat_2 }}" ${data.building_id == {{ $building->id }} ? 'selected' : ''}>{{ $building->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
                                     <button type="button" class="btn btn-success btn-sm" onclick="showAddBuildingModal()" style="height: 38px; width: 40px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                                         <i class="fas fa-plus"></i>
                                     </button>
@@ -1995,19 +1994,11 @@ function openEditModal(id) {
                             <div class="form-group">
                                 <label class="form-label">Nama PIC *</label>
                                 <div style="display: flex; gap: 8px;">
-                                    <select class="form-input select2-contact-edit" id="pic_name_select_edit" name="pic_name_select" style="flex: 1;" required>
-                                        <option value="">Pilih kontak..</option>
-                                        @foreach($allContacts as $contact)
-                                            @php
-                                                $displayName = ($contact->salutation ? $contact->salutation . ' ' : '') . $contact->name;
-                                            @endphp
-                                            <option value="{{ $displayName }}" 
-                                                    data-customer-id="{{ $contact->customer_id }}"
-                                                    data-phone="{{ $contact->phone }}"
-                                                    data-email="{{ $contact->email }}"
-                                                    ${data.pic_name == "{{ $displayName }}" ? 'selected' : ''}>{{ $displayName }}</option>
-                                        @endforeach
-                                    </select>
+                                    <div style="flex: 1; min-width: 0;">
+                                        <select class="form-input select2-contact-edit" id="pic_name_select_edit" name="pic_name_select" style="width: 100%;" required>
+                                            <option value="">Pilih kontak..</option>
+                                        </select>
+                                    </div>
                                     <button type="button" class="btn btn-success btn-sm" onclick="openQuickContactModal('edit')" style="height: 38px; width: 40px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                                         <i class="fas fa-plus"></i>
                                     </button>
@@ -3121,79 +3112,60 @@ function filterDocumentsByCustomer(customerId) {
 }
 
 // ✅ FILTER CONTACTS BY CUSTOMER
+// Contacts are loaded from Master Customer Contacts (/api/customers/{id}/contacts),
+// scoped server-side to the selected customer - not filtered from a preloaded list.
 function filterContactsByCustomer(customerId, isEdit = false) {
-    console.log('Filtering contacts for customer ID:', customerId);
+    console.log('Loading contacts for customer ID:', customerId);
     const selector = isEdit ? '.select2-contact-edit' : '.select2-contact';
+    const hiddenId = isEdit ? '#pic_name_hidden_edit' : '#pic_name_hidden';
+    const phoneId = isEdit ? '#pic_phone_edit' : '#pic_phone';
+    const emailId = isEdit ? '#pic_email_edit' : '#pic_email';
     const selects = document.querySelectorAll(selector);
     const customerIdStr = customerId ? String(customerId) : null;
 
-    selects.forEach((select, index) => {
-        const selectId = select.id || select.name || `contact-select-${index}`;
-        const selectKey = `contact-${selectId}`;
+    // Preserve the currently selected PIC (e.g. pre-filled when opening the edit
+    // modal) so it can be re-selected once this customer's contacts have loaded.
+    const previousPicName = $(hiddenId).val() || '';
 
-        // Store original HTML once
-        if (!originalSelectHTML.has(selectKey) && select.querySelectorAll('option').length > 1) {
-            originalSelectHTML.set(selectKey, select.innerHTML);
-        }
-
-        // Always restore from original before filtering to catch all contacts
-        const originalHTML = originalSelectHTML.get(selectKey);
-        if (originalHTML) {
-            select.innerHTML = originalHTML;
-        }
-
+    selects.forEach(select => {
         if (!customerIdStr) {
-            const emptyOption = select.querySelector('option[value=""]');
-            if (emptyOption) emptyOption.textContent = 'Pilih customer dulu..';
+            select.innerHTML = '<option value="">Pilih customer dulu..</option>';
             select.disabled = true;
-            select.value = '';
-            
-            // Clear related fields
-            const hiddenId = isEdit ? '#pic_name_hidden_edit' : '#pic_name_hidden';
-            const phoneId = isEdit ? '#pic_phone_edit' : '#pic_phone';
-            const emailId = isEdit ? '#pic_email_edit' : '#pic_email';
-            $(hiddenId).val('');
-            $(phoneId).val('');
-            $(emailId).val('');
+            $(select).trigger('change');
             return;
         }
 
-        const options = Array.from(select.querySelectorAll('option'));
-        let visibleCount = 0;
-        const optionsToRemove = [];
+        select.disabled = true;
+        select.innerHTML = '<option value="">Memuat kontak...</option>';
 
-        options.forEach(option => {
-            if (option.value === '') return;
-            const optionCustomerId = option.getAttribute('data-customer-id');
-            if (String(optionCustomerId) !== customerIdStr) {
-                if (option.selected) select.value = '';
-                optionsToRemove.push(option);
-            } else {
-                visibleCount++;
-            }
-        });
+        fetch(`/api/customers/${customerIdStr}/contacts`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        })
+            .then(response => response.json())
+            .then(payload => {
+                const contacts = Array.isArray(payload) ? payload : (payload.data || []);
 
-        optionsToRemove.forEach(option => option.remove());
+                select.innerHTML = '';
+                select.appendChild(new Option(contacts.length ? 'Pilih kontak..' : 'No contacts for this customer', ''));
 
-        const emptyOption = select.querySelector('option[value=""]');
-        if (emptyOption) {
-            if (visibleCount === 0) {
-                emptyOption.textContent = 'No contacts for this customer';
+                contacts.forEach(contact => {
+                    const displayName = (contact.salutation ? contact.salutation + ' ' : '') + contact.name;
+                    const option = new Option(displayName, displayName, false, displayName === previousPicName);
+                    option.setAttribute('data-customer-id', customerIdStr);
+                    option.setAttribute('data-phone', contact.phone || '');
+                    option.setAttribute('data-email', contact.email || '');
+                    select.appendChild(option);
+                });
+
+                select.disabled = contacts.length === 0;
+                $(select).trigger('change');
+            })
+            .catch(error => {
+                console.error('Failed to load contacts for customer', customerIdStr, error);
+                select.innerHTML = '<option value="">Gagal memuat kontak</option>';
                 select.disabled = true;
-                
-                // Clear related fields if no contacts available
-                const hiddenId = isEdit ? '#pic_name_hidden_edit' : '#pic_name_hidden';
-                const phoneId = isEdit ? '#pic_phone_edit' : '#pic_phone';
-                const emailId = isEdit ? '#pic_email_edit' : '#pic_email';
-                $(hiddenId).val('');
-                $(phoneId).val('');
-                $(emailId).val('');
-                select.value = '';
-            } else {
-                emptyOption.textContent = 'Pilih kontak..';
-                select.disabled = false;
-            }
-        }
+                $(select).trigger('change');
+            });
     });
 }
 

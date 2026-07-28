@@ -1701,8 +1701,7 @@ class QuotationWizardController extends Controller
 
         return view('marketing.quotations.wizard.create', compact(
             'quotation',
-            'surveys', 'paymentMethods', 'termOfPaymentOptions',
-            'taxSettings', 'marketingUsers', 'departments', 'salutations', 'positions', 'branches',
+            'termOfPaymentOptions', 'marketingUsers',
             'roomTypes', 'floors', 'intensities', 'installationTypes', 'rentalAliases'
         ));
     }
@@ -1717,8 +1716,7 @@ class QuotationWizardController extends Controller
         extract($this->getQuotationWizardViewData());
 
         return view('marketing.quotations.wizard.create', compact(
-            'surveys', 'paymentMethods', 'termOfPaymentOptions',
-            'taxSettings', 'marketingUsers', 'departments', 'salutations', 'positions', 'branches',
+            'termOfPaymentOptions', 'marketingUsers',
             'roomTypes', 'floors', 'intensities', 'installationTypes', 'rentalAliases'
         ));
     }
@@ -1974,8 +1972,15 @@ class QuotationWizardController extends Controller
             return response()->json([]);
         }
 
+        // Only the columns the survey dropdown actually renders — loading full survey
+        // models (plus surveyDetails) blew past the PHP memory limit once the approved
+        // survey count grew into the thousands.
         $query = $this->accessibleApprovedSurveyQuery($user)
-            ->with(['customer', 'building', 'surveyDetails']);
+            ->select(['id', 'survey_number', 'customer_id', 'building_id', 'created_at'])
+            ->with([
+                'customer:id,name,company_type',
+                'building:id,name,nama_gedung',
+            ]);
 
         if ($customerId) {
             $query->where('customer_id', $customerId);
@@ -2238,58 +2243,17 @@ class QuotationWizardController extends Controller
     private function getQuotationWizardViewData(): array
     {
         $user = Auth::user();
-        $surveys = Cache::remember("quotation-wizard:surveys:user:{$user->id}", now()->addMinutes(5), function () use ($user) {
-            return $this->accessibleApprovedSurveyQuery($user)
-                ->with(['customer:id,name', 'building:id,name,nama_gedung'])
-                ->get();
-        });
 
-        $paymentMethods = ['Before Service', 'After Service'];
-
+        // NOTE: the survey dropdown, branch list and tax settings are loaded on demand
+        // by the wizard (see getSurveysByCustomer / get-user-branches), so they are
+        // deliberately NOT preloaded here — eager-loading every approved survey used to
+        // exhaust PHP's memory limit while serialising it into the cache.
         $termOfPaymentOptions = $this->getTermOfPaymentOptions();
-
-        $taxSettings = Cache::remember('quotation-wizard:tax-settings', now()->addMinutes(10), function () {
-            return TaxSetting::all();
-        });
 
         $marketingUsers = Cache::remember("quotation-wizard:marketing-users:user:{$user->id}", now()->addMinutes(10), function () use ($user) {
             return $this->applyAccessibleUserFilter(User::where('is_active', true), $user)
                 ->orderBy('name')
                 ->get(['id', 'name', 'salutation']);
-        });
-
-        $departments = Cache::remember('quotation-wizard:departments', now()->addMinutes(10), function () {
-            return User::select('position_name')
-                ->whereNotNull('position_name')
-                ->where('position_name', '!=', '')
-                ->distinct()
-                ->pluck('position_name')
-                ->filter()
-                ->values();
-        });
-
-        $salutations = Cache::remember('quotation-wizard:salutations', now()->addMinutes(10), function () {
-            return User::select('salutation')
-                ->whereNotNull('salutation')
-                ->where('salutation', '!=', '')
-                ->distinct()
-                ->pluck('salutation')
-                ->filter()
-                ->values();
-        });
-
-        $positions = Cache::remember('quotation-wizard:positions', now()->addMinutes(10), function () {
-            return User::select('position_name')
-                ->whereNotNull('position_name')
-                ->where('position_name', '!=', '')
-                ->distinct()
-                ->pluck('position_name')
-                ->filter()
-                ->values();
-        });
-
-        $branches = Cache::remember('quotation-wizard:branches', now()->addMinutes(10), function () {
-            return Branch::where('is_active', true)->orderBy('name')->get();
         });
 
         $roomTypes = Cache::remember('quotation-wizard:room-types', now()->addMinutes(10), function () {
@@ -2313,15 +2277,8 @@ class QuotationWizardController extends Controller
         });
 
         return compact(
-            'surveys',
-            'paymentMethods',
             'termOfPaymentOptions',
-            'taxSettings',
             'marketingUsers',
-            'departments',
-            'salutations',
-            'positions',
-            'branches',
             'roomTypes',
             'floors',
             'intensities',

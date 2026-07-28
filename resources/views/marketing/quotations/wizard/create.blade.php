@@ -2858,27 +2858,24 @@ $(document).ready(function() {
                 customer_id: renewalCustomerId
             },
             success: function(response) {
-                console.log('Surveys loaded:', response);
-                
+                console.log('Surveys loaded:', response ? response.length : 0);
+
                 // Clear loading option
                 surveySelect.empty();
-                
-                // Add surveys to select
+
+                // Add surveys to select (built off-DOM, then appended once — the list can
+                // run into the thousands and per-option appends lock the browser up)
                 if (response && response.length > 0) {
-                    response.forEach(function(survey) {
-                        console.log('Survey data:', survey);
-                        console.log('Survey number:', survey.survey_number);
-                        console.log('Customer data:', survey.customer);
-                        console.log('Customer name:', survey.customer ? survey.customer.name : 'No customer');
-                        
-                        const option = $('<option></option>')
+                    const options = response.map(function(survey) {
+                        return $('<option></option>')
                             .val(survey.id)
                             .text(`${survey.survey_number} - ${survey.customer ? survey.customer.name : 'Unknown Customer'} - ${survey.building ? (survey.building.name || survey.building.nama_gedung) : 'Unknown Building'}`)
                             .data('customer', survey.customer ? survey.customer.name : 'Unknown Customer')
                             .data('company-type', survey.customer && survey.customer.company_type ? survey.customer.company_type.toUpperCase() : '-')
-                            .data('building', survey.building ? (survey.building.name || survey.building.nama_gedung) : 'Unknown Building');
-                        surveySelect.append(option);
+                            .data('building', survey.building ? (survey.building.name || survey.building.nama_gedung) : 'Unknown Building')
+                            .get(0);
                     });
+                    surveySelect.append(options);
                 }
                 
                 // Initialize Select2

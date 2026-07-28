@@ -1401,17 +1401,17 @@ class CustomerController extends Controller
     public function getContacts($customerId)
     {
         try {
-            $cacheKey = "customer:{$customerId}:api-contacts:v2";
+            $cacheKey = "customer:{$customerId}:api-contacts:v3";
             $contacts = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($customerId) {
                 $legacyContacts = CustomerContact::where('customer_id', $customerId)
                     ->where('is_active', true)
-                    ->get(['id', 'name', 'position', 'email', 'phone', 'is_active']);
+                    ->get(['id', 'name', 'salutation', 'position', 'email', 'phone', 'is_active']);
 
                 $multiPicContacts = CustomerContact::whereHas('customers', function ($query) use ($customerId) {
                     $query->where('customers.id', $customerId);
                 })
                     ->where('is_active', true)
-                    ->get(['id', 'name', 'position', 'email', 'phone', 'is_active']);
+                    ->get(['id', 'name', 'salutation', 'position', 'email', 'phone', 'is_active']);
 
                 return $legacyContacts
                     ->merge($multiPicContacts)
