@@ -38,3 +38,24 @@ jobs:
           php artisan route:clear
           php artisan config:clear
           php artisan view:clear
+
+          
+
+          cd /var/www/aroma-staging
+
+          git config core.fileMode false
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Staging server has local changes. Resetting them before deploy:"
+            git status --short
+            git reset --hard HEAD
+          fi
+
+          git fetch origin develop
+          git pull --ff-only origin develop
+
+          php artisan migrate --force
+          php artisan optimize:clear
+          php artisan route:clear
+          php artisan config:clear
+          php artisan view:clear
