@@ -16,7 +16,7 @@ class BankController extends Controller
 
     public function index(Request $request)
     {
-        $query = Bank::with(['createdBy', 'updatedBy']);
+        $query = Bank::with(['createdBy:id,name', 'updatedBy:id,name']);
 
         // Apply AutoFilterable filters
         $query->filter($request->all());
@@ -97,7 +97,7 @@ class BankController extends Controller
 
     public function show(Bank $master_bank)
     {
-        $master_bank->load(['createdBy', 'updatedBy']);
+        $master_bank->load(['createdBy:id,name', 'updatedBy:id,name']);
         
         // Check if this is an API request, AJAX request, or fetch request
         if (request()->expectsJson() || request()->is('api/*') || request()->ajax() || request()->header('Accept') === 'application/json') {
@@ -112,7 +112,7 @@ class BankController extends Controller
 
     public function edit(Bank $master_bank)
     {
-        $master_bank->load(['createdBy', 'updatedBy']);
+        $master_bank->load(['createdBy:id,name', 'updatedBy:id,name']);
         
         // Check if this is an API request, AJAX request, or fetch request
         if (request()->expectsJson() || request()->is('api/*') || request()->ajax() || request()->header('Accept') === 'application/json') {
