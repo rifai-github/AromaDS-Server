@@ -80,7 +80,7 @@ class BankController extends Controller
                 ]);
             }
 
-            return redirect()->route('master.banks.index')->with('success', 'Bank created successfully');
+            return redirect()->route('company.master-banks.index')->with('success', 'Bank created successfully');
         } catch (\Exception $e) {
             DB::rollback();
             
@@ -164,7 +164,7 @@ class BankController extends Controller
                 ]);
             }
 
-            return redirect()->route('master.banks.index')->with('success', 'Bank updated successfully');
+            return redirect()->route('company.master-banks.index')->with('success', 'Bank updated successfully');
         } catch (\Exception $e) {
             DB::rollback();
             

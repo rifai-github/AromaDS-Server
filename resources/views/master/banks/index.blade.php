@@ -419,7 +419,7 @@ function openViewModal(id) {
     openModal('Detail Bank');
     document.getElementById('modalBody').innerHTML = '<div class="text-center py-10"><i class="fas fa-spinner fa-spin text-2xl text-[#214589]"></i></div>';
     
-    fetch(`/master/banks/${id}`)
+    fetch(`/company/master-banks/${id}`)
         .then(r => r.json())
         .then(res => {
             const b = res.data;
@@ -464,7 +464,7 @@ function openViewModal(id) {
 }
 
 function openEditModal(id) {
-    fetch(`/master/banks/${id}/edit`)
+    fetch(`/company/master-banks/${id}/edit`)
         .then(r => r.json())
         .then(res => {
             const b = res.data;
@@ -485,7 +485,7 @@ function openEditModal(id) {
 function submitBank(id = null) {
     const form = document.getElementById('bankForm');
     const formData = new FormData(form);
-    const url = id ? `/master/banks/${id}` : '/master/banks';
+    const url = id ? `/company/master-banks/${id}` : '/company/master-banks';
     if (id) formData.append('_method', 'PUT');
 
     fetch(url, {
@@ -505,7 +505,7 @@ function submitBank(id = null) {
 
 function initiateDelete(id) {
     if (confirm('Apakah Anda yakin ingin menghapus bank ini?')) {
-        fetch(`/master/banks/${id}`, {
+        fetch(`/company/master-banks/${id}`, {
             method: 'DELETE',
             headers: {
                 'X-CSRF-TOKEN': '{{ csrf_token() }}',
@@ -525,7 +525,7 @@ function deleteSelected() {
     if (ids.length === 0) return alert('Pilih bank yang ingin dihapus terlebih dahulu');
 
     if (confirm(`Apakah Anda yakin ingin menghapus ${ids.length} bank yang terpilih?`)) {
-        fetch('/master/banks/bulk-delete', {
+        fetch('/company/master-banks/bulk-delete', {
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN': '{{ csrf_token() }}',

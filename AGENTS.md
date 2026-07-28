@@ -14,7 +14,7 @@ Primary manifests/config:
 - `composer.json`: Laravel 12, Sanctum, DomPDF, Excel, Predis, FPDI/FPDF, QR code packages.
 - `package.json`: Vite, Tailwind CSS v4, Laravel Vite plugin, Axios, Concurrently, `pdf-lib`.
 - `bootstrap/app.php`: Laravel 12 routing, middleware aliases, Sanctum stateful API setup, scheduler.
-- `phpunit.xml`: PHPUnit 11 with SQLite in-memory test env; `tests/` is not present in this checkout.
+- `phpunit.xml`: PHPUnit 11 with SQLite in-memory test env; `tests/` is present (~140 files under `Feature/` and `Unit/`).
 - `docker-compose.yml`: app, nginx, MySQL 8.0, Redis, phpMyAdmin, MailHog.
 
 ## Staging Server Testing
@@ -46,7 +46,7 @@ Main directories:
 - `resources/css/app.css`: Tailwind CSS v4 source.
 - `resources/js/app.js`: imports `bootstrap.js`.
 - `database/seeders/`: permission, role, company, inventory, finance, tax, marketing, warehouse seeders.
-- `database/migrations/`: empty in this checkout.
+- `database/migrations/`: incremental migrations only (~25 files, 2026-05 onward); base schema not reproducible from them.
 - `scripts/` and `database/scripts/`: one-off repair/audit/import scripts.
 
 Controller domain folders currently include:
@@ -113,7 +113,7 @@ Official, client-approved status labels and document codes. Load-bearing busines
 Implementation facts to preserve:
 
 - **`Job Check` is the client-confirmed label for Unit Only follow-up/check jobs.** The database still stores these jobs as valid service enum values (`service_first` / `service_routine`) because production has no separate `check` enum, but `JobSchedule::getDisplayTypeAttribute()` derives `Job Check` when the linked rental flow is Unit Only only.
-- **Why `Job Check` was reintroduced:** latest client feedback on the Jayadi CT mixed-rental case (`JKT-CA/26-06/0001`) confirmed that one room can contain both Unit + Refill and Unit Only rentals. Unit + Refill must continue through the CSR service chain after first service, while Unit Only must continue as `Job Check` with IR document numbering after install. Do not collapse Unit Only into the CSR chain.
+- **Why `Job Check` was reintroduced:** dropped 20 Jun 2026 (`ff8ca48`), **restored 3 Jul 2026 (`27be706` "Restore unit-only Job Check flow")** — the current state on `develop`. Do not "fix" it back from memory; verify `app/Models/JobSchedule.php`. Latest client feedback on the Jayadi CT mixed-rental case (`JKT-CA/26-06/0001`) confirmed that one room can contain both Unit + Refill and Unit Only rentals. Unit + Refill must continue through the CSR service chain after first service, while Unit Only must continue as `Job Check` with IR document numbering after install. Do not collapse Unit Only into the CSR chain.
 - **Material-flow bypass is separate and preserved.** Unit-only check jobs and remove jobs still skip material assign via `JobSchedule::skips_material_assignment` accessor + server-side `JobScheduleController::jobScheduleSkipsMaterialAssignment()`. The list UI reads `data-skips-material`; do not rely only on a display-label substring for workflow gates.
 - `service` = ad-hoc/manual service; `service_routine` = auto-generated from a contract's periodic schedule (`ServiceSchedulingService` / `PeriodicJob`). Refill-bearing services render the `customer_service_report` (CSR) document; Unit Only check schedules render the `installation_report` (IR) document.
 - Unit-only periodic jobs keep the **IR** document-number prefix even though their stored `type` is `service_routine` — prefix and type intentionally differ; do not "fix" the prefix.
@@ -184,7 +184,7 @@ docker compose up -d
 
 ## Server Safety
 
-- `database/migrations/` is empty here. Inspect SQL dumps, models, and live schema context before schema edits.
+- `database/migrations/` holds incremental migrations only (~25 files); the base schema is not reproducible from them. Inspect SQL dumps, models, and live schema context before schema edits, and add new changes as a migration here.
 - Do not run repair/backfill/import commands with write/apply options unless the user explicitly asks.
 - Before editing job, room, material, serial number, verification, or partial-completion behavior, inspect `../mobile/lib/features/jobs/data/jobs_repository.dart` and `../mobile/lib/services/sync_service.dart`.
 - Do not commit `.env`, `.env.backup`, SQL dumps, `dump.rdb`, storage logs, uploads, or cache contents.
