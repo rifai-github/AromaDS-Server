@@ -39,7 +39,7 @@ jobs:
           php artisan config:clear
           php artisan view:clear
 
-          
+
 
           cd /var/www/aroma-staging
 

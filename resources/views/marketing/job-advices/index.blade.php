@@ -1558,6 +1558,10 @@ function setupJobAdviceDateGuards() {
     pairs.forEach(({ expected, remove, type }) => {
         if (!expected || !remove) return;
 
+        // Only the Create modal's Remove Date should be auto-defaulted;
+        // the Edit modal may already hold a saved remove_date that must not be clobbered.
+        const isCreatePair = expected.id === 'expected_date';
+
         const syncMinDate = () => {
             const minRemoveDate = addDaysToDateValue(expected.value, 1);
             if (minRemoveDate) {
@@ -1572,6 +1576,30 @@ function setupJobAdviceDateGuards() {
                 remove.setCustomValidity('');
             }
         };
+
+        if (isCreatePair) {
+            // Default Remove Date to H+3 from Expected Date for Install Free,
+            // unless the user has already typed/picked their own value.
+            const applyDefaultRemoveDate = () => {
+                if (!type || !isInstallFreeType(type.value)) return;
+                if (remove.dataset.userEdited === 'true') return;
+
+                const defaultRemoveDate = addDaysToDateValue(expected.value, 3);
+                if (defaultRemoveDate) {
+                    remove.value = defaultRemoveDate;
+                    syncMinDate();
+                }
+            };
+
+            remove.addEventListener('input', () => {
+                remove.dataset.userEdited = 'true';
+            });
+
+            expected.addEventListener('change', applyDefaultRemoveDate);
+            if (type) {
+                type.addEventListener('change', applyDefaultRemoveDate);
+            }
+        }
 
         expected.addEventListener('change', syncMinDate);
         remove.addEventListener('change', syncMinDate);
