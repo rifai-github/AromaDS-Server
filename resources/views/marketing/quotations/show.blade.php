@@ -444,17 +444,6 @@
                                     <i class="fas fa-list-alt me-2"></i>
                                     Quotation Detail
                                 </h5>
-                                @php
-                                    $canApprove = auth()->user()->canApprove('quotations');
-                                @endphp
-                                @if($canApprove && $quotation->status === 'waiting_for_approval')
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="checkComplimentFee" style="width: 18px; height: 18px; cursor: pointer;">
-                                    <label class="form-check-label" for="checkComplimentFee" style="margin-left: 8px; cursor: pointer; font-weight: 600; color: #495057;">
-                                        Check Compliment/Supporter Fee
-                                    </label>
-                                </div>
-                                @endif
                             </div>
                         </div>
                         <div class="card-body p-0">
@@ -1180,84 +1169,6 @@ function proceedWithFinalize() {
 
 // Approve quotation function
 function approveQuotation() {
-    // Check if checkbox is checked
-    const checkComplimentFee = document.getElementById('checkComplimentFee');
-    
-    if (!checkComplimentFee || !checkComplimentFee.checked) {
-        // Show sweet alert with option to check checkbox
-        Swal.fire({
-            title: 'Checklist Wajib',
-            html: `
-                <div style="text-align: left;">
-                    <p style="margin-bottom: 15px;">Anda harus mencentang checkbox <strong>"Check Compliment/Supporter Fee"</strong> di tab Quotation Detail terlebih dahulu sebelum dapat menyetujui quotation.</p>
-                    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="swalCheckComplimentFee" style="width: 18px; height: 18px; cursor: pointer;">
-                            <label class="form-check-label" for="swalCheckComplimentFee" style="margin-left: 8px; cursor: pointer; font-weight: 600;">
-                                Check Compliment/Supporter Fee
-                            </label>
-                        </div>
-                    </div>
-                </div>
-            `,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#28a745',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: 'Centang & Setujui',
-            cancelButtonText: 'Batal',
-            allowOutsideClick: false,
-            preConfirm: () => {
-                const swalCheckbox = document.getElementById('swalCheckComplimentFee');
-                if (!swalCheckbox || !swalCheckbox.checked) {
-                    Swal.showValidationMessage('Anda harus mencentang checkbox terlebih dahulu!');
-                    return false;
-                }
-                return true;
-            }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                // Check the actual checkbox if user checked in sweet alert
-                if (checkComplimentFee) {
-                    checkComplimentFee.checked = true;
-                }
-                
-                // Proceed with approval
-                Swal.fire({
-                    title: 'Approve Quotation',
-                    text: 'Apakah Anda yakin ingin menyetujui quotation ini?',
-                    icon: 'question',
-                    showCancelButton: true,
-                    confirmButtonColor: '#28a745',
-                    cancelButtonColor: '#6c757d',
-                    confirmButtonText: 'Ya, Setujui!',
-                    cancelButtonText: 'Batal'
-                }).then((confirmResult) => {
-                    if (confirmResult.isConfirmed) {
-                        // Send approval request
-                        $.ajax({
-                            url: '{{ route("marketing.quotations.approve", $quotation->id) }}',
-                            type: 'POST',
-                            data: {
-                                _token: '{{ csrf_token() }}'
-                            },
-                            success: function(response) {
-                                Swal.fire('Berhasil!', 'Quotation telah disetujui', 'success').then(() => {
-                                    location.reload();
-                                });
-                            },
-                            error: function(xhr) {
-                                Swal.fire('Error!', 'Gagal menyetujui quotation', 'error');
-                            }
-                        });
-                    }
-                });
-            }
-        });
-        return;
-    }
-    
-    // If checkbox is already checked, proceed with normal approval flow
     Swal.fire({
         title: 'Approve Quotation',
         text: 'Apakah Anda yakin ingin menyetujui quotation ini?',
