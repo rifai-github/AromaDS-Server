@@ -3216,10 +3216,17 @@ function openQuickContactModal(context = 'create') {
     
     // Clear form
     document.getElementById('quickContactForm').reset();
-    
-    // Auto-fill customer ID based on context
-    const customerId = context === 'create' ? $('#customer_id').val() : $('input[name="customer_id"]').val();
-    $('#quick_contact_customer_id').val(customerId);
+
+    // Auto-fill customer ID based on context. 'customer-create' comes from the
+    // "+" button inside the Create New Customer modal's Multi PIC field - the
+    // customer doesn't have an ID yet, so it's left blank and the contact gets
+    // linked once the customer is actually created (see CustomerController::store).
+    if (context === 'customer-create') {
+        $('#quick_contact_customer_id').val('');
+    } else {
+        const customerId = context === 'create' ? $('#customer_id').val() : $('input[name="customer_id"]').val();
+        $('#quick_contact_customer_id').val(customerId);
+    }
     
     // Open modal
     const modal = document.getElementById('quickContactModal');
@@ -3267,34 +3274,49 @@ function submitQuickContactForm(event) {
     .then(data => {
         if (data.success) {
             closeQuickContactModal();
-            
+
             const contact = data.data;
-            const isEdit = currentContactContext === 'edit';
-            const selectId = isEdit ? '#pic_name_select_edit' : '#pic_name_select';
-            const hiddenId = isEdit ? '#pic_name_hidden_edit' : '#pic_name_hidden';
-            const phoneId = isEdit ? '#pic_phone_edit' : '#pic_phone';
-            const emailId = isEdit ? '#pic_email_edit' : '#pic_email';
-            
-            // Format display name as "Salutation Name" if salutation exists
-            const displayName = contact.salutation ? `${contact.salutation} ${contact.name}` : contact.name;
-            
-            const contactSelect = $(selectId);
-            if (contactSelect.length) {
-                // ✅ ENAABLE THE SELECT DROPDOWN (in case it was disabled because no contacts existed)
-                contactSelect.prop('disabled', false);
-                
-                const newOption = new Option(displayName, displayName, true, true);
-                $(newOption).attr('data-customer-id', contact.customer_id);
-                $(newOption).attr('data-phone', contact.phone);
-                $(newOption).attr('data-email', contact.email);
-                contactSelect.append(newOption);
-                contactSelect.trigger('change');
+
+            if (currentContactContext === 'customer-create') {
+                // Contact was created for a not-yet-saved customer (no customer_id
+                // yet). Add it to the Multi PIC select in the Create Customer modal;
+                // it gets linked to the customer once that form is submitted
+                // (see CustomerController::store's contact_ids handling).
+                const multiPicSelect = document.getElementById('create_contact_ids');
+                if (multiPicSelect) {
+                    const label = `${contact.name} - ${contact.position || ''} (${contact.phone || ''})`;
+                    const newOption = new Option(label, contact.id, true, true);
+                    multiPicSelect.appendChild(newOption);
+                    triggerChange(multiPicSelect);
+                }
+            } else {
+                const isEdit = currentContactContext === 'edit';
+                const selectId = isEdit ? '#pic_name_select_edit' : '#pic_name_select';
+                const hiddenId = isEdit ? '#pic_name_hidden_edit' : '#pic_name_hidden';
+                const phoneId = isEdit ? '#pic_phone_edit' : '#pic_phone';
+                const emailId = isEdit ? '#pic_email_edit' : '#pic_email';
+
+                // Format display name as "Salutation Name" if salutation exists
+                const displayName = contact.salutation ? `${contact.salutation} ${contact.name}` : contact.name;
+
+                const contactSelect = $(selectId);
+                if (contactSelect.length) {
+                    // ✅ ENAABLE THE SELECT DROPDOWN (in case it was disabled because no contacts existed)
+                    contactSelect.prop('disabled', false);
+
+                    const newOption = new Option(displayName, displayName, true, true);
+                    $(newOption).attr('data-customer-id', contact.customer_id);
+                    $(newOption).attr('data-phone', contact.phone);
+                    $(newOption).attr('data-email', contact.email);
+                    contactSelect.append(newOption);
+                    contactSelect.trigger('change');
+                }
+
+                $(hiddenId).val(displayName);
+                $(phoneId).val(contact.phone || '');
+                $(emailId).val(contact.email || '');
             }
-            
-            $(hiddenId).val(displayName);
-            $(phoneId).val(contact.phone || '');
-            $(emailId).val(contact.email || '');
-            
+
             if (typeof Swal !== 'undefined') {
                 Swal.fire({ icon: 'success', title: 'Berhasil', text: 'Kontak "' + contact.name + '" berhasil ditambahkan.', confirmButtonColor: '#1e3a8a' });
             } else {

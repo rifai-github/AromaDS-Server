@@ -228,7 +228,7 @@
                                         @endforeach
                                     </select>
                                 </div>
-                                <button type="button" onclick="openCreateCustomerContactModal()" class="btn btn-success btn-sm" style="width: 42px; height: 42px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;" title="Add New Contact">
+                                <button type="button" onclick="openQuickContactModal('customer-create')" class="btn btn-success btn-sm" style="width: 42px; height: 42px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;" title="Add New Contact">
                                     <i class="fas fa-plus"></i>
                                 </button>
                             </div>
@@ -264,63 +264,6 @@
     </div>
 </div>
 
-<!-- Create Contact Modal (Inline) -->
-<div id="createCustomerContactModalOverlay" class="modal-overlay" onclick="closeCreateCustomerContactModal()">
-    <div class="modal-container" onclick="event.stopPropagation()">
-        <div class="modal-header">
-            <h2 class="modal-title">Add New Contact Person</h2>
-            <button class="modal-close" onclick="closeCreateCustomerContactModal()">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="modal-body">
-            <form id="createCustomerContactForm">
-                <div class="form-section">
-                    <h3 class="section-title">
-                        <i class="fas fa-user text-purple-500"></i>
-                        Contact Person Information
-                    </h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-6">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Salutation</label>
-                            <select id="contact_salutation_id" name="salutation" class="w-full px-4 py-3.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent select2">
-                                <option value="">Select Salutation</option>
-                                <!-- Options loaded dynamically from salutations API -->
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
-                            <input type="text" id="contact_name" name="name" class="w-full px-4 py-3.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" required placeholder="Enter full name">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Email *</label>
-                            <input type="email" id="contact_email" name="email" class="w-full px-4 py-3.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" required placeholder="email@example.com">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Phone *</label>
-                            <input type="tel" id="contact_phone" name="phone" class="w-full px-4 py-3.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" required placeholder="08123456789" pattern="[0-9\-\+\(\)\s]+" oninput="this.value = this.value.replace(/[^0-9\-\+\(\)\s]/g, '')">
-                            <small class="text-gray-500 text-xs mt-1 block">Only numbers, +, -, (, ), and spaces allowed</small>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Position</label>
-                            <select id="contact_position_id" name="position" class="w-full px-4 py-3.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent select2">
-                                <option value="">Select Position</option>
-                                <!-- Options loaded dynamically from positions API -->
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Customer</label>
-                            <input type="text" id="contact_customer_name" class="w-full px-4 py-3.5 border border-gray-300 rounded-lg bg-gray-100" readonly placeholder="Will be linked after customer is created">
-                            <input type="hidden" id="contact_customer_id" name="customer_id">
-                            <small class="text-gray-500 text-xs mt-1 block">This contact will be automatically assigned to the new customer after creation</small>
-                        </div>
-                    </div>
-                </div>
-            </form>
-        </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" onclick="closeCreateCustomerContactModal()">Cancel</button>
-            <button type="button" class="btn btn-primary" onclick="submitCreateCustomerContactForm()">Add Contact</button>
-        </div>
-    </div>
-</div>
+<!-- Adding a PIC from here reuses the "Tambah Kontak Cepat" modal defined in
+     marketing/pipeline/index.blade.php (openQuickContactModal('customer-create')),
+     so this partial no longer needs its own separate "Add Contact" modal. -->
