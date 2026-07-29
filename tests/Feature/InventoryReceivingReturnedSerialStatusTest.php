@@ -378,6 +378,70 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         ]);
     }
 
+    public function test_finalize_blocks_serial_shortfall_without_confirmation(): void
+    {
+        $this->seedJakartaConditionWarehouses();
+        $receiving = $this->seedReceivingWithSerialShortfall(requestedQty: 2, scannedCount: 1);
+
+        $response = app(InventoryReceivingController::class)->finalize($receiving);
+
+        $this->assertStringContainsString('fewer Serial Numbers scanned', $response->getSession()->get('error'));
+        $this->assertTrue($response->getSession()->get('requires_partial_confirmation'));
+
+        // Nothing should have moved: receiving stays pending, no stock credited.
+        $this->assertDatabaseHas('inventory_receivings', ['id' => 50, 'status' => 'pending']);
+        $this->assertDatabaseMissing('warehouse_products', ['warehouse_id' => 5, 'master_product_id' => 100]);
+    }
+
+    public function test_finalize_accepts_serial_shortfall_when_partial_confirmed(): void
+    {
+        $this->seedJakartaConditionWarehouses();
+        $receiving = $this->seedReceivingWithSerialShortfall(requestedQty: 2, scannedCount: 1);
+
+        DB::table('inventory_requests')->insert([
+            'id' => 70,
+            'request_number' => 'JKT-IRQ/26-06/0002',
+            'warehouse_id' => 5,
+            'branch_id' => 1,
+            'status' => 'shipped',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_request_items')->insert([
+            'id' => 71,
+            'inventory_request_id' => 70,
+            'master_product_id' => 100,
+            'quantity' => 2,
+            'issued_qty' => 2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $confirmedRequest = Request::create('/warehouse/inventory-receivings/50/finalize', 'POST', ['confirm_partial' => '1']);
+        app(InventoryReceivingController::class)->finalize($receiving, $confirmedRequest);
+
+        // Only the scanned unit gets credited to stock - the shortfall is not tracked further.
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 5,
+            'master_product_id' => 100,
+            'quantity' => 1,
+        ]);
+        $this->assertDatabaseHas('inventory_receiving_items', [
+            'inventory_receiving_id' => 50,
+            'quantity_received' => 1,
+        ]);
+        $this->assertDatabaseHas('inventory_receivings', ['id' => 50, 'status' => 'received']);
+
+        // Request closes as completed even though the shortfall was never fulfilled.
+        $this->assertDatabaseHas('inventory_requests', ['id' => 70, 'status' => 'completed']);
+        $this->assertDatabaseHas('inventory_request_items', [
+            'id' => 71,
+            'received_qty' => 1,
+            'returned_qty' => 1,
+        ]);
+    }
+
     public function test_finalize_inventory_request_receiving_uses_requested_warehouse_not_new_stock_warehouse(): void
     {
         $this->seedJakartaConditionWarehouses();
@@ -964,6 +1028,49 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        return InventoryReceiving::findOrFail(50);
+    }
+
+    private function seedReceivingWithSerialShortfall(int $requestedQty, int $scannedCount, string $referenceNo = 'JKT-IRQ/26-06/0002'): InventoryReceiving
+    {
+        DB::table('inventory_receivings')->insert([
+            'id' => 50,
+            'receiving_number' => 'BDG-IRC/26-05/0015',
+            'reference_no' => $referenceNo,
+            'branch_id' => 1,
+            'schedule_date' => now()->toDateString(),
+            'status' => 'pending',
+            'created_by' => 1,
+            'updated_by' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_receiving_items')->insert([
+            'id' => 60,
+            'inventory_receiving_id' => 50,
+            'master_product_id' => 100,
+            'quantity' => $requestedQty,
+            'quantity_received' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        for ($i = 0; $i < $scannedCount; $i++) {
+            DB::table('serial_numbers')->insert([
+                'id' => 200 + $i,
+                'serial_number' => 'BDG100'.$i,
+                'status' => 'pending',
+                'warehouse_id' => 5,
+                'master_product_id' => 100,
+                'inventory_receiving_id' => 50,
+                'created_by' => 1,
+                'updated_by' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
 
         return InventoryReceiving::findOrFail(50);
     }

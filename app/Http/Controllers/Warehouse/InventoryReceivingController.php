@@ -895,11 +895,16 @@ class InventoryReceivingController extends Controller
     /**
      * Finalize receiving: update stock and complete request.
      */
-    public function finalize(InventoryReceiving $inventoryReceiving)
+    public function finalize(InventoryReceiving $inventoryReceiving, ?Request $request = null)
     {
         if ($inventoryReceiving->status !== 'pending') {
             return back()->with('error', 'Can only finalize pending receiving.');
         }
+
+        // Received qty is allowed to fall short of the requested qty (e.g. 9 of 10) -
+        // the UI confirms the shortfall with the user first instead of blocking finalize.
+        // The shortfall is not tracked for follow-up; the request is closed as-is.
+        $confirmPartial = $request?->boolean('confirm_partial') ?? false;
 
         try {
             DB::beginTransaction();
@@ -923,10 +928,18 @@ class InventoryReceivingController extends Controller
 
                 $expectedQty = (float) $items->sum('quantity');
 
-                if ($snCount != $expectedQty) {
+                if ($snCount > $expectedQty) {
                     DB::rollback();
 
-                    return back()->with('error', "Product '{$firstItem->product?->name}' requires Serial Number. Found {$snCount}, expected {$expectedQty}. Please input all serial numbers before finalizing.");
+                    return back()->with('error', "Product '{$firstItem->product?->name}' has more Serial Numbers scanned ({$snCount}) than requested ({$expectedQty}). Please check the scanned units before finalizing.");
+                }
+
+                if ($snCount < $expectedQty && ! $confirmPartial) {
+                    DB::rollback();
+
+                    return back()
+                        ->with('error', "Product '{$firstItem->product?->name}' has fewer Serial Numbers scanned ({$snCount}) than requested ({$expectedQty}). Confirm to finalize with the shortfall, or scan the remaining serial numbers.")
+                        ->with('requires_partial_confirmation', true);
                 }
 
                 $this->syncReceivedQuantitiesForProduct($inventoryReceiving, (int) $productId);

@@ -177,6 +177,7 @@
                             @if($receiving->status === 'pending')
                             <form method="POST" action="{{ route('warehouse.inventory-receivings.finalize', $receiving->id) }}" style="display: inline;" onsubmit="return handleFinalizeReceiving(event, this)">
                                 @csrf
+                                <input type="hidden" name="confirm_partial" value="0">
                                 <button type="submit" class="btn btn-success btn-sm">
                                     <i class="fas fa-check-circle"></i> Finalize
                                 </button>
@@ -783,13 +784,38 @@ function submitUpdateQty() {
 function handleFinalizeReceiving(event, form) {
     event.preventDefault();
 
+    const items = globalReceivingItems || [];
+    const shortfallProducts = [];
+    items.forEach((item) => {
+        const productId = item.master_product_id;
+        if (!productId || shortfallProducts.some(p => p.id === productId)) {
+            return;
+        }
+        const remaining = globalRemainingQty[productId] ?? 0;
+        if (remaining > 0) {
+            shortfallProducts.push({ id: productId, name: item.product?.name || `Product #${productId}`, remaining });
+        }
+    });
+
+    const hasShortfall = shortfallProducts.length > 0;
+    const confirmPartialInput = form ? form.querySelector('input[name="confirm_partial"]') : null;
+
+    const message = hasShortfall
+        ? 'Jumlah barang yang diterima kurang dari yang diminta untuk: ' +
+          shortfallProducts.map(p => `${p.name} (kurang ${p.remaining})`).join(', ') +
+          '. Kekurangan ini akan dianggap tidak diterima dan request akan tetap diselesaikan (completed). Lanjutkan finalize?'
+        : 'Apakah Anda yakin ingin finalize receiving ini? Stok akan otomatis bertambah dan request akan di-complete.';
+
     showConfirmDialog(
         'Finalize Receiving',
-        'Apakah Anda yakin ingin finalize receiving ini? Stok akan otomatis bertambah dan request akan di-complete.',
+        message,
         'Ya, Finalize',
         'Batal'
     ).then((confirmed) => {
         if (confirmed && form) {
+            if (confirmPartialInput) {
+                confirmPartialInput.value = hasShortfall ? '1' : '0';
+            }
             form.submit();
         }
     });
