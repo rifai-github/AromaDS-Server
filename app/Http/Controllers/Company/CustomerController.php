@@ -514,6 +514,16 @@ class CustomerController extends Controller
                     $syncData[$contactId] = ['is_primary' => $index === 0]; // First one is primary
                 }
                 $customer->contacts()->sync($syncData);
+
+                // Contacts created via the inline "Add Contact" modal while creating
+                // this company have no customer_id yet (it wasn't known until now).
+                // Auto-link them here so they behave like the direct PIC-add flow,
+                // which always sets customer_id immediately. Contacts that already
+                // belong to another customer (genuine multi-customer PICs) are left
+                // untouched.
+                CustomerContact::whereIn('id', array_keys($syncData))
+                    ->whereNull('customer_id')
+                    ->update(['customer_id' => $customer->id]);
             }
 
             // Link the assigned contact to this customer if one was selected

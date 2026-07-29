@@ -221,11 +221,13 @@
                                 <span class="text-xs text-blue-600 italic"><i class="fas fa-info-circle mr-1"></i> Hold Ctrl/Cmd to select multiple</span>
                             </div>
                             <div class="flex gap-2">
-                                <select id="create_contact_ids" name="contact_ids[]" multiple class="flex-1 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all custom-scrollbar select2" style="height: 100px;">
-                                    @foreach($allContacts as $contact)
-                                        <option value="{{ $contact->id }}" class="py-1">{{ $contact->name }} - {{ $contact->position ?? 'No Position' }} ({{ $contact->phone }})</option>
-                                    @endforeach
-                                </select>
+                                <div class="flex-1 min-w-0">
+                                    <select id="create_contact_ids" name="contact_ids[]" multiple class="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all custom-scrollbar select2" style="height: 100px;">
+                                        @foreach($allContacts as $contact)
+                                            <option value="{{ $contact->id }}" class="py-1">{{ $contact->name }} - {{ $contact->position ?? 'No Position' }} ({{ $contact->phone }})</option>
+                                        @endforeach
+                                    </select>
+                                </div>
                                 <button type="button" onclick="openCreateCustomerContactModal()" class="w-[42px] h-[42px] flex-shrink-0 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 shadow-sm flex items-center justify-center transition-all" title="Add New Contact">
                                     <i class="fas fa-plus"></i>
                                 </button>

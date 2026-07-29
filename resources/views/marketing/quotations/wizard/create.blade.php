@@ -1028,7 +1028,7 @@
                                     <div class="row">
                                         <div class="col-md-12">
                                             <div class="form-group">
-                                                <label class="form-label">Total Penawaran</label>
+                                                <label class="form-label">Total Penawaran/TOP</label>
                                                 <div class="input-group">
                                                     <span class="input-group-text">Rp</span>
                                                     <input type="text" class="form-control" id="total_penawaran" name="total_penawaran" readonly placeholder="0">
@@ -4308,7 +4308,7 @@ $(document).ready(function() {
                                     '<th style="width: 50%;">Deskripsi Item</th>' +
                                     '<th style="width: 10%;" class="text-center">Qty</th>' +
                                     '<th style="width: 10%;" class="text-center">Qty Free</th>' +
-                                    '<th style="width: 15%;" class="text-center">Harga Rental</th>' +
+                                    '<th style="width: 15%;" class="text-center">Harga Rental/TOP</th>' +
                                     '<th style="width: 15%;" class="text-center">/ TOP</th>' +
                                 '</tr></thead>' +
                                 '<tbody id="summary-rental-items"></tbody>' +
@@ -4319,7 +4319,7 @@ $(document).ready(function() {
                             '<div class="col-md-4">' +
                                 '<table class="table table-sm mb-0"><tbody>' +
                                     '<tr><td><strong>Sub Total</strong></td><td class="text-end"><strong>' + (sub_total || '0') + '</strong></td></tr>' +
-                                    '<tr class="table-success"><td><strong>Grand Total</strong></td><td class="text-end"><strong>' + (total_penawaran || '0') + '</strong></td></tr>' +
+                                    '<tr class="table-success"><td><strong>Total/TOP</strong></td><td class="text-end"><strong>' + (total_penawaran || '0') + '</strong></td></tr>' +
                                 '</tbody></table>' +
                             '</div>' +
                         '</div>' +
@@ -5262,7 +5262,7 @@ $(document).ready(function() {
                         <div class="row">
                             <div class="col-md-3">
                                 <div class="form-group mb-3">
-                                    <label class="form-label">Harga (Quote Price)</label>
+                                    <label class="form-label">Harga/TOP</label>
                                     <input type="number" class="form-control" name="rental_items[${uniqueId}][price]" placeholder="Harga" min="0" step="1" required>
                                 </div>
                             </div>

@@ -1239,7 +1239,8 @@
                 $user = auth()->user();
                 $roleName = $user->getRoleName(); // MOM10: Use Individual Role only
                 $roleLower = strtolower($roleName ?? '');
-                $isMarketing = $user->hasPermission('marketing.dashboard');
+                $isAdminOrManagement = $user->hasRole('Admin') || $user->hasRole('super_admin') || $user->hasRoleStartingWith('Management');
+                $isMarketing = !$isAdminOrManagement && $user->hasPermission('marketing.dashboard');
                 $dashboardRoute = $isMarketing ? route('marketing.dashboard') : route('dashboard');
             @endphp
             <div class="menu-item {{ request()->routeIs('dashboard') || request()->routeIs('marketing.dashboard') ? 'active' : '' }}" onclick="navigateTo('{{ $dashboardRoute }}', event)">
