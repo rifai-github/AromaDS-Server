@@ -4309,7 +4309,7 @@ $(document).ready(function() {
                                     '<th style="width: 10%;" class="text-center">Qty</th>' +
                                     '<th style="width: 10%;" class="text-center">Qty Free</th>' +
                                     '<th style="width: 15%;" class="text-center">Harga Rental/TOP</th>' +
-                                    '<th style="width: 15%;" class="text-center">/ TOP</th>' +
+                                    '<th style="width: 15%;" class="text-center">Total/TOP</th>' +
                                 '</tr></thead>' +
                                 '<tbody id="summary-rental-items"></tbody>' +
                             '</table>' +
