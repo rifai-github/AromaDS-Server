@@ -1599,6 +1599,26 @@ function setupJobAdviceDateGuards() {
             if (type) {
                 type.addEventListener('change', applyDefaultRemoveDate);
             }
+
+            // Flatpickr wraps expected_date asynchronously (via a page-level
+            // MutationObserver) after this function runs, and when the user types the
+            // date manually flatpickr commits the value through a debounced internal
+            // onChange that does not always dispatch a native 'change' event on the
+            // original input. Hook flatpickr's own onChange callback array directly
+            // once the instance exists, so typed dates trigger the default too.
+            let flatpickrHookAttempts = 0;
+            const wireFlatpickrOnChange = () => {
+                const instance = expected._flatpickr;
+                if (instance && instance.config && Array.isArray(instance.config.onChange)) {
+                    instance.config.onChange.push(applyDefaultRemoveDate);
+                    return;
+                }
+                flatpickrHookAttempts += 1;
+                if (flatpickrHookAttempts < 40) {
+                    setTimeout(wireFlatpickrOnChange, 100);
+                }
+            };
+            wireFlatpickrOnChange();
         }
 
         expected.addEventListener('change', syncMinDate);
