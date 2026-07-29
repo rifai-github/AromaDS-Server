@@ -1580,18 +1580,30 @@ function setupJobAdviceDateGuards() {
         if (isCreatePair) {
             // Default Remove Date to H+3 from Expected Date for Install Free,
             // unless the user has already typed/picked their own value.
+            let isProgrammaticRemoveUpdate = false;
             const applyDefaultRemoveDate = () => {
                 if (!type || !isInstallFreeType(type.value)) return;
                 if (remove.dataset.userEdited === 'true') return;
 
                 const defaultRemoveDate = addDaysToDateValue(expected.value, 3);
-                if (defaultRemoveDate) {
+                if (!defaultRemoveDate) return;
+
+                isProgrammaticRemoveUpdate = true;
+                // remove_date is also auto-upgraded to flatpickr (altInput display +
+                // hidden original). Setting remove.value directly only updates the
+                // hidden original, leaving the visible altInput stale, so go through
+                // flatpickr's own API when the instance exists.
+                if (remove._flatpickr) {
+                    remove._flatpickr.setDate(defaultRemoveDate, true);
+                } else {
                     remove.value = defaultRemoveDate;
-                    syncMinDate();
                 }
+                isProgrammaticRemoveUpdate = false;
+                syncMinDate();
             };
 
             remove.addEventListener('input', () => {
+                if (isProgrammaticRemoveUpdate) return;
                 remove.dataset.userEdited = 'true';
             });
 
