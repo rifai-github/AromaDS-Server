@@ -228,7 +228,7 @@
                                         @endforeach
                                     </select>
                                 </div>
-                                <button type="button" onclick="openCreateCustomerContactModal()" class="bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 shadow-sm transition-all" style="width: 42px; height: 42px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;" title="Add New Contact">
+                                <button type="button" onclick="openCreateCustomerContactModal()" class="btn btn-success btn-sm" style="width: 42px; height: 42px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;" title="Add New Contact">
                                     <i class="fas fa-plus"></i>
                                 </button>
                             </div>
