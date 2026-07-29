@@ -895,8 +895,11 @@ class JobAssignMaterialIssueController extends Controller
 
 
 
-        $sort = $request->get('sort', 'issue_date');
-        $direction = $request->get('direction') === 'asc' ? 'asc' : 'desc';
+        $sort = $request->get('sort', 'job_number');
+        $defaultDirection = $sort === 'job_number' ? 'asc' : 'desc';
+        $direction = in_array($request->get('direction'), ['asc', 'desc'], true)
+            ? $request->get('direction')
+            : $defaultDirection;
 
         if ($sort === 'status') {
             $query->orderBy(
@@ -907,10 +910,18 @@ class JobAssignMaterialIssueController extends Controller
             );
         } elseif ($sort === 'created_at') {
             $query->orderBy('created_at', $direction);
-        } else {
+        } elseif ($sort === 'issue_date') {
             $query->orderBy(
                 MaterialIssue::select('issue_date')
                     ->whereColumn('material_issues.id', 'job_assign_material_issues.material_issue_id')
+                    ->limit(1),
+                $direction
+            );
+        } else {
+            $query->orderBy(
+                JobSchedule::select('job_number')
+                    ->join('job_assign_schedules', 'job_assign_schedules.job_schedule_id', '=', 'job_schedules.id')
+                    ->whereColumn('job_assign_schedules.id', 'job_assign_material_issues.job_assign_schedule_id')
                     ->limit(1),
                 $direction
             );
