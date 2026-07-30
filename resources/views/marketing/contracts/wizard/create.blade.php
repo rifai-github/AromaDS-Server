@@ -143,9 +143,18 @@
         background: #10b981;
         color: white;
     }
-    
+
     .btn-save:hover {
         background: #059669;
+    }
+
+    .btn-finalize {
+        background: #16a34a;
+        color: white;
+    }
+
+    .btn-finalize:hover {
+        background: #15803d;
     }
     
     .form-section {
@@ -705,7 +714,7 @@
             <button type="button" class="btn-wizard btn-save" id="saveDraftBtn" onclick="saveDraft()" style="display: none;">
                 <i class="fas fa-save mr-2"></i>Save Draft
             </button>
-            <button type="button" class="btn-wizard bg-green-600 hover:bg-green-700 text-white" id="finalizeBtn" onclick="finalizeContract()" style="display: none;">
+            <button type="button" class="btn-wizard btn-finalize" id="finalizeBtn" onclick="finalizeContract()" style="display: none;">
                 <i class="fas fa-check-circle mr-2"></i>FINALIZE
             </button>
             <button type="button" class="btn-wizard btn-next" id="nextBtn" onclick="changeStep(1)">
