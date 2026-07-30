@@ -2004,9 +2004,12 @@
                                     <thead class="table-dark">
                                         <tr>
                                             <th>Room Name</th>
+                                            <th>Device Type</th>
+                                            <th>Device Name</th>
                                             <th>MAC / Serial Number</th>
                                             <th>Liquid Level</th>
                                             <th>Fan Level</th>
+                                            <th>Run / Suspend Time</th>
                                             <th style="min-width: 150px;">Operating Schedule</th>
                                             <th>Work Status</th>
                                             <th>Last Scanned At</th>
@@ -2023,6 +2026,8 @@
                                         @forelse($unitDetails ?? [] as $detail)
                                         <tr>
                                             <td>{{ $detail->room_name ?? '-' }}</td>
+                                            <td>{{ !empty($detail->device_type) ? $detail->device_type : '-' }}</td>
+                                            <td>{{ !empty($detail->device_name) ? $detail->device_name : '-' }}</td>
                                             <td>
                                                 <code>{{ !empty($detail->mac) && $detail->mac !== '-' ? $detail->mac : (!empty($detail->unit_serial_number) && $detail->unit_serial_number !== '-' ? $detail->unit_serial_number : 'NO MAC') }}</code>
                                             </td>
@@ -2045,6 +2050,14 @@
                                                     <span class="badge bg-info text-dark">Level {{ $detail->snapshot['fanLevel'] }}</span>
                                                 @else
                                                     -
+                                                @endif
+                                            </td>
+                                            <td style="font-size: 0.8rem;">
+                                                @if((isset($detail->snapshot['run']) && $detail->snapshot['run'] !== '') || (isset($detail->snapshot['suspend']) && $detail->snapshot['suspend'] !== ''))
+                                                    <div>Run: {{ $detail->snapshot['run'] ?? 0 }}s</div>
+                                                    <div>Suspend: {{ $detail->snapshot['suspend'] ?? 0 }}s</div>
+                                                @else
+                                                    <span class="text-muted">-</span>
                                                 @endif
                                             </td>
                                             <td style="font-size: 0.8rem;">
@@ -2106,7 +2119,7 @@
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="8" class="text-center text-muted py-4">
+                                            <td colspan="11" class="text-center text-muted py-4">
                                                 <i class="fas fa-info-circle me-1"></i> No technical data available for this job yet.
                                             </td>
                                         </tr>

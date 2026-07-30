@@ -2960,6 +2960,7 @@ class JobScheduleController extends Controller
                     'mac' => $report->unit_mac_address ?: '-',
                     'unit_serial_number' => $report->unit_serial_number ?: '-',
                     'device_type' => $report->job_type ?: 'Unknown',
+                    'device_name' => null,
                     'snapshot' => $snapshot,
                     'scanned_at' => $report->completed_at ?? $report->created_at,
                     'notes' => $report->notes,
