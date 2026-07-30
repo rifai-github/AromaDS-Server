@@ -5,6 +5,8 @@
 <a href="{{ route('marketing.quotations.index') }}" style="color: #214589; text-decoration: none;">
     <i class="fas fa-arrow-left" style="margin-right: 5px;"></i>Back to Quotation
 </a>
+/ Home / Marketing / Quotation / Create
+@endsection
 @section('content')
 <!-- Bootstrap 5 CSS (for Modal) -->
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" />
