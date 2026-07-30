@@ -179,6 +179,7 @@ if ($invoice->invoice_date) {
 
 $amountIdr = 'IDR ' . number_format($invoice->grand_total, 0, ',', ',');
 $dikirimOleh = trim((string) ($invoice->dikirim_oleh ?? ''));
+$diterimaOleh = trim((string) ($invoice->diterima_oleh ?? ''));
 
 // Footer: prefer the company address, then append the legacy Tel/Fax + branch-phone lines
 // (static branding text not stored per-record — defaults match the official template).
@@ -267,7 +268,8 @@ if (file_exists($logoPath)) {
                     </td>
                     <td class="sign-spacer">&nbsp;</td>
                     <td class="sign-col">
-                        <div class="sign-line" style="margin-top: 60px;"></div>
+                        <div class="sign-name" style="text-align: center; margin-top: 43px;">{{ $diterimaOleh }}</div>
+                        <div class="sign-line"></div>
                         <div class="sign-caption" style="text-align: center;">Tanda tangan, nama jelas, cap</div>
                     </td>
                 </tr>

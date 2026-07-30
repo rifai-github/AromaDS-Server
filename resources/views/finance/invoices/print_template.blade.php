@@ -461,8 +461,11 @@
                 ->implode('  '),
         );
 
-        /* ===== NPWP / NIK (prefer invoice tax fields, fall back to customer) ===== */
-        $npwpNumber = trim((string) ($invoice->npwp_number ?: $invoice->customer?->npwp ?: ''));
+        /* ===== NPWP / NIK (same source chain as the "Customer Information" card on the invoice page) ===== */
+        $customerTaxSetting = $invoice->customer?->customerTaxSettings?->first();
+        $npwpNumber = trim(
+            (string) ($invoice->npwp_number ?: ($customerTaxSetting->tax_number ?? $invoice->customer?->npwp ?: '')),
+        );
         $nikNumber = trim((string) ($invoice->customer?->nik ?? ''));
 
         /* ===== Bill To / Shipment addresses ===== */
