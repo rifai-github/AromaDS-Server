@@ -4300,8 +4300,7 @@ function suggestQtyForGroup(rentalDetailId, startFromIndex = 0) {
     rows.forEach((row, index) => {
         const qtyInput = row.querySelector('.qty-issue-input');
         const bomPerUnit = parseFloat(row.getAttribute('data-product-bom-qty') || 0);
-        const warehouseStock = parseFloat(row.getAttribute('data-warehouse-stock') || 0);
-        
+
         if (index < startFromIndex) {
             // Volume already committed in previous rows
             const currentQty = parseFloat(qtyInput.value || 0);
@@ -4320,12 +4319,6 @@ function suggestQtyForGroup(rentalDetailId, startFromIndex = 0) {
             let suggestedQty = 0;
             if (remainingTarget > 0) {
                  suggestedQty = Math.floor(remainingTarget / bomPerUnit);
-                 // If floor results in 0 but we still have remaining target and this is the last row, 
-                 // we might want to suggest 1? No, user said "min(floor)". 
-                 // But let's stick to the floor for strictness unless it's a special job.
-                 
-                 // Constrain by warehouse stock
-                 suggestedQty = Math.min(suggestedQty, warehouseStock);
                  if (suggestedQty < 0) suggestedQty = 0;
             }
             

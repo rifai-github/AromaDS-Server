@@ -5382,20 +5382,12 @@ class JobAssignMaterialIssueController extends Controller
                 foreach ($candidates as $candidate) {
                     $bomPerUnit = $candidate->bom_quantity ?? 0;
                     if ($bomPerUnit <= 0) continue;
-                    
-                    // Check stock for this candidate in same warehouse
-                    $stock = \App\Models\WarehouseProduct::where('warehouse_id', $materialIssue->warehouse_id)
-                        ->where('master_product_id', $candidate->id)
-                        ->value('quantity') ?? 0;
-                    
-                    if ($stock <= 0) continue;
 
                     // Can we suggest at least 1 unit?
                     if ($bomPerUnit <= $remainingTarget) {
                         $suggestedProduct = $candidate;
                         $suggestedQty = floor($remainingTarget / $bomPerUnit);
-                        $suggestedQty = min($suggestedQty, $stock); // Constrain by stock
-                        break; 
+                        break;
                     } else {
                         // If all packages are too big, maybe suggest 1 unit of the smallest available?
                         // Or just let user choose. Let's pick the smallest if we haven't found anything yet.
