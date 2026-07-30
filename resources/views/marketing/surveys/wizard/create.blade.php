@@ -436,7 +436,12 @@
         max-width: 70% !important;
         display: flex !important;
     }
-    
+
+    .col-lg-8 .wizard-step, .col-md-8 .wizard-step {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+
     .card {
         width: 100% !important;
         display: flex !important;
