@@ -5165,7 +5165,20 @@ $(document).ready(function() {
                     
                     if (targetForm && targetForm.length > 0) {
                         console.log('Filling form for config:', config.uniqueId);
-                        
+
+                        // Fill other fields FIRST, before touching the product select.
+                        // The product select's change handler auto-fetches a default catalog
+                        // price only when the price field is still empty (see the delegated
+                        // handler on .rental-product-select) — filling price here first
+                        // prevents that async fetch from clobbering the restored value.
+                        targetForm.find('input[name*="price"]').val(config.formData.price);
+                        targetForm.find('input[name*="quantity"]').val(config.formData.quantity);
+                        targetForm.find('input[name*="qty_free"]').val(config.formData.qty_free || 0);
+                        targetForm.find('input[name*="remark"]').val(config.formData.remark || '');
+                        targetForm.find('[name*="rental_alias"]').val(config.formData.rental_alias || '');
+
+                        console.log('Filled form values:', config.formData);
+
                         // Fill product (Select2)
                         const productSelect = targetForm.find('.rental-product-select');
                         if (productSelect.length > 0 && config.formData.product_id) {
@@ -5179,7 +5192,7 @@ $(document).ready(function() {
                                     const newOption = new Option(productName, productId, true, true);
                                     productSelect.append(newOption);
                                 }
-                                 productSelect.val(productId).trigger('change'); 
+                                 productSelect.val(productId).trigger('change');
                                 // REMOVED: productSelect.trigger('select2:select'); // This was causing TypeError
                             } else {
                                 // Select2 not yet initialized, set value directly
@@ -5190,15 +5203,6 @@ $(document).ready(function() {
                             }
                             console.log('Set product:', productId, productName, 'Current Val:', productSelect.val());
                         }
-                        
-                        // Fill other fields
-                        targetForm.find('input[name*="price"]').val(config.formData.price);
-                        targetForm.find('input[name*="quantity"]').val(config.formData.quantity);
-                        targetForm.find('input[name*="qty_free"]').val(config.formData.qty_free || 0);
-                        targetForm.find('input[name*="remark"]').val(config.formData.remark || '');
-                        targetForm.find('[name*="rental_alias"]').val(config.formData.rental_alias || '');
-                        
-                        console.log('Filled form values:', config.formData);
                         
                         // Force update button state after filling THIS item
                         updateNextButtonState();
