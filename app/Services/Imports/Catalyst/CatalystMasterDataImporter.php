@@ -218,6 +218,7 @@ class CatalystMasterDataImporter
                 'sku_prefix' => $sourceKey,
             ], [
                 'product_category_id' => $this->resolveCatalystProductCategoryIdForType($sourceKey, $row),
+                'source_category' => $this->cleanString($row['ProductCategory'] ?? null),
                 'name' => $name,
                 'description' => $this->buildSourceDescription([
                     'SourceCode' => $sourceKey,

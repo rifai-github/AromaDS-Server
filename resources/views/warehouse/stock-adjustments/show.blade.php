@@ -539,11 +539,33 @@
                     select.innerHTML += `<option value="${p.id}">${text}</option>`;
                 });
             }
+            initProductSelect2();
             updateSerialNumberInput();
         })
         .catch(err => {
             console.error(err);
             select.innerHTML = '<option value="">Error loading products</option>';
+        });
+    }
+
+    // Auto-init Select2 global (layouts/app.blade.php) melewatkan select ini: saat
+    // page load isinya cuma 1 option placeholder dan #addItemModal tidak memakai
+    // class .modal-body/.modal-container, dan option yang di-inject belakangan tidak
+    // memicu MutationObserver-nya. Jadi Select2 dipasang manual setelah data masuk.
+    function initProductSelect2() {
+        if (typeof $ === 'undefined' || !$.fn.select2) return;
+
+        const $select = $('#item_product_id');
+
+        if ($select.hasClass('select2-hidden-accessible')) {
+            $select.select2('destroy');
+        }
+
+        $select.select2({
+            placeholder: 'Pilih Produk',
+            dropdownParent: $('#addItemModal'),
+            width: '100%',
+            minimumResultsForSearch: 0
         });
     }
 

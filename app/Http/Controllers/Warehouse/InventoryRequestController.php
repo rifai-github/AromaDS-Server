@@ -426,7 +426,9 @@ class InventoryRequestController extends Controller
         $inventoryRequest->load(['warehouse', 'branch', 'requestedBy', 'items.product']);
         $warehouses = $this->getInventoryRequestFormWarehouses();
         [$branches, $userBranchId] = $this->getAvailableBranchesForUser(Auth::user());
-        $products = $this->getInventoryRequestFormProducts();
+        $products = $this->getInventoryRequestFormProducts(
+            $inventoryRequest->items->pluck('master_product_id')->all()
+        );
         $users = $this->getInventoryRequestFormUsers();
 
         return response()->json([
@@ -1258,6 +1260,7 @@ class InventoryRequestController extends Controller
     {
         $existingProductIds = $inventoryRequest->items->pluck('master_product_id')->toArray();
         $products = MasterProduct::where('is_active', true)
+            ->materialOnly()
             ->whereNotIn('id', $existingProductIds)
             ->orderBy('name')
             ->get();
@@ -1273,12 +1276,29 @@ class InventoryRequestController extends Controller
             ->get();
     }
 
-    private function getInventoryRequestFormProducts()
+    /**
+     * Inventory Request hanya boleh meminta produk material (bukan unit rental,
+     * fixed asset, atau item biaya) — dibatasi lewat kategori legacy Catalyst di
+     * product_types.source_category.
+     */
+    private function getInventoryRequestFormProducts(array $alwaysIncludeIds = [])
     {
+        $alwaysIncludeIds = array_values(array_filter($alwaysIncludeIds));
+
         return MasterProduct::query()
             ->select('id', 'name', 'sku', 'packaging_size_id', 'packaging_size')
             ->with(['packagingSize:id,name'])
             ->where('is_active', true)
+            ->where(function ($query) use ($alwaysIncludeIds) {
+                $query->materialOnly();
+
+                // Request lama bisa memuat produk non-material (data sebelum filter
+                // ini ada). Tetap sertakan supaya baris existing tidak kehilangan
+                // pilihannya saat di-edit.
+                if ($alwaysIncludeIds) {
+                    $query->orWhereIn('id', $alwaysIncludeIds);
+                }
+            })
             ->orderBy('name')
             ->get();
     }

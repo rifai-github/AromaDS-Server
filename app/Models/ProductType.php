@@ -11,8 +11,29 @@ class ProductType extends Model
 {
     use HasFactory, SoftDeletes, AutoFilterable;
 
+    /**
+     * Kategori legacy Catalyst/PinkAds (MsProductType.ProductCategory). Dipakai
+     * untuk memisahkan produk material dari unit rental / fixed asset / biaya,
+     * bukan hierarki product_categories.
+     */
+    public const SOURCE_CATEGORY_MATERIAL = 'Material';
+
+    public const SOURCE_CATEGORY_RENTAL = 'Rental';
+
+    public const SOURCE_CATEGORY_FIXED_ASSET = 'Fixed Asset';
+
+    public const SOURCE_CATEGORY_OTHER = 'Other';
+
+    public const SOURCE_CATEGORIES = [
+        self::SOURCE_CATEGORY_MATERIAL,
+        self::SOURCE_CATEGORY_RENTAL,
+        self::SOURCE_CATEGORY_FIXED_ASSET,
+        self::SOURCE_CATEGORY_OTHER,
+    ];
+
     protected $fillable = [
         'product_category_id', // Untuk struktur hierarki Category → Type → Product
+        'source_category', // Kategori legacy Catalyst: Material / Rental / Fixed Asset / Other
         'name',
         'description',
         'unit',
@@ -65,6 +86,11 @@ class ProductType extends Model
     public function scopeIsUnit($query)
     {
         return $query->where('is_unit', true);
+    }
+
+    public function scopeSourceCategory($query, string|array $categories)
+    {
+        return $query->whereIn('source_category', (array) $categories);
     }
 
     public function createdBy()

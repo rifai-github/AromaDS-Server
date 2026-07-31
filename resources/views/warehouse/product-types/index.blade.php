@@ -1043,6 +1043,19 @@ function closeModal() {
     document.getElementById('modalFooter').innerHTML = '';
 }
 
+// Kategori stok legacy Catalyst (product_types.source_category). Menentukan produk
+// dari type ini dianggap material, unit rental, fixed asset, atau item biaya.
+const SOURCE_CATEGORIES = @json(\App\Models\ProductType::SOURCE_CATEGORIES);
+
+function buildSourceCategoryOptions(selected) {
+    let html = '<option value="">Pilih Kategori Stok</option>';
+    SOURCE_CATEGORIES.forEach(function(category) {
+        const isSelected = selected === category ? ' selected' : '';
+        html += '<option value="' + category + '"' + isSelected + '>' + category + '</option>';
+    });
+    return html;
+}
+
 // CRUD Modal functions
 function openCreateModal() {
     openModal('Create New Product Type');
@@ -1086,6 +1099,13 @@ function openCreateModal() {
                 categoryOptions +
                 '</select>' +
                 '<small class="text-muted">Product Type must be associated with a Category</small>' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label class="form-label">Kategori Stok *</label>' +
+                '<select name="source_category" class="form-input" required>' +
+                buildSourceCategoryOptions() +
+                '</select>' +
+                '<small class="text-muted">Menentukan produk ini muncul di Inventory Request / Stock Adjustment (Material) atau tidak</small>' +
                 '</div>' +
                 '<div class="form-group">' +
                 '<label class="form-label">Name *</label>' +
@@ -1365,6 +1385,13 @@ function openEditModal(id) {
                     '<label class="form-label">Product Category *</label>' +
                     '<select name="product_category_id" class="form-input" required>' + categoryOptions + '</select>' +
                     '<small class="text-muted">Product Type must be associated with a Category</small>' +
+                    '</div>' +
+                    '<div class="form-group">' +
+                    '<label class="form-label">Kategori Stok *</label>' +
+                    '<select name="source_category" class="form-input" required>' +
+                    buildSourceCategoryOptions(productType.source_category) +
+                    '</select>' +
+                    '<small class="text-muted">Menentukan produk ini muncul di Inventory Request / Stock Adjustment (Material) atau tidak</small>' +
                     '</div>' +
                     '<div class="form-group">' +
                     '<label class="form-label">Name *</label>' +

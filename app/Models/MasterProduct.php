@@ -276,6 +276,25 @@ class MasterProduct extends Model
     }
 
     /**
+     * Filter berdasarkan kategori legacy Catalyst (Material / Rental / Fixed Asset /
+     * Other) yang tersimpan di product_types.source_category.
+     *
+     * Produk tanpa product_type_id ikut terbuang, sama seperti perilaku LEFT JOIN +
+     * WHERE t.ProductCategory = '...' di sistem lama.
+     */
+    public function scopeBySourceCategory($query, string|array $categories)
+    {
+        return $query->whereHas('productType', function ($typeQuery) use ($categories) {
+            $typeQuery->whereIn('source_category', (array) $categories);
+        });
+    }
+
+    public function scopeMaterialOnly($query)
+    {
+        return $query->bySourceCategory(ProductType::SOURCE_CATEGORY_MATERIAL);
+    }
+
+    /**
      * Helper: Cek is_unit dari Category terlebih dahulu, fallback ke ProductType
      */
     public function getIsUnitFromCategoryAttribute()

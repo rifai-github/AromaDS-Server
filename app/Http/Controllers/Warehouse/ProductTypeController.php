@@ -13,6 +13,7 @@ use App\Helpers\UnitHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class ProductTypeController extends Controller
 {
@@ -132,6 +133,7 @@ class ProductTypeController extends Controller
         try {
             $request->validate([
                 'product_category_id' => 'required|exists:product_categories,id',
+                'source_category' => ['required', Rule::in(ProductType::SOURCE_CATEGORIES)],
                 'name' => 'required|string|max:255',
                 'sku_prefix' => 'required|string|max:10|unique:product_types',
                 'unit' => ['required', 'string', 'max:50', function ($attribute, $value, $fail) {
@@ -169,6 +171,7 @@ class ProductTypeController extends Controller
 
             $productType = ProductType::create([
                 'product_category_id' => $request->product_category_id,
+                'source_category' => $request->source_category,
                 'name' => $request->name,
                 'sku_prefix' => strtoupper($request->sku_prefix),
                 'unit' => $request->unit,
@@ -248,6 +251,7 @@ class ProductTypeController extends Controller
         try {
             $request->validate([
                 'product_category_id' => 'required|exists:product_categories,id',
+                'source_category' => ['required', Rule::in(ProductType::SOURCE_CATEGORIES)],
                 'name' => 'required|string|max:255',
                 'sku_prefix' => 'required|string|max:10|unique:product_types,sku_prefix,' . $productType->id,
                 'unit' => ['required', 'string', 'max:50', function ($attribute, $value, $fail) {
@@ -285,6 +289,7 @@ class ProductTypeController extends Controller
 
             $productType->update([
                 'product_category_id' => $request->product_category_id,
+                'source_category' => $request->source_category,
                 'name' => $request->name,
                 'sku_prefix' => strtoupper($request->sku_prefix),
                 'unit' => $request->unit,
