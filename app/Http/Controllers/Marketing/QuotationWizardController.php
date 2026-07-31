@@ -743,6 +743,7 @@ class QuotationWizardController extends Controller
                 'rental_unit' => 'required|in:hari,bulan',
                 'payment_method' => 'required|in:Before Service,After Service',
                 'term_of_payment' => 'required|string',
+                'price_basis' => 'required|in:room,rental',
             ]);
 
             if ($validator->fails()) {
@@ -1098,6 +1099,7 @@ class QuotationWizardController extends Controller
                 'rental_unit' => 'required|in:hari,bulan',
                 'payment_method' => 'required|in:Before Service,After Service',
                 'term_of_payment' => 'required|string',
+                'price_basis' => 'required|in:room,rental',
             ]);
 
             if ($validator->fails()) {

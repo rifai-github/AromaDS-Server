@@ -7080,6 +7080,18 @@ $(document).ready(function() {
         submitQuotation('draft');
     });
 
+    // The wizard's 7 steps share a single <form>, and only the Step 7 button is
+    // type="submit". Pressing Enter in any input/select elsewhere in the form
+    // still triggers the browser's implicit-submit behavior on that button, which
+    // silently submits the quotation before Steps 5-7 have been filled in. Block
+    // Enter everywhere except while Step 7 is actually active.
+    $('#quotationWizardForm').on('keydown', 'input, select', function(e) {
+        if (e.key !== 'Enter' && e.keyCode !== 13) return;
+        if ($('.wizard-step.active').attr('id') !== 'step-7') {
+            e.preventDefault();
+        }
+    });
+
    
     showStep(1);
     
