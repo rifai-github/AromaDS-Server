@@ -208,7 +208,7 @@ class InventoryIssuingController extends Controller
         $inventoryRequests = InventoryRequest::where('status', 'approved')->get();
         $branches = Branch::where('is_active', true)->get();
         $warehouses = Warehouse::where('is_active', true)->get();
-        $products = MasterProduct::where('is_active', true)->get();
+        $products = MasterProduct::where('is_active', true)->stockableGoods()->get();
         $users = User::where('department_id', 4)->get(); // Warehouse department
 
         return view('warehouse.inventory-issuings.create', compact('inventoryRequests', 'branches', 'warehouses', 'products', 'users'));
@@ -391,7 +391,7 @@ class InventoryIssuingController extends Controller
         $inventoryRequests = InventoryRequest::where('status', 'approved')->get();
         $branches = Branch::where('is_active', true)->get();
         $warehouses = Warehouse::where('is_active', true)->get();
-        $products = MasterProduct::where('is_active', true)->get();
+        $products = MasterProduct::where('is_active', true)->stockableGoods()->get();
         $users = User::where('department_id', 4)->get();
 
         return view('warehouse.inventory-issuings.edit', compact('issuing', 'inventoryRequests', 'branches', 'warehouses', 'products', 'users'));
@@ -1476,12 +1476,15 @@ public function getUserTeams($userId)
     }
 
     /**
-     * Get all active master products for manual issuing
+     * Get all active master products for manual issuing. Paket sewa (RNT/RNNQR)
+     * dan item biaya/aset tetap dibuang - ini barang yang dikeluarkan dari gudang
+     * secara fisik, sama seperti Inventory Request & Stock Adjustment.
      */
     public function getAllProducts()
     {
         try {
             $products = MasterProduct::where('is_active', true)
+                ->stockableGoods()
                 ->with(['productType', 'productCategory'])
                 ->orderBy('name')
                 ->get()
