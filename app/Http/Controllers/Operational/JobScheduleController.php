@@ -2924,10 +2924,20 @@ class JobScheduleController extends Controller
         $processedMacs = [];
         $processedReportIds = [];
 
+        // [ROOM NAME] job_schedule_units has no room_name column of its own; resolve it
+        // from job_advice_room_id so the Device Details tab doesn't show a blank "-".
+        $unitJobAdviceRoomIds = $unitDetailsFromUnits->pluck('job_advice_room_id')->filter()->unique()->values();
+        $unitJobAdviceRoomNames = $unitJobAdviceRoomIds->isEmpty()
+            ? collect()
+            : \App\Models\JobAdviceRoom::withTrashed()->whereIn('id', $unitJobAdviceRoomIds)->pluck('room_name', 'id');
+
         // 1. Process from job_schedule_units (Record scanned by technician)
         foreach ($unitDetailsFromUnits as $unit) {
             $snapshot = $unit->device_snapshot ? (json_decode($unit->device_snapshot, true) ?: []) : [];
             $unit->snapshot = is_array($snapshot) ? $snapshot : [];
+            $unit->room_name = $unit->job_advice_room_id
+                ? ($unitJobAdviceRoomNames[$unit->job_advice_room_id] ?? '-')
+                : '-';
             $mergedDetails->push($unit);
             if ($unit->mac) $processedMacs[] = $unit->mac;
         }

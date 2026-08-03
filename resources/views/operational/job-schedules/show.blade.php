@@ -2032,15 +2032,28 @@
                                                 <code>{{ !empty($detail->mac) && $detail->mac !== '-' ? $detail->mac : (!empty($detail->unit_serial_number) && $detail->unit_serial_number !== '-' ? $detail->unit_serial_number : 'NO MAC') }}</code>
                                             </td>
                                             <td>
-                                                @if(isset($detail->snapshot['liquidLevel']) && $detail->snapshot['liquidLevel'] !== '')
-                                                    @php $liquid = intval($detail->snapshot['liquidLevel']); @endphp
-                                                    <div class="progress" style="height: 20px;" title="{{ $liquid }}%">
-                                                        <div class="progress-bar {{ $liquid < 20 ? 'bg-danger' : ($liquid < 50 ? 'bg-warning' : 'bg-success') }}" 
-                                                               role="progressbar" style="width: {{ $liquid }}%;" 
-                                                               aria-valuenow="{{ $liquid }}" aria-valuemin="0" aria-valuemax="100">
-                                                            {{ $liquid }}%
+                                                @php
+                                                    $liquidRaw = $detail->snapshot['liquidLevel'] ?? null;
+                                                    // Mobile's manual refill input stores a bucketed code
+                                                    // ('0','<=10','>10','50','100'), not always a raw percent.
+                                                    $liquidCodeLabels = ['0' => '0%', '<=10' => '≤10%', '>10' => '>10%', '50' => '50%', '100' => '100%'];
+                                                    $liquidCodeClass = ['0' => 'bg-danger', '<=10' => 'bg-warning text-dark'];
+                                                @endphp
+                                                @if($liquidRaw !== null && $liquidRaw !== '')
+                                                    @if(is_numeric($liquidRaw))
+                                                        @php $liquid = intval($liquidRaw); @endphp
+                                                        <div class="progress" style="height: 20px;" title="{{ $liquid }}%">
+                                                            <div class="progress-bar {{ $liquid < 20 ? 'bg-danger' : ($liquid < 50 ? 'bg-warning' : 'bg-success') }}"
+                                                                   role="progressbar" style="width: {{ $liquid }}%; min-width: 2.5rem;"
+                                                                   aria-valuenow="{{ $liquid }}" aria-valuemin="0" aria-valuemax="100">
+                                                                {{ $liquid }}%
+                                                            </div>
                                                         </div>
-                                                    </div>
+                                                    @else
+                                                        <span class="badge {{ $liquidCodeClass[$liquidRaw] ?? 'bg-success' }}">
+                                                            {{ $liquidCodeLabels[$liquidRaw] ?? $liquidRaw }}
+                                                        </span>
+                                                    @endif
                                                 @else
                                                     <span class="text-muted">-</span>
                                                 @endif
@@ -2088,6 +2101,13 @@
                                                             {{ $session['startTime'] ?? '--' }} - {{ $session['endTime'] ?? '--' }}
                                                         </span>
                                                     </div>
+                                                    @if(isset($session['gear']) || isset($session['workTimeMinutes']) || isset($session['pauseTimeMinutes']))
+                                                        <div class="text-muted mb-1" style="font-size: 0.7rem;">
+                                                            @if(isset($session['gear'])) Gear: {{ $session['gear'] }} @endif
+                                                            @if(isset($session['workTimeMinutes'])) &middot; Work: {{ $session['workTimeMinutes'] }}m @endif
+                                                            @if(isset($session['pauseTimeMinutes'])) &middot; Pause: {{ $session['pauseTimeMinutes'] }}m @endif
+                                                        </div>
+                                                    @endif
                                                 @empty
                                                     <span class="text-muted small">No schedule</span>
                                                 @endforelse
