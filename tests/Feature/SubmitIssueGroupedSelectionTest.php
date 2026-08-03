@@ -523,9 +523,9 @@ class SubmitIssueGroupedSelectionTest extends TestCase
 
         DB::table('job_schedules')->insert([
             'id' => 1,
-            'job_number' => 'JKT-IF/26-06/0001',
+            'job_number' => 'JKT-CSR/26-06/0001',
             'room_name' => 'Meeting Room',
-            'type' => 'install_free',
+            'type' => 'service',
             'status' => 'assign_material',
             'created_at' => $now,
             'updated_at' => $now,
@@ -595,7 +595,250 @@ class SubmitIssueGroupedSelectionTest extends TestCase
 
         $this->assertCount(1, $errors);
         $this->assertStringContainsString('Qty BOM: 1, Target: 4', $errors[0]);
-        $this->assertStringContainsString('JKT-IF/26-06/0001', $errors[0]);
+        $this->assertStringContainsString('JKT-CSR/26-06/0001', $errors[0]);
+    }
+
+    /**
+     * WA report 2/8/2026: IF, Extra, and Complaint jobs must be issuable with less
+     * than the full BOM Rental target (e.g. partial free-install stock). Only these
+     * three job types are exempted from the under-target block.
+     */
+    public function test_material_issue_under_bom_target_allowed_for_install_free_job(): void
+    {
+        $now = now();
+
+        DB::table('job_schedules')->insert([
+            'id' => 1,
+            'job_number' => 'JKT-IF/26-06/0003',
+            'room_name' => 'Meeting Room',
+            'type' => 'install_free',
+            'status' => 'assign_material',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 20,
+            'job_schedule_id' => 1,
+            'status' => 'assigned',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('material_issues')->insert([
+            'id' => 30,
+            'issue_number' => 'JKT-MI/26-06/0003',
+            'status' => 'approved',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('job_assign_material_issues')->insert([
+            'id' => 40,
+            'job_assign_schedule_id' => 20,
+            'material_issue_id' => 30,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('product_types')->insert([
+            'id' => 50,
+            'name' => 'ADS W300',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('master_products')->insert([
+            'id' => 60,
+            'product_type_id' => 50,
+            'name' => 'ADS W300 Battery',
+            'bom_quantity' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('rental_details')->insert([
+            'id' => 70,
+            'bom_rental_qty' => 4,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('material_issue_items')->insert([
+            'id' => 80,
+            'material_issue_id' => 30,
+            'job_assign_schedule_id' => 20,
+            'product_id' => 60,
+            'room_name' => 'Meeting Room',
+            'quantity' => 1,
+            'bom_quantity' => 1,
+            'notes' => 'Room: Meeting Room, Rental: ADS W300, ComponentID: 70',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $errors = $this->validateBomTargets(40);
+
+        $this->assertSame([], $errors);
+    }
+
+    public function test_material_issue_over_bom_target_still_blocked_for_install_free_job(): void
+    {
+        $now = now();
+
+        DB::table('job_schedules')->insert([
+            'id' => 1,
+            'job_number' => 'JKT-IF/26-06/0004',
+            'room_name' => 'Meeting Room',
+            'type' => 'install_free',
+            'status' => 'assign_material',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 20,
+            'job_schedule_id' => 1,
+            'status' => 'assigned',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('material_issues')->insert([
+            'id' => 30,
+            'issue_number' => 'JKT-MI/26-06/0004',
+            'status' => 'approved',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('job_assign_material_issues')->insert([
+            'id' => 40,
+            'job_assign_schedule_id' => 20,
+            'material_issue_id' => 30,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('product_types')->insert([
+            'id' => 50,
+            'name' => 'ADS W300',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('master_products')->insert([
+            'id' => 60,
+            'product_type_id' => 50,
+            'name' => 'ADS W300 Battery',
+            'bom_quantity' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('rental_details')->insert([
+            'id' => 70,
+            'bom_rental_qty' => 4,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('material_issue_items')->insert([
+            'id' => 80,
+            'material_issue_id' => 30,
+            'job_assign_schedule_id' => 20,
+            'product_id' => 60,
+            'room_name' => 'Meeting Room',
+            'quantity' => 5,
+            'bom_quantity' => 1,
+            'notes' => 'Room: Meeting Room, Rental: ADS W300, ComponentID: 70',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $errors = $this->validateBomTargets(40);
+
+        $this->assertCount(1, $errors);
+        $this->assertStringContainsString('Qty BOM: 5, Target: 4', $errors[0]);
+    }
+
+    public function test_material_issue_under_bom_target_allowed_for_complain_job(): void
+    {
+        $now = now();
+
+        DB::table('job_schedules')->insert([
+            'id' => 1,
+            'job_number' => 'JKT-CMP/26-06/0001',
+            'room_name' => 'Meeting Room',
+            'type' => 'complain',
+            'status' => 'assign_material',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 20,
+            'job_schedule_id' => 1,
+            'status' => 'assigned',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('material_issues')->insert([
+            'id' => 30,
+            'issue_number' => 'JKT-MI/26-06/0005',
+            'status' => 'approved',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('job_assign_material_issues')->insert([
+            'id' => 40,
+            'job_assign_schedule_id' => 20,
+            'material_issue_id' => 30,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('product_types')->insert([
+            'id' => 50,
+            'name' => 'ADS W300',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('master_products')->insert([
+            'id' => 60,
+            'product_type_id' => 50,
+            'name' => 'ADS W300 Battery',
+            'bom_quantity' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('rental_details')->insert([
+            'id' => 70,
+            'bom_rental_qty' => 4,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('material_issue_items')->insert([
+            'id' => 80,
+            'material_issue_id' => 30,
+            'job_assign_schedule_id' => 20,
+            'product_id' => 60,
+            'room_name' => 'Meeting Room',
+            'quantity' => 1,
+            'bom_quantity' => 1,
+            'notes' => 'Room: Meeting Room, Rental: ADS W300, ComponentID: 70',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $errors = $this->validateBomTargets(40);
+
+        $this->assertSame([], $errors);
     }
 
     public function test_material_issue_matching_bom_target_can_submit_issue(): void

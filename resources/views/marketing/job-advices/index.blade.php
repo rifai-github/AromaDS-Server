@@ -1541,6 +1541,31 @@ function addDaysToDateValue(dateValue, days) {
     return dateValueForInput(date);
 }
 
+// Reads the date an input actually holds, tolerating flatpickr's unreliable
+// commit-on-blur when the user types into the altInput manually instead of
+// clicking a day on the calendar. In that case the visible altInput text can
+// update while the hidden original input (the one `.value` reads) lags
+// behind, which silently starves any logic that reads `.value` right after
+// blur (e.g. the Remove Date auto-default below). Re-parse the altInput text
+// via flatpickr's own parser and force it back into sync when it disagrees.
+function resolveFlatpickrDateValue(input) {
+    const fp = input._flatpickr;
+    if (!fp || !fp.altInput) return input.value;
+
+    const altText = fp.altInput.value.trim();
+    if (!altText) return input.value;
+
+    const parsed = fp.parseDate(altText, fp.config.altFormat);
+    if (!parsed || Number.isNaN(parsed.getTime())) return input.value;
+
+    const resolved = dateValueForInput(parsed);
+    if (resolved && resolved !== input.value) {
+        fp.setDate(resolved, false);
+    }
+
+    return resolved || input.value;
+}
+
 function setupJobAdviceDateGuards() {
     const pairs = [
         {
@@ -1563,14 +1588,15 @@ function setupJobAdviceDateGuards() {
         const isCreatePair = expected.id === 'expected_date';
 
         const syncMinDate = () => {
-            const minRemoveDate = addDaysToDateValue(expected.value, 1);
+            const expectedValue = resolveFlatpickrDateValue(expected);
+            const minRemoveDate = addDaysToDateValue(expectedValue, 1);
             if (minRemoveDate) {
                 remove.min = minRemoveDate;
             } else {
                 remove.removeAttribute('min');
             }
 
-            if (remove.value && expected.value && remove.value <= expected.value) {
+            if (remove.value && expectedValue && remove.value <= expectedValue) {
                 remove.setCustomValidity('Remove Date harus lebih tinggi dari Expected Date.');
             } else {
                 remove.setCustomValidity('');
@@ -1585,7 +1611,7 @@ function setupJobAdviceDateGuards() {
                 if (!type || !isInstallFreeType(type.value)) return;
                 if (remove.dataset.userEdited === 'true') return;
 
-                const defaultRemoveDate = addDaysToDateValue(expected.value, 3);
+                const defaultRemoveDate = addDaysToDateValue(resolveFlatpickrDateValue(expected), 3);
                 if (!defaultRemoveDate) return;
 
                 isProgrammaticRemoveUpdate = true;

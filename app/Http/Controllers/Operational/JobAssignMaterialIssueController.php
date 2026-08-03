@@ -320,9 +320,21 @@ class JobAssignMaterialIssueController extends Controller
         $errors = [];
         $issueNumber = $materialIssue->issue_number ?: ('ID ' . $materialIssue->id);
         $jobNumber = $jobAssignMaterialIssue->jobAssignSchedule?->jobSchedule?->job_number ?: '-';
+        $jobType = strtolower((string) ($jobAssignMaterialIssue->jobAssignSchedule?->jobSchedule?->type ?? ''));
+
+        // IF (install_free) / Extra / Complaint jobs are allowed to issue less than the
+        // full BOM Rental target — they don't need to cover the whole rental BOM the way
+        // an Install/Service job does. Over-issuing is still blocked for every type.
+        $bomUnderIssueExemptTypes = ['install_free', 'extra', 'complain'];
 
         foreach ($groups as $group) {
-            if (abs($group['total_bom_qty'] - $group['target_bom_qty']) <= 0.01) {
+            $diff = $group['total_bom_qty'] - $group['target_bom_qty'];
+
+            if (abs($diff) <= 0.01) {
+                continue;
+            }
+
+            if ($diff < 0 && in_array($jobType, $bomUnderIssueExemptTypes, true)) {
                 continue;
             }
 

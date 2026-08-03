@@ -1200,10 +1200,11 @@
                                 && !in_array($materialIssue->status, ['issued', 'received', 'sent'], true)
                                 && $isCopyablePackageMaterial;
                         @endphp
-                        <tr class="job-group" 
-                            data-group="{{ $groupKey }}" 
-                            data-id="{{ $issue->id }}" 
-                            data-job-number="{{ $jobSchedule ? $jobSchedule->job_number : '' }}" 
+                        <tr class="job-group"
+                            data-group="{{ $groupKey }}"
+                            data-id="{{ $issue->id }}"
+                            data-job-number="{{ $jobSchedule ? $jobSchedule->job_number : '' }}"
+                            data-job-type="{{ $jobSchedule ? strtolower($jobSchedule->type) : '' }}"
                             data-product-bom-qty="{{ $productBomQty }}"
                             data-rental-detail-id="{{ $rentalDetailId ?? '' }}"
                             data-product-type="{{ $productType }}"
@@ -1593,7 +1594,7 @@
                         @endforeach
                     @else
                         <!-- Fallback if no items -->
-                        <tr data-id="{{ $issue->id }}" data-job-number="{{ $jobSchedule ? $jobSchedule->job_number : '' }}">
+                        <tr data-id="{{ $issue->id }}" data-job-number="{{ $jobSchedule ? $jobSchedule->job_number : '' }}" data-job-type="{{ $jobSchedule ? strtolower($jobSchedule->type) : '' }}">
                             <td class="text-center">
                                 <input type="checkbox" class="row-checkbox w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer" value="{{ $issue->id }}" data-job-number="{{ $jobSchedule ? $jobSchedule->job_number : '' }}" onclick="event.stopPropagation()" onchange="handleCheckboxChange(this)">
                             </td>
@@ -3005,6 +3006,7 @@ function executeSubmitIssue(materialIssueIds, forceContinue) {
             if (!row) return;
             
             const jobNumber = row.getAttribute('data-job-number') || '-';
+            const jobType = (row.getAttribute('data-job-type') || '').toLowerCase();
             const roomName = row.querySelector('td:nth-child(7)')?.textContent?.trim() || '-';
             const rentalDetailId = row.getAttribute('data-rental-detail-id') || 'no-id';
             const targetBomQty = parseFloat(row.querySelector('.target-bom-qty')?.value || 0);
@@ -3041,6 +3043,7 @@ function executeSubmitIssue(materialIssueIds, forceContinue) {
             if (!groupedVolumes[groupKey]) {
                 groupedVolumes[groupKey] = {
                     jobNumber: jobNumber,
+                    jobType: jobType,
                     roomName: roomName,
                     productType: productType,
                     materialName: materialName,
@@ -3048,18 +3051,26 @@ function executeSubmitIssue(materialIssueIds, forceContinue) {
                     totalVolume: 0
                 };
             }
-            
+
             groupedVolumes[groupKey].totalVolume += lineVolume;
         });
-        
+
+        // Job types allowed to issue under the BOM Rental Qty target (IF / Extra / Complaint
+        // don't need to fully cover the rental BOM the way an Install/Service job does).
+        const bomUnderIssueExemptTypes = ['install_free', 'extra', 'complain'];
+
         // Finalize validation after grouping
         Object.values(groupedVolumes).forEach(group => {
-            const { jobNumber, roomName, productType, targetBomQty, totalVolume } = group;
+            const { jobNumber, jobType, roomName, productType, targetBomQty, totalVolume } = group;
             const componentLabel = productType && productType !== '-' ? ` - ${productType}` : '';
+            const diff = totalVolume - targetBomQty;
 
-            if (Math.abs(totalVolume - targetBomQty) > 0.01) {
-                bomValidationErrors.push(`${jobNumber} (${roomName}${componentLabel}): Total volume (${totalVolume}) tidak sesuai BOM Rental Qty (${targetBomQty})`);
-            }
+            if (Math.abs(diff) <= 0.01) return;
+
+            // Under-target is allowed for IF/Extra/Complaint jobs; over-target is still blocked.
+            if (diff < 0 && bomUnderIssueExemptTypes.includes(jobType)) return;
+
+            bomValidationErrors.push(`${jobNumber} (${roomName}${componentLabel}): Total volume (${totalVolume}) tidak sesuai BOM Rental Qty (${targetBomQty})`);
         });
         
         if (bomValidationErrors.length > 0) {
