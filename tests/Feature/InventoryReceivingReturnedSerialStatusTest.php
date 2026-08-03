@@ -442,6 +442,55 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         ]);
     }
 
+    /**
+     * Regresi: lewat route sungguhan, Laravel TIDAK meng-inject Request ke parameter
+     * yang punya default value - ResolvesRouteDependencies::transformDependency()
+     * mengisinya null. Jadi finalize() harus tetap membaca confirm_partial dari
+     * request() global, bukan dari argumen. Tanpa ini, tombol Finalize di UI selalu
+     * ditolak walau user sudah konfirmasi shortfall.
+     */
+    public function test_finalize_accepts_partial_confirmation_when_request_argument_is_null(): void
+    {
+        $this->seedJakartaConditionWarehouses();
+        $receiving = $this->seedReceivingWithSerialShortfall(requestedQty: 2, scannedCount: 1);
+
+        // Persis seperti dispatch lewat router: confirm_partial hanya ada di request
+        // global, dan finalize dipanggil tanpa argumen Request.
+        $this->app->instance('request', Request::create(
+            '/warehouse/inventory-receivings/50/finalize',
+            'POST',
+            ['confirm_partial' => '1']
+        ));
+
+        app(InventoryReceivingController::class)->finalize($receiving);
+
+        $this->assertDatabaseHas('inventory_receivings', ['id' => 50, 'status' => 'received']);
+        $this->assertDatabaseHas('warehouse_products', [
+            'warehouse_id' => 5,
+            'master_product_id' => 100,
+            'quantity' => 1,
+        ]);
+    }
+
+    /**
+     * Tanpa confirm_partial di request global, shortfall tetap harus diblokir.
+     */
+    public function test_finalize_still_blocks_shortfall_when_request_argument_is_null_and_unconfirmed(): void
+    {
+        $this->seedJakartaConditionWarehouses();
+        $receiving = $this->seedReceivingWithSerialShortfall(requestedQty: 2, scannedCount: 1);
+
+        $this->app->instance('request', Request::create(
+            '/warehouse/inventory-receivings/50/finalize',
+            'POST'
+        ));
+
+        $response = app(InventoryReceivingController::class)->finalize($receiving);
+
+        $this->assertStringContainsString('fewer Serial Numbers scanned', $response->getSession()->get('error'));
+        $this->assertDatabaseHas('inventory_receivings', ['id' => 50, 'status' => 'pending']);
+    }
+
     public function test_finalize_inventory_request_receiving_uses_requested_warehouse_not_new_stock_warehouse(): void
     {
         $this->seedJakartaConditionWarehouses();

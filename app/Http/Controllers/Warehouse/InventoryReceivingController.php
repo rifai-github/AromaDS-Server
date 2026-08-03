@@ -904,7 +904,13 @@ class InventoryReceivingController extends Controller
         // Received qty is allowed to fall short of the requested qty (e.g. 9 of 10) -
         // the UI confirms the shortfall with the user first instead of blocking finalize.
         // The shortfall is not tracked for follow-up; the request is closed as-is.
-        $confirmPartial = $request?->boolean('confirm_partial') ?? false;
+        //
+        // $request punya default null supaya pemanggilan langsung di test tetap jalan,
+        // tapi akibatnya Laravel TIDAK meng-inject Request lewat route (parameter dengan
+        // default value diisi null oleh ResolvesRouteDependencies). Jadi jangan pernah
+        // membaca $request begitu saja - fallback ke request() supaya confirm_partial
+        // dari form beneran terbaca saat diakses lewat HTTP.
+        $confirmPartial = ($request ?? request())->boolean('confirm_partial');
 
         try {
             DB::beginTransaction();
