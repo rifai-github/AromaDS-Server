@@ -1105,7 +1105,7 @@ function openCreateModal() {
                 '<select name="source_category" class="form-input" required>' +
                 buildSourceCategoryOptions() +
                 '</select>' +
-                '<small class="text-muted">Menentukan produk ini muncul di Inventory Request / Stock Adjustment (Material) atau tidak</small>' +
+                '<small class="text-muted">Other &amp; Fixed Asset dianggap item biaya, tidak muncul di dropdown Inventory Request / Stock Adjustment</small>' +
                 '</div>' +
                 '<div class="form-group">' +
                 '<label class="form-label">Name *</label>' +
@@ -1391,7 +1391,7 @@ function openEditModal(id) {
                     '<select name="source_category" class="form-input" required>' +
                     buildSourceCategoryOptions(productType.source_category) +
                     '</select>' +
-                    '<small class="text-muted">Menentukan produk ini muncul di Inventory Request / Stock Adjustment (Material) atau tidak</small>' +
+                    '<small class="text-muted">Other &amp; Fixed Asset dianggap item biaya, tidak muncul di dropdown Inventory Request / Stock Adjustment</small>' +
                     '</div>' +
                     '<div class="form-group">' +
                     '<label class="form-label">Name *</label>' +

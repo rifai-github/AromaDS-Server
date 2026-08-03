@@ -119,12 +119,13 @@ class StockAdjustmentController extends Controller
     {
         // If warehouse_id is provided, return products linked to that warehouse
         if ($request->ajax() && $request->has('warehouse_id')) {
-            // Hanya produk material — unit rental & paket sewa (ProductCategory
-            // 'Rental'), fixed asset, dan item biaya tidak di-adjust dari sini.
+            // Hanya barang gudang — paket sewa (RNT/RNNQR), item biaya, dan aset
+            // tetap tidak pernah di-adjust stoknya. Unit fisik (diffuser, dispenser)
+            // tetap muncul.
             $products = MasterProduct::whereHas('warehouseProducts', function ($query) use ($request) {
                 $query->where('warehouse_id', $request->warehouse_id);
             })
-                ->materialOnly()
+                ->stockableGoods()
                 ->select('id', 'name', 'sku', 'packaging_size_id', 'packaging_size', 'product_category_id', 'product_type_id')
                 ->with(['packagingSize:id,name', 'productCategory:id,has_serial_number,is_unit', 'productType:id,has_serial_number,is_unit'])
                 ->withCount('serialNumbers')

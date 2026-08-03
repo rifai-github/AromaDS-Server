@@ -31,6 +31,26 @@ class ProductType extends Model
         self::SOURCE_CATEGORY_OTHER,
     ];
 
+    /**
+     * ProductTypeCode Catalyst (= sku_prefix) untuk PAKET SEWA. Isinya bundel
+     * jasa/servis, bukan barang, jadi tidak pernah punya stok fisik di gudang.
+     *
+     * Client menegaskan 3 Agu 2026 bahwa istilah "rental" punya dua arti dan hanya
+     * yang ini yang berarti paket: `MsProduct.ProductType` bernilai RNT / RNNQR.
+     * `MsProductType.ProductCategory = 'Rental'` (mis. DIFFUSER, DISPENSER) BUKAN
+     * paket - itu unit fisik yang tetap disimpan dan diminta lewat gudang.
+     */
+    public const PACKAGE_TYPE_CODES = ['RNT', 'RNNQR'];
+
+    /**
+     * Kategori legacy yang bukan barang gudang: item biaya (ATK, seragam, promosi,
+     * pemeliharaan) dan aset tetap. Tidak pernah di-request atau di-adjust stoknya.
+     */
+    public const NON_STOCK_SOURCE_CATEGORIES = [
+        self::SOURCE_CATEGORY_FIXED_ASSET,
+        self::SOURCE_CATEGORY_OTHER,
+    ];
+
     protected $fillable = [
         'product_category_id', // Untuk struktur hierarki Category → Type → Product
         'source_category', // Kategori legacy Catalyst: Material / Rental / Fixed Asset / Other

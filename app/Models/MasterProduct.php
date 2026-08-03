@@ -289,9 +289,30 @@ class MasterProduct extends Model
         });
     }
 
-    public function scopeMaterialOnly($query)
+    /**
+     * Barang yang benar-benar disimpan di gudang - dipakai untuk dropdown produk di
+     * Inventory Request & Stock Adjustment.
+     *
+     * Yang dibuang hanya dua kelompok:
+     *   1. Paket sewa (ProductTypeCode RNT / RNNQR) - bundel jasa, tak punya stok.
+     *   2. Item biaya & aset tetap (source_category Other / Fixed Asset).
+     *
+     * Unit fisik seperti DIFFUSER, DISPENSER, Japan Air Filter dan THERMAL TETAP
+     * muncul walaupun source_category-nya 'Rental' - client menegaskan itu barang
+     * gudang, bukan paket. Jangan menyempitkan ini jadi 'Material' saja.
+     *
+     * Produk tanpa product_type_id ikut terbuang (mayoritas data demo pra-Catalyst
+     * yang duplikat dengan produk hasil import).
+     */
+    public function scopeStockableGoods($query)
     {
-        return $query->bySourceCategory(ProductType::SOURCE_CATEGORY_MATERIAL);
+        return $query->whereHas('productType', function ($typeQuery) {
+            $typeQuery->whereNotIn('sku_prefix', ProductType::PACKAGE_TYPE_CODES)
+                ->where(function ($categoryQuery) {
+                    $categoryQuery->whereNotIn('source_category', ProductType::NON_STOCK_SOURCE_CATEGORIES)
+                        ->orWhereNull('source_category');
+                });
+        });
     }
 
     /**

@@ -1260,7 +1260,7 @@ class InventoryRequestController extends Controller
     {
         $existingProductIds = $inventoryRequest->items->pluck('master_product_id')->toArray();
         $products = MasterProduct::where('is_active', true)
-            ->materialOnly()
+            ->stockableGoods()
             ->whereNotIn('id', $existingProductIds)
             ->orderBy('name')
             ->get();
@@ -1277,9 +1277,9 @@ class InventoryRequestController extends Controller
     }
 
     /**
-     * Inventory Request hanya boleh meminta produk material (bukan unit rental,
-     * fixed asset, atau item biaya) — dibatasi lewat kategori legacy Catalyst di
-     * product_types.source_category.
+     * Inventory Request hanya boleh meminta barang gudang — paket sewa (RNT/RNNQR),
+     * item biaya, dan aset tetap dibuang. Unit fisik seperti diffuser & dispenser
+     * tetap bisa diminta.
      */
     private function getInventoryRequestFormProducts(array $alwaysIncludeIds = [])
     {
@@ -1290,11 +1290,11 @@ class InventoryRequestController extends Controller
             ->with(['packagingSize:id,name'])
             ->where('is_active', true)
             ->where(function ($query) use ($alwaysIncludeIds) {
-                $query->materialOnly();
+                $query->stockableGoods();
 
-                // Request lama bisa memuat produk non-material (data sebelum filter
-                // ini ada). Tetap sertakan supaya baris existing tidak kehilangan
-                // pilihannya saat di-edit.
+                // Request lama bisa memuat produk yang kini tersaring (data sebelum
+                // filter ini ada). Tetap sertakan supaya baris existing tidak
+                // kehilangan pilihannya saat di-edit.
                 if ($alwaysIncludeIds) {
                     $query->orWhereIn('id', $alwaysIncludeIds);
                 }
