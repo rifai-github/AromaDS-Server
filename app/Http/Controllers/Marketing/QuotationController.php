@@ -614,13 +614,18 @@ class QuotationController extends Controller
             ], 422);
         }
 
-        // Check if user has permission to cancel (using canApprove - permission-based)
+        // Cancelling a quotation waiting for bottom-price approval is a rejection in
+        // disguise, so it takes the same tiered authority as approve()/reject() -
+        // otherwise a low-tier approver could kill a request that needed a senior
+        // sign-off just by clicking "Cancel" instead of "Reject".
         $user = Auth::user();
-        
-        if (!$user->canApprove('quotations')) {
+        $authorizer = app(QuotationApprovalAuthorizer::class);
+        $evaluation = $authorizer->evaluate($quotation);
+
+        if (!$authorizer->canApprove($user, $quotation, $evaluation)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Anda tidak memiliki akses untuk membatalkan Quotation. Pastikan role Anda memiliki permission "Approve" untuk Quotations.'
+                'message' => $this->insufficientApprovalMessage($evaluation, 'membatalkan')
             ], 403);
         }
 
@@ -632,12 +637,14 @@ class QuotationController extends Controller
         try {
             // Store cancellation reason in internal_notes with prefix
             $cancellationNote = "[CANCELLED " . now()->format('d/m/Y H:i') . " by " . Auth::user()->name . "]\n" . $request->reason;
-            
+
             $quotation->update([
                 'status' => 'cancelled',
                 'internal_notes' => $cancellationNote,
                 'updated_by' => Auth::id(),
             ]);
+
+            app(QuotationApprovalRecorder::class)->markRejected($quotation, Auth::id(), $request->reason);
 
             return response()->json([
                 'status' => 'success',
