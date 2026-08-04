@@ -53,6 +53,7 @@ use App\Http\Controllers\Marketing\LostUnitReportController;
 use App\Http\Controllers\Marketing\MarketingPipelineController;
 use App\Http\Controllers\Marketing\MasterCorporateController;
 use App\Http\Controllers\Marketing\ProspectController;
+use App\Http\Controllers\Marketing\QuotationApprovalLevelController;
 use App\Http\Controllers\Marketing\QuotationController;
 use App\Http\Controllers\Marketing\QuotationWizardController;
 use App\Http\Controllers\Marketing\RentalChangeController;
@@ -433,6 +434,15 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         // Auto Approval & Price Slab Routes
         Route::get('quotations/{quotation}/auto-approval-criteria', [QuotationController::class, 'getAutoApprovalCriteriaData'])->name('quotations.auto-approval-criteria');
         Route::get('quotations/{quotation}/auto-approval-status', [QuotationController::class, 'checkAutoApprovalStatus'])->name('quotations.auto-approval-status');
+
+        // Master: tiered quotation approval levels (bottom price ladder)
+        Route::prefix('quotation-approval-levels')->name('quotation-approval-levels.')->group(function () {
+            Route::get('/', [QuotationApprovalLevelController::class, 'index'])->name('index')->middleware('permission:marketing.quotation-approval-levels.view');
+            Route::post('/', [QuotationApprovalLevelController::class, 'store'])->name('store')->middleware('permission:marketing.quotation-approval-levels.create');
+            Route::get('/{quotationApprovalLevel}/impact', [QuotationApprovalLevelController::class, 'impact'])->name('impact')->middleware('permission:marketing.quotation-approval-levels.view');
+            Route::put('/{quotationApprovalLevel}', [QuotationApprovalLevelController::class, 'update'])->name('update')->middleware('permission:marketing.quotation-approval-levels.edit');
+            Route::delete('/{quotationApprovalLevel}', [QuotationApprovalLevelController::class, 'destroy'])->name('destroy')->middleware('permission:marketing.quotation-approval-levels.delete');
+        });
 
         // Contract Merge Routes (HARUS sebelum resource agar tidak di-shadow oleh {contract})
         Route::get('contracts/merge-wizard', [ContractController::class, 'mergeWizard'])->name('contracts.merge-wizard');

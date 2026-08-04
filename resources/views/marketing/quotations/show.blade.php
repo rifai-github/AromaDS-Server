@@ -137,7 +137,9 @@
                                 </button>
                             @elseif($quotation->status === 'waiting_for_approval')
                                 @php
-                                    $canApproveQuotation = auth()->user()->canApprove('quotations');
+                                    // Tiered by how far below bottom price the quotation sits.
+                                    $canApproveQuotation = $canApproveQuotation ?? auth()->user()->canApproveQuotation($quotation);
+                                    $requiredApprovalLevel = $bottomPriceEvaluation['required_level'] ?? null;
                                 @endphp
                                 @if($canApproveQuotation)
                                     <button class="btn btn-success btn-sm me-2" onclick="approveQuotation()">
@@ -147,7 +149,13 @@
                                         <i class="fas fa-times"></i> CANCEL
                                     </button>
                                 @else
-                                    <span class="badge bg-warning text-dark">Waiting for Approval</span>
+                                    <span class="badge bg-warning text-dark">
+                                        @if($requiredApprovalLevel)
+                                            Waiting for {{ $requiredApprovalLevel['level_name'] }} Approval
+                                        @else
+                                            Waiting for Approval
+                                        @endif
+                                    </span>
                                 @endif
                             @elseif($quotation->status === 'approved')
                                 @php
@@ -184,6 +192,11 @@
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             @endif
+
+            <!-- Why this quotation is waiting, and which level can release it -->
+            @isset($bottomPriceEvaluation)
+                @include('marketing.quotations.partials._bottom-price-approval')
+            @endisset
 
             <!-- Navigation Tabs - HORIZONTAL LAYOUT -->
             <div class="card mb-3">

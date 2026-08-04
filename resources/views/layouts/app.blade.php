@@ -1297,6 +1297,9 @@
                 @if(auth()->user()->canAccessMenuItem('marketing.quotations'))
                 <li data-tooltip="Quotation" class="{{ request()->routeIs('marketing.quotations.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('marketing.quotations.index') }}')">Quotation</li>
                 @endif
+                @if(auth()->user()->canAccessMenuItem('marketing.quotation-approval-levels'))
+                <li data-tooltip="Level Approval Quotation" class="{{ request()->routeIs('marketing.quotation-approval-levels.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('marketing.quotation-approval-levels.index') }}')">Level Approval Quotation</li>
+                @endif
                 @if(auth()->user()->canAccessMenuItem('marketing.contracts'))
                 <li data-tooltip="Contract" class="{{ request()->routeIs('marketing.contracts.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('marketing.contracts.index') }}')">Contract</li>
                 @endif

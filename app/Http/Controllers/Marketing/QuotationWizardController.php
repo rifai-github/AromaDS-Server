@@ -17,6 +17,8 @@ use App\Models\MasterRental;
 use App\Models\MasterProduct;
 use App\Models\Branch;
 use App\Models\Contract;
+use App\Services\Marketing\QuotationApprovalAuthorizer;
+use App\Services\Marketing\QuotationApprovalRecorder;
 use App\Services\Marketing\QuotationBottomPriceEvaluator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -41,9 +43,15 @@ class QuotationWizardController extends Controller
                 'updated_by' => auth()->id(),
             ]);
 
+            app(QuotationApprovalRecorder::class)->openPending($quotation, $result, auth()->id());
+
+            $levelName = $result['required_level']['level_name'] ?? null;
+
             return [
                 'status' => 'waiting_for_approval',
-                'message' => 'Quotation has been submitted for approval',
+                'message' => $levelName
+                    ? 'Quotation has been submitted for '.$levelName.' approval'
+                    : 'Quotation has been submitted for approval',
                 'bottom_price_validation' => $result,
             ];
         }
@@ -60,6 +68,25 @@ class QuotationWizardController extends Controller
             'message' => 'Quotation auto-approved because all rental prices meet bottom price.',
             'bottom_price_validation' => $result,
         ];
+    }
+
+    /**
+     * Explains which rung of the approval ladder the quotation needs, so the
+     * user knows who to escalate to instead of just being told "no".
+     */
+    private function insufficientApprovalMessage(array $evaluation, string $action = 'menyetujui'): string
+    {
+        $levelName = $evaluation['required_level']['level_name'] ?? null;
+
+        if ($levelName) {
+            return 'Quotation ini membutuhkan approval level '.$levelName.'. Level Anda belum mencukupi untuk '.$action.' Quotation ini.';
+        }
+
+        if (! empty($evaluation['requires_approval'])) {
+            return 'Tidak ada level approval yang berwenang atas diskon sebesar ini. Hubungi admin untuk mengatur Level Approval Quotation.';
+        }
+
+        return 'Anda tidak memiliki izin untuk '.$action.' Quotation.';
     }
 
     private function surveySelectionDuplicateKey(Survey $survey): string
@@ -1567,15 +1594,18 @@ class QuotationWizardController extends Controller
         try {
             $quotation = Quotation::findOrFail($id);
             
-            // Check if user has permission to approve (using canApprove - permission-based)
+            // Approval authority is tiered by how far below bottom price the quotation sits
             $user = auth()->user();
-            if (!$user->canApprove('quotations')) {
+            $authorizer = app(QuotationApprovalAuthorizer::class);
+            $evaluation = $authorizer->evaluate($quotation);
+
+            if (!$authorizer->canApprove($user, $quotation, $evaluation)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Anda tidak memiliki akses untuk approve Quotation. Pastikan role Anda memiliki permission "Approve" untuk Quotations.'
+                    'message' => $this->insufficientApprovalMessage($evaluation)
                 ], 403);
             }
-            
+
             // Check if quotation is in waiting for approval status
             if ($quotation->status !== 'waiting_for_approval') {
                 return response()->json([
@@ -1608,8 +1638,10 @@ class QuotationWizardController extends Controller
                 'date_approved' => now(),
                 'updated_by' => $user->id
             ]);
-            
-            
+
+            app(QuotationApprovalRecorder::class)->markApproved($quotation, $user->id);
+
+
             return response()->json([
                 'success' => true,
                 'message' => 'Quotation has been approved successfully'
@@ -1638,15 +1670,18 @@ class QuotationWizardController extends Controller
         try {
             $quotation = Quotation::findOrFail($id);
             
-            // Check if user has permission to reject (using canApprove - permission-based)
+            // Rejecting takes the same authority as approving
             $user = auth()->user();
-            if (!$user->canApprove('quotations')) {
+            $authorizer = app(QuotationApprovalAuthorizer::class);
+            $evaluation = $authorizer->evaluate($quotation);
+
+            if (!$authorizer->canApprove($user, $quotation, $evaluation)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Anda tidak memiliki akses untuk reject Quotation. Pastikan role Anda memiliki permission "Approve" untuk Quotations.'
+                    'message' => $this->insufficientApprovalMessage($evaluation, 'menolak')
                 ], 403);
             }
-            
+
             // Check if quotation is in waiting for approval status
             if ($quotation->status !== 'waiting_for_approval') {
                 return response()->json([
@@ -1665,8 +1700,9 @@ class QuotationWizardController extends Controller
                 'updated_by' => $user->id,
                 'rejection_reason' => $rejectionReason
             ]);
-            
-            
+
+            app(QuotationApprovalRecorder::class)->markRejected($quotation, $user->id, $rejectionReason);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Quotation has been rejected'

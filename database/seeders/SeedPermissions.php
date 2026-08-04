@@ -17,6 +17,10 @@ class SeedPermissions extends Seeder
                 'pipeline' => ['view'],
                 'surveys' => ['view', 'create', 'edit', 'delete'],
                 'quotations' => ['view', 'create', 'edit', 'delete', 'approve', 'download', 'print'],
+                // The per-level approve permissions are NOT listed here: they are
+                // generated from the rows in quotation_approval_levels so the ladder
+                // stays fully configurable.
+                'quotation-approval-levels' => ['view', 'create', 'edit', 'delete'],
                 'contracts' => ['view', 'create', 'edit', 'delete', 'download', 'print'],
                 'projects' => ['view', 'create', 'edit', 'delete'],
                 'job-schedules' => ['view'], 

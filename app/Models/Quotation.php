@@ -359,9 +359,11 @@ class Quotation extends Model
         $statuses = [
             'draft' => 'Draft',
             'sent' => 'Terkirim',
+            'waiting_for_approval' => 'Menunggu Persetujuan',
             'approved' => 'Disetujui Manager',
             'accepted' => 'Disetujui Pelanggan',
             'rejected' => 'Ditolak',
+            'cancelled' => 'Dibatalkan',
             'expired' => 'Kadaluarsa',
             'contract' => 'Contract'
         ];

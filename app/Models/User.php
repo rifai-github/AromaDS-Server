@@ -717,6 +717,16 @@ class User extends Authenticatable
         return false;
     }
 
+    /**
+     * Tiered bottom-price approval: whether this user is senior enough to
+     * approve THIS quotation, not just quotations in general.
+     */
+    public function canApproveQuotation(Quotation $quotation, ?array $evaluation = null): bool
+    {
+        return app(\App\Services\Marketing\QuotationApprovalAuthorizer::class)
+            ->canApprove($this, $quotation, $evaluation);
+    }
+
     // Data Restriction Helper Methods
     public function canViewAllData()
     {

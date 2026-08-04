@@ -18,6 +18,8 @@ use App\Models\QuotationRental;
 use App\Models\QuotationRoom;
 use App\Models\FreeTrial;
 use App\Models\ContractRenewal;
+use App\Services\Marketing\QuotationApprovalAuthorizer;
+use App\Services\Marketing\QuotationApprovalRecorder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
@@ -550,7 +552,20 @@ class QuotationController extends Controller
             'existingContract.contractRentals.masterRental',
             'quotationRentals.masterRental'
         ]);
-        return view('marketing.quotations.show', compact('quotation'));
+
+        // Recomputed live so quotations that predate the audit rows still show
+        // why they are waiting and which level can release them.
+        $authorizer = app(QuotationApprovalAuthorizer::class);
+        $bottomPriceEvaluation = $authorizer->evaluate($quotation);
+        $canApproveQuotation = $authorizer->canApprove(Auth::user(), $quotation, $bottomPriceEvaluation);
+        $currentUserApprovalLevel = $authorizer->highestLevelFor(Auth::user());
+
+        return view('marketing.quotations.show', compact(
+            'quotation',
+            'bottomPriceEvaluation',
+            'canApproveQuotation',
+            'currentUserApprovalLevel'
+        ));
     }
 
     public function downloadPdf(Request $request, Quotation $quotation)
@@ -1138,11 +1153,14 @@ class QuotationController extends Controller
 
         $this->ensureQuotationRenewalCanProceed($quotation, true);
 
-        // Check approval permission
-        if (!Auth::user()->canApprove('quotations')) {
+        // Approval authority is tiered by how far below bottom price the quotation sits
+        $authorizer = app(QuotationApprovalAuthorizer::class);
+        $evaluation = $authorizer->evaluate($quotation);
+
+        if (!$authorizer->canApprove(Auth::user(), $quotation, $evaluation)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Anda tidak memiliki izin untuk menyetujui Quotation.'
+                'message' => $this->insufficientApprovalMessage($evaluation)
             ], 403);
         }
 
@@ -1152,6 +1170,8 @@ class QuotationController extends Controller
             'date_approved' => now(),
             'updated_by' => Auth::id() ?? 1
         ]);
+
+        app(QuotationApprovalRecorder::class)->markApproved($quotation, Auth::id());
 
         return response()->json([
             'status' => 'success',
@@ -1171,13 +1191,15 @@ class QuotationController extends Controller
             ], 422);
         }
 
-        // Check if user has permission to reject (using canApprove - permission-based)
+        // Rejecting takes the same authority as approving
         $user = Auth::user();
-        
-        if (!$user->canApprove('quotations')) {
+        $authorizer = app(QuotationApprovalAuthorizer::class);
+        $evaluation = $authorizer->evaluate($quotation);
+
+        if (!$authorizer->canApprove($user, $quotation, $evaluation)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Anda tidak memiliki akses untuk menolak Quotation. Pastikan role Anda memiliki permission "Approve" untuk Quotations.'
+                'message' => $this->insufficientApprovalMessage($evaluation, 'menolak')
             ], 403);
         }
 
@@ -1198,11 +1220,32 @@ class QuotationController extends Controller
             'updated_by' => Auth::id() ?? 1 // Fallback to admin user if not authenticated
         ]);
 
+        app(QuotationApprovalRecorder::class)->markRejected($quotation, Auth::id(), $request->rejection_reason);
+
         return response()->json([
             'status' => 'success',
             'message' => 'Quotation rejected successfully',
             'data' => $quotation
         ]);
+    }
+
+    /**
+     * Explains which rung of the approval ladder the quotation needs, so the
+     * user knows who to escalate to instead of just being told "no".
+     */
+    private function insufficientApprovalMessage(array $evaluation, string $action = 'menyetujui'): string
+    {
+        $levelName = $evaluation['required_level']['level_name'] ?? null;
+
+        if ($levelName) {
+            return 'Quotation ini membutuhkan approval level '.$levelName.'. Level Anda belum mencukupi untuk '.$action.' Quotation ini.';
+        }
+
+        if (!empty($evaluation['requires_approval'])) {
+            return 'Tidak ada level approval yang berwenang atas diskon sebesar ini. Hubungi admin untuk mengatur Level Approval Quotation.';
+        }
+
+        return 'Anda tidak memiliki izin untuk '.$action.' Quotation.';
     }
 
     /**
@@ -1322,8 +1365,10 @@ class QuotationController extends Controller
                 ], 403);
             }
 
+            // Quotations awaiting approval carry the 'waiting_for_approval' status;
+            // 'sent' never matched, so this list was always empty.
             $query = Quotation::with(['prospect', 'marketing', 'creator'])
-                ->where('status', 'sent');
+                ->where('status', 'waiting_for_approval');
 
             // Filter by date range
             if ($request->filled('date_from')) {
@@ -1340,6 +1385,18 @@ class QuotationController extends Controller
             }
 
             $quotations = $query->orderBy('created_at', 'desc')->paginateStd(25);
+
+            // Tell the approver which rung each one needs, and whether they can act on it.
+            $authorizer = app(QuotationApprovalAuthorizer::class);
+
+            $quotations->getCollection()->transform(function (Quotation $quotation) use ($authorizer, $user) {
+                $evaluation = $authorizer->evaluate($quotation);
+
+                $quotation->required_level = $evaluation['required_level'];
+                $quotation->can_current_user_approve = $authorizer->canApprove($user, $quotation, $evaluation);
+
+                return $quotation;
+            });
             \Log::info('Found ' . $quotations->count() . ' pending quotations');
 
             return response()->json([

@@ -15,6 +15,8 @@ class QuotationApproval extends Model
         'quotation_id',
         'quotation_revision_id',
         'approval_type',
+        'required_level_id',
+        'required_level_code',
         'status',
         'approval_notes',
         'rejection_reason',

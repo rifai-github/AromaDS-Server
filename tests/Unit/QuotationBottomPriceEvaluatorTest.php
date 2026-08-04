@@ -15,7 +15,7 @@ class QuotationBottomPriceEvaluatorTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['quotation_details', 'rental_bottom_prices', 'quotations', 'master_rentals'] as $table) {
+        foreach (['quotation_details', 'rental_bottom_prices', 'quotations', 'master_rentals', 'quotation_approval_levels'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -59,6 +59,23 @@ class QuotationBottomPriceEvaluatorTest extends TestCase
             $table->timestamps();
             $table->softDeletes();
         });
+
+        Schema::create('quotation_approval_levels', function (Blueprint $table) {
+            $table->id();
+            $table->string('level_code', 50)->unique();
+            $table->string('level_name', 100);
+            $table->decimal('max_discount_percentage', 5, 2)->default(0);
+            $table->string('permission_name', 150)->unique();
+            $table->integer('sort_order')->default(0);
+            $table->text('description')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        $this->seedApprovalLevels();
     }
 
     public function test_it_allows_quotation_details_at_or_above_bottom_price(): void
@@ -70,10 +87,12 @@ class QuotationBottomPriceEvaluatorTest extends TestCase
 
         $this->assertFalse($result['requires_approval']);
         $this->assertSame([], $result['issues']);
+        $this->assertNull($result['required_level']);
     }
 
     public function test_it_requires_approval_when_detail_is_below_bottom_price(): void
     {
+        // 1.000.000 against a 1.500.000 floor is a 33,33% discount -> GM.
         $quotation = $this->seedQuotationWithDetail(1_000_000);
         $this->seedBottomPrice(1_500_000);
 
@@ -81,6 +100,8 @@ class QuotationBottomPriceEvaluatorTest extends TestCase
 
         $this->assertTrue($result['requires_approval']);
         $this->assertSame('below_bottom_price', $result['issues'][0]['type']);
+        $this->assertSame(33.3333, $result['issues'][0]['discount_percentage']);
+        $this->assertSame('gm', $result['required_level']['level_code']);
     }
 
     public function test_it_requires_approval_when_bottom_price_is_missing(): void
@@ -91,9 +112,117 @@ class QuotationBottomPriceEvaluatorTest extends TestCase
 
         $this->assertTrue($result['requires_approval']);
         $this->assertSame('missing_bottom_price', $result['issues'][0]['type']);
+        // Undeterminable discount escalates to the most senior level.
+        $this->assertSame('director', $result['required_level']['level_code']);
     }
 
-    private function seedQuotationWithDetail(int $unitPrice): Quotation
+    public function test_a_zero_bottom_price_is_treated_as_missing_rather_than_dividing_by_zero(): void
+    {
+        $quotation = $this->seedQuotationWithDetail(1_500_000);
+        $this->seedBottomPrice(0);
+
+        $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
+
+        $this->assertTrue($result['requires_approval']);
+        $this->assertSame('missing_bottom_price', $result['issues'][0]['type']);
+        $this->assertSame('director', $result['required_level']['level_code']);
+    }
+
+    public function test_free_lines_never_trigger_approval(): void
+    {
+        $quotation = $this->seedQuotationWithDetail(0, qtyFree: 1, quantity: 0);
+        $this->seedBottomPrice(1_000_000);
+
+        $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
+
+        $this->assertFalse($result['requires_approval']);
+        $this->assertSame([], $result['issues']);
+    }
+
+    public function test_a_paid_quotation_carrying_a_free_line_is_judged_only_on_the_paid_line(): void
+    {
+        $quotation = $this->seedQuotationWithDetail(1_500_000);
+        $this->addDetail($quotation, 0, qtyFree: 1, quantity: 0);
+        $this->seedBottomPrice(1_000_000);
+
+        $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
+
+        $this->assertFalse($result['requires_approval']);
+    }
+
+    public function test_discount_exactly_on_a_level_boundary_stays_with_that_level(): void
+    {
+        // 800.000 against 1.000.000 is exactly 20% - Manager's ceiling, inclusive.
+        $quotation = $this->seedQuotationWithDetail(800_000);
+        $this->seedBottomPrice(1_000_000);
+
+        $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
+
+        $this->assertTrue($result['requires_approval']);
+        $this->assertSame(20.0, $result['issues'][0]['discount_percentage']);
+        $this->assertSame('manager', $result['required_level']['level_code']);
+    }
+
+    public function test_discount_just_past_a_boundary_escalates_to_the_next_level(): void
+    {
+        $quotation = $this->seedQuotationWithDetail(799_900);
+        $this->seedBottomPrice(1_000_000);
+
+        $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
+
+        $this->assertSame(20.01, $result['issues'][0]['discount_percentage']);
+        $this->assertSame('gm', $result['required_level']['level_code']);
+    }
+
+    public function test_the_deepest_discount_across_lines_decides_the_required_level(): void
+    {
+        $quotation = $this->seedQuotationWithDetail(900_000);   // 10% -> Manager
+        $this->addDetail($quotation, 400_000);                  // 60% -> Director
+        $this->seedBottomPrice(1_000_000);
+
+        $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
+
+        $this->assertCount(2, $result['issues']);
+        $this->assertSame('director', $result['required_level']['level_code']);
+    }
+
+    public function test_it_fails_closed_when_no_level_covers_the_discount(): void
+    {
+        DB::table('quotation_approval_levels')->where('level_code', 'director')->delete();
+        DB::table('quotation_approval_levels')->where('level_code', 'gm')->delete();
+
+        $quotation = $this->seedQuotationWithDetail(100_000); // 90% discount
+        $this->seedBottomPrice(1_000_000);
+
+        $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
+
+        $this->assertTrue($result['requires_approval']);
+        $this->assertNull($result['required_level']);
+    }
+
+    private function seedApprovalLevels(): void
+    {
+        $levels = [
+            ['manager', 'Manager', 20, 10],
+            ['gm', 'General Manager', 50, 20],
+            ['director', 'Director', 100, 30],
+        ];
+
+        foreach ($levels as [$code, $name, $maxDiscount, $sort]) {
+            DB::table('quotation_approval_levels')->insert([
+                'level_code' => $code,
+                'level_name' => $name,
+                'max_discount_percentage' => $maxDiscount,
+                'permission_name' => 'marketing.quotations.approve-level-'.$code,
+                'sort_order' => $sort,
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+    }
+
+    private function seedQuotationWithDetail(int $unitPrice, int $qtyFree = 0, int $quantity = 1): Quotation
     {
         DB::table('master_rentals')->insert([
             'id' => 10,
@@ -112,19 +241,28 @@ class QuotationBottomPriceEvaluatorTest extends TestCase
             'updated_at' => now(),
         ]);
 
+        $quotation = Quotation::findOrFail(38);
+
+        $this->addDetail($quotation, $unitPrice, $qtyFree, $quantity);
+
+        return $quotation;
+    }
+
+    private function addDetail(Quotation $quotation, int $unitPrice, int $qtyFree = 0, int $quantity = 1): void
+    {
         DB::table('quotation_details')->insert([
-            'quotation_id' => 38,
+            'quotation_id' => $quotation->id,
             'master_rental_id' => 10,
             'room_name' => 'Ruang Dokumentasi',
-            'quantity' => 1,
-            'qty_free' => 0,
+            'quantity' => $quantity,
+            'qty_free' => $qtyFree,
             'unit_price' => $unitPrice,
-            'total_price' => $unitPrice,
+            'total_price' => $unitPrice * max($quantity, 1),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
-        return Quotation::findOrFail(38);
+        $quotation->unsetRelation('quotationDetails');
     }
 
     private function seedBottomPrice(int $bottomPrice): void
