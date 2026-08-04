@@ -68,6 +68,95 @@ class InventoryIssuingService
         }
     }
 
+    /**
+     * Guard the Ready to Issue step against a batch SN code that does not actually
+     * have enough physical rows behind it in this warehouse.
+     *
+     * Aroma/refill rows carry ONE batch code for N units, so the SN-completeness
+     * check ({@see InventoryIssuingItem::requiredSerialCount()}) only ever demands 1
+     * linked SN for them. The only other gate was the aggregate warehouse_products
+     * quantity, which counts every code of the product together -- so a qty=2 row
+     * backed by a single RGB50001 row sailed through Ready to Issue, decremented 2
+     * from stock but flipped only 1 SN to in_use, leaving the stock count and the SN
+     * pool permanently out of sync and letting the job run all the way to Done Job.
+     *
+     * @throws Exception when any batch row asks for more units than its code has.
+     */
+    public function assertBatchSerialStockIsSufficient(InventoryIssuing $issuing): void
+    {
+        $issuing->loadMissing(['items.product.productCategory', 'items.product.productType', 'items.serialNumber']);
+
+        $shortages = [];
+
+        foreach ($issuing->items as $item) {
+            $product = $item->product;
+
+            // Unit rows already need one distinct SN per unit, enforced by
+            // requiredSerialCount(); only batch (non-unit) rows are unguarded.
+            if (!$product || !$product->requiresSerialNumber() || $product->requiresUniqueSerialNumber()) {
+                continue;
+            }
+
+            $quantity = $this->resolveSerialQuantity($item);
+            if ($quantity <= 1) {
+                continue;
+            }
+
+            $serialCode = $item->serialNumber?->serial_number;
+            if (!$serialCode) {
+                continue; // Missing SN entirely is reported by the completeness check.
+            }
+
+            $available = $this->countAvailableBatchSerials($issuing, $item, $serialCode);
+
+            if ($available < $quantity) {
+                $productName = $product->name ?? "Product ID: {$item->product_id}";
+                $shortages[] = "{$productName} SN {$serialCode} (butuh {$quantity}, tersedia {$available})";
+            }
+        }
+
+        if (!empty($shortages)) {
+            throw new Exception(
+                'Stok Serial Number tidak cukup untuk Ready to Issue: ' . implode(', ', array_unique($shortages))
+                . '. Tambahkan SN lewat Inventory Receiving atau turunkan qty item.'
+            );
+        }
+    }
+
+    /**
+     * Rows of $serialCode still sitting ready in this issuing's warehouse, minus the
+     * units other still-open issuings have already claimed from that same pool.
+     * Only pending/processed issuings are subtracted: once an issuing is finalized
+     * its SNs have already left the ready pool via updateSerialNumberLifecycle().
+     */
+    private function countAvailableBatchSerials(InventoryIssuing $issuing, $item, string $serialCode): int
+    {
+        $poolIds = SerialNumber::query()
+            ->where('master_product_id', $item->product_id)
+            ->where('serial_number', $serialCode)
+            ->where('warehouse_id', $issuing->warehouse_id)
+            ->whereIn('status', ['ready', 'available'])
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (empty($poolIds)) {
+            return 0;
+        }
+
+        $claimedByOtherItems = \App\Models\InventoryIssuingItem::query()
+            ->where('id', '!=', $item->id)
+            ->where('product_id', $item->product_id)
+            ->whereIn('serial_number_id', $poolIds)
+            ->whereHas('inventoryIssuing', function ($query) {
+                $query->whereIn('status', ['pending', 'processed']);
+            })
+            ->get()
+            ->sum(fn ($otherItem) => $this->resolveSerialQuantity($otherItem));
+
+        return max(0, count($poolIds) - (int) $claimedByOtherItems);
+    }
+
     public function postReadyStockIfMissing(InventoryIssuing $issuing): bool
     {
         $issuing->loadMissing(['items.product', 'warehouse', 'branch']);
@@ -80,6 +169,11 @@ class InventoryIssuingService
             $this->convertLegacyMaterialIssueMovements($issuing);
             return false;
         }
+
+        // Stock is posted exactly once, here, when the issuing first reaches Ready.
+        // Guard it at the same point so no path (web Ready to Issue, mobile material
+        // verification, legacy finalize) can deduct units a batch SN cannot back.
+        $this->assertBatchSerialStockIsSufficient($issuing);
 
         $this->createInventoryMovements($issuing);
         return true;

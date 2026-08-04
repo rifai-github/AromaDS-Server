@@ -586,6 +586,10 @@ class InventoryIssuingController extends Controller
             }
 
             $syncService = new \App\Services\Warehouse\InventoryIssuingService();
+
+            // postReadyStockIfMissing() also refuses a batch/refill row whose SN code
+            // has fewer physical rows in this warehouse than the row's qty -- the check
+            // above cannot see that, because batch rows only ever need 1 linked SN.
             $syncService->postReadyStockIfMissing($issuing);
 
             $issuing->update([
