@@ -759,7 +759,7 @@ class JobAssignMaterialIssueController extends Controller
             'jobAssignSchedule:id,job_schedule_id,team_id,created_at',
             'jobAssignSchedule.team:id,team_name,branch_office',
             'jobAssignSchedule.team.branch:id,name',
-            'jobAssignSchedule.jobSchedule:id,job_number,job_advice_id,building_id,schedule_date',
+            'jobAssignSchedule.jobSchedule:id,job_number,type,job_advice_id,building_id,schedule_date',
             'jobAssignSchedule.jobSchedule.jobAdvice:id,customer_id,contract_id,quotation_id',
             'jobAssignSchedule.jobSchedule.jobAdvice.customer:id,name',
             'jobAssignSchedule.jobSchedule.jobAdvice.contract:id,quotation_id,notes_operation',

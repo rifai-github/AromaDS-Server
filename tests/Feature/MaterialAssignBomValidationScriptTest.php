@@ -72,6 +72,25 @@ class MaterialAssignBomValidationScriptTest extends TestCase
         $this->assertStringNotContainsString('total issued can be less than or equal to target', $view);
     }
 
+    /**
+     * WA report 4/8/2026: the IF/Extra/Complaint exemption above never actually applied on
+     * the real page, because the index() eager-load selected only
+     * `id,job_number,job_advice_id,building_id,schedule_date` on jobSchedule — no `type`
+     * column. `$jobSchedule->type` was therefore always null, so `data-job-type` rendered as
+     * an empty string for every row and the client-side check always fell through to the
+     * generic block. `type` must stay in this select list.
+     */
+    public function test_index_eager_loads_job_schedule_type_for_bom_exemption(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/Operational/JobAssignMaterialIssueController.php'));
+
+        $this->assertMatchesRegularExpression(
+            "/'jobAssignSchedule\\.jobSchedule:[^']*\\btype\\b[^']*'/",
+            $controller,
+            'jobSchedule eager-load select must include the `type` column, or data-job-type renders empty and the IF/Extra/Complaint BOM exemption silently never applies.'
+        );
+    }
+
     private function extractComponentKeyBlock(string $view): string
     {
         $start = strpos($view, 'const componentKey = [');
