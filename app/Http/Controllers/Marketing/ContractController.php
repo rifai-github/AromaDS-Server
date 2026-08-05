@@ -1330,9 +1330,11 @@ class ContractController extends Controller
             // Format contract rooms for Job Advice selection modal
             // Filter out rooms that don't exist (broken references) AND rooms that are already used
             // MOM: For Extra, Change, Complain, Remove types, we load ALL rooms (even if used)
+            // Change Rental always targets a room that is already installed via an earlier JA,
+            // so it must be on this list too — otherwise no room is ever selectable for it.
             $type = request('type');
             $typeLower = strtolower((string) $type);
-            $shouldIncludeUsedRooms = $type && in_array(strtolower($type), ['extra', 'change', 'complain', 'remove', 'change_unit', 'change unit', 'removal', 'service']);
+            $shouldIncludeUsedRooms = $type && in_array(strtolower($type), ['extra', 'change', 'complain', 'remove', 'change_unit', 'change unit', 'change_rental', 'change rental', 'removal', 'service']);
             $isServiceJobAdvice = $typeLower === 'service';
 
             $contractRooms = $contract->contractRooms
