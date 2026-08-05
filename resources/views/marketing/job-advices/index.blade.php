@@ -1643,17 +1643,13 @@ function setupJobAdviceDateGuards() {
             // manually into flatpickr's altInput and commits it by clicking away, neither
             // a native 'change' event on the original input nor flatpickr's own onChange
             // config callbacks reliably fire (verified: the original input's value updates
-            // silently on altInput blur). 'blur' on the altInput is the one signal that is
-            // guaranteed to fire once the typed value has been committed, so use that as
-            // the primary trigger; keep the onChange hook too as a harmless extra layer.
+            // silently on altInput blur). Best-effort: hook flatpickr's onChange once the
+            // instance shows up, for flows where init lands quickly.
             let flatpickrHookAttempts = 0;
             const wireFlatpickrOnChange = () => {
                 const instance = expected._flatpickr;
                 if (instance && instance.config && Array.isArray(instance.config.onChange)) {
                     instance.config.onChange.push(applyDefaultRemoveDate);
-                    if (instance.altInput) {
-                        instance.altInput.addEventListener('blur', applyDefaultRemoveDate);
-                    }
                     return;
                 }
                 flatpickrHookAttempts += 1;
@@ -1662,6 +1658,15 @@ function setupJobAdviceDateGuards() {
                 }
             };
             wireFlatpickrOnChange();
+
+            // Timing-proof primary trigger: flows that open this modal after heavier
+            // async work (e.g. "Create Job Advice from Quotation", which loads a
+            // marketing user + thousands of quotation options before the modal is
+            // interactive) can push flatpickr's own async init past the polling window
+            // above, so the direct altInput blur listener never gets attached in time.
+            // Expose this open modal's apply function for the single page-level capture
+            // listener (registered once, below) to call.
+            window.__jobAdviceApplyDefaultRemoveDate = applyDefaultRemoveDate;
         }
 
         expected.addEventListener('change', syncMinDate);
@@ -1672,6 +1677,23 @@ function setupJobAdviceDateGuards() {
 
         syncMinDate();
     });
+}
+
+// Registered once for the page's lifetime (not inside setupJobAdviceDateGuards, which
+// reruns every time the Create modal opens). blur/focus don't bubble, but they do
+// propagate during the capture phase, so a single document-level capture listener
+// reliably catches the Expected Date altInput's blur no matter when flatpickr wraps
+// the field relative to whatever async work a given "open modal" flow does first.
+if (!window.__jobAdviceRemoveDateBlurHookAttached) {
+    window.__jobAdviceRemoveDateBlurHookAttached = true;
+    document.addEventListener('blur', function (event) {
+        const expectedEl = document.getElementById('expected_date');
+        if (!expectedEl || !expectedEl._flatpickr) return;
+        if (event.target !== expectedEl._flatpickr.altInput) return;
+        if (typeof window.__jobAdviceApplyDefaultRemoveDate === 'function') {
+            window.__jobAdviceApplyDefaultRemoveDate();
+        }
+    }, true);
 }
 
 function validateJobAdviceDates(data) {
