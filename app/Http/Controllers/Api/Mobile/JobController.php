@@ -4801,31 +4801,51 @@ class JobController extends Controller
                         
                         $autoUpdateLastServiceDateMethod = $reflection->getMethod('autoUpdateUnitOnWallLastServiceDate');
                         $autoUpdateLastServiceDateMethod->setAccessible(true);
-                        
-                        // Call autoUpdateUnitOnWallLastServiceDate
-                        $autoUpdateLastServiceDateMethod->invoke($jobScheduleController, $job, $jobAdvice);
-                        
-                        // MOM13: When the first service/check completes, fan out the remaining
-                        // refill services or unit-only checks. Standalone Service JAs store the
-                        // first job as service_routine, so route through the shared helper which
-                        // handles the service_routine/first-period cases and unit-only flows.
-                        if (in_array(strtolower($job->type), ['service', 'service_first', 'service_routine', 'csr', 'customer_service_report', 'customer service report'])) {
-                            try {
-                                $methodGen = $reflection->getMethod('generateFollowUpServiceSchedules');
-                                $methodGen->setAccessible(true);
-                                $methodGen->invoke($jobScheduleController, $job, $jobAdvice);
-                            } catch (\Exception $e) {
-                                 \Log::error("MOM13 Error: Failed to trigger routine services generation for job {$job->job_number}: " . $e->getMessage());
-                            }
+                        $methodGen = $reflection->getMethod('generateFollowUpServiceSchedules');
+                        $methodGen->setAccessible(true);
+                        $methodRemove = $reflection->getMethod('checkAndCreateRemoveJobAfterAllServicesComplete');
+                        $methodRemove->setAccessible(true);
+
+                        // Multi-room jobs are stored as one job_schedules row PER ROOM under the
+                        // same job_number, and the block above already cascaded completion to the
+                        // siblings. The follow-up generators are room-scoped
+                        // (generateAllRemainingServices only fans out the JA rooms linked to the
+                        // schedule it receives, see getServiceEligibleJobAdviceRoomsForSchedule),
+                        // so they must run for EVERY completed sibling. Running them for the
+                        // tapped schedule alone left the other room without its periods 2..N.
+                        // Web already loops this way in JobScheduleController's completion
+                        // automation ($schedulesToComplete).
+                        $completedServiceSchedules = collect([$job]);
+                        if ($job->job_number) {
+                            $completedServiceSchedules = $completedServiceSchedules->concat(
+                                \App\Models\JobSchedule::where('job_number', $job->job_number)
+                                    ->where('type', $job->type)
+                                    ->where('id', '!=', $job->id)
+                                    ->whereIn('status', ['done_job', 'completed', 'selesai'])
+                                    ->get()
+                            );
                         }
 
-                        // MOM: Trigger auto create remove job if all services are done
-                        try {
-                            $methodRemove = $reflection->getMethod('checkAndCreateRemoveJobAfterAllServicesComplete');
-                            $methodRemove->setAccessible(true);
-                            $methodRemove->invoke($jobScheduleController, $job, $jobAdvice);
-                        } catch (\Exception $e) {
-                             \Log::error("MOM Error: Failed to trigger auto create remove job check for job {$job->job_number}: " . $e->getMessage());
+                        foreach ($completedServiceSchedules as $completedServiceSchedule) {
+                            // Call autoUpdateUnitOnWallLastServiceDate
+                            $autoUpdateLastServiceDateMethod->invoke($jobScheduleController, $completedServiceSchedule, $jobAdvice);
+
+                            // MOM13: When the first service/check completes, fan out the remaining
+                            // refill services or unit-only checks. Standalone Service JAs store the
+                            // first job as service_routine, so route through the shared helper which
+                            // handles the service_routine/first-period cases and unit-only flows.
+                            try {
+                                $methodGen->invoke($jobScheduleController, $completedServiceSchedule, $jobAdvice);
+                            } catch (\Exception $e) {
+                                 \Log::error("MOM13 Error: Failed to trigger routine services generation for job {$completedServiceSchedule->job_number} (schedule {$completedServiceSchedule->id}): " . $e->getMessage());
+                            }
+
+                            // MOM: Trigger auto create remove job if all services are done
+                            try {
+                                $methodRemove->invoke($jobScheduleController, $completedServiceSchedule, $jobAdvice);
+                            } catch (\Exception $e) {
+                                 \Log::error("MOM Error: Failed to trigger auto create remove job check for job {$completedServiceSchedule->job_number} (schedule {$completedServiceSchedule->id}): " . $e->getMessage());
+                            }
                         }
                     } catch (\Throwable $e) {
 
