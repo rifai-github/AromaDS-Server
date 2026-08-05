@@ -879,6 +879,7 @@ class ContractSwitching extends Model
 
         $oldRooms = $oldJobAdvice->rooms->values();
         $newRooms = $newJobAdvice->rooms->values();
+        $jobScheduleIds = $jobs->pluck('id');
 
         foreach ($oldRooms as $index => $oldRoom) {
             $newRoom = $newRooms->get($index);
@@ -886,27 +887,38 @@ class ContractSwitching extends Model
                 continue;
             }
 
-            $jobScheduleRoomIds = JobScheduleRoom::whereIn('job_schedule_id', $jobs->pluck('id'))
+            // Primary rental: job_advice_room_id lives directly on job_schedule_rooms.
+            $headerRoomIds = JobScheduleRoom::whereIn('job_schedule_id', $jobScheduleIds)
                 ->where('job_advice_room_id', $oldRoom->id)
                 ->pluck('id');
 
-            if ($jobScheduleRoomIds->isEmpty()) {
-                continue;
+            if ($headerRoomIds->isNotEmpty()) {
+                JobScheduleRoom::whereIn('id', $headerRoomIds)->update([
+                    'job_advice_room_id' => $newRoom->id,
+                    'updated_at' => now(),
+                ]);
             }
 
-            JobScheduleRoom::whereIn('id', $jobScheduleRoomIds)->update([
-                'job_advice_room_id' => $newRoom->id,
-                'updated_at' => now(),
-            ]);
-
+            // Secondary rentals (multi-rental rooms) only exist in the pivot table, keyed by
+            // their own job_advice_room_id, independently of the room's header column — must
+            // be looked up separately or a non-primary rental never gets remapped and is left
+            // pointing at the old contract's job_advice_room.
             if (Schema::hasTable('job_schedule_room_rentals')) {
-                DB::table('job_schedule_room_rentals')
-                    ->whereIn('job_schedule_room_id', $jobScheduleRoomIds)
-                    ->where('job_advice_room_id', $oldRoom->id)
-                    ->update([
-                        'job_advice_room_id' => $newRoom->id,
-                        'updated_at' => now(),
-                    ]);
+                $pivotRoomIds = JobScheduleRoom::whereIn('job_schedule_id', $jobScheduleIds)
+                    ->whereHas('rentals', function ($query) use ($oldRoom) {
+                        $query->where('job_advice_room_id', $oldRoom->id);
+                    })
+                    ->pluck('id');
+
+                if ($pivotRoomIds->isNotEmpty()) {
+                    DB::table('job_schedule_room_rentals')
+                        ->whereIn('job_schedule_room_id', $pivotRoomIds)
+                        ->where('job_advice_room_id', $oldRoom->id)
+                        ->update([
+                            'job_advice_room_id' => $newRoom->id,
+                            'updated_at' => now(),
+                        ]);
+                }
             }
         }
     }

@@ -310,6 +310,93 @@ class ContractSwitchingExecutionTest extends TestCase
         ]);
     }
 
+    public function test_continue_remaining_remaps_secondary_rental_in_multi_rental_room(): void
+    {
+        Carbon::setTestNow('2026-07-01 10:00:00');
+        $this->seedSwitchingScenario();
+
+        // Second rental sharing the same physical room (Room A), only ever tracked via the
+        // job_schedule_room_rentals pivot — never on job_schedule_rooms' own header column.
+        DB::table('contract_rentals')->insert([
+            'id' => 2,
+            'contract_id' => 1,
+            'master_rental_id' => 11,
+            'room_id' => 100,
+            'quantity' => 1,
+            'unit_price' => 50000,
+            'total_price' => 50000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            'id' => 2,
+            'job_advice_id' => 1,
+            'contract_room_id' => 1,
+            'contract_rental_id' => 2,
+            'room_name' => 'Room A',
+            'rental_name' => 'Rental B Refill',
+            'quantity' => 1,
+            'status' => 'scheduled',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedule_room_rentals')->insert([
+            'id' => 2,
+            'job_schedule_room_id' => 1,
+            'job_advice_room_id' => 2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $switching = ContractSwitching::create([
+            'switching_number' => 'CSW-TEST-003',
+            'old_contract_id' => 1,
+            'old_customer_id' => 1,
+            'new_customer_id' => 2,
+            'switching_reason' => 'Business Transfer',
+            'continue_period' => true,
+            'continue_top' => true,
+            'reset_dates' => false,
+            'status' => ContractSwitching::STATUS_APPROVED,
+            'approved_at' => now(),
+            'approved_by' => 1,
+            'created_by' => 1,
+        ]);
+
+        $switching->execute(1);
+
+        $newJobAdviceId = DB::table('job_schedules')->where('id', 2)->value('job_advice_id');
+        $newSecondaryRoomId = DB::table('job_advice_rooms')
+            ->where('job_advice_id', $newJobAdviceId)
+            ->where('rental_name', 'Rental B Refill')
+            ->value('id');
+
+        $this->assertNotNull($newSecondaryRoomId);
+        $this->assertNotSame(2, $newSecondaryRoomId);
+
+        // The primary rental's header column must still be remapped as before.
+        $this->assertDatabaseHas('job_schedule_rooms', [
+            'id' => 1,
+            'job_advice_room_id' => DB::table('job_advice_rooms')
+                ->where('job_advice_id', $newJobAdviceId)
+                ->where('rental_name', 'Rental A')
+                ->value('id'),
+        ]);
+
+        // The secondary rental's pivot row must be remapped to the new job_advice_room, not
+        // left pointing at the old contract's job_advice_room (id 2).
+        $this->assertDatabaseHas('job_schedule_room_rentals', [
+            'job_schedule_room_id' => 1,
+            'job_advice_room_id' => $newSecondaryRoomId,
+        ]);
+        $this->assertDatabaseMissing('job_schedule_room_rentals', [
+            'job_schedule_room_id' => 1,
+            'job_advice_room_id' => 2,
+        ]);
+    }
+
     public function test_reset_all_starts_full_new_duration_from_effective_date(): void
     {
         Carbon::setTestNow('2026-07-01 10:00:00');
