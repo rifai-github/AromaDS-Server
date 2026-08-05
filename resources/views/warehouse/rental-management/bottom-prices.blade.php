@@ -185,7 +185,6 @@
                                     <th>Branch</th>
                                     <th>Tipe Penawaran</th>
                                     <th>Bottom Price</th>
-                                    <th>Replacement Price</th>
                                     <th>Status</th>
                                     <th>Updated By</th>
                                     <th>Actions</th>
@@ -199,7 +198,6 @@
                                         <span class="badge badge-info">{{ $bp->offer_type === 'hari' ? 'Harian' : 'Bulanan' }}</span>
                                     </td>
                                     <td>{{ $bp->formatted_bottom_price }}</td>
-                                    <td>{{ $bp->formatted_replacement_price }}</td>
                                     <td>
                                         @if($bp->is_active)
                                             <span class="badge badge-success">Active</span>
@@ -270,10 +268,10 @@
                     <label class="form-label">Bottom Price (Rp) <span class="text-danger">*</span></label>
                     <input type="number" class="form-control" id="bottom_price" name="bottom_price" min="0" step="0.01" required>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Replacement Price (Rp) <span class="text-danger">*</span></label>
-                    <input type="number" class="form-control" id="replacement_price" name="replacement_price" min="0" step="0.01" required>
-                </div>
+                {{-- Replacement Price hidden from UI (not used by any pricing/approval logic yet,
+                     only confused users). Kept as a hidden field so backend validation/storage
+                     still work unchanged: defaults to 0 for new rows, keeps its stored value on edit. --}}
+                <input type="hidden" id="replacement_price" name="replacement_price" value="0">
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="is_active" name="is_active" value="1" checked>
                     <label class="form-check-label" for="is_active">Active</label>
