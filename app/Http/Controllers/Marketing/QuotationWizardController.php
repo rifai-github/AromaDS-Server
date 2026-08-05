@@ -83,7 +83,7 @@ class QuotationWizardController extends Controller
         }
 
         if (! empty($evaluation['requires_approval'])) {
-            return 'Tidak ada level approval yang berwenang atas diskon sebesar ini. Hubungi admin untuk mengatur Level Approval Quotation.';
+            return 'Tidak ada level approval yang berwenang atas diskon sebesar ini. Hubungi admin untuk mengatur Master Price Slab (Marketing).';
         }
 
         return 'Anda tidak memiliki izin untuk '.$action.' Quotation.';

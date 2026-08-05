@@ -24,7 +24,7 @@
                         {{ rtrim(rtrim(number_format($bpRequiredLevel['max_discount_percentage'], 2, ',', '.'), '0'), ',') }}%.
                     @else
                         Tidak ada level approval yang berwenang atas diskon sebesar ini.
-                        Hubungi admin untuk mengatur <strong>Level Approval Quotation</strong>.
+                        Hubungi admin untuk mengatur <strong>Master Price Slab</strong> (Marketing).
                     @endif
                 </div>
                 @if(!$canApproveQuotation)

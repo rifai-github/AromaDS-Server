@@ -1298,7 +1298,7 @@
                 <li data-tooltip="Quotation" class="{{ request()->routeIs('marketing.quotations.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('marketing.quotations.index') }}')">Quotation</li>
                 @endif
                 @if(auth()->user()->canAccessMenuItem('marketing.quotation-approval-levels'))
-                <li data-tooltip="Level Approval Quotation" class="{{ request()->routeIs('marketing.quotation-approval-levels.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('marketing.quotation-approval-levels.index') }}')">Level Approval Quotation</li>
+                <li data-tooltip="Master Price Slab" class="{{ request()->routeIs('marketing.quotation-approval-levels.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('marketing.quotation-approval-levels.index') }}')">Master Price Slab</li>
                 @endif
                 @if(auth()->user()->canAccessMenuItem('marketing.contracts'))
                 <li data-tooltip="Contract" class="{{ request()->routeIs('marketing.contracts.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('marketing.contracts.index') }}')">Contract</li>
@@ -1651,8 +1651,13 @@
                 @if(auth()->user()->canAccessMenuItem('company.company-virtual-accounts') || auth()->user()->canAccessMenuItem('marketing.company-virtual-accounts'))
                 <li data-tooltip="Company Virtual Account" class="{{ request()->routeIs('company.company-virtual-accounts.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('company.company-virtual-accounts.index') }}')">Company Virtual Account</li>
                 @endif
-                {{-- Master Price Slab menu hidden to avoid confusion with Marketing > Level Approval Quotation
-                     (quantity-based rental discount, unrelated concept). Route/controller/data untouched. --}}
+                {{-- This is the OLD "Master Price Slab" (quantity-based rental discount, route
+                     prefix company.master-price-slabs.*). Menu hidden as unused/confusing.
+                     NOTE: Marketing > Master Price Slab (route prefix marketing.quotation-approval-levels.*,
+                     just below Quotation in this sidebar) is a DIFFERENT, unrelated feature
+                     (tiered quotation approval levels) that was given this same display name -
+                     do not merge or confuse the two. Route/controller/data of this old feature
+                     are untouched and still reachable directly by URL. --}}
                 @if(auth()->user()->canAccessMenuItem('company.companies'))
                 <li data-tooltip="Master Company" class="{{ request()->routeIs('company.companies.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('company.companies.index') }}')">Master Company</li>
                 @endif

@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
-@section('title', 'Level Approval Quotation')
-@section('breadcrumb', 'Home / Marketing / Level Approval Quotation')
+@section('title', 'Master Price Slab')
+@section('breadcrumb', 'Home / Marketing / Master Price Slab')
 
 @section('content')
 <style>
@@ -177,7 +177,7 @@
                 <div class="table-header">
                     <h3 class="table-title">
                         <i class="fas fa-layer-group"></i>
-                        Level Approval Quotation
+                        Master Price Slab
                     </h3>
                     <button class="btn btn-primary" onclick="openAddModal()">
                         <i class="fas fa-plus"></i>

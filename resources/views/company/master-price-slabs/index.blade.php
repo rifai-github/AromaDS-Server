@@ -1,7 +1,10 @@
 @extends('layouts.app')
 
-@section('title', 'Master Price Slabs')
-@section('breadcrumb', 'Home / Company / Master Price Slabs')
+{{-- Renamed "(Old)" to distinguish from Marketing > Master Price Slab (tiered quotation
+     approval levels, unrelated feature, same display name by request). Menu entry for
+     this page is hidden; route/controller/data untouched. --}}
+@section('title', 'Master Price Slab (Old)')
+@section('breadcrumb', 'Home / Company / Master Price Slab (Old)')
 
 @section('content')
 <style>
@@ -694,7 +697,7 @@
         <!-- Master Price Slabs Header -->
         <div class="flex flex-row justify-between items-center w-full bg-white rounded-t-[10px] p-4">
             <div class="flex flex-row justify-start items-center w-full">
-                <h1 class="text-xl font-semibold text-[#214589]">Master Price Slabs</h1>
+                <h1 class="text-xl font-semibold text-[#214589]">Master Price Slab (Old)</h1>
             </div>
             
             <div class="flex flex-row justify-end items-center">
