@@ -1603,71 +1603,14 @@ function setupJobAdviceDateGuards() {
             }
         };
 
-        if (isCreatePair) {
-            // Default Remove Date to H+3 from Expected Date for Install Free,
-            // unless the user has already typed/picked their own value.
-            let isProgrammaticRemoveUpdate = false;
-            const applyDefaultRemoveDate = () => {
-                if (!type || !isInstallFreeType(type.value)) return;
-                if (remove.dataset.userEdited === 'true') return;
-
-                const defaultRemoveDate = addDaysToDateValue(resolveFlatpickrDateValue(expected), 3);
-                if (!defaultRemoveDate) return;
-
-                isProgrammaticRemoveUpdate = true;
-                // remove_date is also auto-upgraded to flatpickr (altInput display +
-                // hidden original). Setting remove.value directly only updates the
-                // hidden original, leaving the visible altInput stale, so go through
-                // flatpickr's own API when the instance exists.
-                if (remove._flatpickr) {
-                    remove._flatpickr.setDate(defaultRemoveDate, true);
-                } else {
-                    remove.value = defaultRemoveDate;
-                }
-                isProgrammaticRemoveUpdate = false;
-                syncMinDate();
-            };
-
-            remove.addEventListener('input', () => {
-                if (isProgrammaticRemoveUpdate) return;
-                remove.dataset.userEdited = 'true';
-            });
-
-            expected.addEventListener('change', applyDefaultRemoveDate);
-            if (type) {
-                type.addEventListener('change', applyDefaultRemoveDate);
-            }
-
-            // Flatpickr wraps expected_date asynchronously (via a page-level
-            // MutationObserver) after this function runs. When the user types the date
-            // manually into flatpickr's altInput and commits it by clicking away, neither
-            // a native 'change' event on the original input nor flatpickr's own onChange
-            // config callbacks reliably fire (verified: the original input's value updates
-            // silently on altInput blur). Best-effort: hook flatpickr's onChange once the
-            // instance shows up, for flows where init lands quickly.
-            let flatpickrHookAttempts = 0;
-            const wireFlatpickrOnChange = () => {
-                const instance = expected._flatpickr;
-                if (instance && instance.config && Array.isArray(instance.config.onChange)) {
-                    instance.config.onChange.push(applyDefaultRemoveDate);
-                    return;
-                }
-                flatpickrHookAttempts += 1;
-                if (flatpickrHookAttempts < 40) {
-                    setTimeout(wireFlatpickrOnChange, 100);
-                }
-            };
-            wireFlatpickrOnChange();
-
-            // Timing-proof primary trigger: flows that open this modal after heavier
-            // async work (e.g. "Create Job Advice from Quotation", which loads a
-            // marketing user + thousands of quotation options before the modal is
-            // interactive) can push flatpickr's own async init past the polling window
-            // above, so the direct altInput blur listener never gets attached in time.
-            // Expose this open modal's apply function for the single page-level capture
-            // listener (registered once, below) to call.
-            window.__jobAdviceApplyDefaultRemoveDate = applyDefaultRemoveDate;
-        }
+        // The Create modal's Remove Date default (H+3 from Expected Date for Install
+        // Free) is wired up by the page-level, ID-based listeners below instead of
+        // closures here. This modal is rebuilt (fresh innerHTML, fresh DOM nodes) more
+        // than once per page load in some flows (e.g. "Create Job Advice from
+        // Quotation"), and closures captured on an earlier build silently keep
+        // pointing at now-detached elements once that happens -- reading stale, blank
+        // values forever after. Re-querying by ID at the moment each event fires (see
+        // applyJobAdviceDefaultRemoveDate below) sidesteps that regardless of root cause.
 
         expected.addEventListener('change', syncMinDate);
         remove.addEventListener('change', syncMinDate);
@@ -1679,20 +1622,67 @@ function setupJobAdviceDateGuards() {
     });
 }
 
+let jobAdviceIsProgrammaticRemoveUpdate = false;
+
+// Default the Create modal's Remove Date to H+3 from Expected Date for Install Free,
+// unless the user has already typed/picked their own value. Always re-queries by ID
+// instead of closing over elements from whichever modal build happened to be current
+// when a listener was attached, so it stays correct even if the modal's DOM gets
+// rebuilt after that (see the comment in setupJobAdviceDateGuards).
+function applyJobAdviceDefaultRemoveDate() {
+    const expected = document.getElementById('expected_date');
+    const remove = document.getElementById('remove_date');
+    const type = document.getElementById('modal_type');
+    if (!expected || !remove || !type) return;
+    if (!isInstallFreeType(type.value)) return;
+    if (remove.dataset.userEdited === 'true') return;
+
+    const defaultRemoveDate = addDaysToDateValue(resolveFlatpickrDateValue(expected), 3);
+    if (!defaultRemoveDate) return;
+
+    jobAdviceIsProgrammaticRemoveUpdate = true;
+    // remove_date is also auto-upgraded to flatpickr (altInput display + hidden
+    // original). Setting .value directly only updates the hidden original, leaving
+    // the visible altInput stale, so go through flatpickr's own API when present.
+    if (remove._flatpickr) {
+        remove._flatpickr.setDate(defaultRemoveDate, true);
+    } else {
+        remove.value = defaultRemoveDate;
+    }
+    jobAdviceIsProgrammaticRemoveUpdate = false;
+}
+
 // Registered once for the page's lifetime (not inside setupJobAdviceDateGuards, which
-// reruns every time the Create modal opens). blur/focus don't bubble, but they do
-// propagate during the capture phase, so a single document-level capture listener
-// reliably catches the Expected Date altInput's blur no matter when flatpickr wraps
-// the field relative to whatever async work a given "open modal" flow does first.
-if (!window.__jobAdviceRemoveDateBlurHookAttached) {
-    window.__jobAdviceRemoveDateBlurHookAttached = true;
+// reruns every time the Create modal opens, and whose per-open element references can
+// go stale -- see above). blur/focus don't bubble, but they do propagate during the
+// capture phase, so a single document-level capture listener reliably catches events
+// on the Expected/Remove Date fields no matter when flatpickr wraps them or how many
+// times the modal's DOM gets rebuilt.
+if (!window.__jobAdviceRemoveDateHooksAttached) {
+    window.__jobAdviceRemoveDateHooksAttached = true;
+
     document.addEventListener('blur', function (event) {
         const expectedEl = document.getElementById('expected_date');
-        if (!expectedEl || !expectedEl._flatpickr) return;
-        if (event.target !== expectedEl._flatpickr.altInput) return;
-        if (typeof window.__jobAdviceApplyDefaultRemoveDate === 'function') {
-            window.__jobAdviceApplyDefaultRemoveDate();
-        }
+        if (!expectedEl) return;
+        const altInput = expectedEl._flatpickr ? expectedEl._flatpickr.altInput : null;
+        if (event.target !== expectedEl && event.target !== altInput) return;
+        applyJobAdviceDefaultRemoveDate();
+    }, true);
+
+    document.addEventListener('change', function (event) {
+        const expectedEl = document.getElementById('expected_date');
+        const typeEl = document.getElementById('modal_type');
+        if (event.target !== expectedEl && event.target !== typeEl) return;
+        applyJobAdviceDefaultRemoveDate();
+    }, true);
+
+    document.addEventListener('input', function (event) {
+        if (jobAdviceIsProgrammaticRemoveUpdate) return;
+        const removeEl = document.getElementById('remove_date');
+        if (!removeEl) return;
+        const altInput = removeEl._flatpickr ? removeEl._flatpickr.altInput : null;
+        if (event.target !== removeEl && event.target !== altInput) return;
+        removeEl.dataset.userEdited = 'true';
     }, true);
 }
 
