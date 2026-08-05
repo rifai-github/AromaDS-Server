@@ -1651,9 +1651,8 @@
                 @if(auth()->user()->canAccessMenuItem('company.company-virtual-accounts') || auth()->user()->canAccessMenuItem('marketing.company-virtual-accounts'))
                 <li data-tooltip="Company Virtual Account" class="{{ request()->routeIs('company.company-virtual-accounts.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('company.company-virtual-accounts.index') }}')">Company Virtual Account</li>
                 @endif
-                @if(auth()->user()->canAccessMenuItem('company.master-price-slabs'))
-                <li data-tooltip="Master Price Slab" class="{{ request()->routeIs('company.master-price-slabs.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('company.master-price-slabs.index') }}')">Master Price Slab</li>
-                @endif
+                {{-- Master Price Slab menu hidden to avoid confusion with Marketing > Level Approval Quotation
+                     (quantity-based rental discount, unrelated concept). Route/controller/data untouched. --}}
                 @if(auth()->user()->canAccessMenuItem('company.companies'))
                 <li data-tooltip="Master Company" class="{{ request()->routeIs('company.companies.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('company.companies.index') }}')">Master Company</li>
                 @endif
