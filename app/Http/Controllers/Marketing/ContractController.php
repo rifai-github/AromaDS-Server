@@ -1539,6 +1539,13 @@ class ContractController extends Controller
             return null;
         }
 
+        // Preferred path: the contract the unit was actually installed under, stored at
+        // install time. Guessing from customer + room is wrong whenever one room holds
+        // units from several contracts - it always lands on the newest contract.
+        if ($unit->contract_id) {
+            return $this->resolveStoredContractForUnitOnWall($unit, $marketingId);
+        }
+
         $roomId = $unit->room_id;
         $roomName = trim((string) ($unit->room?->room_name ?: $unit->room_name));
         $normalizedRoomName = mb_strtolower(preg_replace('/\s+/', ' ', $roomName));
@@ -1579,19 +1586,13 @@ class ContractController extends Controller
             ->get();
 
         foreach ($contracts as $contract) {
-            $contractRoom = $contract->contractRooms->first(function ($contractRoom) use ($roomId, $buildingId, $normalizedRoomName) {
-                if ($roomId && (int) $contractRoom->room_id === (int) $roomId) {
-                    return true;
-                }
+            // A contract already renewed into a successor must not be offered for a new
+            // Job Advice - getForJobAdvice() rejects it anyway.
+            if ($contract->hasRenewalSuccessor()) {
+                continue;
+            }
 
-                $contractRoomName = trim((string) ($contractRoom->room?->room_name ?? ''));
-                $contractRoomName = mb_strtolower(preg_replace('/\s+/', ' ', $contractRoomName));
-
-                return $buildingId
-                    && $normalizedRoomName !== ''
-                    && (int) ($contractRoom->room?->building_id ?? 0) === (int) $buildingId
-                    && $contractRoomName === $normalizedRoomName;
-            });
+            $contractRoom = $this->matchContractRoomForUnitOnWall($contract, $roomId, $buildingId, $normalizedRoomName);
 
             if ($contractRoom) {
                 return [
@@ -1602,6 +1603,110 @@ class ContractController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Resolve the contract straight from the linkage stored on the unit at install time.
+     * Follows the renewal chain so a renewed unit points at the contract that is live now.
+     */
+    private function resolveStoredContractForUnitOnWall(UnitOnWall $unit, ?int $marketingId = null): ?array
+    {
+        $contract = Contract::with(['customer', 'contractRooms.room'])->find($unit->contract_id);
+
+        if (! $contract) {
+            return null;
+        }
+
+        $contract = $this->followContractRenewalChain($contract);
+
+        if ($this->isTerminatedContract($contract)) {
+            return null;
+        }
+
+        if ($marketingId
+            && (int) $contract->marketing_id !== $marketingId
+            && (int) $contract->created_by !== $marketingId) {
+            return null;
+        }
+
+        $contractRoom = null;
+
+        if ($unit->contract_room_id) {
+            $contractRoom = $contract->contractRooms->firstWhere('id', $unit->contract_room_id);
+        }
+
+        if (! $contractRoom) {
+            // Either the unit predates contract_room_id, or the renewal chain moved us to a
+            // different contract - re-match the room on whichever contract we ended up on.
+            $roomName = trim((string) ($unit->room?->room_name ?: $unit->room_name));
+            $normalizedRoomName = mb_strtolower(preg_replace('/\s+/', ' ', $roomName));
+            $buildingId = $unit->building_id ?: $unit->room?->building_id;
+
+            $contractRoom = $this->matchContractRoomForUnitOnWall($contract, $unit->room_id, $buildingId, $normalizedRoomName);
+        }
+
+        return [
+            'contract' => $contract,
+            'contract_room' => $contractRoom,
+        ];
+    }
+
+    private function matchContractRoomForUnitOnWall(Contract $contract, $roomId, $buildingId, string $normalizedRoomName)
+    {
+        return $contract->contractRooms->first(function ($contractRoom) use ($roomId, $buildingId, $normalizedRoomName) {
+            if ($roomId && (int) $contractRoom->room_id === (int) $roomId) {
+                return true;
+            }
+
+            $contractRoomName = trim((string) ($contractRoom->room?->room_name ?? ''));
+            $contractRoomName = mb_strtolower(preg_replace('/\s+/', ' ', $contractRoomName));
+
+            return $buildingId
+                && $normalizedRoomName !== ''
+                && (int) ($contractRoom->room?->building_id ?? 0) === (int) $buildingId
+                && $contractRoomName === $normalizedRoomName;
+        });
+    }
+
+    private function followContractRenewalChain(Contract $contract, int $maxHops = 5): Contract
+    {
+        $seen = [$contract->id => true];
+
+        for ($hop = 0; $hop < $maxHops; $hop++) {
+            $successor = $contract->renewedByContract()->first();
+
+            if (! $successor) {
+                $successorId = $contract->renewals()
+                    ->where('status', \App\Models\ContractRenewal::STATUS_COMPLETED)
+                    ->whereNotNull('new_contract_id')
+                    ->latest('id')
+                    ->value('new_contract_id');
+
+                $successor = $successorId
+                    ? Contract::with(['customer', 'contractRooms.room'])->find($successorId)
+                    : null;
+            }
+
+            if (! $successor || isset($seen[$successor->id])) {
+                break;
+            }
+
+            $seen[$successor->id] = true;
+            $successor->loadMissing(['customer', 'contractRooms.room']);
+            $contract = $successor;
+        }
+
+        return $contract;
+    }
+
+    private function isTerminatedContract(Contract $contract): bool
+    {
+        $statuses = [
+            mb_strtolower(trim((string) $contract->status)),
+            mb_strtolower(trim((string) $contract->contract_status)),
+        ];
+
+        return (bool) array_intersect($statuses, ['terminated', 'cancelled', 'canceled', 'expired']);
     }
 
     private function activeUnitOnWallStatusesForJobAdvice(): array

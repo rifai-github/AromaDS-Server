@@ -7221,6 +7221,12 @@ class JobScheduleController extends Controller
 
                     $unitData = [
                         'customer_id' => $jobAdvice->customer_id,
+                        // Store the real owner of this physical unit. One room can hold units
+                        // from several contracts, so the contract must never be re-guessed later
+                        // from customer + room alone.
+                        'contract_id' => $jobAdvice->contract_id,
+                        'contract_room_id' => $jaRoom->contract_room_id,
+                        'install_job_schedule_id' => $installJob->id,
                         'building_id' => $installJob->building_id,
                         'room_id' => $roomId,
                         'rental_id' => $rental->id,

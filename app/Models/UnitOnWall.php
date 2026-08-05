@@ -13,6 +13,9 @@ class UnitOnWall extends Model
 
     protected $fillable = [
         'customer_id',
+        'contract_id',
+        'contract_room_id',
+        'install_job_schedule_id',
         'building_id',
         'room_id',
         'rental_id',
@@ -51,6 +54,26 @@ class UnitOnWall extends Model
     public function building()
     {
         return $this->belongsTo(Building::class);
+    }
+
+    /**
+     * Contract the unit was physically installed under.
+     * Populated at install time - do not infer the contract from customer+room,
+     * one room can hold units from several different contracts.
+     */
+    public function contract()
+    {
+        return $this->belongsTo(Contract::class);
+    }
+
+    public function contractRoom()
+    {
+        return $this->belongsTo(ContractRoom::class, 'contract_room_id');
+    }
+
+    public function installJobSchedule()
+    {
+        return $this->belongsTo(JobSchedule::class, 'install_job_schedule_id');
     }
 
     public function room()

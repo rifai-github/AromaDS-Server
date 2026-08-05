@@ -26,8 +26,27 @@ class ExtraJobAdviceOnWallContractDetectionTest extends TestCase
             $table->foreignId('customer_id')->nullable();
             $table->foreignId('marketing_id')->nullable();
             $table->foreignId('created_by')->nullable();
+            $table->foreignId('quotation_id')->nullable();
             $table->string('status')->nullable();
             $table->string('contract_status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('quotations', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('existing_contract_id')->nullable();
+            $table->string('quotation_type')->nullable();
+            $table->string('status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('contract_renewals', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('contract_id')->nullable();
+            $table->foreignId('new_contract_id')->nullable();
+            $table->string('status')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -58,6 +77,9 @@ class ExtraJobAdviceOnWallContractDetectionTest extends TestCase
         Schema::create('unit_on_walls', function (Blueprint $table) {
             $table->id();
             $table->foreignId('customer_id')->nullable();
+            $table->foreignId('contract_id')->nullable();
+            $table->foreignId('contract_room_id')->nullable();
+            $table->foreignId('install_job_schedule_id')->nullable();
             $table->foreignId('building_id')->nullable();
             $table->foreignId('room_id')->nullable();
             $table->string('serial_number')->nullable();
@@ -134,6 +156,8 @@ class ExtraJobAdviceOnWallContractDetectionTest extends TestCase
             'contract_rooms',
             'master_rooms',
             'buildings',
+            'contract_renewals',
+            'quotations',
             'contracts',
             'customers',
         ] as $table) {
@@ -153,5 +177,123 @@ class ExtraJobAdviceOnWallContractDetectionTest extends TestCase
             ->assertJsonPath('data.0.contract_id', 20)
             ->assertJsonPath('data.0.contract_number', 'BDG-CA/26-05/0001')
             ->assertJsonPath('data.0.contract_room_id', 50);
+    }
+
+    public function test_unit_keeps_its_own_contract_when_a_newer_contract_shares_the_room(): void
+    {
+        // Same customer + same room, but a newer contract exists. Guessing by
+        // customer+room would hand the unit to contract 21 - it belongs to 20.
+        $this->insertContract(21, 'BDG-CA/26-06/0007');
+        $this->insertContractRoom(51, 21, 40);
+
+        DB::table('unit_on_walls')->where('id', 60)->update([
+            'contract_id' => 20,
+            'contract_room_id' => 50,
+        ]);
+
+        $response = $this->getJson('/api/contracts/on-wall-units-for-job-advice?marketing_id=1');
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.id', 60)
+            ->assertJsonPath('data.0.contract_id', 20)
+            ->assertJsonPath('data.0.contract_number', 'BDG-CA/26-05/0001')
+            ->assertJsonPath('data.0.contract_room_id', 50);
+    }
+
+    public function test_unit_follows_the_renewal_successor_of_its_stored_contract(): void
+    {
+        DB::table('quotations')->insert([
+            'id' => 70,
+            'existing_contract_id' => 20,
+            'quotation_type' => 'renewal',
+            'status' => 'approved',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->insertContract(22, 'BDG-CA/26-07/0011', ['quotation_id' => 70]);
+        $this->insertContractRoom(52, 22, 40);
+
+        DB::table('unit_on_walls')->where('id', 60)->update([
+            'contract_id' => 20,
+            'contract_room_id' => 50,
+        ]);
+
+        $response = $this->getJson('/api/contracts/on-wall-units-for-job-advice?marketing_id=1');
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.id', 60)
+            ->assertJsonPath('data.0.contract_id', 22)
+            ->assertJsonPath('data.0.contract_number', 'BDG-CA/26-07/0011')
+            ->assertJsonPath('data.0.contract_room_id', 52);
+    }
+
+    public function test_unit_is_not_offered_when_its_stored_contract_is_terminated(): void
+    {
+        DB::table('contracts')->where('id', 20)->update([
+            'status' => 'terminated',
+            'contract_status' => 'terminated',
+        ]);
+
+        DB::table('unit_on_walls')->where('id', 60)->update([
+            'contract_id' => 20,
+            'contract_room_id' => 50,
+        ]);
+
+        $response = $this->getJson('/api/contracts/on-wall-units-for-job-advice?marketing_id=1');
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonCount(0, 'data');
+    }
+
+    public function test_legacy_unit_without_stored_contract_skips_already_renewed_contracts(): void
+    {
+        // No contract_id on the unit (pre-migration row) so the legacy guess runs.
+        // Contract 20 was renewed into 23, so 23 is the one that may take a new Job Advice.
+        DB::table('quotations')->insert([
+            'id' => 71,
+            'existing_contract_id' => 20,
+            'quotation_type' => 'renewal',
+            'status' => 'approved',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->insertContract(23, 'BDG-CA/26-08/0002', ['quotation_id' => 71]);
+        $this->insertContractRoom(53, 23, 40);
+
+        $response = $this->getJson('/api/contracts/on-wall-units-for-job-advice?marketing_id=1');
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.id', 60)
+            ->assertJsonPath('data.0.contract_id', 23)
+            ->assertJsonPath('data.0.contract_number', 'BDG-CA/26-08/0002');
+    }
+
+    private function insertContract(int $id, string $contractNumber, array $overrides = []): void
+    {
+        DB::table('contracts')->insert(array_merge([
+            'id' => $id,
+            'contract_number' => $contractNumber,
+            'customer_id' => 10,
+            'marketing_id' => 1,
+            'created_by' => 1,
+            'status' => 'active',
+            'contract_status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $overrides));
+    }
+
+    private function insertContractRoom(int $id, int $contractId, int $roomId): void
+    {
+        DB::table('contract_rooms')->insert([
+            'id' => $id,
+            'contract_id' => $contractId,
+            'room_id' => $roomId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 }
