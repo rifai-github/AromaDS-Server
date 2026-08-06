@@ -221,10 +221,26 @@ class CoreTaxImportTest extends TestCase
         $this->assertFalse($withPpn->fresh()->canPrintDocuments());
         $this->assertStringContainsString('dibatalkan', $withPpn->fresh()->documentBlockReason());
 
+        // Exempt only when no PPN was actually billed.
         $withoutPpn = Invoice::find(2);
-        $withoutPpn->update(['tax_obligation' => false]);
+        $withoutPpn->update(['tax_obligation' => false, 'tax_amount' => 0]);
         $this->assertTrue($withoutPpn->fresh()->canPrintDocuments());
         $this->assertNull($withoutPpn->fresh()->documentBlockReason());
+    }
+
+    /**
+     * Most existing invoices bill PPN while `tax_obligation` is still 0 — on QA,
+     * 49 of the 55 that charge tax. Keying the gate on the flag alone let those
+     * through, so the tax actually charged has to count as well.
+     */
+    public function test_gate_blocks_invoices_that_bill_ppn_even_when_the_flag_is_off(): void
+    {
+        $invoice = Invoice::find(2);
+        $invoice->update(['tax_obligation' => false, 'tax_amount' => 33000]);
+
+        $this->assertTrue($invoice->fresh()->requiresFakturPajak());
+        $this->assertFalse($invoice->fresh()->canPrintDocuments());
+        $this->assertStringContainsString('belum punya Faktur Pajak', $invoice->fresh()->documentBlockReason());
     }
 
     /**

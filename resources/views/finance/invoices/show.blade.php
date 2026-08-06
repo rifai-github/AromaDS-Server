@@ -211,7 +211,9 @@
                         </div>
                         <div>
                             <div class="d-flex gap-2">
-                                @php($documentBlockReason = $invoice->documentBlockReason())
+                                @php
+                                    $documentBlockReason = $invoice->documentBlockReason();
+                                @endphp
                                 <button type="button" id="btnHeaderSave" class="btn btn-info btn-sm text-white"><i class="fas fa-save me-1"></i> SAVE</button>
                                 <button type="button" id="btnHeaderReceipt" class="btn btn-info btn-sm text-white" {{ $documentBlockReason ? 'disabled' : '' }} title="{{ $documentBlockReason }}"><i class="fas fa-receipt me-1"></i> T. TERIMA</button>
                                 @if($invoice->faktur_pajak && $invoice->faktur_pajak_status !== 'cancelled')

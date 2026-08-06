@@ -536,12 +536,16 @@ class Invoice extends Model
 
     /**
      * Invoices that carry PPN must wait for their faktur pajak before any
-     * document leaves the building. Non-PPN invoices never get one, so they
+     * document leaves the building. Invoices with no PPN never get one, so they
      * are exempt — otherwise they could never be printed at all.
+     *
+     * The `tax_obligation` flag alone is not trustworthy: on QA, 49 of the 55
+     * invoices that actually bill PPN have it switched off. The tax actually
+     * charged is the reliable signal, so either one is enough to require a faktur.
      */
     public function requiresFakturPajak(): bool
     {
-        return (bool) $this->tax_obligation;
+        return (bool) $this->tax_obligation || (float) $this->tax_amount > 0;
     }
 
     public function canPrintDocuments(): bool
