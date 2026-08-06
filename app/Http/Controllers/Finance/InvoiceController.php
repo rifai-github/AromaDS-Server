@@ -732,14 +732,54 @@ class InvoiceController extends Controller
                 ]);
             }
 
-            // 3. BA Files & System CSR
-            $query = \App\Models\JobSchedule::where('contract_number', $invoice->contract->contract_number);
+        }
 
-            if ($invoice->period_invoice && preg_match('/Period (\d+)/i', $invoice->period_invoice, $m)) {
-                $periodNum = $m[1];
-                $query->where('period', $periodNum);
+        // 3. BA Files & System CSR
+        //
+        // Take the jobs straight from the invoice's own rental lines: `job_no` records
+        // exactly which job each line bills. Matching on the period number instead is
+        // wrong — invoice periods and service periods were decoupled when billing moved
+        // to a per-month cycle, so e.g. invoice "Period 11" bills job period 6.
+        if (! $invoice->relationLoaded('invoiceRentalDetails')) {
+            $invoice->load('invoiceRentalDetails');
+        }
+
+        $billedJobNumbers = $invoice->invoiceRentalDetails
+            ->pluck('job_no')
+            ->filter()
+            ->unique()
+            ->values();
+
+        // Neither source is complete on its own: `job_no` points at whichever job
+        // produced the rental line — the service job on a service invoice, but the
+        // install job on an install-period one — while the period lookup misses any
+        // invoice whose billing cycle has drifted from the service cycle. Take both
+        // so nothing is dropped.
+        $query = \App\Models\JobSchedule::query()->where(function ($q) use ($invoice, $billedJobNumbers) {
+            $matched = false;
+
+            if ($billedJobNumbers->isNotEmpty()) {
+                $q->whereIn('job_number', $billedJobNumbers);
+                $matched = true;
             }
 
+            if ($invoice->contract) {
+                $q->orWhere(function ($sub) use ($invoice) {
+                    $sub->where('contract_number', $invoice->contract->contract_number);
+
+                    if ($invoice->period_invoice && preg_match('/Period (\d+)/i', $invoice->period_invoice, $m)) {
+                        $sub->where('period', $m[1]);
+                    }
+                });
+                $matched = true;
+            }
+
+            if (! $matched) {
+                $q->whereRaw('1 = 0');
+            }
+        });
+
+        if ($billedJobNumbers->isNotEmpty() || $invoice->contract) {
             $jobSchedules = $query->with(['baFiles' => function ($q) {
                 $q->where('verification_status', 'verified')->with('uploader');
             }, 'room', 'assignedTechnician', 'jobAssignSchedules.team'])->get();

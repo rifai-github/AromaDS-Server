@@ -244,6 +244,32 @@ class CoreTaxImportTest extends TestCase
     }
 
     /**
+     * Invoices cleared by the removed TAX APPROVE button have no CoreTax number
+     * and never will. Blocking them stranded documents that used to print.
+     */
+    public function test_invoices_tax_approved_before_coretax_can_still_print(): void
+    {
+        $legacy = Invoice::find(1);
+        $legacy->update(['invoice_status' => Invoice::STATUS_TAX_APPROVED]);
+
+        $this->assertNull($legacy->fresh()->coretax_faktur_number);
+        $this->assertTrue($legacy->fresh()->canPrintDocuments());
+        $this->assertNull($legacy->fresh()->documentBlockReason());
+
+        // The exception is only for a missing number — a revoked one still locks.
+        $legacy->update([
+            'coretax_faktur_number' => '0400260035400001',
+            'coretax_status' => Invoice::CORETAX_STATUS_CANCELLED,
+        ]);
+        $this->assertFalse($legacy->fresh()->canPrintDocuments());
+
+        // And an invoice still awaiting its faktur stays locked.
+        $waiting = Invoice::find(2);
+        $this->assertSame(Invoice::STATUS_APPROVED, $waiting->invoice_status);
+        $this->assertFalse($waiting->canPrintDocuments());
+    }
+
+    /**
      * Rule 43 used to trip on the name of an uploaded file. It must follow the
      * faktur pajak that CoreTax actually issued instead.
      */

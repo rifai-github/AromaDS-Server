@@ -574,7 +574,22 @@ class Invoice extends Model
 
     public function canPrintDocuments(): bool
     {
-        return ! $this->requiresFakturPajak() || $this->hasValidCoreTaxFaktur();
+        return ! $this->requiresFakturPajak()
+            || $this->hasValidCoreTaxFaktur()
+            || $this->wasTaxApprovedBeforeCoreTax();
+    }
+
+    /**
+     * Invoices cleared by the old manual TAX APPROVE button carry no CoreTax
+     * number and never will: that button is gone, and the CoreTax import is now
+     * the only thing that sets this status — always writing the number with it.
+     * So this combination can only be pre-CoreTax data, and blocking it would
+     * strand documents that printed fine before.
+     */
+    private function wasTaxApprovedBeforeCoreTax(): bool
+    {
+        return $this->invoice_status === self::STATUS_TAX_APPROVED
+            && blank($this->coretax_faktur_number);
     }
 
     public function documentBlockReason(): ?string
