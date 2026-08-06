@@ -995,7 +995,9 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::resource('tax-file-exports', TaxFileExportController::class);
         Route::post('tax-file-exports/bulk-delete', [TaxFileExportController::class, 'bulkDelete'])->name('tax-file-exports.bulk-delete');
         Route::get('tax-file-exports/{taxFileExport}/download', [TaxFileExportController::class, 'download'])->name('tax-file-exports.download');
-        Route::post('tax-file-exports/{taxFileExport}/generate-espt', [TaxFileExportController::class, 'generateESPTExport'])->name('tax-file-exports.generate-espt');
+        Route::post('tax-file-exports/{taxFileExport}/generate-coretax', [TaxFileExportController::class, 'generateCoreTaxExport'])->name('tax-file-exports.generate-coretax');
+        // Legacy path kept so bookmarked/cached clients keep working; both build the CoreTax workbook.
+        Route::post('tax-file-exports/{taxFileExport}/generate-espt', [TaxFileExportController::class, 'generateCoreTaxExport'])->name('tax-file-exports.generate-espt');
 
         // Tax Management routes for new models
         Route::resource('tax-invoices', TaxInvoiceController::class);

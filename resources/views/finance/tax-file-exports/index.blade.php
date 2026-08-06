@@ -996,7 +996,7 @@
                         </td>
                         <td>
                             <span class="badge badge-secondary">
-                                {{ strtoupper($export->file_format ?? 'CSV') }}
+                                {{ strtoupper($export->file_format ?? 'XLSX') }}
                             </span>
                         </td>
                         <td>
@@ -1040,8 +1040,8 @@
                                 </button>
                                 @endif
                                 @if($export->status === 'pending')
-                                <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); generateESPTExport({{ $export->id }})">
-                                    <i class="fas fa-file-csv"></i>
+                                <button class="btn btn-sm btn-secondary" title="Generate file CoreTax (XLSX)" onclick="event.stopPropagation(); generateCoreTaxExport({{ $export->id }})">
+                                    <i class="fas fa-file-excel"></i>
                                 </button>
                                 @endif
                                 @if(in_array($export->status, ['pending', 'failed']))
@@ -1281,10 +1281,7 @@ function openCreateModal() {
                         <div class="form-group">
                             <label class="form-label">File Format *</label>
                             <select name="file_format" class="form-input" required>
-                                <option value="">Select Format</option>
-                                <option value="csv">CSV (e-SPT Compatible)</option>
-                                <option value="xlsx">Excel (XLSX)</option>
-                                <option value="pdf">PDF</option>
+                                <option value="xlsx" selected>CoreTax (XLSX)</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -1379,10 +1376,7 @@ function openCreateModalFallback() {
                     <div class="form-group">
                         <label class="form-label">File Format *</label>
                         <select name="file-format" class="form-input" required>
-                            <option value="">Select Format</option>
-                            <option value="csv">CSV (e-SPT Compatible)</option>
-                            <option value="xlsx">Excel (XLSX)</option>
-                            <option value="pdf">PDF</option>
+                            <option value="xlsx" selected>CoreTax (XLSX)</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -1586,10 +1580,7 @@ function openEditModal(id) {
                             <div class="form-group">
                                 <label class="form-label">File Format *</label>
                                 <select name="file_format" class="form-input" required>
-                                    <option value="">Select Format</option>
-                                    <option value="csv" ${data.data.file_format === 'csv' ? 'selected' : ''}>CSV</option>
-                                    <option value="xlsx" ${data.data.file_format === 'xlsx' ? 'selected' : ''}>Excel (XLSX)</option>
-                                    <option value="pdf" ${data.data.file_format === 'pdf' ? 'selected' : ''}>PDF</option>
+                                    <option value="xlsx" selected>CoreTax (XLSX)</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -1749,16 +1740,16 @@ function downloadExport(id) {
     window.open(`/finance/tax-file-exports/${id}/download`, '_blank');
 }
 
-// Generate e-SPT export function
-function generateESPTExport(id) {
+// Generate CoreTax export function
+function generateCoreTaxExport(id) {
     showConfirmDialog(
-        'Generate export e-SPT?',
-        'File CSV yang kompatibel dengan e-SPT akan dibuat.'
+        'Generate file CoreTax?',
+        'File XLSX untuk diupload ke CoreTax akan dibuat.'
     ).then((confirmed) => {
         if (!confirmed) {
             return;
         }
-        fetch(`/finance/tax-file-exports/${id}/generate-espt`, {
+        fetch(`/finance/tax-file-exports/${id}/generate-coretax`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1768,15 +1759,15 @@ function generateESPTExport(id) {
         .then(response => response.json())
         .then(result => {
             if (result.status === 'success') {
-                showSuccessModal('Export e-SPT berhasil dibuat.');
+                showSuccessModal('File CoreTax berhasil dibuat.');
                 location.reload();
             } else {
-                showErrorModal('Gagal membuat export e-SPT: ' + result.message);
+                showErrorModal('Gagal membuat file CoreTax: ' + result.message);
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            showErrorModal('Gagal membuat export e-SPT.');
+            showErrorModal('Gagal membuat file CoreTax.');
         });
     });
 }

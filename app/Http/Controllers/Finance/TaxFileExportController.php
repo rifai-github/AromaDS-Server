@@ -4,21 +4,21 @@ namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
 use App\Http\Traits\AccessControlFilterTrait;
+use App\Models\Customer;
 use App\Models\Finance\Invoice;
 use App\Models\TaxFileExport;
-use App\Models\Customer;
 use App\Models\User;
+use App\Services\Finance\CoreTaxExportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
-use Carbon\Carbon;
 
 class TaxFileExportController extends Controller
 {
     use AccessControlFilterTrait;
-    
+
     /**
      * Display a listing of the resource.
      */
@@ -33,12 +33,12 @@ class TaxFileExportController extends Controller
         // Search functionality
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('export_number', 'like', "%{$search}%")
-                  ->orWhere('notes', 'like', "%{$search}%")
-                  ->orWhereHas('createdBy', function($userQuery) use ($search) {
-                      $userQuery->where('name', 'like', "%{$search}%");
-                  });
+                    ->orWhere('notes', 'like', "%{$search}%")
+                    ->orWhereHas('createdBy', function ($userQuery) use ($search) {
+                        $userQuery->where('name', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -65,7 +65,7 @@ class TaxFileExportController extends Controller
         // Filter by period range
         if ($request->filled('period_from') && $request->filled('period_to')) {
             $query->whereBetween('period_from', [$request->period_from, $request->period_to])
-                  ->orWhereBetween('period_to', [$request->period_from, $request->period_to]);
+                ->orWhereBetween('period_to', [$request->period_from, $request->period_to]);
         }
 
         // Filter by created by
@@ -100,23 +100,23 @@ class TaxFileExportController extends Controller
             ->whereNotNull('invoice_date')
             ->orderBy('invoice_date', 'desc')
             ->get()
-            ->map(function($invoice) {
+            ->map(function ($invoice) {
                 return [
                     'id' => $invoice->id,
                     'invoice_number' => $invoice->invoice_number,
-                    'invoice_date' => $invoice->invoice_date ?  $invoice->invoice_date->format('Y-m-d') : null,
+                    'invoice_date' => $invoice->invoice_date ? $invoice->invoice_date->format('Y-m-d') : null,
                     'customer_name' => $invoice->customer ? $invoice->customer->name : null,
-                    'formatted_total_amount' => 'Rp ' . number_format($invoice->grand_total ?? $invoice->total_amount ?? 0, 0, ',', '.'),
+                    'formatted_total_amount' => 'Rp '.number_format($invoice->grand_total ?? $invoice->total_amount ?? 0, 0, ',', '.'),
                 ];
             });
-        
+
         if (request()->ajax()) {
             return response()->json([
                 'status' => 'success',
-                'invoices' => $taxInvoices
+                'invoices' => $taxInvoices,
             ]);
         }
-        
+
         return view('finance.tax-file-exports.create', compact('taxInvoices'));
     }
 
@@ -140,7 +140,7 @@ class TaxFileExportController extends Controller
                     ->whereNotNull('invoice_date')
                     ->whereNull('deleted_at'),
             ],
-            'file_format' => 'required|in:csv,xlsx,pdf',
+            'file_format' => 'required|in:xlsx',
             'include_details' => 'boolean',
             'notes' => 'nullable|string|max:1000',
             'filter_parameters' => 'nullable|array',
@@ -157,13 +157,13 @@ class TaxFileExportController extends Controller
             // Handle specific invoice selection
             if ($request->selection_mode === 'specific_invoices') {
                 $filterParameters['invoice_ids'] = $request->invoice_ids;
-                
+
                 // Auto-calculate period from selected invoices
                 $invoices = Invoice::where('invoice_status', Invoice::STATUS_APPROVED)
                     ->whereIn('id', $request->invoice_ids)
                     ->select('invoice_date')
                     ->get();
-                
+
                 if ($invoices->isNotEmpty()) {
                     $periodFrom = $invoices->min('invoice_date');
                     $periodTo = $invoices->max('invoice_date');
@@ -190,7 +190,7 @@ class TaxFileExportController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Tax file export created successfully.',
-                    'data' => $export->load('createdBy')
+                    'data' => $export->load('createdBy'),
                 ]);
             }
 
@@ -198,15 +198,15 @@ class TaxFileExportController extends Controller
                 ->with('success', 'Tax file export created successfully. Processing will start shortly.');
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to create tax file export: ' . $e->getMessage()
+                    'message' => 'Failed to create tax file export: '.$e->getMessage(),
                 ], 500);
             }
-            
-            return back()->with('error', 'Failed to create tax file export: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to create tax file export: '.$e->getMessage());
         }
     }
 
@@ -216,14 +216,14 @@ class TaxFileExportController extends Controller
     public function show(TaxFileExport $taxFileExport)
     {
         $taxFileExport->load('createdBy');
-        
+
         if (request()->ajax()) {
             return response()->json([
                 'status' => 'success',
-                'data' => $taxFileExport
+                'data' => $taxFileExport,
             ]);
         }
-        
+
         $statistics = [
             'total_records' => $taxFileExport->total_records,
             'file_size' => $taxFileExport->formatted_file_size,
@@ -242,16 +242,17 @@ class TaxFileExportController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Cannot edit export that is not in pending status.'
+                    'message' => 'Cannot edit export that is not in pending status.',
                 ], 400);
             }
+
             return back()->with('error', 'Cannot edit export that is not in pending status.');
         }
 
         if (request()->ajax()) {
             return response()->json([
                 'status' => 'success',
-                'data' => $taxFileExport
+                'data' => $taxFileExport,
             ]);
         }
 
@@ -272,9 +273,10 @@ class TaxFileExportController extends Controller
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Cannot update export that is not in pending status.'
+                    'message' => 'Cannot update export that is not in pending status.',
                 ], 400);
             }
+
             return back()->with('error', 'Cannot update export that is not in pending status.');
         }
 
@@ -283,7 +285,7 @@ class TaxFileExportController extends Controller
             'export_type' => 'required|in:monthly,quarterly,yearly,custom',
             'period_from' => 'required|date',
             'period_to' => 'required|date|after_or_equal:period_from',
-            'file_format' => 'required|in:csv,xlsx,pdf',
+            'file_format' => 'required|in:xlsx',
             'include_details' => 'boolean',
             'notes' => 'nullable|string|max:1000',
             'filter_parameters' => 'nullable|array',
@@ -310,7 +312,7 @@ class TaxFileExportController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Tax file export updated successfully.',
-                    'data' => $taxFileExport->load('createdBy')
+                    'data' => $taxFileExport->load('createdBy'),
                 ]);
             }
 
@@ -318,15 +320,15 @@ class TaxFileExportController extends Controller
                 ->with('success', 'Tax file export updated successfully.');
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to update tax file export: ' . $e->getMessage()
+                    'message' => 'Failed to update tax file export: '.$e->getMessage(),
                 ], 500);
             }
-            
-            return back()->with('error', 'Failed to update tax file export: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to update tax file export: '.$e->getMessage());
         }
     }
 
@@ -335,13 +337,14 @@ class TaxFileExportController extends Controller
      */
     public function destroy(TaxFileExport $taxFileExport)
     {
-        if (!$taxFileExport->canDelete()) {
+        if (! $taxFileExport->canDelete()) {
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Cannot delete export that is not in pending or failed status.'
+                    'message' => 'Cannot delete export that is not in pending or failed status.',
                 ], 400);
             }
+
             return back()->with('error', 'Cannot delete export that is not in pending or failed status.');
         }
 
@@ -349,8 +352,8 @@ class TaxFileExportController extends Controller
             DB::beginTransaction();
 
             // Delete file if exists
-            if ($taxFileExport->file_path && file_exists(public_path('uploads/' . $taxFileExport->file_path))) {
-                unlink(public_path('uploads/' . $taxFileExport->file_path));
+            if ($taxFileExport->file_path && file_exists(public_path('uploads/'.$taxFileExport->file_path))) {
+                unlink(public_path('uploads/'.$taxFileExport->file_path));
             }
 
             $taxFileExport->delete();
@@ -360,7 +363,7 @@ class TaxFileExportController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Tax file export deleted successfully.'
+                    'message' => 'Tax file export deleted successfully.',
                 ]);
             }
 
@@ -368,15 +371,15 @@ class TaxFileExportController extends Controller
                 ->with('success', 'Tax file export deleted successfully.');
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete tax file export: ' . $e->getMessage()
+                    'message' => 'Failed to delete tax file export: '.$e->getMessage(),
                 ], 500);
             }
-            
-            return back()->with('error', 'Failed to delete tax file export: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to delete tax file export: '.$e->getMessage());
         }
     }
 
@@ -387,7 +390,7 @@ class TaxFileExportController extends Controller
     {
         $request->validate([
             'export_ids' => 'required|array|min:1',
-            'export_ids.*' => 'exists:tax_file_exports,id'
+            'export_ids.*' => 'exists:tax_file_exports,id',
         ]);
 
         try {
@@ -400,15 +403,15 @@ class TaxFileExportController extends Controller
             if ($exports->isEmpty()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No exports found that can be deleted.'
+                    'message' => 'No exports found that can be deleted.',
                 ], 400);
             }
 
             $deletedCount = 0;
             foreach ($exports as $export) {
                 // Delete file if exists
-                if ($export->file_path && file_exists(public_path('uploads/' . $export->file_path))) {
-                    unlink(public_path('uploads/' . $export->file_path));
+                if ($export->file_path && file_exists(public_path('uploads/'.$export->file_path))) {
+                    unlink(public_path('uploads/'.$export->file_path));
                 }
                 $export->delete();
                 $deletedCount++;
@@ -419,13 +422,14 @@ class TaxFileExportController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => "Successfully deleted {$deletedCount} export(s).",
-                'count' => $deletedCount
+                'count' => $deletedCount,
             ]);
         } catch (\Exception $e) {
             DB::rollback();
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to delete exports: ' . $e->getMessage()
+                'message' => 'Failed to delete exports: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -435,61 +439,41 @@ class TaxFileExportController extends Controller
      */
     public function download(TaxFileExport $taxFileExport)
     {
-        if (!$taxFileExport->canDownload()) {
+        if (! $taxFileExport->canDownload()) {
             return back()->with('error', 'Export file is not available for download.');
         }
 
-        $fileName = $taxFileExport->export_number . '.' . $taxFileExport->file_format;
-        $filePath = public_path('uploads/' . $taxFileExport->file_path);
+        $fileName = $taxFileExport->export_number.'.'.$taxFileExport->file_format;
+        $filePath = public_path('uploads/'.$taxFileExport->file_path);
 
         return response()->download($filePath, $fileName);
     }
 
     /**
-     * Generate e-SPT compatible CSV export
+     * Build the CoreTax workbook for this export and mark it ready for download.
      */
-    public function generateESPTExport(TaxFileExport $taxFileExport)
+    public function generateCoreTaxExport(TaxFileExport $taxFileExport, CoreTaxExportService $coreTaxExport)
     {
         if ($taxFileExport->status !== 'pending') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Export is not in pending status.'
+                'message' => 'Export is not in pending status.',
             ], 400);
         }
 
         try {
             DB::beginTransaction();
 
-            // Update status to processing
             $taxFileExport->update(['status' => 'processing']);
 
-            // Generate e-SPT compatible CSV
-            $csvData = $this->generateESPTData($taxFileExport);
-            
-            // Create file
-            $fileName = $taxFileExport->export_number . '.csv';
-            $filePath = 'exports/tax-files/' . $fileName;
-            $fullPath = public_path('uploads/' . $filePath);
-            
-            // Create directory if not exists
-            $dir = dirname($fullPath);
-            if (!file_exists($dir)) {
-                mkdir($dir, 0755, true);
-            }
+            $result = $coreTaxExport->generate($taxFileExport);
 
-            // Write CSV file
-            $file = fopen($fullPath, 'w');
-            foreach ($csvData as $row) {
-                fputcsv($file, $row);
-            }
-            fclose($file);
-
-            // Update export record
             $taxFileExport->update([
                 'status' => 'completed',
-                'file_path' => $filePath,
-                'file_size' => filesize($fullPath),
-                'total_records' => count($csvData) - 1, // Exclude header
+                'file_format' => 'xlsx',
+                'file_path' => $result['file_path'],
+                'file_size' => $result['file_size'],
+                'total_records' => $result['total_records'],
                 'exported_at' => now(),
             ]);
 
@@ -497,74 +481,19 @@ class TaxFileExportController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'e-SPT export generated successfully.',
-                'data' => $taxFileExport->fresh()
+                'message' => 'CoreTax export generated successfully.',
+                'data' => $taxFileExport->fresh(),
             ]);
         } catch (\Exception $e) {
             DB::rollback();
-            
+
             $taxFileExport->update(['status' => 'failed']);
-            
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to generate e-SPT export: ' . $e->getMessage()
+                'message' => 'Failed to generate CoreTax export: '.$e->getMessage(),
             ], 500);
         }
-    }
-
-    /**
-     * Generate e-SPT compatible data
-     */
-    private function generateESPTData(TaxFileExport $taxFileExport)
-    {
-        $data = [[
-            'NPWP', 'Nama', 'Alamat', 'Tanggal Faktur', 'Nomor Faktur', 
-            'DPP', 'PPN', 'Keterangan'
-        ]];
-
-        $filterParameters = $taxFileExport->getFilterParametersArray();
-        $invoiceIds = $filterParameters['invoice_ids'] ?? [];
-
-        $query = Invoice::with('customer')
-            ->where('invoice_status', Invoice::STATUS_APPROVED)
-            ->whereNotNull('invoice_date');
-
-        if (!empty($invoiceIds)) {
-            $query->whereIn('id', $invoiceIds);
-        } else {
-            $query->whereBetween('invoice_date', [
-                $taxFileExport->period_from->toDateString(),
-                $taxFileExport->period_to->toDateString(),
-            ]);
-        }
-
-        $invoices = $query
-            ->orderBy('invoice_date')
-            ->orderBy('invoice_number')
-            ->get();
-
-        if ($invoices->isEmpty()) {
-            throw new \RuntimeException('No approved invoices found for the selected export criteria.');
-        }
-
-        foreach ($invoices as $invoice) {
-            $customer = $invoice->customer;
-
-            $data[] = [
-                $invoice->npwp_number ?: ($customer?->npwp ?? ''),
-                $customer?->name ?? '',
-                $invoice->tax_address
-                    ?: ($customer?->npwp_address
-                        ?: ($invoice->billing_address ?: ($customer?->address ?? ''))),
-                $invoice->invoice_date->format('Y-m-d'),
-                $invoice->invoice_number,
-                (string) ($invoice->subtotal_after_discount ?? $invoice->subtotal ?? 0),
-                (string) ($invoice->tax_amount ?? 0),
-                $invoice->additional_notes ?: ($invoice->period_invoice ?? ''),
-            ];
-        }
-
-        return $data;
     }
 
     /**
@@ -592,7 +521,8 @@ class TaxFileExportController extends Controller
             return back()->with('success', 'Export regeneration started.');
         } catch (\Exception $e) {
             DB::rollback();
-            return back()->with('error', 'Failed to regenerate export: ' . $e->getMessage());
+
+            return back()->with('error', 'Failed to regenerate export: '.$e->getMessage());
         }
     }
 
@@ -627,37 +557,20 @@ class TaxFileExportController extends Controller
     }
 
     /**
-     * Process the export (placeholder for actual processing logic).
+     * Rebuild the CoreTax workbook for an export that is being regenerated.
      */
     private function processExport(TaxFileExport $export)
     {
-        // This is a placeholder for actual export processing
-        // In a real application, you would:
-        // 1. Mark as processing
-        // 2. Generate the file based on filter parameters
-        // 3. Save the file
-        // 4. Mark as completed
-
         $export->update(['status' => 'processing']);
 
-        // Simulate processing time
-        sleep(2);
-
-        // Generate file path
-        $fileName = $export->export_number . '.' . $export->format;
-        $filePath = 'exports/tax-files/' . $fileName;
-
-        // Create dummy file (replace with actual export logic)
-        $fullPath = public_path('uploads/' . $filePath);
-        $dir = dirname($fullPath);
-        if (!file_exists($dir)) {
-            mkdir($dir, 0755, true);
-        }
-        file_put_contents($fullPath, 'Tax file export content for ' . $export->export_number);
+        $result = app(CoreTaxExportService::class)->generate($export);
 
         $export->update([
             'status' => 'completed',
-            'file_path' => $filePath,
+            'file_format' => 'xlsx',
+            'file_path' => $result['file_path'],
+            'file_size' => $result['file_size'],
+            'total_records' => $result['total_records'],
             'exported_at' => now(),
         ]);
     }
