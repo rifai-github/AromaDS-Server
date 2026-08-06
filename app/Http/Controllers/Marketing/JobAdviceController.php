@@ -567,11 +567,7 @@ class JobAdviceController extends Controller
 
             // MOM14: Validation for unfinished jobs before creating JA type Change Rental or Remove
             if ($contractId && (str_contains($jaType, 'remove') || str_contains($jaType, 'change'))) {
-                JobSchedule::reconcilePartialCompletionSourceJobs($contract->contract_number);
-
-                $unfinishedJob = JobSchedule::where('contract_number', $contract->contract_number)
-                    ->whereNotIn('status', ['completed', 'done_job', 'cancelled', 'terminated', 'suspend', 'dpf'])
-                    ->first();
+                $unfinishedJob = JobSchedule::findBlockingUnfinishedJob($contract->contract_number);
 
                 if ($unfinishedJob) {
                     $errorMsg = "maaf job advice untuk referensi no {$contract->contract_number} tidak dapat di buat karena masih ada pekerjaan bernomor {$unfinishedJob->job_number} yang belum selesai";

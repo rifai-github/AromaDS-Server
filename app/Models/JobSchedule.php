@@ -307,6 +307,58 @@ class JobSchedule extends Model
     }
 
     /**
+     * MOM14 "unfinished job" guard used before creating a Change Rental / Remove Job
+     * Advice or a Contract Termination: find a job on this contract that genuinely still
+     * has work outstanding. Auto-generated future periodic service/check placeholders
+     * (status still 'scheduled'/'assign_team'/etc., never actually started) must NOT
+     * count as blocking — every active contract has these queued up for months ahead,
+     * so treating them as "unfinished" would block the action on virtually any contract.
+     */
+    public static function findBlockingUnfinishedJob(string $contractNumber): ?self
+    {
+        self::reconcilePartialCompletionSourceJobs($contractNumber);
+
+        $terminalStatuses = ['completed', 'done_job', 'cancelled', 'terminated', 'suspend', 'dpf'];
+
+        return self::where('contract_number', $contractNumber)
+            ->whereNotIn('status', $terminalStatuses)
+            ->get()
+            ->first(fn (self $job) => self::blocksUnfinishedJobCheck($job));
+    }
+
+    private static function blocksUnfinishedJobCheck(self $job): bool
+    {
+        $type = strtolower(trim(str_replace('-', '_', (string) $job->type)));
+        $status = strtolower(trim((string) $job->status));
+
+        $stoppableServiceTypes = [
+            'service',
+            'service_first',
+            'service first',
+            'service_routine',
+            'service routine',
+            'csr',
+            'customer_service_report',
+            'customer service report',
+            'check',
+        ];
+
+        $notStartedStatuses = [
+            'new_job',
+            'scheduled',
+            'assign_team',
+            'assign_material',
+            'barang_dipersiapkan',
+            'barang_siap_diambil',
+        ];
+
+        return ! (
+            in_array($type, $stoppableServiceTypes, true)
+            && in_array($status, $notStartedStatuses, true)
+        );
+    }
+
+    /**
      * Get the location logs for the job schedule.
      */
     public function locationLogs()

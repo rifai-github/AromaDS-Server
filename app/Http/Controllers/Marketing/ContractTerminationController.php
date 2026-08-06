@@ -62,44 +62,7 @@ class ContractTerminationController extends Controller
 
     private function findBlockingUnfinishedJobForTermination(Contract $contract): ?JobSchedule
     {
-        JobSchedule::reconcilePartialCompletionSourceJobs($contract->contract_number);
-
-        return JobSchedule::where('contract_number', $contract->contract_number)
-            ->whereNotIn('status', ['completed', 'done_job', 'cancelled', 'terminated', 'suspend', 'dpf'])
-            ->get()
-            ->first(fn (JobSchedule $job) => $this->jobBlocksContractTermination($job));
-    }
-
-    private function jobBlocksContractTermination(JobSchedule $job): bool
-    {
-        $type = strtolower(trim(str_replace('-', '_', (string) $job->type)));
-        $status = strtolower(trim((string) $job->status));
-
-        $stoppableServiceTypes = [
-            'service',
-            'service_first',
-            'service first',
-            'service_routine',
-            'service routine',
-            'csr',
-            'customer_service_report',
-            'customer service report',
-            'check',
-        ];
-
-        $notStartedStatuses = [
-            'new_job',
-            'scheduled',
-            'assign_team',
-            'assign_material',
-            'barang_dipersiapkan',
-            'barang_siap_diambil',
-        ];
-
-        return ! (
-            in_array($type, $stoppableServiceTypes, true)
-            && in_array($status, $notStartedStatuses, true)
-        );
+        return JobSchedule::findBlockingUnfinishedJob($contract->contract_number);
     }
 
     /**

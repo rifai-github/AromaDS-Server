@@ -2,9 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Http\Controllers\Marketing\ContractTerminationController;
 use App\Models\JobSchedule;
-use App\Services\DocumentNumberService;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -39,9 +37,10 @@ class ContractTerminationRefillOnlyScriptTest extends TestCase
 
     public function test_future_service_jobs_do_not_block_contract_termination(): void
     {
-        $method = new ReflectionMethod(ContractTerminationController::class, 'jobBlocksContractTermination');
+        // The MOM14 "unfinished job" guard is shared by ContractTerminationController and
+        // JobAdviceController (Change Rental/Remove) via JobSchedule::blocksUnfinishedJobCheck().
+        $method = new ReflectionMethod(JobSchedule::class, 'blocksUnfinishedJobCheck');
         $method->setAccessible(true);
-        $controller = new ContractTerminationController($this->createMock(DocumentNumberService::class));
 
         $futureServiceJob = new JobSchedule([
             'type' => 'service',
@@ -60,9 +59,9 @@ class ContractTerminationRefillOnlyScriptTest extends TestCase
             'status' => 'barang_diambil',
         ]);
 
-        $this->assertFalse($method->invoke($controller, $futureServiceJob));
-        $this->assertFalse($method->invoke($controller, $futureCheckJob));
-        $this->assertTrue($method->invoke($controller, $installJob));
-        $this->assertTrue($method->invoke($controller, $startedServiceJob));
+        $this->assertFalse($method->invoke(null, $futureServiceJob));
+        $this->assertFalse($method->invoke(null, $futureCheckJob));
+        $this->assertTrue($method->invoke(null, $installJob));
+        $this->assertTrue($method->invoke(null, $startedServiceJob));
     }
 }
