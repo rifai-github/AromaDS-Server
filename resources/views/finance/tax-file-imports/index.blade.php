@@ -1032,7 +1032,7 @@ function openCreateModal() {
                     <div class="form-group">
                         <label class="form-label">File *</label>
                         <input type="file" name="file" class="form-input" accept=".csv,.xlsx,.xls" required>
-                        <small class="text-gray-500">Supported formats: CSV, Excel (.xlsx, .xls)</small>
+                        <small class="text-gray-500">File hasil dari CoreTax &mdash; CSV atau Excel (.xlsx, .xls), maksimal 10 MB. Baris header dan pemisah kolom dikenali otomatis.</small>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Auto Process</label>
@@ -1040,27 +1040,7 @@ function openCreateModal() {
                             <option value="1">Yes</option>
                             <option value="0">No</option>
                         </select>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="modal-section">
-                <div class="modal-section-title">Import Settings</div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="form-group">
-                        <label class="form-label">Skip Header</label>
-                        <select name="skip_header" class="form-input">
-                            <option value="1">Yes</option>
-                            <option value="0">No</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Delimiter</label>
-                        <select name="delimiter" class="form-input">
-                            <option value=",">Comma (,)</option>
-                            <option value=";">Semicolon (;)</option>
-                            <option value="\\t">Tab</option>
-                        </select>
+                        <small class="text-gray-500">Yes: file langsung diproses. No: tersimpan sebagai Pending sampai tombol Process ditekan.</small>
                     </div>
                     <div class="form-group" style="grid-column: 1 / -1;">
                         <label class="form-label">Notes</label>
@@ -1149,14 +1129,6 @@ function openViewModal(id) {
                             <label class="form-label">Success Rate</label>
                             <p class="detail-value">${data.data.success_rate || '0'}%</p>
                         </div>
-                        <div class="detail-item">
-                            <label class="form-label">Skip Header</label>
-                            <p class="detail-value">${data.data.skip_header ? 'Yes' : 'No'}</p>
-                        </div>
-                        <div class="detail-item">
-                            <label class="form-label">Delimiter</label>
-                            <p class="detail-value">${data.data.delimiter === ',' ? 'Comma (,)' : data.data.delimiter === ';' ? 'Semicolon (;)' : (data.data.delimiter === '\\t' || data.data.delimiter === '\t') ? 'Tab' : data.data.delimiter || '-'}</p>
-                        </div>
                     </div>
                 </div>
                 
@@ -1231,27 +1203,6 @@ function openEditModal(id) {
                                 <select name="auto_process" class="form-input">
                                     <option value="0" ${!data.data.auto_process ? 'selected' : ''}>No</option>
                                     <option value="1" ${data.data.auto_process ? 'selected' : ''}>Yes</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="modal-section">
-                        <div class="modal-section-title">Import Settings</div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="form-group">
-                                <label class="form-label">Skip Header</label>
-                                <select name="skip_header" class="form-input">
-                                    <option value="1" ${data.data.skip_header ? 'selected' : ''}>Yes</option>
-                                    <option value="0" ${!data.data.skip_header ? 'selected' : ''}>No</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Delimiter</label>
-                                <select name="delimiter" class="form-input">
-                                    <option value="," ${data.data.delimiter === ',' ? 'selected' : ''}>Comma (,)</option>
-                                    <option value=";" ${data.data.delimiter === ';' ? 'selected' : ''}>Semicolon (;)</option>
-                                    <option value="\\t" ${(data.data.delimiter === '\\t' || data.data.delimiter === '\t') ? 'selected' : ''}>Tab</option>
                                 </select>
                             </div>
                             <div class="form-group" style="grid-column: 1 / -1;">

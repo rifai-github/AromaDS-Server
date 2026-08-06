@@ -33,6 +33,9 @@ class TaxFileImportProcessingTest extends TestCase
             $table->unsignedInteger('success_count')->default(0);
             $table->unsignedInteger('failed_count')->default(0);
             $table->decimal('success_rate', 5, 2)->default(0);
+            $table->unsignedInteger('approval_success')->default(0);
+            $table->unsignedInteger('not_approved')->default(0);
+            $table->unsignedInteger('rejected')->default(0);
             $table->boolean('auto_process')->default(false);
             $table->boolean('skip_header')->default(true);
             $table->string('delimiter')->default(',');
@@ -63,19 +66,33 @@ class TaxFileImportProcessingTest extends TestCase
         Schema::create('invoices', function (Blueprint $table) {
             $table->id();
             $table->string('invoice_number');
+            $table->string('contract_number')->nullable();
+            $table->string('invoice_status')->default('approved');
+            $table->string('status')->nullable();
+            $table->boolean('tax_obligation')->default(true);
             $table->string('faktur_pajak')->nullable();
             $table->string('tax_number')->nullable();
             $table->string('npwp_number')->nullable();
+            $table->string('coretax_faktur_number', 50)->nullable();
+            $table->date('coretax_faktur_date')->nullable();
+            $table->string('coretax_status', 30)->nullable();
             $table->date('invoice_date')->nullable();
+            $table->decimal('grand_total', 15, 2)->default(0);
+            $table->decimal('total_amount', 15, 2)->default(0);
             $table->decimal('tax_amount', 15, 2)->default(0);
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
 
-        Schema::create('tax_invoices', function (Blueprint $table) {
+        Schema::create('invoice_activities', function (Blueprint $table) {
             $table->id();
-            $table->string('no_faktur')->nullable();
-            $table->boolean('approved')->default(false);
+            $table->foreignId('invoice_id');
+            $table->string('activity_type')->nullable();
+            $table->text('notes')->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -84,6 +101,8 @@ class TaxFileImportProcessingTest extends TestCase
             [
                 'id' => 1,
                 'invoice_number' => 'INV-001',
+                'invoice_status' => 'approved',
+                'tax_obligation' => true,
                 'faktur_pajak' => 'FP-001',
                 'tax_number' => 'TAX-001',
                 'invoice_date' => '2026-07-19',
@@ -94,6 +113,8 @@ class TaxFileImportProcessingTest extends TestCase
             [
                 'id' => 2,
                 'invoice_number' => 'INV-002',
+                'invoice_status' => 'approved',
+                'tax_obligation' => true,
                 'faktur_pajak' => null,
                 'tax_number' => 'TAX-002',
                 'invoice_date' => '2026-07-18',
@@ -103,14 +124,6 @@ class TaxFileImportProcessingTest extends TestCase
             ],
         ]);
 
-        DB::table('tax_invoices')->insert([
-            'id' => 1,
-            'no_faktur' => 'FP-001',
-            'approved' => false,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
         $directory = public_path('uploads/tax-file-imports');
         if (! is_dir($directory)) {
             mkdir($directory, 0755, true);
@@ -118,10 +131,10 @@ class TaxFileImportProcessingTest extends TestCase
 
         $this->testFilePath = $directory.'/tax-file-import-processing-test.csv';
         $handle = fopen($this->testFilePath, 'w');
-        fputcsv($handle, ['invoice_number', 'coretax_status']);
-        fputcsv($handle, ['INV-001', 'Approved']);
-        fputcsv($handle, ['INV-002', 'Pending']);
-        fputcsv($handle, ['INV-NOT-FOUND', 'Rejected']);
+        fputcsv($handle, ['Reference', 'TaxInvoiceNumber', 'TaxInvoiceDate', 'TaxInvoiceStatus', 'VAT']);
+        fputcsv($handle, ['INV-001', '0400250035384444', '2026-07-19T00:00:00', 'APPROVED', '110000']);
+        fputcsv($handle, ['INV-002', '0400250035385555', '2026-07-18T00:00:00', 'IN PROGRESS', '220000']);
+        fputcsv($handle, ['INV-NOT-FOUND', '0400250035386666', '2026-07-18T00:00:00', 'APPROVED', '330000']);
         fclose($handle);
     }
 
@@ -137,7 +150,7 @@ class TaxFileImportProcessingTest extends TestCase
             }
         }
 
-        Schema::dropIfExists('tax_invoices');
+        Schema::dropIfExists('invoice_activities');
         Schema::dropIfExists('invoices');
         Schema::dropIfExists('tax_file_import_details');
         Schema::dropIfExists('tax_file_imports');
@@ -170,16 +183,24 @@ class TaxFileImportProcessingTest extends TestCase
 
         $this->assertSame(['approved', 'warning', 'rejected'], $details->pluck('status')->all());
         $this->assertSame('INV-001', $details[0]->invoice_number);
-        $this->assertSame('TAX-001', $details[0]->tax_number);
-        $this->assertSame('N/A', $details[2]->invoice_number);
-        $this->assertStringContainsString('INV-NOT-FOUND', $details[2]->remarks);
+        $this->assertSame('0400250035384444', $details[0]->tax_number);
+        $this->assertSame('INV-NOT-FOUND', $details[2]->invoice_number);
+        $this->assertStringContainsString('Tidak ada invoice', $details[2]->remarks);
+
+        // Only the APPROVED row moves its invoice on; the rest are left alone.
+        $issued = DB::table('invoices')->where('id', 1)->first();
+        $this->assertSame('tax_approved', $issued->invoice_status);
+        $this->assertSame('0400250035384444', $issued->coretax_faktur_number);
+
+        $untouched = DB::table('invoices')->where('id', 2)->first();
+        $this->assertSame('approved', $untouched->invoice_status);
+        $this->assertNull($untouched->coretax_faktur_number);
 
         $import = TaxFileImport::findOrFail($importId);
         $this->assertSame('completed', $import->status);
         $this->assertSame(3, $import->total_records);
-        $this->assertSame(2, $import->success_count);
-        $this->assertSame(1, $import->failed_count);
-        $this->assertTrue((bool) DB::table('tax_invoices')->where('id', 1)->value('approved'));
+        $this->assertSame(1, $import->success_count);
+        $this->assertSame(2, $import->failed_count);
     }
 
     public function test_process_import_converts_tab_token_to_tab_character(): void
@@ -187,7 +208,8 @@ class TaxFileImportProcessingTest extends TestCase
         $tabFilePath = public_path('uploads/tax-file-imports/tax-file-import-processing-tab-test.csv');
         file_put_contents(
             $tabFilePath,
-            "invoice_number\tcoretax_status\nINV-002\tPending\n",
+            "Reference\tTaxInvoiceNumber\tTaxInvoiceDate\tTaxInvoiceStatus\tVAT\n"
+            ."INV-002\t0400250035387777\t2026-07-18T00:00:00\tAPPROVED\t220000\n",
         );
 
         try {
@@ -214,9 +236,10 @@ class TaxFileImportProcessingTest extends TestCase
             $import = TaxFileImport::findOrFail($importId);
 
             $this->assertSame('INV-002', $detail->invoice_number);
-            $this->assertSame('warning', $detail->status);
+            $this->assertSame('approved', $detail->status);
             $this->assertSame('completed', $import->status);
             $this->assertSame(1, $import->success_count);
+            $this->assertSame('tax_approved', DB::table('invoices')->where('id', 2)->value('invoice_status'));
         } finally {
             if (file_exists($tabFilePath)) {
                 unlink($tabFilePath);
@@ -317,6 +340,33 @@ class TaxFileImportProcessingTest extends TestCase
             $this->assertSame($delimiter, $import->delimiter);
             $this->uploadedImportFiles[] = public_path('uploads/tax-file-imports/'.$import->file_name);
         }
+    }
+
+    /**
+     * The create form no longer asks for a delimiter or skip-header: the parser
+     * finds the header row and the separator itself.
+     */
+    public function test_store_no_longer_requires_import_settings(): void
+    {
+        $response = $this
+            ->withoutMiddleware()
+            ->withHeaders([
+                'Accept' => 'application/json',
+                'X-Requested-With' => 'XMLHttpRequest',
+            ])
+            ->post(route('finance.tax-file-imports.store'), [
+                'file' => UploadedFile::fake()->create('coretax-result.csv', 1, 'text/csv'),
+                'auto_process' => '0',
+                'notes' => 'no-import-settings-test',
+            ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('status', 'success');
+
+        $import = TaxFileImport::where('notes', 'no-import-settings-test')->firstOrFail();
+
+        $this->assertSame(TaxFileImport::DELIMITER_COMMA, $import->delimiter);
+        $this->uploadedImportFiles[] = public_path('uploads/tax-file-imports/'.$import->file_name);
     }
 
     public function test_store_accepts_exported_csv_detected_as_plain_text(): void

@@ -211,8 +211,9 @@
                         </div>
                         <div>
                             <div class="d-flex gap-2">
+                                @php($documentBlockReason = $invoice->documentBlockReason())
                                 <button type="button" id="btnHeaderSave" class="btn btn-info btn-sm text-white"><i class="fas fa-save me-1"></i> SAVE</button>
-                                <button type="button" id="btnHeaderReceipt" class="btn btn-info btn-sm text-white"><i class="fas fa-receipt me-1"></i> T. TERIMA</button>
+                                <button type="button" id="btnHeaderReceipt" class="btn btn-info btn-sm text-white" {{ $documentBlockReason ? 'disabled' : '' }} title="{{ $documentBlockReason }}"><i class="fas fa-receipt me-1"></i> T. TERIMA</button>
                                 @if($invoice->faktur_pajak && $invoice->faktur_pajak_status !== 'cancelled')
                                     <button type="button" id="btnCancelFaktur" class="btn btn-warning btn-sm"><i class="fas fa-times-circle me-1"></i> CANCEL FP</button>
                                 @endif
@@ -224,12 +225,9 @@
                                         <i class="fas fa-rotate-right me-1"></i> REGENERATE
                                     </button>
                                 @endif
-                                <button type="button" id="btnHeaderPrint" class="btn btn-primary btn-sm"><i class="fas fa-print me-1"></i> PRINT</button>
+                                <button type="button" id="btnHeaderPrint" class="btn btn-primary btn-sm" {{ $documentBlockReason ? 'disabled' : '' }} title="{{ $documentBlockReason }}"><i class="fas fa-print me-1"></i> PRINT</button>
                                 @if($invoice->invoice_status === 'draft')
                                     <button type="button" id="btnApprove" class="btn btn-success btn-sm"><i class="fas fa-check-circle me-1"></i> APPROVE</button>
-                                @endif
-                                @if($invoice->invoice_status === 'approved')
-                                    <button type="button" id="btnTaxApprove" class="btn btn-warning btn-sm text-white"><i class="fas fa-stamp me-1"></i> TAX APPROVE</button>
                                 @endif
                             </div>
                         </div>
@@ -1412,44 +1410,8 @@ $(document).ready(function() {
             }
         });
     });
-    // Tax Approve Invoice
-    $('#btnTaxApprove').on('click', function() {
-        Swal.fire({
-            title: 'Setujui Pajak Invoice?',
-            text: "Invoice akan ditandai sebagai TAX APPROVED.",
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#ffc107',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: 'Ya, tax approve',
-            cancelButtonText: 'Batal'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-2"></i>Memproses...');
-                $.ajax({
-                    url: "{{ route('finance.invoices.tax-approve', $invoice->id) }}",
-                    type: "POST",
-                    data: { _token: "{{ csrf_token() }}" },
-                    success: function(response) {
-                        if (response.success) {
-                            Swal.fire('Berhasil Tax Approve', response.message, 'success').then(() => {
-                                location.reload();
-                            });
-                        } else {
-                            Swal.fire('Gagal', response.message, 'error');
-                            $('#btnTaxApprove').prop('disabled', false).html('<i class="fas fa-stamp me-1"></i> TAX APPROVE');
-                        }
-                    },
-                    error: function(xhr) {
-                        let msg = 'Terjadi kesalahan sistem.';
-                        if (xhr.status === 422) { msg = xhr.responseJSON.message; }
-                        Swal.fire('Gagal', msg, 'error');
-                        $('#btnTaxApprove').prop('disabled', false).html('<i class="fas fa-stamp me-1"></i> TAX APPROVE');
-                    }
-                });
-            }
-        });
-    });
+    // Invoice moves to Tax Approved automatically when the CoreTax result file is
+    // imported on Finance > Tax File Imports — there is no manual tax approval.
 
     // --- Header Buttons Handlers ---
     

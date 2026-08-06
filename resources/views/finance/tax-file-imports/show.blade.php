@@ -320,14 +320,6 @@
                     <div class="import-meta-value">{{ $import->bank->bank_name ?? '-' }}</div>
                 </div>
                 <div>
-                    <div class="import-meta-label">Delimiter</div>
-                    <div class="import-meta-value">{{ $import->delimiter_label ?? '-' }}</div>
-                </div>
-                <div>
-                    <div class="import-meta-label">Skip Header</div>
-                    <div class="import-meta-value">{{ $import->skip_header ? 'Yes' : 'No' }}</div>
-                </div>
-                <div>
                     <div class="import-meta-label">Auto Process</div>
                     <div class="import-meta-value">{{ $import->auto_process ? 'Yes' : 'No' }}</div>
                 </div>

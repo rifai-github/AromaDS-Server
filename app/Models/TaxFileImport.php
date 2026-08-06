@@ -2,10 +2,10 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Carbon\Carbon;
 
 class TaxFileImport extends Model
 {
@@ -33,6 +33,9 @@ class TaxFileImport extends Model
         'success_count',
         'failed_count',
         'success_rate',
+        'approval_success',
+        'not_approved',
+        'rejected',
         'auto_process',
         'skip_header',
         'delimiter',
@@ -174,7 +177,7 @@ class TaxFileImport extends Model
 
     public function getFormattedSuccessRateAttribute()
     {
-        return number_format($this->success_rate, 2) . '%';
+        return number_format($this->success_rate, 2).'%';
     }
 
     public function getFormatLabelAttribute()
@@ -257,6 +260,7 @@ class TaxFileImport extends Model
         if ($this->total_records == 0) {
             return 0;
         }
+
         return round(($this->success_count / $this->total_records) * 100, 2);
     }
 

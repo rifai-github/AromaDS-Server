@@ -912,7 +912,6 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('invoices/files/download-attachment', [InvoiceController::class, 'downloadFile'])->name('invoices.download-attachment');
         Route::match(['get', 'post'], 'invoices/{invoice}/download-combined', [InvoiceController::class, 'downloadCombined'])->name('invoices.download-combined')->middleware('permission:finance.invoices.view');
         Route::post('invoices/{invoice}/approve', [InvoiceController::class, 'approve'])->name('invoices.approve')->middleware('permission:finance.invoices.update');
-        Route::post('invoices/{invoice}/tax-approve', [InvoiceController::class, 'taxApprove'])->name('invoices.tax-approve')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/update-date-preference', [InvoiceController::class, 'updateDatePreference'])->name('invoices.update-date-preference')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/reload-tax', [InvoiceController::class, 'reloadTaxData'])->name('invoices.reload-tax')->middleware('permission:finance.invoices.update');
         Route::get('invoices/{invoice}/print', [InvoiceController::class, 'printInvoice'])->name('invoices.print')->middleware('permission:finance.invoices.view');

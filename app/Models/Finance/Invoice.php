@@ -2,23 +2,22 @@
 
 namespace App\Models\Finance;
 
+use App\Http\Traits\AutoFilterable;
+use App\Models\Contract;
+use App\Models\Customer;
+use App\Models\JobSchedule;
+use App\Models\TaxSetting;
+use App\Models\User;
+use App\Services\DocumentNumberService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Http\Traits\AutoFilterable;
-use App\Models\User;
-use App\Models\Contract;
-use App\Models\Customer;
-use App\Models\TaxSetting;
-use App\Models\JobSchedule;
-use App\Services\DocumentNumberService;
-use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 
 class Invoice extends Model
 {
-    use HasFactory, SoftDeletes, AutoFilterable;
+    use AutoFilterable, HasFactory, SoftDeletes;
 
     protected $fillable = [
         'invoice_number',
@@ -59,6 +58,9 @@ class Invoice extends Model
         'created_by',
         'updated_by',
         'faktur_pajak_status',
+        'coretax_faktur_number',
+        'coretax_faktur_date',
+        'coretax_status',
         'ba_date',
         'is_tax_exported',
         'is_emailed',
@@ -73,19 +75,29 @@ class Invoice extends Model
         'is_printed',
         'printed_at',
     ];
-    
+
     // Status Constants
     const STATUS_DRAFT = 'draft';
+
     const STATUS_APPROVED = 'approved';
+
     const STATUS_TAX_APPROVED = 'tax_approved';
+
     const STATUS_SENT = 'sent';
+
     const STATUS_PAID = 'paid';
+
     const STATUS_CANCELLED = 'cancelled';
+
     const STATUS_OVERDUE = 'overdue';
+
+    /** Value CoreTax reports in TaxInvoiceStatus once a faktur pajak is issued. */
+    const CORETAX_STATUS_APPROVED = 'APPROVED';
 
     protected $casts = [
         'invoice_date' => 'date',
         'due_date' => 'date',
+        'coretax_faktur_date' => 'date',
         'tax_obligation' => 'boolean',
         'subtotal' => 'decimal:2',
         'discount_amount' => 'decimal:2',
@@ -263,7 +275,7 @@ class Invoice extends Model
             $timeline->push([
                 'source' => 'follow_up',
                 'type' => $followUp->follow_up_type,
-                'title' => 'Follow Up - ' . $followUp->follow_up_type_label,
+                'title' => 'Follow Up - '.$followUp->follow_up_type_label,
                 'notes' => $followUp->notes,
                 'status' => $followUp->status,
                 'icon' => $this->timelineIconForFollowUp($followUp->follow_up_type),
@@ -292,7 +304,7 @@ class Invoice extends Model
                 'source' => 'receipt',
                 'type' => 'paid',
                 'title' => 'Payment Receipt',
-                'notes' => trim(($receipt->receipt_number ? "Receipt: {$receipt->receipt_number}. " : '') . ($receipt->notes ?? '')),
+                'notes' => trim(($receipt->receipt_number ? "Receipt: {$receipt->receipt_number}. " : '').($receipt->notes ?? '')),
                 'status' => $receipt->status,
                 'icon' => 'fas fa-receipt',
                 'color' => $receipt->status === 'verified' ? 'success' : 'info',
@@ -402,23 +414,23 @@ class Invoice extends Model
     public function scopeOverdueInvoices($query)
     {
         return $query->where('due_date', '<', now()->toDateString())
-                    ->whereIn('status', ['sent', 'draft']);
+            ->whereIn('status', ['sent', 'draft']);
     }
 
     // Accessors & Mutators
     public function getFormattedSubtotalAttribute()
     {
-        return 'Rp ' . number_format($this->subtotal, 0, ',', '.');
+        return 'Rp '.number_format($this->subtotal, 0, ',', '.');
     }
 
     public function getFormattedTaxAmountAttribute()
     {
-        return 'Rp ' . number_format($this->tax_amount, 0, ',', '.');
+        return 'Rp '.number_format($this->tax_amount, 0, ',', '.');
     }
 
     public function getFormattedTotalAmountAttribute()
     {
-        return 'Rp ' . number_format($this->total_amount, 0, ',', '.');
+        return 'Rp '.number_format($this->total_amount, 0, ',', '.');
     }
 
     public function getTotalInvoiceAttribute($value)
@@ -472,12 +484,12 @@ class Invoice extends Model
 
     public function getIsOverdueAttribute()
     {
-        return $this->due_date < now()->toDateString() && !in_array($this->invoice_status, ['paid', 'cancelled']);
+        return $this->due_date < now()->toDateString() && ! in_array($this->invoice_status, ['paid', 'cancelled']);
     }
 
     public function getDaysOverdueAttribute()
     {
-        if (!$this->is_overdue) {
+        if (! $this->is_overdue) {
             return 0;
         }
 
@@ -512,18 +524,54 @@ class Invoice extends Model
         return empty($this->faktur_pajak) || $this->faktur_pajak_status === 'cancelled';
     }
 
+    /**
+     * True once CoreTax has issued a faktur pajak for this invoice and has not
+     * revoked it. Set by the CoreTax CSV import, never by hand.
+     */
+    public function hasValidCoreTaxFaktur(): bool
+    {
+        return filled($this->coretax_faktur_number)
+            && strtoupper((string) $this->coretax_status) === self::CORETAX_STATUS_APPROVED;
+    }
+
+    /**
+     * Invoices that carry PPN must wait for their faktur pajak before any
+     * document leaves the building. Non-PPN invoices never get one, so they
+     * are exempt — otherwise they could never be printed at all.
+     */
+    public function requiresFakturPajak(): bool
+    {
+        return (bool) $this->tax_obligation;
+    }
+
+    public function canPrintDocuments(): bool
+    {
+        return ! $this->requiresFakturPajak() || $this->hasValidCoreTaxFaktur();
+    }
+
+    public function documentBlockReason(): ?string
+    {
+        if ($this->canPrintDocuments()) {
+            return null;
+        }
+
+        return filled($this->coretax_faktur_number)
+            ? 'Faktur Pajak invoice ini sudah dibatalkan di CoreTax.'
+            : 'Invoice ini belum punya Faktur Pajak dari CoreTax.';
+    }
+
     protected static function boot()
     {
         parent::boot();
 
         static::creating(function ($invoice) {
             $invoice->created_by = auth()->id();
-            
+
             // Auto-generate invoice_number if not provided
             if (empty($invoice->invoice_number)) {
                 $contractId = null;
 
-                if (!empty($invoice->contract_number)) {
+                if (! empty($invoice->contract_number)) {
                     $contractId = Contract::where('contract_number', $invoice->contract_number)->value('id');
                 }
 
@@ -547,17 +595,17 @@ class Invoice extends Model
             } elseif ($invoice->grand_total > 0 && ($invoice->total_amount === null || $invoice->total_amount == 0)) {
                 $invoice->total_amount = $invoice->grand_total;
             }
-            
+
             // Sync status columns if needed
-            if ($invoice->invoice_status && !$invoice->status) {
+            if ($invoice->invoice_status && ! $invoice->status) {
                 $invoice->status = $invoice->invoice_status;
-            } elseif ($invoice->status && !$invoice->invoice_status) {
+            } elseif ($invoice->status && ! $invoice->invoice_status) {
                 $invoice->invoice_status = $invoice->status;
             }
 
             // Auto-detect contract number if missing - Fixed to check current contract_number
-            if ((!$invoice->contract_number || trim($invoice->contract_number) === '')) {
-                // No change needed if we don't have a way to find it, 
+            if ((! $invoice->contract_number || trim($invoice->contract_number) === '')) {
+                // No change needed if we don't have a way to find it,
                 // but at least we don't check for non-existent contract_id column
             }
         });

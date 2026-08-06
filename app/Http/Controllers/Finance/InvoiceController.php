@@ -1496,6 +1496,11 @@ class InvoiceController extends Controller
 
     public function downloadCombined(Request $request, Invoice $invoice)
     {
+        // Covers the PRINT button too — printInvoice() delegates here.
+        if (! $invoice->canPrintDocuments()) {
+            abort(403, $invoice->documentBlockReason().' Invoice belum bisa dicetak.');
+        }
+
         $request->validate([
             'file_ids' => 'nullable|array',
             'file_ids.*' => 'string',
@@ -1762,44 +1767,6 @@ class InvoiceController extends Controller
         }
     }
 
-    public function taxApprove(Invoice $invoice)
-    {
-        if ($invoice->invoice_status !== 'approved') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Only Approved invoices can be Tax Approved.',
-            ], 422);
-        }
-
-        try {
-            DB::beginTransaction();
-
-            $invoice->update([
-                'invoice_status' => 'tax_approved',
-            ]);
-
-            $invoice->invoiceActivities()->create([
-                'activity_type' => 'updated',
-                'notes' => 'Invoice tax approved',
-                'created_by' => Auth::id(),
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Invoice tax approved successfully',
-            ]);
-        } catch (\Exception $e) {
-            DB::rollback();
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Error tax approving invoice: '.$e->getMessage(),
-            ], 500);
-        }
-    }
-
     public function cancel(Invoice $invoice)
     {
         // Rule 43: cancellation only if no faktur or faktur cancelled
@@ -1916,6 +1883,11 @@ class InvoiceController extends Controller
      */
     public function exportDeliveryReceipt(Invoice $invoice)
     {
+        // A PPN invoice may not leave the building before CoreTax issues its faktur pajak.
+        if (! $invoice->canPrintDocuments()) {
+            abort(403, $invoice->documentBlockReason().' Tanda terima belum bisa dibuat.');
+        }
+
         // Validasi: delivery info harus terisi
         if (empty($invoice->dikirim_oleh) || empty($invoice->pada)) {
             return response()->json([
