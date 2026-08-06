@@ -888,6 +888,11 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('/', function () {
             return view('finance.dashboard');
         })->name('dashboard');
+        // Static GET paths must be declared before the resource, otherwise
+        // `GET invoices/{invoice}` (invoices.show) swallows them and returns 404.
+        Route::get('invoices/export', [InvoiceController::class, 'export'])->name('invoices.export')->middleware('permission:finance.invoices.view');
+        Route::get('invoices/contracts-ready', [InvoiceController::class, 'getContractsReadyForInvoice'])->name('invoices.contracts-ready')->middleware('permission:finance.invoices.view');
+        Route::get('invoices/regeneration-contracts', [InvoiceController::class, 'getRegenerationContracts'])->name('invoices.regeneration-contracts')->middleware('permission:finance.invoices.view');
         Route::resource('invoices', InvoiceController::class)->middleware('permission:finance.invoices.view');
         Route::post('invoices/{invoice}/email', [InvoiceController::class, 'emailInvoice'])->name('finance.invoices.email')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/rental-details/{rentalDetail}/update-price', [InvoiceController::class, 'updateRentalPrice'])->name('finance.invoices.update-rental-price');
@@ -895,7 +900,6 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('invoices/{invoice}/recalculate', [InvoiceController::class, 'recalculate'])->name('finance.invoices.recalculate')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/update-notes', [InvoiceController::class, 'updateNotes'])->name('finance.invoices.update-notes');
         Route::post('invoices/{invoice}/update-internal-notes', [InvoiceController::class, 'updateInternalNotes'])->name('finance.invoices.update-internal-notes');
-        Route::get('invoices/export', [InvoiceController::class, 'export'])->name('invoices.export')->middleware('permission:finance.invoices.view');
         Route::post('invoices/{invoice}/send', [InvoiceController::class, 'send'])->name('invoices.send')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/mark-paid', [InvoiceController::class, 'markPaid'])->name('invoices.mark-paid')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/cancel', [InvoiceController::class, 'cancel'])->name('invoices.cancel')->middleware('permission:finance.invoices.update');
@@ -904,8 +908,6 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('invoices/bulk-delete', [InvoiceController::class, 'bulkDelete'])->name('invoices.bulk-delete')->middleware('permission:finance.invoices.delete');
         Route::post('invoices/bulk-send', [InvoiceController::class, 'bulkSend'])->name('invoices.bulk-send')->middleware('permission:finance.invoices.update');
         Route::post('invoices/auto-generate', [InvoiceController::class, 'autoGenerateInvoice'])->name('invoices.auto-generate')->middleware('permission:finance.invoices.create');
-        Route::get('invoices/contracts-ready', [InvoiceController::class, 'getContractsReadyForInvoice'])->name('invoices.contracts-ready')->middleware('permission:finance.invoices.view');
-        Route::get('invoices/regeneration-contracts', [InvoiceController::class, 'getRegenerationContracts'])->name('invoices.regeneration-contracts')->middleware('permission:finance.invoices.view');
         Route::post('invoices/{invoice}/update-delivery', [InvoiceController::class, 'updateDeliveryInfo'])->name('invoices.update-delivery')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/cancel-faktur', [InvoiceController::class, 'cancelFakturPajak'])->name('invoices.cancel-faktur')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/upload', [InvoiceController::class, 'uploadFile'])->name('invoices.upload');
