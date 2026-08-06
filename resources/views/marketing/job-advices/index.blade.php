@@ -1354,7 +1354,7 @@
                                 <select class="form-select" id="extra_unit_on_wall_id" name="extra_unit_on_wall_id" disabled onchange="applyExtraUnitOnWallSelection()">
                                     <option value="">Select Marketing First</option>
                                 </select>
-                                <small class="form-text text-muted">Select an installed/on-wall unit to auto-fill the related contract reference.</small>
+                                <small class="form-text text-muted">Select an installed/on-wall unit to auto-fill the related contract reference and add its room below. This only adds <strong>one</strong> room — to include more rooms in the same building, use the <strong>"+ Add Room"</strong> button in the Rental Rooms section below.</small>
                             </div>
                         </div>
                         <div class="form-row">
