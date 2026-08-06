@@ -78,17 +78,13 @@ class CoreTaxExportService
         $seller = $this->resolveSeller();
         $rows = $invoices->map(fn (Invoice $invoice) => $this->mapInvoice($invoice))->values();
 
-        // A Faktur row with no DetailFaktur line is rejected by CoreTax, so fail here
-        // with the offending invoice numbers rather than hand the user a bad upload.
-        $withoutLines = $rows->where(fn (array $row) => empty($row['lines']))->pluck('invoice_number');
+        // CoreTax rejects rows that are missing either of these, so fail here with the
+        // offending invoice numbers rather than hand the user a file that bounces.
+        $this->rejectWhen($rows, fn (array $row) => empty($row['lines']),
+            'Invoice berikut tidak punya baris detail sewa untuk dilaporkan');
 
-        if ($withoutLines->isNotEmpty()) {
-            throw new \RuntimeException(
-                'These invoices have no rental detail lines to report: '
-                .$withoutLines->take(10)->implode(', ')
-                .($withoutLines->count() > 10 ? ' (+'.($withoutLines->count() - 10).' more)' : '')
-            );
-        }
+        $this->rejectWhen($rows, fn (array $row) => $row['buyer_npwp'] === '',
+            'NPWP pembeli tidak ditemukan untuk invoice berikut. Lengkapi NPWP di data pajak customer');
 
         $spreadsheet = new Spreadsheet;
         $spreadsheet->removeSheetByIndex(0);
@@ -115,6 +111,23 @@ class CoreTaxExportService
             'total_records' => $rows->count(),
             'file_size' => filesize($fullPath) ?: 0,
         ];
+    }
+
+    /**
+     * Abort the whole export, naming the invoices that need fixing first.
+     */
+    private function rejectWhen(Collection $rows, callable $predicate, string $message): void
+    {
+        $offenders = $rows->filter($predicate)->pluck('invoice_number');
+
+        if ($offenders->isEmpty()) {
+            return;
+        }
+
+        throw new \RuntimeException(
+            $message.': '.$offenders->take(10)->implode(', ')
+            .($offenders->count() > 10 ? ' (+'.($offenders->count() - 10).' lagi)' : '')
+        );
     }
 
     /**
@@ -173,7 +186,14 @@ class CoreTaxExportService
             ];
         }
 
-        $buyerNpwp = $this->normalizeNpwp($invoice->npwp_number ?: ($customer->npwp ?? ''));
+        $buyerTax = $this->resolveBuyerTaxProfile($invoice->customer_id);
+
+        // The invoice keeps a snapshot taken when it was raised; when that is blank
+        // fall back to the customer's tax profile, which is where this app actually
+        // stores the NPWP (`customers.npwp` is unused).
+        $buyerNpwp = $this->normalizeNpwp(
+            $invoice->npwp_number ?: ($buyerTax['npwp'] ?: ($customer->npwp ?? ''))
+        );
 
         return [
             'invoice_number' => $invoice->invoice_number,
@@ -183,9 +203,9 @@ class CoreTaxExportService
             'tax_number' => $invoice->tax_number,
             'contract_number' => $invoice->contract_number,
             'buyer_npwp' => $buyerNpwp,
-            'buyer_tku' => $buyerNpwp.$this->resolveNitku($invoice->customer_id),
+            'buyer_tku' => $buyerNpwp.$buyerTax['nitku'],
             'buyer_name' => $customer->name ?? '',
-            'buyer_address' => $this->resolveAddress($invoice, $customer),
+            'buyer_address' => $this->resolveAddress($invoice, $customer, $buyerTax['address']),
             'lines' => $lines,
             'total_dpp' => array_sum(array_column($lines, 'dpp')),
             'total_ppn' => array_sum(array_column($lines, 'ppn')),
@@ -391,26 +411,32 @@ class CoreTaxExportService
     }
 
     /**
-     * The buyer's place-of-business id, kept per customer in the tax settings.
+     * The buyer's tax identity, all taken from the same active tax setting so the
+     * NPWP and the NITKU that get concatenated into the 22-digit TKU always belong
+     * together.
+     *
+     * @return array{npwp: string, nitku: string, address: ?string}
      */
-    private function resolveNitku(?int $customerId): string
+    private function resolveBuyerTaxProfile(?int $customerId): array
     {
-        if (! $customerId) {
-            return self::DEFAULT_NITKU;
-        }
+        $setting = $customerId
+            ? CustomerTax::where('customer_id', $customerId)
+                ->where('is_active', true)
+                ->orderByDesc('id')
+                ->first()
+            : null;
 
-        $nitku = CustomerTax::where('customer_id', $customerId)
-            ->where('is_active', true)
-            ->whereNotNull('nitku')
-            ->orderByDesc('id')
-            ->value('nitku');
-
-        return $this->normalizeNitku($nitku ?? '');
+        return [
+            'npwp' => (string) ($setting->tax_number ?? ''),
+            'nitku' => $this->normalizeNitku($setting->nitku ?? ''),
+            'address' => $setting->tax_address ?? null,
+        ];
     }
 
-    private function resolveAddress(Invoice $invoice, ?Customer $customer): string
+    private function resolveAddress(Invoice $invoice, ?Customer $customer, ?string $taxProfileAddress = null): string
     {
         return $invoice->tax_address
+            ?: $taxProfileAddress
             ?: ($customer->npwp_address ?? null)
             ?: $invoice->billing_address
             ?: ($customer->address ?? '');

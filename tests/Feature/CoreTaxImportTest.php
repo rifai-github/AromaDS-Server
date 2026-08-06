@@ -244,6 +244,48 @@ class CoreTaxImportTest extends TestCase
     }
 
     /**
+     * Rule 43 used to trip on the name of an uploaded file. It must follow the
+     * faktur pajak that CoreTax actually issued instead.
+     */
+    public function test_cancelling_the_invoice_is_blocked_only_by_a_live_coretax_faktur(): void
+    {
+        $invoice = Invoice::find(1);
+
+        // An attached file must not lock the invoice on its own.
+        $invoice->update(['faktur_pajak' => 'scan-faktur.pdf', 'faktur_pajak_status' => 'active']);
+        $this->assertTrue($invoice->fresh()->canCancel());
+
+        $invoice->update(['coretax_faktur_number' => '0400260035400001', 'coretax_status' => 'APPROVED']);
+        $this->assertFalse($invoice->fresh()->canCancel());
+
+        $invoice->fresh()->cancelCoreTaxFaktur();
+        $this->assertTrue($invoice->fresh()->canCancel());
+    }
+
+    public function test_cancelling_the_faktur_relocks_documents_and_reopens_export(): void
+    {
+        $invoice = Invoice::find(1);
+        $invoice->update([
+            'invoice_status' => Invoice::STATUS_TAX_APPROVED,
+            'coretax_faktur_number' => '0400260035400001',
+            'coretax_status' => 'APPROVED',
+        ]);
+
+        $this->assertTrue($invoice->fresh()->canPrintDocuments());
+
+        $invoice->fresh()->cancelCoreTaxFaktur();
+        $invoice = $invoice->fresh();
+
+        $this->assertSame(Invoice::CORETAX_STATUS_CANCELLED, $invoice->coretax_status);
+        $this->assertFalse($invoice->hasValidCoreTaxFaktur());
+        // Documents lock again...
+        $this->assertFalse($invoice->canPrintDocuments());
+        $this->assertStringContainsString('dibatalkan', $invoice->documentBlockReason());
+        // ...and the invoice is eligible for a fresh CoreTax export.
+        $this->assertSame(Invoice::STATUS_APPROVED, $invoice->invoice_status);
+    }
+
+    /**
      * Shaped like the real CoreTax export: two unnamed leading columns, then the
      * named ones. Row 1 is issued, row 2 is still pending, row 3 belongs to a
      * cancelled invoice, row 4 references an invoice we do not have.

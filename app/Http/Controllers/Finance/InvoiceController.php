@@ -1468,12 +1468,10 @@ class InvoiceController extends Controller
             $invoiceFile->updated_by = auth()->id();
 
             if ($category === 'tax_invoice') {
+                // Archive only. The faktur pajak NUMBER comes from the CoreTax import,
+                // so uploading the document no longer touches `invoices.faktur_pajak` —
+                // writing a filename there used to lock the invoice against cancellation.
                 $invoiceFile->description = $invoiceFile->description ? $invoiceFile->description.' (Faktur Pajak)' : 'Faktur Pajak';
-
-                // Update Invoice specific fields
-                $invoice->faktur_pajak = $originalName; // Store filename as reference
-                // $invoice->faktur_pajak_status = 'uploaded'; // Assuming logic exists, but let's stick to user request "trigger"
-                $invoice->save();
             }
 
             $invoiceFile->save();
@@ -1706,22 +1704,37 @@ class InvoiceController extends Controller
      */
     public function cancelFakturPajak(Invoice $invoice)
     {
+        if (! $invoice->hasValidCoreTaxFaktur()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice ini tidak punya Faktur Pajak CoreTax yang aktif.',
+            ], 422);
+        }
+
         try {
-            $invoice->update([
-                'faktur_pajak_status' => 'cancelled',
-            ]);
+            DB::beginTransaction();
+
+            $number = $invoice->coretax_faktur_number;
+            $wasTaxApproved = $invoice->invoice_status === Invoice::STATUS_TAX_APPROVED;
+
+            $invoice->cancelCoreTaxFaktur();
 
             $invoice->invoiceActivities()->create([
                 'activity_type' => 'cancelled',
-                'notes' => 'Faktur Pajak cancelled by user',
+                'notes' => 'Faktur Pajak '.$number.' dibatalkan oleh user.'
+                    .($wasTaxApproved ? ' Status invoice kembali ke Approved agar bisa diekspor ulang ke CoreTax.' : ''),
                 'created_by' => Auth::id(),
             ]);
+
+            DB::commit();
 
             return response()->json([
                 'success' => true,
                 'message' => 'Faktur Pajak cancelled successfully',
             ]);
         } catch (\Exception $e) {
+            DB::rollback();
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error cancelling Faktur Pajak: '.$e->getMessage(),

@@ -216,10 +216,10 @@
                                 @endphp
                                 <button type="button" id="btnHeaderSave" class="btn btn-info btn-sm text-white"><i class="fas fa-save me-1"></i> SAVE</button>
                                 <button type="button" id="btnHeaderReceipt" class="btn btn-info btn-sm text-white" {{ $documentBlockReason ? 'disabled' : '' }} title="{{ $documentBlockReason }}"><i class="fas fa-receipt me-1"></i> T. TERIMA</button>
-                                @if($invoice->faktur_pajak && $invoice->faktur_pajak_status !== 'cancelled')
+                                @if($invoice->hasValidCoreTaxFaktur())
                                     <button type="button" id="btnCancelFaktur" class="btn btn-warning btn-sm"><i class="fas fa-times-circle me-1"></i> CANCEL FP</button>
                                 @endif
-                                <button type="button" id="btnCancelInvoice" class="btn btn-danger btn-sm" {{ $invoice->canCancel() ? '' : 'disabled' }} title="{{ $invoice->canCancel() ? '' : 'Cancel Faktur Pajak first' }}">
+                                <button type="button" id="btnCancelInvoice" class="btn btn-danger btn-sm" {{ $invoice->canCancel() ? '' : 'disabled' }} title="{{ $invoice->canCancel() ? '' : 'Batalkan Faktur Pajak dulu' }}">
                                     <i class="fas fa-ban me-1"></i> CANCEL
                                 </button>
                                 @if(($regenerationContext['can_regenerate'] ?? false) && $invoice->invoice_status === 'cancelled')
@@ -489,9 +489,32 @@
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Faktur Pajak</div>
                                         <div class="invoice-field-value">
-                                            {{ $invoice->faktur_pajak ?? 'Not Set' }}
-                                            @if($invoice->faktur_pajak_status === 'cancelled')
-                                                <span class="badge bg-danger ms-2">CANCELLED</span>
+                                            @php
+                                                // The number comes from the CoreTax import; the document itself is
+                                                // still uploaded by hand on the FILE(S) tab, so look it up there.
+                                                $fakturPajakFile = $files->first(function ($f) use ($invoice) {
+                                                    return str_contains((string) $f->description, 'Faktur Pajak')
+                                                        || (filled($invoice->faktur_pajak) && $f->file_name === $invoice->faktur_pajak);
+                                                });
+                                            @endphp
+
+                                            @if($invoice->coretax_faktur_number)
+                                                <span class="fw-bold">{{ $invoice->coretax_faktur_number }}</span>
+                                                @unless($invoice->hasValidCoreTaxFaktur())
+                                                    <span class="badge bg-danger ms-2">{{ strtoupper($invoice->coretax_status ?: 'TIDAK AKTIF') }}</span>
+                                                @endunless
+                                                <div class="text-muted small">
+                                                    {{ $invoice->coretax_faktur_date?->format('d M Y') ?? '-' }} &middot; dari CoreTax
+                                                </div>
+                                            @else
+                                                <span class="text-muted">Belum terbit</span>
+                                                <div class="text-muted small">Menunggu impor hasil CoreTax di Tax File Import</div>
+                                            @endif
+
+                                            @if($fakturPajakFile)
+                                                <a href="{{ $fakturPajakFile->file_url }}" target="_blank" rel="noopener noreferrer" class="d-inline-block mt-1 small">
+                                                    <i class="fas fa-paperclip me-1"></i>{{ $fakturPajakFile->file_name }}
+                                                </a>
                                             @endif
                                         </div>
                                     </div>

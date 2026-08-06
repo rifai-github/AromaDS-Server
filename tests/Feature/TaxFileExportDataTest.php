@@ -73,6 +73,8 @@ class TaxFileExportDataTest extends TestCase
         Schema::create('customer_tax_settings', function (Blueprint $table) {
             $table->id();
             $table->foreignId('customer_id');
+            $table->string('tax_number')->nullable();
+            $table->text('tax_address')->nullable();
             $table->string('nitku')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
@@ -213,6 +215,63 @@ class TaxFileExportDataTest extends TestCase
         $this->assertSame(['INV-APPROVED-OUTSIDE-RANGE'], $invoices->pluck('invoice_number')->all());
     }
 
+    /**
+     * `customers.npwp` is unused in this app and `invoices.npwp_number` is only a
+     * snapshot that is often blank — the NPWP actually lives on the customer's tax
+     * setting, which is also where the NITKU comes from.
+     */
+    public function test_buyer_npwp_falls_back_to_the_customer_tax_setting(): void
+    {
+        $this->seedSellerAndLines();
+
+        DB::table('customer_tax_settings')->insert([
+            'id' => 1,
+            'customer_id' => 1,
+            'tax_number' => '0002026088072026',
+            'tax_address' => 'Jl. Pajak Customer No. 9',
+            'nitku' => '000000',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Blank the invoice snapshot, exactly like the invoices that exported empty.
+        DB::table('invoices')->where('id', 1)->update(['npwp_number' => null, 'tax_address' => null]);
+
+        $export = $this->newExport('TFE-TEST-NPWP');
+        $result = app(CoreTaxExportService::class)->generate($export);
+        $fullPath = public_path('uploads/'.$result['file_path']);
+
+        try {
+            $book = (new XlsxReader)->load($fullPath);
+            $faktur = $book->getSheetByName('Faktur');
+
+            $this->assertSame('0002026088072026', $faktur->getCell('J4')->getValue());
+            $this->assertSame('0002026088072026000000', $faktur->getCell('Q4')->getValue());
+
+            $legacy = $book->getSheetByName('E-Faktur-2026-07-01_2026-07-31_');
+            $this->assertSame('0002026088072026', $legacy->getCell('H4')->getValue());
+            $this->assertSame('Jl. Pajak Customer No. 9', $legacy->getCell('J4')->getValue());
+
+            $book->disconnectWorksheets();
+        } finally {
+            @unlink($fullPath);
+        }
+    }
+
+    public function test_export_fails_when_the_buyer_has_no_npwp(): void
+    {
+        $this->seedSellerAndLines();
+        // No snapshot, no tax setting, and no customer NPWP anywhere.
+        DB::table('invoices')->where('id', 1)->update(['npwp_number' => null]);
+        DB::table('customers')->where('id', 1)->update(['npwp' => null]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('NPWP pembeli tidak ditemukan');
+
+        app(CoreTaxExportService::class)->generate($this->newExport('TFE-TEST-NONPWP'));
+    }
+
     public function test_export_fails_when_an_invoice_has_no_detail_lines(): void
     {
         DB::table('companies')->insert([
@@ -340,5 +399,41 @@ class TaxFileExportDataTest extends TestCase
         } finally {
             @unlink($fullPath);
         }
+    }
+
+    private function seedSellerAndLines(): void
+    {
+        DB::table('companies')->insert([
+            'id' => 1,
+            'name' => 'PT Aroma Delivery System',
+            'npwp' => '0017556507035000',
+            'nitku' => '000000',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('invoice_rental_details')->insert([
+            'id' => 1,
+            'invoice_id' => 1,
+            'rental_name' => 'Aroma Delivery Sys Svc',
+            'building_name' => 'GROUND',
+            'room_name' => 'STORE (STORE - ADS)',
+            'quantity' => 1,
+            'unit_price' => 550000,
+            'total_price' => 550000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function newExport(string $exportNumber): TaxFileExport
+    {
+        return new TaxFileExport([
+            'export_number' => $exportNumber,
+            'period_from' => '2026-07-01',
+            'period_to' => '2026-07-31',
+            'filter_parameters' => [],
+        ]);
     }
 }

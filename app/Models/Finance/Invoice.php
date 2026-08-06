@@ -94,6 +94,9 @@ class Invoice extends Model
     /** Value CoreTax reports in TaxInvoiceStatus once a faktur pajak is issued. */
     const CORETAX_STATUS_APPROVED = 'APPROVED';
 
+    /** Written by us when the user revokes the faktur pajak from the invoice screen. */
+    const CORETAX_STATUS_CANCELLED = 'CANCELLED';
+
     protected $casts = [
         'invoice_date' => 'date',
         'due_date' => 'date',
@@ -517,11 +520,16 @@ class Invoice extends Model
     }
 
     /**
-     * Rule 43: Cancellation only possible if tax factor number is empty or cancelled.
+     * Rule 43: an invoice may not be cancelled while a faktur pajak is live at DJP.
+     *
+     * This used to key off `faktur_pajak`, which holds the name of the file someone
+     * attached on the FILE(S) tab — so an invoice was locked merely because a file
+     * had been uploaded, while an invoice with a genuinely issued faktur stayed
+     * cancellable. The CoreTax number is the real record, so that is what locks it.
      */
     public function canCancel()
     {
-        return empty($this->faktur_pajak) || $this->faktur_pajak_status === 'cancelled';
+        return ! $this->hasValidCoreTaxFaktur();
     }
 
     /**
@@ -532,6 +540,22 @@ class Invoice extends Model
     {
         return filled($this->coretax_faktur_number)
             && strtoupper((string) $this->coretax_status) === self::CORETAX_STATUS_APPROVED;
+    }
+
+    /**
+     * Revoke the faktur pajak issued by CoreTax. The invoice drops back to
+     * approved so it can be exported to CoreTax again for a fresh number, and
+     * its documents lock until that arrives.
+     */
+    public function cancelCoreTaxFaktur(): void
+    {
+        $this->update([
+            'coretax_status' => self::CORETAX_STATUS_CANCELLED,
+            'faktur_pajak_status' => 'cancelled',
+            'invoice_status' => $this->invoice_status === self::STATUS_TAX_APPROVED
+                ? self::STATUS_APPROVED
+                : $this->invoice_status,
+        ]);
     }
 
     /**
