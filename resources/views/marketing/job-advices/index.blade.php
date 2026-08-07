@@ -2556,6 +2556,9 @@ function loadContractRoomsForJobAdvice(contractSelectElement) {
                 room_name: cr.room?.room_name || cr.room_name || 'Room ' + cr.id,
                 building_name: cr.room?.building?.nama_gedung || cr.room?.building?.name || 'N/A',
                 rental_product_id: cr.rental_product_id,
+                // Kept so loadRoomDetails() can tell a single-rental room (safe to
+                // auto-fill) from a multi-rental one (ambiguous - user must choose).
+                rentals: cr.rentals || [],
                 has_active_unit: cr.has_active_unit,
                 active_sn: cr.active_sn
             }));
@@ -2692,6 +2695,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 room_name: cr.room?.room_name || cr.room_name || 'Room ' + cr.id,
                 building_name: cr.room?.building?.nama_gedung || cr.room?.building?.name || 'N/A',
                 rental_product_id: cr.rental_product_id,
+                // Kept so loadRoomDetails() can tell a single-rental room (safe to
+                // auto-fill) from a multi-rental one (ambiguous - user must choose).
+                rentals: cr.rentals || [],
                 has_active_unit: cr.has_active_unit,
                 active_sn: cr.active_sn
             }));
@@ -2991,6 +2997,21 @@ function addRoomRow() {
     }
 }
 
+// Select2 renders its own label element and only repaints it when the source <select>
+// emits change.select2. Assigning `.value` / replacing options natively leaves the old
+// label on screen - reported as "rentalnya tetap tidak berubah walaupun roomnya berubah"
+// on Extra / Complain / Change Rental job advices. Call this after every programmatic
+// mutation of a select that may have been select2-enhanced.
+function refreshSelect2Display(selectElement) {
+    if (!selectElement) return;
+
+    if (typeof $ !== 'undefined' && $.fn.select2 && $(selectElement).hasClass('select2-hidden-accessible')) {
+        // change.select2 is namespaced, so this repaints the widget without
+        // re-firing the element's own onchange handler.
+        $(selectElement).trigger('change.select2');
+    }
+}
+
 // Re-populates any contract-source rental-product dropdown that was rendered before
 // rentalProducts finished loading (e.g. a room row added while a contract/type-change
 // fetch was still in-flight), so the user doesn't have to reselect the room to see options.
@@ -3011,6 +3032,7 @@ function refreshRentalProductOptionsInExistingRows() {
         });
         select.innerHTML = rentalOptions;
         select.value = currentValue;
+        refreshSelect2Display(select);
     });
 }
 
@@ -3018,7 +3040,7 @@ function refreshRentalProductOptionsInExistingRows() {
 function loadRoomDetails(selectElement, rowId) {
     const roomId = selectElement.value;
     const selectedOption = selectElement.options[selectElement.selectedIndex];
-    const rentalId = selectedOption.getAttribute('data-rental-id');
+    const rentalId = selectedOption?.getAttribute('data-rental-id') || '';
     const rentalSelect = document.querySelector(`select[name="rooms[${rowId}][rental_product_id]"]`);
     const quotationRentalInput = document.querySelector(`input[name="rooms[${rowId}][quotation_rental_id]"]`);
     const quotationDetailInput = document.querySelector(`input[name="rooms[${rowId}][quotation_detail_id]"]`);
@@ -3044,16 +3066,27 @@ function loadRoomDetails(selectElement, rowId) {
         if (roomRentals.length === 1) {
             rentalSelect.selectedIndex = 1;
             syncRoomRentalSource(rentalSelect, rowId);
+        } else {
+            rentalSelect.value = '';
         }
+
+        refreshSelect2Display(rentalSelect);
 
         return;
     }
-    
-    if (rentalId) {
-        // Auto-select rental product if available
-        if (rentalSelect) {
-            rentalSelect.value = rentalId;
-        }
+
+    if (rentalSelect) {
+        // A contract room can carry more than one rental (mixed Unit+Refill / Unit Only
+        // in the same room), but the API's `rental_product_id` is only the FIRST rental
+        // of that room. Auto-filling it there would silently pick the wrong product, so
+        // only auto-fill when the room has exactly one rental; otherwise clear the field
+        // and let the user choose. Either way the value is always rewritten, so the
+        // previously selected room's rental can never stick.
+        const selectedContractRoom = contractRooms.find(room => String(room.id) === String(roomId));
+        const roomRentals = selectedContractRoom?.rentals || [];
+
+        rentalSelect.value = roomRentals.length > 1 ? '' : (rentalId || '');
+        refreshSelect2Display(rentalSelect);
     }
 
     // User Request: "satu ruangan bisa lebih dari 1 unit dari contract/quotation yg berbeda"
