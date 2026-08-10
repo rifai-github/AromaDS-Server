@@ -2,16 +2,25 @@
 
 namespace App\Models;
 
+use App\Http\Traits\AutoFilterable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Http\Traits\AutoFilterable;
 
 class JobAdvice extends Model
 {
-    use HasFactory, SoftDeletes, AutoFilterable;
+    use AutoFilterable, HasFactory, SoftDeletes;
 
     protected $table = 'job_advices';
+
+    /**
+     * Prefix nomor JA yang dibuat oleh importer Catalyst
+     * (lihat CatalystMasterDataImporter::catalystJobAdviceNumber()).
+     *
+     * JA ini hanya catatan riwayat install dari sistem lama: statusnya langsung
+     * 'approved' tapi tidak pernah menghasilkan job schedule maupun unit-on-wall.
+     */
+    public const MIGRATED_NUMBER_PREFIX = 'JA-CATALYST-';
 
     protected $fillable = [
         'job_advice_number',
@@ -41,7 +50,7 @@ class JobAdvice extends Model
         'with_materials',
         'notes',
         'created_by',
-        'updated_by'
+        'updated_by',
     ];
 
     protected $casts = [
@@ -53,7 +62,7 @@ class JobAdvice extends Model
         'rejected_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'with_invoicing' => 'boolean',
-        'with_materials' => 'boolean'
+        'with_materials' => 'boolean',
     ];
 
     // Relationships
@@ -191,6 +200,27 @@ class JobAdvice extends Model
     public function scopeWithMaterials($query)
     {
         return $query->where('with_materials', true);
+    }
+
+    /**
+     * JA hasil migrasi Catalyst — riwayat install lama, bukan pekerjaan berjalan.
+     */
+    public function scopeMigrated($query)
+    {
+        return $query->where('job_advice_number', 'like', self::MIGRATED_NUMBER_PREFIX.'%');
+    }
+
+    public function scopeNotMigrated($query)
+    {
+        return $query->where(function ($q) {
+            $q->whereNull('job_advice_number')
+                ->orWhere('job_advice_number', 'not like', self::MIGRATED_NUMBER_PREFIX.'%');
+        });
+    }
+
+    public function isMigrated(): bool
+    {
+        return str_starts_with((string) $this->job_advice_number, self::MIGRATED_NUMBER_PREFIX);
     }
 
     // Accessors

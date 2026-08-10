@@ -1327,6 +1327,22 @@ class ContractController extends Controller
                 ->pluck('contract_room_id')
                 ->toArray();
 
+            // JA hasil migrasi Catalyst hanya mencatat install lama — statusnya
+            // 'approved' tapi tidak pernah menghasilkan job schedule atau unit-on-wall.
+            // Kalau ikut memblokir, kontrak migrasi tidak bisa dibuatkan JA Install
+            // maupun Service selamanya. Room-nya tetap ditandai "sudah dipakai" di UI
+            // (lihat $usedContractRoomIds) supaya user sadar ada riwayatnya.
+            $migratedContractRoomIds = \App\Models\JobAdviceRoom::whereHas('jobAdvice', function ($q) use ($id) {
+                $q->where('contract_id', $id)
+                    ->whereNotIn('status', ['cancelled'])
+                    ->migrated();
+            })
+                ->whereNotNull('contract_room_id')
+                ->pluck('contract_room_id')
+                ->toArray();
+
+            $blockingContractRoomIds = array_values(array_diff($usedContractRoomIds, $migratedContractRoomIds));
+
             // Format contract rooms for Job Advice selection modal
             // Filter out rooms that don't exist (broken references) AND rooms that are already used
             // MOM: For Extra, Change, Complain, Remove types, we load ALL rooms (even if used)
@@ -1338,21 +1354,27 @@ class ContractController extends Controller
             $isServiceJobAdvice = $typeLower === 'service';
 
             $contractRooms = $contract->contractRooms
-                ->filter(function ($contractRoom) use ($contract, $usedContractRoomIds, $shouldIncludeUsedRooms, $isServiceJobAdvice, $id) {
+                ->filter(function ($contractRoom) use ($contract, $blockingContractRoomIds, $migratedContractRoomIds, $shouldIncludeUsedRooms, $isServiceJobAdvice, $id) {
                     // Only include rooms that exist
                     // If shouldIncludeUsedRooms is true, we ignore the used filtering
                     if ($contractRoom->room === null) {
                         return false;
                     }
 
-                    if (! $shouldIncludeUsedRooms && in_array($contractRoom->id, $usedContractRoomIds)) {
+                    if (! $shouldIncludeUsedRooms && in_array($contractRoom->id, $blockingContractRoomIds)) {
                         return false;
                     }
 
                     if ($isServiceJobAdvice) {
-                        $hasActiveUnit = $this->contractRoomHasActiveUnitOnWall($contract, $contractRoom);
+                        // JA migrasi = bukti install lama dari Catalyst. Migrasi tidak
+                        // membawa job schedule maupun unit-on-wall, jadi tanpa ini tidak
+                        // ada satu pun room kontrak lama yang lolos syarat Service.
+                        $hasMigratedInstall = in_array($contractRoom->id, $migratedContractRoomIds);
 
-                        $hasCompletedInstall = \App\Models\JobSchedule::whereIn('type', ['install', 'installation'])
+                        $hasActiveUnit = $hasMigratedInstall
+                            || $this->contractRoomHasActiveUnitOnWall($contract, $contractRoom);
+
+                        $hasCompletedInstall = $hasActiveUnit || \App\Models\JobSchedule::whereIn('type', ['install', 'installation'])
                             ->whereIn('status', ['completed', 'done_job'])
                             ->where(function ($query) use ($id, $contractRoom) {
                                 $query->where(function ($q) use ($id, $contractRoom) {

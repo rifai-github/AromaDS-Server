@@ -1591,6 +1591,22 @@ class JobAdviceController extends Controller
             return true;
         }
 
+        // JA hasil migrasi Catalyst adalah bukti install lama. Migrasi tidak membawa
+        // job schedule maupun unit-on-wall, jadi tanpa pengecualian ini semua room
+        // kontrak lama ditolak saat membuat JA Service.
+        // Sejalan dengan ContractController::getForJobAdvice().
+        $hasMigratedInstall = JobAdviceRoom::where('contract_room_id', $contractRoom->id)
+            ->whereHas('jobAdvice', function ($jaQuery) use ($contractId) {
+                $jaQuery->where('contract_id', $contractId)
+                    ->whereNotIn('status', ['cancelled'])
+                    ->migrated();
+            })
+            ->exists();
+
+        if ($hasMigratedInstall) {
+            return true;
+        }
+
         return JobSchedule::whereIn('type', ['install', 'installation'])
             ->whereIn('status', ['completed', 'done_job'])
             ->where(function ($query) use ($contractId, $contractRoom, $roomId) {
