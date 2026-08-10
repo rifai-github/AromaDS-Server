@@ -348,8 +348,7 @@ class JobAdviceController extends Controller
         $positionOption = \App\Models\MasterOption::where('name', 'Position')->first();
         $positions = $positionOption ? $positionOption->optionDetails()->where('is_active', true)->pluck('option_name') : collect();
 
-        $pagination = $jobAdvices->toArray();
-        return view('marketing.job-advices.index', compact('jobAdvices', 'selectedQuotationId', 'salutations', 'positions', 'pagination'));
+        return view('marketing.job-advices.index', compact('jobAdvices', 'selectedQuotationId', 'salutations', 'positions'));
     }
 
     public function create(Request $request)

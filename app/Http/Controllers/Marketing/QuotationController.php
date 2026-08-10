@@ -341,14 +341,11 @@ class QuotationController extends Controller
                 ->get();
         });
 
-        $pagination = $quotations->toArray();
-
         return view('marketing.quotations.index', compact(
-            'quotations', 
-            'pagination', // Add pagination array for view logic
-            'prospects', 
-            'surveys', 
-            'approvers', 
+            'quotations',
+            'prospects',
+            'surveys',
+            'approvers',
             'masterRentals'
         ));
     }

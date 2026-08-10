@@ -241,9 +241,7 @@ class ContractController extends Controller
         $statuses = MasterOption::where('name', 'Contract Status')->first()?->optionDetails ?? collect();
         $types = MasterOption::where('name', 'Contract Type')->first()?->optionDetails ?? collect();
 
-        $pagination = $contracts->toArray();
-
-        return view('marketing.contracts.index', compact('contracts', 'marketingStaff', 'statuses', 'types', 'pagination'));
+        return view('marketing.contracts.index', compact('contracts', 'marketingStaff', 'statuses', 'types'));
     }
 
     public function create()

@@ -153,8 +153,7 @@ class SurveyController extends Controller
         $provinces = IndonesiaRegion::getProvinces();
         $buildings = collect();
 
-        $pagination = $surveys->toArray();
-        return view('marketing.surveys.index', compact('surveys', 'surveyors', 'prospects', 'provinces', 'buildings', 'pagination'));
+        return view('marketing.surveys.index', compact('surveys', 'surveyors', 'prospects', 'provinces', 'buildings'));
     }
 
     public function getSurveyors()
