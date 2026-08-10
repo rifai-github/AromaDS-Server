@@ -40,13 +40,19 @@ class MasterProductSourceCategoryScopeTest extends TestCase
         $this->assertNotContains(ProductType::SOURCE_CATEGORY_MATERIAL, $bindings);
     }
 
-    public function test_stockable_goods_excludes_products_without_product_type(): void
+    /**
+     * product_type_id itu nullable di form Master Product. Sebelumnya produk yang
+     * dibuat tanpa Product Type otomatis terbuang dari Inventory Request/Issuing/
+     * Stock Adjustment tanpa peringatan - ditemukan lewat laporan QA 10 Agu 2026
+     * (produk REFILL asli seperti "PURE Hand Sanitizer (Gel) 1000 mL" hilang total
+     * padahal bukan paket sewa). Sekarang produk begini tetap muncul; yang dibuang
+     * cuma yang MEMANG dikenali sebagai paket/non-stok lewat Product Type-nya.
+     */
+    public function test_stockable_goods_keeps_products_without_product_type(): void
     {
-        // whereHas menghasilkan EXISTS, jadi baris dengan product_type_id NULL ikut
-        // terbuang - mayoritas data demo pra-Catalyst yang duplikat.
         $sql = strtolower(MasterProduct::query()->stockableGoods()->toSql());
 
-        $this->assertStringNotContainsString('left join', $sql);
+        $this->assertStringContainsString('product_type_id" is null', $sql);
         $this->assertStringContainsString('exists (select', $sql);
     }
 

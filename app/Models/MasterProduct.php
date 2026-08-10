@@ -301,16 +301,24 @@ class MasterProduct extends Model
      * muncul walaupun source_category-nya 'Rental' - client menegaskan itu barang
      * gudang, bukan paket. Jangan menyempitkan ini jadi 'Material' saja.
      *
-     * Produk tanpa product_type_id ikut terbuang (mayoritas data demo pra-Catalyst
-     * yang duplikat dengan produk hasil import).
+     * Produk tanpa product_type_id TETAP muncul (nullable di form Master Product,
+     * jadi user bisa lupa mengisinya). Pengecualian hanya untuk yang memang
+     * dikenali sebagai paket sewa / item non-stok lewat Product Type - produk
+     * yang belum diklasifikasi tidak boleh ikut hilang begitu saja.
+     * Untuk data lama yang ternyata duplikat dari produk yang sudah
+     * terklasifikasi, lihat command
+     * master-products:deactivate-unclassified-duplicates.
      */
     public function scopeStockableGoods($query)
     {
-        return $query->whereHas('productType', function ($typeQuery) {
-            $typeQuery->whereNotIn('sku_prefix', ProductType::PACKAGE_TYPE_CODES)
-                ->where(function ($categoryQuery) {
-                    $categoryQuery->whereNotIn('source_category', ProductType::NON_STOCK_SOURCE_CATEGORIES)
-                        ->orWhereNull('source_category');
+        return $query->where(function ($outer) {
+            $outer->whereNull('product_type_id')
+                ->orWhereHas('productType', function ($typeQuery) {
+                    $typeQuery->whereNotIn('sku_prefix', ProductType::PACKAGE_TYPE_CODES)
+                        ->where(function ($categoryQuery) {
+                            $categoryQuery->whereNotIn('source_category', ProductType::NON_STOCK_SOURCE_CATEGORIES)
+                                ->orWhereNull('source_category');
+                        });
                 });
         });
     }
