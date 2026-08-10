@@ -10661,28 +10661,25 @@ class JobScheduleController extends Controller
 
     /**
      * Product unit/non-unit classification must follow product_categories.is_unit.
-     * ProductType is only a legacy fallback when the product has no category.
+     * ProductType is only a legacy fallback when the product has no category, and
+     * name keywords are a last resort for products that have neither.
+     *
+     * Order matters. The keyword check used to run FIRST, which meant any product whose
+     * category/type/name mentioned "hand sanitizer" / "refill" / "cleaner" was forced to
+     * non-unit before is_unit was ever consulted. That misclassified 16 physical dispensers
+     * (e.g. "Dispenser Hand Sanitizer 7600S--A", all serial-number tracked) as consumables,
+     * so autoCreateMaterialIssue()'s install-job filter silently skipped them and they could
+     * never be issued on an IR job — the category name "Hand Sanitizer Disp" alone was
+     * enough to trigger it, so renaming products could not have helped.
+     *
+     * NOTE: product_categories.is_unit is NOT NULL DEFAULT 0, so the `!== null` guard below
+     * is always satisfied once the relation is loaded. In practice that makes the keyword
+     * branch dead for any product that has a category — it is retained only for
+     * category-less and type-less legacy rows. Do not read it as a safety net.
      */
     protected function isUnitProductByCategory($product): bool
     {
         if (!$product) {
-            return false;
-        }
-
-        $haystack = $this->buildMaterialClassificationText([
-            $product->productCategory->name ?? null,
-            $product->productType->name ?? null,
-            $product->name ?? null,
-            $product->sku ?? null,
-            $product->brand_line ?? null,
-            $product->variant_name ?? null,
-        ]);
-
-        if (
-            $this->containsHandSanitizerMaterialKeywords($haystack)
-            || str_contains($haystack, 'refill')
-            || str_contains($haystack, 'cleaner')
-        ) {
             return false;
         }
 
@@ -10700,9 +10697,30 @@ class JobScheduleController extends Controller
             }
         }
 
-        return $product->productType
-            ? (bool) $product->productType->is_unit
-            : false;
+        if ($product->productType && $product->productType->is_unit !== null) {
+            return (bool) $product->productType->is_unit;
+        }
+
+        // Last resort: no category and no type to go on, so fall back to naming conventions.
+        $haystack = $this->buildMaterialClassificationText([
+            $product->productCategory->name ?? null,
+            $product->productType->name ?? null,
+            $product->name ?? null,
+            $product->sku ?? null,
+            $product->brand_line ?? null,
+            $product->variant_name ?? null,
+        ]);
+
+        if (
+            $this->containsHandSanitizerMaterialKeywords($haystack)
+            || str_contains($haystack, 'refill')
+            || str_contains($haystack, 'cleaner')
+        ) {
+            return false;
+        }
+
+        // Nothing classified it: default to non-unit, matching the previous behaviour.
+        return false;
     }
 
     /**
