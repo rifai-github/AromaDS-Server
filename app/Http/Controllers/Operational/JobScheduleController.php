@@ -8431,6 +8431,14 @@ class JobScheduleController extends Controller
             return ($type === 'remove_free' || $type === 'remove free' || $jaType === 'remove_free') ? 'remove_free' : 'remove';
         }
 
+        if (in_array($type, ['extra', 'change', 'change unit'], true)) {
+            return 'job_schedule_extra'; // EXT
+        }
+
+        if ($type === 'complain') {
+            return 'job_schedule_complain'; // NR
+        }
+
         return 'job_schedule';
     }
 
@@ -9227,6 +9235,8 @@ class JobScheduleController extends Controller
      * CSR = Customer Service Report (service)
      * RV = Remove
      * RF = Remove Free
+     * EXT = Extra / Change Unit
+     * NR = Complain
      */
     private function generateJobNumber($type, $jobAdvice = null, $scheduleDate = null)
     {
@@ -9241,6 +9251,8 @@ class JobScheduleController extends Controller
             'service', 'service_first', 'service_routine' => 'customer_service_report',
             'remove', 'removal' => 'remove',
             'remove_free', 'remove free' => 'remove_free',
+            'extra', 'change', 'change unit' => 'job_schedule_extra',
+            'complain' => 'job_schedule_complain',
             default => 'job_schedule',
         };
 
