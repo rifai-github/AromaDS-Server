@@ -16,8 +16,12 @@ class CheckMultiLogin
 
     /**
      * Handle an incoming request.
-     * 
-     * For users with multi_login=false:
+     *
+     * For every authenticated user (multi_login true or false):
+     * - On each request: If this session's own last_activity exceeds the user's
+     *   configured idle_timeout (UserLoginRestriction, default 30 min), force logout.
+     *
+     * Additionally for users with multi_login=false:
      * - On login: The current session becomes the only active web session
      * - On each request: Verify the current session still matches the active session record
      * - If another login replaced it, force logout
@@ -34,6 +38,19 @@ class CheckMultiLogin
         }
 
         $user = $request->user();
+
+        if ($this->singleSessionManager->isSessionIdle($user, $request)) {
+            $currentSessionId = Session::getId();
+
+            \Log::info('CheckMultiLogin: Session ' . substr($currentSessionId, 0, 8) . '... for user ' . $user->id . ' idle-timed-out');
+
+            $this->singleSessionManager->forgetCurrentSession($user, $currentSessionId);
+            Auth::logout();
+            Session::invalidate();
+            Session::regenerateToken();
+
+            return redirect()->route('login')->with('error', 'Sesi Anda berakhir karena tidak ada aktivitas. Silakan login kembali.');
+        }
 
         if (!$this->singleSessionManager->isCurrentSessionValid($user, $request)) {
             $currentSessionId = Session::getId();

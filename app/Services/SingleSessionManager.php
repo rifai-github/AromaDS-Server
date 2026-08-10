@@ -105,6 +105,30 @@ class SingleSessionManager
         }
     }
 
+    /**
+     * Whether the current session has been idle longer than the user's
+     * configured idle timeout. Applies to every user (multi_login or not) -
+     * each session is tracked independently by session_id.
+     */
+    public function isSessionIdle(User $user, Request $request): bool
+    {
+        if (!$this->hasUserSessionsTable()) {
+            return false;
+        }
+
+        $sessionId = $request->session()->getId();
+
+        $session = UserSession::where('session_id', $sessionId)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (!$session || $session->last_activity === null) {
+            return false;
+        }
+
+        return $session->last_activity->getTimestamp() <= $this->activeSessionThreshold($user);
+    }
+
     public function isCurrentSessionValid(User $user, Request $request): bool
     {
         if ($user->multi_login) {

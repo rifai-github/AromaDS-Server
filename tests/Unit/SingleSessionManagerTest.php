@@ -7,6 +7,7 @@ use App\Models\UserSession;
 use App\Models\UserLoginRestriction;
 use App\Services\SingleSessionManager;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -113,6 +114,71 @@ class SingleSessionManagerTest extends TestCase
         $user->id = 1;
 
         $this->assertFalse(app(SingleSessionManager::class)->hasActiveWebSession($user));
+    }
+
+    public function test_session_idle_beyond_default_timeout_is_reported_idle(): void
+    {
+        UserSession::create([
+            'user_id' => 1,
+            'session_id' => str_repeat('a', 40),
+            'last_activity' => now()->subMinutes(31)->timestamp,
+        ]);
+
+        $user = new User(['multi_login' => false]);
+        $user->id = 1;
+
+        $request = $this->requestWithSessionId(str_repeat('a', 40));
+
+        $this->assertTrue(app(SingleSessionManager::class)->isSessionIdle($user, $request));
+    }
+
+    public function test_session_within_configured_idle_timeout_is_not_idle(): void
+    {
+        UserLoginRestriction::create([
+            'user_id' => 1,
+            'idle_timeout' => 60,
+            'is_active' => true,
+        ]);
+
+        UserSession::create([
+            'user_id' => 1,
+            'session_id' => str_repeat('b', 40),
+            'last_activity' => now()->subMinutes(31)->timestamp,
+        ]);
+
+        $user = new User(['multi_login' => false]);
+        $user->id = 1;
+
+        $request = $this->requestWithSessionId(str_repeat('b', 40));
+
+        $this->assertFalse(app(SingleSessionManager::class)->isSessionIdle($user, $request));
+    }
+
+    public function test_multi_login_user_session_is_still_subject_to_idle_timeout(): void
+    {
+        UserSession::create([
+            'user_id' => 1,
+            'session_id' => str_repeat('a', 40),
+            'last_activity' => now()->subMinutes(31)->timestamp,
+        ]);
+
+        $user = new User(['multi_login' => true]);
+        $user->id = 1;
+
+        $request = $this->requestWithSessionId(str_repeat('a', 40));
+
+        $this->assertTrue(app(SingleSessionManager::class)->isSessionIdle($user, $request));
+    }
+
+    private function requestWithSessionId(string $sessionId): Request
+    {
+        $store = new \Illuminate\Session\Store('test', new \Illuminate\Session\ArraySessionHandler(120));
+        $store->setId($sessionId);
+
+        $request = Request::create('/dashboard');
+        $request->setLaravelSession($store);
+
+        return $request;
     }
 
     private function resetHasUserSessionsTableCache(): void
