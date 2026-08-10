@@ -574,8 +574,18 @@ $qrFooterSrc = $qrPng($companyWebsite !== '' ? $companyWebsite : 'https://www.ad
                     </tr>
                 @endif
                 @foreach ($details as $detail)
+                    @php
+                        /* ITEM column shows the rental's PRODUCT CATEGORY (master_rentals.category,
+                         * sourced from product_categories.name), not the rental name — matches the
+                         * client's reference quotation layout. An explicit per-line rental_alias
+                         * still wins; rental_name only remains as a last-resort fallback. */
+                        $itemLabel =
+                            $detail->rental_alias
+                            ?: (trim((string) ($detail->masterRental->category ?? '')) ?:
+                                ($detail->masterRental->rental_name ?? '-'));
+                    @endphp
                     <tr>
-                        <td>{{ $detail->rental_alias ?: $detail->masterRental->rental_name ?? '-' }}</td>
+                        <td>{{ $itemLabel }}</td>
                         <td>{{ $detail->room_name ?: '-' }}</td>
                         <td class="right">{{ number_format($detail->total_price ?? 0, 0) }}</td>
                     </tr>
