@@ -363,13 +363,19 @@ trait AutoFilterable
     private function applyBooleanLike(Builder $query, string $column, string $term, bool $useOr = false): void
     {
         $termLower = strtolower(trim($term));
+
+        // "all" means no constraint on this column (e.g. the "Status: All" filter dropdown).
+        if ($termLower === 'all') {
+            return;
+        }
+
         $value = null;
 
         // Map common string representations to boolean values
         // Case 1: Positive terms
         if (in_array($termLower, ['active', 'yes', 'true', '1', 'y', 'on', 'system', 'reserved'])) {
             $value = 1;
-        } 
+        }
         // Case 2: Negative terms
         elseif (in_array($termLower, ['inactive', 'no', 'false', '0', 'n', 'off', 'user', 'public'])) {
             $value = 0;
