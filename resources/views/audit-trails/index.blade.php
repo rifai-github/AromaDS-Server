@@ -431,6 +431,11 @@
         max-height: 80vh;
         overflow: hidden;
         box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        /* Bootstrap's global CSS sets .modal-dialog { pointer-events: none } expecting a
+           .modal-content child to restore it. This modal doesn't use that wrapper, so
+           without this override the dialog (and everything inside it) is unclickable
+           and unscrollable. */
+        pointer-events: auto;
     }
 
     .modal-header {
