@@ -162,13 +162,24 @@ class AccessControlService
         // Check day restrictions
         if ($restriction->allowed_days) {
             // Model cast already handles JSON decoding, allowed_days is already an array
-            $allowedDays = is_array($restriction->allowed_days) 
-                ? $restriction->allowed_days 
+            $allowedDays = is_array($restriction->allowed_days)
+                ? $restriction->allowed_days
                 : json_decode($restriction->allowed_days, true);
-            
-            // Convert all values to integers for comparison (handles "1", "2" as strings)
-            $allowedDaysInt = array_map('intval', $allowedDays ?? []);
-            
+
+            $dayNameToInt = [
+                'sunday' => 0, 'monday' => 1, 'tuesday' => 2, 'wednesday' => 3,
+                'thursday' => 4, 'friday' => 5, 'saturday' => 6,
+            ];
+
+            // allowed_days is stored as lowercase day-name strings (e.g. "saturday"),
+            // but tolerate legacy numeric values too.
+            $allowedDaysInt = array_map(function ($day) use ($dayNameToInt) {
+                if (is_numeric($day)) {
+                    return (int) $day;
+                }
+                return $dayNameToInt[strtolower((string) $day)] ?? -1;
+            }, $allowedDays ?? []);
+
             if (!in_array($currentDay, $allowedDaysInt)) {
                 return false;
             }

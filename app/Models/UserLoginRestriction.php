@@ -63,7 +63,19 @@ class UserLoginRestriction extends Model
             return true;
         }
 
+        $dayNameToInt = [
+            'sunday' => 0, 'monday' => 1, 'tuesday' => 2, 'wednesday' => 3,
+            'thursday' => 4, 'friday' => 5, 'saturday' => 6,
+        ];
+
+        $allowedDaysInt = array_map(function ($day) use ($dayNameToInt) {
+            if (is_numeric($day)) {
+                return (int) $day;
+            }
+            return $dayNameToInt[strtolower((string) $day)] ?? -1;
+        }, $this->allowed_days);
+
         $currentDay = now()->dayOfWeek;
-        return in_array($currentDay, $this->allowed_days);
+        return in_array($currentDay, $allowedDaysInt);
     }
 }

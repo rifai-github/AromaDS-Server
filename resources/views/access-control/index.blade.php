@@ -905,9 +905,14 @@ $(document).ready(function() {
                                 : JSON.parse(loginRestrictions.allowed_days);
                                 
                             if (Array.isArray(d) && d.length > 0) {
-                                var dayMap = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                                // Filter valid indices
-                                var validDays = d.filter(idx => idx >= 0 && idx <= 6).map(idx => dayMap[idx]);
+                                var dayMap = {
+                                    sunday: 'Sun', monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed',
+                                    thursday: 'Thu', friday: 'Fri', saturday: 'Sat',
+                                    0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat'
+                                };
+                                // allowed_days is stored as lowercase day-name strings (e.g. "saturday"),
+                                // but tolerate legacy numeric values too.
+                                var validDays = d.map(day => dayMap[typeof day === 'string' ? day.toLowerCase() : day]).filter(Boolean);
                                 if (validDays.length > 0) daysStr = validDays.join(', ');
                             }
                          } catch(e) { console.error('Day parse error', e); }
