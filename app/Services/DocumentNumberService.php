@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Branch;
 use App\Models\Building;
+use App\Models\City;
 use App\Models\Contract;
 use App\Models\Quotation;
 use App\Models\JobAdvice;
@@ -420,24 +421,58 @@ class DocumentNumberService
             $branch = Branch::where('city_id', $cityId)
                 ->where('is_active', true)
                 ->first();
-            
+
+            if ($branch) {
+                return $branch;
+            }
+
+            // The `cities` table carries two overlapping legacy imports, so the
+            // same city (e.g. "KABUPATEN SEMARANG") often exists under two
+            // different IDs - a building can end up on one ID and its branch on
+            // the other. Exact id match then silently fails and every document
+            // for that city falls back to the JKT default. Match by normalized
+            // name before giving up, since the branch's own city_id is trusted.
+            $branch = $this->getBranchByCityName($cityId);
             if ($branch) {
                 return $branch;
             }
         }
-        
+
         // If no match by city, try by province (less specific)
         if ($provinceId) {
             $branch = Branch::where('province_id', $provinceId)
                 ->where('is_active', true)
                 ->first();
-            
+
             if ($branch) {
                 return $branch;
             }
         }
-        
+
         return null;
+    }
+
+    private function getBranchByCityName(int $cityId): ?Branch
+    {
+        // withTrashed() on both sides: the "203 vs 582" style duplicates were
+        // partly cleaned up by soft-deleting the stale row, but buildings still
+        // point at the deleted id - we only need its name for matching, not an
+        // active record.
+        $cityName = City::withTrashed()->whereKey($cityId)->value('name');
+        if (!$cityName) {
+            return null;
+        }
+
+        $normalized = mb_strtolower(trim($cityName));
+        if ($normalized === '') {
+            return null;
+        }
+
+        return Branch::where('is_active', true)
+            ->whereHas('city', function ($query) use ($normalized) {
+                $query->withTrashed()->whereRaw('LOWER(TRIM(name)) = ?', [$normalized]);
+            })
+            ->first();
     }
 
     /**
