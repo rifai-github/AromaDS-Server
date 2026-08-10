@@ -26,7 +26,7 @@ class JobScheduleExtraComplainNumberPrefixTest extends TestCase
         $method = new ReflectionMethod(JobScheduleController::class, 'documentTypeForJobSchedule');
         $method->setAccessible(true);
 
-        return $method->invoke(new JobScheduleController(), $job);
+        return $method->invoke(new JobScheduleController, $job);
     }
 
     private function generatedDocumentTypeFor(string $type): string
@@ -46,7 +46,7 @@ class JobScheduleExtraComplainNumberPrefixTest extends TestCase
 
         $method = new ReflectionMethod(JobScheduleController::class, 'generateJobNumber');
         $method->setAccessible(true);
-        $method->invoke(new JobScheduleController(), $type, null, null);
+        $method->invoke(new JobScheduleController, $type, null, null);
 
         return $captured;
     }
