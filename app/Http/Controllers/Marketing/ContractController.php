@@ -1296,7 +1296,7 @@ class ContractController extends Controller
             $contract = Contract::with([
                 'customer',
                 'contractRooms.room.building',
-                'contractRentals',
+                'contractRentals.masterRental',
                 'quotation.quotationDetails',
             ])->findOrFail($id);
 
@@ -1412,7 +1412,7 @@ class ContractController extends Controller
                         return [
                             'id' => $rental->id, // This is contract_rental_id
                             'master_rental_id' => $rental->master_rental_id,
-                            'rental_name' => $rental->rental_alias ?? ($rental->masterRental?->rental_name ?? 'Unknown Rental'),
+                            'rental_name' => $rental->masterRental?->rental_name ?? ($rental->rental_alias ?: 'Unknown Rental'),
                             'quantity' => $rental->quantity ?? 0,
                             'qty_free' => $rental->qty_free ?? 0,
                         ];

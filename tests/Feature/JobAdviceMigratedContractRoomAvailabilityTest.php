@@ -88,6 +88,14 @@ class JobAdviceMigratedContractRoomAvailabilityTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('master_rentals', function (Blueprint $table) {
+            $table->id();
+            $table->string('rental_code')->nullable();
+            $table->string('rental_name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('contract_rentals', function (Blueprint $table) {
             $table->id();
             $table->foreignId('contract_id')->nullable();

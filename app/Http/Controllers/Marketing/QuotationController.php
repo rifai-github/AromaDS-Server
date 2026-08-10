@@ -2979,7 +2979,7 @@ class QuotationController extends Controller
                                 'id' => null, // No quotation_rental_id
                                 'quotation_detail_id' => $detail->id,
                                 'master_rental_id' => $detail->master_rental_id,
-                                'rental_name' => $detail->rental_alias ?? ($detail->masterRental?->rental_name ?? 'Unknown Rental'),
+                                'rental_name' => $detail->masterRental?->rental_name ?? ($detail->rental_alias ?: 'Unknown Rental'),
                             ];
                         })->values()->toArray();
                     } else {
@@ -2989,7 +2989,7 @@ class QuotationController extends Controller
                                 'id' => $rental->id, // This is quotation_rental_id
                                 'quotation_detail_id' => null,
                                 'master_rental_id' => $rental->master_rental_id,
-                                'rental_name' => $rental->rental_alias ?? ($rental->masterRental?->rental_name ?? 'Unknown Rental'),
+                                'rental_name' => $rental->masterRental?->rental_name ?? ($rental->rental_alias ?: 'Unknown Rental'),
                             ];
                         })->values()->toArray();
                     }
