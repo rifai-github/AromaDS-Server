@@ -289,9 +289,6 @@
                 <button class="btn btn-primary btn-sm" onclick="openCreateModal()">
                     <i class="fas fa-plus"></i> Add Setting
                 </button>
-                <button class="btn btn-secondary btn-sm" onclick="exportSettings()">
-                    <i class="fas fa-download"></i> Export
-                </button>
             </div>
         </div>
 
@@ -852,12 +849,6 @@ function deactivateSetting(id) {
         console.error('Error:', error);
         showAlert('An error occurred', 'error');
     });
-}
-
-// Export function
-function exportSettings() {
-    const params = new URLSearchParams(window.location.search);
-    window.open(`/settings/system/export?${params.toString()}`, '_blank');
 }
 
 // Alert function
