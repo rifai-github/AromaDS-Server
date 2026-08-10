@@ -172,7 +172,8 @@ class QuotationRental extends Model
         } else {
             // No price slab found, check if there's a rental bottom price
             // for this branch and the quotation's offer type (harian/bulanan).
-            $rentalBottomPrice = RentalBottomPrice::where('master_rental_id', $this->master_rental_id)
+            $rentalBottomPrice = RentalBottomPrice::active()
+                ->where('master_rental_id', $this->master_rental_id)
                 ->where('branch_id', $this->quotation->prospect->customer->branch_id ?? null)
                 ->where('offer_type', $this->quotation->rental_unit ?? 'bulan')
                 ->first();

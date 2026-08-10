@@ -409,7 +409,11 @@ class RentalManagementController extends Controller
     // Bottom Prices Management
     public function bottomPrices(MasterRental $rental)
     {
-        $bottomPrices = $rental->bottomPrices()->with(['branch', 'createdBy', 'updatedBy'])->get();
+        $bottomPrices = $rental->bottomPrices()
+            ->with(['branch', 'createdBy', 'updatedBy'])
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->get();
         $existingBranchIds = $bottomPrices->pluck('branch_id')->filter()->unique();
         $branches = Branch::where('is_active', true)
             ->when($existingBranchIds->isNotEmpty(), function ($query) use ($existingBranchIds) {
@@ -448,10 +452,14 @@ class RentalManagementController extends Controller
                 'offer_type' => $request->offer_type,
                 'bottom_price' => $request->bottom_price,
                 'replacement_price' => $request->replacement_price,
-                'is_active' => $request->is_active ?? true,
+                'is_active' => true,
                 'created_by' => Auth::id(),
                 'updated_by' => Auth::id()
             ]);
+
+            // Newest submission for this rental/branch/offer_type wins.
+            RentalBottomPrice::refreshActiveFlagForGroup($rental->id, $request->branch_id, $request->offer_type);
+            $bottomPrice->refresh();
 
             DB::commit();
 
@@ -491,14 +499,25 @@ class RentalManagementController extends Controller
         try {
             DB::beginTransaction();
 
+            $originalMasterRentalId = $bottomPrice->master_rental_id;
+            $originalBranchId = $bottomPrice->branch_id;
+            $originalOfferType = $bottomPrice->offer_type;
+
             $bottomPrice->update([
                 'branch_id' => $request->branch_id,
                 'offer_type' => $request->offer_type,
                 'bottom_price' => $request->bottom_price,
                 'replacement_price' => $request->replacement_price,
-                'is_active' => $request->is_active ?? false,
+                'is_active' => true,
                 'updated_by' => Auth::id()
             ]);
+
+            // Recompute both the group this row left and the group it now
+            // belongs to, so exactly one row per group stays active — the
+            // most recently submitted one.
+            RentalBottomPrice::refreshActiveFlagForGroup($originalMasterRentalId, $originalBranchId, $originalOfferType);
+            RentalBottomPrice::refreshActiveFlagForGroup($bottomPrice->master_rental_id, $bottomPrice->branch_id, $bottomPrice->offer_type);
+            $bottomPrice->refresh();
 
             DB::commit();
 
@@ -520,7 +539,14 @@ class RentalManagementController extends Controller
     public function destroyBottomPrice(RentalBottomPrice $bottomPrice)
     {
         try {
+            $masterRentalId = $bottomPrice->master_rental_id;
+            $branchId = $bottomPrice->branch_id;
+            $offerType = $bottomPrice->offer_type;
+
             $bottomPrice->delete();
+
+            // Whatever remains the newest in this group becomes active.
+            RentalBottomPrice::refreshActiveFlagForGroup($masterRentalId, $branchId, $offerType);
 
             return response()->json([
                 'status' => 'success',

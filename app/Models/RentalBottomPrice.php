@@ -55,6 +55,32 @@ class RentalBottomPrice extends Model
         return $query->where('is_active', true);
     }
 
+    /**
+     * A rental/branch/offer_type combination can have several bottom-price
+     * entries over time (re-negotiated floors); only the most recently
+     * submitted one should be "active" and used for pricing. Recompute the
+     * flag for the whole group after any create/update/delete so exactly one
+     * row (the latest by updated_at) ends up active.
+     */
+    public static function refreshActiveFlagForGroup(int $masterRentalId, int $branchId, string $offerType): void
+    {
+        $latestId = static::where('master_rental_id', $masterRentalId)
+            ->where('branch_id', $branchId)
+            ->where('offer_type', $offerType)
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->value('id');
+
+        static::where('master_rental_id', $masterRentalId)
+            ->where('branch_id', $branchId)
+            ->where('offer_type', $offerType)
+            ->update(['is_active' => false]);
+
+        if ($latestId) {
+            static::whereKey($latestId)->update(['is_active' => true]);
+        }
+    }
+
     public function scopeByBranch($query, $branchId)
     {
         return $query->where('branch_id', $branchId);

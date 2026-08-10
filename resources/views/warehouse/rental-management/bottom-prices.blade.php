@@ -78,6 +78,8 @@
     }
 
     .data-table tbody tr:hover { background: #f8f9fa; }
+    .data-table tbody tr.row-active { background: #f0fdf4; }
+    .data-table tbody tr.row-active:hover { background: #e6fbec; }
 
     .badge {
         padding: 4px 8px;
@@ -192,7 +194,7 @@
                             </thead>
                             <tbody>
                                 @foreach($bottomPrices as $bp)
-                                <tr>
+                                <tr class="{{ $bp->is_active ? 'row-active' : '' }}">
                                     <td>{{ $bp->branch->name ?? '-' }}</td>
                                     <td>
                                         <span class="badge badge-info">{{ $bp->offer_type === 'hari' ? 'Harian' : 'Bulanan' }}</span>
@@ -200,20 +202,19 @@
                                     <td>{{ $bp->formatted_bottom_price }}</td>
                                     <td>
                                         @if($bp->is_active)
-                                            <span class="badge badge-success">Active</span>
+                                            <span class="badge badge-success"><i class="fas fa-check-circle"></i> Active</span>
                                         @else
                                             <span class="badge badge-danger">Inactive</span>
                                         @endif
                                     </td>
-                                    <td>{{ $bp->updatedBy->name ?? '-' }}</td>
+                                    <td>{{ $bp->updatedBy->name ?? '-' }}<br><small class="text-muted">{{ optional($bp->updated_at)->format('d/m/Y H:i') }}</small></td>
                                     <td>
                                         <button class="btn btn-sm btn-warning" onclick="openEditModal({
                                             id: {{ $bp->id }},
                                             branch_id: {{ $bp->branch_id }},
                                             offer_type: '{{ $bp->offer_type }}',
                                             bottom_price: '{{ $bp->bottom_price }}',
-                                            replacement_price: '{{ $bp->replacement_price }}',
-                                            is_active: {{ $bp->is_active ? 'true' : 'false' }}
+                                            replacement_price: '{{ $bp->replacement_price }}'
                                         })" title="Edit">
                                             <i class="fas fa-edit"></i>
                                         </button>
@@ -272,10 +273,10 @@
                      only confused users). Kept as a hidden field so backend validation/storage
                      still work unchanged: defaults to 0 for new rows, keeps its stored value on edit. --}}
                 <input type="hidden" id="replacement_price" name="replacement_price" value="0">
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="is_active" name="is_active" value="1" checked>
-                    <label class="form-check-label" for="is_active">Active</label>
-                </div>
+                <p class="text-muted" style="font-size: 13px; margin: 0;">
+                    <i class="fas fa-info-circle"></i>
+                    Bottom price yang dipakai untuk cabang &amp; tipe penawaran ini otomatis mengikuti input terakhir.
+                </p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn" style="background:#f3f4f6;color:#374151;" onclick="closeAddModal()">Cancel</button>
@@ -328,7 +329,6 @@
         setSelectValue('offer_type', bottomPrice.offer_type);
         document.getElementById('bottom_price').value = bottomPrice.bottom_price;
         document.getElementById('replacement_price').value = bottomPrice.replacement_price;
-        document.getElementById('is_active').checked = Boolean(bottomPrice.is_active);
         document.getElementById('bottomPriceModalTitle').textContent = 'Edit Bottom Price';
         document.getElementById('bottomPriceSubmitBtn').innerHTML = '<i class="fas fa-save me-1"></i>Update';
         document.getElementById('addBottomPriceModal').classList.add('show');
@@ -348,7 +348,6 @@
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Saving...';
 
         const formData = new FormData(document.getElementById('bottomPriceForm'));
-        formData.set('is_active', document.getElementById('is_active').checked ? '1' : '0');
         formData.append('_token', csrfToken);
         const url = editingBottomPriceId
             ? `/warehouse/rental-management/bottom-prices/${editingBottomPriceId}`
