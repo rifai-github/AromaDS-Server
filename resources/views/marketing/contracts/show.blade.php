@@ -1222,7 +1222,7 @@
                                         @forelse($contract->contractRentals ?? [] as $index => $contractRental)
                                         <tr id="rental-row-{{ $contractRental->id }}">
                                             <td>{{ $index + 1 }}</td>
-                                            <td>{{ $contractRental->rental_alias ?? ($contractRental->masterRental->rental_name ?? '-') }}</td>
+                                            <td>{{ $contractRental->masterRental->rental_name ?? ($contractRental->rental_alias ?: '-') }}</td>
                                             <td>{{ $contractRental->quantity}}</td>
                                             <td>{{ $contractRental->qty_free ?? 0 }}</td>
                                             <td>Rp {{ number_format($contractRental->unit_price, 0, ',', '.') }}</td>
