@@ -637,8 +637,8 @@
                                                 }
                                             }
                                             
-                                            // Use rental_alias if available, otherwise use default rental name
-                                            $rentalName = $rentalAlias ?? ($rental?->rental_name ?? $jaRoom->rental_name ?? 'N/A');
+                                            // Show the master rental name; rental_alias / the snapshot hold the legacy product code
+                                            $rentalName = $rental?->rental_name ?? ($rentalAlias ?: ($jaRoom->rental_name ?: 'N/A'));
                                             $billingSource = $jaRoom->contractRental ?? $jaRoom->quotationRental ?? $jaRoom->quotationDetail ?? null;
                                             
                                             // MOM9: Get rental price from quotation detail or quotation rental if available
