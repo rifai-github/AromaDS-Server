@@ -375,9 +375,11 @@ class JobAssignMaterialIssueController extends Controller
                 return;
             }
             $key = $this->rentalQtyMapKey($jaRoom->room_name, $jaRoom->rental_product_id);
-            $qty = max(1, (int) round((float) ($jaRoom->operational_quantity ?? 1)));
+            // An explicit 0 (contract/JA genuinely has no units for this rental line) must
+            // stay 0, not be floored back up to 1 — only a missing/null field defaults to 1.
+            $qty = max(0, (int) round((float) ($jaRoom->operational_quantity ?? 1)));
             // Keep the largest qty seen for the key (defensive against duplicate advice rows).
-            $map[$key] = max($map[$key] ?? 1, $qty);
+            $map[$key] = max($map[$key] ?? 0, $qty);
         };
 
         foreach ($jobSchedule->jobScheduleRooms as $scheduleRoom) {
@@ -3526,8 +3528,10 @@ class JobAssignMaterialIssueController extends Controller
                 $key = $jobAssignScheduleId . '|'
                     . strtolower(trim((string) $jaRoom->room_name)) . '|'
                     . (int) $jaRoom->rental_product_id;
-                $qty = max(1, (int) round((float) ($jaRoom->operational_quantity ?? 1)));
-                $map[$key] = max($map[$key] ?? 1, $qty);
+                // An explicit 0 (contract/JA genuinely has no units for this rental line) must
+                // stay 0, not be floored back up to 1 — only a missing/null field defaults to 1.
+                $qty = max(0, (int) round((float) ($jaRoom->operational_quantity ?? 1)));
+                $map[$key] = max($map[$key] ?? 0, $qty);
             };
 
             foreach ($jobSchedule->jobScheduleRooms as $scheduleRoom) {
@@ -4657,8 +4661,10 @@ class JobAssignMaterialIssueController extends Controller
             // QA "1 Rental banyak Qty": scale the default kemasan/pieces by the rental qty
             // (quantity + qty_free). When the form sends an explicit quantity it is used as-is
             // (the UI already shows the scaled value), so this only affects the default path
-            // and stays in sync with autoCreateMaterialIssue.
-            $rentalQtyMultiplier = max(1, (int) round((float) ($jaRoom->operational_quantity ?? 1)));
+            // and stays in sync with autoCreateMaterialIssue. An explicit 0 (contract/JA
+            // genuinely has no units for this rental line) must stay 0, not be floored to 1 —
+            // the `$qty <= 0` skip below then drops it, same as autoCreateMaterialIssue.
+            $rentalQtyMultiplier = max(0, (int) round((float) ($jaRoom->operational_quantity ?? 1)));
 
             // Track if we have substituted aroma for THIS room
             $hasSubstitutedAroma = false;

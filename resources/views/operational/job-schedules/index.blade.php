@@ -3822,7 +3822,13 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
                             } else {
                                 data.data.forEach(item => {
                                     const isDone = item.job_status === 'done_job' || item.job_status === 'completed';
-                                    const alreadyHasMaterial = item.job_status !== 'scheduled' && item.job_status !== 'new_job';
+                                    // Use the explicit has_material flag from the backend rather than
+                                    // inferring from job_status: a room can sit in a non-"scheduled"
+                                    // job status while still having zero generated material (a prior
+                                    // generation bug skipped it), and job_status intentionally does not
+                                    // revert in that case. Guessing from job_status disabled the
+                                    // checkbox and made that room impossible to (re)process.
+                                    const alreadyHasMaterial = item.has_material === true;
                                     const isDisabled = item.status === 'already_assigned' || isDone || alreadyHasMaterial;
                                     const isSelectedInTable = selectedRoomIdsFromTable.length === 0 || selectedRoomIdsFromTable.includes(item.id.toString());
                                     detailsHtml += `

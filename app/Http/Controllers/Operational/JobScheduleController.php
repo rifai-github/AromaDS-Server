@@ -10249,8 +10249,10 @@ class JobScheduleController extends Controller
             // JobAdviceRoom.operational_quantity = quantity + qty_free (physical units to install).
             // Multiply BOM/kemasan by this so downstream (Material Assign target, Inventory
             // Issuing qty, Job Schedule material, Inventory Receiving, mobile checklist) all
-            // reflect the true quantity. Legacy single-qty rentals resolve to 1 (no-op).
-            $rentalQtyMultiplier = max(1, (int) round((float) ($jobAdviceRoom->operational_quantity ?? 1)));
+            // reflect the true quantity. Legacy single-qty rentals (field never set) resolve to 1;
+            // an explicit 0 (contract/JA genuinely has no units for this rental line) must stay 0,
+            // not be floored back up to 1.
+            $rentalQtyMultiplier = max(0, (int) round((float) ($jobAdviceRoom->operational_quantity ?? 1)));
 
             // Load rentalDetails (materials/products). Material Issue must mirror
             // these rows exactly; do not append components from quotation/BOM.
@@ -10370,6 +10372,14 @@ class JobScheduleController extends Controller
                         // QA "1 Rental banyak Qty": scale kemasan/pieces by the rental qty so
                         // qty 2 issues twice the material (and twice the units → 2 serial numbers).
                         $qtyIssue = ($detail->quantity ?? 1) * $rentalQtyMultiplier;  // rental_details.quantity × rental qty
+
+                        // rentalQtyMultiplier is 0 when the contract/JA genuinely has no units
+                        // for this rental line in this room — skip it entirely rather than
+                        // issuing a phantom material with quantity 0.
+                        if ($qtyIssue <= 0) {
+                            continue;
+                        }
+
                         $bomQty = $product->bom_qty ?? ($product->bom_quantity ?? 1);  // From substituted product if applicable
 
                         $allMaterials[] = [
@@ -10955,6 +10965,14 @@ class JobScheduleController extends Controller
                         'rental_name' => $rentalName,
                         'job_status' => $currentStatus,
                         'material_checked' => (bool) $job->material_checked,
+                        // Explicit signal for the Material Assign confirmation dialog: whether
+                        // THIS room already has a generated MaterialIssueItem. job_status alone
+                        // is not reliable here — e.g. a job can be status "assign_material"
+                        // while one of its rooms still has zero material (a prior generation
+                        // bug skipped it), and job_status intentionally does not revert to
+                        // "scheduled" for that case (see
+                        // test_selected_assign_material_room_stays_assign_material_without_material_items).
+                        'has_material' => $thisRoomHasMaterial,
                         'display_text' => $room->room_name,
                     ];
                 }
