@@ -44,19 +44,37 @@ class RelinkContractQuotationSurveyTest extends TestCase
             $table->timestamps();
         });
 
+        // added_by NOT NULL tanpa default di production - lupa mengisinya
+        // bikin command ini crash di tengah jalan (ketemu saat --apply pertama
+        // kali ke QA, 10 Agu 2026). Skema di sini sengaja disamakan biar
+        // regresinya ketahuan dari test, bukan dari --apply ke data asli.
         Schema::create('contract_surveys', function (Blueprint $table) {
             $table->id();
             $table->foreignId('contract_id')->nullable();
             $table->foreignId('survey_id')->nullable();
             $table->integer('sort_order')->nullable();
-            $table->timestamp('added_at')->nullable();
+            $table->timestamp('added_at')->nullable(false);
+            $table->unsignedBigInteger('added_by')->nullable(false);
             $table->timestamps();
         });
+
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->timestamps();
+        });
+
+        DB::table('users')->insert([
+            'id' => 28,
+            'name' => 'Administrator',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     protected function tearDown(): void
     {
-        foreach (['contract_surveys', 'quotation_surveys', 'quotations', 'contracts'] as $table) {
+        foreach (['users', 'contract_surveys', 'quotation_surveys', 'quotations', 'contracts'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -112,6 +130,7 @@ class RelinkContractQuotationSurveyTest extends TestCase
         $this->assertDatabaseHas('contract_surveys', [
             'contract_id' => 1,
             'survey_id' => 7151,
+            'added_by' => 28,
         ]);
     }
 

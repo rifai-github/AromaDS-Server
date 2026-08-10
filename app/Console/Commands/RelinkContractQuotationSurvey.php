@@ -24,6 +24,8 @@ class RelinkContractQuotationSurvey extends Command
 
     protected $description = 'Sambung ulang contracts.quotation_id dan contract_surveys yang kosong akibat SqNo hilang saat import Catalyst';
 
+    private ?int $actorUserId = null;
+
     public function handle(): int
     {
         $apply = (bool) $this->option('apply');
@@ -193,8 +195,7 @@ class RelinkContractQuotationSurvey extends Command
     /**
      * Bangun ulang contract_surveys dari quotation_surveys — logika yang sama
      * dengan step contract_surveys di importer Catalyst.
-     */
-    /**
+     *
      * @param  array<int,int>  $plannedLinks  contract_id => quotation_id yang belum tersimpan (dry-run)
      */
     private function rebuildContractSurveys(bool $apply, array $plannedLinks = []): int
@@ -248,6 +249,7 @@ class RelinkContractQuotationSurvey extends Command
                     'contract_id' => $contractId,
                     'survey_id' => $survey->survey_id,
                     'added_at' => now(),
+                    'added_by' => $this->actorId(),
                     'sort_order' => $survey->sort_order ?? 0,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -256,6 +258,26 @@ class RelinkContractQuotationSurvey extends Command
         }
 
         return $created;
+    }
+
+    /**
+     * Sama seperti CatalystMasterDataImporter::actorId() - tidak ada user
+     * terautentikasi di CLI, jadi jatuh ke user pertama di sistem.
+     */
+    private function actorId(): ?int
+    {
+        if ($this->actorUserId !== null) {
+            return $this->actorUserId;
+        }
+
+        $authenticated = auth()->id();
+        if ($authenticated) {
+            return $this->actorUserId = (int) $authenticated;
+        }
+
+        $firstUserId = DB::table('users')->orderBy('id')->value('id');
+
+        return $this->actorUserId = $firstUserId ? (int) $firstUserId : null;
     }
 
     private function applyContractFilter($query): void
