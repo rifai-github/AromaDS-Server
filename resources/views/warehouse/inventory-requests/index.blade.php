@@ -1739,26 +1739,30 @@ function submitForm(event) {
         },
         body: formData
     })
-    .then(response => {
-        if (!response.ok) {
-            return response.text().then(text => {
-                throw new Error(text);
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.status === 'success') {
+    .then(response => response.json().then(data => ({ ok: response.ok, data: data })))
+    .then(({ ok, data }) => {
+        if (ok && data.status === 'success') {
             showSuccessModal('created', data.message || 'Inventory request created successfully');
             closeModal();
         } else {
-            showErrorModal(data.message || 'Failed to create request');
+            showErrorModal(formatRequestError(data, 'Failed to create request'));
         }
     })
     .catch(error => {
         console.error('Error:', error);
         showErrorModal('Network error occurred: ' + error.message);
     });
+}
+
+// Builds a readable message from a Laravel JSON error/validation response
+function formatRequestError(data, fallback) {
+    if (data && data.errors && typeof data.errors === 'object') {
+        const messages = Object.values(data.errors).flat();
+        if (messages.length) {
+            return messages.join(' ');
+        }
+    }
+    return (data && data.message) || fallback;
 }
 
 function submitEditForm(event, id) {
@@ -1776,20 +1780,13 @@ function submitEditForm(event, id) {
         },
         body: formData
     })
-    .then(response => {
-        if (!response.ok) {
-            return response.text().then(text => {
-                throw new Error(text);
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.status === 'success') {
+    .then(response => response.json().then(data => ({ ok: response.ok, data: data })))
+    .then(({ ok, data }) => {
+        if (ok && data.status === 'success') {
             showSuccessModal('updated', data.message || 'Inventory request updated successfully');
             closeModal();
         } else {
-            showErrorModal(data.message || 'Failed to update request');
+            showErrorModal(formatRequestError(data, 'Failed to update request'));
         }
     })
     .catch(error => {
