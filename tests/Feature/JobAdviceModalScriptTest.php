@@ -131,4 +131,25 @@ class JobAdviceModalScriptTest extends TestCase
         );
         $this->assertStringContainsString("|| quotationCustomerIdMap[String(quotationId)] || ''", $view);
     }
+
+    /**
+     * "Add/Choose Rooms" on an existing draft JA used to hide any room flagged
+     * is_used_in_other_ja outright - a blanket rule from back when that flag
+     * meant "genuinely unavailable". Since ContractController::getForJobAdvice()
+     * started letting rooms held only by a migrated Catalyst JA through (they
+     * never produced a real job schedule), that same flag is now also set on
+     * rooms the backend deliberately still wants selectable. Skipping them in
+     * JS re-hid exactly the rooms the backend fix was supposed to expose -
+     * found via QA report 10 Agu 2026 where a fresh JA for a migrated contract
+     * showed "Tidak ada ruangan yang tersedia" despite the API returning 3.
+     */
+    public function test_add_room_modal_does_not_re_hide_rooms_the_backend_already_decided_to_show(): void
+    {
+        $view = file_get_contents(resource_path('views/marketing/job-advices/show.blade.php'));
+
+        $this->assertStringNotContainsString('Skip completely instead of showing', $view);
+        $this->assertStringNotContainsString('return; // Skip this room', $view);
+        $this->assertStringContainsString('const isUsedInOtherJa = contractRoom.is_used_in_other_ja || false;', $view);
+        $this->assertStringContainsString("Dipakai di \${usedByJa", $view);
+    }
 }

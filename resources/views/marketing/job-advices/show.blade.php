@@ -1355,27 +1355,31 @@ function openAddRoomModal() {
             const isAdded = addedRoomIds.includes(contractRoom.id);
             const rentals = contractRoom.rentals || [];
             const rentalCount = contractRoom.rental_count || rentals.length || 0;
-            
-            // Check if room is used in another JA - FIX ISSUE 2: Skip completely instead of showing
+
+            // The backend already decides which rooms are selectable for this JA
+            // type (see ContractController::getForJobAdvice) - a room can be
+            // returned here and still be flagged is_used_in_other_ja, e.g. a
+            // contract-migration JA that never produced a real job schedule.
+            // Only use the flag to show a badge; don't re-filter on top of what
+            // the backend already decided, or migrated-only contracts end up
+            // with an empty room list again.
             const isUsedInOtherJa = contractRoom.is_used_in_other_ja || false;
-            
-            // FIX ISSUE 2: Completely skip rooms used in other JA (don't show them at all)
-            if (isUsedInOtherJa) {
-                return; // Skip this room
-            }
-            
+            const usedByJa = contractRoom.used_by_ja || null;
+
             // Only count rooms that are added in THIS JA (not skip entirely)
             let isDisabled = isAdded;
-            
+
             // Determine styling
             let checkedClass = '';
             let opacityStyle = '';
             let statusBadge = '';
-            
+
             if (isAdded) {
                 checkedClass = 'bg-secondary';
                 opacityStyle = 'opacity: 0.7;';
                 statusBadge = '<br><span class="badge bg-success mt-1">Sudah ditambahkan</span>';
+            } else if (isUsedInOtherJa) {
+                statusBadge = `<br><span class="badge bg-info mt-1">Dipakai di ${usedByJa ? usedByJa.job_advice_number : 'JA lain'}</span>`;
             }
             
             // Build rental info - rooms with multiple rentals will auto-add all rentals
