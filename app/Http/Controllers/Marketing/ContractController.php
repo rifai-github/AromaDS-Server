@@ -3020,16 +3020,22 @@ class ContractController extends Controller
 
             $customer = $contract->customer;
 
-            // Check if VA already exists for this customer
-            // Check by account_name (exact match or contains customer name)
+            // Check if a *usable* VA already exists for this customer.
+            // Legacy Catalyst imports stuffed free text like "Bank Name - Holder (12345)"
+            // into account_number, which matches these name/description filters but is
+            // not a real generated VA (real ones are digits-only). Filtering to
+            // ctype_digit here stops that legacy junk from permanently blocking
+            // auto-generation of a proper VA number for the customer.
             $existingVA = \App\Models\CompanyVirtualAccount::where(function ($q) use ($customer) {
-                $q->where('account_name', $customer->name)
-                    ->orWhere('account_name', 'like', "%{$customer->name}%");
+                $q->where('customer_id', $customer->id)
+                    ->orWhere('account_name', $customer->name)
+                    ->orWhere('account_name', 'like', "%{$customer->name}%")
+                    ->orWhere('description', 'like', "%Customer: {$customer->name}%")
+                    ->orWhere('description', 'like', "%customer: {$customer->name}%")
+                    ->orWhere('description', 'like', "%{$customer->name}%");
             })
-                ->orWhere('description', 'like', "%Customer: {$customer->name}%")
-                ->orWhere('description', 'like', "%customer: {$customer->name}%")
-                ->orWhere('description', 'like', "%{$customer->name}%")
-                ->first();
+                ->get()
+                ->first(fn ($va) => filled($va->account_number) && ctype_digit($va->account_number));
 
             if ($existingVA) {
                 Log::info("Virtual Account already exists for customer {$customer->name} (ID: {$customer->id}, VA ID: {$existingVA->id})");
