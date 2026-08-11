@@ -277,6 +277,7 @@ class InvoiceGenerationService
                 $query->where('contract_id', $contract->id);
             })
             ->whereBetween('schedule_date', [$periodStart, $periodEnd])
+            ->whereNull('catalyst_backfill_at')
             ->whereNotIn('status', self::NON_BILLABLE_JOB_STATUSES)
             ->whereRaw("LOWER(COALESCE(type, '')) NOT IN (?, ?, ?, ?)", self::NON_BILLABLE_JOB_TYPES)
             ->orderBy('schedule_date')

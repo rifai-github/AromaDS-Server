@@ -83,6 +83,7 @@ class JobSchedule extends Model
         'resolved_at',
         'material_checked',
         'material_checked_at',
+        'catalyst_backfill_at',
     ];
 
     protected $casts = [
@@ -105,6 +106,7 @@ class JobSchedule extends Model
         'completed_at' => 'datetime',
         'material_checked' => 'boolean',
         'material_checked_at' => 'datetime',
+        'catalyst_backfill_at' => 'datetime',
     ];
 
     // Relationships

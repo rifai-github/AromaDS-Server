@@ -237,6 +237,7 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->date('schedule_date')->nullable();
             $table->date('ba_date')->nullable();
             $table->text('internal_notes')->nullable();
+            $table->timestamp('catalyst_backfill_at')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
