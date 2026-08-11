@@ -1929,6 +1929,14 @@ class JobController extends Controller
                 ? $job
                 : JobSchedule::find($specificJobScheduleId);
             $jobScheduleRooms = $roomGroup->map(function ($adviceRoom) use ($specificJobSchedule, $specificJobScheduleId, $masterRoom) {
+                if ($specificJobSchedule && !$this->jobAdviceRoomBelongsToJobSchedule($adviceRoom, $specificJobSchedule)) {
+                    // This rental belongs to a sibling job (e.g. the refill leg of a
+                    // Unit + Refill room belongs to the CSR job, not this IR job).
+                    // Only resolve an existing link for display — never create one,
+                    // or the rental leaks into the wrong job's material/report.
+                    return $this->resolveJobScheduleRoomForAdviceRoom($specificJobScheduleId, $adviceRoom, $masterRoom?->id);
+                }
+
                 return $specificJobSchedule
                     ? $this->ensureMobileRentalScheduleRoom($specificJobSchedule, $adviceRoom, $masterRoom?->id)
                     : $this->resolveJobScheduleRoomForAdviceRoom($specificJobScheduleId, $adviceRoom, $masterRoom?->id);
@@ -2872,6 +2880,38 @@ class JobController extends Controller
             'customer_service_report',
             'customer service report',
         ], true);
+    }
+
+    /**
+     * A physical room can hold multiple job_advice_rooms (e.g. a Unit + Refill
+     * rental split into a unit-only row and a refill-only row) that are each
+     * scheduled under a different sibling JobSchedule (install vs service vs
+     * remove). Grouping by physical room alone is not enough to decide which
+     * job schedule owns a given job_advice_room — that must be checked against
+     * install_job_schedule_id / service_job_schedule_id / remove_job_schedule_id,
+     * otherwise a rental gets cross-linked into the wrong document (IR vs CSR).
+     */
+    private function jobAdviceRoomBelongsToJobSchedule($jobAdviceRoom, JobSchedule $jobSchedule): bool
+    {
+        if (!$jobAdviceRoom) {
+            return false;
+        }
+
+        if ($this->isRemoveJobType($jobSchedule->type)) {
+            $ownerId = $jobAdviceRoom->remove_job_schedule_id;
+        } elseif ($this->isServiceLikeJob($jobSchedule)) {
+            $ownerId = $jobAdviceRoom->service_job_schedule_id;
+        } else {
+            $ownerId = $jobAdviceRoom->install_job_schedule_id;
+        }
+
+        // Not yet linked to any specific sibling job — safe to fall back to
+        // physical-room grouping (legacy data / single-rental rooms).
+        if (!$ownerId) {
+            return true;
+        }
+
+        return (int) $ownerId === (int) $jobSchedule->id;
     }
 
     private function materialIssuesForJob(JobSchedule $job)

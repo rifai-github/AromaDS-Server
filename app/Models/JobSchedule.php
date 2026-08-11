@@ -241,8 +241,17 @@ class JobSchedule extends Model
         $yearMonth = ($date ?? now())->format('y-m');
         $prefix = "{$branchCode}-{$typeCode}/{$yearMonth}/";
 
+        // lockForUpdate() takes an InnoDB gap lock on the ba_number LIKE range,
+        // so a second caller (e.g. two sibling rooms verified a second apart via
+        // mobile verifyJob) blocks here until the first caller's transaction
+        // commits, instead of both reading the same count and generating the
+        // identical ba_number. Only effective when the caller already has an
+        // open transaction (verifyJob/finalizeWithBa do) — Laravel nests this
+        // as a savepoint rather than committing early, so the lock is held
+        // until the outer transaction commits.
         $count = self::withTrashed()
             ->where('ba_number', 'like', "{$prefix}%")
+            ->lockForUpdate()
             ->count();
 
         return $prefix . str_pad($count + 1, 4, '0', STR_PAD_LEFT);
