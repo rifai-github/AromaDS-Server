@@ -1599,16 +1599,40 @@ class InvoiceGenerationService
     }
 
     /**
+     * Bulk pre-filter for the "Regenerate Invoice" contract picker: one indexed query
+     * returning contract IDs that have at least one billable-completed job in the given
+     * lookback window, instead of asking hasRecentCompletedPeriod() to check every
+     * active contract one by one. On staging there are ~5,000 active contracts; the vast
+     * majority have no completed job in the last 12 months at all, so this single query
+     * (job_schedules join job_advices) shrinks the candidate set before the more
+     * expensive per-contract period-boundary + trigger-matching check ever runs. Without
+     * this, hasRecentCompletedPeriod() alone still iterated all ~5,000 contracts (each
+     * running getPeriodStatus()'s heavily-eager-loaded query up to ~12 times) and never
+     * finished within the request/CLI timeout.
+     */
+    public function contractIdsWithRecentCompletedJobs(Carbon $sinceDate): \Illuminate\Support\Collection
+    {
+        return JobSchedule::query()
+            ->join('job_advices', 'job_advices.id', '=', 'job_schedules.job_advice_id')
+            ->whereIn('job_schedules.status', self::BILLABLE_COMPLETED_STATUSES)
+            ->whereNotNull('job_schedules.ba_date')
+            ->where('job_schedules.schedule_date', '>=', $sinceDate)
+            ->whereNull('job_schedules.catalyst_backfill_at')
+            ->whereNotNull('job_advices.contract_id')
+            ->distinct()
+            ->pluck('job_advices.contract_id');
+    }
+
+    /**
      * Cheap eligibility check for the "Regenerate Invoice" contract picker: whether this
      * contract has at least one 'completed' rental period within the given lookback
      * window. Mirrors getRentalPeriodsForContract()'s period-boundary math exactly (so
      * period dates/ordering stay identical) but only runs the expensive per-period
      * job-completion query (getPeriodStatus(), which hits the DB) for periods inside the
-     * window, and stops as soon as a completed period is found. Scanning every period
-     * since contract start for every active contract (getInvoiceRegenerationContracts()
-     * previously called getRentalPeriodsForContract() for all ~5,000 active contracts)
-     * was timing out the modal — most contracts run for years, so that was thousands of
-     * unbounded DB queries per request.
+     * window, and stops as soon as a completed period is found. Meant to be called only
+     * against the (much smaller) candidate set from contractIdsWithRecentCompletedJobs()
+     * — see that method's doc comment for why iterating every active contract directly
+     * was too slow on its own.
      */
     public function hasRecentCompletedPeriod(Contract $contract, Carbon $sinceDate): bool
     {

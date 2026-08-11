@@ -247,8 +247,19 @@ class InvoiceController extends Controller
     private function getInvoiceRegenerationContracts()
     {
         $invoiceService = app(InvoiceGenerationService::class);
+        $sinceDate = now()->subMonths(12);
+
+        // Bulk pre-filter first (one indexed query) so the expensive per-contract check
+        // below only runs against contracts that could plausibly qualify, instead of all
+        // ~5,000 active contracts — see contractIdsWithRecentCompletedJobs()'s doc comment.
+        $candidateContractIds = $invoiceService->contractIdsWithRecentCompletedJobs($sinceDate);
+
+        if ($candidateContractIds->isEmpty()) {
+            return collect();
+        }
 
         return Contract::with(['customer:id,name', 'quotation:id,payment_method,billing_methods,existing_contract_id'])
+            ->whereIn('id', $candidateContractIds)
             ->where(function ($query) {
                 $query->where('contract_status', 'active')
                     ->orWhere('status', 'active');
@@ -260,9 +271,9 @@ class InvoiceController extends Controller
             })
             ->orderByDesc('id')
             ->get()
-            ->filter(function (Contract $contract) use ($invoiceService) {
+            ->filter(function (Contract $contract) use ($invoiceService, $sinceDate) {
                 try {
-                    return $invoiceService->hasRecentCompletedPeriod($contract, now()->subMonths(12));
+                    return $invoiceService->hasRecentCompletedPeriod($contract, $sinceDate);
                 } catch (\Throwable $e) {
                     return false;
                 }
