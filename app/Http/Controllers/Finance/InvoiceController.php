@@ -249,17 +249,20 @@ class InvoiceController extends Controller
         $invoiceService = app(InvoiceGenerationService::class);
         $sinceDate = now()->subMonths(12);
 
-        // Bulk pre-filter first (one indexed query) so the expensive per-contract check
-        // below only runs against contracts that could plausibly qualify, instead of all
-        // ~5,000 active contracts — see contractIdsWithRecentCompletedJobs()'s doc comment.
-        $candidateContractIds = $invoiceService->contractIdsWithRecentCompletedJobs($sinceDate);
-
-        if ($candidateContractIds->isEmpty()) {
-            return collect();
-        }
-
+        // contractIdsWithRecentCompletedJobs() (one indexed query, ~0.3s on staging vs.
+        // the ~5,000 active contracts it replaces) is the only filter here. It was
+        // originally followed by a precise per-contract hasRecentCompletedPeriod() check
+        // (correct period-boundary + rental-trigger-type matching), but that alone still
+        // took ~3s+ PER CONTRACT (getCandidateInvoiceJobsQuery()'s heavily-eager-loaded
+        // query, run up to ~12x for contracts with no qualifying period) — confirmed via
+        // direct timing on staging, still didn't finish for 37 candidate contracts after
+        // several minutes. "Has a billable-completed job in the window" is a good enough
+        // signal for this manual admin picker: the exact per-period trigger/duplicate
+        // check still runs correctly when the operator actually proceeds with generation
+        // (checkExistingInvoice), so an occasional over-inclusive candidate here just
+        // no-ops there instead of corrupting anything.
         return Contract::with(['customer:id,name', 'quotation:id,payment_method,billing_methods,existing_contract_id'])
-            ->whereIn('id', $candidateContractIds)
+            ->whereIn('id', $invoiceService->contractIdsWithRecentCompletedJobs($sinceDate))
             ->where(function ($query) {
                 $query->where('contract_status', 'active')
                     ->orWhere('status', 'active');
@@ -270,15 +273,7 @@ class InvoiceController extends Controller
                     ->whereNotNull('new_contract_id');
             })
             ->orderByDesc('id')
-            ->get()
-            ->filter(function (Contract $contract) use ($invoiceService, $sinceDate) {
-                try {
-                    return $invoiceService->hasRecentCompletedPeriod($contract, $sinceDate);
-                } catch (\Throwable $e) {
-                    return false;
-                }
-            })
-            ->values();
+            ->get();
     }
 
     public function getRegenerationContracts()

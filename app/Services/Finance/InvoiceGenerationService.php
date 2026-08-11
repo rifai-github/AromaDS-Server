@@ -1599,16 +1599,24 @@ class InvoiceGenerationService
     }
 
     /**
-     * Bulk pre-filter for the "Regenerate Invoice" contract picker: one indexed query
-     * returning contract IDs that have at least one billable-completed job in the given
-     * lookback window, instead of asking hasRecentCompletedPeriod() to check every
-     * active contract one by one. On staging there are ~5,000 active contracts; the vast
+     * Bulk eligibility filter for the "Regenerate Invoice" contract picker: one indexed
+     * query returning contract IDs that have at least one billable-completed job in the
+     * given lookback window. On staging there are ~5,000 active contracts; the vast
      * majority have no completed job in the last 12 months at all, so this single query
-     * (job_schedules join job_advices) shrinks the candidate set before the more
-     * expensive per-contract period-boundary + trigger-matching check ever runs. Without
-     * this, hasRecentCompletedPeriod() alone still iterated all ~5,000 contracts (each
-     * running getPeriodStatus()'s heavily-eager-loaded query up to ~12 times) and never
-     * finished within the request/CLI timeout.
+     * (job_schedules join job_advices, ~0.3s on staging) is what the picker's contract
+     * list is scoped to.
+     *
+     * A precise per-contract check (correct period-boundary math + rental-trigger-type
+     * matching, mirroring getRentalPeriodsForContract()) was tried and removed: even
+     * limited to a 12-month lookback with early-exit, it still took 3s+ PER CONTRACT
+     * (getPeriodStatus()'s heavily-eager-loaded getCandidateInvoiceJobsQuery(), run up to
+     * ~12x for a contract with no qualifying period) — confirmed via direct timing on
+     * staging, it still hadn't finished for just 37 candidate contracts after several
+     * minutes. "Has a billable-completed job in the window" is a good enough signal for
+     * this manual admin picker: the exact per-period trigger/duplicate check still runs
+     * correctly when the operator actually proceeds with generation (checkExistingInvoice
+     * in autoGenerateInvoiceForRentalPeriod), so an occasional over-inclusive candidate
+     * here just no-ops there instead of corrupting anything.
      */
     public function contractIdsWithRecentCompletedJobs(Carbon $sinceDate): \Illuminate\Support\Collection
     {
@@ -1621,50 +1629,6 @@ class InvoiceGenerationService
             ->whereNotNull('job_advices.contract_id')
             ->distinct()
             ->pluck('job_advices.contract_id');
-    }
-
-    /**
-     * Cheap eligibility check for the "Regenerate Invoice" contract picker: whether this
-     * contract has at least one 'completed' rental period within the given lookback
-     * window. Mirrors getRentalPeriodsForContract()'s period-boundary math exactly (so
-     * period dates/ordering stay identical) but only runs the expensive per-period
-     * job-completion query (getPeriodStatus(), which hits the DB) for periods inside the
-     * window, and stops as soon as a completed period is found. Meant to be called only
-     * against the (much smaller) candidate set from contractIdsWithRecentCompletedJobs()
-     * — see that method's doc comment for why iterating every active contract directly
-     * was too slow on its own.
-     */
-    public function hasRecentCompletedPeriod(Contract $contract, Carbon $sinceDate): bool
-    {
-        $currentDate = $contract->start_date;
-        $endDate = $contract->end_date;
-
-        if (! $currentDate || ! $endDate) {
-            return false;
-        }
-
-        $periodType = $contract->invoice_period_type ?? 'contract_date';
-        $topIntervalMonths = max(1, (int) ($contract->top_interval_months ?? 1));
-
-        while ($currentDate <= $endDate) {
-            if ($periodType === 'monthly') {
-                $periodEnd = $currentDate->copy()->endOfMonth();
-                $periodEnd = ($periodEnd > $endDate) ? $endDate : $periodEnd;
-            } else {
-                $periodEnd = $currentDate->copy()->addMonths($topIntervalMonths)->subDay();
-                $periodEnd = ($periodEnd > $endDate) ? $endDate : $periodEnd;
-            }
-
-            if ($periodEnd->gte($sinceDate) && $this->getPeriodStatus($contract, $currentDate, $periodEnd) === 'completed') {
-                return true;
-            }
-
-            $currentDate = $periodType === 'monthly'
-                ? $currentDate->copy()->addMonth()->startOfMonth()
-                : $currentDate->copy()->addMonths($topIntervalMonths);
-        }
-
-        return false;
     }
 
     /**
