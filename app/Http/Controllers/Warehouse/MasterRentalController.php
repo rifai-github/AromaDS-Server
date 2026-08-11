@@ -957,8 +957,12 @@ class MasterRentalController extends Controller
             $productTypesQuery = \App\Models\ProductCategory::with(['masterProducts' => function ($query) use ($scopedProductCategoryId, $scopedProductTypeId) {
                 $query->with(['packagingSize', 'productCategory', 'productType'])
                     ->where('is_active', true)
-                    ->when($scopedProductTypeId, fn ($q) => $q->where('product_type_id', $scopedProductTypeId))
-                    ->when(! $scopedProductTypeId && $scopedProductCategoryId, fn ($q) => $q->where('product_category_id', $scopedProductCategoryId))
+                    ->when($scopedProductCategoryId, fn ($q) => $q->where('product_category_id', $scopedProductCategoryId))
+                    // A product with no product_type_id is still valid for this category (users can forget to
+                    // classify it), so narrowing by type must not silently exclude untyped products.
+                    ->when($scopedProductTypeId, fn ($q) => $q->where(function ($sub) use ($scopedProductTypeId) {
+                        $sub->where('product_type_id', $scopedProductTypeId)->orWhereNull('product_type_id');
+                    }))
                     ->orderBy('name');
             }])
                 ->whereNotNull('sku_prefix')
@@ -993,8 +997,10 @@ class MasterRentalController extends Controller
             // Get all products only from the same category/type context as the rental detail.
             $allProducts = \App\Models\MasterProduct::with(['packagingSize', 'productCategory', 'productType'])
                 ->where('is_active', true)
-                ->when($scopedProductTypeId, fn ($query) => $query->where('product_type_id', $scopedProductTypeId))
-                ->when(! $scopedProductTypeId && $scopedProductCategoryId, fn ($query) => $query->where('product_category_id', $scopedProductCategoryId))
+                ->when($scopedProductCategoryId, fn ($query) => $query->where('product_category_id', $scopedProductCategoryId))
+                ->when($scopedProductTypeId, fn ($query) => $query->where(function ($sub) use ($scopedProductTypeId) {
+                    $sub->where('product_type_id', $scopedProductTypeId)->orWhereNull('product_type_id');
+                }))
                 ->orderBy('name')
                 ->get()
                 ->map(function ($product) {
@@ -1112,7 +1118,9 @@ class MasterRentalController extends Controller
         return MasterProduct::with(['packagingSize', 'productCategory', 'productType'])
             ->where('is_active', true)
             ->where('product_category_id', $productCategoryId)
-            ->when($productTypeId, fn ($query) => $query->where('product_type_id', $productTypeId))
+            ->when($productTypeId, fn ($query) => $query->where(function ($sub) use ($productTypeId) {
+                $sub->where('product_type_id', $productTypeId)->orWhereNull('product_type_id');
+            }))
             ->orderBy('name')
             ->get();
     }
