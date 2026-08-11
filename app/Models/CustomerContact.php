@@ -18,20 +18,18 @@ class CustomerContact extends Model
     protected static function boot()
     {
         parent::boot();
-        
-        // Validasi saat creating: customer_id wajib diisi
+
+        // customer_id boleh kosong saat creating: dipakai oleh flow "Tambah Kontak
+        // Cepat" dari modal Create Customer (context 'customer-create'), di mana
+        // customer belum tersimpan/punya ID. Contact-nya di-link belakangan oleh
+        // CustomerController::store() via contact_ids. Cukup log untuk observability,
+        // jangan blok pembuatannya.
         static::creating(function ($contact) {
             if (empty($contact->customer_id)) {
-                \Log::error('Attempt to create contact without customer_id', [
+                \Log::info('Creating contact without customer_id (expected for pending customer-create flow)', [
                     'name' => $contact->name,
                     'position' => $contact->position,
-                    'trace' => debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5)
                 ]);
-                
-                throw new \Exception(
-                    'Customer ID wajib diisi untuk membuat contact. ' .
-                    'Silakan refresh halaman kembali atau lewati pembuatan customer contact ini.'
-                );
             }
         });
     }
