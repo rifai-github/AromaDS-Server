@@ -538,6 +538,33 @@ class MarketingPipelineController extends Controller
     }
 
     /**
+     * Search active buildings for the pipeline Building dropdown (select2 AJAX).
+     */
+    public function searchBuildings(Request $request)
+    {
+        $search = trim((string) $request->get('q', ''));
+
+        $buildings = Building::where('status_update', true)
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where('name', 'like', '%' . $search . '%');
+            })
+            ->orderBy('name')
+            ->limit(20)
+            ->get(['id', 'name', 'alamat_1', 'address', 'alamat_2'])
+            ->map(function (Building $building) {
+                return [
+                    'id' => $building->id,
+                    'name' => $building->name,
+                    'text' => $building->name,
+                    'address1' => $building->alamat_1 ?? $building->address ?? '',
+                    'address2' => $building->alamat_2 ?? '',
+                ];
+            });
+
+        return response()->json($buildings);
+    }
+
+    /**
      * Get employees by branch and team for pipeline assignment
      */
     public function getEmployeesByBranchAndTeam(Request $request)

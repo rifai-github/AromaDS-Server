@@ -260,6 +260,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::put('pipeline/{pipeline}', [MarketingPipelineController::class, 'update'])->name('pipeline.update');
         Route::delete('pipeline/{pipeline}', [MarketingPipelineController::class, 'destroy'])->name('pipeline.destroy');
         Route::get('pipeline/customers/search', [MarketingPipelineController::class, 'searchCustomers'])->name('pipeline.customers.search');
+        Route::get('pipeline/buildings/search', [MarketingPipelineController::class, 'searchBuildings'])->name('pipeline.buildings.search');
         Route::get('pipeline/employees/by-branch-team', [MarketingPipelineController::class, 'getEmployeesByBranchAndTeam'])->name('pipeline.employees.by-branch-team');
         Route::get('pipeline/statistics', [MarketingPipelineController::class, 'getStatistics'])->name('pipeline.statistics');
         Route::post('pipeline/bulk-delete', [MarketingPipelineController::class, 'bulkDelete'])->name('pipeline.bulk-delete');

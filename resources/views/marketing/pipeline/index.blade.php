@@ -1692,9 +1692,6 @@ function openCreateModal() {
                     <div style="flex: 1; min-width: 0;">
                         <select class="form-input select2-building" id="building_id" name="building_id" style="width: 100%;">
                             <option value="">Pilih atau ketik disini..</option>
-                            @foreach($buildings as $building)
-                                <option value="{{ $building->id }}" data-name="{{ $building->name }}" data-address="{{ $building->alamat_1 ?? $building->address }}" data-address2="{{ $building->alamat_2 }}">{{ $building->name }}</option>
-                            @endforeach
                         </select>
                     </div>
                     <button type="button" class="btn btn-success btn-sm" onclick="showAddBuildingModal()" style="height: 38px; width: 40px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
@@ -1875,7 +1872,43 @@ function openCreateModal() {
             $('.select2-building').select2({
                 placeholder: 'Pilih atau ketik untuk mencari building...',
                 allowClear: true,
-                dropdownParent: $('body')
+                minimumInputLength: 0,
+                dropdownParent: $('body'),
+                ajax: {
+                    url: '{{ route("marketing.pipeline.buildings.search") }}',
+                    dataType: 'json',
+                    delay: 250,
+                    cache: false,
+                    data: function(params) {
+                        return { q: params.term || '' };
+                    },
+                    processResults: function(data) {
+                        return {
+                            results: $.map(data || [], function(building) {
+                                return {
+                                    id: building.id,
+                                    text: building.text || building.name,
+                                    name: building.name,
+                                    address1: building.address1,
+                                    address2: building.address2
+                                };
+                            })
+                        };
+                    }
+                }
+            });
+
+            // Stash address data onto the selected <option> so the 'change'
+            // handler below can read it via data-address/data-address2 for
+            // both AJAX-searched and manually-created buildings.
+            $('#building_id').on('select2:select', function(e) {
+                const data = e.params.data;
+                if (data && data.id) {
+                    const option = $(this).find('option[value="' + data.id + '"]');
+                    option.attr('data-name', data.name || data.text || '');
+                    option.attr('data-address', data.address1 || '');
+                    option.attr('data-address2', data.address2 || '');
+                }
             });
 
             $('.select2-contact').select2({
@@ -1970,9 +2003,7 @@ function openEditModal(id) {
                                     <div style="flex: 1; min-width: 0;">
                                         <select class="form-input select2-building-edit" id="building_id_edit" name="building_id" style="width: 100%;">
                                             <option value="">Pilih atau ketik disini..</option>
-                                            @foreach($buildings as $building)
-                                                <option value="{{ $building->id }}" data-name="{{ $building->name }}" data-address="{{ $building->alamat_1 ?? $building->address }}" data-address2="{{ $building->alamat_2 }}" ${data.building_id == {{ $building->id }} ? 'selected' : ''}>{{ $building->name }}</option>
-                                            @endforeach
+                                            ${data.building ? `<option value="${data.building.id}" data-name="${data.building.name}" data-address="${data.building.alamat_1 || data.building.address || ''}" data-address2="${data.building.alamat_2 || ''}" selected>${data.building.name}</option>` : ''}
                                         </select>
                                     </div>
                                     <button type="button" class="btn btn-success btn-sm" onclick="showAddBuildingModal()" style="height: 38px; width: 40px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
@@ -2208,20 +2239,55 @@ function openEditModal(id) {
                     $('.select2-building-edit').select2({
                         dropdownParent: $('body'),
                         placeholder: 'Pilih atau ketik disini..',
-                        allowClear: true
+                        allowClear: true,
+                        minimumInputLength: 0,
+                        ajax: {
+                            url: '{{ route("marketing.pipeline.buildings.search") }}',
+                            dataType: 'json',
+                            delay: 250,
+                            cache: false,
+                            data: function(params) {
+                                return { q: params.term || '' };
+                            },
+                            processResults: function(data) {
+                                return {
+                                    results: $.map(data || [], function(building) {
+                                        return {
+                                            id: building.id,
+                                            text: building.text || building.name,
+                                            name: building.name,
+                                            address1: building.address1,
+                                            address2: building.address2
+                                        };
+                                    })
+                                };
+                            }
+                        }
                     });
-                    
+
+                    // Stash address data onto the selected <option> for both
+                    // AJAX-searched and manually-created buildings.
+                    $('#building_id_edit').on('select2:select', function(e) {
+                        const selData = e.params.data;
+                        if (selData && selData.id) {
+                            const option = $(this).find('option[value="' + selData.id + '"]');
+                            option.attr('data-name', selData.name || selData.text || '');
+                            option.attr('data-address', selData.address1 || '');
+                            option.attr('data-address2', selData.address2 || '');
+                        }
+                    });
+
                     // Event listener for building change in edit modal
                     $('#building_id_edit').on('change', function() {
                         const selectedOption = $(this).find('option:selected');
                         const addr1 = selectedOption.attr('data-address') || '';
                         const addr2 = selectedOption.attr('data-address2') || '';
-                        
+
                         let fullAddress = addr1;
                         if (addr2) {
                             fullAddress = addr1 ? (addr1 + ', ' + addr2) : addr2;
                         }
-                        
+
                         if (fullAddress) {
                             $('#company_address_edit').val(fullAddress);
                         }

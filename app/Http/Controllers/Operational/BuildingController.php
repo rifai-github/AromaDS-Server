@@ -345,7 +345,7 @@ class BuildingController extends Controller
             'phone_2' => $request->phone_2,
             'fax' => $request->fax,
             'email' => $request->email,
-            'status_update' => filter_var($request->status_update, FILTER_VALIDATE_BOOLEAN),
+            'status_update' => $request->has('status_update') ? filter_var($request->status_update, FILTER_VALIDATE_BOOLEAN) : true,
             'created_by' => Auth::id(),
         ]);
 
