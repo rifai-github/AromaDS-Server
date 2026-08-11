@@ -5,6 +5,7 @@ namespace App\Services\Finance;
 use App\Models\Building;
 use App\Models\Contract;
 use App\Models\ContractFile;
+use App\Models\Finance\BillingGroup;
 use App\Models\Invoice;
 use App\Models\InvoiceFile;
 use App\Models\JobSchedule;
@@ -41,7 +42,7 @@ class InvoiceGenerationService
         try {
             DB::beginTransaction();
 
-            $contract = Contract::with(['customer', 'contractRentals', 'billingGroup', 'quotation'])
+            $contract = Contract::with(['customer', 'contractRentals', 'billingGroup', 'billingGroups.buildings', 'contractRooms.room', 'quotation'])
                 ->whereKey($contractId)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -84,6 +85,21 @@ class InvoiceGenerationService
                         'message' => 'Invoice cannot be generated: BA Files are required (BA Files Supported is ON) but some jobs do not have verified BA files.',
                     ];
                 }
+            }
+
+            // A contract can legitimately have more than one active BillingGroup (each
+            // scoped to different buildings/rooms). When that's the case, split into
+            // one invoice per billing group instead of a single contract-wide invoice.
+            // Zero or exactly one active billing group keeps the original single-invoice
+            // behavior below untouched.
+            $activeBillingGroups = $contract->billingGroups->where('is_active', true)->values();
+
+            if ($activeBillingGroups->count() > 1) {
+                $result = $this->generateInvoicesPerBillingGroup($contract, $activeBillingGroups, $rentalPeriod, $periodStart, $periodEnd);
+
+                DB::commit();
+
+                return $result;
             }
 
             // Check if invoice already exists for this period
@@ -186,17 +202,35 @@ class InvoiceGenerationService
     }
 
     /**
-     * Check if invoice already exists for this period
+     * Check if invoice already exists for this period.
+     *
+     * When $scopeByBillingGroup is true, the lookup is additionally scoped to
+     * $billingGroupId (including explicitly matching NULL for the "default"/leftover
+     * bucket) so that generating one billing group's invoice for a period does not
+     * block another billing group's invoice for the same period, and so that
+     * per-billing-group generation stays idempotent on re-run. Existing callers that
+     * don't pass these two params keep the original contract+period-only behavior.
      */
-    private function checkExistingInvoice(int $contractId, string $contractNumber, string $rentalPeriod, Carbon $periodStart, Carbon $periodEnd): ?Invoice
+    private function checkExistingInvoice(int $contractId, string $contractNumber, string $rentalPeriod, Carbon $periodStart, Carbon $periodEnd, ?int $billingGroupId = null, bool $scopeByBillingGroup = false): ?Invoice
     {
-        return Invoice::where(function ($query) use ($contractId, $contractNumber) {
+        $query = Invoice::where(function ($query) use ($contractId, $contractNumber) {
             $query->where('contract_id', $contractId)
                 ->orWhere('contract_number', $contractNumber);
         })
             ->where('invoice_status', '!=', Invoice::STATUS_CANCELLED)
-            ->where('period_invoice', $rentalPeriod)
-            ->first();
+            ->where('period_invoice', $rentalPeriod);
+
+        if ($scopeByBillingGroup) {
+            $query->where(function ($query) use ($billingGroupId) {
+                if ($billingGroupId === null) {
+                    $query->whereNull('billing_group_id');
+                } else {
+                    $query->where('billing_group_id', $billingGroupId);
+                }
+            });
+        }
+
+        return $query->first();
     }
 
     private function getInvoiceTiming(Contract $contract): string
@@ -459,9 +493,15 @@ class InvoiceGenerationService
     }
 
     /**
-     * Create invoice for rental period
+     * Create invoice for rental period.
+     *
+     * $billingGroupOverride is used by the per-billing-group split
+     * (generateInvoicesPerBillingGroup()) to stamp a specific billing group's
+     * PIC/tax/address/billing_group_id on the invoice. When omitted, this falls
+     * back to $contract->billingGroup (latest), which is the original single-invoice
+     * behavior — unchanged for contracts with zero or one billing group.
      */
-    private function createInvoiceForRentalPeriod(Contract $contract, string $rentalPeriod, Carbon $periodStart, Carbon $periodEnd): Invoice
+    private function createInvoiceForRentalPeriod(Contract $contract, string $rentalPeriod, Carbon $periodStart, Carbon $periodEnd, ?BillingGroup $billingGroupOverride = null): Invoice
     {
         $invoiceNumber = $this->documentNumberService->generate(
             'invoice',
@@ -526,7 +566,7 @@ class InvoiceGenerationService
         $dueDate = $this->calculateDueDate($invoiceDate, $paymentTerms);
 
         // Helper to get Billing Group
-        $billingGroup = $contract->billingGroup;
+        $billingGroup = $billingGroupOverride ?? $contract->billingGroup;
 
         $invoice = Invoice::create([
             'invoice_number' => $invoiceNumber,
@@ -584,30 +624,224 @@ class InvoiceGenerationService
      */
     private function createInvoiceDetailsFromJobs(Invoice $invoice, Contract $contract, Carbon $periodStart, Carbon $periodEnd, array $billedRentals = []): \Illuminate\Database\Eloquent\Collection
     {
+        $pairs = $this->computeBillableRentalPairs($contract, $periodStart, $periodEnd, $billedRentals);
+
+        foreach ($pairs as $pair) {
+            $this->createInvoiceDetail($invoice, $pair['job'], $pair['rental']);
+        }
+
+        // Unfiltered (legacy/single-invoice) callers keep returning every ready job in the
+        // period, regardless of whether it actually contributed a rental line — this matches
+        // the original behavior relied on by attachApprovedBaFiles() for the single-invoice path.
+        return $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
+    }
+
+    /**
+     * Compute the (job, rental-detail) pairs that should be billed for this contract/period.
+     *
+     * $billedRentals is a list of billing keys (see invoiceRentalBillingKey()) to treat as
+     * already billed and therefore skip — used both for cross-invoice dedup within a single
+     * generation pass and for backfilling an already-drafted invoice.
+     *
+     * $allowedContractRoomIds, when not null, restricts results to rentals whose
+     * contract_room_id is in the given list — this is how per-billing-group invoice
+     * splitting scopes rental lines to only the rooms that belong to that billing group.
+     * Passing null (the default) bills every eligible room, i.e. the original behavior.
+     *
+     * @return array<int, array{job: JobSchedule, rental: array}>
+     */
+    private function computeBillableRentalPairs(Contract $contract, Carbon $periodStart, Carbon $periodEnd, array $billedRentals = [], ?array $allowedContractRoomIds = null): array
+    {
         $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
+        $pairs = [];
 
         foreach ($completedJobs as $jobSchedule) {
-            // Get rental details for this job
             $rentalDetails = $this->getRentalDetailsForJob($jobSchedule);
 
             foreach ($rentalDetails as $rental) {
+                if ($allowedContractRoomIds !== null && ! in_array($rental['contract_room_id'] ?? null, $allowedContractRoomIds, true)) {
+                    continue;
+                }
+
                 // Create a unique key for this rental: room + rental product
                 $billingKey = $this->invoiceRentalBillingKey($rental);
 
-                if (! in_array($billingKey, $billedRentals)) {
-                    $this->createInvoiceDetail($invoice, $jobSchedule, $rental);
-                    $billedRentals[] = $billingKey;
-                } else {
-                    Log::debug("Skipping duplicate billing for rental unit in invoice {$invoice->invoice_number}", [
+                if (in_array($billingKey, $billedRentals, true)) {
+                    Log::debug('Skipping duplicate billing for rental unit', [
                         'job_no' => $jobSchedule->job_number,
                         'room' => $rental['room_name'],
                         'rental' => $rental['rental_name'],
                     ]);
+
+                    continue;
+                }
+
+                $billedRentals[] = $billingKey;
+                $pairs[] = ['job' => $jobSchedule, 'rental' => $rental];
+            }
+        }
+
+        return $pairs;
+    }
+
+    /**
+     * Resolve which active billing group (if any) each of the contract's rooms belongs to.
+     *
+     * Mirrors the precedence BillingGroupService already uses elsewhere in the app:
+     * 1. An explicit ContractRoom::billing_group_id wins when it points at one of the
+     *    contract's currently-active billing groups.
+     * 2. Otherwise, fall back to the billing group whose BillingGroup::buildings() list
+     *    includes the room's building.
+     * Rooms matching neither are left out of the map entirely — callers treat those as the
+     * "leftover"/default bucket (constraint: rooms not covered by any billing group must
+     * still be billed).
+     *
+     * @return array<int, int> contract_room_id => billing_group_id
+     */
+    private function resolveContractRoomBillingGroupMap(Contract $contract, \Illuminate\Support\Collection $activeBillingGroups): array
+    {
+        $contract->loadMissing('contractRooms.room');
+
+        $buildingToGroup = [];
+        foreach ($activeBillingGroups as $billingGroup) {
+            foreach ($billingGroup->buildings as $building) {
+                // First active billing group claiming a building wins if a building was
+                // (incorrectly) assigned to more than one active billing group.
+                if (! isset($buildingToGroup[$building->id])) {
+                    $buildingToGroup[$building->id] = $billingGroup->id;
                 }
             }
         }
 
-        return $completedJobs;
+        $activeBillingGroupIds = $activeBillingGroups->pluck('id')->all();
+        $map = [];
+
+        foreach ($contract->contractRooms as $contractRoom) {
+            $billingGroupId = null;
+
+            if ($contractRoom->billing_group_id && in_array((int) $contractRoom->billing_group_id, $activeBillingGroupIds, true)) {
+                $billingGroupId = (int) $contractRoom->billing_group_id;
+            } elseif ($contractRoom->room?->building_id && isset($buildingToGroup[$contractRoom->room->building_id])) {
+                $billingGroupId = $buildingToGroup[$contractRoom->room->building_id];
+            }
+
+            if ($billingGroupId !== null) {
+                $map[$contractRoom->id] = $billingGroupId;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * Generate one invoice per active billing group for this rental period (plus a "default"
+     * invoice, without a billing_group_id, for any rooms not covered by any active billing
+     * group). Each invoice only contains rental line items for rooms belonging to its bucket.
+     *
+     * Called from within autoGenerateInvoiceForRentalPeriod()'s existing transaction, so all
+     * billing groups for this period either all succeed or all roll back together — matching
+     * the current all-or-nothing contract-level semantics.
+     */
+    private function generateInvoicesPerBillingGroup(Contract $contract, \Illuminate\Support\Collection $activeBillingGroups, string $rentalPeriod, Carbon $periodStart, Carbon $periodEnd): array
+    {
+        $roomBucketMap = $this->resolveContractRoomBillingGroupMap($contract, $activeBillingGroups);
+        $allRoomIds = $contract->contractRooms->pluck('id')->all();
+        $leftoverRoomIds = array_values(array_diff($allRoomIds, array_keys($roomBucketMap)));
+
+        $buckets = $activeBillingGroups
+            ->map(fn (BillingGroup $billingGroup) => [
+                'billing_group' => $billingGroup,
+                'room_ids' => array_keys(array_filter($roomBucketMap, fn ($bgId) => $bgId === $billingGroup->id)),
+            ])
+            ->values()
+            ->all();
+
+        // Default/leftover bucket: rooms not covered by any active billing group must still
+        // be billed somehow, using the same "no billing_group_id" behavior as before this fix.
+        $buckets[] = ['billing_group' => null, 'room_ids' => $leftoverRoomIds];
+
+        $generatedInvoices = [];
+        $existingInvoices = [];
+
+        foreach ($buckets as $bucket) {
+            $billingGroup = $bucket['billing_group'];
+            $billingGroupId = $billingGroup?->id;
+
+            // Compute (without persisting) whether this bucket has anything to bill before
+            // creating an invoice header/number for it, so an empty bucket doesn't burn a
+            // document number or leave a zero-amount invoice behind.
+            $pairs = $this->computeBillableRentalPairs($contract, $periodStart, $periodEnd, [], $bucket['room_ids']);
+            if (empty($pairs)) {
+                continue;
+            }
+
+            $existingInvoice = $this->checkExistingInvoice(
+                $contract->id,
+                $contract->contract_number,
+                $rentalPeriod,
+                $periodStart,
+                $periodEnd,
+                $billingGroupId,
+                true
+            );
+
+            if ($existingInvoice) {
+                $existingInvoices[] = $existingInvoice;
+
+                continue;
+            }
+
+            $invoice = $this->createInvoiceForRentalPeriod($contract, $rentalPeriod, $periodStart, $periodEnd, $billingGroup);
+
+            $jobIds = [];
+            foreach ($pairs as $pair) {
+                $this->createInvoiceDetail($invoice, $pair['job'], $pair['rental']);
+                $jobIds[] = $pair['job']->id;
+            }
+
+            // Scope BA-file/contract-file attachment to only the jobs that actually
+            // contributed a line to THIS invoice, so the same BA file isn't attached to
+            // more than one billing group's invoice for the same period.
+            $contributingJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)
+                ->whereIn('id', array_unique($jobIds))
+                ->values();
+
+            $this->attachApprovedBaFiles($invoice, $contributingJobs);
+            $this->attachVerifiedContractFiles($invoice, $contract);
+            $this->updateInvoiceTotals($invoice);
+
+            $generatedInvoices[] = $invoice;
+
+            Log::info('Auto-generated invoice for contract '.$contract->contract_number
+                .' billing group '.($billingGroupId ?? 'default')
+                ." rental period {$rentalPeriod}: {$invoice->invoice_number}");
+        }
+
+        if (empty($generatedInvoices)) {
+            if (! empty($existingInvoices)) {
+                return [
+                    'success' => false,
+                    'message' => 'Invoice already exists for this rental period',
+                    'existing_invoice' => $existingInvoices[0],
+                    'existing_invoices' => $existingInvoices,
+                ];
+            }
+
+            return [
+                'success' => false,
+                'message' => 'No completed billable rooms found for this billing period',
+            ];
+        }
+
+        return [
+            'success' => true,
+            'invoice' => $generatedInvoices[0],
+            'invoices' => $generatedInvoices,
+            'message' => 'Invoice(s) auto-generated successfully for rental period',
+            'rental_period' => $rentalPeriod,
+            'period_start' => $periodStart->toDateString(),
+            'period_end' => $periodEnd->toDateString(),
+        ];
     }
 
     /**
@@ -622,6 +856,7 @@ class InvoiceGenerationService
                 'contractRooms.room',
                 'customer',
                 'quotation',
+                'billingGroups.buildings',
             ])
             ->first();
 
@@ -631,12 +866,38 @@ class InvoiceGenerationService
 
         $periodStart = Carbon::parse($invoice->invoice_date)->startOfMonth();
         $periodEnd = Carbon::parse($invoice->invoice_date)->endOfMonth();
+
+        // If the contract has more than one active billing group, restrict the preview to
+        // just this invoice's own bucket (its billing group's rooms, or the leftover/default
+        // bucket when billing_group_id is null) — otherwise a repair run against one billing
+        // group's invoice would suggest rows that actually belong to a sibling invoice.
+        $allowedContractRoomIds = null;
+        $activeBillingGroups = $contract->billingGroups->where('is_active', true)->values();
+
+        if ($activeBillingGroups->count() > 1) {
+            $roomBucketMap = $this->resolveContractRoomBillingGroupMap($contract, $activeBillingGroups);
+
+            if ($invoice->billing_group_id) {
+                $allowedContractRoomIds = array_keys(array_filter(
+                    $roomBucketMap,
+                    fn ($billingGroupId) => $billingGroupId === (int) $invoice->billing_group_id
+                ));
+            } else {
+                $allRoomIds = $contract->contractRooms->pluck('id')->all();
+                $allowedContractRoomIds = array_values(array_diff($allRoomIds, array_keys($roomBucketMap)));
+            }
+        }
+
         $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
         $expected = [];
         $billedRentals = [];
 
         foreach ($completedJobs as $jobSchedule) {
             foreach ($this->getRentalDetailsForJob($jobSchedule) as $rental) {
+                if ($allowedContractRoomIds !== null && ! in_array($rental['contract_room_id'] ?? null, $allowedContractRoomIds, true)) {
+                    continue;
+                }
+
                 $billingKey = $this->invoiceRentalBillingKey($rental);
 
                 if (isset($billedRentals[$billingKey])) {
@@ -1343,47 +1604,61 @@ class InvoiceGenerationService
     public function attemptAutoInvoiceForContract(int $contractId): void
     {
         try {
+            $contract = Contract::with(['billingGroups.buildings', 'contractRooms.room'])->find($contractId);
+            if (! $contract) {
+                return;
+            }
+
+            $activeBillingGroups = $contract->billingGroups->where('is_active', true)->values();
+
             // Get all rental periods for this contract
             $periods = $this->getRentalPeriodsForContract($contractId);
 
             foreach ($periods as $period) {
                 // We only care about periods that are fully COMPLETED
-                if ($period['status'] === 'completed') {
-                    // Check if invoice already exists to avoid redundant processing
-                    $exists = $this->checkExistingInvoice(
+                if ($period['status'] !== 'completed') {
+                    continue;
+                }
+
+                $periodStart = Carbon::parse($period['period_start']);
+                $periodEnd = Carbon::parse($period['period_end']);
+
+                if ($activeBillingGroups->count() > 1) {
+                    $this->attemptAutoInvoiceForMultiBillingGroupPeriod($contract, $activeBillingGroups, $period, $periodStart, $periodEnd);
+
+                    continue;
+                }
+
+                // Check if invoice already exists to avoid redundant processing
+                $exists = $this->checkExistingInvoice(
+                    $contractId,
+                    $contract->contract_number ?? '',
+                    $period['rental_period'],
+                    $periodStart,
+                    $periodEnd
+                );
+
+                if (! $exists) {
+                    Log::info("Real-time Invoice Trigger: Attempting to generate invoice for Contract {$contractId}, Period {$period['rental_period']}");
+
+                    $result = $this->autoGenerateInvoiceForRentalPeriod(
                         $contractId,
-                        Contract::whereKey($contractId)->value('contract_number') ?? '',
                         $period['rental_period'],
-                        Carbon::parse($period['period_start']),
-                        Carbon::parse($period['period_end'])
+                        $periodStart,
+                        $periodEnd
                     );
 
-                    if (! $exists) {
-                        Log::info("Real-time Invoice Trigger: Attempting to generate invoice for Contract {$contractId}, Period {$period['rental_period']}");
-
-                        $result = $this->autoGenerateInvoiceForRentalPeriod(
-                            $contractId,
-                            $period['rental_period'],
-                            Carbon::parse($period['period_start']),
-                            Carbon::parse($period['period_end'])
-                        );
-
-                        if ($result['success']) {
-                            Log::info("Real-time Invoice Trigger: [SUCCESS] Generated Invoice {$result['invoice']->invoice_number}");
-                        } else {
-                            Log::warning('Real-time Invoice Trigger: [FAILED] '.$result['message']);
-                        }
-                    } elseif ($exists->invoice_status === Invoice::STATUS_DRAFT) {
-                        // A room/rental whose job completed after this period's invoice was
-                        // first drafted would otherwise never get billed (the existence check
-                        // above used to just skip). Backfill any missing rental lines while
-                        // the invoice is still a draft.
-                        $this->refreshDraftInvoiceRentalDetails(
-                            $exists,
-                            Carbon::parse($period['period_start']),
-                            Carbon::parse($period['period_end'])
-                        );
+                    if ($result['success']) {
+                        Log::info("Real-time Invoice Trigger: [SUCCESS] Generated Invoice {$result['invoice']->invoice_number}");
+                    } else {
+                        Log::warning('Real-time Invoice Trigger: [FAILED] '.$result['message']);
                     }
+                } elseif ($exists->invoice_status === Invoice::STATUS_DRAFT) {
+                    // A room/rental whose job completed after this period's invoice was
+                    // first drafted would otherwise never get billed (the existence check
+                    // above used to just skip). Backfill any missing rental lines while
+                    // the invoice is still a draft.
+                    $this->refreshDraftInvoiceRentalDetails($exists, $periodStart, $periodEnd);
                 }
             }
 
@@ -1393,11 +1668,80 @@ class InvoiceGenerationService
     }
 
     /**
+     * Real-time trigger handling for a completed period on a contract with more than one
+     * active billing group. Checks each billing-group bucket (plus the default/leftover
+     * bucket) independently: if any bucket is missing its invoice, delegates to
+     * autoGenerateInvoiceForRentalPeriod() (which internally creates whichever buckets are
+     * still missing for the period in one pass); buckets that already have a draft invoice
+     * get backfilled with any newly-completed room's rental lines, scoped to that bucket's
+     * own rooms only.
+     */
+    private function attemptAutoInvoiceForMultiBillingGroupPeriod(Contract $contract, \Illuminate\Support\Collection $activeBillingGroups, array $period, Carbon $periodStart, Carbon $periodEnd): void
+    {
+        $roomBucketMap = $this->resolveContractRoomBillingGroupMap($contract, $activeBillingGroups);
+        $allRoomIds = $contract->contractRooms->pluck('id')->all();
+        $leftoverRoomIds = array_values(array_diff($allRoomIds, array_keys($roomBucketMap)));
+
+        $buckets = $activeBillingGroups
+            ->map(fn (BillingGroup $billingGroup) => [
+                'billing_group_id' => $billingGroup->id,
+                'room_ids' => array_keys(array_filter($roomBucketMap, fn ($bgId) => $bgId === $billingGroup->id)),
+            ])
+            ->values()
+            ->all();
+        $buckets[] = ['billing_group_id' => null, 'room_ids' => $leftoverRoomIds];
+
+        $anyMissing = false;
+
+        foreach ($buckets as $bucket) {
+            $existing = $this->checkExistingInvoice(
+                $contract->id,
+                $contract->contract_number ?? '',
+                $period['rental_period'],
+                $periodStart,
+                $periodEnd,
+                $bucket['billing_group_id'],
+                true
+            );
+
+            if (! $existing) {
+                $anyMissing = true;
+            } elseif ($existing->invoice_status === Invoice::STATUS_DRAFT) {
+                $this->refreshDraftInvoiceRentalDetails($existing, $periodStart, $periodEnd, $bucket['room_ids']);
+            }
+        }
+
+        if (! $anyMissing) {
+            return;
+        }
+
+        Log::info("Real-time Invoice Trigger: Attempting to generate invoice(s) for Contract {$contract->id}, Period {$period['rental_period']} (multi billing group)");
+
+        $result = $this->autoGenerateInvoiceForRentalPeriod(
+            $contract->id,
+            $period['rental_period'],
+            $periodStart,
+            $periodEnd
+        );
+
+        if ($result['success']) {
+            Log::info('Real-time Invoice Trigger: [SUCCESS] Generated invoice(s): '.
+                collect($result['invoices'] ?? [$result['invoice']])->pluck('invoice_number')->implode(', '));
+        } else {
+            Log::warning('Real-time Invoice Trigger: [FAILED] '.($result['message'] ?? ''));
+        }
+    }
+
+    /**
      * Add any rental lines for completed jobs in the period that are missing from an
      * already-drafted invoice (e.g. a second room's job completed after the invoice for
      * this period was first generated from the first room's job).
+     *
+     * $allowedContractRoomIds scopes the backfill to a specific billing-group bucket's rooms
+     * (see attemptAutoInvoiceForMultiBillingGroupPeriod()); null bills every eligible room,
+     * which is the original single-invoice behavior.
      */
-    private function refreshDraftInvoiceRentalDetails(Invoice $invoice, Carbon $periodStart, Carbon $periodEnd): void
+    private function refreshDraftInvoiceRentalDetails(Invoice $invoice, Carbon $periodStart, Carbon $periodEnd, ?array $allowedContractRoomIds = null): void
     {
         $contract = $invoice->contract_id ? Contract::find($invoice->contract_id) : null;
         if (! $contract) {
@@ -1412,10 +1756,13 @@ class InvoiceGenerationService
             ]))
             ->all();
 
-        DB::transaction(function () use ($invoice, $contract, $periodStart, $periodEnd, $billedRentals) {
+        DB::transaction(function () use ($invoice, $contract, $periodStart, $periodEnd, $billedRentals, $allowedContractRoomIds) {
             $existingCount = $invoice->invoiceRentalDetails()->count();
 
-            $this->createInvoiceDetailsFromJobs($invoice, $contract, $periodStart, $periodEnd, $billedRentals);
+            $pairs = $this->computeBillableRentalPairs($contract, $periodStart, $periodEnd, $billedRentals, $allowedContractRoomIds);
+            foreach ($pairs as $pair) {
+                $this->createInvoiceDetail($invoice, $pair['job'], $pair['rental']);
+            }
 
             $invoice->refresh();
             if ($invoice->invoiceRentalDetails()->count() > $existingCount) {

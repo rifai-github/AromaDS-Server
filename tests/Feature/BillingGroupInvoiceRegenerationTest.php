@@ -4,9 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\Contract;
 use App\Models\Customer;
-use App\Models\Invoice as LegacyInvoice;
 use App\Models\Finance\BillingGroup;
 use App\Models\Finance\Invoice;
+use App\Models\Invoice as LegacyInvoice;
 use App\Models\JobSchedule;
 use App\Services\DocumentNumberService;
 use App\Services\Finance\BillingGroupService;
@@ -147,6 +147,22 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->id();
             $table->string('building_name')->nullable();
             $table->string('name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        // Backs BillingGroup::buildings(), which InvoiceGenerationService now eager-loads
+        // (contract_rooms.billing_group_id, resolved via BillingGroupService's existing
+        // precedence, is checked first — this pivot is the fallback building-level scope).
+        Schema::create('billing_group_buildings', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('billing_group_id')->nullable();
+            $table->foreignId('building_id')->nullable();
+            $table->decimal('billing_amount', 12, 2)->default(0);
+            $table->text('notes')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -345,6 +361,7 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'master_rentals',
             'contract_rooms',
             'master_rooms',
+            'billing_group_buildings',
             'buildings',
             'billing_groups',
             'contracts',
@@ -423,7 +440,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'total_price' => 120000,
         ]);
 
-        $service = new BillingGroupService(new class extends DocumentNumberService {
+        $service = new BillingGroupService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -551,7 +569,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $service = new BillingGroupService(new class extends DocumentNumberService {
+        $service = new BillingGroupService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -715,7 +734,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             ],
         ]);
 
-        $service = new BillingGroupService(new class extends DocumentNumberService {
+        $service = new BillingGroupService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -857,7 +877,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'total_price' => 1000000,
         ]);
 
-        $service = new BillingGroupService(new class extends DocumentNumberService {
+        $service = new BillingGroupService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -1051,7 +1072,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'total_price' => 3000000,
         ]);
 
-        $service = new BillingGroupService(new class extends DocumentNumberService {
+        $service = new BillingGroupService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -1142,7 +1164,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             ['job_schedule_id' => $jobSchedule->id, 'job_advice_room_id' => 802, 'room_id' => 302, 'room_name' => 'Ruang Anggrek', 'status' => 'pending', 'notes' => '[SUSPEND] Room suspended by Admin', 'created_at' => now(), 'updated_at' => now()],
         ]);
 
-        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -1175,7 +1198,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             serviceJobNo: 'JKT-CSR/26-05/0004'
         );
 
-        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -1217,7 +1241,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             serviceJobNo: 'JKT-CSR/26-05/0005'
         );
 
-        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -1284,7 +1309,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
 
         $contract = $contract->fresh(['quotation', 'contractRentals.masterRental', 'contractRooms.room']);
 
-        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -1390,7 +1416,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'ba_date' => '2026-06-26',
         ]);
 
-        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -1426,7 +1453,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
     {
         [$contract, $installJob, $serviceJob] = $this->makeContractWithUnitOnlyAndRefillOnlyInSameRoom();
 
-        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -1691,7 +1719,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'due_date' => '2026-07-11',
         ]);
 
-        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -1859,7 +1888,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -2030,7 +2060,8 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $service = new InvoiceGenerationService(new class extends DocumentNumberService {
+        $service = new InvoiceGenerationService(new class extends DocumentNumberService
+        {
             public function generate(
                 string $documentType,
                 ?string $branchCode = null,
@@ -2271,5 +2302,222 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
         ]);
 
         return [$contract, $installJob, $serviceJob];
+    }
+
+    /**
+     * Root-cause regression test: a contract with more than one ACTIVE billing group must
+     * get one invoice PER billing group per rental period, each scoped to only the rooms
+     * that belong to that billing group's building(s) — not a single contract-wide invoice
+     * that silently drops every billing group except the latest one.
+     */
+    public function test_multi_billing_group_contract_splits_into_one_invoice_per_billing_group(): void
+    {
+        DB::table('users')->insert([
+            'name' => 'Admin',
+            'email' => 'admin3@aroma.com',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $customer = Customer::create(['name' => 'Test Multi Billing Group']);
+        $contract = Contract::create([
+            'contract_number' => 'SBY-CA/26-08/0099',
+            'customer_id' => $customer->id,
+            'payment_terms' => 30,
+            'start_date' => '2026-08-01',
+            'end_date' => '2026-12-31',
+        ]);
+
+        $billingGroupA = BillingGroup::create([
+            'billing_group_name' => 'Billing Group A',
+            'customer_id' => $customer->id,
+            'contract_id' => $contract->id,
+            'billing_frequency' => 'monthly',
+            'is_active' => true,
+            'pic_name' => 'PIC A',
+        ]);
+        $billingGroupB = BillingGroup::create([
+            'billing_group_name' => 'Billing Group B',
+            'customer_id' => $customer->id,
+            'contract_id' => $contract->id,
+            'billing_frequency' => 'monthly',
+            'is_active' => true,
+            'pic_name' => 'PIC B',
+        ]);
+
+        DB::table('buildings')->insert([
+            ['id' => 901, 'building_name' => 'Gedung A', 'name' => 'Gedung A', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 902, 'building_name' => 'Gedung B', 'name' => 'Gedung B', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        // Building-level scoping is the fallback path (no explicit contract_rooms.billing_group_id
+        // set below), matching BillingGroup::buildings() as described in the root cause.
+        DB::table('billing_group_buildings')->insert([
+            ['billing_group_id' => $billingGroupA->id, 'building_id' => 901, 'billing_amount' => 1000000, 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
+            ['billing_group_id' => $billingGroupB->id, 'building_id' => 902, 'billing_amount' => 1500000, 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('master_rooms')->insert([
+            ['id' => 9011, 'building_id' => 901, 'room_name' => 'Ruang A', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 9021, 'building_id' => 902, 'room_name' => 'Ruang B', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rooms')->insert([
+            ['id' => 90101, 'contract_id' => $contract->id, 'room_id' => 9011, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 90201, 'contract_id' => $contract->id, 'room_id' => 9021, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('master_rentals')->insert([
+            ['id' => 90301, 'rental_name' => 'Rental A', 'rental_type' => 'unit_refill', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 90302, 'rental_name' => 'Rental B', 'rental_type' => 'unit_refill', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('contract_rentals')->insert([
+            ['id' => 90401, 'contract_id' => $contract->id, 'master_rental_id' => 90301, 'room_id' => 9011, 'quantity' => 1, 'unit_price' => 1000000, 'total_price' => 1000000, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 90402, 'contract_id' => $contract->id, 'master_rental_id' => 90302, 'room_id' => 9021, 'quantity' => 1, 'unit_price' => 1500000, 'total_price' => 1500000, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $jobAdviceId = DB::table('job_advices')->insertGetId([
+            'contract_id' => $contract->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $jobA = JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-08/0090',
+            'type' => 'service',
+            'status' => 'done_job',
+            'job_advice_id' => $jobAdviceId,
+            'room_id' => 9011,
+            'schedule_date' => '2026-08-10',
+            'ba_date' => '2026-08-10',
+        ]);
+        DB::table('job_advice_rooms')->insert([
+            'id' => 90501,
+            'job_advice_id' => $jobAdviceId,
+            'contract_room_id' => 90101,
+            'contract_rental_id' => 90401,
+            'rental_product_id' => 90301,
+            'service_job_schedule_id' => $jobA->id,
+            'room_name' => 'Ruang A',
+            'rental_name' => 'Rental A',
+            'status' => 'completed',
+            'is_trial' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'job_schedule_id' => $jobA->id,
+            'job_advice_room_id' => 90501,
+            'room_id' => 9011,
+            'room_name' => 'Ruang A',
+            'status' => 'completed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $jobB = JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-08/0091',
+            'type' => 'service',
+            'status' => 'done_job',
+            'job_advice_id' => $jobAdviceId,
+            'room_id' => 9021,
+            'schedule_date' => '2026-08-11',
+            'ba_date' => '2026-08-11',
+        ]);
+        DB::table('job_advice_rooms')->insert([
+            'id' => 90502,
+            'job_advice_id' => $jobAdviceId,
+            'contract_room_id' => 90201,
+            'contract_rental_id' => 90402,
+            'rental_product_id' => 90302,
+            'service_job_schedule_id' => $jobB->id,
+            'room_name' => 'Ruang B',
+            'rental_name' => 'Rental B',
+            'status' => 'completed',
+            'is_trial' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'job_schedule_id' => $jobB->id,
+            'job_advice_room_id' => 90502,
+            'room_id' => 9021,
+            'room_name' => 'Ruang B',
+            'status' => 'completed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $invoiceNumbers = ['SBY-INV/26-08/0090', 'SBY-INV/26-08/0091'];
+        $service = new InvoiceGenerationService(new class($invoiceNumbers) extends DocumentNumberService
+        {
+            private int $i = 0;
+
+            public function __construct(private array $numbers) {}
+
+            public function generate(
+                string $documentType,
+                ?string $branchCode = null,
+                ?int $buildingId = null,
+                ?int $contractId = null,
+                ?int $quotationId = null,
+                ?int $surveyId = null,
+                ?int $warehouseId = null,
+                ?int $branchId = null,
+                \DateTimeInterface|string|null $documentDate = null
+            ): string {
+                return $this->numbers[$this->i++];
+            }
+        });
+
+        $result = $service->autoGenerateInvoiceForRentalPeriod(
+            $contract->id,
+            'Period 1',
+            Carbon::parse('2026-08-01'),
+            Carbon::parse('2026-08-31')
+        );
+
+        $this->assertTrue($result['success'], $result['message'] ?? 'No message');
+        $this->assertCount(2, $result['invoices']);
+        $this->assertDatabaseCount('invoices', 2);
+
+        $invoiceA = Invoice::where('billing_group_id', $billingGroupA->id)->where('contract_id', $contract->id)->first();
+        $invoiceB = Invoice::where('billing_group_id', $billingGroupB->id)->where('contract_id', $contract->id)->first();
+
+        $this->assertNotNull($invoiceA);
+        $this->assertNotNull($invoiceB);
+        $this->assertNotSame($invoiceA->id, $invoiceB->id);
+        $this->assertSame('PIC A', $invoiceA->pic_finance);
+        $this->assertSame('PIC B', $invoiceB->pic_finance);
+
+        $this->assertDatabaseCount('invoice_rental_details', 2);
+        $this->assertDatabaseHas('invoice_rental_details', [
+            'invoice_id' => $invoiceA->id,
+            'room_name' => 'Ruang A',
+            'rental_name' => 'Rental A',
+            'total_price' => 1000000,
+        ]);
+        $this->assertDatabaseMissing('invoice_rental_details', [
+            'invoice_id' => $invoiceA->id,
+            'room_name' => 'Ruang B',
+        ]);
+        $this->assertDatabaseHas('invoice_rental_details', [
+            'invoice_id' => $invoiceB->id,
+            'room_name' => 'Ruang B',
+            'rental_name' => 'Rental B',
+            'total_price' => 1500000,
+        ]);
+        $this->assertDatabaseMissing('invoice_rental_details', [
+            'invoice_id' => $invoiceB->id,
+            'room_name' => 'Ruang A',
+        ]);
+        $this->assertDatabaseHas('invoices', ['id' => $invoiceA->id, 'subtotal' => 1000000]);
+        $this->assertDatabaseHas('invoices', ['id' => $invoiceB->id, 'subtotal' => 1500000]);
+
+        // Re-running generation for the same period must be idempotent per billing group
+        // (not just per contract) — neither billing group's invoice should be duplicated.
+        $resultAgain = $service->autoGenerateInvoiceForRentalPeriod(
+            $contract->id,
+            'Period 1',
+            Carbon::parse('2026-08-01'),
+            Carbon::parse('2026-08-31')
+        );
+        $this->assertFalse($resultAgain['success']);
+        $this->assertDatabaseCount('invoices', 2);
     }
 }
