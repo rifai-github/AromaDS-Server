@@ -3038,6 +3038,14 @@ class ContractController extends Controller
                 ->first(fn ($va) => filled($va->account_number) && ctype_digit($va->account_number));
 
             if ($existingVA) {
+                // Rows matched only via the name/description fallback (pre-dating the
+                // customer_id fix) are otherwise invisible to Contract::collectCustomerVirtualAccounts(),
+                // which looks up by customer_id only — self-heal them here instead of
+                // requiring a separate backfill pass.
+                if (empty($existingVA->customer_id)) {
+                    $existingVA->update(['customer_id' => $customer->id]);
+                }
+
                 Log::info("Virtual Account already exists for customer {$customer->name} (ID: {$customer->id}, VA ID: {$existingVA->id})");
 
                 return;
