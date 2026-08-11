@@ -5377,10 +5377,43 @@ class JobController extends Controller
             // 2. Validate and Get New Serial Number
             $newSnModel = \App\Models\SerialNumber::where('serial_number', $newSn)->first();
             if (!$newSnModel) {
-                 return response()->json([
-                    'status' => 'error',
-                    'message' => "Serial Number baru {$newSn} tidak terdaftar di sistem."
-                ], 404);
+                // TRIAL MODE (SN_BYPASS_ENABLED): allow swapping in a unit whose SN was
+                // never pre-registered. Product/warehouse context is inherited from the
+                // unit being replaced; if that context isn't resolvable we still reject,
+                // same as before, rather than guess.
+                if (\App\Services\SerialNumberBypassService::isEnabled()) {
+                    $oldSnForContext = $uow->serialNumber ?: \App\Models\SerialNumber::where('serial_number', $oldSn)->first();
+                    $contextProductId = $uow->product_id ?: $oldSnForContext?->master_product_id;
+                    $contextWarehouseId = $oldSnForContext?->warehouse_id;
+
+                    if ($contextProductId && $contextWarehouseId) {
+                        $newSnModel = \App\Models\SerialNumber::create([
+                            'serial_number' => \App\Models\SerialNumber::normalizeSerialCode($newSn),
+                            'master_product_id' => $contextProductId,
+                            'warehouse_id' => $contextWarehouseId,
+                            'status' => 'ready',
+                            'condition_status' => \App\Models\SerialNumber::CONDITION_NEW,
+                            'location_type' => 'technician',
+                            'location_id' => Auth::id(),
+                            'notes' => 'Auto-registered via SN bypass trial mode (swap unit)',
+                            'created_by' => Auth::id(),
+                            'updated_by' => Auth::id(),
+                        ]);
+
+                        \Log::warning("⚠️ SN bypass: auto-registered unknown serial number during swap unit", [
+                            'serial_number' => $newSn,
+                            'job_id' => $job->id,
+                            'unit_on_wall_id' => $uow->id,
+                        ]);
+                    }
+                }
+
+                if (!$newSnModel) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "Serial Number baru {$newSn} tidak terdaftar di sistem."
+                    ], 404);
+                }
             }
 
             // Check if new SN is already in use
@@ -5726,22 +5759,50 @@ class JobController extends Controller
         // STRICT VALIDATION: For install/install_free jobs, SN MUST be in verified materials
         // Install jobs cannot fallback to unit_on_wall - they are installing NEW units
         if (!$serialNumber && in_array(strtolower($job->type), ['install', 'install_free', 'install free'], true)) {
-            \Log::warning("❌ Serial number not found in verified materials for INSTALL job", [
-                'serial_number' => $serialNumberInput,
-                'job_id' => $job->id,
-                'job_number' => $job->job_number,
-                'job_type' => $job->type,
-                'material_issue_numbers' => $materialIssueNumbers,
-                'inventory_issuing_ids' => $inventoryIssuingIds,
-            ]);
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Serial number tidak terdaftar di material job ini. Untuk job INSTALL, SN harus sudah terverifikasi saat verifikasi material di gudang.',
-                'expected_serial_numbers' => isset($inventoryIssuingItems)
-                    ? $inventoryIssuingItems->pluck('serialNumber.serial_number')->filter()->values()->toArray()
-                    : [],
-            ], 404);
+            // TRIAL MODE (SN_BYPASS_ENABLED): allow scanning a SN the warehouse never
+            // pre-linked. We still register + link it for real so job completion /
+            // Unit On Wall behave exactly as if it had gone through the normal flow.
+            if (\App\Services\SerialNumberBypassService::isEnabled()) {
+                $bypassItem = $this->resolveBypassIssuingItemForInstall($inventoryIssuingIds, $selectedRoomName);
+                if ($bypassItem) {
+                    $serialNumber = \App\Services\SerialNumberBypassService::registerAndLinkSerial(
+                        $serialNumberInput,
+                        $bypassItem,
+                        'on_hand',
+                        'technician',
+                        Auth::id()
+                    );
+                    $serialNumber->load(['masterProduct.productType', 'warehouse']);
+                    $source = 'sn_bypass_trial';
+                    $snRoomName = $bypassItem->room_name ?: $selectedRoomName;
+
+                    \Log::warning("⚠️ SN bypass: auto-registered unknown serial number for INSTALL job", [
+                        'serial_number' => $serialNumberInput,
+                        'job_id' => $job->id,
+                        'job_number' => $job->job_number,
+                        'inventory_issuing_item_id' => $bypassItem->id,
+                    ]);
+                }
+            }
+
+            if (!$serialNumber) {
+                \Log::warning("❌ Serial number not found in verified materials for INSTALL job", [
+                    'serial_number' => $serialNumberInput,
+                    'job_id' => $job->id,
+                    'job_number' => $job->job_number,
+                    'job_type' => $job->type,
+                    'material_issue_numbers' => $materialIssueNumbers,
+                    'inventory_issuing_ids' => $inventoryIssuingIds,
+                ]);
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Serial number tidak terdaftar di material job ini. Untuk job INSTALL, SN harus sudah terverifikasi saat verifikasi material di gudang.',
+                    'expected_serial_numbers' => isset($inventoryIssuingItems)
+                        ? $inventoryIssuingItems->pluck('serialNumber.serial_number')->filter()->values()->toArray()
+                        : [],
+                ], 404);
+            }
         }
         
         // STEP 2: For remove job, directly check unit on wall (no material verification needed)
@@ -6018,6 +6079,53 @@ class JobController extends Controller
             'status' => 'error',
             'message' => 'Serial number tidak terdaftar untuk job ini. Pastikan SN sudah terverifikasi saat verifikasi material.'
         ], 404);
+    }
+
+    /**
+     * SN bypass (trial mode) helper: pick the single InventoryIssuingItem an unknown
+     * scanned SN should be registered/linked against for an install job. Only resolves
+     * when there is exactly one candidate product (optionally narrowed by room) - if the
+     * room/job has more than one SN-requiring product we refuse to guess and let the
+     * normal "not found" rejection stand.
+     */
+    private function resolveBypassIssuingItemForInstall(array $inventoryIssuingIds, ?string $selectedRoomName): ?\App\Models\InventoryIssuingItem
+    {
+        if (empty($inventoryIssuingIds)) {
+            return null;
+        }
+
+        $items = \App\Models\InventoryIssuingItem::whereIn('inventory_issuing_id', $inventoryIssuingIds)
+            ->with(['product', 'inventoryIssuing'])
+            ->get()
+            ->filter(function ($item) {
+                return $item->product && $item->product->requiresSerialNumber() && $item->inventoryIssuing;
+            });
+
+        if ($items->isEmpty()) {
+            return null;
+        }
+
+        if ($selectedRoomName) {
+            $roomFiltered = $items->filter(function ($item) use ($selectedRoomName) {
+                $roomName = $item->room_name;
+                if (!$roomName && $item->notes && preg_match('/Room:\s*([^,]+)/i', $item->notes, $matches)) {
+                    $roomName = trim($matches[1]);
+                }
+
+                return $roomName && trim(strtolower($roomName)) === trim(strtolower($selectedRoomName));
+            });
+
+            if ($roomFiltered->isNotEmpty()) {
+                $items = $roomFiltered;
+            }
+        }
+
+        $distinctProductIds = $items->pluck('product_id')->filter()->unique();
+        if ($distinctProductIds->count() !== 1) {
+            return null;
+        }
+
+        return $items->first();
     }
 
     private function serialConditionPayload(?\App\Models\SerialNumber $serialNumber): array

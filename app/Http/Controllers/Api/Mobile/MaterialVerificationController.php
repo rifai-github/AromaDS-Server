@@ -28,6 +28,13 @@ class MaterialVerificationController extends Controller
     public function verifyMaterials(Request $request, $jobScheduleId)
     {
         try {
+            // TRIAL MODE (SN_BYPASS_ENABLED): a scanned SN may not exist in serial_numbers
+            // yet (warehouse never pre-linked it), so we can't hard-require an id up front -
+            // resolveBypassMaterialSerials() will register/link it further down instead.
+            $serialNumberIdRule = \App\Services\SerialNumberBypassService::isEnabled()
+                ? 'nullable|integer|exists:serial_numbers,id'
+                : 'required_with:materials.*.serial_numbers|exists:serial_numbers,id';
+
             $request->validate([
                 'inventory_issuing_id' => 'required|exists:inventory_issuings,id',
                 'materials' => 'required|array',
@@ -38,7 +45,7 @@ class MaterialVerificationController extends Controller
                 'materials.*.serial_number_id' => 'nullable|exists:serial_numbers,id', // ID SN yang di-scan (optional)
                 'materials.*.serial_numbers' => 'nullable|array',
                 'materials.*.serial_numbers.*.serial_number' => 'required_with:materials.*.serial_numbers|string',
-                'materials.*.serial_numbers.*.serial_number_id' => 'required_with:materials.*.serial_numbers|exists:serial_numbers,id',
+                'materials.*.serial_numbers.*.serial_number_id' => $serialNumberIdRule,
             ]);
 
             DB::beginTransaction();
@@ -179,8 +186,14 @@ class MaterialVerificationController extends Controller
             // Update inventory issuing items with received quantities and link serial numbers
             foreach ($request->materials as $material) {
                 $item = InventoryIssuingItem::findOrFail($material['item_id']);
-                
-                // GROUPING FIX: Find all items with the same product in this issuing 
+
+                // TRIAL MODE (SN_BYPASS_ENABLED): register+link any scanned SN the
+                // warehouse never prepared, before we compare prepared vs submitted below.
+                if (\App\Services\SerialNumberBypassService::isEnabled()) {
+                    $material = $this->resolveBypassMaterialSerials($material, $item);
+                }
+
+                // GROUPING FIX: Find all items with the same product in this issuing
                 // to distribute the quantity if grouped items were sent as one
                 $siblingItems = InventoryIssuingItem::where('inventory_issuing_id', $inventoryIssuing->id)
                     ->where('product_id', $item->product_id)
@@ -535,6 +548,49 @@ class MaterialVerificationController extends Controller
                 'message' => 'Terjadi kesalahan: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * SN bypass (trial mode) helper: for any scanned serial in $material that has no
+     * resolvable serial_number_id yet, register+link it against $item via
+     * SerialNumberBypassService, then fill the id back in so the normal
+     * prepared-vs-submitted matching below just works.
+     */
+    private function resolveBypassMaterialSerials(array $material, InventoryIssuingItem $item): array
+    {
+        $resolve = function (?string $rawSerial, $rawId) use ($item) {
+            if (! empty($rawId)) {
+                return (int) $rawId;
+            }
+
+            $rawSerial = trim((string) $rawSerial);
+            if ($rawSerial === '') {
+                return null;
+            }
+
+            return \App\Services\SerialNumberBypassService::registerAndLinkSerial(
+                $rawSerial,
+                $item,
+                'on_hand',
+                'technician',
+                auth()->id()
+            )->id;
+        };
+
+        if (!empty($material['serial_numbers']) && is_array($material['serial_numbers'])) {
+            foreach ($material['serial_numbers'] as $idx => $entry) {
+                $material['serial_numbers'][$idx]['serial_number_id'] = $resolve(
+                    $entry['serial_number'] ?? null,
+                    $entry['serial_number_id'] ?? null
+                );
+            }
+        }
+
+        if (empty($material['serial_number_id']) && !empty($material['serial_number'])) {
+            $material['serial_number_id'] = $resolve($material['serial_number'], null);
+        }
+
+        return $material;
     }
 
     private function linkedSerialNumbersForItems($items)
