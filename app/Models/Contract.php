@@ -780,21 +780,43 @@ class Contract extends Model
     }
 
     /**
+     * Instance-level cache for getActualStartDateAttribute(), since it isn't backed
+     * by a real column and Eloquent won't memoize a plain accessor call on its own.
+     * Also settable via primeActualStartDate() so list pages can batch-load this
+     * for a whole page of contracts in one query instead of one query per row.
+     */
+    protected $actualStartDateCached = false;
+    protected $cachedActualStartDate;
+
+    /**
      * Get actual contract start date from BA date of first completed job schedule
      * Contract period starts after installation/service is completed (done_job with ba_date)
      * Returns null if no BA date exists (contract hasn't started yet)
      */
     public function getActualStartDateAttribute()
     {
-        // Get first BA date from completed job schedules (install or service type)
-        $firstBaDate = $this->jobSchedules()
-            ->whereNotNull('ba_date')
-            ->whereIn('job_schedules.type', ['install', 'install_free', 'service'])
-            ->orderBy('ba_date', 'asc')
-            ->value('ba_date');
-        
+        if (! $this->actualStartDateCached) {
+            // Get first BA date from completed job schedules (install or service type)
+            $this->cachedActualStartDate = $this->jobSchedules()
+                ->whereNotNull('ba_date')
+                ->whereIn('job_schedules.type', ['install', 'install_free', 'service'])
+                ->orderBy('ba_date', 'asc')
+                ->value('ba_date');
+            $this->actualStartDateCached = true;
+        }
+
         // Return BA date ONLY - no fallback (contract hasn't started if no BA date)
-        return $firstBaDate;
+        return $this->cachedActualStartDate;
+    }
+
+    /**
+     * Pre-seed the actual_start_date cache (e.g. from a bulk query on a list page)
+     * so getActualStartDateAttribute() skips its per-row DB query.
+     */
+    public function primeActualStartDate($baDate): void
+    {
+        $this->cachedActualStartDate = $baDate;
+        $this->actualStartDateCached = true;
     }
 
     /**

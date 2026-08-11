@@ -236,6 +236,27 @@ class ContractController extends Controller
             ]);
         }
 
+        // Batch-load the first BA date per contract in one query instead of letting
+        // Contract::getActualStartDateAttribute() run its own query per row (the
+        // index view reads actual_start_date/actual_end_date for every listed contract).
+        $contractIds = $contracts->pluck('id');
+        if ($contractIds->isNotEmpty()) {
+            $firstBaDates = DB::table('job_schedules')
+                ->join('job_advices', 'job_advices.id', '=', 'job_schedules.job_advice_id')
+                ->whereIn('job_advices.contract_id', $contractIds)
+                ->whereNotNull('job_schedules.ba_date')
+                ->whereIn('job_schedules.type', ['install', 'install_free', 'service'])
+                ->whereNull('job_schedules.deleted_at')
+                ->whereNull('job_advices.deleted_at')
+                ->selectRaw('job_advices.contract_id, MIN(job_schedules.ba_date) as first_ba_date')
+                ->groupBy('job_advices.contract_id')
+                ->pluck('first_ba_date', 'contract_id');
+
+            foreach ($contracts as $contract) {
+                $contract->primeActualStartDate($firstBaDates[$contract->id] ?? null);
+            }
+        }
+
         $marketingStaff = User::where('department_name', 'Marketing')->get();
 
         $statuses = MasterOption::where('name', 'Contract Status')->first()?->optionDetails ?? collect();
