@@ -3022,18 +3022,19 @@ class ContractController extends Controller
 
             // Check if a *usable* VA already exists for this customer.
             // Legacy Catalyst imports stuffed free text like "Bank Name - Holder (12345)"
-            // into account_number, which matches these name/description filters but is
-            // not a real generated VA (real ones are digits-only). Filtering to
-            // ctype_digit here stops that legacy junk from permanently blocking
-            // auto-generation of a proper VA number for the customer.
-            $existingVA = \App\Models\CompanyVirtualAccount::where(function ($q) use ($customer) {
-                $q->where('customer_id', $customer->id)
-                    ->orWhere('account_name', $customer->name)
-                    ->orWhere('account_name', 'like', "%{$customer->name}%")
-                    ->orWhere('description', 'like', "%Customer: {$customer->name}%")
-                    ->orWhere('description', 'like', "%customer: {$customer->name}%")
-                    ->orWhere('description', 'like', "%{$customer->name}%");
-            })
+            // into account_number, which matches an account_name filter but is not a
+            // real generated VA (real ones are digits-only) — filtering to ctype_digit
+            // stops that legacy junk from permanently blocking auto-generation of a
+            // proper VA number for the customer.
+            //
+            // Matching is customer_id-exact, or account_name-exact as a fallback for
+            // legacy rows that predate customer_id being recorded (importer always set
+            // account_name to the customer's full name verbatim). Do NOT use a `LIKE
+            // %name%` substring match here: two different customers whose names share a
+            // substring (e.g. "Agustina" vs "Agustina Rahayu") would false-positive
+            // against each other's VA and silently block generation for one of them.
+            $existingVA = \App\Models\CompanyVirtualAccount::where('customer_id', $customer->id)
+                ->orWhere('account_name', $customer->name)
                 ->get()
                 ->first(fn ($va) => filled($va->account_number) && ctype_digit($va->account_number));
 
