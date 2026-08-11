@@ -114,7 +114,7 @@ class CatalystMasterDataImporter
     private ?int $actorUserId = null;
     private ?int $defaultImportCompanyId = null;
 
-    public function run(array $requestedSteps = [], bool $apply = false, ?string $batchName = null, bool $exactSteps = false, ?callable $progressCallback = null): array
+    public function run(array $requestedSteps = [], bool $apply = false, ?string $batchName = null, bool $exactSteps = false, ?callable $progressCallback = null, array $excludeSteps = []): array
     {
         if (!extension_loaded('sqlsrv') && !extension_loaded('pdo_sqlsrv')) {
             throw new RuntimeException('PHP extension sqlsrv / pdo_sqlsrv belum aktif di CLI.');
@@ -125,7 +125,7 @@ class CatalystMasterDataImporter
         $this->heartbeatEvery = max(250, $this->chunkSize);
         $this->progressCallback = $progressCallback;
 
-        $steps = $this->resolveSteps($requestedSteps, ! $exactSteps);
+        $steps = $this->resolveSteps($requestedSteps, ! $exactSteps, $excludeSteps);
         $this->source()->getPdo();
         $this->ensureImportMapIndexes();
         $this->loadSourceLookups();
@@ -1806,14 +1806,14 @@ class CatalystMasterDataImporter
             : (str_contains($value, 'ud') ? 'ud' : 'other'));
     }
 
-    protected function resolveSteps(array $requestedSteps, bool $includeDependencies = true): array
+    protected function resolveSteps(array $requestedSteps, bool $includeDependencies = true, array $excludeSteps = []): array
     {
         if ($requestedSteps === []) {
-            return $this->steps;
+            return array_values(array_diff($this->steps, $excludeSteps));
         }
 
         if (! $includeDependencies) {
-            $steps = array_values(array_intersect($this->steps, $requestedSteps));
+            $steps = array_values(array_diff(array_intersect($this->steps, $requestedSteps), $excludeSteps));
             if ($steps === []) {
                 throw new RuntimeException('No valid import steps were requested.');
             }
@@ -1826,7 +1826,7 @@ class CatalystMasterDataImporter
             $this->collectStepDependencies($step, $resolved);
         }
 
-        $steps = array_values(array_intersect($this->steps, $resolved));
+        $steps = array_values(array_diff(array_intersect($this->steps, $resolved), $excludeSteps));
         if ($steps === []) {
             throw new RuntimeException('No valid import steps were requested.');
         }

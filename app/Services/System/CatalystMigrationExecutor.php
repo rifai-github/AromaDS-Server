@@ -10,6 +10,8 @@ use Throwable;
 
 class CatalystMigrationExecutor
 {
+    private const EXCLUDED_STEPS = ['warehouse_types', 'warehouses', 'warehouse_product_links'];
+
     public function __construct(
         protected CatalystMigrationRunService $runService,
         protected CatalystMasterDataImporter $importer,
@@ -77,6 +79,7 @@ class CatalystMigrationExecutor
             requestedSteps: [],
             apply: $apply,
             batchName: $label . ' #' . $runId,
+            excludeSteps: self::EXCLUDED_STEPS,
             progressCallback: function (string $step, array $summary) use ($runId): void {
                 $batchId = $this->detectLatestRunningBatchId();
                 $message = $this->formatProgressMessage($summary);

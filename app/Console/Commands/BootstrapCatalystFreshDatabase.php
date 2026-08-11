@@ -25,10 +25,7 @@ class BootstrapCatalystFreshDatabase extends Command
             'departments',
             'customer_categories',
             'customer_types',
-            'warehouse_types',
-            'warehouses',
             'master_products',
-            'warehouse_product_links',
             'master_rentals',
             'rental_components',
             'rental_details',
@@ -50,8 +47,6 @@ class BootstrapCatalystFreshDatabase extends Command
         }
 
         $plan[] = ['type' => 'artisan', 'label' => 'Import master core', 'command' => $importCommand];
-        $plan[] = ['type' => 'process', 'label' => 'Export warehouse links', 'command' => ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_product_warehouse_links.ps1')]];
-        $plan[] = ['type' => 'artisan', 'label' => 'Backfill product warehouses', 'command' => ['catalyst:backfill-product-warehouses', '--file=storage/app/catalyst/product_warehouse_links.csv']];
         $plan[] = ['type' => 'artisan', 'label' => 'Backfill product relations', 'command' => ['catalyst:backfill-product-relations']];
         $plan[] = ['type' => 'artisan', 'label' => 'Backfill rental details', 'command' => ['catalyst:backfill-rental-details']];
         $plan[] = ['type' => 'artisan', 'label' => 'Normalize rental detail duplicates', 'command' => ['catalyst:normalize-rental-detail-duplicates']];
