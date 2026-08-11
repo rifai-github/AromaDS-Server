@@ -3082,6 +3082,7 @@ class ContractController extends Controller
             // Create Virtual Account
             $virtualAccount = \App\Models\CompanyVirtualAccount::create([
                 'company_id' => $companyId,
+                'customer_id' => $customer->id,
                 'bank_payment_id' => $bankPayment->id,
                 'account_number' => $accountNumber,
                 'account_name' => $customer->name,
