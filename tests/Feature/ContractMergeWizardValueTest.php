@@ -501,7 +501,7 @@ class ContractMergeWizardValueTest extends TestCase
             'billing_group_name' => 'Billing Group 1',
             'customer_id' => 1,
             'contract_id' => $mergeContract->id,
-            'virtual_account_number' => 'VA-001',
+            'virtual_account_number' => '88997000001',
         ]);
 
         $freshContract = $mergeContract->fresh();
@@ -511,6 +511,6 @@ class ContractMergeWizardValueTest extends TestCase
             $freshContract->display_quotations->pluck('quotation_number')->all()
         );
         $this->assertSame('SBY-SQ/26-06/0020, SBY-SQ/26-06/0021', $freshContract->display_quotation_numbers);
-        $this->assertSame('VA-001', $freshContract->display_virtual_accounts);
+        $this->assertSame('88997000001', $freshContract->display_virtual_accounts);
     }
 }

@@ -410,6 +410,14 @@ class Contract extends Model
         $accounts = $accounts
             ->filter(fn ($account) => filled($account))
             ->map(fn ($account) => trim((string) $account))
+            // A real VA is always digits-only (see VirtualAccountRuleService /
+            // CompanyVirtualAccount::generateAccountNumber). Legacy Catalyst
+            // imports stuffed descriptive bank-account text (e.g. "Bank Central
+            // Asia - PT Pink Services Indonesia (123...)") into this same
+            // column, which is the company's own receiving account, not a
+            // per-customer VA — exclude it so this field only ever shows a
+            // real, usable VA number.
+            ->filter(fn ($account) => ctype_digit($account))
             ->unique()
             ->values();
 
