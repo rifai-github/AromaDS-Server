@@ -77,7 +77,7 @@ class JobWebCompletionService
             ? $this->storeFile($verification['pic_photo'], 'pic')
             : null;
 
-        $signaturePath = !empty($verification['signature_base64'])
+        $signaturePath = ! empty($verification['signature_base64'])
             ? $this->storeSignature($verification['signature_base64'], $jobScheduleId)
             : null;
 
@@ -90,11 +90,11 @@ class JobWebCompletionService
 
         // BA stamp (idempotent: only fill if empty), mirroring verifyJob:4156-4162.
         $now = now();
-        if (!$jobSchedule->ba_date) {
+        if (! $jobSchedule->ba_date) {
             $jobSchedule->ba_date = $now->toDateString();
         }
-        if (!$jobSchedule->ba_number) {
-            $jobSchedule->ba_number = JobSchedule::generateBaNumber();
+        if (! $jobSchedule->ba_number) {
+            $jobSchedule->ba_number = JobSchedule::resolveBaNumberForGroup($jobSchedule);
         }
         $jobSchedule->completed_at = $now;
         $jobSchedule->updated_by = $userId;
@@ -123,7 +123,7 @@ class JobWebCompletionService
                 'signature_file' => $signaturePath ?: $existingJobReport?->signature_file,
                 'signature_data' => $verification['signature_base64'] ?: $existingJobReport?->signature_data,
                 'pic_name' => $verification['pic_name'] ?: $existingJobReport?->pic_name,
-                'photos' => !empty($workPhotoPaths) ? $workPhotoPaths : ($existingJobReport?->photos ?: null),
+                'photos' => ! empty($workPhotoPaths) ? $workPhotoPaths : ($existingJobReport?->photos ?: null),
                 'photo_before' => $beforeWorkPhoto ?: $existingJobReport?->photo_before,
                 'photo_after' => $afterWorkPhoto ?: $existingJobReport?->photo_after,
                 'completed_at' => $now,
@@ -181,7 +181,7 @@ class JobWebCompletionService
             ]);
 
             $roomsToMove = $sourceJob->jobScheduleRooms
-                ->filter(fn ($room) => !in_array($room->status, [
+                ->filter(fn ($room) => ! in_array($room->status, [
                     JobScheduleRoom::STATUS_COMPLETED,
                     JobScheduleRoom::STATUS_CANCELLED,
                 ], true))
@@ -221,7 +221,7 @@ class JobWebCompletionService
             $sourceJob->save();
         }
 
-        if (!$processedAnyRoom) {
+        if (! $processedAnyRoom) {
             $job->status = 'meninggalkan_lokasi';
             $job->updated_by = $userId;
         }
@@ -229,7 +229,7 @@ class JobWebCompletionService
 
     private function getPartialCompletionAffectedJobs(JobSchedule $job)
     {
-        if (!$job->job_number) {
+        if (! $job->job_number) {
             return collect([$job]);
         }
 
@@ -251,7 +251,7 @@ class JobWebCompletionService
         $materialReturn = null;
         $inventoryReceiving = null;
 
-        if (!$warehouse) {
+        if (! $warehouse) {
             Log::warning("handlePartialCompletion: No warehouse resolved for incomplete job {$job->job_number}. Outstanding job will still be created without auto material return.");
 
             return [
@@ -273,12 +273,12 @@ class JobWebCompletionService
                 \App\Models\MaterialReturn::STATUS_APPROVED,
                 \App\Models\MaterialReturn::STATUS_RETURNED,
             ])
-            ->where('notes', 'like', '%Job ' . $job->job_number . ' (Pekerjaan tidak selesai)%')
+            ->where('notes', 'like', '%Job '.$job->job_number.' (Pekerjaan tidak selesai)%')
             ->lockForUpdate()
             ->latest('id')
             ->first();
 
-        if (!$materialReturn) {
+        if (! $materialReturn) {
             $returnNumber = \App\Models\MaterialReturn::generateReturnNumber($job->id);
 
             $materialReturn = \App\Models\MaterialReturn::create([
@@ -296,12 +296,12 @@ class JobWebCompletionService
         }
 
         $inventoryReceiving = \App\Models\InventoryReceiving::where('reference_no', $job->job_number)
-            ->where('notes', 'like', '%Job ' . $job->job_number . ' (Pekerjaan tidak selesai)%')
+            ->where('notes', 'like', '%Job '.$job->job_number.' (Pekerjaan tidak selesai)%')
             ->lockForUpdate()
             ->latest('id')
             ->first();
 
-        if (!$inventoryReceiving) {
+        if (! $inventoryReceiving) {
             $receivingNumber = app(DocumentNumberService::class)
                 ->generate('inventory_receiving', warehouseId: $warehouse->id);
 
@@ -386,7 +386,7 @@ class JobWebCompletionService
             return $existingJob;
         }
 
-        $newJob = new JobSchedule();
+        $newJob = new JobSchedule;
         if (\Illuminate\Support\Facades\Schema::hasColumn('job_schedules', 'customer_id')) {
             $newJob->customer_id = $sourceJob->customer_id;
         }
@@ -517,7 +517,7 @@ class JobWebCompletionService
         $inventoryReceiving = $returnContext['inventory_receiving'];
         $warehouse = $returnContext['warehouse'];
 
-        if (!$materialReturn || !$inventoryReceiving || !$warehouse) {
+        if (! $materialReturn || ! $inventoryReceiving || ! $warehouse) {
             return;
         }
 
@@ -534,7 +534,7 @@ class JobWebCompletionService
         }
 
         foreach ($materialIssueItems as $issueItem) {
-            if (!$issueItem->product_id) {
+            if (! $issueItem->product_id) {
                 continue;
             }
 
@@ -665,12 +665,12 @@ class JobWebCompletionService
     public function startWork(JobSchedule $job, ?int $userId): array
     {
         $allowedStatuses = ['teknisi_tiba_dilokasi', 'barang_diambil'];
-        if (!in_array($job->status, $allowedStatuses, true)) {
+        if (! in_array($job->status, $allowedStatuses, true)) {
             return ['ok' => false, 'message' => 'Job harus berstatus "Tiba di Lokasi" atau "Barang Diambil" sebelum pekerjaan dapat dimulai.'];
         }
 
         $job->status = 'in_progress';
-        if (!$job->started_at) {
+        if (! $job->started_at) {
             $job->started_at = now();
         }
         $job->updated_by = $userId;
@@ -746,7 +746,7 @@ class JobWebCompletionService
         }
 
         $issuing = $this->resolveInventoryIssuingForJob($job);
-        if (!$issuing) {
+        if (! $issuing) {
             return ['ok' => false, 'code' => 404, 'message' => 'Inventory Issuing tidak ditemukan untuk job ini. Pastikan material sudah disiapkan gudang.'];
         }
 
@@ -791,9 +791,9 @@ class JobWebCompletionService
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
-            Log::error("Web verifyMaterials error for Job {$job->id}: " . $e->getMessage());
+            Log::error("Web verifyMaterials error for Job {$job->id}: ".$e->getMessage());
 
-            return ['ok' => false, 'code' => 500, 'message' => 'Terjadi kesalahan saat verifikasi material: ' . $e->getMessage()];
+            return ['ok' => false, 'code' => 500, 'message' => 'Terjadi kesalahan saat verifikasi material: '.$e->getMessage()];
         }
 
         return ['ok' => true, 'code' => 200, 'message' => 'Material berhasil diverifikasi (barang diambil). Teknisi dapat melanjutkan ke lokasi.'];
@@ -842,7 +842,7 @@ class JobWebCompletionService
         DB::beginTransaction();
         try {
             $snapshot = [];
-            if (!empty($schedule)) {
+            if (! empty($schedule)) {
                 $snapshot['schedule'] = $schedule;
             }
 
@@ -871,7 +871,7 @@ class JobWebCompletionService
                     ->value('id');
 
                 // Merge schedule into existing snapshot instead of clobbering it.
-                if (!empty($schedule)) {
+                if (! empty($schedule)) {
                     $current = DB::table('job_schedule_units')->where('id', $jobScheduleUnitId)->value('device_snapshot');
                     $currentSnapshot = $current ? (json_decode($current, true) ?: []) : [];
                     $currentSnapshot['schedule'] = $schedule;
@@ -888,9 +888,9 @@ class JobWebCompletionService
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
-            Log::error("Web saveScannedUnit error for Job {$job->id}: " . $e->getMessage());
+            Log::error("Web saveScannedUnit error for Job {$job->id}: ".$e->getMessage());
 
-            return ['ok' => false, 'code' => 500, 'message' => 'Gagal menyimpan data unit: ' . $e->getMessage(), 'job_schedule_unit_id' => null];
+            return ['ok' => false, 'code' => 500, 'message' => 'Gagal menyimpan data unit: '.$e->getMessage(), 'job_schedule_unit_id' => null];
         }
 
         return ['ok' => true, 'code' => 200, 'message' => 'Data unit & jadwal aroma tersimpan.', 'job_schedule_unit_id' => (int) $jobScheduleUnitId];
@@ -905,7 +905,7 @@ class JobWebCompletionService
             $q->where('job_schedule_id', $job->id);
         })->first();
 
-        if (!$materialIssue) {
+        if (! $materialIssue) {
             return null;
         }
 
@@ -932,7 +932,7 @@ class JobWebCompletionService
         $advanced = ['teknisi_tiba_dilokasi', 'in_progress', 'teknisi_sedang_pengerjaan', 'teknisi_selesai_pengerjaan', 'done_job', 'completed'];
 
         foreach ($relatedJobs as $relatedJob) {
-            if (!in_array($relatedJob->status, $advanced, true)) {
+            if (! in_array($relatedJob->status, $advanced, true)) {
                 $relatedJob->update([
                     'status' => 'barang_diambil',
                     'material_checked' => true,
@@ -990,7 +990,7 @@ class JobWebCompletionService
         ?int $userId
     ): void {
         foreach ($files as $photo) {
-            if (!$photo instanceof UploadedFile || !$photo->isValid()) {
+            if (! $photo instanceof UploadedFile || ! $photo->isValid()) {
                 continue;
             }
 
@@ -1006,19 +1006,19 @@ class JobWebCompletionService
     private function storeFile(UploadedFile $photo, string $suffix): string
     {
         $uploadPath = public_path(self::UPLOAD_DIR);
-        if (!is_dir($uploadPath) && !mkdir($uploadPath, 0775, true) && !is_dir($uploadPath)) {
+        if (! is_dir($uploadPath) && ! mkdir($uploadPath, 0775, true) && ! is_dir($uploadPath)) {
             throw new \RuntimeException('Folder upload foto pekerjaan tidak bisa dibuat.');
         }
-        if (!is_writable($uploadPath)) {
+        if (! is_writable($uploadPath)) {
             throw new \RuntimeException('Folder upload foto pekerjaan tidak writable.');
         }
 
-        $filename = time() . '_' . uniqid() . '_' . $suffix . '.' . $photo->getClientOriginalExtension();
-        if (!$photo->move($uploadPath, $filename)) {
+        $filename = time().'_'.uniqid().'_'.$suffix.'.'.$photo->getClientOriginalExtension();
+        if (! $photo->move($uploadPath, $filename)) {
             throw new \RuntimeException('Gagal menyimpan foto pekerjaan.');
         }
 
-        return self::PATH_PREFIX . $filename;
+        return self::PATH_PREFIX.$filename;
     }
 
     /**
@@ -1028,7 +1028,7 @@ class JobWebCompletionService
     private function storeSignature(string $signatureBase64, int $jobScheduleId): string
     {
         $uploadPath = public_path(self::UPLOAD_DIR);
-        if (!is_dir($uploadPath) && !mkdir($uploadPath, 0775, true) && !is_dir($uploadPath)) {
+        if (! is_dir($uploadPath) && ! mkdir($uploadPath, 0775, true) && ! is_dir($uploadPath)) {
             throw new \RuntimeException('Folder upload tanda tangan tidak bisa dibuat.');
         }
 
@@ -1037,12 +1037,12 @@ class JobWebCompletionService
             throw new \RuntimeException('Data tanda tangan tidak valid.');
         }
 
-        $filename = 'signature_' . $jobScheduleId . '_' . time() . '.png';
-        if (file_put_contents($uploadPath . DIRECTORY_SEPARATOR . $filename, $data) === false) {
+        $filename = 'signature_'.$jobScheduleId.'_'.time().'.png';
+        if (file_put_contents($uploadPath.DIRECTORY_SEPARATOR.$filename, $data) === false) {
             throw new \RuntimeException('Gagal menyimpan tanda tangan.');
         }
 
-        return self::PATH_PREFIX . $filename;
+        return self::PATH_PREFIX.$filename;
     }
 
     /**

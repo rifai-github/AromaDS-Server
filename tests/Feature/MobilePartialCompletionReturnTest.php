@@ -880,6 +880,158 @@ class MobilePartialCompletionReturnTest extends TestCase
         ]);
     }
 
+    public function test_sibling_room_verified_separately_reuses_same_ba_number(): void
+    {
+        $this->seedPartialCompletionScenario();
+
+        DB::table('job_advices')->insert([
+            'id' => 70,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            ['id' => 80, 'job_advice_id' => 70, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 81, 'job_advice_id' => 70, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_schedules')->where('id', 10)->update([
+            'job_advice_id' => 70,
+            'status' => 'in_progress',
+            'type' => 'Install (IR)',
+            'ba_date' => null,
+            'ba_number' => null,
+        ]);
+
+        DB::table('job_schedules')->insert([
+            'id' => 11,
+            'job_number' => 'BDG-IR/26-05/0002',
+            'type' => 'Install (IR)',
+            'status' => 'in_progress',
+            'job_advice_id' => 70,
+            'building_id' => 10,
+            'building_name' => 'Gedung Cabang B 110526',
+            'branch_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 21,
+            'job_schedule_id' => 11,
+            'team_id' => 12,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            [
+                'id' => 90,
+                'job_schedule_id' => 10,
+                'job_advice_room_id' => 80,
+                'room_name' => 'Ruang Mawar',
+                'room_id' => 800,
+                'status' => 'completed',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                // Not completed yet when job 10 finishes, so job 10's sibling
+                // cascade must skip it — it only gets its ba_number when its
+                // own room is completed and it goes through verifyJob() on
+                // its own, later.
+                'id' => 91,
+                'job_schedule_id' => 11,
+                'job_advice_room_id' => 81,
+                'room_name' => 'Ruang Melati',
+                'room_id' => 900,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_photos')->insert([
+            [
+                'job_schedule_id' => 10,
+                'job_schedule_room_id' => 90,
+                'photo_path' => 'job-verifications/before-90.jpg',
+                'photo_type' => 'Before Work',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'job_schedule_id' => 10,
+                'job_schedule_room_id' => 90,
+                'photo_path' => 'job-verifications/after-90.jpg',
+                'photo_type' => 'After Work',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $requestOne = Request::create('/api/v1/mobile/jobs/10/verify', 'POST', [
+            'pic_name' => 'Bapak Client',
+            'signature' => 'data:image/png;base64,'.base64_encode('test-signature'),
+        ], [], [
+            'pic_photo' => UploadedFile::fake()->image('pic.jpg'),
+        ]);
+
+        $responseOne = app(JobController::class)->verifyJob($requestOne, 10);
+        $this->assertSame(200, $responseOne->getStatusCode(), $responseOne->getContent());
+
+        $jobTen = DB::table('job_schedules')->where('id', 10)->first();
+        $this->assertSame('done_job', $jobTen->status);
+        $this->assertNotEmpty($jobTen->ba_number);
+
+        $jobElevenBefore = DB::table('job_schedules')->where('id', 11)->first();
+        $this->assertNull($jobElevenBefore->ba_number);
+
+        // Technician now finishes room 11's own work and verifies it in a
+        // separate request — job 10 is already 'done_job' by this point, so
+        // the old code path (no cross-sibling BA lookup) would mint a brand
+        // new, DIFFERENT ba_number for job 11 here: the "2 BA for 1 job" bug.
+        DB::table('job_schedule_rooms')->where('id', 91)->update(['status' => 'completed']);
+
+        DB::table('job_photos')->insert([
+            [
+                'job_schedule_id' => 11,
+                'job_schedule_room_id' => 91,
+                'photo_path' => 'job-verifications/before-91.jpg',
+                'photo_type' => 'Before Work',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'job_schedule_id' => 11,
+                'job_schedule_room_id' => 91,
+                'photo_path' => 'job-verifications/after-91.jpg',
+                'photo_type' => 'After Work',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $requestTwo = Request::create('/api/v1/mobile/jobs/11/verify', 'POST', [
+            'pic_name' => 'Bapak Client',
+            'signature' => 'data:image/png;base64,'.base64_encode('test-signature'),
+        ], [], [
+            'pic_photo' => UploadedFile::fake()->image('pic.jpg'),
+        ]);
+
+        $responseTwo = app(JobController::class)->verifyJob($requestTwo, 11);
+        $this->assertSame(200, $responseTwo->getStatusCode(), $responseTwo->getContent());
+
+        $jobEleven = DB::table('job_schedules')->where('id', 11)->first();
+        $this->assertSame('done_job', $jobEleven->status);
+        $this->assertSame(
+            $jobTen->ba_number,
+            $jobEleven->ba_number,
+            'Sibling room verified separately must reuse the same BA number, not mint a second one.'
+        );
+    }
+
     public function test_csr_final_verification_waits_until_ir_is_done_job(): void
     {
         DB::table('job_advices')->insert([

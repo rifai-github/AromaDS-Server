@@ -206,7 +206,7 @@ class JobSchedule extends Model
         if ($totalRooms === 0) {
             return true; // No rooms to track, consider completed
         }
-        
+
         $completedRooms = $this->jobScheduleRooms()->where('status', JobScheduleRoom::STATUS_COMPLETED)->count();
         return $completedRooms === $totalRooms;
     }
@@ -255,6 +255,34 @@ class JobSchedule extends Model
             ->count();
 
         return $prefix . str_pad($count + 1, 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Resolve the BA number to stamp on $job when completing it: reuse an
+     * already-assigned sibling room's BA number if this job group (same
+     * job_number+type — multi-room jobs are stored as one job_schedules row
+     * PER ROOM) was already partly verified elsewhere (mobile or web),
+     * instead of minting a second BA for one logical job. Otherwise generate
+     * a fresh one via generateBaNumber().
+     *
+     * lockForUpdate() also takes a row lock across the sibling group, so a
+     * concurrent call for a sibling room (two rooms verified a second apart)
+     * blocks here until this transaction commits instead of both concluding
+     * "no BA yet" and each minting their own. The caller must already be
+     * inside a DB transaction (verifyJob/finalizeWithBa/JobScheduleController
+     * completion paths all are) for the lock to have effect.
+     */
+    public static function resolveBaNumberForGroup(self $job): string
+    {
+        $existingBaNumber = self::where('job_number', $job->job_number)
+            ->where('type', $job->type)
+            ->where('id', '!=', $job->id)
+            ->lockForUpdate()
+            ->get()
+            ->first(fn ($sibling) => !empty($sibling->ba_number))
+            ?->ba_number;
+
+        return $existingBaNumber ?: self::generateBaNumber();
     }
 
     /**
@@ -492,7 +520,7 @@ class JobSchedule extends Model
             'suspend' => 'badge-dark',      // Suspend: Job diselesaikan tapi TIDAK ditagih (MOM6)
             'dpf' => 'badge-warning',       // DPF: Done but Force-charged - Job diselesaikan tapi TETAP ditagih (MOM6)
             'terminated' => 'badge-dark',   // Terminated: Contract terminated, job locked (hitam)
-            
+
             // Refactored Statuses
             'assign_material' => 'badge-primary',   // Blue (Confirmed/Taken) - Replaces material_assign
             'material_issue' => 'badge-warning',    // Orange/Yellow
@@ -534,22 +562,22 @@ class JobSchedule extends Model
             'new_job' => 'New Job',
             'assign_team' => 'Assign Team',
             'assign_material' => 'Material Assign', // User requested label
-            
+
             // Refactored Statuses
             'material_issue' => 'Material Prepare',     // Permintaan harmonisasi
-            
+
             // Legacy Statuses
             'barang_dipersiapkan' => 'Material Prepare',
             'barang_siap_diambil' => 'Material Ready',
             'barang_diambil' => 'Material Issued',     // Sesuai permintaan: "material telah di issue"
-            
+
             'teknisi_tiba_dilokasi' => 'Teknisi tiba dilokasi',
             'teknisi_sedang_pengerjaan' => 'Teknisi sedang pengerjaan',
             'teknisi_selesai_pengerjaan' => 'Teknisi selesai pengerjaan',
             'meninggalkan_lokasi' => 'Meninggalkan lokasi',
             'done_job' => 'Done Job',
             'completed' => 'Done Job',
-            'in_progress' => 'In Progress', 
+            'in_progress' => 'In Progress',
             'cancelled' => 'Cancelled',
             'pending' => 'Pending',
             'force_majeure' => 'Force Majeure',
@@ -567,7 +595,7 @@ class JobSchedule extends Model
      */
     public function getInvoicePeriodAttribute()
     {
-        // For non-service/check jobs, invoice period usually doesn't apply 
+        // For non-service/check jobs, invoice period usually doesn't apply
         // or coincides with its period if set.
         if (!in_array($this->type, ['service', 'service_routine', 'service_first', 'check', 'service routine', 'service first'])) {
             return $this->period ?? '-';
@@ -584,13 +612,13 @@ class JobSchedule extends Model
         // Get TOP interval from contract
         $contract = $this->jobAdvice?->contract ?? null;
         $topInterval = $contract ? $contract->top_interval_months : 1;
-        
+
         // Get Service Frequency Times (e.g. 4x per month)
         $freqTimes = 1;
         if ($this->service_frequency && is_numeric($this->service_frequency)) {
             $freqTimes = (int) $this->service_frequency;
         }
-        
+
         // Calculate Divisor
         // Example: 4x service per month, Monthly Invoice (TOP=1) -> Divisor = 4
         // PS 1,2,3,4 / 4 -> ceil -> 1.
@@ -1027,21 +1055,21 @@ class JobSchedule extends Model
         // Formula from CLIENT-FEEDBACK-ENHANCEMENT.md
         // 1. Add one month to start date
         $endOfMonth = $this->schedule_date->copy()->addMonth();
-        
+
         // 2. Calculate difference in days
         $daysDifference = $this->schedule_date->diffInDays($endOfMonth);
-        
+
         // 3. Divide by service frequency
         $interval = $daysDifference / $this->service_frequency;
-        
+
         // 4. Round up the result
         $intervalDays = ceil($interval);
-        
+
         $this->update([
             'service_interval_days' => $intervalDays,
             'next_service_date' => $this->schedule_date->copy()->addDays($intervalDays)
         ]);
-        
+
         return $intervalDays;
     }
 
@@ -1124,12 +1152,12 @@ class JobSchedule extends Model
 
         $dates = [];
         $currentDate = $this->schedule_date->copy();
-        
+
         for ($i = 0; $i < $months; $i++) {
             $currentDate->addDays($this->service_interval_days);
             $dates[] = $currentDate->copy();
         }
-        
+
         return $dates;
     }
 
@@ -1141,7 +1169,7 @@ class JobSchedule extends Model
 
         $labels = [
             1 => 'Once per month',
-            2 => 'Twice per month', 
+            2 => 'Twice per month',
             3 => 'Three times per month',
             4 => 'Four times per month',
             6 => 'Every 2 months',
@@ -1180,29 +1208,29 @@ class JobSchedule extends Model
 
         $today = now()->startOfDay();
         $scheduleDate = $this->schedule_date->startOfDay();
-        
+
         // Calculate days since schedule date
         $daysSinceSchedule = $today->diffInDays($scheduleDate);
-        
+
         // Calculate service interval in days
         $serviceIntervalDays = $this->calculateServiceIntervalDays();
-        
+
         if (!$serviceIntervalDays) {
             return false;
         }
 
         // Find the next service date based on frequency
         $nextServiceDate = $this->calculateNextServiceDate($today, $scheduleDate, $serviceIntervalDays);
-        
+
         if ($nextServiceDate && $nextServiceDate != $this->expected_date) {
             $this->update([
                 'expected_date' => $nextServiceDate,
                 'updated_by' => 1 // System update
             ]);
-            
+
             return true;
         }
-        
+
         return false;
     }
 
@@ -1218,7 +1246,7 @@ class JobSchedule extends Model
         // For monthly frequency, calculate days per service
         $daysInMonth = 30; // Approximate
         $intervalDays = $daysInMonth / $this->service_frequency;
-        
+
         return ceil($intervalDays);
     }
 
@@ -1229,20 +1257,20 @@ class JobSchedule extends Model
     {
         $currentDate = $scheduleDate->copy();
         $serviceDates = [];
-        
+
         // Generate service dates for the next 3 months
         for ($i = 0; $i < 12; $i++) { // 12 iterations to cover 3 months with 3x/month
             $currentDate->addDays($intervalDays);
             $serviceDates[] = $currentDate->copy();
         }
-        
+
         // Find the next service date that is >= today
         foreach ($serviceDates as $serviceDate) {
             if ($serviceDate->gte($today)) {
                 return $serviceDate;
             }
         }
-        
+
         return null;
     }
 
@@ -1253,18 +1281,18 @@ class JobSchedule extends Model
     public static function updateAllExpectedDates()
     {
         $updatedCount = 0;
-        
+
         $jobSchedules = self::whereNotNull('service_frequency')
             ->whereNotNull('schedule_date')
             ->where('status', '!=', 'completed')
             ->get();
-            
+
         foreach ($jobSchedules as $jobSchedule) {
             if ($jobSchedule->updateExpectedDateBasedOnFrequency()) {
                 $updatedCount++;
             }
         }
-        
+
         return $updatedCount;
     }
 

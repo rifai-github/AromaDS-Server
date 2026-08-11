@@ -4562,7 +4562,7 @@ class JobController extends Controller
                 $job->ba_date = now()->toDateString();
             }
             if (!$job->ba_number) {
-                $job->ba_number = JobSchedule::generateBaNumber();
+                $job->ba_number = JobSchedule::resolveBaNumberForGroup($job);
             }
             
             // Store verification data in internal_notes or create JobReport

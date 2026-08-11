@@ -9857,7 +9857,7 @@ class JobScheduleController extends Controller
      */
     private function generateBANumber(JobSchedule $jobSchedule)
     {
-        return JobSchedule::generateBaNumber();
+        return JobSchedule::resolveBaNumberForGroup($jobSchedule);
     }
 
     /**
