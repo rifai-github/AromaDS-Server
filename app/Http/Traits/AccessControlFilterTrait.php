@@ -64,16 +64,28 @@ trait AccessControlFilterTrait
             if (empty($branchIds) && $user->branch_id) {
                 $branchIds = [$user->branch_id];
             }
-        } elseif ($user->branch_id) {
-            // No explicit branch AccessLevel row configured for this user. Fall back
-            // to their own users.branch_id so they can at least see data scoped to
-            // their own branch/warehouse - mirrors
-            // InventoryTransfer::userCanActForWarehouse(), which already treats
-            // users.branch_id as authoritative for warehouse transfer actions. Without
-            // this, a user whose only "access" is users.branch_id (e.g. a Warehouse
-            // Pusat Manager with no access_levels row) could act on records in their
-            // own branch but never see them in any list using this trait.
-            $branchIds = [$user->branch_id];
+        } else {
+            // No explicit branch AccessLevel row configured for this user. The
+            // "Multi-Branch" user assignment page (BranchUserController) can assign
+            // several branches via the branch_user pivot, but it only stamps the
+            // *primary* one onto users.branch_id (for backward compatibility) -
+            // so prefer the full pivot assignment when it exists.
+            $assignedBranchIds = \Illuminate\Support\Facades\Schema::hasTable('branch_user')
+                ? \Illuminate\Support\Facades\DB::table('branch_user')
+                    ->where('user_id', $user->id)
+                    ->pluck('branch_id')
+                    ->toArray()
+                : [];
+
+            if (! empty($assignedBranchIds)) {
+                $branchIds = $assignedBranchIds;
+            } elseif ($user->branch_id) {
+                // Fall back to their own users.branch_id so they can at least see
+                // data scoped to their own branch/warehouse - mirrors
+                // InventoryTransfer::userCanActForWarehouse(), which already treats
+                // users.branch_id as authoritative for warehouse transfer actions.
+                $branchIds = [$user->branch_id];
+            }
         }
         
         // Get all user IDs that this user can access (Hierarchy + Peer)

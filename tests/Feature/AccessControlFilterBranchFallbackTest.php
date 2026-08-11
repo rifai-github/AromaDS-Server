@@ -71,10 +71,19 @@ class AccessControlFilterBranchFallbackTest extends TestCase
             $table->unsignedBigInteger('branch_id')->nullable();
             $table->timestamps();
         });
+
+        Schema::create('branch_user', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('branch_id');
+            $table->unsignedBigInteger('user_id');
+            $table->boolean('is_primary')->default(false);
+            $table->timestamps();
+        });
     }
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('branch_user');
         Schema::dropIfExists('records');
         Schema::dropIfExists('warehouse_admins');
         Schema::dropIfExists('warehouses');
@@ -143,6 +152,32 @@ class AccessControlFilterBranchFallbackTest extends TestCase
             ->all();
 
         $this->assertSame([101], $visibleIds, 'No branch_id to fall back to - only their own records, same as before this fix.');
+    }
+
+    public function test_multi_branch_pivot_assignment_wins_over_the_single_branch_id_fallback(): void
+    {
+        DB::table('users')->insert(['id' => 1, 'name' => 'Sender A', 'branch_id' => 24]);
+        // Multi-Branch assignment page (BranchUserController::updateUserBranches)
+        // stamps only the primary branch onto users.branch_id, even though this
+        // user is assigned to branches 24, 55, and 99 via the branch_user pivot.
+        DB::table('users')->insert(['id' => 5, 'name' => 'Multi-branch gudang manager', 'branch_id' => 24]);
+        DB::table('branch_user')->insert(['branch_id' => 24, 'user_id' => 5, 'is_primary' => true]);
+        DB::table('branch_user')->insert(['branch_id' => 55, 'user_id' => 5, 'is_primary' => false]);
+        DB::table('branch_user')->insert(['branch_id' => 99, 'user_id' => 5, 'is_primary' => false]);
+
+        DB::table('records')->insert(['id' => 100, 'created_by' => 1, 'branch_id' => 24]);
+        DB::table('records')->insert(['id' => 200, 'created_by' => 1, 'branch_id' => 55]);
+        DB::table('records')->insert(['id' => 300, 'created_by' => 1, 'branch_id' => 99]);
+        DB::table('records')->insert(['id' => 400, 'created_by' => 1, 'branch_id' => 77]);
+
+        $viewer = User::findOrFail(5);
+        $visibleIds = $this->filterAsController($this->recordModel()->newQuery(), $viewer)
+            ->pluck('id')
+            ->sort()
+            ->values()
+            ->all();
+
+        $this->assertSame([100, 200, 300], $visibleIds, 'Should see records across all pivot-assigned branches, not just the primary one stamped onto users.branch_id.');
     }
 
     public function test_explicit_branch_access_level_config_still_wins_over_the_fallback(): void
