@@ -1896,10 +1896,19 @@ class JobController extends Controller
                     $swapUnitOnWallQuery->where('room_name', $roomName);
                 }
 
-                $swapUnitOnWalls = $swapUnitOnWallQuery->with(['product.productType', 'serialNumber'])->get();
+                $swapUnitOnWalls = $swapUnitOnWallQuery->with(['product.productType', 'product.productCategory', 'serialNumber'])->get();
 
                 foreach ($swapUnitOnWalls as $unit) {
-                    if (!$unit->product || !($unit->product->productType?->is_unit)) {
+                    // Mirrors the is_unit fallback pattern used elsewhere in this file
+                    // (e.g. line ~1703): productType is sometimes unset for a product even
+                    // though its productCategory correctly carries is_unit — confirmed on
+                    // staging for a real Diffuser product (productType null, productCategory
+                    // is_unit=true), which silently dropped the unit from this list.
+                    $isUnitProduct = $unit->product?->productType?->is_unit
+                        ?? $unit->product?->productCategory?->is_unit
+                        ?? false;
+
+                    if (!$unit->product || !$isUnitProduct) {
                         continue;
                     }
 
@@ -1917,7 +1926,7 @@ class JobController extends Controller
                         'product_name' => $unit->product->name ?? '-',
                         'product_code' => $unit->product->sku ?? '-',
                         'kode' => $unit->product->sku ?? '-',
-                        'product_type' => $unit->product->productType->name ?? '-',
+                        'product_type' => $unit->product->productType->name ?? $unit->product->productCategory->name ?? '-',
                         'quantity' => 1,
                         'unit' => $unit->product->unit ?? 'pcs',
                         'source' => 'unit_on_wall',
