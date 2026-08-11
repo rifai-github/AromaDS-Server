@@ -2817,8 +2817,8 @@ function confirmDelete() {
     }
     
     console.log('Sending bulk delete request with IDs:', selectedIdsForRetry);
-    console.log('Request body:', JSON.stringify({ product_ids: selectedIdsForRetry }));
-    
+    console.log('Request body:', JSON.stringify({ ids: selectedIdsForRetry }));
+
     fetch('/warehouse/master-products/bulk-delete', {
         method: 'POST',
         headers: {
@@ -2827,7 +2827,7 @@ function confirmDelete() {
             'Accept': 'application/json',
             'X-Requested-With': 'XMLHttpRequest'
         },
-        body: JSON.stringify({ product_ids: selectedIdsForRetry })
+        body: JSON.stringify({ ids: selectedIdsForRetry })
     })
     .then(async response => {
         // Get response text first to handle both JSON and non-JSON responses
