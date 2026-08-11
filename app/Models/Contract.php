@@ -393,23 +393,26 @@ class Contract extends Model
 
     public function getDisplayVirtualAccountsAttribute(): string
     {
-        $accounts = collect([$this->virtual_account])
+        $entries = collect([['number' => $this->virtual_account, 'bank' => null]])
             ->merge($this->collectBillingGroupVirtualAccounts($this))
             ->merge($this->collectCustomerVirtualAccounts());
 
         if ($this->is_merged_contract) {
-            $accounts = $accounts->merge(
+            $entries = $entries->merge(
                 $this->mergeDisplaySources()
                     ->flatMap(function ($sourceContract) {
-                        return collect([$sourceContract->virtual_account])
+                        return collect([['number' => $sourceContract->virtual_account, 'bank' => null]])
                             ->merge($this->collectBillingGroupVirtualAccounts($sourceContract));
                     })
             );
         }
 
-        $accounts = $accounts
-            ->filter(fn ($account) => filled($account))
-            ->map(fn ($account) => trim((string) $account))
+        $entries = $entries
+            ->filter(fn ($entry) => filled($entry['number']))
+            ->map(fn ($entry) => [
+                'number' => trim((string) $entry['number']),
+                'bank' => filled($entry['bank']) ? trim((string) $entry['bank']) : null,
+            ])
             // A real VA is always digits-only (see VirtualAccountRuleService /
             // CompanyVirtualAccount::generateAccountNumber). Legacy Catalyst
             // imports stuffed descriptive bank-account text (e.g. "Bank Central
@@ -417,11 +420,12 @@ class Contract extends Model
             // column, which is the company's own receiving account, not a
             // per-customer VA — exclude it so this field only ever shows a
             // real, usable VA number.
-            ->filter(fn ($account) => ctype_digit($account))
-            ->unique()
+            ->filter(fn ($entry) => ctype_digit($entry['number']))
+            ->unique('number')
+            ->map(fn ($entry) => $entry['bank'] ? "{$entry['bank']} - {$entry['number']}" : $entry['number'])
             ->values();
 
-        return $accounts->isNotEmpty() ? $accounts->implode(', ') : '-';
+        return $entries->isNotEmpty() ? $entries->implode(', ') : '-';
     }
 
     public function getDisplayContractTypeAttribute(): string
@@ -582,7 +586,7 @@ class Contract extends Model
         $contract->loadMissing('billingGroups');
 
         return $contract->billingGroups
-            ->pluck('virtual_account_number');
+            ->map(fn ($group) => ['number' => $group->virtual_account_number, 'bank' => $group->bank_name]);
     }
 
     private function collectCustomerVirtualAccounts()
@@ -591,29 +595,37 @@ class Contract extends Model
             return collect();
         }
 
-        $accounts = collect();
+        $entries = collect();
 
         if (\Illuminate\Support\Facades\Schema::hasTable('virtual_accounts')) {
-            $this->loadMissing('customer.virtualAccounts.bankPayment');
+            $this->loadMissing('customer.virtualAccounts.bankPayment.bank');
 
-            $accounts = $accounts->merge(
+            $entries = $entries->merge(
                 $this->customer?->virtualAccounts
                     ?->filter(fn ($account) => $account->status_active ?? true)
-                    ->map(fn ($account) => $account->full_va_number ?? $account->va_number)
+                    ->map(fn ($account) => [
+                        'number' => $account->full_va_number ?? $account->va_number,
+                        'bank' => $account->bankPayment?->bank?->bank_name,
+                    ])
                     ?? collect()
             );
         }
 
         if (\Illuminate\Support\Facades\Schema::hasTable('company_virtual_accounts')) {
-            $accounts = $accounts->merge(
+            $entries = $entries->merge(
                 \App\Models\CompanyVirtualAccount::query()
                     ->where('customer_id', $this->customer_id)
                     ->where('is_active', true)
-                    ->pluck('account_number')
+                    ->with('bankPayment.bank')
+                    ->get()
+                    ->map(fn ($account) => [
+                        'number' => $account->account_number,
+                        'bank' => $account->bankPayment?->bank?->bank_name,
+                    ])
             );
         }
 
-        return $accounts;
+        return $entries;
     }
 
     private function formatMergeDisplayDates(string $field): string

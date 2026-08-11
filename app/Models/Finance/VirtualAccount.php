@@ -6,8 +6,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Models\User;
-use App\Models\Company\Customer;
-use App\Models\Company\BankPayment;
+use App\Models\Customer;
+use App\Models\BankPayment;
 
 class VirtualAccount extends Model
 {
