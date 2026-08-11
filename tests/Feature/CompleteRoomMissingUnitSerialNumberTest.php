@@ -50,6 +50,10 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             $table->string('type')->nullable();
             $table->string('status')->nullable();
             $table->foreignId('job_advice_id')->nullable();
+            $table->string('material_issue_number')->nullable();
+            $table->boolean('material_checked')->nullable();
+            $table->timestamp('material_checked_at')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -78,6 +82,7 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             $table->unsignedBigInteger('location_id')->nullable();
             $table->unsignedBigInteger('master_product_id')->nullable();
             $table->unsignedBigInteger('warehouse_id')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -150,6 +155,8 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             $table->unsignedBigInteger('received_by')->nullable();
             $table->date('issue_date')->nullable();
             $table->timestamp('received_at')->nullable();
+            $table->unsignedBigInteger('branch_id')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -163,6 +170,7 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             $table->integer('quantity_requested')->default(0);
             $table->integer('quantity_issued')->default(0);
             $table->integer('quantity_received')->default(0);
+            $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamps();
         });
 
@@ -211,10 +219,90 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             $table->timestamps();
             $table->softDeletes();
         });
+
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('branches', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('warehouses', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->unsignedBigInteger('branch_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('warehouse_products', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('warehouse_id')->nullable();
+            $table->unsignedBigInteger('master_product_id')->nullable();
+            $table->decimal('quantity', 12, 2)->default(0);
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('inventory_movements', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('warehouse_id')->nullable();
+            $table->unsignedBigInteger('master_product_id')->nullable();
+            $table->string('movement_type')->nullable();
+            $table->decimal('quantity', 12, 2)->default(0);
+            $table->text('notes')->nullable();
+            $table->date('movement_date')->nullable();
+            $table->string('reference_no')->nullable();
+            $table->string('reference_type')->nullable();
+            $table->string('movement_no')->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('audit_logs', function (Blueprint $table) {
+            $table->id();
+            $table->string('model_type')->nullable();
+            $table->unsignedBigInteger('model_id')->nullable();
+            $table->string('action')->nullable();
+            $table->json('old_values')->nullable();
+            $table->json('new_values')->nullable();
+            $table->json('changed_fields')->nullable();
+            $table->foreignId('user_id')->nullable();
+            $table->string('ip_address')->nullable();
+            $table->text('user_agent')->nullable();
+            $table->string('page_name')->nullable();
+            $table->string('module_name')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('unit_on_walls', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('serial_number_id')->nullable();
+            $table->string('status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
     }
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('unit_on_walls');
+        Schema::dropIfExists('audit_logs');
+        Schema::dropIfExists('inventory_movements');
+        Schema::dropIfExists('warehouse_products');
+        Schema::dropIfExists('warehouses');
+        Schema::dropIfExists('branches');
+        Schema::dropIfExists('users');
         Schema::dropIfExists('rental_details');
         Schema::dropIfExists('job_advice_rooms');
         Schema::dropIfExists('product_types');
@@ -970,5 +1058,109 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             $missing,
             'Validator must still block completion when no unit SN has been scanned.'
         );
+    }
+
+    /**
+     * QA bug (WI SMG-WI/26-08/0005, issuing 179): "All Purpose Cleaner 100 ml"
+     * (a refill/batch product, not a unit) was issued for the SAME job under
+     * two different rooms ("Main Entrance KW" and "Manajemen Office KW"),
+     * producing two InventoryIssuingItem rows for the one product, both
+     * legitimately linked to the same batch SN row (one code covers any
+     * quantity). getMaterialsForVerification()/verifyMaterials() grouped
+     * these sibling rows and SUMMED each row's requiredSerialCount() (1+1=2),
+     * even though only one distinct SN code was ever needed -- so the
+     * technician was told to scan 2 SNs while only 1 unique one existed,
+     * making "Verifikasi Material" permanently unfinishable for this item.
+     */
+    public function test_batch_product_split_across_two_rooms_only_requires_one_serial_scan(): void
+    {
+        \DB::table('users')->insert(['id' => 1, 'name' => 'Teknisi Test', 'created_at' => now(), 'updated_at' => now()]);
+        $this->actingAs(\App\Models\User::findOrFail(1));
+
+        $jobAdvice = JobAdvice::create(['customer_id' => 7, 'type' => 'install']);
+        $job = JobSchedule::create([
+            'job_number' => 'SMG-IR/26-08/0005',
+            'type' => 'install',
+            'status' => 'barang_siap_diambil',
+            'job_advice_id' => $jobAdvice->id,
+        ]);
+
+        $refillCategory = ProductCategory::create(['code' => 'REF', 'name' => 'Refill', 'is_unit' => false]);
+        $refillProduct = MasterProduct::create([
+            'product_category_id' => $refillCategory->id,
+            'name' => 'All Purpose Cleaner 100 ml',
+            'sku' => 'CLN100',
+            'unit' => 'pcs',
+        ]);
+
+        // The row actually linked to both issuing items (warehouse's batch pool).
+        $linkedSn = SerialNumber::create(['serial_number' => 'CLN1000005', 'master_product_id' => $refillProduct->id, 'status' => 'ready']);
+        // A DIFFERENT physical row sharing the identical batch code -- what the
+        // mobile "Cek Serial Number" endpoint may resolve to instead, since its
+        // lookup isn't scoped to this issuing's warehouse/pool.
+        $otherPoolSn = SerialNumber::create(['serial_number' => 'CLN1000005', 'master_product_id' => $refillProduct->id, 'status' => 'ready']);
+
+        \DB::table('warehouse_products')->insert([
+            'warehouse_id' => 106, 'master_product_id' => $refillProduct->id, 'quantity' => 10,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $materialIssue = MaterialIssue::create(['issue_number' => 'SMG-MI/26-08/0005', 'status' => 'issued']);
+        $jobAssignSchedule = JobAssignSchedule::create(['job_schedule_id' => $job->id, 'status' => 'assigned']);
+        JobAssignMaterialIssue::create([
+            'job_assign_schedule_id' => $jobAssignSchedule->id,
+            'material_issue_id' => $materialIssue->id,
+        ]);
+
+        $issuing = InventoryIssuing::create([
+            'issuing_number' => 'SMG-WI/26-08/0005',
+            'reference_no' => $materialIssue->issue_number,
+            'status' => 'processed',
+            'warehouse_id' => 106,
+            'issue_date' => now()->toDateString(),
+        ]);
+
+        $itemMainEntrance = InventoryIssuingItem::create([
+            'inventory_issuing_id' => $issuing->id,
+            'product_id' => $refillProduct->id,
+            'serial_number_id' => $linkedSn->id,
+            'room_name' => 'Main Entrance KW',
+            'quantity_requested' => 1,
+            'quantity_issued' => 1,
+        ]);
+        InventoryIssuingItem::create([
+            'inventory_issuing_id' => $issuing->id,
+            'product_id' => $refillProduct->id,
+            'serial_number_id' => $linkedSn->id,
+            'room_name' => 'Manajemen Office KW',
+            'quantity_requested' => 1,
+            'quantity_issued' => 1,
+        ]);
+
+        $controller = app(MaterialVerificationController::class);
+        $materialsPayload = $controller->getMaterialsForVerification($job->id)->getData(true);
+        $materialPayload = collect($materialsPayload['data']['materials'])
+            ->firstWhere('product_id', $refillProduct->id);
+
+        $this->assertSame(1, $materialPayload['required_serial_count'], 'Batch product split across rooms must only need 1 SN, not one per row.');
+        $this->assertCount(1, $materialPayload['serial_numbers']);
+
+        // Technician scans the batch code, but the server resolves it to the
+        // OTHER pool row (different id, same code) -- must still be accepted.
+        $verifyResponse = $controller->verifyMaterials(Request::create('/', 'POST', [
+            'inventory_issuing_id' => $issuing->id,
+            'materials' => [[
+                'item_id' => $itemMainEntrance->id,
+                'quantity_received' => 2,
+                'verified' => true,
+                'serial_numbers' => [[
+                    'serial_number_id' => $otherPoolSn->id,
+                    'serial_number' => $otherPoolSn->serial_number,
+                ]],
+            ]],
+        ]), $job->id);
+
+        $this->assertSame(200, $verifyResponse->getStatusCode(), 'Verification failed: ' . json_encode($verifyResponse->getData(true)));
+        $this->assertSame('success', $verifyResponse->getData(true)['status']);
     }
 }

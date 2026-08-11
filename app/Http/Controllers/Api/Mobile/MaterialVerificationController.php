@@ -205,34 +205,47 @@ class MaterialVerificationController extends Controller
                     ])
                     ->get();
 
-                $requiredSerialCount = $siblingItems->sum(fn ($siblingItem) => $siblingItem->requiredSerialCount());
+                $requiredSerialCount = $this->requiredSerialCountForGroup($siblingItems);
                 $preparedSerials = $this->linkedSerialNumbersForItems($siblingItems);
-                $preparedSerialIds = $preparedSerials->pluck('id')->map(fn ($id) => (int) $id)->values();
-                $submittedSerialIds = $this->submittedSerialIds($material);
+                $requiresUniqueSerial = (bool) optional($item->product)->requiresUniqueSerialNumber();
+
+                // Batch/refill products (aroma, cleaner, etc.) share one SN code across
+                // many physical rows in stock. The mobile "Cek Serial Number" lookup isn't
+                // scoped to this issuing's warehouse/pool, so it can resolve the scanned
+                // code to a different row id than the one actually linked here even though
+                // the code is correct. Match those by code text; unit products still match
+                // by row id since each id is a genuinely distinct physical unit.
+                if ($requiresUniqueSerial) {
+                    $preparedIdentities = $preparedSerials->pluck('id')->map(fn ($id) => (int) $id)->values();
+                    $submittedIdentities = $this->submittedSerialIds($material);
+                } else {
+                    $preparedIdentities = $preparedSerials->pluck('serial_number')->map(fn ($sn) => strtoupper(trim($sn)))->unique()->values();
+                    $submittedIdentities = $this->submittedSerialCodes($material);
+                }
 
                 if ($requiredSerialCount > 0) {
-                    if ($preparedSerialIds->count() < $requiredSerialCount) {
+                    if ($preparedIdentities->count() < $requiredSerialCount) {
                         DB::rollBack();
 
                         return response()->json([
                             'status' => 'error',
-                            'message' => "Inventory Issuing {$inventoryIssuing->issuing_number} baru memiliki {$preparedSerialIds->count()} dari {$requiredSerialCount} Serial Number untuk {$item->product?->name}. Gudang harus melengkapi SN terlebih dahulu.",
+                            'message' => "Inventory Issuing {$inventoryIssuing->issuing_number} baru memiliki {$preparedIdentities->count()} dari {$requiredSerialCount} Serial Number untuk {$item->product?->name}. Gudang harus melengkapi SN terlebih dahulu.",
                             'code' => 'ISSUING_SERIALS_INCOMPLETE',
                         ], 422);
                     }
 
-                    $missingSerialIds = $preparedSerialIds->diff($submittedSerialIds);
-                    $unexpectedSerialIds = $submittedSerialIds->diff($preparedSerialIds);
-                    if ($submittedSerialIds->count() !== $requiredSerialCount || $missingSerialIds->isNotEmpty() || $unexpectedSerialIds->isNotEmpty()) {
+                    $missingSerials = $preparedIdentities->diff($submittedIdentities);
+                    $unexpectedSerials = $submittedIdentities->diff($preparedIdentities);
+                    if ($submittedIdentities->count() !== $requiredSerialCount || $missingSerials->isNotEmpty() || $unexpectedSerials->isNotEmpty()) {
                         DB::rollBack();
 
                         return response()->json([
                             'status' => 'error',
-                            'message' => "Wajib scan {$requiredSerialCount} Serial Number yang sudah disiapkan untuk {$item->product?->name}. Terdeteksi {$submittedSerialIds->count()} dari {$requiredSerialCount}.",
+                            'message' => "Wajib scan {$requiredSerialCount} Serial Number yang sudah disiapkan untuk {$item->product?->name}. Terdeteksi {$submittedIdentities->count()} dari {$requiredSerialCount}.",
                             'code' => 'MATERIAL_SERIALS_INCOMPLETE',
                             'data' => [
                                 'required_serial_count' => $requiredSerialCount,
-                                'scanned_serial_count' => $submittedSerialIds->count(),
+                                'scanned_serial_count' => $submittedIdentities->count(),
                                 'expected_serial_numbers' => $preparedSerials->pluck('serial_number')->values(),
                             ],
                         ], 422);
@@ -479,7 +492,7 @@ class MaterialVerificationController extends Controller
             
             $materials = $inventoryIssuing->items->groupBy('product_id')->map(function($group) use ($roomNameMap, $alreadyVerified) {
                 $first = $group->first();
-                $requiredSerialCount = $group->sum(fn ($item) => $item->requiredSerialCount());
+                $requiredSerialCount = $this->requiredSerialCountForGroup($group);
                 $preparedSerials = $this->linkedSerialNumbersForItems($group);
                 $serialPayload = $preparedSerials->map(fn ($serialNumber) => [
                     'serial_number_id' => $serialNumber->id,
@@ -593,6 +606,32 @@ class MaterialVerificationController extends Controller
         return $material;
     }
 
+    /**
+     * How many distinct serial numbers a group of sibling rows (same product,
+     * possibly split across rooms) needs in total. Unit products need one
+     * distinct SN per physical unit, so per-row counts are summed. Aroma/refill
+     * batch products only ever need 1 SN code no matter how many rows/rooms
+     * share that product (InventoryIssuingItem::requiredSerialCount() already
+     * returns 1 per row for these, so naively summing across rows over-counts
+     * when the same product spans multiple rows, e.g. two rooms in one WI).
+     */
+    private function requiredSerialCountForGroup($items): int
+    {
+        $items = collect($items);
+        $first = $items->first();
+        $product = $first?->product;
+
+        if (!$product || !$product->requiresSerialNumber()) {
+            return 0;
+        }
+
+        if (!$product->requiresUniqueSerialNumber()) {
+            return 1;
+        }
+
+        return $items->sum(fn ($item) => $item->requiredSerialCount());
+    }
+
     private function linkedSerialNumbersForItems($items)
     {
         return collect($items)->flatMap(function ($item) {
@@ -620,5 +659,19 @@ class MaterialVerificationController extends Controller
         }
 
         return $serialIds->unique()->values();
+    }
+
+    private function submittedSerialCodes(array $material)
+    {
+        $codes = collect($material['serial_numbers'] ?? [])
+            ->pluck('serial_number')
+            ->filter()
+            ->map(fn ($sn) => strtoupper(trim($sn)));
+
+        if (! empty($material['serial_number'])) {
+            $codes->push(strtoupper(trim($material['serial_number'])));
+        }
+
+        return $codes->unique()->values();
     }
 }
