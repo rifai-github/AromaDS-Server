@@ -222,7 +222,7 @@
         document.getElementById('formMethod').value = 'POST';
         document.getElementById('termForm').reset();
         document.getElementById('is_active').checked = true;
-        document.getElementById('billing_mode').value = 'fixed_interval';
+        $('#billing_mode').val('fixed_interval').trigger('change');
         toggleTermModeState();
         document.getElementById('termModal').classList.add('show');
     }
@@ -234,7 +234,7 @@
         document.getElementById('label').value = term.label || '';
         document.getElementById('value').value = term.value || '';
         document.getElementById('months').value = term.months || '';
-        document.getElementById('billing_mode').value = term.billing_mode || 'fixed_interval';
+        $('#billing_mode').val(term.billing_mode || 'fixed_interval').trigger('change');
         document.getElementById('payment_count').value = term.payment_count || '';
         document.getElementById('is_advance').checked = !!term.is_advance;
         document.getElementById('description').value = term.description || '';
