@@ -18,6 +18,7 @@ class BackfillCatalystProductRelations extends Command
     private array $skuBrandVariantLookup = [];
     private array $nameBrandVariantLookup = [];
     private array $variantBrandVariantLookup = [];
+    private array $familyBrandVariantLookup = [];
 
     public function handle(): int
     {
@@ -182,6 +183,11 @@ class BackfillCatalystProductRelations extends Command
             $this->rememberUniquePair($this->skuBrandVariantLookup, $this->normalizeLookupKey($row->sku ?? null), $pair);
             $this->rememberUniquePair($this->nameBrandVariantLookup, $this->normalizeLookupKey($row->name ?? null), $pair);
             $this->rememberUniquePair($this->variantBrandVariantLookup, $this->normalizeLookupKey($row->variant_name ?? null), $pair);
+
+            $familyCandidate = $this->extractVariantCandidate($row->name ?? null);
+            if ($familyCandidate) {
+                $this->rememberUniquePair($this->familyBrandVariantLookup, $this->normalizeLookupKey($familyCandidate), $pair);
+            }
         }
     }
 
@@ -220,7 +226,8 @@ class BackfillCatalystProductRelations extends Command
             $variantCandidate = $this->extractVariantCandidate($product->name ?? null);
 
             if ($variantCandidate) {
-                $candidate = $this->findBrandVariantPairByLookup($variantCandidate, $this->variantBrandVariantLookup);
+                $candidate = $this->findBrandVariantPairByLookup($variantCandidate, $this->familyBrandVariantLookup)
+                    ?? $this->findBrandVariantPairByLookup($variantCandidate, $this->variantBrandVariantLookup);
 
                 if (!$candidate && $currentBrandLine) {
                     $candidate = [
