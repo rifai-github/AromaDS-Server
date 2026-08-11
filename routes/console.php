@@ -539,6 +539,20 @@ Artisan::command('operational:repair-job-schedule-rentals {job_number? : Optiona
     $createdLinks = 0;
     $createdRooms = 0;
     $processedJobs = 0;
+    $skippedWrongFlow = 0;
+
+    // Rentals only belong to a job of a given type if their flow calls for it
+    // (e.g. a refill_only rental must never be linked into an install/IR job)
+    // -- reuse the same decision JobAdviceController uses when jobs are first
+    // created, instead of re-deriving it here and risking drift.
+    $jobAdviceController = app(\App\Http\Controllers\Marketing\JobAdviceController::class);
+    $jobTypeFlowKey = [
+        'install' => 'needs_install',
+        'service' => 'needs_service',
+        'service_first' => 'needs_service',
+        'service_routine' => 'needs_service',
+        'check' => 'needs_check',
+    ];
 
     foreach ($jobs as $job) {
         if (! $job->jobAdvice || $job->jobAdvice->rooms->isEmpty()) {
@@ -550,6 +564,7 @@ Artisan::command('operational:repair-job-schedule-rentals {job_number? : Optiona
         $targetRoomId = $job->room_id ? (int) $job->room_id : null;
         $targetBuildingId = $job->building_id ? (int) $job->building_id : null;
         $targetRoomName = strtolower(trim((string) $job->room_name));
+        $flowKey = $jobTypeFlowKey[strtolower(trim((string) $job->type))] ?? null;
 
         foreach ($groups as $roomGroup) {
             $primaryJaRoom = $roomGroup->first();
@@ -570,6 +585,26 @@ Artisan::command('operational:repair-job-schedule-rentals {job_number? : Optiona
 
             if (! $belongsToJob) {
                 continue;
+            }
+
+            // A physical room can mix rental flows (e.g. a unit_refill item
+            // that needs install+service alongside a refill_only item that
+            // only ever needs service). Only link the rentals that actually
+            // belong on this job's type.
+            if ($flowKey !== null) {
+                $roomGroup = $roomGroup->filter(function ($jaRoom) use ($jobAdviceController, $flowKey) {
+                    $flow = $jobAdviceController->determineRentalJobFlow($jaRoom);
+
+                    return (bool) ($flow[$flowKey] ?? false);
+                })->values();
+
+                if ($roomGroup->isEmpty()) {
+                    $skippedWrongFlow++;
+
+                    continue;
+                }
+
+                $primaryJaRoom = $roomGroup->first();
             }
 
             $jobScheduleRoom = $job->jobScheduleRooms
@@ -628,7 +663,7 @@ Artisan::command('operational:repair-job-schedule-rentals {job_number? : Optiona
         return 0;
     }
 
-    $this->info("Done. Processed {$processedJobs} job(s), created {$createdRooms} room row(s), created {$createdLinks} rental link(s).");
+    $this->info("Done. Processed {$processedJobs} job(s), created {$createdRooms} room row(s), created {$createdLinks} rental link(s), skipped {$skippedWrongFlow} room-group(s) with no rental matching this job's type.");
 
     return 0;
 })->purpose('Repair JobScheduleRoom multi-rental links from JobAdviceRoom data');
@@ -824,6 +859,19 @@ Artisan::command('marketing:repair-ja-room-materials
     $groups = $jobAdvice->rooms->groupBy($roomKey);
     $touchedMaterialIssues = collect();
 
+    // Rentals only belong to a job of a given type if their flow calls for it
+    // (e.g. a refill_only rental must never be linked into an install/IR job)
+    // -- reuse the same decision JobAdviceController uses when jobs are first
+    // created, instead of re-deriving it here and risking drift.
+    $jobAdviceController = app(\App\Http\Controllers\Marketing\JobAdviceController::class);
+    $jobTypeFlowKey = [
+        'install' => 'needs_install',
+        'service' => 'needs_service',
+        'service_first' => 'needs_service',
+        'service_routine' => 'needs_service',
+        'check' => 'needs_check',
+    ];
+
     foreach ($jobs as $job) {
         $matchingGroups = $groups->filter(function ($roomGroup) use ($job, $roomIdOf, $buildingIdOf) {
             $primary = $roomGroup->first();
@@ -857,7 +905,25 @@ Artisan::command('marketing:repair-ja-room-materials
             });
         }
 
+        $flowKey = $jobTypeFlowKey[strtolower(trim((string) $job->type))] ?? null;
+
         foreach ($matchingGroups as $roomGroup) {
+            // A physical room can mix rental flows (e.g. a unit_refill item
+            // that needs install+service alongside a refill_only item that
+            // only ever needs service). Only sync the rentals that actually
+            // belong on this job's type.
+            if ($flowKey !== null) {
+                $roomGroup = $roomGroup->filter(function ($jaRoom) use ($jobAdviceController, $flowKey) {
+                    $flow = $jobAdviceController->determineRentalJobFlow($jaRoom);
+
+                    return (bool) ($flow[$flowKey] ?? false);
+                })->values();
+
+                if ($roomGroup->isEmpty()) {
+                    continue;
+                }
+            }
+
             $primary = $roomGroup->first();
             $scheduleRoom = $job->jobScheduleRooms
                 ->first(function ($scheduleRoom) use ($roomGroup) {

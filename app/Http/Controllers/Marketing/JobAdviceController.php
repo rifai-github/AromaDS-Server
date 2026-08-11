@@ -1934,7 +1934,7 @@ class JobAdviceController extends Controller
         ];
     }
 
-    private function determineRentalJobFlow($jaRoom): array
+    public function determineRentalJobFlow($jaRoom): array
     {
         $rental = $jaRoom->rentalProduct;
         $rentalType = strtolower(trim((string) ($rental?->rental_type ?? '')));
