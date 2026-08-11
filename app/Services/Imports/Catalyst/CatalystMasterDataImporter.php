@@ -570,6 +570,10 @@ class CatalystMasterDataImporter
                 return $this->skippedRow('Rental detail could not resolve its rental or component type.', $sourceKey);
             }
 
+            if (in_array(Str::upper($component), ['#N/A', 'N/A', 'NA'], true)) {
+                return $this->skippedRow('Rental detail component type is a placeholder value in the source data.', $sourceKey);
+            }
+
             if (!$this->yesNoToBool($row['FgActive'] ?? null, true)) {
                 return $this->skippedRow('Inactive rental detail source row skipped.', $sourceKey);
             }
@@ -1662,9 +1666,10 @@ class CatalystMasterDataImporter
             Str::contains($component, 'DIFFUSER') => ['diffuser', 'ads diffuser', 'ads'],
             Str::contains($component, 'DISPENSER') => ['dispenser'],
             Str::contains($component, 'REFILL') => ['refill', 'aroma refill', 'hs refill'],
-            Str::contains($component, 'BATTERY') => ['battery set', 'battery'],
+            Str::contains($component, 'BATTERY') || $component === 'BIN' => ['battery set', 'battery'],
             Str::contains($component, 'PART') => ['spare part', 'part'],
             Str::contains($component, 'CLEAN') => ['cleaner'],
+            Str::contains($component, ['FILTER', 'THERMAL']) => ['aroma filter', 'air filter', 'ads thermal', 'thermal251219'],
             default => [$component],
         };
 
@@ -1689,7 +1694,7 @@ class CatalystMasterDataImporter
             Str::contains($component, 'DIFFUSER') => ['diffuser', 'diff'],
             Str::contains($component, 'DISPENSER') => ['dispenser', 'dsp', 'hsd'],
             Str::contains($component, 'REFILL') => ['refill', 'ref', 'ar', 'hsr'],
-            Str::contains($component, 'BATTERY') => ['battery', 'btr'],
+            Str::contains($component, 'BATTERY') || $component === 'BIN' => ['battery', 'btr'],
             Str::contains($component, 'PART') => ['part'],
             Str::contains($component, 'CLEAN') => ['cleaner', 'clean'],
             default => [$component],
