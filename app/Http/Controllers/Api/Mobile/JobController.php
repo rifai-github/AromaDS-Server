@@ -1874,7 +1874,61 @@ class JobController extends Controller
                     }
                 }
             }
-            
+
+            // GANTI UNIT SUPPORT: Service/CSR/Change Rental jobs only get refill/material
+            // items in $products above (Unit On Wall is only fetched for Remove jobs), so
+            // the room's actually-installed unit and its real serial number were never
+            // surfaced here. That left the mobile "Ganti Unit" flow with nothing to match
+            // the scanned "SN Lama" against — it always failed with "Serial Number lama
+            // tidak sesuai!" for these job types, even with the correct SN, because the app
+            // only validates against whatever's already in room.products (see
+            // UnitDetailDialog/_handleSwapUnit's productsWithSn filter). Merge in the
+            // room's active Unit On Wall device(s) here so the swap has a real SN to
+            // validate against, without disturbing the refill materials already listed.
+            if ($this->isServiceLikeJob($job)) {
+                $swapUnitOnWallQuery = \App\Models\UnitOnWall::where('status', 'active')
+                    ->where('customer_id', $job->jobAdvice->customer_id)
+                    ->where('building_id', $job->building_id);
+
+                if ($masterRoom && $masterRoom->id) {
+                    $swapUnitOnWallQuery->where('room_id', $masterRoom->id);
+                } elseif ($roomName) {
+                    $swapUnitOnWallQuery->where('room_name', $roomName);
+                }
+
+                $swapUnitOnWalls = $swapUnitOnWallQuery->with(['product.productType', 'serialNumber'])->get();
+
+                foreach ($swapUnitOnWalls as $unit) {
+                    if (!$unit->product || !($unit->product->productType?->is_unit)) {
+                        continue;
+                    }
+
+                    $alreadyListed = collect($products)->contains(
+                        fn ($p) => ($p['unit_on_wall_id'] ?? null) === $unit->id
+                    );
+                    if ($alreadyListed) {
+                        continue;
+                    }
+
+                    $serialNumber = $unit->serialNumber->serial_number ?? $unit->serial_number ?? '';
+
+                    $products[] = array_merge([
+                        'product_id' => $unit->product_id,
+                        'product_name' => $unit->product->name ?? '-',
+                        'product_code' => $unit->product->sku ?? '-',
+                        'kode' => $unit->product->sku ?? '-',
+                        'product_type' => $unit->product->productType->name ?? '-',
+                        'quantity' => 1,
+                        'unit' => $unit->product->unit ?? 'pcs',
+                        'source' => 'unit_on_wall',
+                        'serial_number' => $serialNumber,
+                        'unit_on_wall_id' => $unit->id,
+                        'requires_serial_number' => $unit->product->requiresSerialNumber(),
+                        'is_unit' => true,
+                    ], $this->serialConditionPayload($unit->serialNumber));
+                }
+            }
+
             // Get dimensions from MasterRoom (access directly using room_length, room_width, room_height)
             // Ensure values are cast to float for JSON response
             $length = $masterRoom ? (float)($masterRoom->room_length ?? 0) : 0.0;
