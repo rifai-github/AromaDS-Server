@@ -262,8 +262,7 @@ class InvoiceController extends Controller
             ->get()
             ->filter(function (Contract $contract) use ($invoiceService) {
                 try {
-                    return collect($invoiceService->getRentalPeriodsForContract($contract->id))
-                        ->contains(fn ($period) => ($period['status'] ?? null) === 'completed');
+                    return $invoiceService->hasRecentCompletedPeriod($contract, now()->subMonths(12));
                 } catch (\Throwable $e) {
                     return false;
                 }
@@ -273,16 +272,25 @@ class InvoiceController extends Controller
 
     public function getRegenerationContracts()
     {
-        $contracts = $this->getInvoiceRegenerationContracts()
-            ->map(function (Contract $contract) {
-                return [
-                    'id' => $contract->id,
-                    'contract_number' => $contract->contract_number,
-                    'customer_name' => $contract->customer?->name ?? '-',
-                    'payment_method' => $contract->quotation?->payment_method ?? $contract->quotation?->billing_methods ?? '-',
-                ];
-            })
-            ->values();
+        try {
+            $contracts = $this->getInvoiceRegenerationContracts()
+                ->map(function (Contract $contract) {
+                    return [
+                        'id' => $contract->id,
+                        'contract_number' => $contract->contract_number,
+                        'customer_name' => $contract->customer?->name ?? '-',
+                        'payment_method' => $contract->quotation?->payment_method ?? $contract->quotation?->billing_methods ?? '-',
+                    ];
+                })
+                ->values();
+        } catch (\Throwable $e) {
+            \Log::error('getRegenerationContracts failed: '.$e->getMessage(), ['exception' => $e]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal memuat daftar contract: '.$e->getMessage(),
+            ], 500);
+        }
 
         return response()->json([
             'status' => 'success',

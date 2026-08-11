@@ -1599,6 +1599,51 @@ class InvoiceGenerationService
     }
 
     /**
+     * Cheap eligibility check for the "Regenerate Invoice" contract picker: whether this
+     * contract has at least one 'completed' rental period within the given lookback
+     * window. Mirrors getRentalPeriodsForContract()'s period-boundary math exactly (so
+     * period dates/ordering stay identical) but only runs the expensive per-period
+     * job-completion query (getPeriodStatus(), which hits the DB) for periods inside the
+     * window, and stops as soon as a completed period is found. Scanning every period
+     * since contract start for every active contract (getInvoiceRegenerationContracts()
+     * previously called getRentalPeriodsForContract() for all ~5,000 active contracts)
+     * was timing out the modal — most contracts run for years, so that was thousands of
+     * unbounded DB queries per request.
+     */
+    public function hasRecentCompletedPeriod(Contract $contract, Carbon $sinceDate): bool
+    {
+        $currentDate = $contract->start_date;
+        $endDate = $contract->end_date;
+
+        if (! $currentDate || ! $endDate) {
+            return false;
+        }
+
+        $periodType = $contract->invoice_period_type ?? 'contract_date';
+        $topIntervalMonths = max(1, (int) ($contract->top_interval_months ?? 1));
+
+        while ($currentDate <= $endDate) {
+            if ($periodType === 'monthly') {
+                $periodEnd = $currentDate->copy()->endOfMonth();
+                $periodEnd = ($periodEnd > $endDate) ? $endDate : $periodEnd;
+            } else {
+                $periodEnd = $currentDate->copy()->addMonths($topIntervalMonths)->subDay();
+                $periodEnd = ($periodEnd > $endDate) ? $endDate : $periodEnd;
+            }
+
+            if ($periodEnd->gte($sinceDate) && $this->getPeriodStatus($contract, $currentDate, $periodEnd) === 'completed') {
+                return true;
+            }
+
+            $currentDate = $periodType === 'monthly'
+                ? $currentDate->copy()->addMonth()->startOfMonth()
+                : $currentDate->copy()->addMonths($topIntervalMonths);
+        }
+
+        return false;
+    }
+
+    /**
      * Attempt to auto-generate invoice for a contract if conditions are met
      * (Real-time trigger for Job Completion)
      */
