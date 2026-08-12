@@ -467,6 +467,82 @@ class MobileCompleteRoomDuplicateTest extends TestCase
         $this->assertSame('in_progress', DB::table('job_schedules')->where('id', 11)->value('status'));
     }
 
+    public function test_completing_one_sibling_job_schedules_room_does_not_prematurely_flip_it_to_teknisi_selesai_pengerjaan(): void
+    {
+        // Multi-room CSR/Service jobs are stored as one job_schedules row PER ROOM
+        // (unlike the install case above, where one job_schedules row owns several
+        // job_schedule_rooms). Each row's own areAllRoomsCompleted() only sees its
+        // own single room, so completing that one room used to flip THAT row alone
+        // to 'teknisi_selesai_pengerjaan' even while the sibling row's room (the
+        // mobile app shows both combined as one "2 Ruangan" card) hadn't started.
+        DB::table('job_advices')->insert([
+            'id' => 72,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            ['id' => 90, 'job_advice_id' => 72, 'room_name' => 'Ruang ABC', 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 91, 'job_advice_id' => 72, 'room_name' => 'Ruang XYZ', 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_schedules')->insert([
+            ['id' => 13, 'job_advice_id' => 72, 'job_number' => 'SBY-CSR/26-10/0099', 'type' => 'service', 'status' => 'barang_diambil', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 14, 'job_advice_id' => 72, 'job_number' => 'SBY-CSR/26-10/0099', 'type' => 'service', 'status' => 'barang_diambil', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            ['id' => 190, 'job_schedule_id' => 13, 'job_advice_room_id' => 90, 'room_name' => 'Ruang ABC', 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 191, 'job_schedule_id' => 14, 'job_advice_room_id' => 91, 'room_name' => 'Ruang XYZ', 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $this->seedMaterialReadyForJob(13, 40);
+        $this->seedMaterialReadyForJob(14, 41);
+
+        $controller = app(JobController::class);
+
+        // Step 1: complete Ruang ABC (job schedule 13's own room). Its sibling (job
+        // schedule 14 / Ruang XYZ) hasn't been touched, so job 13 must NOT flip to
+        // 'teknisi_selesai_pengerjaan' yet — even though job 13's own single room is
+        // now 100% complete in isolation.
+        $requestAbc = Request::create('/api/v1/mobile/rooms/90/complete', 'POST', [
+            'job_schedule_id' => 13,
+        ], [], [
+            'before_photos' => [UploadedFile::fake()->image('before-abc.jpg')],
+            'after_photos' => [UploadedFile::fake()->image('after-abc.jpg')],
+        ]);
+        $responseAbc = $controller->completeRoom($requestAbc, 90);
+        $payloadAbc = json_decode($responseAbc->getContent(), true);
+
+        $this->assertSame(200, $responseAbc->getStatusCode());
+        $this->assertFalse($payloadAbc['data']['all_completed']);
+        $this->assertSame('completed', DB::table('job_schedule_rooms')->where('id', 190)->value('status'));
+        $this->assertSame('in_progress', DB::table('job_schedules')->where('id', 13)->value('status'));
+        $this->assertSame('barang_diambil', DB::table('job_schedules')->where('id', 14)->value('status'));
+
+        // Step 2: complete Ruang XYZ (the sibling's room). Now every sibling room in
+        // this job_number+type group is done, so BOTH job schedules should flip to
+        // 'teknisi_selesai_pengerjaan' — whichever card the technician is viewing
+        // correctly offers "Verifikasi Pekerjaan".
+        $requestXyz = Request::create('/api/v1/mobile/rooms/91/complete', 'POST', [
+            'job_schedule_id' => 14,
+        ], [], [
+            'before_photos' => [UploadedFile::fake()->image('before-xyz.jpg')],
+            'after_photos' => [UploadedFile::fake()->image('after-xyz.jpg')],
+        ]);
+        $responseXyz = $controller->completeRoom($requestXyz, 91);
+        $payloadXyz = json_decode($responseXyz->getContent(), true);
+
+        $this->assertSame(200, $responseXyz->getStatusCode());
+        $this->assertTrue($payloadXyz['data']['all_completed']);
+        $this->assertSame('teknisi_selesai_pengerjaan', DB::table('job_schedules')->where('id', 14)->value('status'));
+        $this->assertSame(
+            'teknisi_selesai_pengerjaan',
+            DB::table('job_schedules')->where('id', 13)->value('status'),
+            'Sibling job schedule 13 should also be flipped once every sibling room is done.'
+        );
+    }
+
     public function test_unit_refill_completion_does_not_auto_complete_unit_only_sibling_without_scan(): void
     {
         DB::table('job_advices')->insert([

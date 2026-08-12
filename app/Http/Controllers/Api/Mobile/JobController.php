@@ -2630,11 +2630,42 @@ class JobController extends Controller
             // Check completion at JobScheduleRoom level. One JA can have IR, CSR, and remove,
             // so JobAdviceRoom status must not complete sibling jobs automatically.
             $allCompleted = $jobSchedule ? $jobSchedule->areAllRoomsCompleted() : false;
-            
+
+            // Multi-room jobs are stored as one job_schedules row PER ROOM sharing the same
+            // job_number+type (JobAdviceController::createJobScheduleForRoom). The mobile
+            // job detail page merges every sibling room into one combined "N Ruangan" card,
+            // but areAllRoomsCompleted() above only checks the CURRENT row's own room(s) -
+            // so finishing the first of several sibling rooms flipped just that one row to
+            // 'teknisi_selesai_pengerjaan', which the app's "PRIORITY 1" check reads as
+            // "show Verifikasi Pekerjaan" even though a sibling room hadn't been started.
+            // Require every sibling row's own rooms to also be complete before flipping.
+            $siblingSchedules = collect();
+            if ($allCompleted && $jobSchedule && $jobSchedule->job_number) {
+                $siblingSchedules = JobSchedule::where('job_number', $jobSchedule->job_number)
+                    ->where('type', $jobSchedule->type)
+                    ->where('id', '!=', $jobSchedule->id)
+                    ->get();
+
+                if ($siblingSchedules->contains(fn ($sibling) => !$sibling->areAllRoomsCompleted())) {
+                    $allCompleted = false;
+                }
+            }
+
             if ($allCompleted && $jobSchedule && !in_array($jobSchedule->status, ['done_job', 'completed', 'selesai'])) {
                 $jobSchedule->status = 'teknisi_selesai_pengerjaan';
                 $jobSchedule->updated_by = Auth::id();
                 $jobSchedule->save();
+
+                // Every sibling's own rooms are also done at this point (checked above) -
+                // flip any that haven't reached this status yet too, so whichever sibling
+                // card the technician is viewing also correctly shows Verifikasi Pekerjaan.
+                foreach ($siblingSchedules as $sibling) {
+                    if (!in_array($sibling->status, ['teknisi_selesai_pengerjaan', 'done_job', 'completed', 'selesai'], true)) {
+                        $sibling->status = 'teknisi_selesai_pengerjaan';
+                        $sibling->updated_by = Auth::id();
+                        $sibling->save();
+                    }
+                }
             } elseif ($jobSchedule && !in_array($jobSchedule->status, ['teknisi_selesai_pengerjaan', 'done_job', 'completed', 'selesai'])) {
                 // If not all rooms done, ensure current job is at least in_progress
                 if ($jobSchedule->status !== 'in_progress') {
