@@ -740,7 +740,7 @@ class JobController extends Controller
             }
             
             $buildingAddress = trim(implode(', ', array_filter([
-                $building->address ?? $building->alamat_1 ?? '',
+                $building->building_address ?? '',
                 $city,
                 $province,
             ])));
@@ -843,7 +843,7 @@ class JobController extends Controller
             'room_id' => $roomId,
             'job_number' => $job->job_number,
             'customer_name' => $job->jobAdvice->customer->name ?? 'N/A',
-            'building_name' => $building?->building_name ?? $building?->name ?? $building?->nama_gedung ?? 'N/A',
+            'building_name' => $building?->building_name ?? 'N/A',
             'building_address' => $buildingAddress,
             'room_name' => $roomName,
             'room_status' => $roomStatus,

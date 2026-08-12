@@ -115,9 +115,7 @@
             $techName = $technicians->merge($teamNames)->unique()->filter()->implode(', ') ?: '-';
 
             $building = $mainJob->building;
-            $buildingName = $building?->nama_gedung
-                ?? $building?->name
-                ?? $building?->building_name
+            $buildingName = $building?->building_name
                 ?? $mainJob->building_name
                 ?? '-';
 

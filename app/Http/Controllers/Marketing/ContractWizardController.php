@@ -79,21 +79,21 @@ class ContractWizardController extends Controller
         return $buildings
             ->filter(fn ($building) => $building && $building->id && (bool) $building->status_update)
             ->unique('id')
-            ->sortBy(fn ($building) => $building->nama_gedung ?: $building->name)
+            ->sortBy(fn ($building) => $building->building_name)
             ->values()
             ->map(fn ($building) => [
                 'id' => $building->id,
-                'nama_gedung' => $building->nama_gedung ?: $building->name,
-                'name' => $building->name ?: $building->nama_gedung,
-                'alamat_1' => $building->alamat_1 ?: $building->address,
-                'address' => $building->address ?: $building->alamat_1,
+                'nama_gedung' => $building->building_name,
+                'name' => $building->building_name,
+                'alamat_1' => $building->building_address,
+                'address' => $building->building_address,
                 'alamat_2' => $building->alamat_2,
                 'province' => $building->province?->name,
                 'city' => $building->city?->name,
                 'district' => $building->district?->name,
                 'subdistrict' => $building->subdistrict?->name,
-                'kode_pos' => $building->kode_pos ?: $building->postal_code,
-                'postal_code' => $building->postal_code ?: $building->kode_pos,
+                'kode_pos' => $building->building_postal_code,
+                'postal_code' => $building->building_postal_code,
                 'phone_1' => $building->phone_1,
                 'phone_2' => $building->phone_2,
                 'email' => $building->email,

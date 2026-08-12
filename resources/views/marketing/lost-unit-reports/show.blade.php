@@ -420,18 +420,18 @@
                             @if($buildings->count() > 0)
                                 <ul class="mb-0 ps-3">
                                 @foreach($buildings as $bding)
-                                    <li>{{ $bding->name ?? $bding->nama_gedung ?? '-' }}</li>
+                                    <li>{{ $bding->building_name ?? '-' }}</li>
                                 @endforeach
                                 </ul>
                             @else
-                                {{ $report->building->name ?? $report->building->nama_gedung ?? '-' }}
+                                {{ $report->building->building_name ?? '-' }}
                             @endif
                         </div>
                     </div>
                 @elseif($report->building)
                     <div class="info-row mt-3">
                         <div class="info-label">Building</div>
-                        <div class="info-value">{{ $report->building->name ?? $report->building->nama_gedung ?? '-' }}</div>
+                        <div class="info-value">{{ $report->building->building_name ?? '-' }}</div>
                     </div>
                 @endif
                 @if($report->branch)

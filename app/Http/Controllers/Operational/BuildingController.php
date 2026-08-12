@@ -759,7 +759,7 @@ class BuildingController extends Controller
             $data = \App\Services\OperationalAreaService::getValidationData($survey->building);
             $data['branches_url'] = route('company.branches.index');
             $data['building_id'] = $survey->building->id;
-            $data['building_name'] = $survey->building->nama_gedung ?? $survey->building->name;
+            $data['building_name'] = $survey->building->building_name;
             
             return response()->json($data);
         } catch (\Exception $e) {

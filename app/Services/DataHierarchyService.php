@@ -479,7 +479,7 @@ class DataHierarchyService
         return [
             'id' => $building->id,
             'name' => $building->name,
-            'nama_gedung' => $building->nama_gedung,
+            'nama_gedung' => $building->building_name,
             'address' => $building->address,
             'alamat_1' => $building->alamat_1,
             'alamat_2' => $building->alamat_2,
@@ -623,7 +623,7 @@ class DataHierarchyService
             $buildingNode = [
                 'id' => $building->id,
                 'type' => 'building',
-                'name' => $building->name ?: $building->nama_gedung,
+                'name' => $building->building_name,
                 'children' => [],
             ];
 

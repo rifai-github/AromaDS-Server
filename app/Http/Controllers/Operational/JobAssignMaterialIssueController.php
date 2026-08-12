@@ -766,7 +766,7 @@ class JobAssignMaterialIssueController extends Controller
             'jobAssignSchedule.jobSchedule.jobAdvice:id,customer_id,contract_id,quotation_id',
             'jobAssignSchedule.jobSchedule.jobAdvice.customer:id,name',
             'jobAssignSchedule.jobSchedule.jobAdvice.contract:id,quotation_id,notes_operation',
-            'jobAssignSchedule.jobSchedule.building:id,nama_gedung,city_id,branch_id',
+            'jobAssignSchedule.jobSchedule.building:id,nama_gedung,name,city_id,branch_id',
             'jobAssignSchedule.jobSchedule.building.city:id,name,province_id',
             'jobAssignSchedule.jobSchedule.building.city.branches:id,name,city_id,province_id',
             'jobAssignSchedule.jobSchedule.building.city.province:id,name',

@@ -657,7 +657,7 @@ class JobSchedule extends Model
 
     public function getBuildingNameAttribute()
     {
-        return $this->building ? $this->building->nama_gedung : '-';
+        return $this->building ? $this->building->building_name : '-';
     }
 
     public function getRoomNameAttribute()

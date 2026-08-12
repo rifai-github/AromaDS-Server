@@ -1263,10 +1263,8 @@ class ContractController extends Controller
                     $contract = $match['contract'];
                     $contractRoom = $match['contract_room'];
                     $roomName = $unit->room?->room_name ?: $unit->room_name;
-                    $buildingName = $unit->building?->nama_gedung
-                        ?? $unit->building?->name
-                        ?? $unit->room?->building?->nama_gedung
-                        ?? $unit->room?->building?->name
+                    $buildingName = $unit->building?->building_name
+                        ?? $unit->room?->building?->building_name
                         ?? null;
 
                     return [
@@ -1475,8 +1473,8 @@ class ContractController extends Controller
                             'room_floor' => $contractRoom->room->room_floor ?? 'N/A',
                             'building' => [
                                 'id' => $contractRoom->room->building?->id,
-                                'nama_gedung' => $contractRoom->room->building?->nama_gedung ?? $contractRoom->room->building?->name ?? 'N/A',
-                                'name' => $contractRoom->room->building?->nama_gedung ?? $contractRoom->room->building?->name ?? 'N/A',
+                                'nama_gedung' => $contractRoom->room->building?->building_name ?? 'N/A',
+                                'name' => $contractRoom->room->building?->building_name ?? 'N/A',
                             ],
                         ],
                         'has_active_unit' => $this->contractRoomHasActiveUnitOnWall($contract, $contractRoom),
@@ -2686,7 +2684,7 @@ class ContractController extends Controller
         if ($billingGroupIds->isEmpty()) {
             return $contractBuildings->map(fn ($building) => [
                 'id' => $building->id,
-                'name' => $building->nama_gedung ?? $building->name ?? 'Building #'.$building->id,
+                'name' => $building->building_name ?? 'Building #'.$building->id,
             ]);
         }
 
@@ -2701,7 +2699,7 @@ class ContractController extends Controller
             ->reject(fn ($building) => in_array((int) $building->id, $assignedBuildingIds, true))
             ->map(fn ($building) => [
                 'id' => $building->id,
-                'name' => $building->nama_gedung ?? $building->name ?? 'Building #'.$building->id,
+                'name' => $building->building_name ?? 'Building #'.$building->id,
             ])
             ->values();
     }
@@ -3134,7 +3132,7 @@ class ContractController extends Controller
                     if (! $buildings->contains('id', $building->id)) {
                         $buildings->push([
                             'id' => $building->id,
-                            'nama_gedung' => $building->nama_gedung ?? $building->name,
+                            'nama_gedung' => $building->building_name,
                             'name' => $building->name,
                         ]);
                     }
@@ -3149,7 +3147,7 @@ class ContractController extends Controller
                     if (! $buildings->contains('id', $building->id)) {
                         $buildings->push([
                             'id' => $building->id,
-                            'nama_gedung' => $building->nama_gedung ?? $building->name,
+                            'nama_gedung' => $building->building_name,
                             'name' => $building->name,
                         ]);
                     }

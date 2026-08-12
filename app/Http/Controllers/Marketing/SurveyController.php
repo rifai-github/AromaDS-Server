@@ -265,7 +265,7 @@ class SurveyController extends Controller
             
             // Get building info for auto-filling building_name
             $building = \App\Models\Building::find($request->building_id);
-            $buildingName = $building ? ($building->nama_gedung ?? $building->name) : null;
+            $buildingName = $building ? ($building->building_name) : null;
             
             $survey = Survey::create([
                 'survey_number' => $surveyNumber,
@@ -390,7 +390,7 @@ class SurveyController extends Controller
             
             // Get building info for auto-filling building_name
             $building = \App\Models\Building::find($request->building_id);
-            $buildingName = $building ? ($building->nama_gedung ?? $building->name) : null;
+            $buildingName = $building ? ($building->building_name) : null;
             
             $survey->update([
                 'survey_number' => $request->survey_number,

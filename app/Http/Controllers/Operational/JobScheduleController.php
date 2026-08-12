@@ -7816,7 +7816,7 @@ class JobScheduleController extends Controller
                             'status' => 'scheduled',
                             'job_advice_id' => $jobAdvice->id,
                             'building_id' => $building?->id,
-                            'building_name' => $building?->nama_gedung ?? $building?->name,
+                            'building_name' => $building?->building_name,
                             'room_id' => $roomId,
                             'room_name' => $primaryRoom->room_name,
                             'company_name' => $jobAdvice->company_name,

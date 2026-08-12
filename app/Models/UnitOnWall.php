@@ -243,7 +243,7 @@ class UnitOnWall extends Model
     public function getFullLocationAttribute()
     {
         $location = [];
-        if ($this->building) $location[] = $this->building->nama_gedung;
+        if ($this->building) $location[] = $this->building->building_name;
         if ($this->room) $location[] = $this->room->room_name;
         return implode(' - ', $location) ?: '-';
     }

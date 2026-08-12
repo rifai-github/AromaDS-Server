@@ -1149,7 +1149,7 @@
                                             <td>{{ $index + 1 }}</td>
                                             <td>
                                                 @if($contractRoom->building)
-                                                    <a href="{{ route('operational.buildings.show', $contractRoom->building) }}" target="_blank" rel="noopener noreferrer">{{ $contractRoom->building->nama_gedung ?? $contractRoom->building->name ?? '-' }}</a>
+                                                    <a href="{{ route('operational.buildings.show', $contractRoom->building) }}" target="_blank" rel="noopener noreferrer">{{ $contractRoom->building->building_name ?? '-' }}</a>
                                                 @else
                                                     -
                                                 @endif
@@ -1386,7 +1386,7 @@
                                                     $alamatPenagihan = $billingGroup->npwp_address;
                                                 } elseif ($firstBuilding) {
                                                     // Fallback to Building Name if no tax info
-                                                     $alamatPenagihan = $firstBuilding->nama_gedung ?? $firstBuilding->name ?? '-';
+                                                     $alamatPenagihan = $firstBuilding->building_name ?? '-';
                                                 }
                                                 
                                                 // PIC Finance (customer contact)
@@ -1607,7 +1607,7 @@
                                         @forelse($uniqueBuildings as $index => $building)
                                         <tr>
                                             <td>{{ $loop->iteration }}</td>
-                                            <td>{{ $building->nama_gedung ?? $building->name ?? '-' }}</td>
+                                            <td>{{ $building->building_name ?? '-' }}</td>
                                             <td>{{ $building->kode_pos ?? $building->postal_code ?? '-' }}</td>
                                             <td>{{ $building->alamat_1 ?? $building->address ?? '-' }}</td>
                                             <td>{{ $building->city->name ?? '-' }}</td>
@@ -1903,7 +1903,7 @@ function saveActiveContractEdit() {
             })
             ->unique('id')
             ->map(function($building) {
-                $name = $building->nama_gedung ?? $building->name ?? 'Building #' . ($building->id ?? 0);
+                $name = $building->building_name ?? 'Building #' . ($building->id ?? 0);
                 // Ensure name is safe for JSON
                 $name = str_replace(["\n", "\r", "\t"], ' ', $name);
                 return [

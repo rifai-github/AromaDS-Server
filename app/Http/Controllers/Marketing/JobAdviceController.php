@@ -2204,7 +2204,7 @@ class JobAdviceController extends Controller
                     'status' => 'scheduled', 
                     'job_advice_id' => $jobAdvice->id,
                     'building_id' => $building->id,
-                    'building_name' => $building->nama_gedung ?? $building->name,
+                    'building_name' => $building->building_name,
                     'company_name' => $jobAdvice->company_name,
                     'quotation_number' => $quotationNumber,
                     'schedule_date' => $jobAdvice->expected_date,
@@ -2227,7 +2227,7 @@ class JobAdviceController extends Controller
                         'status' => 'scheduled',
                         'job_advice_id' => $jobAdvice->id,
                         'building_id' => $building->id,
-                        'building_name' => $building->nama_gedung ?? $building->name,
+                        'building_name' => $building->building_name,
                         'company_name' => $jobAdvice->company_name,
                         'quotation_number' => $quotationNumber,
                         'schedule_date' => $jobAdvice->remove_date,
@@ -3199,7 +3199,7 @@ class JobAdviceController extends Controller
             'status' => 'scheduled', // MOM9: Will auto-update to 'new_job' or 'assign_team' when team assigned
             'job_advice_id' => $jobAdvice->id,
             'building_id' => $building->id,
-            'building_name' => $building->nama_gedung ?? $building->name,
+            'building_name' => $building->building_name,
             'company_name' => $jobAdvice->company_name,
             'contract_number' => $jobAdvice->contract->contract_number ?? null,
             'quotation_number' => $quotationNumber, // MOM9: For Install Free from Quotation
@@ -3382,7 +3382,7 @@ class JobAdviceController extends Controller
                 'status' => 'scheduled',
                 'job_advice_id' => $jobAdvice->id,
                 'building_id' => $roomBuilding->id,
-                'building_name' => $roomBuilding->nama_gedung ?? $roomBuilding->name,
+                'building_name' => $roomBuilding->building_name,
                 'room_id' => $roomId, // Direct room reference
                 'room_name' => $jaRoom->room_name, // Direct room name
                 'company_name' => $jobAdvice->company_name,
@@ -3541,7 +3541,7 @@ class JobAdviceController extends Controller
                 'status' => 'scheduled',
                 'job_advice_id' => $jobAdvice->id,
                 'building_id' => $building->id,
-                'building_name' => $building->nama_gedung,
+                'building_name' => $building->building_name,
                 'company_name' => $jobAdvice->company_name,
                 'contract_number' => $contract->contract_number ?? null,
                 'schedule_date' => $jobAdvice->expected_date,

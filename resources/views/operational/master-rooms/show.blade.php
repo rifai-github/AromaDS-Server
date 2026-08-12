@@ -240,7 +240,7 @@
                                     <div>
                                         <label class="info-label">Gedung</label>
                                         <div class="info-value-box" style="background: #f1f5f9; color: #1e293b;">
-                                            {{ $masterRoom->building->nama_gedung ?? '-' }}
+                                            {{ $masterRoom->building->building_name ?? '-' }}
                                         </div>
                                     </div>
                                     <div>

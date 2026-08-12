@@ -1430,7 +1430,7 @@ class BillingGroupController extends Controller
                 ->map(function($building) {
                     return [
                         'id' => $building->id,
-                        'name' => $building->nama_gedung ?? $building->name ?? 'Building #' . $building->id
+                        'name' => $building->building_name ?? 'Building #' . $building->id
                     ];
                 });
 
@@ -1478,7 +1478,7 @@ class BillingGroupController extends Controller
                     $building = $bgBuilding->building;
                     return [
                         'id' => $building->id,
-                        'name' => $building->nama_gedung ?? $building->name ?? 'Building #' . $building->id
+                        'name' => $building->building_name ?? 'Building #' . $building->id
                     ];
                 });
 
@@ -1505,7 +1505,7 @@ class BillingGroupController extends Controller
 
                     return [
                         'id' => $building->id,
-                        'name' => $building->nama_gedung ?? $building->name ?? 'Building #' . $building->id,
+                        'name' => $building->building_name ?? 'Building #' . $building->id,
                         'assigned_to_other' => $assignedToOther,
                         'assigned_to_billing_group' => $assignedToOther ? $otherAssignedBuildingIds[$building->id]->billingGroup->billing_group_name : null,
                         'assigned_to_this' => $assignedToThis

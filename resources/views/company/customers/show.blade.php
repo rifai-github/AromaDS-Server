@@ -502,7 +502,7 @@
                             <tbody>
                                 @forelse($customer->buildingCustomers as $building)
                                 <tr>
-                                    <td style="padding: 12px;"><strong>{{ $building->nama_gedung ?? $building->name }}</strong></td>
+                                    <td style="padding: 12px;"><strong>{{ $building->building_name }}</strong></td>
                                     <td style="padding: 12px;">{{ $building->city->name ?? '-' }}</td>
                                     <td style="padding: 12px;"><small>{{ $building->alamat_1 }}</small></td>
                                     <td style="padding: 12px; text-align: center;">{{ $building->total_floors ?? '-' }}</td>

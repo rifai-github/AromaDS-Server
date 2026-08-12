@@ -313,7 +313,7 @@ class MasterRoomController extends Controller
         foreach ($unitsOnWall as $item) {
             $rentalUnits->push((object)[
                 'company_name' => $item->customer->name ?? $item->company_name ?? '-',
-                'building_name' => $item->building->nama_gedung ?? '-',
+                'building_name' => $item->building->building_name ?? '-',
                 'room_name' => $item->room_name ?? $masterRoom->room_name,
                 'rental_name' => $item->rental->rental_name ?? $item->rental_name ?? '-',
                 'reference_number' => $item->serial_number ?: 'Installed Unit',
@@ -335,7 +335,7 @@ class MasterRoomController extends Controller
 
             $rentalUnits->push((object)[
                 'company_name' => $item->contract->customer->name ?? '-',
-                'building_name' => $item->room->building->nama_gedung ?? $item->building->nama_gedung ?? '-',
+                'building_name' => $item->room->building->building_name ?? $item->building->building_name ?? '-',
                 'room_name' => $masterRoom->room_name,
                 'rental_name' => $item->rental_product->rental_name ?? 'Pending Assignment',
                 'reference_number' => $item->contract->contract_number,
@@ -354,7 +354,7 @@ class MasterRoomController extends Controller
             foreach ($qr->quotationRentals as $rental) {
                 $rentalUnits->push((object)[
                     'company_name' => $qr->quotation->customer->name ?? $qr->quotation->company_name ?? '-',
-                    'building_name' => $masterRoom->building->nama_gedung ?? '-',
+                    'building_name' => $masterRoom->building->building_name ?? '-',
                     'room_name' => $masterRoom->room_name,
                     'rental_name' => $rental->masterRental->rental_name ?? '-',
                     'reference_number' => $qr->quotation->quotation_number,
@@ -373,7 +373,7 @@ class MasterRoomController extends Controller
         foreach ($roomRentalUnits as $item) {
             $rentalUnits->push((object)[
                 'company_name' => $item->company_name,
-                'building_name' => $item->building->nama_gedung ?? '-',
+                'building_name' => $item->building->building_name ?? '-',
                 'room_name' => $item->room_name,
                 'rental_name' => $item->rental_name,
                 'reference_number' => $item->reference_number,

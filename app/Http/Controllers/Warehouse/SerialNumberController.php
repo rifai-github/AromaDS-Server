@@ -298,7 +298,7 @@ class SerialNumberController extends Controller
                 'action' => $ui->status,
                 'action_date' => $ui->install_date,
                 'customer_name' => $ui->jobSchedule->company_name ?? '-',
-                'location' => ($ui->room->building->nama_gedung ?? '-').' - '.($ui->room->room_name ?? '-'),
+                'location' => ($ui->room->building->building_name ?? '-').' - '.($ui->room->room_name ?? '-'),
                 'technician_name' => $ui->jobSchedule->assignedTechnician->name ?? '-',
                 'job_schedule_number' => $ui->jobSchedule->job_number ?? '-',
                 'job_schedule_id' => $ui->job_schedule_id,

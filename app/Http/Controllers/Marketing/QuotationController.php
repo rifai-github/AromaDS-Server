@@ -2048,7 +2048,7 @@ class QuotationController extends Controller
                 if ($building->customers()->where('customers.id', $customerId)->exists()) {
                     $skippedBuildings[] = [
                         'id' => $buildingId,
-                        'name' => $building->nama_gedung ?? $building->name,
+                        'name' => $building->building_name,
                         'reason' => 'Already assigned to this customer'
                     ];
                     continue;
@@ -2062,7 +2062,7 @@ class QuotationController extends Controller
                 ]);
                 $assignedBuildings[] = [
                     'id' => $buildingId,
-                    'name' => $building->nama_gedung ?? $building->name
+                    'name' => $building->building_name
                 ];
             }
 
@@ -3011,8 +3011,8 @@ class QuotationController extends Controller
                             'room_floor' => $quotationRoom->room->room_floor ?? 'N/A',
                             'building' => [
                                 'id' => $quotationRoom->room->building?->id,
-                                'nama_gedung' => $quotationRoom->room->building?->nama_gedung ?? $quotationRoom->room->building?->name ?? 'N/A',
-                                'name' => $quotationRoom->room->building?->nama_gedung ?? $quotationRoom->room->building?->name ?? 'N/A',
+                                'nama_gedung' => $quotationRoom->room->building?->building_name ?? 'N/A',
+                                'name' => $quotationRoom->room->building?->building_name ?? 'N/A',
                             ]
                         ],
                         'aroma_product' => $quotationRoom->aromaProduct ? [

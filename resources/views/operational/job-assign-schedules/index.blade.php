@@ -926,7 +926,7 @@
                         <td>{{ $jobSchedule && $jobSchedule->jobAdvice && $jobSchedule->jobAdvice->contract && $jobSchedule->jobAdvice->contract->quotation ? $jobSchedule->jobAdvice->contract->quotation->quotation_number : '-' }}</td>
                         <td>{{ $jobSchedule->contract_number ?? '-' }}</td>
                         <td>{{ $jobSchedule && $jobSchedule->jobAdvice && $jobSchedule->jobAdvice->customer ? $jobSchedule->jobAdvice->customer->name : '-' }}</td>
-                        <td>{{ $jobSchedule && $jobSchedule->building ? $jobSchedule->building->nama_gedung : '-' }}</td>
+                        <td>{{ $jobSchedule && $jobSchedule->building ? $jobSchedule->building->building_name : '-' }}</td>
                         <td>{{ $jobSchedule->postal_code ?? ($jobSchedule && $jobSchedule->building ? $jobSchedule->building->postal_code : '-') }}</td>
                         <td>{{ $jobSchedule && $jobSchedule->schedule_date ? $jobSchedule->schedule_date->format('d/M/Y') : '-' }}</td>
                         <td>{{ $schedule->assigned_date ? $schedule->assigned_date->format('d/M/Y') : '-' }}</td>

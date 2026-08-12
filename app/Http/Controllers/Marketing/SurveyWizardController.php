@@ -95,7 +95,7 @@ class SurveyWizardController extends Controller
 
     private function buildingDisplayName(Building $building): string
     {
-        return trim((string) ($building->name ?: $building->nama_gedung));
+        return trim((string) ($building->building_name));
     }
 
     private function buildingAddressLine(Building $building): string
@@ -150,13 +150,17 @@ class SurveyWizardController extends Controller
     {
         return [
             'id' => $building->id,
-            'name' => $building->name,
-            'nama_gedung' => $building->nama_gedung,
-            'address' => $building->address,
-            'alamat_1' => $building->alamat_1,
+            // Kirim nilai kanonik (nama_gedung ?: name) di kedua key. Frontend punya
+            // beberapa fallback chain lama (`name || nama_gedung` maupun sebaliknya) —
+            // menyamakan keduanya di sini memastikan dropdown selalu ikut Master
+            // Building tanpa perlu membongkar tiap fallback JS satu-satu.
+            'name' => $building->building_name,
+            'nama_gedung' => $building->building_name,
+            'address' => $building->building_address,
+            'alamat_1' => $building->building_address,
             'alamat_2' => $building->alamat_2,
-            'postal_code' => $building->postal_code,
-            'kode_pos' => $building->kode_pos,
+            'postal_code' => $building->building_postal_code,
+            'kode_pos' => $building->building_postal_code,
             'phone_1' => $building->phone_1,
             'phone_2' => $building->phone_2,
             'fax' => $building->fax,
@@ -1048,11 +1052,11 @@ class SurveyWizardController extends Controller
                 'reused' => $wasReused,
                 'building' => [
                     'id' => $building->id,
-                    'name' => $building->name,
-                    'nama_gedung' => $building->nama_gedung,
-                    'address1' => $building->alamat_1,
+                    'name' => $building->building_name,
+                    'nama_gedung' => $building->building_name,
+                    'address1' => $building->building_address,
                     'address2' => $building->alamat_2,
-                    'postal_code' => $building->kode_pos,
+                    'postal_code' => $building->building_postal_code,
                     'province_id' => $building->province_id,
                     'city_id' => $building->city_id,
                     'district_id' => $building->district_id,
@@ -1244,16 +1248,16 @@ class SurveyWizardController extends Controller
                 'building_id' => $buildingId,
                 'marketing_id' => $request->marketing_id,
                 'survey_date' => $request->survey_date,
-                'survey_location' => $building->address ?? $building->alamat_1 ?? '',
+                'survey_location' => $building->building_address ?? '',
                 'name' => $customer->name ?? '',
                 'customer_type' => $customer->company_type ?? '',
                 'contact_person' => $contact->name ?? '',
                 'email' => $contact->email ?? '',
                 'phone_1' => $contact->phone ?? '',
                 'position' => $contact->position ?? '',
-                'building_name' => $building->name ?? $building->nama_gedung ?? '',
-                'address_1' => $building->address ?? $building->alamat_1 ?? '',
-                'postal_code' => $building->postal_code ?? $building->kode_pos ?? '',
+                'building_name' => $building->building_name ?? '',
+                'address_1' => $building->building_address ?? '',
+                'postal_code' => $building->building_postal_code ?? '',
                 'status' => $request->action === 'finalize' ? 'approved' : 'draft',
                 'updated_by' => Auth::id()
             ]);
@@ -1735,22 +1739,22 @@ class SurveyWizardController extends Controller
                 'surveyor_id' => $request->marketing_id, // Marketing staff is also the surveyor
                 'marketing_id' => $request->marketing_id,
                 'survey_date' => $request->survey_date,
-                'survey_location' => $building->alamat_1 ?? $building->address ?? 'Lokasi Survey Tidak Diketahui',
+                'survey_location' => $building->building_address ?? 'Lokasi Survey Tidak Diketahui',
                 'company_name' => $customer->name ?? '',
                 'customer_type' => $companyTypeName ?? 'corporate', // Store actual company type name
                 'contact_person' => $contact->name ?? '',
                 'email' => $contact->email ?? '',
                 'phone_1' => $contact->phone ?? '',
                 'position' => $contact->position ?? '',
-                'building_name' => $building->nama_gedung ?? $building->name ?? 'Nama Gedung Tidak Diketahui',
+                'building_name' => $building->building_name ?? 'Nama Gedung Tidak Diketahui',
                 'building_location_detail' => $request->building_location_detail ?: $request->new_building_location_detail ?: $building->location_detail ?: '',
-                'address_1' => $building->alamat_1 ?? $building->address ?? 'Alamat Tidak Diketahui',
+                'address_1' => $building->building_address ?? 'Alamat Tidak Diketahui',
                 'address_2' => $building->alamat_2 ?? '',
                 'province' => $building->province->name ?? 'Provinsi Tidak Diketahui',
                 'city' => $building->city->name ?? 'Kota Tidak Diketahui',
                 'district' => $building->district->name ?? 'Kecamatan Tidak Diketahui',
                 'village' => $building->subdistrict->name ?? 'Kelurahan Tidak Diketahui',
-                'postal_code' => $building->kode_pos ?? $building->postal_code ?? '',
+                'postal_code' => $building->building_postal_code ?? '',
                 'phone_2' => $building->phone_1 ?? '',
                 'status' => $request->action === 'finalize' ? 'approved' : 'draft',
                 'created_by' => Auth::id(),

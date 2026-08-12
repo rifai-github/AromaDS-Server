@@ -1225,7 +1225,7 @@
                             <td>{{ $jobSchedule && $jobSchedule->jobAdvice && $jobSchedule->jobAdvice->customer ? $jobSchedule->jobAdvice->customer->name : '-' }}</td>
 
                             <!-- 3. Gedung -->
-                            <td>{{ $jobSchedule && $jobSchedule->building ? $jobSchedule->building->nama_gedung : '-' }}</td>
+                            <td>{{ $jobSchedule && $jobSchedule->building ? $jobSchedule->building->building_name : '-' }}</td>
 
                             <!-- 4. Team -->
                             <td style="width: 250px; min-width: 250px;">{{ $team ? $team->team_name : '-' }}</td>
@@ -1599,7 +1599,7 @@
                                 <input type="checkbox" class="row-checkbox w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer" value="{{ $issue->id }}" data-job-number="{{ $jobSchedule ? $jobSchedule->job_number : '' }}" onclick="event.stopPropagation()" onchange="handleCheckboxChange(this)">
                             </td>
                             <td>{{ $jobSchedule && $jobSchedule->jobAdvice && $jobSchedule->jobAdvice->customer ? $jobSchedule->jobAdvice->customer->name : '-' }}</td>
-                            <td>{{ $jobSchedule && $jobSchedule->building ? $jobSchedule->building->nama_gedung : '-' }}</td>
+                            <td>{{ $jobSchedule && $jobSchedule->building ? $jobSchedule->building->building_name : '-' }}</td>
                             <td style="width: 250px; min-width: 250px;">{{ $team ? $team->team_name : '-' }}</td>
                             <td>{{ $jobSchedule ? $jobSchedule->job_number : '-' }}</td>
                             <td>{{ $jobSchedule && $jobSchedule->schedule_date ? $jobSchedule->schedule_date->format('d M') : '-' }}</td>

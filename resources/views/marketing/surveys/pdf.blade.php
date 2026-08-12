@@ -154,7 +154,7 @@
                 <div class="info-label">Survey Location</div>
                 <div class="info-value" style="word-wrap: break-word; white-space: normal;">
                     @php
-                        $address1 = $survey->survey_location ?? $survey->building->alamat_1 ?? $survey->building->address ?? '';
+                        $address1 = $survey->survey_location ?? $survey->building->building_address ?? '';
                         $address2 = $survey->building->alamat_2 ?? '';
                         $fullLocation = $address1;
                         if (!empty($address2)) {
@@ -204,7 +204,7 @@
         <div class="info-grid">
             <div class="info-row">
                 <div class="info-label">Building Name</div>
-                <div class="info-value">{{ $survey->building->name ?? $survey->building->nama_gedung ?? $survey->building_name ?? '-' }}</div>
+                <div class="info-value">{{ $survey->building->building_name ?? $survey->building_name ?? '-' }}</div>
             </div>
             <div class="info-row">
                 <div class="info-label">Building Type</div>
@@ -212,7 +212,7 @@
             </div>
             <div class="info-row">
                 <div class="info-label">Address 1</div>
-                <div class="info-value">{{ $survey->building->alamat_1 ?? $survey->building->address ?? $survey->address_1 ?? '-' }}</div>
+                <div class="info-value">{{ $survey->building->building_address ?? $survey->address_1 ?? '-' }}</div>
             </div>
             <div class="info-row">
                 <div class="info-label">Address 2</div>
@@ -244,7 +244,7 @@
             </div>
             <div class="info-row">
                 <div class="info-label">Postal Code</div>
-                <div class="info-value">{{ $survey->postal_code ?? $survey->building->postal_code ?? $survey->building->kode_pos ?? '-' }}</div>
+                <div class="info-value">{{ $survey->postal_code ?? $survey->building->building_postal_code ?? '-' }}</div>
             </div>
         </div>
     </div>

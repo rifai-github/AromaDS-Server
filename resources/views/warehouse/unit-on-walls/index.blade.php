@@ -757,7 +757,7 @@
                         <td>
                             @if($unit->building)
                                 <div>
-                                    <div class="font-medium">{{ $unit->building->nama_gedung ?? '-' }}</div>
+                                    <div class="font-medium">{{ $unit->building->building_name ?? '-' }}</div>
                                     <div class="text-sm text-gray-500">{{ $unit->building->alamat_1 ?? '-' }}</div>
                                 </div>
                             @else

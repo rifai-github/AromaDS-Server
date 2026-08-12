@@ -359,7 +359,7 @@
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Building</div>
-                                        <div class="info-field-value">{{ $unitOnWall->building?->nama_gedung ?? '-' }}</div>
+                                        <div class="info-field-value">{{ $unitOnWall->building?->building_name ?? '-' }}</div>
                                     </div>
                                     <div class="info-field">
                                         <div class="info-field-label">Room</div>

@@ -176,8 +176,7 @@ class Survey extends Model
     public function getDisplayBuildingNameAttribute()
     {
         return $this->normalizeDisplayValue($this->building_name)
-            ?? $this->normalizeDisplayValue($this->building?->nama_gedung)
-            ?? $this->normalizeDisplayValue($this->building?->name)
+            ?? $this->normalizeDisplayValue($this->building?->building_name)
             ?? '-';
     }
 

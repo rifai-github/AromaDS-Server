@@ -442,7 +442,7 @@
                                         <tr>
                                             <td class="text-center">{{ $roomCounter++ }}</td>
                                             <td>{{ $customer?->name ?? 'N/A' }}</td>
-                                            <td>{{ $building?->nama_gedung ?? $building?->name ?? 'N/A' }}</td>
+                                            <td>{{ $building?->building_name ?? 'N/A' }}</td>
                                             <td>{{ $roomName }}</td>
                                             <td>
                                                 @if($aromaProduct)
@@ -775,7 +775,7 @@
                                                 {{ $displayPrice !== null ? 'Rp ' . number_format((float) $displayPrice, 0, ',', '.') : '-' }}
                                             </td>
                                             <td>{{ $customer?->name ?? 'N/A' }}</td>
-                                            <td>{{ $building?->nama_gedung ?? $building?->name ?? 'N/A' }}</td>
+                                            <td>{{ $building?->building_name ?? 'N/A' }}</td>
                                             <td>{{ $room?->room_type ?? $roomSpecs['room_type'] ?? 'N/A' }}</td>
                                             <td class="text-center">{{ $room?->room_floor ?? $roomSpecs['floor'] ?? $roomSpecs['room_floor'] ?? '-' }}</td>
                                             <td>

@@ -144,7 +144,7 @@ class JobAssignSchedule extends Model
 
     public function getBuildingNameAttribute()
     {
-        return $this->jobSchedule && $this->jobSchedule->building ? $this->jobSchedule->building->nama_gedung : '-';
+        return $this->jobSchedule && $this->jobSchedule->building ? $this->jobSchedule->building->building_name : '-';
     }
 
     // Methods

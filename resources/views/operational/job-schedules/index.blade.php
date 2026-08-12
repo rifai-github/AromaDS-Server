@@ -1302,7 +1302,7 @@
                         <td>{{ $contractDisplayNumber }}</td>
                         
                         <!-- 8. Building Name -->
-                        <td>{{ $job->building?->nama_gedung ?? '-' }}</td>
+                        <td>{{ $job->building?->building_name ?? '-' }}</td>
                         
                         <!-- 9. Branch Service -->
                         <td>{{ $branchService }}</td>
@@ -1686,7 +1686,7 @@ function openCreateModal() {
                         <select name="building_id" class="form-input" required onchange="loadFloorsForJobSchedule(this.value)">
                             <option value="">Select Building</option>
                             @foreach($buildings ?? [] as $building)
-                                <option value="{{ $building->id }}">{{ $building->nama_gedung }}</option>
+                                <option value="{{ $building->id }}">{{ $building->building_name }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -1992,7 +1992,7 @@ function openEditModal(id) {
                                 <select name="building_id" class="form-input" required>
                                     <option value="">Select Building</option>
                                     @foreach($buildings ?? [] as $building)
-                                        <option value="{{ $building->id }}" ${data.data.building_id == {{ $building->id }} ? 'selected' : ''}>{{ $building->nama_gedung }}</option>
+                                        <option value="{{ $building->id }}" ${data.data.building_id == {{ $building->id }} ? 'selected' : ''}>{{ $building->building_name }}</option>
                                     @endforeach
                                 </select>
                             </div>

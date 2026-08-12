@@ -810,7 +810,7 @@
                             <input type="checkbox" class="row-checkbox w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer" value="{{ $building->id }}" onclick="event.stopPropagation()">
                         </td>
                         <!-- Building Name -->
-                        <td>{{ $building->nama_gedung ?? $building->name ?? '-' }}</td>
+                        <td>{{ $building->building_name ?? '-' }}</td>
                         <!-- Jenis Alamat (stored in building_type column) -->
                         <td>{{ $building->building_type ?? '-' }}</td>
                         <!-- Address -->

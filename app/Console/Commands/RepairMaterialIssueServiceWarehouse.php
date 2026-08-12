@@ -193,7 +193,7 @@ class RepairMaterialIssueServiceWarehouse extends Command
             $status,
             $assignment->materialIssue?->issue_number ?: '-',
             $assignment->jobAssignSchedule?->jobSchedule?->job_number ?: '-',
-            $assignment->jobAssignSchedule?->jobSchedule?->building?->nama_gedung ?: '-',
+            $assignment->jobAssignSchedule?->jobSchedule?->building?->building_name ?: '-',
             $assignment->materialIssue?->warehouse?->name ?: '-',
             $plan['target_warehouse']->name ?? '-',
             $plan['note'] ?? '-',

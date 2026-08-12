@@ -161,7 +161,7 @@ class CancelledRemoveFreeSerialRestoreService
                     'action' => 'repair',
                     'customer_id' => $customerId,
                     'customer_name' => $unit->customer?->company_name ?? $unit->customer?->name,
-                    'location' => trim(($unit->building?->nama_gedung ?? '') . ' - ' . ($unit->room?->room_name ?? ''), ' -'),
+                    'location' => trim(($unit->building?->building_name ?? '') . ' - ' . ($unit->room?->room_name ?? ''), ' -'),
                     'action_date' => now()->toDateString(),
                     'job_schedule_id' => $removeJob->id,
                     'job_schedule_number' => $removeJob->job_number,

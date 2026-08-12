@@ -165,7 +165,7 @@ class PeriodicJob extends Model
             'type' => $this->job_type,
             'status' => 'scheduled',
             'building_id' => $this->building_id,
-            'building_name' => $this->building->nama_gedung,
+            'building_name' => $this->building->building_name,
             'company_name' => $this->building->customer->name,
             'contract_number' => $this->contract->contract_number,
             'schedule_date' => $this->next_job_date,

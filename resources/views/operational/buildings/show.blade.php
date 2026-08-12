@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Building Detail - ' . ($building->nama_gedung ?? $building->name))
+@section('title', 'Building Detail - ' . ($building->building_name))
 
 @section('content')
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
@@ -256,7 +256,7 @@
                         </div>
                         <div class="text-center">
                             <h3 class="card-title mb-0" style="color: white; font-size: 1.5rem; font-weight: bold;">
-                                {{ $building->nama_gedung ?? $building->name }}
+                                {{ $building->building_name }}
                             </h3>
                             <div class="mt-1">
                                 <span class="badge" style="background-color: {{ $building->status_update ? '#059669' : '#dc2626' }}; color: white; padding: 0.35rem 0.75rem; font-size: 0.8rem;">
@@ -286,7 +286,7 @@
                         <!-- Row 1 -->
                         <div style="grid-column: span 2;">
                             <div class="info-label">Building Name</div>
-                            <div class="info-value">{{ $building->nama_gedung ?? $building->name ?? '-' }}</div>
+                            <div class="info-value">{{ $building->building_name ?? '-' }}</div>
                         </div>
                         <div style="grid-column: span 2;">
                             <div class="info-label">Jenis Alamat</div>

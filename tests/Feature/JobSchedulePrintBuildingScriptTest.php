@@ -20,7 +20,7 @@ class JobSchedulePrintBuildingScriptTest extends TestCase
     {
         $view = file_get_contents(resource_path('views/operational/job-schedules/pdf-csr.blade.php'));
 
-        $this->assertStringContainsString('$buildingName = $building?->nama_gedung', $view);
+        $this->assertStringContainsString('$buildingName = $building?->building_name', $view);
         $this->assertStringContainsString('$buildingAddressParts = collect', $view);
         $this->assertStringContainsString('<div class="section-label">Building :</div>', $view);
         $this->assertStringContainsString('<div class="building-title">{{ $buildingName }}</div>', $view);

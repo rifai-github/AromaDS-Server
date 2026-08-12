@@ -33,7 +33,7 @@ class BuildingMultiUserController extends Controller
                     'building' => [
                         'id' => $building->id,
                         'name' => $building->name,
-                        'nama_gedung' => $building->nama_gedung
+                        'nama_gedung' => $building->building_name
                     ],
                     'users' => $users,
                     'total_users' => $users->count(),

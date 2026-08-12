@@ -1044,7 +1044,7 @@ class LostUnitReportController extends Controller
             ->get()
             ->map(function ($contractRoom) {
                 $roomName = $contractRoom->room->room_name ?? $contractRoom->room_name ?? 'Unknown Room';
-                $buildingName = $contractRoom->room->building->name ?? $contractRoom->room->building->nama_gedung ?? null;
+                $buildingName = $contractRoom->room->building->building_name ?? null;
                 
                 if ($buildingName) {
                     $roomName .= " ({$buildingName})";
@@ -1305,7 +1305,7 @@ class LostUnitReportController extends Controller
                         'job_advice_id' => $jobAdvice->id,
                         'type' => $jobType,
                         'building_id' => $report->building_id,
-                        'building_name' => $report->building->nama_gedung ?? $report->building->name,
+                        'building_name' => $report->building->building_name,
                         'room_id' => $item->room_id,
                         'company_name' => $contract->customer->name,
                         'schedule_date' => now(), // Tanggal report di-approve

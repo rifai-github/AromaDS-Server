@@ -600,7 +600,7 @@ class ContractRenewalController extends Controller
             'id' => $survey->id,
             'survey_number' => $survey->survey_number,
             'customer_name' => $survey->customer->name ?? $contract->customer->name ?? '',
-            'building_name' => $survey->building->name ?? $survey->building->nama_gedung ?? '',
+            'building_name' => $survey->building->building_name ?? '',
             'marketing_id' => $survey->marketing_id,
         ];
     }

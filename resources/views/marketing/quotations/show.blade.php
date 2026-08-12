@@ -663,7 +663,7 @@
                                                         ?? $detail->survey?->building
                                                         ?? $detail->room?->survey?->building
                                                         ?? $surveys->first()?->building;
-                                                    $buildingName = $displayBuilding?->nama_gedung ?: $displayBuilding?->name;
+                                                    $buildingName = $displayBuilding?->building_name;
                                                     $buildingAddress = $displayBuilding?->alamat_1 ?: $displayBuilding?->address;
                                                 @endphp
 

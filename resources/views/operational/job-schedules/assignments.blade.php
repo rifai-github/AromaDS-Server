@@ -42,7 +42,7 @@
                 </div>
                 <div class="bg-gray-50 p-4 rounded-lg">
                     <label class="text-sm font-medium text-gray-500 block mb-2">Building</label>
-                    <p class="text-lg font-semibold text-gray-900">{{ $jobSchedule->building->nama_gedung ?? 'N/A' }}</p>
+                    <p class="text-lg font-semibold text-gray-900">{{ $jobSchedule->building->building_name ?? 'N/A' }}</p>
                 </div>
             </div>
         </div>

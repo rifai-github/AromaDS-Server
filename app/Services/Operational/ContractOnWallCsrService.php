@@ -438,7 +438,7 @@ class ContractOnWallCsrService
             'status' => 'scheduled',
             'job_advice_id' => $jobAdvice->id,
             'building_id' => $building?->id,
-            'building_name' => $building?->nama_gedung ?? $building?->name,
+            'building_name' => $building?->building_name,
             'room_id' => $contractRoom->room_id,
             'room_name' => $room?->room_name,
             'company_name' => $jobAdvice->company_name,

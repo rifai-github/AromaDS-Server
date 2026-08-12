@@ -2096,7 +2096,7 @@ class QuotationWizardController extends Controller
                 'survey_number' => $survey->survey_number,
                 'customer_name' => $survey->customer->name ?? 'Unknown Customer',
                 'customer_address' => $survey->customer->address ?? '-',
-                'building_name' => $survey->building->name ?? $survey->building->nama_gedung ?? '-',
+                'building_name' => $survey->building->building_name ?? '-',
                 'building_address' => $this->getBuildingFullAddress($survey->building),
                 'rooms' => $rooms
             ];

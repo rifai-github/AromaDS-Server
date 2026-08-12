@@ -689,7 +689,7 @@
                 <i class="fas fa-building me-2"></i>
                 <div>
                     <strong>Building Filter Active:</strong> Showing rooms for building 
-                    <span class="fw-bold">{{ $relatedJobScheduleRooms->first()->jobAdviceRoom->contractRoom->room->building->nama_gedung ?? 'Selected Building' }}</span>.
+                    <span class="fw-bold">{{ $relatedJobScheduleRooms->first()->jobAdviceRoom->contractRoom->room->building->building_name ?? 'Selected Building' }}</span>.
                 </div>
                 <a href="{{ route('operational.job-schedules.show', $jobSchedule->id) }}" class="btn btn-sm btn-outline-primary ms-auto" style="border-color: #0dcaf0; color: #055160;">
                     Show All Rooms
@@ -846,7 +846,7 @@
                                         <div class="info-field-label">Gedung</div>
                                         <div class="info-field-value">
                                             @if($jobSchedule->building)
-                                                <a href="{{ route('operational.buildings.show', $jobSchedule->building) }}" target="_blank" rel="noopener noreferrer">{{ $jobSchedule->building->nama_gedung ?? '-' }}</a>
+                                                <a href="{{ route('operational.buildings.show', $jobSchedule->building) }}" target="_blank" rel="noopener noreferrer">{{ $jobSchedule->building->building_name ?? '-' }}</a>
                                             @else
                                                 -
                                             @endif

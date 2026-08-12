@@ -2316,7 +2316,7 @@ function openCreateModal() {
                             <option value="">Select Building</option>
                             @if(isset($buildings) && count($buildings) > 0)
                                 @foreach($buildings as $building)
-                                    <option value="{{ $building->id }}">{{ $building->nama_gedung ?? $building->name }} - {{ $building->customer ? $building->customer->name : 'No Customer' }}</option>
+                                    <option value="{{ $building->id }}">{{ $building->building_name }} - {{ $building->customer ? $building->customer->name : 'No Customer' }}</option>
                                 @endforeach
                             @else
                                 <option value="" disabled>No buildings available</option>
@@ -3387,7 +3387,7 @@ function loadAllBuildingsForEdit(selectedBuildingId = null) {
         @foreach($buildings as $building)
             const option{{ $building->id }} = document.createElement('option');
             option{{ $building->id }}.value = '{{ $building->id }}';
-            option{{ $building->id }}.textContent = '{{ $building->nama_gedung ?? $building->name }} - {{ $building->customer->name ?? "Unknown Customer" }}';
+            option{{ $building->id }}.textContent = '{{ $building->building_name }} - {{ $building->customer->name ?? "Unknown Customer" }}';
             @if($building->id == (isset($data) ? $data->building_id : null))
                 option{{ $building->id }}.selected = true;
             @endif

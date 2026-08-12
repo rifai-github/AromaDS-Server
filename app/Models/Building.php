@@ -199,19 +199,38 @@ class Building extends Model
     }
 
     // Accessors
-    public function getBuildingNameAttribute()
+
+    /**
+     * Nama gedung untuk ditampilkan — satu-satunya sumber kebenaran.
+     *
+     * `nama_gedung` selalu menang karena itulah field wajib ("Building Name *")
+     * di Master Building; `name` hanya pelengkap opsional dan sering menyimpan
+     * nilai lama. Pakai `?:` (bukan `??`) supaya string kosong ikut jatuh ke
+     * fallback, dan kembalikan null saat dua-duanya kosong supaya pemanggil
+     * yang memakai `??` atau `?:` sama-sama dapat default-nya.
+     */
+    public function getBuildingNameAttribute(): ?string
     {
-        return $this->name ?: $this->nama_gedung;
+        return trim((string) ($this->nama_gedung ?: $this->name)) ?: null;
     }
 
-    public function getBuildingAddressAttribute()
+    /**
+     * Alamat untuk ditampilkan — sama alasannya dengan getBuildingNameAttribute().
+     * `alamat_1` adalah field wajib ("Address 1 *") di Master Building; `address`
+     * cuma pelengkap opsional "(English)".
+     */
+    public function getBuildingAddressAttribute(): ?string
     {
-        return $this->address ?: $this->alamat_1;
+        return trim((string) ($this->alamat_1 ?: $this->address)) ?: null;
     }
 
-    public function getBuildingPostalCodeAttribute()
+    /**
+     * `kode_pos` di-auto-fill dari kelurahan di Master Building (field hidup);
+     * `postal_code` cuma pelengkap opsional "(English)" yang sering basi.
+     */
+    public function getBuildingPostalCodeAttribute(): ?string
     {
-        return $this->postal_code ?: $this->kode_pos;
+        return trim((string) ($this->kode_pos ?: $this->postal_code)) ?: null;
     }
 
     // Removed: getCustomerNameAttribute() - Building tidak punya customer relationship lagi

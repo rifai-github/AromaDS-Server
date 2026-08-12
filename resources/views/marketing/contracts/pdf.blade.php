@@ -559,7 +559,7 @@
         /* ===== Group rooms by building, price from contractRentals matched by room_id ===== */
         $rentalsByRoom = $contract->contractRentals->groupBy('room_id');
         $roomGroups = $contract->contractRooms->groupBy(
-            fn($r) => trim((string) ($r->building->nama_gedung ?? $r->building->name ?? '')),
+            fn($r) => trim((string) ($r->building->building_name ?? '')),
         );
 
         /* ===== Signatories ===== */

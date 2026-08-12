@@ -584,7 +584,7 @@
                             <input type="checkbox" class="row-checkbox w-4 h-4 bg-white border border-[#888888] rounded cursor-pointer" onclick="event.stopPropagation()" value="{{ $room->id }}">
                         </td>
                         <td>{{ $room->customer->name ?? 'N/A' }}</td>
-                        <td>{{ $room->building->nama_gedung ?? $room->building->name ?? 'N/A' }}</td>
+                        <td>{{ $room->building->building_name ?? 'N/A' }}</td>
                         <td>{{ $room->room_name ?? 'N/A' }}</td>
                         <td>{{ $room->room_type ?? 'N/A' }}</td>
                         <td>{{ $room->room_floor ?? 'N/A' }}</td>

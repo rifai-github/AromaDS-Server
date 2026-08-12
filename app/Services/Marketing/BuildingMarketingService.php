@@ -50,7 +50,7 @@ class BuildingMarketingService
                 'data' => [
                     'pipeline_id' => $pipelineId,
                     'building_id' => $buildingId,
-                    'building_name' => $building->nama_gedung
+                    'building_name' => $building->building_name
                 ]
             ];
 
