@@ -284,14 +284,25 @@
             </div>
             
             <div class="flex flex-row justify-end items-center gap-2">
-                <button class="btn btn-secondary" id="bulkDeleteBtn" onclick="deleteSelected()" style="display: none; color: #dc2626; border-color: #fca5a5; background-color: #fef2f2;">
-                    <i class="fas fa-trash"></i>
-                    <span>Hapus Terpilih</span>
-                </button>
-                <button class="btn btn-primary" onclick="openCreateModal()">
-                    <i class="fas fa-plus"></i>
-                    <span>Add Master Option</span>
-                </button>
+                @if($showTrashed)
+                    <a href="{{ route('other.master-options.index') }}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Kembali ke Daftar Aktif</span>
+                    </a>
+                @else
+                    <a href="{{ route('other.master-options.index', ['trashed' => 1]) }}" class="btn btn-secondary">
+                        <i class="fas fa-trash-restore"></i>
+                        <span>Lihat Terhapus</span>
+                    </a>
+                    <button class="btn btn-secondary" id="bulkDeleteBtn" onclick="deleteSelected()" style="display: none; color: #dc2626; border-color: #fca5a5; background-color: #fef2f2;">
+                        <i class="fas fa-trash"></i>
+                        <span>Hapus Terpilih</span>
+                    </button>
+                    <button class="btn btn-primary" onclick="openCreateModal()">
+                        <i class="fas fa-plus"></i>
+                        <span>Add Master Option</span>
+                    </button>
+                @endif
             </div>
         </div>
 
@@ -300,22 +311,28 @@
             <table class="responsive-table" id="optionsTable">
                 <thead>
                     <tr style="height: 40px !important;">
-                        <th style="width: 50px;" class="text-center">
-                            <input type="checkbox" id="headerSelectAll">
-                        </th>
+                        @if($showTrashed)
+                            <th style="width: 110px;" class="text-center">Aksi</th>
+                        @else
+                            <th style="width: 50px;" class="text-center">
+                                <input type="checkbox" id="headerSelectAll">
+                            </th>
+                        @endif
                         <th style="width: 60px;" class="text-center">No</th>
                         <th style="width: 200px;">Nama</th>
                         <th>Description</th>
                         <th style="width: 150px;">System Reserved</th>
                         <th style="width: 120px;">Status</th>
-                        <th style="width: 150px;">Created At</th>
+                        <th style="width: 150px;">{{ $showTrashed ? 'Deleted At' : 'Created At' }}</th>
                         <th style="width: 180px;">Created By</th>
                     </tr>
                     <tr class="filter-row" style="height: 40px !important;">
                         <th class="text-center">
+                            @unless($showTrashed)
                             <button onclick="resetFilters()" class="btn btn-secondary btn-sm" style="padding: 0; height: 26px; width: 26px; min-width: 26px; display: flex; align-items: center; justify-content: center; background: white; border: 1px solid #d1d5db;">
                                 <i class="fas fa-undo" style="font-size: 10px; color: #6b7280;"></i>
                             </button>
+                            @endunless
                         </th>
                         <th></th>
                         <th><input type="text" class="table-filter" name="filter[name]" value="{{ request('filter.name') }}" placeholder="Filter..."></th>
@@ -340,16 +357,31 @@
                 </thead>
                 <tbody>
                     @forelse($masterOptions as $index => $option)
-                    <tr onclick="window.location.href='{{ route('other.master-options.show', $option->id) }}'">
-                        <td class="text-center" onclick="event.stopPropagation()">
-                            <input type="checkbox" class="row-checkbox" value="{{ $option->id }}" onchange="toggleBulkDeleteBtn()">
-                        </td>
+                    <tr @unless($showTrashed) onclick="window.location.href='{{ route('other.master-options.show', $option->id) }}'" @endunless>
+                        @if($showTrashed)
+                            <td class="text-center" onclick="event.stopPropagation()">
+                                <button class="btn btn-secondary btn-sm" style="color: #16a34a; border-color: #86efac; background-color: #f0fdf4; padding: 4px 10px;" onclick="restoreOption({{ $option->id }}, '{{ addslashes($option->name) }}')">
+                                    <i class="fas fa-trash-restore"></i>
+                                    <span>Restore</span>
+                                </button>
+                            </td>
+                        @else
+                            <td class="text-center" onclick="event.stopPropagation()">
+                                @if($option->is_system || $option->is_in_use)
+                                    <i class="fas fa-lock text-gray-400" title="Tidak bisa dihapus: {{ $option->is_system ? 'opsi sistem' : 'masih dipakai di sistem' }}"></i>
+                                @else
+                                    <input type="checkbox" class="row-checkbox" value="{{ $option->id }}" onchange="toggleBulkDeleteBtn()">
+                                @endif
+                            </td>
+                        @endif
                         <td class="text-center">{{ $masterOptions->firstItem() + $index }}</td>
                         <td class="font-medium" style="color: #214589;">{{ $option->name }}</td>
                         <td class="text-gray-600">{{ $option->description ?? '-' }}</td>
                         <td>
                             @if($option->system_reserved)
                                 <span class="status-badge bg-blue-100 text-blue-700 border border-blue-200 text-xs">System</span>
+                            @elseif($option->is_in_use)
+                                <span class="status-badge bg-amber-100 text-amber-700 border border-amber-200 text-xs">In Use</span>
                             @else
                                 <span class="status-badge bg-gray-100 text-gray-700 border border-gray-200 text-xs">User</span>
                             @endif
@@ -361,12 +393,12 @@
                                 <span class="status-badge bg-red-100 text-red-700 border border-red-200 text-xs">Inactive</span>
                             @endif
                         </td>
-                        <td>{{ $option->created_at ? $option->created_at->format('d/M/Y') : '-' }}</td>
+                        <td>{{ ($showTrashed ? $option->deleted_at : $option->created_at) ? ($showTrashed ? $option->deleted_at : $option->created_at)->format('d/M/Y H:i') : '-' }}</td>
                         <td>{{ $option->createdBy->name ?? '-' }}</td>
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="8" class="text-center py-10 text-gray-500">No master options found.</td>
+                        <td colspan="8" class="text-center py-10 text-gray-500">{{ $showTrashed ? 'Tidak ada master option yang terhapus.' : 'No master options found.' }}</td>
                     </tr>
                     @endforelse
                 </tbody>
@@ -579,6 +611,31 @@ function confirmDelete() {
             setTimeout(() => location.reload(), 1500);
         } else {
             alert(res.message || 'Gagal menghapus data');
+        }
+    });
+}
+
+// Restore function (trashed view)
+function restoreOption(id, name) {
+    if (!confirm(`Pulihkan master option "${name}"?`)) {
+        return;
+    }
+
+    fetch(`/other/master-options/${id}/restore`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json'
+        }
+    })
+    .then(res => res.json())
+    .then(res => {
+        if (res.status === 'success') {
+            showSuccessModal(res.message);
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            alert(res.message || 'Gagal memulihkan data');
         }
     });
 }

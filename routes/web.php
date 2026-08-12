@@ -1643,6 +1643,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('master-options/{masterOption}/details', [\App\Http\Controllers\Other\OptionDetailController::class, 'index'])->name('master-options.details');
         Route::resource('master-options', MasterOptionController::class);
         Route::post('master-options/bulk-delete', [MasterOptionController::class, 'bulkDelete'])->name('master-options.bulk-delete');
+        Route::post('master-options/{id}/restore', [MasterOptionController::class, 'restore'])->name('master-options.restore');
         Route::get('option-details/create', [\App\Http\Controllers\Other\OptionDetailController::class, 'createWithQuery'])->name('option-details.create.query');
         Route::get('option-details/create/{masterOption}', [\App\Http\Controllers\Other\OptionDetailController::class, 'create'])->name('option-details.create');
         Route::get('test-route/{id}', function ($id) {

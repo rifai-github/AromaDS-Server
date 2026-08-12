@@ -15,7 +15,11 @@ class MasterOptionController extends Controller
 
     public function index(Request $request)
     {
-        $query = MasterOption::with(['updatedBy', 'createdBy']);
+        $showTrashed = $request->boolean('trashed');
+
+        $query = $showTrashed
+            ? MasterOption::onlyTrashed()->with(['updatedBy', 'createdBy'])
+            : MasterOption::with(['updatedBy', 'createdBy']);
 
         $this->applyColumnFilters($query, null, [
             'name' => ['column' => 'name'],
@@ -50,7 +54,7 @@ class MasterOptionController extends Controller
         // AutoFilterable trait will automatically apply filters from 'filter[column]' parameters
         $masterOptions = $query->orderBy('name')->paginateStd(25);
 
-        return view('other.master-options.index', compact('masterOptions'));
+        return view('other.master-options.index', compact('masterOptions', 'showTrashed'));
     }
 
     public function create()
@@ -260,12 +264,41 @@ class MasterOptionController extends Controller
                 throw new \Exception('Tidak dapat menghapus opsi sistem.');
             }
 
+            // Prevent deletion of options still looked up by name elsewhere in the app
+            if ($masterOption->is_in_use) {
+                throw new \Exception("Tidak dapat menghapus '{$masterOption->name}' karena masih digunakan di sistem.");
+            }
+
             $masterOption->delete();
             return redirect()->route('other.master-options.index')
                 ->with('success', 'Opsi master berhasil dihapus.');
         } catch (\Exception $e) {
             return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
         }
+    }
+
+    public function restore($id)
+    {
+        $masterOption = MasterOption::onlyTrashed()->find($id);
+
+        if (!$masterOption) {
+            $message = 'Master option terhapus tidak ditemukan.';
+            if (request()->ajax()) {
+                return response()->json(['status' => 'error', 'message' => $message], 404);
+            }
+            return back()->with('error', $message);
+        }
+
+        $masterOption->restore();
+        $masterOption->optionDetails()->onlyTrashed()->restore();
+
+        $message = "Master option '{$masterOption->name}' berhasil dipulihkan.";
+
+        if (request()->ajax()) {
+            return response()->json(['status' => 'success', 'message' => $message]);
+        }
+
+        return redirect()->route('other.master-options.index', ['trashed' => 1])->with('success', $message);
     }
 
     public function bulkDelete(Request $request)
@@ -277,17 +310,28 @@ class MasterOptionController extends Controller
             ]);
 
             $deletedCount = 0;
+            $skippedNames = [];
             foreach ($request->option_ids as $id) {
                 $masterOption = MasterOption::find($id);
-                if ($masterOption && !$masterOption->is_system) {
-                    $masterOption->delete();
-                    $deletedCount++;
+                if (!$masterOption) {
+                    continue;
                 }
+                if ($masterOption->is_system || $masterOption->is_in_use) {
+                    $skippedNames[] = $masterOption->name;
+                    continue;
+                }
+                $masterOption->delete();
+                $deletedCount++;
+            }
+
+            $message = "Berhasil menghapus {$deletedCount} master option(s).";
+            if (!empty($skippedNames)) {
+                $message .= ' Dilewati karena masih digunakan/system: ' . implode(', ', $skippedNames) . '.';
             }
 
             return response()->json([
                 'success' => true,
-                'message' => "Berhasil menghapus {$deletedCount} master option(s).",
+                'message' => $message,
                 'count' => $deletedCount
             ]);
         } catch (\Exception $e) {
