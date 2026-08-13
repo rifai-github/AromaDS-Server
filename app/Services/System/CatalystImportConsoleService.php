@@ -326,6 +326,15 @@ class CatalystImportConsoleService
                     $this->artisanCommand(['catalyst:audit-sync-health']),
                 ],
             ],
+            'diagnose_job_advices' => [
+                'label' => 'Diagnose Job Advices',
+                'description' => 'Read-only: tampilkan stats & pesan skip/fail step job_advices/job_advice_rooms pada batch Catalyst terakhir, dari source_import_batches/source_import_logs lokal (tidak menyentuh source Catalyst).',
+                'group' => 'tools',
+                'execution' => 'sync',
+                'commands' => [
+                    $this->artisanCommand(['catalyst:diagnose-job-advices']),
+                ],
+            ],
         ];
     }
 
