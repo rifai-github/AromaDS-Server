@@ -267,11 +267,11 @@
                                     </div>
                                     <div class="survey-field">
                                         <div class="survey-field-label">E-mail</div>
-                                        <div class="survey-field-value">{{ $survey->email ?? '-' }}</div>
+                                        <div class="survey-field-value">{{ $survey->display_email }}</div>
                                     </div>
                                     <div class="survey-field">
                                         <div class="survey-field-label">Phone 1</div>
-                                        <div class="survey-field-value">{{ $survey->phone_1 ?? '-' }}</div>
+                                        <div class="survey-field-value">{{ $survey->display_phone_one }}</div>
                                     </div>
                                     <div class="survey-field">
                                         <div class="survey-field-label">Jabatan / Posisi</div>

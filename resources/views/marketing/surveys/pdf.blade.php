@@ -399,8 +399,8 @@
                 <div class="lbl">Survey Untuk :</div>
                 <div class="party-name">{{ strtoupper($surveyForName) }}</div>
                 <div class="party-addr">{{ $surveyForAddress ?: '-' }}</div>
-                @if ($survey->contact_person || $survey->phone_1)
-                    <div class="party-addr">{{ trim(($survey->contact_person ?? '') . ' ' . ($survey->phone_1 ? '- ' . $survey->phone_1 : '')) }}</div>
+                @if ($survey->contact_person || $survey->display_phone_one !== '-')
+                    <div class="party-addr">{{ trim(($survey->contact_person ?? '') . ($survey->display_phone_one !== '-' ? ' - ' . $survey->display_phone_one : '')) }}</div>
                 @endif
             </td>
             <td class="info-right">
@@ -468,13 +468,13 @@
             </tr>
             <tr>
                 <td class="detail-label">Email</td>
-                <td>{{ $survey->email ?? '-' }}</td>
+                <td>{{ $survey->display_email }}</td>
                 <td class="detail-label">Jabatan</td>
                 <td>{{ $survey->position ?? '-' }}</td>
             </tr>
             <tr>
                 <td class="detail-label">Telepon 1</td>
-                <td>{{ $survey->phone_1 ?? '-' }}</td>
+                <td>{{ $survey->display_phone_one }}</td>
                 <td class="detail-label">Telepon 2</td>
                 <td>{{ $survey->phone_2 ?? '-' }}</td>
             </tr>

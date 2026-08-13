@@ -173,6 +173,20 @@ class Survey extends Model
             ?? '-';
     }
 
+    public function getDisplayEmailAttribute()
+    {
+        return $this->normalizeDisplayValue($this->customer?->email)
+            ?? $this->normalizeDisplayValue($this->email)
+            ?? '-';
+    }
+
+    public function getDisplayPhoneOneAttribute()
+    {
+        return $this->normalizeDisplayValue($this->customer?->phone)
+            ?? $this->normalizeDisplayValue($this->phone_1)
+            ?? '-';
+    }
+
     public function getDisplayBuildingNameAttribute()
     {
         return $this->normalizeDisplayValue($this->building_name)
