@@ -31,16 +31,12 @@ class BackfillBuildingCityMapping extends Command
 
         $buildings = DB::table('buildings')
             ->whereNull('city_id')
-            ->where(function ($query) {
-                $query->where('notes', 'like', '%CityName:%')
-                    ->orWhere('notes', 'like', '%AreaCity:%');
-            })
             ->orderBy('id')
             ->limit(max((int) $this->option('limit'), 1))
             ->get(['id', 'name', 'nama_gedung', 'notes']);
 
         if ($buildings->isEmpty()) {
-            $this->info('No buildings found with a missing city_id and a captured CityName/AreaCity.');
+            $this->info('No buildings found with a missing city_id.');
 
             return self::SUCCESS;
         }
@@ -55,7 +51,7 @@ class BackfillBuildingCityMapping extends Command
 
             if (!$cityName) {
                 $skipped++;
-                $rows[] = ['SKIP', $building->id, $building->name ?: $building->nama_gedung, '-', '-', 'no CityName/AreaCity in notes'];
+                $rows[] = ['SKIP', $building->id, $building->name ?: $building->nama_gedung, '-', '-', 'no CityName/AreaCity captured in notes - needs re-import from Catalyst source'];
                 continue;
             }
 
@@ -63,7 +59,9 @@ class BackfillBuildingCityMapping extends Command
 
             if (!$match) {
                 $skipped++;
-                $rows[] = ['SKIP', $building->id, $building->name ?: $building->nama_gedung, $cityName, '-', 'no matching local city'];
+                $candidates = $this->findCandidateCities($cityName);
+                $note = $candidates ? 'no exact match, close names: ' . implode(', ', $candidates) : 'no matching local city at all';
+                $rows[] = ['SKIP', $building->id, $building->name ?: $building->nama_gedung, $cityName, '-', $note];
                 continue;
             }
 
@@ -106,6 +104,25 @@ class BackfillBuildingCityMapping extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    private function findCandidateCities(string $cityName): array
+    {
+        $normalized = $this->normalizePlace($cityName);
+        if (!$normalized) {
+            return [];
+        }
+
+        $token = collect(explode(' ', $normalized))->sortByDesc(fn ($word) => strlen($word))->first();
+        if (!$token || strlen($token) < 3) {
+            return [];
+        }
+
+        return DB::table('cities')
+            ->where('name', 'like', '%' . $token . '%')
+            ->limit(5)
+            ->pluck('name')
+            ->all();
     }
 
     private function loadTargetCityLookup(): array
