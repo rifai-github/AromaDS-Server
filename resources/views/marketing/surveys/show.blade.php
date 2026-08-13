@@ -259,7 +259,7 @@
                                     </div>
                                     <div class="survey-field">
                                         <div class="survey-field-label">Jenis Customer</div>
-                                        <div class="survey-field-value">{{ $survey->customer_type ?? $survey->customer->company_type ?? '-' }}</div>
+                                        <div class="survey-field-value">{{ strtoupper($survey->customer_type ?? $survey->customer->company_type ?? '-') }}</div>
                                     </div>
                                     <div class="survey-field">
                                         <div class="survey-field-label">PIC</div>
