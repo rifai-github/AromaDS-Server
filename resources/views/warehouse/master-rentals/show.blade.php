@@ -497,7 +497,7 @@
                         <table class="responsive-table" id="detailsTable">
                             <thead>
                                 <tr>
-                                    <th data-column="productCategory.name">Product Category</th>
+                                    <th data-column="productCategory.name">Material Type</th>
                                     <th data-column="service_frequency_multiplier" data-type="numeric" title="Interval penggantian material dalam jumlah service (bukan bulan). Contoh: 6 = diganti tiap 6 kali service. 0 = unit permanen, tidak pernah diganti.">Frequency <i class="fas fa-info-circle text-gray-400" style="font-size: 11px;"></i></th>
                                     <!-- <th data-column="quantity" data-type="numeric">Quantity</th> -->
                                     <th data-column="masterProduct.name">Product</th>
@@ -749,9 +749,9 @@
                 <input type="hidden" id="detail_id" name="detail_id">
                 
                 <div class="form-group">
-                    <label class="form-label">Product Category <span class="text-red-500">*</span></label>
+                    <label class="form-label">Material Type <span class="text-red-500">*</span></label>
                     <select class="form-select" id="product_category_id" name="product_category_id" required>
-                        <option value="">Select Product Category</option>
+                        <option value="">Select Material Type</option>
                         @foreach($productCategories as $category)
                             <option value="{{ $category->id }}" data-is-unit="{{ $category->is_unit ? 'true' : 'false' }}">{{ $category->name }}</option>
                         @endforeach
