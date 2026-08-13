@@ -193,6 +193,7 @@
     }
 
     .modal-container {
+        position: relative;
         background: white;
         border-radius: 12px;
         box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
@@ -200,6 +201,32 @@
         max-height: 90vh;
         width: 600px;
         overflow: visible; /* Changed from hidden to avoid clipping body scroll */
+    }
+
+    .modal-loading-overlay {
+        display: none;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.85);
+        border-radius: 12px;
+        z-index: 10;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        color: #214589;
+        font-size: 14px;
+    }
+
+    .modal-loading-overlay.show {
+        display: flex;
+    }
+
+    .modal-loading-overlay i {
+        font-size: 28px;
     }
 
     .modal-header {
@@ -580,6 +607,9 @@
                                     <td>{{ $detail->updater->name ?? $detail->creator->name ?? '-' }}</td>
                                     <td onclick="event.stopPropagation()">
                                         <div class="flex gap-4">
+                                            <button class="btn btn-secondary btn-sm" onclick="editDetail({{ $detail->id }})" title="Edit">
+                                                <i class="fas fa-pen"></i>
+                                            </button>
                                             <button class="btn btn-secondary btn-sm" onclick="openMaterialList({{ $detail->id }})" title="Daftar Material">
                                                 <i class="fas fa-book"></i>
                                             </button>
@@ -738,6 +768,10 @@
 <!-- Add/Edit Detail Modal -->
 <div id="detailModal" class="modal-overlay">
     <div class="modal-container">
+        <div id="detailModalLoading" class="modal-loading-overlay">
+            <i class="fas fa-spinner fa-spin"></i>
+            <span>Memuat data...</span>
+        </div>
         <div class="modal-header">
             <h2 class="modal-title" id="detailModalTitle">Tambah Detail Rental</h2>
             <button class="modal-close" onclick="closeDetailModal()">
@@ -1011,9 +1045,17 @@ function getSelectedMultiProductIds() {
 }
 
 function getAllCurrentCategoryProductIds() {
-    return Array.from(document.querySelectorAll('#master_product_ids option'))
-        .map(option => parseInt(option.value, 10))
+    // Must come from the selected category, not from the dropdown options: the dropdown also lists
+    // products of other categories, so counting its options would never match a single category.
+    return getProductsForSelectedCategory()
+        .map(product => parseInt(product.id, 10))
         .filter(id => !Number.isNaN(id));
+}
+
+function selectionCoversWholeCategory(selectedProductIds, categoryProductIds) {
+    if (!categoryProductIds.length) return false;
+    const selected = new Set(selectedProductIds);
+    return categoryProductIds.every(id => selected.has(id));
 }
 
 function setAutoExpandMode(enabled) {
@@ -1024,9 +1066,10 @@ function setAutoExpandMode(enabled) {
 }
 
 function syncAutoExpandModeFromProductSelection() {
-    const selectedProductIds = getSelectedMultiProductIds();
-    const allProductIds = getAllCurrentCategoryProductIds();
-    setAutoExpandMode(allProductIds.length > 0 && selectedProductIds.length === allProductIds.length);
+    setAutoExpandMode(selectionCoversWholeCategory(
+        getSelectedMultiProductIds(),
+        getAllCurrentCategoryProductIds()
+    ));
 }
 
 function populateProductSelections(products, selectedIds = [], primaryProductId = null) {
@@ -1077,7 +1120,17 @@ function getProductsForSelectedCategory() {
 
 function refreshProductsForSelectedCategory(preservedSelectedIds = []) {
     const products = getProductsForSelectedCategory();
-    populateProductSelections(products, preservedSelectedIds);
+
+    // Products already picked from other categories must stay in the option list, otherwise
+    // populateProductSelections() cannot re-select them and the save would silently drop them.
+    const listedIds = new Set(products.map(product => String(product.id)));
+    const carriedOver = (preservedSelectedIds || [])
+        .map(id => String(id))
+        .filter(id => !listedIds.has(id))
+        .map(id => masterProductsCatalog.find(product => String(product.id) === id))
+        .filter(Boolean);
+
+    populateProductSelections(products.concat(carriedOver), preservedSelectedIds);
 
     if (typeof $ !== 'undefined' && $.fn.select2) {
         const $single = $('#master_product_id');
@@ -1185,7 +1238,11 @@ function openAddDetailModal() {
 function editDetail(detailId) {
     currentDetailId = detailId;
     document.getElementById('detailModalTitle').textContent = 'Edit Rental Detail';
-    
+
+    // Open immediately with a loading state so the click feels responsive while data fetches
+    document.getElementById('detailModal').classList.add('show');
+    document.getElementById('detailModalLoading').classList.add('show');
+
     // Fetch detail data and allowed products
     Promise.all([
         fetch(`/warehouse/master-rentals/{{ $masterRental->id }}/details/${detailId}`, {
@@ -1282,11 +1339,20 @@ function editDetail(detailId) {
                 setupSelect2('master_product_id', false);
                 setupSelect2('master_product_ids', true);
             }
-            
-            document.getElementById('detailModal').classList.add('show');
+
+            document.getElementById('detailModalLoading').classList.remove('show');
+        } else {
+            document.getElementById('detailModalLoading').classList.remove('show');
+            closeDetailModal();
+            showErrorDialog('Gagal', detailResponse.message || 'Data rental detail tidak berhasil dimuat.');
         }
     })
-    .catch(error => console.error('Error:', error));
+    .catch(error => {
+        console.error('Error:', error);
+        document.getElementById('detailModalLoading').classList.remove('show');
+        closeDetailModal();
+        showErrorDialog('Gagal', 'Data rental detail tidak berhasil dimuat.');
+    });
 }
 
 function closeDetailModal() {
@@ -1313,10 +1379,9 @@ function submitDetail(event) {
     const detailId = formData.get('detail_id');
     
     const selectedProductIds = getSelectedMultiProductIds();
-    const allProductIds = getAllCurrentCategoryProductIds();
     const autoExpandInput = document.getElementById('auto_expand');
     const shouldAutoExpand = autoExpandInput?.value === '1'
-        || (allProductIds.length > 0 && selectedProductIds.length === allProductIds.length);
+        || selectionCoversWholeCategory(selectedProductIds, getAllCurrentCategoryProductIds());
 
     formData.delete('master_product_id');
     formData.delete('master_product_ids[]');
@@ -1512,17 +1577,15 @@ function renderProductTypes() {
     const container = document.getElementById('productTypeList');
     container.innerHTML = '';
     
+    const selectedIdSet = new Set(globalSelectedProductIds.map(id => parseInt(id)));
+
     globalProductTypes.forEach(productType => {
-        const productsInType = productType.products || [];
-        const productCount = productsInType.length;
-        
+        const productIdsInType = (productType.product_ids || []).map(id => parseInt(id));
+        const productCount = productType.product_count ?? productIdsInType.length;
+
         // Check if all products in this type are selected
-        const productIdsInType = productsInType.map(p => p.id);
-        const allProductsSelected = productIdsInType.length > 0 && 
-            productIdsInType.every(productId => {
-                const productIdNum = parseInt(productId);
-                return globalSelectedProductIds.some(id => parseInt(id) === productIdNum);
-            });
+        const allProductsSelected = productIdsInType.length > 0 &&
+            productIdsInType.every(productId => selectedIdSet.has(productId));
         
         const div = document.createElement('div');
         div.className = 'flex items-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-lg';

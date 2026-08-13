@@ -953,53 +953,40 @@ class MasterRentalController extends Controller
                 ]);
             }
 
-            // Scope selectable products to the detail context so a rental component only sees relevant products.
-            $productTypesQuery = \App\Models\ProductCategory::with(['masterProducts' => function ($query) use ($scopedProductCategoryId, $scopedProductTypeId) {
-                $query->with(['packagingSize', 'productCategory', 'productType'])
-                    ->where('is_active', true)
-                    ->when($scopedProductCategoryId, fn ($q) => $q->where('product_category_id', $scopedProductCategoryId))
-                    // A product with no product_type_id is still valid for this category (users can forget to
-                    // classify it), so narrowing by type must not silently exclude untyped products.
-                    ->when($scopedProductTypeId, fn ($q) => $q->where(function ($sub) use ($scopedProductTypeId) {
-                        $sub->where('product_type_id', $scopedProductTypeId)->orWhereNull('product_type_id');
-                    }))
-                    ->orderBy('name');
+            // List every category a rental detail may use, each with its own products, so the picker can
+            // offer products from any category (a component is not limited to its own Material Type).
+            // Uses the same scope as the Material Type dropdown so both show the same set of categories.
+            // Only ids are needed per category (the checkboxes tick rows in step 2 by id), so the products
+            // themselves are not repeated here - they already travel once in all_products below.
+            $productTypesQuery = \App\Models\ProductCategory::with(['masterProducts' => function ($query) {
+                $query->select('id', 'product_category_id')
+                    ->where('is_active', true);
             }])
-                ->where('is_active', true)
-                ->when($scopedProductCategoryId, fn ($query) => $query->where('id', $scopedProductCategoryId))
+                ->availableForRentalDetail()
                 ->orderBy('name');
 
             $productTypes = $productTypesQuery
                 ->get()
                 ->filter(fn ($cat) => $cat->masterProducts->isNotEmpty())
                 ->map(function ($cat) {
+                    $productIds = $cat->masterProducts->pluck('id')->toArray();
+
                     return [
                         'id' => $cat->id,
                         'code' => $cat->code ?? '',
                         'name' => $cat->name,
                         'is_unit' => $cat->is_unit,
-                        'products' => $cat->masterProducts->map(function ($product) {
-                            return [
-                                'id' => $product->id,
-                                'sku' => $product->sku ?? '',
-                                'name' => $product->name,
-                                'packaging_size' => $product->packagingSize ? $product->packagingSize->name : null,
-                                'packaging_size_id' => $product->packaging_size_id,
-                                'is_unit' => $this->productIsUnit($product),
-                                'bom_quantity' => $product->bom_quantity ?? 0,
-                            ];
-                        })->toArray(),
-                        'product_ids' => $cat->masterProducts->pluck('id')->toArray(),
+                        'product_count' => count($productIds),
+                        'product_ids' => $productIds,
                     ];
-                });
+                })
+                ->values();
 
-            // Get all products only from the same category/type context as the rental detail.
+            // All selectable products. Must stay unscoped in step with the category list above: the category
+            // checkboxes in step 1 tick the matching product rows in step 2 by id, so any product missing
+            // here would make its category checkbox silently do nothing.
             $allProducts = \App\Models\MasterProduct::with(['packagingSize', 'productCategory', 'productType'])
                 ->where('is_active', true)
-                ->when($scopedProductCategoryId, fn ($query) => $query->where('product_category_id', $scopedProductCategoryId))
-                ->when($scopedProductTypeId, fn ($query) => $query->where(function ($sub) use ($scopedProductTypeId) {
-                    $sub->where('product_type_id', $scopedProductTypeId)->orWhereNull('product_type_id');
-                }))
                 ->orderBy('name')
                 ->get()
                 ->map(function ($product) {
@@ -1057,8 +1044,11 @@ class MasterRentalController extends Controller
                 (int) $detail->product_category_id,
                 $detail->product_type_id ? (int) $detail->product_type_id : null
             )->pluck('id')->map(fn ($id) => (int) $id)->sort()->values();
+            // auto_expand means "keep following this row's own category", so it is decided by whether every
+            // product of that category is selected - not by an exact match, which would break as soon as the
+            // user also picks products from another category.
             $selectedAllScopedProducts = $allScopedProductIds->isNotEmpty()
-                && $productIds->sort()->values()->all() === $allScopedProductIds->all();
+                && $allScopedProductIds->diff($productIds)->isEmpty();
             $autoExpand = $request->boolean('auto_expand') || $selectedAllScopedProducts;
 
             $detail->update([
