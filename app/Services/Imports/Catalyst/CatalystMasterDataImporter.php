@@ -1306,15 +1306,23 @@ class CatalystMasterDataImporter
             return;
         }
 
+        // City and Province both use SoftDeletes - exclude soft-deleted rows
+        // (join the province on deleted_at IS NULL too) so we never map a
+        // building to an id that Building::city()/province() (plain Eloquent
+        // belongsTo) will refuse to resolve.
         $rows = DB::table('cities')
-            ->leftJoin('provinces', 'provinces.id', '=', 'cities.province_id')
-            ->select('cities.id', 'cities.name', 'cities.province_id', 'provinces.name as province_name')
+            ->leftJoin('provinces', function ($join) {
+                $join->on('provinces.id', '=', 'cities.province_id')
+                    ->whereNull('provinces.deleted_at');
+            })
+            ->whereNull('cities.deleted_at')
+            ->select('cities.id', 'cities.name', 'cities.province_id', 'provinces.id as joined_province_id', 'provinces.name as province_name')
             ->get();
 
         foreach ($rows as $row) {
             $target = [
                 'id' => (int) $row->id,
-                'province_id' => $row->province_id ? (int) $row->province_id : null,
+                'province_id' => $row->joined_province_id ? (int) $row->joined_province_id : null,
                 'province_name' => $this->cleanString($row->province_name),
             ];
 

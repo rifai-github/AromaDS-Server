@@ -29,7 +29,11 @@ class BackfillBuildingCityMapping extends Command
             return self::FAILURE;
         }
 
-        $validCityIds = DB::table('cities')->pluck('id')->all();
+        // City uses SoftDeletes: a building's city_id can point at a row that
+        // still physically exists but is soft-deleted, which Building::city()
+        // (a normal Eloquent belongsTo) will not resolve. Only count non-deleted
+        // rows as "valid" so those buildings are picked up for repair too.
+        $validCityIds = DB::table('cities')->whereNull('deleted_at')->pluck('id')->all();
 
         $buildings = DB::table('buildings')
             ->where(function ($query) use ($validCityIds) {
@@ -125,6 +129,7 @@ class BackfillBuildingCityMapping extends Command
         }
 
         return DB::table('cities')
+            ->whereNull('deleted_at')
             ->where('name', 'like', '%' . $token . '%')
             ->limit(5)
             ->pluck('name')
@@ -135,11 +140,23 @@ class BackfillBuildingCityMapping extends Command
     {
         $lookup = [];
 
-        foreach (DB::table('cities')->select('id', 'name', 'province_id')->get() as $row) {
+        // Province also uses SoftDeletes: only carry province_id through when
+        // that province row is not itself soft-deleted, otherwise
+        // Building::province() would refuse to resolve it too.
+        $rows = DB::table('cities')
+            ->leftJoin('provinces', function ($join) {
+                $join->on('provinces.id', '=', 'cities.province_id')
+                    ->whereNull('provinces.deleted_at');
+            })
+            ->whereNull('cities.deleted_at')
+            ->select('cities.id', 'cities.name', 'provinces.id as joined_province_id')
+            ->get();
+
+        foreach ($rows as $row) {
             $target = [
                 'id' => (int) $row->id,
                 'name' => $row->name,
-                'province_id' => $row->province_id ? (int) $row->province_id : null,
+                'province_id' => $row->joined_province_id ? (int) $row->joined_province_id : null,
             ];
 
             foreach ($this->cityLookupKeys($row->name) as $key) {
