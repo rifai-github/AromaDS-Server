@@ -279,6 +279,24 @@ class CatalystImportConsoleService
                     $this->artisanCommand(['catalyst:backfill-rental-details']),
                 ],
             ],
+            'dry_run_repair_merged_rental_details' => [
+                'label' => 'Dry Run Repair Merged Rental Details',
+                'description' => 'Simulasikan perbaikan rental_details yang ke-merge akibat bug fallback-match lama (beberapa komponen BOM Catalyst berbeda numplah jadi satu baris). Tidak menulis ke database.',
+                'group' => 'post_import',
+                'execution' => 'sync',
+                'commands' => [
+                    $this->artisanCommand(['catalyst:repair-merged-rental-details']),
+                ],
+            ],
+            'apply_repair_merged_rental_details' => [
+                'label' => 'Apply Repair Merged Rental Details',
+                'description' => 'Lepaskan mapping duplikat untuk rental_details yang ke-merge, supaya komponen yang hilang bisa dibuat ulang saat "Apply Master Rental Import" dijalankan lagi. Tidak mengubah/menghapus baris rental_details yang ada.',
+                'group' => 'post_import',
+                'execution' => 'sync',
+                'commands' => [
+                    $this->artisanCommand(['catalyst:repair-merged-rental-details', '--apply']),
+                ],
+            ],
             'dry_run_backfill_building_city' => [
                 'label' => 'Dry Run Backfill Building City',
                 'description' => 'Simulasikan pengisian city_id/province_id Master Building yang kosong/orphaned/soft-deleted, dicocokkan dari CityName/AreaCity yang sudah tersimpan di notes hasil import. Tidak menulis ke database.',

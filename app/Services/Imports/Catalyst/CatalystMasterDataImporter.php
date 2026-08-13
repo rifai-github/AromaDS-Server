@@ -593,6 +593,26 @@ class CatalystMasterDataImporter
                 : ($productTypeId ? 'product_type' : ($productCategoryId ? 'product_category' : 'product'));
             $itemId = $masterProductId ?: ($productTypeId ?: $productCategoryId);
 
+            if (!$masterProductId && !$productCategoryId && !$productTypeId) {
+                $this->log('rental_details', 'warning', sprintf(
+                    'Rental detail component "%s" (material "%s") on rental %s could not resolve a product, category, or type - will show blank in the UI.',
+                    $component,
+                    $this->cleanString($row['Material'] ?? null) ?? '(empty)',
+                    $rentalKey
+                ), [
+                    'source_table' => 'MsRentalBOM',
+                    'source_key' => $sourceKey,
+                ]);
+            }
+
+            // product_category_id/product_type_id are the "match" key used to dedupe
+            // against an existing detail row. When neither resolved, that key
+            // degenerates to just (rental, frequency, qty) - too coarse, and would
+            // silently merge unrelated BOM components (e.g. two different
+            // "permanent, replace never" parts) into a single row. Only trust the
+            // fallback match when we actually resolved a category or type.
+            $allowFallbackMatch = $productCategoryId !== null || $productTypeId !== null;
+
             $result = $this->syncRecord('rental_details', 'MsRentalBOM', $sourceKey, 'rental_details', [
                 'master_rental_id' => $masterRentalId,
                 'product_category_id' => $productCategoryId,
@@ -607,7 +627,7 @@ class CatalystMasterDataImporter
                 'bom_rental_qty' => $bomQty,
                 'auto_expand' => !$masterProductId && (bool) ($productTypeId || $productCategoryId),
                 'unit' => 'UNIT',
-            ], $row);
+            ], $row, $allowFallbackMatch);
 
             if ($this->apply && ($result['target_id'] ?? 0) > 0) {
                 $this->syncRentalDetailMaterials((int) $result['target_id'], $selectedProductIds);
@@ -990,7 +1010,7 @@ class CatalystMasterDataImporter
         return ['stats' => $stats];
     }
 
-    protected function syncRecord(string $step, string $sourceTable, string $sourceKey, string $targetTable, array $match, array $payload, array $row): array
+    protected function syncRecord(string $step, string $sourceTable, string $sourceKey, string $targetTable, array $match, array $payload, array $row, bool $allowFallbackMatch = true): array
     {
         $payload = $this->filterPayload($targetTable, array_merge($match, $payload));
         $match = Arr::only($payload, array_keys($match));
@@ -1006,7 +1026,13 @@ class CatalystMasterDataImporter
             $existing = DB::table($targetTable)->where('id', $targetId)->first();
         }
 
-        if (!$existing) {
+        // Some callers pass a "match" that is only meaningful when its values are
+        // non-null (e.g. a resolved category/type). When every value collapsed to
+        // null, the fallback lookup below would match ANY other row with the same
+        // all-null combination - silently merging unrelated source rows into one
+        // target record. Skip the fallback in that case; sourceKey-based mapping
+        // is still reliable, so we simply insert a fresh row instead.
+        if (!$existing && $allowFallbackMatch) {
             $existing = $this->findTargetRecord($targetTable, $match);
             $targetId = $existing->id ?? null;
         }
