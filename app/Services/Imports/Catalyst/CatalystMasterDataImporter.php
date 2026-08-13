@@ -1706,8 +1706,15 @@ class CatalystMasterDataImporter
 
     protected function resolveRentalDetailCategoryId(?string $component, ?int $masterProductId): ?int
     {
-        if ($masterProductId && array_key_exists($masterProductId, $this->targetMasterProductCategoryLookup)) {
-            return $this->targetMasterProductCategoryLookup[$masterProductId];
+        // targetMasterProductCategoryLookup carries every product id as a key, with a
+        // null value for products that have no category of their own - array_key_exists
+        // is true either way, so only short-circuit when the product actually has one.
+        // Otherwise fall through to guessing a category from the BOM's Material Type text.
+        if ($masterProductId) {
+            $ownCategoryId = $this->targetMasterProductCategoryLookup[$masterProductId] ?? null;
+            if ($ownCategoryId) {
+                return $ownCategoryId;
+            }
         }
 
         $component = Str::upper($this->cleanString($component) ?? '');
