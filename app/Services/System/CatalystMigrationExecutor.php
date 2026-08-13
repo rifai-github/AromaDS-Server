@@ -10,7 +10,10 @@ use Throwable;
 
 class CatalystMigrationExecutor
 {
-    private const EXCLUDED_STEPS = ['warehouse_types', 'warehouses', 'warehouse_product_links'];
+    private const EXCLUDED_STEPS = [
+        'warehouse_types', 'warehouses', 'warehouse_product_links',
+        'master_rentals', 'rental_components', 'rental_details',
+    ];
 
     public function __construct(
         protected CatalystMigrationRunService $runService,
