@@ -1237,6 +1237,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::put('master-rentals/{masterRental}/details/{detail}', [MasterRentalController::class, 'detailsUpdate'])->name('master-rentals.details.update')->middleware('permission:warehouse.master-rentals.update');
         Route::delete('master-rentals/{masterRental}/details/{detail}', [MasterRentalController::class, 'detailsDestroy'])->name('master-rentals.details.destroy')->middleware('permission:warehouse.master-rentals.delete');
         Route::get('master-rentals/{masterRental}/details/{detail}/materials', [MasterRentalController::class, 'getMaterialList'])->name('master-rentals.details.materials')->middleware('permission:warehouse.master-rentals.view');
+        Route::post('master-rentals/{masterRental}/details/{detail}/materials', [MasterRentalController::class, 'saveMaterialList'])->name('master-rentals.details.materials.save')->middleware('permission:warehouse.master-rentals.update');
 
         // Master Rental Prices Routes
         Route::post('master-rentals/{masterRental}/prices', [MasterRentalController::class, 'pricesStore'])->name('master-rentals.prices.store')->middleware('permission:warehouse.master-rentals.update');
