@@ -965,7 +965,6 @@ class MasterRentalController extends Controller
                     }))
                     ->orderBy('name');
             }])
-                ->whereNotNull('sku_prefix')
                 ->where('is_active', true)
                 ->when($scopedProductCategoryId, fn ($query) => $query->where('id', $scopedProductCategoryId))
                 ->orderBy('name');
