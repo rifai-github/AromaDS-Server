@@ -1041,64 +1041,6 @@ class MasterRentalController extends Controller
         }
     }
 
-    public function saveMaterialList(Request $request, MasterRental $masterRental, RentalDetail $detail)
-    {
-        $request->validate([
-            'product_ids' => 'required|array',
-            'product_ids.*' => 'exists:master_products,id',
-            'auto_expand' => 'nullable|boolean',
-        ]);
-
-        try {
-            DB::beginTransaction();
-
-            $productIds = collect($request->product_ids)->map(fn ($id) => (int) $id)->unique()->values();
-            $allScopedProductIds = $this->getProductsForRentalDetailScope(
-                (int) $detail->product_category_id,
-                $detail->product_type_id ? (int) $detail->product_type_id : null
-            )->pluck('id')->map(fn ($id) => (int) $id)->sort()->values();
-            $selectedAllScopedProducts = $allScopedProductIds->isNotEmpty()
-                && $productIds->sort()->values()->all() === $allScopedProductIds->all();
-            $autoExpand = $request->boolean('auto_expand') || $selectedAllScopedProducts;
-
-            $detail->update([
-                'item_type' => $productIds->isNotEmpty() ? 'product' : 'product_type',
-                'item_id' => $productIds->first(),
-                'master_product_id' => $productIds->first(),
-                'auto_expand' => $autoExpand,
-                'updated_by' => Auth::id(),
-            ]);
-
-            // Sync products with pivot data
-            $syncData = [];
-            foreach ($productIds as $index => $productId) {
-                $syncData[$productId] = [
-                    'is_selected' => true,
-                    'sort_order' => $index,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-
-            $detail->allowedProducts()->sync($syncData);
-
-            DB::commit();
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Material list berhasil disimpan.',
-                'data' => $detail->load('allowedProducts'),
-            ]);
-        } catch (\Exception $e) {
-            DB::rollback();
-
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Terjadi kesalahan: '.$e->getMessage(),
-            ], 422);
-        }
-    }
-
     private function productIsUnit(MasterProduct $product): bool
     {
         if ($product->productCategory && $product->productCategory->is_unit !== null) {
