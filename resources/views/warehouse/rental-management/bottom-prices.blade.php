@@ -145,6 +145,12 @@
         gap: 10px;
     }
 
+    .form-row-split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
     .form-label { font-weight: 500; color: #495057; margin-bottom: 5px; }
     .form-control, .form-select {
         border: 1px solid #ced4da;
@@ -249,21 +255,23 @@
         <form id="bottomPriceForm" onsubmit="return false;">
             <input type="hidden" id="bottom_price_id" name="bottom_price_id">
             <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label">Branch <span class="text-danger">*</span></label>
-                    <select class="form-select" id="branch_id" name="branch_id" required>
-                        <option value="">-- Pilih Branch --</option>
-                        @foreach($branches as $branch)
-                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Tipe Penawaran <span class="text-danger">*</span></label>
-                    <select class="form-select" id="offer_type" name="offer_type" required>
-                        <option value="bulan">Bulanan</option>
-                        <option value="hari">Harian</option>
-                    </select>
+                <div class="mb-3 form-row-split">
+                    <div>
+                        <label class="form-label">Branch <span class="text-danger">*</span></label>
+                        <select class="form-select" id="branch_id" name="branch_id" required>
+                            <option value="">-- Pilih Branch --</option>
+                            @foreach($branches as $branch)
+                                <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">TOP <span class="text-danger">*</span></label>
+                        <select class="form-select" id="offer_type" name="offer_type" required>
+                            <option value="bulan">Bulanan</option>
+                            <option value="hari">Harian</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Bottom Price (Rp) <span class="text-danger">*</span></label>

@@ -174,16 +174,52 @@ class QuotationBottomPriceEvaluatorTest extends TestCase
         $this->assertSame('gm', $result['required_level']['level_code']);
     }
 
-    public function test_the_deepest_discount_across_lines_decides_the_required_level(): void
+    public function test_the_required_level_is_decided_by_the_aggregate_discount_not_the_worst_line(): void
     {
-        $quotation = $this->seedQuotationWithDetail(900_000);   // 10% -> Manager
-        $this->addDetail($quotation, 400_000);                  // 60% -> Director
+        // Line A: 900.000 vs 1.000.000 floor (10% under, would be Manager alone).
+        // Line B: 400.000 vs 1.000.000 floor (60% under, would be Director alone).
+        // Aggregate: 1.300.000 / 2.000.000 -> 35% under -> GM, not Director.
+        $quotation = $this->seedQuotationWithDetail(900_000);
+        $this->addDetail($quotation, 400_000);
         $this->seedBottomPrice(1_000_000);
 
         $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
 
         $this->assertCount(2, $result['issues']);
-        $this->assertSame('director', $result['required_level']['level_code']);
+        $this->assertSame(35.0, $result['issues'][0]['discount_percentage']);
+        $this->assertSame(35.0, $result['issues'][1]['discount_percentage']);
+        $this->assertSame('gm', $result['required_level']['level_code']);
+    }
+
+    public function test_a_line_below_its_own_floor_is_auto_approved_when_the_total_clears_the_total_floor(): void
+    {
+        // Line A: 700.000 vs 1.000.000 floor (individually 30% under).
+        // Line B: 1.400.000 vs 1.000.000 floor (individually above floor).
+        // Aggregate: 2.100.000 total vs 2.000.000 total floor -> total clears -> auto-approve.
+        $quotation = $this->seedQuotationWithDetail(700_000);
+        $this->addDetail($quotation, 1_400_000);
+        $this->seedBottomPrice(1_000_000);
+
+        $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
+
+        $this->assertFalse($result['requires_approval']);
+        $this->assertSame([], $result['issues']);
+        $this->assertNull($result['required_level']);
+    }
+
+    public function test_totals_are_weighted_by_each_lines_quantity(): void
+    {
+        // Line A: unit 900.000 x qty 1 vs floor 1.000.000 x 1 = 900.000 / 1.000.000.
+        // Line B: unit 400.000 x qty 3 vs floor 1.000.000 x 3 = 1.200.000 / 3.000.000.
+        // Aggregate: 2.100.000 / 4.000.000 -> 47,5% under -> still GM.
+        $quotation = $this->seedQuotationWithDetail(900_000);
+        $this->addDetail($quotation, 400_000, quantity: 3);
+        $this->seedBottomPrice(1_000_000);
+
+        $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
+
+        $this->assertSame(47.5, $result['issues'][0]['discount_percentage']);
+        $this->assertSame('gm', $result['required_level']['level_code']);
     }
 
     public function test_it_fails_closed_when_no_level_covers_the_discount(): void

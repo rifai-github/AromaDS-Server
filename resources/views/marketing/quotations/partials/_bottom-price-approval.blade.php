@@ -2,9 +2,14 @@
     $bpIssues = $bottomPriceEvaluation['issues'] ?? [];
     $bpRequiredLevel = $bottomPriceEvaluation['required_level'] ?? null;
     $bpLineIssues = collect($bpIssues)->filter(fn ($issue) => ($issue['type'] ?? null) !== 'missing_details');
+
+    // Bottom price / discount figures are approval-sensitive pricing data.
+    // Only users who can approve quotations at some level (not plain
+    // Marketing staff) may see this breakdown.
+    $bpCanViewApprovalDetail = auth()->user()?->canApprove('quotations') ?? false;
 @endphp
 
-@if(!empty($bottomPriceEvaluation['requires_approval']) && $quotation->status === 'waiting_for_approval')
+@if($bpCanViewApprovalDetail && !empty($bottomPriceEvaluation['requires_approval']) && $quotation->status === 'waiting_for_approval')
 <div class="card mb-3" style="border-left: 4px solid #f59e0b;">
     <div class="card-body">
         <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
