@@ -871,14 +871,26 @@ class CatalystMasterDataImporter
         return $this->runStep('buildings', 'MsBuilding', 'BuildingCode', function (array $row) {
             $sourceKey = $this->makeKey($row['BuildingCode'] ?? null);
             $name = $this->cleanString($row['BuildingName'] ?? null);
-            $city = $this->resolveSourceCity($row['City'] ?? null);
             $area = $this->resolveSourceArea($row['AreaService'] ?? null);
+            $city = $this->resolveSourceCity($row['City'] ?? null, $area['city_name'] ?? null);
             $address = $this->cleanString($row['Address'] ?? null) ?: $name;
             $phone = $this->normalizePhoneLike($row['Phone'] ?? null);
             $fax = $this->normalizePhoneLike($row['Fax'] ?? null);
 
             if (!$sourceKey || !$name) {
                 return $this->failedRow('Building code or name is empty.');
+            }
+
+            if (!$city['target_city_id'] && ($city['name'] || $area['city_name'])) {
+                $this->log('buildings', 'warning', sprintf(
+                    'Building "%s" (%s): city "%s" has no match in local cities table.',
+                    $name,
+                    $sourceKey,
+                    $city['name'] ?? $area['city_name']
+                ), [
+                    'source_table' => 'MsBuilding',
+                    'source_key' => $sourceKey,
+                ]);
             }
 
             return $this->syncRecord('buildings', 'MsBuilding', $sourceKey, 'buildings', [
@@ -1422,11 +1434,23 @@ class CatalystMasterDataImporter
         return $this->sourceMarketingRentalProductCodes;
     }
 
-    protected function resolveSourceCity($code): array
+    protected function resolveSourceCity($code, ?string $fallbackName = null): array
     {
         $key = $this->makeKey($code);
         $name = $this->sourceCityLookup[$key]['name'] ?? null;
         $target = $name ? ($this->targetCityLookup[$this->normalizePlace($name)] ?? null) : null;
+
+        // MsCity has no usable match (missing/unmapped code, or the name doesn't
+        // exist in our local cities table). Fall back to the servicing area's
+        // city name (V_MsAreaService), which is populated more reliably in
+        // source data than MsBuilding.City in some Catalyst tenants.
+        if (!$target && $fallbackName) {
+            $fallbackTarget = $this->targetCityLookup[$this->normalizePlace($fallbackName)] ?? null;
+            if ($fallbackTarget) {
+                $target = $fallbackTarget;
+                $name = $name ?: $fallbackName;
+            }
+        }
 
         return [
             'code' => $key,

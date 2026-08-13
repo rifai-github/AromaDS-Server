@@ -248,6 +248,24 @@ class CatalystImportConsoleService
                     $this->artisanCommand(['catalyst:backfill-rental-details']),
                 ],
             ],
+            'dry_run_backfill_building_city' => [
+                'label' => 'Dry Run Backfill Building City',
+                'description' => 'Simulasikan pengisian city_id/province_id Master Building yang kosong, dicocokkan dari CityName/AreaCity yang sudah tersimpan di notes hasil import. Tidak menulis ke database.',
+                'group' => 'post_import',
+                'execution' => 'sync',
+                'commands' => [
+                    $this->artisanCommand(['catalyst:backfill-building-city']),
+                ],
+            ],
+            'apply_backfill_building_city' => [
+                'label' => 'Apply Backfill Building City',
+                'description' => 'Isi city_id/province_id Master Building yang kosong berdasarkan CityName/AreaCity yang sudah tersimpan di notes hasil import Catalyst.',
+                'group' => 'post_import',
+                'execution' => 'sync',
+                'commands' => [
+                    $this->artisanCommand(['catalyst:backfill-building-city', '--apply']),
+                ],
+            ],
             'post_import_sync' => [
                 'label' => 'Run Post-Import Sync',
                 'description' => 'Jalankan export warehouse link, export rental material exact, backfill warehouse, product relations, dan rental details sekaligus.',
