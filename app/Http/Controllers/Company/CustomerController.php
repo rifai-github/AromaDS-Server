@@ -451,7 +451,7 @@ class CustomerController extends Controller
         // Allow simple customer creation from pipeline modal
         $request->validate([
             'name' => 'required|string|max:255',
-            'phone' => 'nullable|string|max:20',
+            'phone' => 'required|string|max:20',
             'email' => 'nullable|email|max:255',
             'address' => 'nullable|string',
             'company_type' => 'nullable|string',
@@ -855,7 +855,7 @@ class CustomerController extends Controller
             'member_since' => 'nullable|date',
             'balance' => 'nullable|numeric|min:0',
             'email' => 'nullable|email|max:255|unique:customers,email,'.$customer->id,
-            'phone' => 'nullable|string|max:20',
+            'phone' => 'required|string|max:20',
             'address' => 'nullable|string',
             'city' => 'nullable|string|max:100',
             'postal_code' => 'nullable|string|max:10',
