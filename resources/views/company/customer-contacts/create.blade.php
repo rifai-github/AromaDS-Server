@@ -64,8 +64,8 @@
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="email" class="form-label">Email</label>
-                                    <input type="email" class="form-control" id="email" name="email" value="{{ old('email') }}">
+                                    <label for="email" class="form-label">Email <span class="text-danger">*</span></label>
+                                    <input type="email" class="form-control" id="email" name="email" value="{{ old('email') }}" required>
                                     @error('email')
                                         <div class="text-danger">{{ $message }}</div>
                                     @enderror
@@ -75,8 +75,8 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="phone" class="form-label">Phone</label>
-                                    <input type="text" class="form-control" id="phone" name="phone" value="{{ old('phone') }}">
+                                    <label for="phone" class="form-label">Phone <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="phone" name="phone" value="{{ old('phone') }}" required>
                                     @error('phone')
                                         <div class="text-danger">{{ $message }}</div>
                                     @enderror

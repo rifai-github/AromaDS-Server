@@ -832,16 +832,16 @@
                     <input type="text" name="name" class="form-control" required>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Email</label>
-                    <input type="email" name="email" class="form-control">
+                    <label class="form-label">Email *</label>
+                    <input type="email" name="email" class="form-control" required>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Email Alt</label>
                     <input type="email" name="email_alt" class="form-control">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Phone 1</label>
-                    <input type="tel" name="phone_1" class="form-control">
+                    <label class="form-label">Phone 1 *</label>
+                    <input type="tel" name="phone_1" class="form-control" required>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Phone 2</label>
@@ -3754,8 +3754,14 @@ function closeClientContactModal() {
 
 function saveClientContact() {
     const form = document.getElementById('clientContactForm');
+
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
     const formData = new FormData(form);
-    
+
     // Validasi customer_id sebelum submit
     const customerId = formData.get('customer_id');
     if (!customerId) {

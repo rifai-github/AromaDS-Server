@@ -111,8 +111,8 @@ class CustomerContactController extends Controller
             'salutation' => 'nullable|string|max:20',
             'name' => 'required|string|max:255',
             'position' => 'nullable|string|max:255',
-            'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
+            'email' => 'required|email|max:255',
+            'phone' => 'required|string|max:20',
             'is_active' => 'boolean'
         ]);
 
@@ -357,8 +357,8 @@ class CustomerContactController extends Controller
             'salutation' => 'nullable|string|max:20',
             'name' => 'required|string|max:255',
             'position' => 'nullable|string|max:255',
-            'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
+            'email' => 'required|email|max:255',
+            'phone' => 'required|string|max:20',
             'is_active' => 'boolean'
         ]);
 

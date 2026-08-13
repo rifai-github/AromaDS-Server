@@ -1197,9 +1197,9 @@ class ContractWizardController extends Controller
             'name' => 'required|string|max:255',
             'position' => 'nullable|string|max:100',
             'salutation' => 'nullable|string|max:50',
-            'email' => 'nullable|email|max:255',
+            'email' => 'required|email|max:255',
             'email_alt' => 'nullable|email|max:255',
-            'phone_1' => 'nullable|string|max:50',
+            'phone_1' => 'required|string|max:50',
             'phone_2' => 'nullable|string|max:50',
             'employee_status' => 'nullable|string|in:active,leave,resigned',
         ]);

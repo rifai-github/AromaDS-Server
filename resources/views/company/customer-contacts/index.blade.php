@@ -796,12 +796,14 @@ function openCreateModal() {
                         </select>
                     </div>
                     <div class="detail-item">
-                        <label class="form-label">Email</label>
-                        <input type="email" class="form-control" name="email">
+                        <label class="form-label">Email <span style="color: red;">*</span></label>
+                        <input type="email" class="form-control" name="email" required>
+                        <div class="invalid-feedback"></div>
                     </div>
                     <div class="detail-item">
-                        <label class="form-label">Phone</label>
-                        <input type="text" class="form-control" name="phone">
+                        <label class="form-label">Phone <span style="color: red;">*</span></label>
+                        <input type="text" class="form-control" name="phone" required>
+                        <div class="invalid-feedback"></div>
                     </div>
                     <div class="detail-item">
                         <label class="form-label">Status</label>
@@ -814,7 +816,7 @@ function openCreateModal() {
             </div>
         </form>
     `;
-    
+
     // Add modal footer
     document.getElementById('modalFooter').innerHTML = `
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -1000,12 +1002,14 @@ function openEditModal(id) {
                                 </select>
                             </div>
                             <div class="detail-item">
-                                <label class="form-label">Email</label>
-                                <input type="email" class="form-control" name="email" value="${data.email || ''}">
+                                <label class="form-label">Email <span style="color: red;">*</span></label>
+                                <input type="email" class="form-control" name="email" value="${data.email || ''}" required>
+                                <div class="invalid-feedback"></div>
                             </div>
                             <div class="detail-item">
-                                <label class="form-label">Phone</label>
-                                <input type="text" class="form-control" name="phone" value="${data.phone || ''}">
+                                <label class="form-label">Phone <span style="color: red;">*</span></label>
+                                <input type="text" class="form-control" name="phone" value="${data.phone || ''}" required>
+                                <div class="invalid-feedback"></div>
                             </div>
                             <div class="detail-item">
                                 <label class="form-label">Status</label>
