@@ -1312,15 +1312,36 @@ class CatalystMasterDataImporter
             ->get();
 
         foreach ($rows as $row) {
-            $key = $this->normalizePlace($row->name);
-            if ($key && !isset($this->targetCityLookup[$key])) {
-                $this->targetCityLookup[$key] = [
-                    'id' => (int) $row->id,
-                    'province_id' => $row->province_id ? (int) $row->province_id : null,
-                    'province_name' => $this->cleanString($row->province_name),
-                ];
+            $target = [
+                'id' => (int) $row->id,
+                'province_id' => $row->province_id ? (int) $row->province_id : null,
+                'province_name' => $this->cleanString($row->province_name),
+            ];
+
+            foreach ($this->cityLookupKeys($row->name) as $key) {
+                if ($key && !isset($this->targetCityLookup[$key])) {
+                    $this->targetCityLookup[$key] = $target;
+                }
             }
         }
+    }
+
+    /**
+     * Local city names sometimes carry a bracketed alias, e.g. "SURAKARTA (SOLO)"
+     * or "BULUNGAN (BULONGAN)". Catalyst's MsCity/AreaService names are plain
+     * ("Surakarta"), so register the full name, the part before the bracket, and
+     * the alias inside the bracket as separate lookup keys.
+     */
+    protected function cityLookupKeys(string $name): array
+    {
+        $keys = [$this->normalizePlace($name)];
+
+        if (preg_match('/^(.*?)\(([^)]+)\)\s*$/', trim($name), $matches)) {
+            $keys[] = $this->normalizePlace($matches[1]);
+            $keys[] = $this->normalizePlace($matches[2]);
+        }
+
+        return array_values(array_filter(array_unique($keys)));
     }
 
     protected function loadTargetRentalLookups(): void

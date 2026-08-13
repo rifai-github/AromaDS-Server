@@ -29,14 +29,18 @@ class BackfillBuildingCityMapping extends Command
             return self::FAILURE;
         }
 
+        $validCityIds = DB::table('cities')->pluck('id')->all();
+
         $buildings = DB::table('buildings')
-            ->whereNull('city_id')
+            ->where(function ($query) use ($validCityIds) {
+                $query->whereNull('city_id')->orWhereNotIn('city_id', $validCityIds);
+            })
             ->orderBy('id')
             ->limit(max((int) $this->option('limit'), 1))
-            ->get(['id', 'name', 'nama_gedung', 'notes']);
+            ->get(['id', 'name', 'nama_gedung', 'notes', 'city_id']);
 
         if ($buildings->isEmpty()) {
-            $this->info('No buildings found with a missing city_id.');
+            $this->info('No buildings found with a missing or orphaned city_id.');
 
             return self::SUCCESS;
         }
@@ -46,12 +50,14 @@ class BackfillBuildingCityMapping extends Command
         $skipped = 0;
 
         foreach ($buildings as $building) {
+            $priorState = $building->city_id === null ? 'city_id was null' : 'city_id=' . $building->city_id . ' is orphaned (no matching cities row)';
+
             $cityName = $this->extractLabelValue($building->notes, 'CityName')
                 ?: $this->extractLabelValue($building->notes, 'AreaCity');
 
             if (!$cityName) {
                 $skipped++;
-                $rows[] = ['SKIP', $building->id, $building->name ?: $building->nama_gedung, '-', '-', 'no CityName/AreaCity captured in notes - needs re-import from Catalyst source'];
+                $rows[] = ['SKIP', $building->id, $building->name ?: $building->nama_gedung, '-', '-', $priorState . '; no CityName/AreaCity captured in notes - needs re-import from Catalyst source'];
                 continue;
             }
 
@@ -60,7 +66,7 @@ class BackfillBuildingCityMapping extends Command
             if (!$match) {
                 $skipped++;
                 $candidates = $this->findCandidateCities($cityName);
-                $note = $candidates ? 'no exact match, close names: ' . implode(', ', $candidates) : 'no matching local city at all';
+                $note = $priorState . '; ' . ($candidates ? 'no exact match, close names: ' . implode(', ', $candidates) : 'no matching local city at all');
                 $rows[] = ['SKIP', $building->id, $building->name ?: $building->nama_gedung, $cityName, '-', $note];
                 continue;
             }
@@ -130,17 +136,38 @@ class BackfillBuildingCityMapping extends Command
         $lookup = [];
 
         foreach (DB::table('cities')->select('id', 'name', 'province_id')->get() as $row) {
-            $key = $this->normalizePlace($row->name);
-            if ($key && !isset($lookup[$key])) {
-                $lookup[$key] = [
-                    'id' => (int) $row->id,
-                    'name' => $row->name,
-                    'province_id' => $row->province_id ? (int) $row->province_id : null,
-                ];
+            $target = [
+                'id' => (int) $row->id,
+                'name' => $row->name,
+                'province_id' => $row->province_id ? (int) $row->province_id : null,
+            ];
+
+            foreach ($this->cityLookupKeys($row->name) as $key) {
+                if ($key && !isset($lookup[$key])) {
+                    $lookup[$key] = $target;
+                }
             }
         }
 
         return $lookup;
+    }
+
+    /**
+     * Local city names sometimes carry a bracketed alias, e.g. "SURAKARTA (SOLO)"
+     * or "BULUNGAN (BULONGAN)". Catalyst's MsCity/AreaService names are plain
+     * ("Surakarta"), so register the full name, the part before the bracket, and
+     * the alias inside the bracket as separate lookup keys.
+     */
+    private function cityLookupKeys(string $name): array
+    {
+        $keys = [$this->normalizePlace($name)];
+
+        if (preg_match('/^(.*?)\(([^)]+)\)\s*$/', trim($name), $matches)) {
+            $keys[] = $this->normalizePlace($matches[1]);
+            $keys[] = $this->normalizePlace($matches[2]);
+        }
+
+        return array_values(array_filter(array_unique($keys)));
     }
 
     private function extractLabelValue(?string $text, string $label): ?string
