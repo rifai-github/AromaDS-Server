@@ -112,8 +112,10 @@
             color: #384295;
             font-size: 18px;
             cursor: pointer;
-            align-self: flex-end; 
-            margin: 0 10px 15px 0;
+            position: absolute;
+            top: 24px;
+            right: 14px;
+            margin: 0;
             width: 35px;
             height: 35px;
             border-radius: 50%;
@@ -125,6 +127,15 @@
             flex-shrink: 0;
             min-width: 35px;
             min-height: 35px;
+            z-index: 20;
+        }
+
+        /* Collapsed sidebar: keep the button on its own row below the logo,
+           since the narrow width leaves no room beside the centered logo. */
+        .sidebar.collapsed .collapse-btn {
+            position: static;
+            align-self: flex-end;
+            margin: 0 10px 15px 0;
         }
 
         .collapse-btn:hover {
@@ -142,7 +153,7 @@
             overflow-x: hidden;
             padding-right: 5px;
             transition: all 0.5s ease-in-out;
-            max-height: calc(100vh - 150px);
+            max-height: calc(100vh - 100px);
             min-height: 0;
             scrollbar-width: thin;
             scrollbar-color: rgba(255,255,255,0.3) transparent;
@@ -304,25 +315,6 @@
             display: flex;
             align-items: center;
             text-align: center;
-        }
-
-        .sidebar.collapsed .bottom {
-            padding: 10px 0;
-            background: rgba(0, 0, 0, 0.15);
-            border-top: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .sidebar.collapsed .bottom .menu-item {
-            flex-shrink: 0;
-        }
-
-        /* Ensure bottom section is always visible */
-        .sidebar .bottom {
-            min-height: 80px;
-        }
-
-        .sidebar.collapsed .bottom {
-            min-height: 60px;
         }
 
         /* Ensure smooth transitions for all sidebar elements */
@@ -565,21 +557,6 @@
 
         /* Custom Scrollbar for Submenu - Removed since submenu no longer scrolls */
 
-        .bottom {
-            margin-top: auto;
-            padding: 15px 0;
-            flex-shrink: 0;
-            transition: all 0.5s ease-in-out;
-            background: rgba(0, 0, 0, 0.1);
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            position: relative;
-            z-index: 10;
-        }
-
-        .bottom .menu-item {
-            flex-shrink: 0;
-        }
-
         /* Tooltip styles */
         .tooltip {
             position: fixed;
@@ -696,6 +673,79 @@
             font-size: 12px;
             color: #3d3d3d;
             line-height: 15px;
+        }
+
+        /* User menu (My Profile / Logout) - top right dropdown */
+        .user-menu {
+            position: relative;
+        }
+
+        .user-menu .user-profile {
+            cursor: pointer;
+            padding: 6px 10px;
+            border-radius: 10px;
+            transition: background 0.2s ease;
+        }
+
+        .user-menu .user-profile:hover,
+        .user-menu.open .user-profile {
+            background: #eff6ff;
+        }
+
+        .user-menu-caret {
+            margin-left: 12px;
+            font-size: 12px;
+            color: #9aa5b1;
+            transition: transform 0.2s ease;
+        }
+
+        .user-menu.open .user-menu-caret {
+            transform: rotate(180deg);
+        }
+
+        .user-dropdown {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            min-width: 210px;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            padding: 8px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-6px);
+            transition: all 0.2s ease;
+            z-index: 200;
+        }
+
+        .user-menu.open .user-dropdown {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .user-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            color: #333;
+            font-size: 14px;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .user-dropdown-item:hover {
+            background: #C1E0FC;
+            color: #225FD3;
+        }
+
+        .user-dropdown-item i {
+            width: 16px;
+            text-align: center;
         }
 
         .content-body {
@@ -1762,31 +1812,6 @@
             </ul> -->
         </div>
 
-        <div class="bottom">
-            <div class="menu-item" onclick="navigateTo('{{ route('profile.index') }}')">
-                <div class="left">
-                    <i class="fas fa-user"></i>
-                    <span>My Profile</span>
-                </div>
-                <div class="tooltip">My Profile</div>
-            </div>
-            <div class="menu-item" onclick="logout()">
-                <div class="left">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Logout</span>
-                </div>
-                <div class="tooltip">Logout</div>
-            </div>
-            
-            <!-- Fallback logout link for users with JavaScript disabled -->
-            <a href="{{ route('logout.get') }}" class="menu-item" style="display: none;" id="fallbackLogout">
-                <div class="left">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Logout (Direct)</span>
-                </div>
-                <div class="tooltip">Logout</div>
-            </a>
-        </div>
     </div>
 
     <div class="main-content" id="mainContent">
@@ -1800,17 +1825,35 @@
                     </div>
                     
                     <div class="header-right">
-                        <div class="user-profile">
-                            <div class="user-avatar">
-                                @if(auth()->user()->photo_file_path)
-                                    <img src="{{ asset('uploads/' . auth()->user()->photo_file_path) }}" alt="{{ auth()->user()->name }}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
-                                @else
-                                    {{ substr(auth()->user()->name ?? 'U', 0, 1) }}
-                                @endif
+                        <div class="user-menu" id="userMenu">
+                            <div class="user-profile" onclick="toggleUserMenu(event)">
+                                <div class="user-avatar">
+                                    @if(auth()->user()->photo_file_path)
+                                        <img src="{{ asset('uploads/' . auth()->user()->photo_file_path) }}" alt="{{ auth()->user()->name }}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+                                    @else
+                                        {{ substr(auth()->user()->name ?? 'U', 0, 1) }}
+                                    @endif
+                                </div>
+                                <div class="user-info">
+                                    <div class="user-name">{{ auth()->user()->name ?? 'User' }}</div>
+                                    <div class="user-role">{{ auth()->user()->roles->pluck('name')->implode(', ') ?? 'Staff' }} | {{ auth()->user()->department_name ?? 'Department' }}</div>
+                                </div>
+                                <i class="fas fa-chevron-down user-menu-caret"></i>
                             </div>
-                            <div class="user-info">
-                                <div class="user-name">{{ auth()->user()->name ?? 'User' }}</div>
-                                <div class="user-role">{{ auth()->user()->roles->pluck('name')->implode(', ') ?? 'Staff' }} | {{ auth()->user()->department_name ?? 'Department' }}</div>
+                            <div class="user-dropdown" id="userDropdown">
+                                <a href="{{ route('profile.index') }}" class="user-dropdown-item">
+                                    <i class="fas fa-user"></i>
+                                    <span>My Profile</span>
+                                </a>
+                                <div class="user-dropdown-item" onclick="logout()">
+                                    <i class="fas fa-sign-out-alt"></i>
+                                    <span>Logout</span>
+                                </div>
+                                <!-- Fallback logout link for users with JavaScript disabled -->
+                                <a href="{{ route('logout.get') }}" class="user-dropdown-item" style="display: none;" id="fallbackLogout">
+                                    <i class="fas fa-sign-out-alt"></i>
+                                    <span>Logout (Direct)</span>
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -2325,7 +2368,27 @@
             }
         });
 
+        function toggleUserMenu(event) {
+            event.stopPropagation();
+            document.getElementById('userMenu').classList.toggle('open');
+        }
+
+        document.addEventListener('click', function(e) {
+            const userMenu = document.getElementById('userMenu');
+            if (userMenu && !userMenu.contains(e.target)) {
+                userMenu.classList.remove('open');
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                const userMenu = document.getElementById('userMenu');
+                if (userMenu) userMenu.classList.remove('open');
+            }
+        });
+
         function logout() {
+            document.getElementById('userMenu')?.classList.remove('open');
             showLogoutModal();
         }
 
