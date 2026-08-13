@@ -10,7 +10,8 @@ class BackfillBuildingCityMapping extends Command
 {
     protected $signature = 'catalyst:backfill-building-city
                             {--apply : Apply the repair (default is dry-run)}
-                            {--limit=1000 : Max buildings to scan}';
+                            {--limit=5000 : Max buildings to scan}
+                            {--name= : Only scan buildings whose name/nama_gedung matches this (LIKE %value%), ignoring the missing/orphaned city_id filter}';
 
     protected $description = 'Backfill buildings.city_id/province_id for Catalyst-imported buildings whose city failed to resolve during import, using the CityName/AreaCity already captured in buildings.notes';
 
@@ -35,26 +36,48 @@ class BackfillBuildingCityMapping extends Command
         // rows as "valid" so those buildings are picked up for repair too.
         $validCityIds = DB::table('cities')->whereNull('deleted_at')->pluck('id')->all();
 
-        $buildings = DB::table('buildings')
-            ->where(function ($query) use ($validCityIds) {
+        $nameFilter = trim((string) $this->option('name'));
+
+        $buildingsQuery = DB::table('buildings');
+
+        if ($nameFilter !== '') {
+            $this->info('Name filter active ("' . $nameFilter . '") - scanning matching buildings regardless of current city_id state.');
+            $buildingsQuery->where(function ($query) use ($nameFilter) {
+                $query->where('name', 'like', '%' . $nameFilter . '%')
+                    ->orWhere('nama_gedung', 'like', '%' . $nameFilter . '%');
+            });
+        } else {
+            $buildingsQuery->where(function ($query) use ($validCityIds) {
                 $query->whereNull('city_id')->orWhereNotIn('city_id', $validCityIds);
-            })
+            });
+        }
+
+        $buildings = $buildingsQuery
             ->orderBy('id')
             ->limit(max((int) $this->option('limit'), 1))
             ->get(['id', 'name', 'nama_gedung', 'notes', 'city_id']);
 
         if ($buildings->isEmpty()) {
-            $this->info('No buildings found with a missing or orphaned city_id.');
+            $this->info($nameFilter !== '' ? 'No buildings matched that name.' : 'No buildings found with a missing or orphaned city_id.');
 
             return self::SUCCESS;
         }
 
+        $validCityIdSet = array_flip($validCityIds);
+
         $rows = [];
         $plans = [];
         $skipped = 0;
+        $alreadyValid = 0;
 
         foreach ($buildings as $building) {
-            $priorState = $building->city_id === null ? 'city_id was null' : 'city_id=' . $building->city_id . ' is orphaned (no matching cities row)';
+            if ($building->city_id !== null && isset($validCityIdSet[(int) $building->city_id])) {
+                $alreadyValid++;
+                $rows[] = ['OK', $building->id, $building->name ?: $building->nama_gedung, '-', '-', 'city_id=' . $building->city_id . ' already points to an active cities row, left unchanged'];
+                continue;
+            }
+
+            $priorState = $building->city_id === null ? 'city_id was null' : 'city_id=' . $building->city_id . ' is orphaned/soft-deleted (no matching active cities row)';
 
             $cityName = $this->extractLabelValue($building->notes, 'CityName')
                 ?: $this->extractLabelValue($building->notes, 'AreaCity');
@@ -105,6 +128,7 @@ class BackfillBuildingCityMapping extends Command
         );
 
         $this->line('Scanned buildings: ' . $buildings->count());
+        $this->line('Already valid    : ' . $alreadyValid);
         $this->line('Repair plans     : ' . count($plans));
         $this->line('Applied repairs  : ' . ($apply ? $applied : 'dry-run'));
         $this->line('Skipped          : ' . $skipped);
