@@ -996,6 +996,9 @@ class MasterRentalController extends Controller
                         'name' => $product->name,
                         'product_type_id' => $product->product_type_id,
                         'product_category_id' => $product->product_category_id,
+                        // Shown as its own column: products from every category are listed together now,
+                        // so the row is meaningless without saying which category it came from.
+                        'product_category' => $product->productCategory ? $product->productCategory->name : null,
                         'packaging_size' => $product->packagingSize ? $product->packagingSize->name : null,
                         'packaging_size_id' => $product->packaging_size_id,
                         'is_unit' => $this->productIsUnit($product),

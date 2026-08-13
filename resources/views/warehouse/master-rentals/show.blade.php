@@ -229,6 +229,48 @@
         font-size: 28px;
     }
 
+    /* Material picker lists both grow with the catalog, so each scrolls on its own
+       instead of pushing the modal past the viewport. */
+    .material-category-list {
+        max-height: 190px;
+        overflow-y: auto;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .material-product-scroll {
+        max-height: 320px;
+        overflow-y: auto;
+    }
+
+    .material-category-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+    }
+
+    .material-category-row.is-own-category {
+        background: #eef4ff;
+        border-color: #214589;
+    }
+
+    .badge-own-category {
+        background: #214589;
+        color: #fff;
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        white-space: nowrap;
+    }
+
     .modal-header {
         background: #214589;
         color: white;
@@ -925,7 +967,7 @@
 
 <!-- Material List Modal -->
 <div id="materialListModal" class="modal-overlay">
-    <div class="modal-container" style="width: 800px;">
+    <div class="modal-container" style="width: 900px;">
         <div class="modal-header">
             <h2 class="modal-title">Daftar Material</h2>
             <button class="modal-close" onclick="closeMaterialListModal()">
@@ -934,16 +976,16 @@
         </div>
         <div class="modal-body">
             <input type="hidden" id="selected_detail_id">
-            
+
             <div class="mb-3">
-                <input type="text" class="form-input" id="materialSearch" placeholder="Cari produk..." onkeyup="filterMaterials()" oninput="filterMaterials()" onpaste="filterMaterials()">
+                <input type="text" class="form-input" id="materialSearch" placeholder="Cari produk atau kategori..." onkeyup="filterMaterials()" oninput="filterMaterials()" onpaste="filterMaterials()">
             </div>
 
             <!-- Product Type Grouping per report-mom5.md -->
             <div class="mb-4">
                 <h4 class="text-md font-semibold mb-2">1. Pilih Kategori Produk (Opsional)</h4>
-                <p class="text-sm text-gray-600 mb-3">Pilih kategori produk untuk menambahkan semua produk dalam kategori tersebut</p>
-                <div id="productTypeList" class="space-y-2">
+                <p class="text-sm text-gray-600 mb-3">Centang kategori untuk langsung memilih semua produk di dalamnya. Material Type baris ini ditandai dan tampil paling atas.</p>
+                <div id="productTypeList" class="material-category-list">
                     <!-- Will be populated dynamically -->
                 </div>
             </div>
@@ -951,10 +993,19 @@
             <hr class="my-4">
 
             <div>
-                <h4 class="text-md font-semibold mb-2">2. Pilih Produk Satuan</h4>
-                <p class="text-sm text-gray-600 mb-3">Pilih produk satuan setelah memilih kategori produk</p>
-                
-                <div class="table-container">
+                <div class="flex items-center justify-between mb-2">
+                    <h4 class="text-md font-semibold">2. Pilih Produk Satuan</h4>
+                    <span id="materialSelectedCount" class="text-sm text-gray-600"></span>
+                </div>
+                <p class="text-sm text-gray-600 mb-3">Saring per kategori untuk mempermudah, lalu centang produk yang diperlukan. Pilihan di kategori lain tetap tersimpan meski sedang tersaring.</p>
+
+                <div class="mb-3">
+                    <select class="form-select" id="materialCategoryFilter" onchange="handleMaterialCategoryFilterChange()">
+                        <option value="">Semua Kategori</option>
+                    </select>
+                </div>
+
+                <div class="table-container material-product-scroll">
                     <table class="responsive-table">
                         <thead>
                             <tr>
@@ -963,6 +1014,7 @@
                                 </th>
                                 <th>Product Code</th>
                                 <th>Product Name</th>
+                                <th>Kategori</th>
                                 <th>Package Size</th>
                             </tr>
                         </thead>
@@ -1500,19 +1552,20 @@ function deleteDetail(detailId) {
 let globalProductTypes = [];
 let globalAllProducts = [];
 let globalSelectedProductIds = [];
+let globalOwnCategoryId = null;
 
 function openMaterialList(detailId) {
     document.getElementById('selected_detail_id').value = detailId;
-    
+
     // Clear search input
     const searchInput = document.getElementById('materialSearch');
     if (searchInput) {
         searchInput.value = '';
     }
-    
+
     // Show loading state
     const tbody = document.getElementById('materialListBody');
-    tbody.innerHTML = '<tr><td colspan="3" class="text-center">Loading products...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center">Loading products...</td></tr>';
     
     // Load material list data from API (includes product types and products)
     fetch(`/warehouse/master-rentals/{{ $masterRental->id }}/details/${detailId}/materials`, {
@@ -1531,115 +1584,176 @@ function openMaterialList(detailId) {
         if (data.status === 'success') {
             globalProductTypes = data.data.product_types || [];
             globalAllProducts = data.data.all_products || [];
+            globalOwnCategoryId = data.data.scope ? data.data.scope.product_category_id : null;
             setAutoExpandMode(Boolean(data.data.auto_expand));
             // Normalize selected product IDs to numbers for consistent comparison
             const allowedIds = data.data.allowed_product_ids || [];
             globalSelectedProductIds = allowedIds.map(id => parseInt(id));
-            
-            console.log('Loaded products:', globalAllProducts.length);
-            console.log('Loaded product types:', globalProductTypes.length);
-            console.log('Loaded selected product IDs:', globalSelectedProductIds);
-            
+
             // Render Product Types Section
             renderProductTypes();
-            
+
+            // Start narrowed to this row's own Material Type - that is the common case, and showing
+            // every category at once is unusable. "Semua Kategori" is one click away.
+            populateMaterialCategoryFilter(globalOwnCategoryId);
+
             // Render Individual Products Section
             renderIndividualProducts();
-            
-            // Debug: Log rendered rows
-            setTimeout(() => {
-                const rows = document.querySelectorAll('.material-row');
-                console.log('Total material rows rendered:', rows.length);
-                if (rows.length > 0) {
-                    console.log('First row text:', rows[0].textContent.trim().substring(0, 50));
-                    console.log('Last row text:', rows[rows.length-1].textContent.trim().substring(0, 50));
-                }
-            }, 500);
-            
-            // Clear any existing search filter
-            if (searchInput) {
-                filterMaterials();
-            }
+
+            filterMaterials();
         } else {
             throw new Error(data.message || 'Failed to load material list');
         }
     })
     .catch(error => {
         console.error('Error loading material list:', error);
-        tbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error loading products: ${error.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error loading products: ${error.message}</td></tr>`;
         showErrorDialog('Gagal', 'Material list tidak berhasil dimuat: ' + error.message);
     });
     
     document.getElementById('materialListModal').classList.add('show');
 }
 
+// This row's own Material Type first, then the rest alphabetically: with ~30 categories the one
+// the user almost always wants would otherwise be buried in the middle of the list.
+function getOrderedProductTypes() {
+    const ownId = globalOwnCategoryId != null ? String(globalOwnCategoryId) : null;
+
+    return globalProductTypes.slice().sort((a, b) => {
+        if (ownId) {
+            if (String(a.id) === ownId) return -1;
+            if (String(b.id) === ownId) return 1;
+        }
+        return (a.name || '').localeCompare(b.name || '');
+    });
+}
+
 function renderProductTypes() {
     const container = document.getElementById('productTypeList');
     container.innerHTML = '';
-    
-    const selectedIdSet = new Set(globalSelectedProductIds.map(id => parseInt(id)));
 
-    globalProductTypes.forEach(productType => {
+    const selectedIdSet = new Set(globalSelectedProductIds.map(id => parseInt(id)));
+    const ownId = globalOwnCategoryId != null ? String(globalOwnCategoryId) : null;
+    const fragment = document.createDocumentFragment();
+
+    getOrderedProductTypes().forEach(productType => {
         const productIdsInType = (productType.product_ids || []).map(id => parseInt(id));
         const productCount = productType.product_count ?? productIdsInType.length;
 
         // Check if all products in this type are selected
         const allProductsSelected = productIdsInType.length > 0 &&
             productIdsInType.every(productId => selectedIdSet.has(productId));
-        
+
+        const isOwnCategory = ownId !== null && String(productType.id) === ownId;
+        const label = [productType.code, productType.name].filter(Boolean).join(' - ');
+
         const div = document.createElement('div');
-        div.className = 'flex items-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-lg';
+        div.className = 'material-category-row' + (isOwnCategory ? ' is-own-category' : '');
         div.innerHTML = `
-            <input type="checkbox" 
-                class="product-type-checkbox" 
-                value="${productType.id}" 
+            <input type="checkbox"
+                class="product-type-checkbox"
+                value="${productType.id}"
                 data-products='${JSON.stringify(productIdsInType)}'
                 ${allProductsSelected ? 'checked' : ''}
                 onchange="handleProductTypeCheck(this)">
             <div class="flex-1">
-                <strong>${productType.code || ''} - ${productType.name}</strong>
-                <small class="text-gray-600 ml-2">(${productCount} product${productCount !== 1 ? 's' : ''})</small>
+                <strong>${label}</strong>
+                <small class="text-gray-600 ml-2">(${productCount} produk)</small>
             </div>
+            ${isOwnCategory ? '<span class="badge-own-category">Material Type baris ini</span>' : ''}
         `;
-        container.appendChild(div);
+        fragment.appendChild(div);
     });
+
+    container.appendChild(fragment);
+}
+
+function populateMaterialCategoryFilter(preferredCategoryId = null) {
+    const select = document.getElementById('materialCategoryFilter');
+    if (!select) return;
+
+    const previousValue = select.value;
+    select.innerHTML = '<option value="">Semua Kategori</option>';
+
+    getOrderedProductTypes().forEach(productType => {
+        const option = document.createElement('option');
+        option.value = productType.id;
+        const count = productType.product_count ?? (productType.product_ids || []).length;
+        option.text = `${productType.name} (${count} produk)`;
+        select.appendChild(option);
+    });
+
+    const desired = preferredCategoryId != null ? String(preferredCategoryId) : previousValue;
+    // Fall back to "Semua Kategori" when the wanted category is not offered, so the list is never
+    // filtered by a value the dropdown cannot show.
+    select.value = Array.from(select.options).some(option => option.value === desired) ? desired : '';
+}
+
+function handleMaterialCategoryFilterChange() {
+    const searchInput = document.getElementById('materialSearch');
+    // A category pick and a leftover search term fight each other and usually show nothing;
+    // the category choice is the more explicit intent, so clear the search.
+    if (searchInput && searchInput.value) {
+        searchInput.value = '';
+    }
+    filterMaterials();
 }
 
 function renderIndividualProducts() {
     const tbody = document.getElementById('materialListBody');
     tbody.innerHTML = '';
-    
+
     if (!globalAllProducts || globalAllProducts.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No products found. Please ensure products are active in the system.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No products found. Please ensure products are active in the system.</td></tr>';
         return;
     }
-    
+
+    const selectedIdSet = new Set(globalSelectedProductIds.map(id => parseInt(id)));
+    const fragment = document.createDocumentFragment();
+
     globalAllProducts.forEach(product => {
         const tr = document.createElement('tr');
         tr.className = 'material-row';
         const productId = product.id || product.product_id;
-        // Ensure both are numbers for comparison
-        const productIdNum = parseInt(productId);
-        const isChecked = globalSelectedProductIds.some(id => parseInt(id) === productIdNum);
+        const isChecked = selectedIdSet.has(parseInt(productId));
+
+        // Filtering reads this instead of the visible text, so a category whose name happens to
+        // appear in a product name cannot leak into the wrong filter.
+        tr.setAttribute('data-category-id', product.product_category_id ?? '');
+
         tr.innerHTML = `
             <td>
-                <input type="checkbox" 
-                    class="material-checkbox" 
-                    value="${productId}" 
+                <input type="checkbox"
+                    class="material-checkbox"
+                    value="${productId}"
                     ${isChecked ? 'checked' : ''}>
             </td>
             <td>${product.sku || '-'}</td>
             <td>${product.name || '-'}</td>
+            <td>${product.product_category || '-'}</td>
             <td>${product.packaging_size || '-'}</td>
         `;
-        tbody.appendChild(tr);
+        fragment.appendChild(tr);
     });
+
+    tbody.appendChild(fragment);
+    updateMaterialSelectedCount();
+}
+
+function updateMaterialSelectedCount() {
+    const label = document.getElementById('materialSelectedCount');
+    if (!label) return;
+
+    // Counts every ticked box, including ones currently filtered out of view, because that is
+    // exactly what gets saved.
+    const total = document.querySelectorAll('.material-checkbox:checked').length;
+    label.textContent = total > 0 ? `${total} produk dipilih` : 'Belum ada produk dipilih';
 }
 
 function handleProductTypeCheck(checkbox) {
     const productIds = JSON.parse(checkbox.getAttribute('data-products'));
     const isChecked = checkbox.checked;
-    
+
     // Auto-expand: Check/uncheck all products in this type
     productIds.forEach(productId => {
         const productCheckbox = document.querySelector(`.material-checkbox[value="${productId}"]`);
@@ -1647,79 +1761,117 @@ function handleProductTypeCheck(checkbox) {
             productCheckbox.checked = isChecked;
         }
     });
-    
-    console.log(`Product Type ${isChecked ? 'checked' : 'unchecked'}: ${productIds.length} products ${isChecked ? 'added' : 'removed'}`);
+
+    // Jump the list to the category just ticked, otherwise the rows it changed may all sit
+    // outside the current filter and the click looks like it did nothing.
+    const select = document.getElementById('materialCategoryFilter');
+    if (select && isChecked && select.value !== checkbox.value) {
+        select.value = Array.from(select.options).some(option => option.value === checkbox.value)
+            ? checkbox.value
+            : select.value;
+        handleMaterialCategoryFilterChange();
+    }
+
+    updateMaterialSelectedCount();
 }
+
+// Delegated so it keeps working after the rows are re-rendered.
+document.addEventListener('DOMContentLoaded', function () {
+    const tbody = document.getElementById('materialListBody');
+    if (!tbody) return;
+
+    tbody.addEventListener('change', function (event) {
+        if (!event.target.classList.contains('material-checkbox')) return;
+        updateMaterialSelectedCount();
+        syncSelectAllMaterialsCheckbox();
+    });
+});
 
 function closeMaterialListModal() {
     // Clear search input when closing
     const searchInput = document.getElementById('materialSearch');
     if (searchInput) {
         searchInput.value = '';
-        // Reset filter to show all products
-        filterMaterials();
     }
-    
+
     document.getElementById('materialListModal').classList.remove('show');
 }
 
 function filterMaterials() {
     const searchTerm = document.getElementById('materialSearch').value.toLowerCase().trim();
-    
-    // Filter product rows in table
+    const categoryFilter = document.getElementById('materialCategoryFilter')?.value || '';
+
+    // Rows are hidden, never removed: the category checkboxes in step 1 tick rows by id, and
+    // applyMaterialList() saves every ticked box, so a filtered-out row must still exist.
     const productRows = document.querySelectorAll('.material-row');
     let visibleCount = 0;
-    
+
     productRows.forEach(row => {
         const sku = row.querySelector('td:nth-child(2)')?.textContent?.toLowerCase() || '';
         const name = row.querySelector('td:nth-child(3)')?.textContent?.toLowerCase() || '';
-        const rowText = (sku + ' ' + name).toLowerCase();
-        
-        if (searchTerm === '' || rowText.includes(searchTerm)) {
+        const category = row.querySelector('td:nth-child(4)')?.textContent?.toLowerCase() || '';
+        const rowText = `${sku} ${name} ${category}`;
+
+        const matchesSearch = searchTerm === '' || rowText.includes(searchTerm);
+        const matchesCategory = categoryFilter === ''
+            || (row.getAttribute('data-category-id') || '') === categoryFilter;
+
+        if (matchesSearch && matchesCategory) {
             row.style.display = '';
             visibleCount++;
         } else {
             row.style.display = 'none';
         }
     });
-    
-    // Also filter product types
+
+    // Step 1 follows the search box only. Narrowing it by the category dropdown too would hide
+    // the very checkboxes used to switch categories.
     const productTypeDivs = document.querySelectorAll('#productTypeList > div');
     productTypeDivs.forEach(div => {
         const typeName = div.textContent?.toLowerCase() || '';
-        if (searchTerm === '' || typeName.includes(searchTerm)) {
-            div.style.display = '';
-        } else {
-            div.style.display = 'none';
-        }
+        div.style.display = (searchTerm === '' || typeName.includes(searchTerm)) ? '' : 'none';
     });
-    
-    // Show message if no results
+
     const tbody = document.getElementById('materialListBody');
-    if (visibleCount === 0 && searchTerm !== '') {
-        // Check if there's already a "no results" row
-        const existingNoResults = tbody.querySelector('.no-results-row');
+    const existingNoResults = tbody.querySelector('.no-results-row');
+    if (visibleCount === 0 && (searchTerm !== '' || categoryFilter !== '')) {
         if (!existingNoResults) {
             const tr = document.createElement('tr');
             tr.className = 'no-results-row';
-            tr.innerHTML = `<td colspan="3" class="text-center text-muted">No products found matching "${searchTerm}"</td>`;
+            tr.innerHTML = '<td colspan="5" class="text-center text-muted">Tidak ada produk yang cocok dengan pencarian/filter ini.</td>';
             tbody.appendChild(tr);
         }
-    } else {
-        // Remove "no results" row if it exists
-        const existingNoResults = tbody.querySelector('.no-results-row');
-        if (existingNoResults) {
-            existingNoResults.remove();
-        }
+    } else if (existingNoResults) {
+        existingNoResults.remove();
     }
+
+    syncSelectAllMaterialsCheckbox();
+}
+
+// Header checkbox reflects only the rows on screen, since that is all it acts on.
+function syncSelectAllMaterialsCheckbox() {
+    const selectAll = document.getElementById('selectAllMaterials');
+    if (!selectAll) return;
+
+    const visible = Array.from(document.querySelectorAll('.material-row'))
+        .filter(row => row.style.display !== 'none')
+        .map(row => row.querySelector('.material-checkbox'))
+        .filter(Boolean);
+
+    const checkedCount = visible.filter(cb => cb.checked).length;
+    selectAll.checked = visible.length > 0 && checkedCount === visible.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < visible.length;
 }
 
 function toggleAllMaterials(checkbox) {
-    document.querySelectorAll('.material-checkbox').forEach(cb => {
-        if (cb.closest('tr').style.display !== 'none') {
-            cb.checked = checkbox.checked;
-        }
+    // Only the visible rows, so it never silently changes products hidden by the current filter.
+    document.querySelectorAll('.material-row').forEach(row => {
+        if (row.style.display === 'none') return;
+        const cb = row.querySelector('.material-checkbox');
+        if (cb) cb.checked = checkbox.checked;
     });
+
+    updateMaterialSelectedCount();
 }
 
 function applyMaterialList() {
