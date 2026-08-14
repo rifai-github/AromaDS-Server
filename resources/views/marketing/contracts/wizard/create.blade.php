@@ -734,6 +734,7 @@
         <div class="modal-body" style="flex: 1; overflow-y: auto; overflow-x: hidden; max-height: calc(90vh - 200px); padding: 0 18px 10px 0;">
             <form id="addTaxForm">
                 <input type="hidden" name="customer_id" id="taxModalCustomerId">
+                <input type="hidden" name="contract_date" id="taxModalContractDate">
                 <div style="display: grid; grid-template-columns: 1fr; gap: 20px;">
                     <div class="form-group">
                         <label class="form-label">Tax Name *</label>
@@ -4091,10 +4092,21 @@ function openAddTaxModal(addressIndex) {
     document.getElementById('taxModalCustomerId').value = quotationData.customer.id;
 
     syncModalTaxRateFromCode();
-    
-    // Set default effective date to today
+
+    // Effective date pajak tidak boleh melewati Contract Date
     const effectiveDateInput = document.querySelector('#addTaxForm input[name="effective_date"]');
-    if (effectiveDateInput) effectiveDateInput.value = new Date().toISOString().split('T')[0];
+    const contractDateValue = document.getElementById('contractDate')?.value || '';
+    document.getElementById('taxModalContractDate').value = contractDateValue;
+    const todayValue = new Date().toISOString().split('T')[0];
+    if (effectiveDateInput) {
+        if (contractDateValue) {
+            effectiveDateInput.max = contractDateValue;
+            effectiveDateInput.value = todayValue > contractDateValue ? contractDateValue : todayValue;
+        } else {
+            effectiveDateInput.removeAttribute('max');
+            effectiveDateInput.value = todayValue;
+        }
+    }
 
     modal.style.display = 'flex';
     updateTaxNumberMaxLength('modal');
@@ -4229,6 +4241,14 @@ function saveTaxData() {
 
     if (!form.checkValidity()) {
         form.reportValidity();
+        return;
+    }
+
+    const contractDateValue = document.getElementById('contractDate')?.value || '';
+    const effectiveDateValue = form.querySelector('input[name="effective_date"]')?.value || '';
+    document.getElementById('taxModalContractDate').value = contractDateValue;
+    if (contractDateValue && effectiveDateValue && effectiveDateValue > contractDateValue) {
+        Swal.fire('Error', 'Effective Date pajak tidak boleh melewati Contract Date (' + contractDateValue + ').', 'error');
         return;
     }
 

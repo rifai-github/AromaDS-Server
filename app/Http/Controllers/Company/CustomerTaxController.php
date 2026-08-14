@@ -185,6 +185,7 @@ class CustomerTaxController extends Controller
             'description' => 'nullable|string',
             'status' => 'required|in:active,inactive',
             'tax_address' => 'nullable|string',
+            'contract_date' => 'nullable|date',
         ];
 
         // Specific rules for Tax Number & NITKU
@@ -204,6 +205,10 @@ class CustomerTaxController extends Controller
 
         $request->validate($rules);
         $this->validateNitkuParentNpwp($taxName, $request->tax_number, (int) $request->customer_id);
+
+        if ($request->filled('contract_date') && $request->effective_date > $request->contract_date) {
+            return $this->respondWithError($request, 'Effective Date pajak tidak boleh melewati Contract Date.', 'effective_date');
+        }
 
         try {
             DB::beginTransaction();
@@ -723,6 +728,19 @@ class CustomerTaxController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
+    }
+
+    private function respondWithError(Request $request, string $message, ?string $field = null)
+    {
+        if ($request->ajax()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $message,
+                'errors' => $field ? [$field => [$message]] : null,
+            ], 422);
+        }
+
+        return back()->withInput()->with('error', $message);
     }
 
     private function resolveTaxRateForCode(?string $taxCode): float
