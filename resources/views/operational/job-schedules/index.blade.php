@@ -9,6 +9,16 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/airbnb.css">
 
 <style>
+    /* Let the Action dropdown's options panel grow to fit its widest label
+       (e.g. "Unassign Material", team names) instead of wrapping to 2 lines. */
+    .select2-dropdown:has(#select2-actionType-results) {
+        width: max-content !important;
+        min-width: 100%;
+    }
+    .select2-dropdown:has(#select2-actionType-results) .select2-results__option {
+        white-space: nowrap;
+    }
+
     /* Custom Flatpickr styles to match premium design */
     .flatpickr-input {
         background-color: white !important;
@@ -1626,24 +1636,6 @@
 let selectedIdsForRetry = [];
 let successModalTimer = null;
 const viewMode = '{{ $viewMode ?? 'job' }}';
-
-// Widen the Action dropdown's option panel so labels (e.g. "Unassign Material", team names)
-// never wrap to a second line - the shared Select2 init otherwise mirrors the narrow trigger width.
-window.addEventListener('load', function () {
-    if (!window.jQuery) return;
-    const $actionType = jQuery('#actionType');
-    if ($actionType.length && $actionType.hasClass('select2-hidden-accessible')) {
-        $actionType.select2('destroy');
-        $actionType.select2({
-            placeholder: $actionType.find('option:first').text() || 'Choose Action...',
-            allowClear: !$actionType.prop('required'),
-            dropdownParent: jQuery('body'),
-            width: '100%',
-            dropdownAutoWidth: true,
-            minimumResultsForSearch: 10
-        });
-    }
-});
 
 // Function to format date with 3-digit month
 function formatDateWithThreeDigitMonth(date) {
