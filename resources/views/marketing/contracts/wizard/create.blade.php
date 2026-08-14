@@ -4112,18 +4112,29 @@ function openAddTaxModal(addressIndex) {
 
     syncModalTaxRateFromCode();
 
-    // Effective date pajak tidak boleh melewati Contract Date
+    // Effective date pajak tidak boleh melewati Contract Date.
+    // This field is upgraded to flatpickr (see app.blade.php initFlatpickr): the
+    // original <input> becomes a hidden value-holder and a separate visible
+    // altInput drives the calendar, so max/value must go through the flatpickr
+    // instance API — setting attributes on the hidden input alone doesn't
+    // affect what the user sees or can pick.
     const effectiveDateInput = document.querySelector('#addTaxForm input[name="effective_date"]');
     const contractDateValue = document.getElementById('contractDate')?.value || '';
     document.getElementById('taxModalContractDate').value = contractDateValue;
     const todayValue = new Date().toISOString().split('T')[0];
     if (effectiveDateInput) {
-        if (contractDateValue) {
-            effectiveDateInput.max = contractDateValue;
-            effectiveDateInput.value = todayValue > contractDateValue ? contractDateValue : todayValue;
+        const defaultValue = (contractDateValue && todayValue > contractDateValue) ? contractDateValue : todayValue;
+        const fp = effectiveDateInput._flatpickr;
+        if (fp) {
+            fp.set('maxDate', contractDateValue || null);
+            fp.setDate(defaultValue, true);
         } else {
-            effectiveDateInput.removeAttribute('max');
-            effectiveDateInput.value = todayValue;
+            if (contractDateValue) {
+                effectiveDateInput.max = contractDateValue;
+            } else {
+                effectiveDateInput.removeAttribute('max');
+            }
+            effectiveDateInput.value = defaultValue;
         }
     }
 
