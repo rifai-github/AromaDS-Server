@@ -98,12 +98,12 @@ class SerialNumberNormalizedDuplicateTest extends TestCase
         return new UploadedFile($path, 'serial-numbers.csv', 'text/csv', null, true);
     }
 
-    public function test_manual_create_rejects_duplicate_serial_after_trim_and_uppercase(): void
+    public function test_manual_create_rejects_duplicate_serial_after_trim(): void
     {
         $request = Request::create('/warehouse/serial-numbers', 'POST', [
             'warehouse_id' => 1,
             'master_product_id' => 1,
-            'serial_number' => ' sn-dup-001 ',
+            'serial_number' => ' SN-DUP-001 ',
             'status' => 'ready',
             'condition_status' => 'new',
         ]);
@@ -115,11 +115,32 @@ class SerialNumberNormalizedDuplicateTest extends TestCase
         $this->assertStringContainsString('SN-DUP-001', $response->getData(true)['message']);
     }
 
+    public function test_manual_create_treats_different_case_as_distinct_serial_for_unit_product(): void
+    {
+        $request = Request::create('/warehouse/serial-numbers', 'POST', [
+            'warehouse_id' => 1,
+            'master_product_id' => 1,
+            'serial_number' => 'sn-dup-001',
+            'status' => 'ready',
+            'condition_status' => 'new',
+        ]);
+        $request->headers->set('X-Requested-With', 'XMLHttpRequest');
+
+        $response = (new SerialNumberController)->store($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $payload['status']);
+        $this->assertSame('sn-dup-001', $payload['data']['serial_number']);
+        $this->assertSame(1, SerialNumber::where('serial_number', 'SN-DUP-001')->count());
+        $this->assertSame(1, SerialNumber::where('serial_number', 'sn-dup-001')->count());
+    }
+
     public function test_import_preview_marks_normalized_duplicate_as_existing(): void
     {
         $request = Request::create('/warehouse/serial-numbers/import-preview', 'POST');
         $request->files->set('file', $this->csvUpload(
-            "serial_number,product_sku,status,condition_status,warehouse\n sn-dup-001 ,DISP-001,ready,new,WH-JKT\nSN-NEW-001,DISP-001,ready,new,WH-JKT\n"
+            "serial_number,product_sku,status,condition_status,warehouse\n SN-DUP-001 ,DISP-001,ready,new,WH-JKT\nSN-NEW-001,DISP-001,ready,new,WH-JKT\n"
         ));
 
         $response = (new SerialNumberImportController)->preview($request);
@@ -131,12 +152,28 @@ class SerialNumberNormalizedDuplicateTest extends TestCase
         $this->assertTrue($payload['preview']['preview_data'][0]['exists']);
     }
 
+    public function test_import_preview_treats_different_case_as_new(): void
+    {
+        $request = Request::create('/warehouse/serial-numbers/import-preview', 'POST');
+        $request->files->set('file', $this->csvUpload(
+            "serial_number,product_sku,status,condition_status,warehouse\nsn-dup-001,DISP-001,ready,new,WH-JKT\n"
+        ));
+
+        $response = (new SerialNumberImportController)->preview($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertSame(0, $payload['preview']['existing']);
+        $this->assertSame(1, $payload['preview']['new']);
+        $this->assertFalse($payload['preview']['preview_data'][0]['exists']);
+    }
+
     public function test_manual_create_allows_shared_serial_for_non_unit_product(): void
     {
         $request = Request::create('/warehouse/serial-numbers', 'POST', [
             'warehouse_id' => 1,
             'master_product_id' => 2,
-            'serial_number' => ' sn-batch-001 ',
+            'serial_number' => ' SN-BATCH-001 ',
             'status' => 'ready',
             'condition_status' => 'new',
         ]);
@@ -181,7 +218,20 @@ class SerialNumberNormalizedDuplicateTest extends TestCase
         $this->assertSame(3, SerialNumber::whereNormalizedSerialNumber('SN-BATCH-001')->count());
     }
 
-    public function test_check_serial_number_finds_value_case_insensitively(): void
+    public function test_check_serial_number_finds_value_by_exact_case_after_trim(): void
+    {
+        $request = Request::create('/warehouse/serial-numbers/check', 'POST', [
+            'serial_number' => ' SN-DUP-001 ',
+        ]);
+
+        $response = (new SerialNumberController)->checkSerialNumber($request);
+        $payload = $response->getData(true);
+
+        $this->assertTrue($payload['found']);
+        $this->assertSame('SN-DUP-001', $payload['serialNumber']['serial_number']);
+    }
+
+    public function test_check_serial_number_does_not_match_different_case(): void
     {
         $request = Request::create('/warehouse/serial-numbers/check', 'POST', [
             'serial_number' => ' sn-dup-001 ',
@@ -190,7 +240,6 @@ class SerialNumberNormalizedDuplicateTest extends TestCase
         $response = (new SerialNumberController)->checkSerialNumber($request);
         $payload = $response->getData(true);
 
-        $this->assertTrue($payload['found']);
-        $this->assertSame('SN-DUP-001', $payload['serialNumber']['serial_number']);
+        $this->assertFalse($payload['found']);
     }
 }

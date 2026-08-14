@@ -279,7 +279,7 @@ class StockAdjustment extends Model
 
         $availableCounts = $this->availableWarehouseSerialNumbersQuery($item, $serialNumbers)
             ->pluck('serial_number')
-            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->map(fn ($serialNumber) => trim((string) $serialNumber))
             ->countBy();
 
         $missing = collect($serialNumbers)
@@ -373,7 +373,7 @@ class StockAdjustment extends Model
         }
 
         return collect($serialNumbers)
-            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->map(fn ($serialNumber) => trim((string) $serialNumber))
             ->filter()
             ->values()
             ->all();
@@ -466,7 +466,7 @@ class StockAdjustment extends Model
             // Every created SN must still be ready in this warehouse (not consumed).
             $available = $this->createdIncreaseSerialNumbersQuery($item, $serialNumbers)
                 ->pluck('serial_number')
-                ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+                ->map(fn ($serialNumber) => trim((string) $serialNumber))
                 ->countBy();
 
             $missing = collect($serialNumbers)
@@ -491,7 +491,7 @@ class StockAdjustment extends Model
 
         $restorable = $this->retiredDecreaseSerialNumbersQuery($item, $serialNumbers)
             ->pluck('serial_number')
-            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->map(fn ($serialNumber) => trim((string) $serialNumber))
             ->countBy();
 
         $missing = collect($serialNumbers)

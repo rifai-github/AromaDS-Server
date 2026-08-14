@@ -311,7 +311,7 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
         $response = app(MobileSerialNumberController::class)->getBySerialNumber(Request::create(
             '/api/v1/mobile/serial-numbers/check',
             'POST',
-            ['serial_number' => 'rlg100001']
+            ['serial_number' => 'RLG100001']
         ));
 
         $payload = $response->getData(true);

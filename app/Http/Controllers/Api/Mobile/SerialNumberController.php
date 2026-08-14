@@ -108,7 +108,7 @@ class SerialNumberController extends Controller
 
     private function findSerialNumberForMobileCheck(string $serialNumber): ?SerialNumber
     {
-        $normalizedSerial = strtoupper(trim($serialNumber));
+        $normalizedSerial = trim($serialNumber);
         $relations = [
             'masterProduct.productCategory',
             'masterProduct.productType',
@@ -118,7 +118,7 @@ class SerialNumberController extends Controller
         ];
 
         $baseQuery = SerialNumber::with($relations)
-            ->whereRaw('UPPER(serial_number) = ?', [$normalizedSerial]);
+            ->whereRaw('serial_number = ?', [$normalizedSerial]);
 
         $readyWarehouseSerial = (clone $baseQuery)
             ->whereIn('status', ['ready', 'available'])

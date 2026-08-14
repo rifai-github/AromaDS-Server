@@ -3214,7 +3214,7 @@ class JobController extends Controller
             ->where('job_schedule_id', $job->id)
             ->where('job_advice_room_id', $jobAdviceRoomId)
             ->pluck('mac')
-            ->map(fn ($mac) => trim(strtoupper((string) $mac)))
+            ->map(fn ($mac) => trim((string) $mac))
             ->filter()
             ->values()
             ->all();
@@ -3244,7 +3244,7 @@ class JobController extends Controller
                     continue;
                 }
 
-                $normalizedSerial = trim(strtoupper($serial));
+                $normalizedSerial = trim($serial);
                 if (!in_array($normalizedSerial, $scannedSerials, true)) {
                     $missing[$normalizedSerial] = $item->serialNumber->masterProduct->name ?? ($item->serialNumber->masterProduct?->name ?? 'Unit');
                 }
@@ -3272,7 +3272,7 @@ class JobController extends Controller
             $cat = $item->serialNumber->masterProduct->product_category_id ?? null;
             $mpId = $item->serialNumber->master_product_id ?? null;
             if ($sn && $cat) {
-                $snToCategory[trim(strtoupper((string) $sn))] = $cat;
+                $snToCategory[trim((string) $sn)] = $cat;
             }
             if ($mpId) {
                 $issuedMasterProductIds[$mpId] = $mpId;
@@ -3286,7 +3286,7 @@ class JobController extends Controller
                 ->select('serial_numbers.serial_number', 'mp.product_category_id')
                 ->get();
             foreach ($extraSnRows as $row) {
-                $key = trim(strtoupper((string) $row->serial_number));
+                $key = trim((string) $row->serial_number);
                 if ($key !== '' && ! isset($snToCategory[$key])) {
                     $snToCategory[$key] = $row->product_category_id;
                 }
@@ -3306,11 +3306,11 @@ class JobController extends Controller
             $registeredRows = \DB::table('serial_numbers')
                 ->join('master_products as mp', 'serial_numbers.master_product_id', '=', 'mp.id')
                 ->join('product_categories as pc', 'mp.product_category_id', '=', 'pc.id')
-                ->whereIn(\DB::raw('UPPER(TRIM(serial_numbers.serial_number))'), $unregisteredCandidates)
+                ->whereIn(\DB::raw('TRIM(serial_numbers.serial_number)'), $unregisteredCandidates)
                 ->select('serial_numbers.serial_number', 'pc.is_unit', 'mp.product_category_id')
                 ->get();
             foreach ($registeredRows as $row) {
-                $key = trim(strtoupper((string) $row->serial_number));
+                $key = trim((string) $row->serial_number);
                 if ($row->is_unit) {
                     // A registered unit of a different product than what was
                     // issued for this rental — still a real unit scan, credit
@@ -3467,7 +3467,7 @@ class JobController extends Controller
         }
 
         $serialNumber = \App\Models\SerialNumber::with(['masterProduct.productType', 'masterProduct.productCategory'])
-            ->whereRaw('UPPER(TRIM(serial_number)) = ?', [strtoupper($identifier)])
+            ->whereRaw('TRIM(serial_number) = ?', [$identifier])
             ->first();
 
         $product = $serialNumber?->masterProduct;
@@ -4274,7 +4274,7 @@ class JobController extends Controller
 
             $existingScanForSn = \DB::table('job_schedule_units')
                 ->where('job_schedule_id', $request->job_schedule_id)
-                ->whereRaw('UPPER(TRIM(mac)) = ?', [strtoupper(trim((string) $request->mac))])
+                ->whereRaw('TRIM(mac) = ?', [trim((string) $request->mac)])
                 ->first();
 
             if ($existingScanForSn && (int) ($existingScanForSn->job_advice_room_id ?? 0) !== $targetRoomId) {
@@ -5482,7 +5482,7 @@ class JobController extends Controller
         $newSn = $request->new_serial_number;
         $roomId = $request->room_id;
 
-        if (trim(strtoupper($oldSn)) === trim(strtoupper($newSn))) {
+        if (trim($oldSn) === trim($newSn)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Serial Number baru tidak boleh sama dengan Serial Number lama.'
@@ -5651,8 +5651,8 @@ class JobController extends Controller
         
         $job = JobSchedule::with(['building', 'jobAdvice.customer'])->findOrFail($id);
         if ($deny = $this->denyIfNotAssigned($job)) return $deny;
-        // Normalize serial number: uppercase and trim (SN disimpan dalam UPPERCASE di database)
-        $serialNumberInput = trim(strtoupper($request->serial_number));
+        // Normalize serial number: trim whitespace only (SN is case-sensitive)
+        $serialNumberInput = trim($request->serial_number);
         $selectedRoomName = $request->room_name ? trim($request->room_name) : null;
         $source = 'materials'; // Default source
         $snRoomName = null; // Room name dari SN yang ditemukan
@@ -5695,8 +5695,8 @@ class JobController extends Controller
                 ->with($inventoryIssuingItemRelations)
                 ->get();
             
-            // Find the matching SN (case-insensitive, trim whitespace)
-            $serialNumberInputNormalized = trim(strtoupper($serialNumberInput));
+            // Find the matching SN (exact case, trim whitespace)
+            $serialNumberInputNormalized = trim($serialNumberInput);
             $matchedSerialNumber = null;
             $inventoryIssuingItem = $inventoryIssuingItems->first(function($item) use ($serialNumberInputNormalized, &$matchedSerialNumber) {
                 $linkedSerials = $item->relationLoaded('serialLinks')
@@ -5708,7 +5708,7 @@ class JobController extends Controller
                 }
 
                 $matchedSerialNumber = $linkedSerials->first(function ($serialNumber) use ($serialNumberInputNormalized) {
-                    return trim(strtoupper((string) $serialNumber->serial_number)) === $serialNumberInputNormalized;
+                    return trim((string) $serialNumber->serial_number) === $serialNumberInputNormalized;
                 });
 
                 return $matchedSerialNumber !== null;
@@ -5961,9 +5961,9 @@ class JobController extends Controller
             // SECURITY: Check unit on wall with strict validation
             // Must match: serial number, status active/removed (if done), customer, building, and ROOMS
             $unitOnWallQuery = \App\Models\UnitOnWall::where(function($q) use ($serialNumberInput) {
-                    $q->whereRaw('UPPER(TRIM(serial_number)) = ?', [strtoupper(trim($serialNumberInput))])
+                    $q->whereRaw('TRIM(serial_number) = ?', [trim($serialNumberInput)])
                       ->orWhereHas('serialNumber', function($sq) use ($serialNumberInput) {
-                          $sq->whereRaw('UPPER(TRIM(serial_number)) = ?', [strtoupper(trim($serialNumberInput))]);
+                          $sq->whereRaw('TRIM(serial_number) = ?', [trim($serialNumberInput)]);
                       });
                 })
                 ->with(['product.productType', 'building', 'room', 'customer', 'serialNumber']);
@@ -6079,12 +6079,12 @@ class JobController extends Controller
             // SECURITY: Check unit on wall with strict validation
             // Must match: serial number, status active, customer, building, and ROOMS
             $unitOnWallQuery = \App\Models\UnitOnWall::where(function($q) use ($serialNumberInput) {
-                    $q->whereRaw('UPPER(TRIM(serial_number)) = ?', [strtoupper(trim($serialNumberInput))])
+                    $q->whereRaw('TRIM(serial_number) = ?', [trim($serialNumberInput)])
                       ->orWhereHas('serialNumber', function($sq) use ($serialNumberInput) {
-                          $sq->whereRaw('UPPER(TRIM(serial_number)) = ?', [strtoupper(trim($serialNumberInput))]);
+                          $sq->whereRaw('TRIM(serial_number) = ?', [trim($serialNumberInput)]);
                       });
                 })
-                ->where('status', 'active') 
+                ->where('status', 'active')
                 ->with(['product.productType', 'building', 'room', 'customer', 'serialNumber']);
 
             // Web Alignment: Room filter
@@ -6286,7 +6286,7 @@ class JobController extends Controller
         $query = \DB::table('job_schedule_units as jsu')
             ->leftJoin('job_advice_rooms as jar', 'jar.id', '=', 'jsu.job_advice_room_id')
             ->where('jsu.job_schedule_id', $job->id)
-            ->whereRaw('UPPER(TRIM(jsu.mac)) = ?', [strtoupper(trim($serialNumber))]);
+            ->whereRaw('TRIM(jsu.mac) = ?', [trim($serialNumber)]);
 
         if ($selectedRoomName) {
             $normalizedRoomName = strtolower(trim($selectedRoomName));

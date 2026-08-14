@@ -31,7 +31,7 @@ class StockAdjustmentController extends Controller
         }
 
         return collect($serialNumbers)
-            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->map(fn ($serialNumber) => trim((string) $serialNumber))
             ->filter()
             ->values()
             ->all();
@@ -55,7 +55,7 @@ class StockAdjustmentController extends Controller
             ->get(['id', 'serial_number'])
             ->map(fn (SerialNumber $serialNumber) => [
                 'id' => $serialNumber->id,
-                'serial_number' => strtoupper(trim((string) $serialNumber->serial_number)),
+                'serial_number' => trim((string) $serialNumber->serial_number),
             ])
             ->values();
     }

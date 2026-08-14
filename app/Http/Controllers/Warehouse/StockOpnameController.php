@@ -30,7 +30,7 @@ class StockOpnameController extends Controller
         }
 
         return collect($serialNumbers)
-            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->map(fn ($serialNumber) => trim((string) $serialNumber))
             ->filter()
             ->unique()
             ->values()
@@ -51,7 +51,7 @@ class StockOpnameController extends Controller
                 $query->whereIn('status', ['active', 'installed', 'on_wall', 'on wall', 'onwall']);
             })
             ->pluck('serial_number')
-            ->map(fn ($serialNumber) => strtoupper(trim((string) $serialNumber)))
+            ->map(fn ($serialNumber) => trim((string) $serialNumber))
             ->unique()
             ->values();
     }

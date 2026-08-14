@@ -832,7 +832,7 @@ class JobWebCompletionService
         // (mirror saveScannedUnit:3798-3810).
         $existingScanForSn = DB::table('job_schedule_units')
             ->where('job_schedule_id', $job->id)
-            ->whereRaw('UPPER(TRIM(mac)) = ?', [strtoupper($mac)])
+            ->whereRaw('TRIM(mac) = ?', [$mac])
             ->first();
 
         if ($existingScanForSn && (int) ($existingScanForSn->job_advice_room_id ?? 0) !== $roomId) {

@@ -584,10 +584,9 @@ class JobReportController extends Controller
                 // User requirement implies strictness: "Kode SN aja beda... harusnya yg ini".
                 
                 if (!empty($allowedSNs)) {
-                    // Check if scanned SN is in the allowed list
-                    // Normalize for comparison (case insensitive)
-                    $normalizedAllowed = array_map('strtoupper', $allowedSNs);
-                    $normalizedScanned = strtoupper($scannedSN);
+                    // Check if scanned SN is in the allowed list (exact case)
+                    $normalizedAllowed = array_map('trim', $allowedSNs);
+                    $normalizedScanned = trim($scannedSN);
                     
                     if (!in_array($normalizedScanned, $normalizedAllowed)) {
                          // Fail validation

@@ -1172,7 +1172,7 @@ class InventoryReceivingController extends Controller
         try {
             DB::beginTransaction();
 
-            $serialNumber = strtoupper(trim($request->serial_number));
+            $serialNumber = trim($request->serial_number);
 
             $inventoryReceiving->loadMissing(['issuing']);
             $warehouse = $this->resolveReceivingTargetWarehouse($inventoryReceiving);

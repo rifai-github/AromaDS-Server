@@ -2679,7 +2679,7 @@ class JobScheduleController extends Controller
                     return $linkedSerials;
                 })
                 ->filter(fn ($serialNumber) => !empty($serialNumber->serial_number))
-                ->unique(fn ($serialNumber) => strtoupper(trim((string) $serialNumber->serial_number)) ?: $serialNumber->id)
+                ->unique(fn ($serialNumber) => trim((string) $serialNumber->serial_number) ?: $serialNumber->id)
                 ->values();
 
             $serialNumbers->each->loadMissing(['masterProduct.productType', 'warehouse']);
@@ -2693,7 +2693,7 @@ class JobScheduleController extends Controller
 
         $serialNumbers = collect($serialNumbers)
             ->filter()
-            ->unique(fn ($serialNumber) => strtoupper(trim((string) $serialNumber->serial_number)) ?: $serialNumber->id)
+            ->unique(fn ($serialNumber) => trim((string) $serialNumber->serial_number) ?: $serialNumber->id)
             ->values();
         
         // Get team location history for this job schedule (and siblings in Job View)
@@ -7022,7 +7022,7 @@ class JobScheduleController extends Controller
                         }
 
                         $snRecord = \App\Models\SerialNumber::with('masterProduct.productCategory')
-                            ->whereRaw('UPPER(TRIM(serial_number)) = ?', [strtoupper(trim((string) $scannedUnit->mac))])
+                            ->whereRaw('TRIM(serial_number) = ?', [trim((string) $scannedUnit->mac)])
                             ->first();
 
                         // Try fallback via MAC Address in units table

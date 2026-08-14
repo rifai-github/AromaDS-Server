@@ -138,7 +138,7 @@ class AuditUnitOnWallSync extends Command
             : ['remove', 'rv', 'remove_free', 'remove free', 'rf'];
 
         $candidateJobIds = DB::table('job_schedule_units')
-            ->whereRaw('UPPER(TRIM(mac)) = ?', [strtoupper(trim($serialCode))])
+            ->whereRaw('TRIM(mac) = ?', [trim($serialCode)])
             ->orderByDesc('scanned_at')
             ->pluck('job_schedule_id');
 

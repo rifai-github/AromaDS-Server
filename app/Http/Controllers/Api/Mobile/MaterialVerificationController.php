@@ -219,7 +219,7 @@ class MaterialVerificationController extends Controller
                     $preparedIdentities = $preparedSerials->pluck('id')->map(fn ($id) => (int) $id)->values();
                     $submittedIdentities = $this->submittedSerialIds($material);
                 } else {
-                    $preparedIdentities = $preparedSerials->pluck('serial_number')->map(fn ($sn) => strtoupper(trim($sn)))->unique()->values();
+                    $preparedIdentities = $preparedSerials->pluck('serial_number')->map(fn ($sn) => trim($sn))->unique()->values();
                     $submittedIdentities = $this->submittedSerialCodes($material);
                 }
 
@@ -666,10 +666,10 @@ class MaterialVerificationController extends Controller
         $codes = collect($material['serial_numbers'] ?? [])
             ->pluck('serial_number')
             ->filter()
-            ->map(fn ($sn) => strtoupper(trim($sn)));
+            ->map(fn ($sn) => trim($sn));
 
         if (! empty($material['serial_number'])) {
-            $codes->push(strtoupper(trim($material['serial_number'])));
+            $codes->push(trim($material['serial_number']));
         }
 
         return $codes->unique()->values();

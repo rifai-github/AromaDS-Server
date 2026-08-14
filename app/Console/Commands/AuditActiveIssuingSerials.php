@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Models\SerialNumber;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -23,7 +22,10 @@ class AuditActiveIssuingSerials extends Command
             return self::INVALID;
         }
 
-        $serialFilter = SerialNumber::normalizeSerialCode((string) $this->option('serial'));
+        // Deliberately case-insensitive: this filter is a diagnostic search
+        // convenience for auditors, independent of SerialNumber::normalizeSerialCode()
+        // (which is now case-sensitive for business/storage logic).
+        $serialFilter = strtoupper(trim((string) $this->option('serial')));
         $activeStatuses = ['pending', 'processed', 'sent'];
 
         $duplicates = DB::table('inventory_issuing_items as iii')

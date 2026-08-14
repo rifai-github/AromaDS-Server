@@ -98,12 +98,12 @@ class SerialNumber extends Model
 
     public static function normalizeSerialCode(?string $serialNumber): string
     {
-        return strtoupper(trim((string) $serialNumber));
+        return trim((string) $serialNumber);
     }
 
     public function scopeWhereNormalizedSerialNumber($query, string $serialNumber)
     {
-        return $query->whereRaw('UPPER(TRIM(serial_number)) = ?', [self::normalizeSerialCode($serialNumber)]);
+        return $query->whereRaw('TRIM(serial_number) = ?', [self::normalizeSerialCode($serialNumber)]);
     }
 
     public function scopeByStatus($query, $status)

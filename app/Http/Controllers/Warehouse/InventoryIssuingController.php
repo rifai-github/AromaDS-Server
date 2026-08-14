@@ -1071,7 +1071,7 @@ class InventoryIssuingController extends Controller
                 }
             }
 
-            $serialNumber = strtoupper(trim($request->serial_number));
+            $serialNumber = trim($request->serial_number);
 
             // Validasi 1: SN harus ada di serial_numbers table. Batch/refill SN may have
             // duplicate rows, so choose an available row for this item before falling back.
