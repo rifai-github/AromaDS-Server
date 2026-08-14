@@ -1627,6 +1627,24 @@ let selectedIdsForRetry = [];
 let successModalTimer = null;
 const viewMode = '{{ $viewMode ?? 'job' }}';
 
+// Widen the Action dropdown's option panel so labels (e.g. "Unassign Material", team names)
+// never wrap to a second line - the shared Select2 init otherwise mirrors the narrow trigger width.
+window.addEventListener('load', function () {
+    if (!window.jQuery) return;
+    const $actionType = jQuery('#actionType');
+    if ($actionType.length && $actionType.hasClass('select2-hidden-accessible')) {
+        $actionType.select2('destroy');
+        $actionType.select2({
+            placeholder: $actionType.find('option:first').text() || 'Choose Action...',
+            allowClear: !$actionType.prop('required'),
+            dropdownParent: jQuery('body'),
+            width: '100%',
+            dropdownAutoWidth: true,
+            minimumResultsForSearch: 10
+        });
+    }
+});
+
 // Function to format date with 3-digit month
 function formatDateWithThreeDigitMonth(date) {
     const day = String(date.getDate()).padStart(2, '0');
