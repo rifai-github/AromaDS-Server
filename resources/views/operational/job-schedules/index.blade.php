@@ -904,7 +904,7 @@
                 <div class="flex items-center gap-6">
                     <!-- 1. Select All -->
                     <div class="flex items-center gap-2">
-                        <input type="checkbox" id="selectAll" class="w-4 h-4 text-blue-600 border-gray-300 rounded cursor-pointer" onchange="toggleSelectAll()">
+                        <input type="checkbox" id="selectAll" class="w-4 h-4 text-blue-600 border-gray-300 rounded cursor-pointer" onchange="toggleSelectAll(this)">
                         <label for="selectAll" class="text-xs font-bold text-gray-700 cursor-pointer whitespace-nowrap">Select All</label>
                     </div>
 
@@ -983,7 +983,7 @@
                 <thead>
                     <tr>
                         <th>
-                            <input type="checkbox" id="headerSelectAll" class="w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer" onchange="toggleSelectAll()">
+                            <input type="checkbox" id="headerSelectAll" class="w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer" onchange="toggleSelectAll(this)">
                         </th>
                         <!-- 1. Job No -->
                         <th data-column="job_number">Job No</th>
@@ -3236,13 +3236,15 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         window.location.href = '{{ route("operational.job-schedules.index") }}?' + outputParams.toString();
     }
 
-    function toggleSelectAll() {
+    function toggleSelectAll(source) {
         const selectAll = document.getElementById('selectAll');
         const headerSelectAll = document.getElementById('headerSelectAll');
         const checkboxes = document.querySelectorAll('.row-checkbox:not(:disabled)');
-        
-        const isChecked = selectAll?.checked || headerSelectAll?.checked;
-        
+
+        // Use the checkbox the user actually clicked, not an OR of both -
+        // otherwise unchecking one while the other is still checked (stale) re-checks everything.
+        const isChecked = source ? source.checked : (selectAll?.checked || headerSelectAll?.checked);
+
         checkboxes.forEach(checkbox => {
             checkbox.checked = isChecked;
         });
