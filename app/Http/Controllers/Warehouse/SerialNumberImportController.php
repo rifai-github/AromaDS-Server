@@ -87,9 +87,12 @@ class SerialNumberImportController extends Controller
                 continue;
             }
 
-            $duplicateInFile = isset($seen[$serial]);
+            $product = $this->resolveProduct($row);
+            $requiresUniqueSerial = ! $product || $product->requiresUniqueSerialNumber();
+
+            $duplicateInFile = $requiresUniqueSerial && isset($seen[$serial]);
             $seen[$serial] = true;
-            $existsInDb = SerialNumber::whereNormalizedSerialNumber($serial)->exists();
+            $existsInDb = $requiresUniqueSerial && SerialNumber::whereNormalizedSerialNumber($serial)->exists();
 
             if ($duplicateInFile) {
                 $preview['errors'][] = "Baris {$rowNo}: serial_number duplikat di dalam file ({$serial})";
@@ -152,23 +155,27 @@ class SerialNumberImportController extends Controller
                             throw new \Exception('serial_number wajib diisi');
                         }
 
-                        if (isset($seen[$serial])) {
-                            throw new \Exception("serial_number duplikat di dalam file: {$serial}");
+                        $product = $this->resolveProduct($row);
+                        if (! $product) {
+                            throw new \Exception('product_sku/product_name tidak ditemukan di master produk');
+                        }
+
+                        // Batch/refill (non-unit) products intentionally share one SN code
+                        // across many rows in stock; only unit products must be unique.
+                        if ($product->requiresUniqueSerialNumber()) {
+                            if (isset($seen[$serial])) {
+                                throw new \Exception("serial_number duplikat di dalam file: {$serial}");
+                            }
+
+                            if (SerialNumber::whereNormalizedSerialNumber($serial)->exists()) {
+                                throw new \Exception("serial_number sudah ada di sistem: {$serial}");
+                            }
                         }
                         $seen[$serial] = true;
-
-                        if (SerialNumber::whereNormalizedSerialNumber($serial)->exists()) {
-                            throw new \Exception("serial_number sudah ada di sistem: {$serial}");
-                        }
 
                         $status = trim($row['status'] ?? '');
                         if (! in_array($status, self::VALID_STATUSES, true)) {
                             throw new \Exception("status tidak valid: '{$status}'");
-                        }
-
-                        $product = $this->resolveProduct($row);
-                        if (! $product) {
-                            throw new \Exception('product_sku/product_name tidak ditemukan di master produk');
                         }
 
                         $condition = trim($row['condition_status'] ?? '');

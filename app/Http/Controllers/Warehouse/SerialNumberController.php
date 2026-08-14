@@ -136,7 +136,8 @@ class SerialNumberController extends Controller
         ]);
 
         $normalizedSerial = SerialNumber::normalizeSerialCode($request->serial_number);
-        if ($this->normalizedSerialExists($normalizedSerial)) {
+        $product = MasterProduct::find($request->master_product_id);
+        if (optional($product)->requiresUniqueSerialNumber() && $this->normalizedSerialExists($normalizedSerial)) {
             return response()->json([
                 'status' => 'error',
                 'message' => "Serial Number sudah ada di sistem: {$normalizedSerial}",
@@ -451,7 +452,8 @@ class SerialNumberController extends Controller
 
         if ($request->has('serial_number')) {
             $normalizedSerial = SerialNumber::normalizeSerialCode($request->serial_number);
-            if ($this->normalizedSerialExists($normalizedSerial, $serialNumber->id)) {
+            $product = MasterProduct::find($request->input('master_product_id', $serialNumber->master_product_id));
+            if (optional($product)->requiresUniqueSerialNumber() && $this->normalizedSerialExists($normalizedSerial, $serialNumber->id)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => "Serial Number sudah ada di sistem: {$normalizedSerial}",

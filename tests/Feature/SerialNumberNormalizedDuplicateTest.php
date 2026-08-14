@@ -26,10 +26,21 @@ class SerialNumberNormalizedDuplicateTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('product_categories', function (Blueprint $table) {
+            $table->id();
+            $table->string('code')->nullable();
+            $table->string('name')->nullable();
+            $table->boolean('has_serial_number')->default(false);
+            $table->boolean('is_unit')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('master_products', function (Blueprint $table) {
             $table->id();
             $table->string('name')->nullable();
             $table->string('sku')->nullable();
+            $table->unsignedBigInteger('product_category_id')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -51,12 +62,21 @@ class SerialNumberNormalizedDuplicateTest extends TestCase
         });
 
         \DB::table('warehouses')->insert(['id' => 1, 'name' => 'Gudang Jakarta', 'warehouse_code' => 'WH-JKT']);
-        \DB::table('master_products')->insert(['id' => 1, 'name' => 'Dispenser Aroma', 'sku' => 'DISP-001']);
+        \DB::table('product_categories')->insert(['id' => 1, 'code' => 'DISP', 'name' => 'Dispenser', 'has_serial_number' => true, 'is_unit' => true]);
+        \DB::table('product_categories')->insert(['id' => 2, 'code' => 'RFL', 'name' => 'Refill', 'has_serial_number' => true, 'is_unit' => false]);
+        \DB::table('master_products')->insert(['id' => 1, 'name' => 'Dispenser Aroma', 'sku' => 'DISP-001', 'product_category_id' => 1]);
+        \DB::table('master_products')->insert(['id' => 2, 'name' => 'Aroma Lemongrass 100ml', 'sku' => 'RFL-001', 'product_category_id' => 2]);
         SerialNumber::create([
             'serial_number' => 'SN-DUP-001',
             'status' => 'ready',
             'warehouse_id' => 1,
             'master_product_id' => 1,
+        ]);
+        SerialNumber::create([
+            'serial_number' => 'SN-BATCH-001',
+            'status' => 'ready',
+            'warehouse_id' => 1,
+            'master_product_id' => 2,
         ]);
     }
 
@@ -64,6 +84,7 @@ class SerialNumberNormalizedDuplicateTest extends TestCase
     {
         Schema::dropIfExists('serial_numbers');
         Schema::dropIfExists('master_products');
+        Schema::dropIfExists('product_categories');
         Schema::dropIfExists('warehouses');
 
         parent::tearDown();
@@ -108,6 +129,56 @@ class SerialNumberNormalizedDuplicateTest extends TestCase
         $this->assertSame(1, $payload['preview']['existing']);
         $this->assertSame(1, $payload['preview']['new']);
         $this->assertTrue($payload['preview']['preview_data'][0]['exists']);
+    }
+
+    public function test_manual_create_allows_shared_serial_for_non_unit_product(): void
+    {
+        $request = Request::create('/warehouse/serial-numbers', 'POST', [
+            'warehouse_id' => 1,
+            'master_product_id' => 2,
+            'serial_number' => ' sn-batch-001 ',
+            'status' => 'ready',
+            'condition_status' => 'new',
+        ]);
+        $request->headers->set('X-Requested-With', 'XMLHttpRequest');
+
+        $response = (new SerialNumberController)->store($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $response->getData(true)['status']);
+        $this->assertSame(2, SerialNumber::whereNormalizedSerialNumber('SN-BATCH-001')->count());
+    }
+
+    public function test_import_preview_treats_non_unit_shared_serial_as_new(): void
+    {
+        $request = Request::create('/warehouse/serial-numbers/import-preview', 'POST');
+        $request->files->set('file', $this->csvUpload(
+            "serial_number,product_sku,status,condition_status,warehouse\n sn-batch-001 ,RFL-001,ready,new,WH-JKT\n sn-batch-001 ,RFL-001,ready,new,WH-JKT\n"
+        ));
+
+        $response = (new SerialNumberImportController)->preview($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertSame(0, $payload['preview']['existing']);
+        $this->assertSame(2, $payload['preview']['new']);
+        $this->assertEmpty($payload['preview']['errors']);
+    }
+
+    public function test_import_allows_shared_serial_for_non_unit_product(): void
+    {
+        $request = Request::create('/warehouse/serial-numbers/import', 'POST');
+        $request->files->set('file', $this->csvUpload(
+            "serial_number,product_sku,status,condition_status,warehouse\nSN-BATCH-001,RFL-001,ready,new,WH-JKT\nSN-BATCH-001,RFL-001,ready,new,WH-JKT\n"
+        ));
+
+        $response = (new SerialNumberImportController)->import($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertSame(2, $payload['stats']['success']);
+        $this->assertSame(0, $payload['stats']['failed']);
+        $this->assertSame(3, SerialNumber::whereNormalizedSerialNumber('SN-BATCH-001')->count());
     }
 
     public function test_check_serial_number_finds_value_case_insensitively(): void
