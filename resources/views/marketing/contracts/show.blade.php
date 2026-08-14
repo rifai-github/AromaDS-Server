@@ -1290,7 +1290,7 @@
                                             <th>Account Name</th>
                                             <th>Account No</th>
                                             <th>Wajib Pungut?</th>
-                                            <th>Name</th>
+                                            <th>Invoice Type</th>
                                             <th>Alamat 1</th>
                                             <th>Alamat 2</th>
                                             <th>Provinsi</th>
@@ -1491,6 +1491,8 @@
                                                     
                                                     $kodePos = $firstBuilding->kode_pos ?? $firstBuilding->postal_code ?? '-';
                                                 }
+
+                                                $firstBuildingLink = $firstBuilding ? route('operational.buildings.show', $firstBuilding) : null;
                                             @endphp
                                             <tr>
                                                 <td><input type="checkbox" class="billing-group-checkbox" value="{{ $billingGroup->id }}"></td>
@@ -1508,7 +1510,13 @@
                                                 <td>{{ $accountNo }}</td>
                                                 <td>{{ $wajibPungut }}</td>
                                                 <td>{{ $invoiceTypeLabel }}</td>
-                                                <td>{{ $alamat1 }}</td>
+                                                <td>
+                                                    @if($firstBuildingLink)
+                                                        <a href="{{ $firstBuildingLink }}" target="_blank" rel="noopener noreferrer" title="{{ $firstBuilding->building_name }}">{{ $alamat1 }}</a>
+                                                    @else
+                                                        {{ $alamat1 }}
+                                                    @endif
+                                                </td>
                                                 <td>{{ $alamat2 }}</td>
                                                 <td>{{ $provinsi }}</td>
                                                 <td>{{ $kota }}</td>
@@ -1607,7 +1615,9 @@
                                         @forelse($uniqueBuildings as $index => $building)
                                         <tr>
                                             <td>{{ $loop->iteration }}</td>
-                                            <td>{{ $building->building_name ?? '-' }}</td>
+                                            <td>
+                                                <a href="{{ route('operational.buildings.show', $building) }}" target="_blank" rel="noopener noreferrer">{{ $building->building_name ?? '-' }}</a>
+                                            </td>
                                             <td>{{ $building->kode_pos ?? $building->postal_code ?? '-' }}</td>
                                             <td>{{ $building->alamat_1 ?? $building->address ?? '-' }}</td>
                                             <td>{{ $building->city->name ?? '-' }}</td>
