@@ -737,7 +737,6 @@
                             <thead>
                                 <tr>
                                     <th data-column="name">Category</th>
-                                    <th data-column="code">Code</th>
                                     <th data-no-filter>Products</th>
                                     <th data-column="sku_prefix">SKU Prefix</th>
                                     <th data-column="unit">Unit</th>
@@ -771,9 +770,6 @@
                                                 @endif
                                             </div>
                                         </div>
-                                    </td>
-                                    <td>
-                                        <span class="badge badge-info">{{ $category->code }}</span>
                                     </td>
                                     <td>
                                         <span class="badge badge-info">{{ $category->master_products_count }}</span>
