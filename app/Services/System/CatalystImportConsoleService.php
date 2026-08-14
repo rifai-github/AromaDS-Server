@@ -298,8 +298,8 @@ class CatalystImportConsoleService
                 ],
             ],
             'dry_run_backfill_building_city' => [
-                'label' => 'Dry Run Backfill Building City',
-                'description' => 'Simulasikan pengisian city_id/province_id Master Building yang kosong/orphaned/soft-deleted, dicocokkan dari CityName/AreaCity yang sudah tersimpan di notes hasil import. Tidak menulis ke database.',
+                'label' => 'Dry Run Backfill Building City & District',
+                'description' => 'Simulasikan pengisian city_id/province_id dan district_id Master Building yang kosong/orphaned/soft-deleted, dicocokkan dari CityName/AreaCity (notes) dan AreaServiceName (description) yang sudah tersimpan hasil import. Tidak menulis ke database.',
                 'group' => 'post_import',
                 'execution' => 'sync',
                 'commands' => [
@@ -307,8 +307,8 @@ class CatalystImportConsoleService
                 ],
             ],
             'apply_backfill_building_city' => [
-                'label' => 'Apply Backfill Building City',
-                'description' => 'Isi city_id/province_id Master Building yang kosong/orphaned/soft-deleted berdasarkan CityName/AreaCity yang sudah tersimpan di notes hasil import Catalyst.',
+                'label' => 'Apply Backfill Building City & District',
+                'description' => 'Isi city_id/province_id dan district_id Master Building yang kosong/orphaned/soft-deleted berdasarkan CityName/AreaCity (notes) dan AreaServiceName (description) yang sudah tersimpan hasil import Catalyst.',
                 'group' => 'post_import',
                 'execution' => 'sync',
                 'commands' => [
