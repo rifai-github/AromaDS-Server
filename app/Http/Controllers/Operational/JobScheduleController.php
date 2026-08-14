@@ -2831,6 +2831,10 @@ class JobScheduleController extends Controller
             $snapshotKey = implode('|', [
                 $photo->photo_type,
                 $photo->job_schedule_room_id ?: 'js-' . ($photo->job_schedule_id ?? '0'),
+                // Multi-unit rooms (rental qty > 1) keep one Before/After snapshot
+                // PER SCANNED UNIT — without this, a second unit's photo looked
+                // like a "retry" of the first unit's and got filtered out here.
+                $photo->job_schedule_unit_id ?: '0',
             ]);
 
             if (isset($latestSnapshotKeys[$snapshotKey])) {
