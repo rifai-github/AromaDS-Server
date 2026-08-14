@@ -765,9 +765,6 @@
                                             @endif
                                             <div>
                                                 <div class="font-weight-bold">{{ $category->name }}</div>
-                                                @if($category->description)
-                                                    <small class="text-muted">{{ Str::limit($category->description, 50) }}</small>
-                                                @endif
                                             </div>
                                         </div>
                                     </td>
