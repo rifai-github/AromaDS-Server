@@ -528,7 +528,7 @@
                     
                     <div class="form-group">
                         <label class="form-label">Kode PPN <span class="text-red-500">*</span></label>
-                        <select name="ppn_code" id="ppnCode" class="form-control" required>
+                        <select name="ppn_code" id="ppnCode" class="form-control" required onchange="syncMandatoryTaxForAllAddresses()">
                             <option value="">Pilih Kode Transaksi PPN...</option>
                             <option value="01">01 - Penyerahan BKP/JKP yang PPN dipungut oleh PKP penyerah</option>
                             <option value="02">02 - Penyerahan kepada pemungut PPN instansi pemerintah</option>
@@ -878,6 +878,7 @@ const financeTaxCodeRules = @json($financeTaxCodeRules ?? []);
 let billingAddresses = [];
 let buildingSelections = [];
 let currentTaxAddressIndex = null;
+let contractDataPopulated = false;
 
 // Initialize wizard
 document.addEventListener('DOMContentLoaded', function() {
@@ -1056,13 +1057,19 @@ function loadStepData() {
             loadQuotationDetails();
             break;
         case 3:
-            // Populate contract data from quotation when step 3 is loaded
+            // Populate contract data from quotation only the first time Step 3 is shown
+            // for the current quotation selection — re-running this on every revisit
+            // (e.g. clicking Previous from Step 4) would wipe out edits the user made.
             console.log('=== STEP 3 LOADED ===');
+            console.log('contractDataPopulated:', contractDataPopulated);
             console.log('quotationData available:', quotationData ? 'yes' : 'no');
             console.log('selectedQuotation:', selectedQuotation);
-            
-            if (quotationData) {
+
+            if (contractDataPopulated) {
+                console.log('Step 3: Already populated, skipping to preserve user edits');
+            } else if (quotationData) {
                 console.log('Step 3: Populating contract data from stored quotationData');
+                contractDataPopulated = true;
                 // Use setTimeout to ensure form fields are rendered
                 setTimeout(() => {
                     populateContractData(quotationData);
@@ -1073,6 +1080,7 @@ function loadStepData() {
                 if (quotationSelect && quotationSelect.value) {
                     selectedQuotation = quotationSelect.value;
                     console.log('Step 3: Loading quotation data for:', selectedQuotation);
+                    contractDataPopulated = true;
                     loadQuotationData(selectedQuotation);
                 } else {
                     console.warn('Step 3: No quotation data available and no quotation selected');
@@ -1093,9 +1101,12 @@ function loadStepData() {
 const quotationSelectElement = document.getElementById('quotationSelect');
 if (quotationSelectElement) {
     quotationSelectElement.addEventListener('change', function() {
+        // A newly picked quotation should always repopulate Step 3 once.
+        contractDataPopulated = false;
         if (this.value) {
             selectedQuotation = this.value;
             console.log('Quotation selected:', selectedQuotation);
+            contractDataPopulated = true;
             loadQuotationData(this.value);
         } else {
             selectedQuotation = null;
@@ -2614,10 +2625,12 @@ function addBillingAddress() {
             </div>
             <div class="form-group">
                 <label class="form-label">Wajib Pungut?</label>
-                <select name="billing_addresses[${addressIndex}][mandatory_tax]" class="form-control">
+                <select id="mandatoryTaxSelect_${addressIndex}" class="form-control bg-gray-100 cursor-not-allowed" disabled>
                     <option value="no">No</option>
                     <option value="yes">Yes</option>
                 </select>
+                <input type="hidden" name="billing_addresses[${addressIndex}][mandatory_tax]" id="mandatoryTaxHidden_${addressIndex}" value="no">
+                <small class="text-gray-500 text-xs mt-1 block">Otomatis mengikuti Kode PPN di Step 3.</small>
             </div>
         </div>
         <div class="flex justify-end gap-2">
@@ -2644,7 +2657,10 @@ function addBillingAddress() {
     };
     
     billingAddresses.push(billingAddress);
-    
+
+    // Wajib Pungut is derived from the Kode PPN chosen in Step 3, not editable here
+    syncMandatoryTaxForAddress(addressIndex);
+
     // Load data for the new billing address
     loadPICFinanceContacts(addressIndex, addressDiv.querySelector('select[name*="[pic_finance]"]'));
     populateTaxDropdown(addressIndex);
@@ -2926,7 +2942,10 @@ function loadBillingAddresses() {
     if (billingAddresses.length === 0) {
         addBillingAddress();
     }
-    
+
+    // Keep Wajib Pungut in sync with Step 3's Kode PPN every time Step 4 is shown
+    syncMandatoryTaxForAllAddresses();
+
     // Load and count available buildings, then update button visibility
     loadAndCountAvailableBuildings();
 }
@@ -4111,6 +4130,31 @@ function openAddTaxModal(addressIndex) {
     modal.style.display = 'flex';
     updateTaxNumberMaxLength('modal');
     updateTaxNumberCounter('modal');
+}
+
+// Wajib Pungut (mandatory_tax) is derived from the Kode PPN selected in Step 3:
+// only codes whose finance tax rule says the PPN is "Bayar & setor oleh customer"
+// make the customer a mandatory withholder (see FinanceTaxCode::isCollectedByCustomer()).
+function getMandatoryTaxValueFromPpnCode() {
+    const ppnCodeSelect = document.getElementById('ppnCode');
+    const selectedCode = ppnCodeSelect ? ppnCodeSelect.value : '';
+    const selectedRule = selectedCode ? financeTaxCodeRules[selectedCode] : null;
+    return (selectedRule && selectedRule.customer_status === 'Bayar & setor oleh customer') ? 'yes' : 'no';
+}
+
+function syncMandatoryTaxForAddress(addressIndex) {
+    const value = getMandatoryTaxValueFromPpnCode();
+    const select = document.getElementById(`mandatoryTaxSelect_${addressIndex}`);
+    const hidden = document.getElementById(`mandatoryTaxHidden_${addressIndex}`);
+    if (select) select.value = value;
+    if (hidden) hidden.value = value;
+}
+
+function syncMandatoryTaxForAllAddresses() {
+    document.querySelectorAll('input[id^="mandatoryTaxHidden_"]').forEach(hidden => {
+        const addressIndex = hidden.id.replace('mandatoryTaxHidden_', '');
+        syncMandatoryTaxForAddress(addressIndex);
+    });
 }
 
 function syncModalTaxRateFromCode() {
