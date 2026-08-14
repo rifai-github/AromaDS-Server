@@ -874,12 +874,18 @@ class JobController extends Controller
      * Old files stay in storage, but the UI should not keep stacking duplicate
      * PIC/signature rows every time a job is re-done after unpost.
      */
-    private function syncJobPhotoRecord(int $jobScheduleId, string $photoType, string $photoPath, string $description, ?int $jobScheduleRoomId = null): void
+    private function syncJobPhotoRecord(int $jobScheduleId, string $photoType, string $photoPath, string $description, ?int $jobScheduleRoomId = null, ?int $jobScheduleUnitId = null): void
     {
+        // When $jobScheduleUnitId is provided (multi-unit room, one physical unit
+        // per install slot), scope the upsert to that unit too so a second unit's
+        // photo doesn't overwrite the first unit's — see completeRoom().
         $jobPhoto = \App\Models\JobPhoto::where('job_schedule_id', $jobScheduleId)
             ->where('photo_type', $photoType)
             ->when($jobScheduleRoomId, function ($query) use ($jobScheduleRoomId) {
                 $query->where('job_schedule_room_id', $jobScheduleRoomId);
+            })
+            ->when($jobScheduleUnitId, function ($query) use ($jobScheduleUnitId) {
+                $query->where('job_schedule_unit_id', $jobScheduleUnitId);
             })
             ->latest('id')
             ->first();
@@ -889,6 +895,7 @@ class JobController extends Controller
                 'photo_path' => $photoPath,
                 'description' => $description,
                 'job_schedule_room_id' => $jobScheduleRoomId ?: $jobPhoto->job_schedule_room_id,
+                'job_schedule_unit_id' => $jobScheduleUnitId ?: $jobPhoto->job_schedule_unit_id,
                 'uploaded_by' => Auth::id(),
                 'updated_at' => now(),
             ]);
@@ -899,6 +906,7 @@ class JobController extends Controller
         \App\Models\JobPhoto::create([
             'job_schedule_id' => $jobScheduleId,
             'job_schedule_room_id' => $jobScheduleRoomId,
+            'job_schedule_unit_id' => $jobScheduleUnitId,
             'photo_path' => $photoPath,
             'photo_type' => $photoType,
             'description' => $description,
@@ -2482,7 +2490,24 @@ class JobController extends Controller
                 ], 422);
             }
 
-            if ($jobScheduleRoom->status !== \App\Models\JobScheduleRoom::STATUS_COMPLETED) {
+            // Multi-unit rooms (rental qty > 1, e.g. "install 2 unit" in one room):
+            // resolve which scanned unit (job_schedule_units row, matched by the mac
+            // this specific completeRoom call is for) these photos belong to. Only
+            // engaged when the rental genuinely requires more than one serialized
+            // unit AND the caller sent a mac — single-unit rooms (the vast majority)
+            // take the exact same path as before this was added.
+            $requiredUnitCount = array_sum($this->unitQuantitiesRequiredForRentalRoom($room));
+            $requestMac = trim((string) $request->input('mac', ''));
+            $jobScheduleUnitId = null;
+            if ($requiredUnitCount > 1 && $requestMac !== '') {
+                $jobScheduleUnitId = \DB::table('job_schedule_units')
+                    ->where('job_schedule_id', $jobSchedule->id)
+                    ->where('job_advice_room_id', $roomId)
+                    ->whereRaw('TRIM(mac) = ?', [$requestMac])
+                    ->value('id');
+            }
+
+            if ($jobScheduleUnitId === null && $jobScheduleRoom->status !== \App\Models\JobScheduleRoom::STATUS_COMPLETED) {
                 $missingUnitSerials = $this->getMissingUnitSerialNumbersForRoom($jobSchedule, $roomId, $room->room_name);
                 if (!empty($missingUnitSerials)) {
                     return response()->json([
@@ -2513,8 +2538,8 @@ class JobController extends Controller
 
             $hasNewBeforePhoto = $this->requestHasAnyFile($request, 'before_photos');
             $hasNewAfterPhoto = $this->requestHasAnyFile($request, 'after_photos');
-            $hasExistingBeforePhoto = $this->jobScheduleRoomHasPhotoType($jobScheduleRoom->id, 'Before Work');
-            $hasExistingAfterPhoto = $this->jobScheduleRoomHasPhotoType($jobScheduleRoom->id, 'After Work');
+            $hasExistingBeforePhoto = $this->jobScheduleRoomHasPhotoType($jobScheduleRoom->id, 'Before Work', $jobScheduleUnitId);
+            $hasExistingAfterPhoto = $this->jobScheduleRoomHasPhotoType($jobScheduleRoom->id, 'After Work', $jobScheduleUnitId);
 
             if (
                 $jobScheduleRoom->status === \App\Models\JobScheduleRoom::STATUS_COMPLETED
@@ -2552,10 +2577,11 @@ class JobController extends Controller
                     $jobScheduleRoom,
                     'Before Work',
                     'before',
-                    'Foto sebelum pengerjaan - Room: ' . ($room->room_name ?? 'N/A')
+                    'Foto sebelum pengerjaan - Room: ' . ($room->room_name ?? 'N/A'),
+                    $jobScheduleUnitId
                 );
             }
-            
+
             // Upload and save after photos if provided
             if ($request->hasFile('after_photos')) {
                 $this->saveRoomCompletionPhotos(
@@ -2565,17 +2591,45 @@ class JobController extends Controller
                     $jobScheduleRoom,
                     'After Work',
                     'after',
-                    'Foto sesudah pengerjaan - Room: ' . ($room->room_name ?? 'N/A')
+                    'Foto sesudah pengerjaan - Room: ' . ($room->room_name ?? 'N/A'),
+                    $jobScheduleUnitId
                 );
             }
 
             if (
-                !$this->jobScheduleRoomHasPhotoType($jobScheduleRoom->id, 'Before Work')
-                || !$this->jobScheduleRoomHasPhotoType($jobScheduleRoom->id, 'After Work')
+                !$this->jobScheduleRoomHasPhotoType($jobScheduleRoom->id, 'Before Work', $jobScheduleUnitId)
+                || !$this->jobScheduleRoomHasPhotoType($jobScheduleRoom->id, 'After Work', $jobScheduleUnitId)
             ) {
                 throw new \RuntimeException('Foto sebelum dan sesudah belum tersimpan. Room tidak diselesaikan.');
             }
-            
+
+            // Multi-unit room: this unit's own before/after photos are now safely
+            // stored above (each unit gets its own job_photos rows). Don't finalize
+            // the room yet if other required units still need a scan and/or photos -
+            // return a partial success so the technician is guided to the next unit
+            // instead of the request either failing or silently marking the room
+            // "done" after only one of several units was photographed.
+            if ($jobScheduleUnitId !== null) {
+                $missingUnitSerials = $this->getMissingUnitSerialNumbersForRoom($jobSchedule, $roomId, $room->room_name);
+                $unitsMissingPhotos = $this->getUnitsMissingPhotosForRoom($jobSchedule->id, $roomId, $jobScheduleRoom->id);
+
+                if (!empty($missingUnitSerials) || !empty($unitsMissingPhotos)) {
+                    \DB::commit();
+
+                    return response()->json([
+                        'status' => 'success',
+                        'message' => 'Foto unit tersimpan. Masih ada unit lain di room ini yang perlu di-scan dan difoto sebelum room selesai.',
+                        'data' => [
+                            'room_id' => $room->id,
+                            'room_status' => $jobScheduleRoom->status,
+                            'all_completed' => false,
+                            'missing_serial_numbers' => array_keys($missingUnitSerials),
+                            'units_missing_photos' => $unitsMissingPhotos,
+                        ],
+                    ]);
+                }
+            }
+
             // Update JobAdviceRoom status to completed
             $room->status = 'completed';
             
@@ -2742,7 +2796,8 @@ class JobController extends Controller
         \App\Models\JobScheduleRoom $jobScheduleRoom,
         string $photoType,
         string $filenameSuffix,
-        string $description
+        string $description,
+        ?int $jobScheduleUnitId = null
     ): void {
         if (!$request->hasFile($requestKey)) {
             return;
@@ -2775,7 +2830,8 @@ class JobController extends Controller
                 $photoType,
                 'job-verifications/' . $filename,
                 $description,
-                $jobScheduleRoom->id
+                $jobScheduleRoom->id,
+                $jobScheduleUnitId
             );
         }
     }
@@ -3597,7 +3653,7 @@ class JobController extends Controller
         return array_values($messages);
     }
 
-    private function jobScheduleRoomHasPhotoType(?int $jobScheduleRoomId, string $photoType): bool
+    private function jobScheduleRoomHasPhotoType(?int $jobScheduleRoomId, string $photoType, ?int $jobScheduleUnitId = null): bool
     {
         if (!$jobScheduleRoomId) {
             return false;
@@ -3605,7 +3661,35 @@ class JobController extends Controller
 
         return \App\Models\JobPhoto::where('job_schedule_room_id', $jobScheduleRoomId)
             ->where('photo_type', $photoType)
+            ->when($jobScheduleUnitId, function ($query) use ($jobScheduleUnitId) {
+                $query->where('job_schedule_unit_id', $jobScheduleUnitId);
+            })
             ->exists();
+    }
+
+    /**
+     * Macs of scanned units in this room (job_schedule_units) that don't yet have
+     * BOTH a Before Work and After Work photo tied to their own job_schedule_unit_id.
+     * Used to gate multi-unit room completion so unit #2's photos can't silently
+     * overwrite/short-circuit unit #1's the way a flat room-level photo check did.
+     */
+    private function getUnitsMissingPhotosForRoom(int $jobScheduleId, int $jobAdviceRoomId, int $jobScheduleRoomId): array
+    {
+        $units = \DB::table('job_schedule_units')
+            ->where('job_schedule_id', $jobScheduleId)
+            ->where('job_advice_room_id', $jobAdviceRoomId)
+            ->get(['id', 'mac']);
+
+        $missing = [];
+        foreach ($units as $unit) {
+            $hasBefore = $this->jobScheduleRoomHasPhotoType($jobScheduleRoomId, 'Before Work', (int) $unit->id);
+            $hasAfter = $this->jobScheduleRoomHasPhotoType($jobScheduleRoomId, 'After Work', (int) $unit->id);
+            if (!$hasBefore || !$hasAfter) {
+                $missing[] = $unit->mac;
+            }
+        }
+
+        return $missing;
     }
 
     private function validateJobReadyForMobileCompletion(JobSchedule $job): array

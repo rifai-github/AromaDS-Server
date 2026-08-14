@@ -22,6 +22,7 @@ class MobileJobPhotoSnapshotTest extends TestCase
             $table->id();
             $table->unsignedBigInteger('job_schedule_id')->nullable();
             $table->unsignedBigInteger('job_schedule_room_id')->nullable();
+            $table->unsignedBigInteger('job_schedule_unit_id')->nullable();
             $table->string('photo_path')->nullable();
             $table->string('photo_type')->nullable();
             $table->text('description')->nullable();

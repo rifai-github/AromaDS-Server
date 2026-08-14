@@ -51,6 +51,7 @@ class MobileCompleteRoomDuplicateTest extends TestCase
             $table->string('room_name')->nullable();
             $table->foreignId('room_id')->nullable();
             $table->foreignId('rental_product_id')->nullable();
+            $table->integer('quantity')->default(1);
             $table->string('status')->nullable();
             $table->foreignId('remove_job_schedule_id')->nullable();
             $table->foreignId('install_job_schedule_id')->nullable();
@@ -213,6 +214,7 @@ class MobileCompleteRoomDuplicateTest extends TestCase
             $table->id();
             $table->foreignId('job_schedule_id')->nullable();
             $table->foreignId('job_schedule_room_id')->nullable();
+            $table->foreignId('job_schedule_unit_id')->nullable();
             $table->string('photo_path')->nullable();
             $table->string('photo_type')->nullable();
             $table->text('description')->nullable();
@@ -649,5 +651,131 @@ class MobileCompleteRoomDuplicateTest extends TestCase
         $this->assertFalse($readiness['ok']);
         $this->assertStringContainsString('Rental Unit Only', $readiness['message']);
         $this->assertStringContainsString('Dispenser', $readiness['message']);
+    }
+
+    /**
+     * Client-reported bug: photo count/requirement was flat per room (one
+     * Before + one After, upserted by room+type) instead of scaling with the
+     * rental's own qty — "install 2 unit masa 1 lagi gak di foto". Scanning
+     * and photographing a SECOND unit in the same room used to either get
+     * short-circuited as a "duplicate" of the first unit's completeRoom call,
+     * or overwrite the first unit's Before/After rows outright, so only one
+     * of the two units ever ended up with a stored photo. Each scanned unit
+     * must keep its own Before/After photos, and the room must only finish
+     * once every required unit has both.
+     */
+    public function test_multi_unit_room_keeps_each_units_own_photos_and_only_completes_after_the_last_one(): void
+    {
+        DB::table('job_advices')->insert([
+            'id' => 73,
+            'customer_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('master_rentals')->insert([
+            'id' => 3, 'rental_name' => 'Rental Unit Qty 2', 'rental_type' => 'unit_only', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        DB::table('product_categories')->insert([
+            'id' => 5, 'name' => 'Diffuser', 'is_unit' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        DB::table('master_products')->insert([
+            'id' => 40, 'name' => 'Diffuser Multi Unit', 'product_category_id' => 5, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        // BOM: 1 unit per room-qty, room quantity 2 -> 2 units required.
+        DB::table('rental_details')->insert([
+            'master_rental_id' => 3, 'product_category_id' => 5, 'master_product_id' => 40,
+            'quantity' => 1, 'bom_rental_qty' => 1, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            'id' => 95, 'job_advice_id' => 73, 'room_name' => 'Ruang Multi Unit', 'rental_product_id' => 3,
+            'quantity' => 2, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedules')->insert([
+            'id' => 15, 'job_advice_id' => 73, 'job_number' => 'SBY-IR/26-08/0099', 'type' => 'install',
+            'status' => 'barang_diambil', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 96, 'job_schedule_id' => 15, 'job_advice_room_id' => 95, 'room_name' => 'Ruang Multi Unit',
+            'status' => 'pending', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->seedMaterialReadyForJob(15, 25);
+        $issuingId = DB::table('inventory_issuings')->where('issuing_number', 'WI-25')->value('id');
+
+        DB::table('serial_numbers')->insert([
+            ['id' => 300, 'serial_number' => 'UNITMULTI001', 'master_product_id' => 40, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 301, 'serial_number' => 'UNITMULTI002', 'master_product_id' => 40, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('inventory_issuing_items')->insert([
+            ['inventory_issuing_id' => $issuingId, 'job_assign_schedule_id' => 25, 'product_id' => 40, 'serial_number_id' => 300, 'room_name' => 'Ruang Multi Unit', 'quantity_requested' => 1, 'quantity_issued' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['inventory_issuing_id' => $issuingId, 'job_assign_schedule_id' => 25, 'product_id' => 40, 'serial_number_id' => 301, 'room_name' => 'Ruang Multi Unit', 'quantity_requested' => 1, 'quantity_issued' => 1, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $controller = app(JobController::class);
+
+        // Technician scans + photographs unit #1.
+        DB::table('job_schedule_units')->insert([
+            'job_schedule_id' => 15, 'job_advice_room_id' => 95, 'mac' => 'UNITMULTI001',
+            'device_snapshot' => '{}', 'scanned_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $response1 = $controller->completeRoom(
+            Request::create('/api/v1/mobile/rooms/95/complete', 'POST', [
+                'job_schedule_id' => 15,
+                'mac' => 'UNITMULTI001',
+            ], [], [
+                'before_photos' => [UploadedFile::fake()->image('unit1-before.jpg')],
+                'after_photos' => [UploadedFile::fake()->image('unit1-after.jpg')],
+            ]),
+            95
+        );
+        $payload1 = json_decode($response1->getContent(), true);
+
+        $this->assertSame(200, $response1->getStatusCode(), json_encode($payload1));
+        $this->assertFalse($payload1['data']['all_completed']);
+        $this->assertSame('pending', DB::table('job_schedule_rooms')->where('id', 96)->value('status'));
+        $this->assertSame(1, DB::table('job_photos')->where('job_schedule_room_id', 96)->where('photo_type', 'Before Work')->count());
+        $this->assertSame(1, DB::table('job_photos')->where('job_schedule_room_id', 96)->where('photo_type', 'After Work')->count());
+
+        // Technician scans + photographs unit #2.
+        DB::table('job_schedule_units')->insert([
+            'job_schedule_id' => 15, 'job_advice_room_id' => 95, 'mac' => 'UNITMULTI002',
+            'device_snapshot' => '{}', 'scanned_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $response2 = $controller->completeRoom(
+            Request::create('/api/v1/mobile/rooms/95/complete', 'POST', [
+                'job_schedule_id' => 15,
+                'mac' => 'UNITMULTI002',
+            ], [], [
+                'before_photos' => [UploadedFile::fake()->image('unit2-before.jpg')],
+                'after_photos' => [UploadedFile::fake()->image('unit2-after.jpg')],
+            ]),
+            95
+        );
+        $payload2 = json_decode($response2->getContent(), true);
+
+        $this->assertSame(200, $response2->getStatusCode(), json_encode($payload2));
+        $this->assertTrue($payload2['data']['all_completed']);
+        $this->assertSame('completed', DB::table('job_schedule_rooms')->where('id', 96)->value('status'));
+
+        // The core bug: unit #1's photos must still be there, not overwritten
+        // by unit #2's upload.
+        $this->assertSame(2, DB::table('job_photos')->where('job_schedule_room_id', 96)->where('photo_type', 'Before Work')->count(), 'Each unit must keep its own Before Work photo.');
+        $this->assertSame(2, DB::table('job_photos')->where('job_schedule_room_id', 96)->where('photo_type', 'After Work')->count(), 'Each unit must keep its own After Work photo.');
+
+        $unit1Id = DB::table('job_schedule_units')->where('job_schedule_id', 15)->where('mac', 'UNITMULTI001')->value('id');
+        $unit2Id = DB::table('job_schedule_units')->where('job_schedule_id', 15)->where('mac', 'UNITMULTI002')->value('id');
+
+        $this->assertSame(1, DB::table('job_photos')->where('job_schedule_unit_id', $unit1Id)->where('photo_type', 'Before Work')->count());
+        $this->assertSame(1, DB::table('job_photos')->where('job_schedule_unit_id', $unit2Id)->where('photo_type', 'Before Work')->count());
     }
 }

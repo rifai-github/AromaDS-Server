@@ -378,6 +378,7 @@ class MobilePartialCompletionReturnTest extends TestCase
             $table->id();
             $table->foreignId('job_schedule_id')->nullable();
             $table->foreignId('job_schedule_room_id')->nullable();
+            $table->foreignId('job_schedule_unit_id')->nullable();
             $table->string('photo_path')->nullable();
             $table->string('photo_type')->nullable();
             $table->text('description')->nullable();

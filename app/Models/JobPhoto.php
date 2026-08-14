@@ -12,6 +12,7 @@ class JobPhoto extends Model
     protected $fillable = [
         'job_schedule_id',
         'job_schedule_room_id',
+        'job_schedule_unit_id',
         'photo_path',
         'photo_type',
         'description',
