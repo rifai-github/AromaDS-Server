@@ -13,7 +13,7 @@
        (e.g. "Unassign Material", team names) instead of wrapping to 2 lines. */
     .select2-dropdown:has(#select2-actionType-results) {
         width: max-content !important;
-        min-width: 100%;
+        max-width: 25vw;
     }
     .select2-dropdown:has(#select2-actionType-results) .select2-results__option {
         white-space: nowrap;
