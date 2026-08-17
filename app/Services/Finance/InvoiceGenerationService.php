@@ -27,6 +27,12 @@ class InvoiceGenerationService
 
     private const NON_BILLABLE_JOB_TYPES = ['install_free', 'install free', 'remove_free', 'remove free'];
 
+    // Job types whose invoice-period membership is decided by their own sequence counter
+    // (job_schedules.period, i.e. the "P.Invoice" value in the Job Schedule list / see
+    // JobSchedule::getInvoicePeriodAttribute()) rather than the calendar schedule_date
+    // window — see resolveInvoiceTriggerJobIds().
+    private const RECURRING_INVOICE_JOB_TYPES = ['service', 'service_routine', 'service_first'];
+
     protected $documentNumberService;
 
     public function __construct(DocumentNumberService $documentNumberService)
@@ -58,10 +64,12 @@ class InvoiceGenerationService
                 ];
             }
 
+            $periodNumber = $this->parsePeriodNumber($rentalPeriod);
+
             // Check if the invoice trigger jobs for this rental period are completed.
             // Before Service: IR/install BA triggers invoice.
             // After Service: CSR/service BA triggers invoice.
-            $allJobsCompleted = $this->checkInvoiceTriggerJobsCompletedInPeriod($contract, $periodStart, $periodEnd);
+            $allJobsCompleted = $this->checkInvoiceTriggerJobsCompletedInPeriod($contract, $periodStart, $periodEnd, $periodNumber);
 
             if (! $allJobsCompleted) {
                 DB::rollBack();
@@ -69,15 +77,15 @@ class InvoiceGenerationService
                 return [
                     'success' => false,
                     'message' => 'Invoice trigger jobs in the rental period are not completed with BA date yet',
-                    'completed_jobs' => $this->getCompletedJobsCount($contract, $periodStart, $periodEnd),
-                    'total_jobs' => $this->getTotalJobsCount($contract, $periodStart, $periodEnd),
+                    'completed_jobs' => $this->getCompletedJobsCount($contract, $periodStart, $periodEnd, $periodNumber),
+                    'total_jobs' => $this->getTotalJobsCount($contract, $periodStart, $periodEnd, $periodNumber),
                     'invoice_timing' => $this->getInvoiceTiming($contract),
                 ];
             }
 
             // NEW: Check BA Files Supported
             if ($contract->ba_files_supported) {
-                if (! $this->checkAllJobsHaveVerifiedBaFiles($contract, $periodStart, $periodEnd)) {
+                if (! $this->checkAllJobsHaveVerifiedBaFiles($contract, $periodStart, $periodEnd, $periodNumber)) {
                     DB::rollBack();
 
                     return [
@@ -118,7 +126,7 @@ class InvoiceGenerationService
             $invoice = $this->createInvoiceForRentalPeriod($contract, $rentalPeriod, $periodStart, $periodEnd);
 
             // Create invoice details based on completed jobs
-            $completedJobs = $this->createInvoiceDetailsFromJobs($invoice, $contract, $periodStart, $periodEnd);
+            $completedJobs = $this->createInvoiceDetailsFromJobs($invoice, $contract, $periodStart, $periodEnd, [], $periodNumber);
 
             // Attach approved BA files as supporting documents
             $this->attachApprovedBaFiles($invoice, $completedJobs);
@@ -156,10 +164,10 @@ class InvoiceGenerationService
     /**
      * Check if invoice trigger jobs in the rental period are completed.
      */
-    private function checkInvoiceTriggerJobsCompletedInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd): bool
+    private function checkInvoiceTriggerJobsCompletedInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): bool
     {
-        $totalJobs = $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
-        $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
+        $totalJobs = $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)->count();
+        $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)->count();
 
         return $totalJobs > 0 && $totalJobs === $completedJobs;
     }
@@ -167,25 +175,25 @@ class InvoiceGenerationService
     /**
      * Get count of completed jobs in period
      */
-    private function getCompletedJobsCount(Contract $contract, Carbon $periodStart, Carbon $periodEnd): int
+    private function getCompletedJobsCount(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): int
     {
-        return $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
+        return $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)->count();
     }
 
     /**
      * Get total jobs count in period
      */
-    private function getTotalJobsCount(Contract $contract, Carbon $periodStart, Carbon $periodEnd): int
+    private function getTotalJobsCount(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): int
     {
-        return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)->count();
+        return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)->count();
     }
 
     /**
      * Check if all completed jobs in period have verified BA files
      */
-    private function checkAllJobsHaveVerifiedBaFiles(Contract $contract, Carbon $periodStart, Carbon $periodEnd): bool
+    private function checkAllJobsHaveVerifiedBaFiles(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): bool
     {
-        $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
+        $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber);
 
         foreach ($completedJobs as $job) {
             // Check if job has at least one verified BA file
@@ -261,8 +269,110 @@ class InvoiceGenerationService
         };
     }
 
-    private function getCandidateInvoiceJobsQuery(Contract $contract, Carbon $periodStart, Carbon $periodEnd)
+    /**
+     * Parse the numeric period counter out of a "Period N" label (as produced by
+     * getRentalPeriodsForContract()). Returns null for anything that doesn't match, so
+     * callers that can't resolve a period number safely fall back to the original
+     * calendar-window-only behavior everywhere below.
+     */
+    private function parsePeriodNumber(?string $rentalPeriod): ?int
     {
+        if ($rentalPeriod && preg_match('/(\d+)/', $rentalPeriod, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * Mirrors JobSchedule::getInvoicePeriodAttribute()'s formula using the Contract
+     * instance already loaded/locked by the caller (avoids re-fetching the same contract
+     * through the job's jobAdvice.contract relation for every candidate job). Keep the two
+     * formulas in sync if either changes.
+     */
+    private function computeInvoicePeriodForJob(JobSchedule $job, Contract $contract): ?int
+    {
+        if (! in_array($this->normalizeJobType($job->type), self::RECURRING_INVOICE_JOB_TYPES, true)) {
+            return null;
+        }
+
+        if (! is_numeric($job->period)) {
+            return null;
+        }
+
+        $topInterval = max(1, (int) ($contract->top_interval_months ?? 1));
+        $freqTimes = is_numeric($job->service_frequency) ? max(1, (int) $job->service_frequency) : 1;
+        $divisor = max(1, $freqTimes * $topInterval);
+
+        return (int) ceil(((int) $job->period) / $divisor);
+    }
+
+    /**
+     * Resolve the job IDs that belong to this invoice period.
+     *
+     * Non-recurring jobs (install/remove/free/legacy) and recurring jobs with no numeric
+     * `period` set are matched purely by calendar schedule_date window, same as before.
+     *
+     * Recurring service/CSR jobs with a numeric `period` are matched by their own
+     * sequence-derived invoice period instead: the service-generation cadence (e.g. 3x per
+     * month) doesn't necessarily tile a calendar TOP-interval window evenly, so a job's
+     * actual schedule_date can drift onto the "wrong" side of the calendar boundary while
+     * the period it's meant to belong to (and the "P.Invoice" value shown in the Job
+     * Schedule list) does not move. Confirmed live on contract SBY-CA/26-08/0006 (17 Aug
+     * 2026): a 3x/month service inside a 1-month TOP put the 4th service's schedule_date on
+     * Period 1's last calendar day even though its own sequence number puts it in Period 2,
+     * which silently delayed Period 1's invoice until that unrelated Period-2 job finished.
+     *
+     * $periodNumber === null (callers that don't know their period number, e.g. direct
+     * legacy calls) preserves the original calendar-window-only behavior for every job.
+     */
+    private function resolveInvoiceTriggerJobIds(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber): array
+    {
+        $baseQuery = fn () => JobSchedule::whereHas('jobAdvice', function ($query) use ($contract) {
+            $query->where('contract_id', $contract->id);
+        })
+            ->whereNull('catalyst_backfill_at')
+            ->whereNotIn('status', self::NON_BILLABLE_JOB_STATUSES)
+            ->whereRaw("LOWER(COALESCE(type, '')) NOT IN (?, ?, ?, ?)", self::NON_BILLABLE_JOB_TYPES);
+
+        $windowJobs = $baseQuery()
+            ->whereBetween('schedule_date', [$periodStart, $periodEnd])
+            ->get(['id', 'type', 'period', 'service_frequency']);
+
+        $ids = $windowJobs->pluck('id')->all();
+
+        if ($periodNumber === null) {
+            return $ids;
+        }
+
+        // Drop window-matched recurring jobs whose sequence-derived period disagrees.
+        foreach ($windowJobs as $job) {
+            $invoicePeriod = $this->computeInvoicePeriodForJob($job, $contract);
+            if ($invoicePeriod !== null && $invoicePeriod !== $periodNumber) {
+                $ids = array_diff($ids, [$job->id]);
+            }
+        }
+
+        // Add recurring jobs whose sequence-derived period matches this period but whose
+        // schedule_date drifted outside the calendar window above.
+        $recurringContractJobs = $baseQuery()
+            ->whereRaw("LOWER(COALESCE(type, '')) IN (?, ?, ?)", self::RECURRING_INVOICE_JOB_TYPES)
+            ->whereNotNull('period')
+            ->get(['id', 'type', 'period', 'service_frequency']);
+
+        foreach ($recurringContractJobs as $job) {
+            if ($this->computeInvoicePeriodForJob($job, $contract) === $periodNumber) {
+                $ids[] = $job->id;
+            }
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    private function getCandidateInvoiceJobsQuery(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null)
+    {
+        $jobIds = $this->resolveInvoiceTriggerJobIds($contract, $periodStart, $periodEnd, $periodNumber);
+
         return JobSchedule::with([
             'jobAdvice.rooms.rentalProduct',
             'jobAdvice.rooms.contractRoom.room',
@@ -273,20 +383,14 @@ class InvoiceGenerationService
             'jobScheduleRooms.jobAdviceRoom.quotationRoom.room',
             'jobScheduleRooms.room',
         ])
-            ->whereHas('jobAdvice', function ($query) use ($contract) {
-                $query->where('contract_id', $contract->id);
-            })
-            ->whereBetween('schedule_date', [$periodStart, $periodEnd])
-            ->whereNull('catalyst_backfill_at')
-            ->whereNotIn('status', self::NON_BILLABLE_JOB_STATUSES)
-            ->whereRaw("LOWER(COALESCE(type, '')) NOT IN (?, ?, ?, ?)", self::NON_BILLABLE_JOB_TYPES)
+            ->whereIn('id', $jobIds)
             ->orderBy('schedule_date')
             ->orderBy('id');
     }
 
-    private function getInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd): \Illuminate\Support\Collection
+    private function getInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): \Illuminate\Support\Collection
     {
-        $candidates = $this->getCandidateInvoiceJobsQuery($contract, $periodStart, $periodEnd)->get();
+        $candidates = $this->getCandidateInvoiceJobsQuery($contract, $periodStart, $periodEnd, $periodNumber)->get();
 
         // Whether this period contains an actual Install (IR) job. When a free-trial install
         // (IF) continues straight into the contract with the unit still on the wall, no IR job
@@ -305,9 +409,9 @@ class InvoiceGenerationService
             ->values();
     }
 
-    private function getCompletedInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd): \Illuminate\Support\Collection
+    private function getCompletedInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): \Illuminate\Support\Collection
     {
-        return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)
+        return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)
             ->filter(function (JobSchedule $jobSchedule) {
                 return in_array($jobSchedule->status, self::BILLABLE_COMPLETED_STATUSES, true)
                     && ! empty($jobSchedule->ba_date);
@@ -323,9 +427,9 @@ class InvoiceGenerationService
      * Install Free/installation source for the same quotation and room. The CSR is
      * therefore intentionally invoice-ready while it is still unstarted.
      */
-    private function getReadyInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd): \Illuminate\Support\Collection
+    private function getReadyInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): \Illuminate\Support\Collection
     {
-        return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)
+        return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)
             ->filter(function (JobSchedule $jobSchedule) use ($contract) {
                 $isCompletedWithBa = in_array($jobSchedule->status, self::BILLABLE_COMPLETED_STATUSES, true)
                     && ! empty($jobSchedule->ba_date);
@@ -541,7 +645,7 @@ class InvoiceGenerationService
         }
 
         // Pull ba_date from the job that triggers invoice generation for this contract timing.
-        $firstJob = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)
+        $firstJob = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $this->parsePeriodNumber($rentalPeriod))
             ->sortBy([
                 ['schedule_date', 'asc'],
                 ['id', 'asc'],
@@ -623,9 +727,9 @@ class InvoiceGenerationService
     /**
      * Create invoice details from completed jobs
      */
-    private function createInvoiceDetailsFromJobs(Invoice $invoice, Contract $contract, Carbon $periodStart, Carbon $periodEnd, array $billedRentals = []): \Illuminate\Database\Eloquent\Collection
+    private function createInvoiceDetailsFromJobs(Invoice $invoice, Contract $contract, Carbon $periodStart, Carbon $periodEnd, array $billedRentals = [], ?int $periodNumber = null): \Illuminate\Database\Eloquent\Collection
     {
-        $pairs = $this->computeBillableRentalPairs($contract, $periodStart, $periodEnd, $billedRentals);
+        $pairs = $this->computeBillableRentalPairs($contract, $periodStart, $periodEnd, $billedRentals, null, $periodNumber);
 
         foreach ($pairs as $pair) {
             $this->createInvoiceDetail($invoice, $pair['job'], $pair['rental']);
@@ -634,7 +738,7 @@ class InvoiceGenerationService
         // Unfiltered (legacy/single-invoice) callers keep returning every ready job in the
         // period, regardless of whether it actually contributed a rental line — this matches
         // the original behavior relied on by attachApprovedBaFiles() for the single-invoice path.
-        return $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
+        return $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber);
     }
 
     /**
@@ -651,9 +755,9 @@ class InvoiceGenerationService
      *
      * @return array<int, array{job: JobSchedule, rental: array}>
      */
-    private function computeBillableRentalPairs(Contract $contract, Carbon $periodStart, Carbon $periodEnd, array $billedRentals = [], ?array $allowedContractRoomIds = null): array
+    private function computeBillableRentalPairs(Contract $contract, Carbon $periodStart, Carbon $periodEnd, array $billedRentals = [], ?array $allowedContractRoomIds = null, ?int $periodNumber = null): array
     {
-        $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd);
+        $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber);
         $pairs = [];
 
         foreach ($completedJobs as $jobSchedule) {
@@ -745,6 +849,7 @@ class InvoiceGenerationService
      */
     private function generateInvoicesPerBillingGroup(Contract $contract, \Illuminate\Support\Collection $activeBillingGroups, string $rentalPeriod, Carbon $periodStart, Carbon $periodEnd): array
     {
+        $periodNumber = $this->parsePeriodNumber($rentalPeriod);
         $roomBucketMap = $this->resolveContractRoomBillingGroupMap($contract, $activeBillingGroups);
         $allRoomIds = $contract->contractRooms->pluck('id')->all();
         $leftoverRoomIds = array_values(array_diff($allRoomIds, array_keys($roomBucketMap)));
@@ -771,7 +876,7 @@ class InvoiceGenerationService
             // Compute (without persisting) whether this bucket has anything to bill before
             // creating an invoice header/number for it, so an empty bucket doesn't burn a
             // document number or leave a zero-amount invoice behind.
-            $pairs = $this->computeBillableRentalPairs($contract, $periodStart, $periodEnd, [], $bucket['room_ids']);
+            $pairs = $this->computeBillableRentalPairs($contract, $periodStart, $periodEnd, [], $bucket['room_ids'], $periodNumber);
             if (empty($pairs)) {
                 continue;
             }
@@ -803,7 +908,7 @@ class InvoiceGenerationService
             // Scope BA-file/contract-file attachment to only the jobs that actually
             // contributed a line to THIS invoice, so the same BA file isn't attached to
             // more than one billing group's invoice for the same period.
-            $contributingJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd)
+            $contributingJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)
                 ->whereIn('id', array_unique($jobIds))
                 ->values();
 
@@ -1549,7 +1654,8 @@ class InvoiceGenerationService
                     'rental_period' => "Period {$periodCounter}",
                     'period_start' => $currentDate->toDateString(),
                     'period_end' => $periodEnd->toDateString(),
-                    'status' => $this->getPeriodStatus($contract, $currentDate, $periodEnd),
+                    'period_number' => $periodCounter,
+                    'status' => $this->getPeriodStatus($contract, $currentDate, $periodEnd, $periodCounter),
                 ];
 
                 $currentDate = $currentDate->copy()->addMonths($topIntervalMonths);
@@ -1567,6 +1673,11 @@ class InvoiceGenerationService
                     'rental_period' => "Period {$periodCounter}",
                     'period_start' => $currentDate->toDateString(),
                     'period_end' => $periodEnd->toDateString(),
+                    // Deliberately no 'period_number' here: the sequence-derived invoice_period
+                    // formula (computeInvoicePeriodForJob) assumes TOP-interval-sized buckets,
+                    // which doesn't hold for this per-calendar-month period type. Downstream
+                    // callers reading `$period['period_number'] ?? null` fall back to the
+                    // original calendar-window-only matching for 'monthly' contracts.
                     'status' => $this->getPeriodStatus($contract, $currentDate, $periodEnd),
                 ];
 
@@ -1582,10 +1693,10 @@ class InvoiceGenerationService
     /**
      * Get status of rental period
      */
-    private function getPeriodStatus(Contract $contract, Carbon $periodStart, Carbon $periodEnd): string
+    private function getPeriodStatus(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): string
     {
-        $totalJobs = $this->getTotalJobsCount($contract, $periodStart, $periodEnd);
-        $completedJobs = $this->getCompletedJobsCount($contract, $periodStart, $periodEnd);
+        $totalJobs = $this->getTotalJobsCount($contract, $periodStart, $periodEnd, $periodNumber);
+        $completedJobs = $this->getCompletedJobsCount($contract, $periodStart, $periodEnd, $periodNumber);
 
         if ($totalJobs === 0) {
             return 'no_jobs';
@@ -1692,7 +1803,7 @@ class InvoiceGenerationService
                     // first drafted would otherwise never get billed (the existence check
                     // above used to just skip). Backfill any missing rental lines while
                     // the invoice is still a draft.
-                    $this->refreshDraftInvoiceRentalDetails($exists, $periodStart, $periodEnd);
+                    $this->refreshDraftInvoiceRentalDetails($exists, $periodStart, $periodEnd, null, $period['period_number'] ?? null);
                 }
             }
 
@@ -1741,7 +1852,7 @@ class InvoiceGenerationService
             if (! $existing) {
                 $anyMissing = true;
             } elseif ($existing->invoice_status === Invoice::STATUS_DRAFT) {
-                $this->refreshDraftInvoiceRentalDetails($existing, $periodStart, $periodEnd, $bucket['room_ids']);
+                $this->refreshDraftInvoiceRentalDetails($existing, $periodStart, $periodEnd, $bucket['room_ids'], $period['period_number'] ?? null);
             }
         }
 
@@ -1775,7 +1886,7 @@ class InvoiceGenerationService
      * (see attemptAutoInvoiceForMultiBillingGroupPeriod()); null bills every eligible room,
      * which is the original single-invoice behavior.
      */
-    private function refreshDraftInvoiceRentalDetails(Invoice $invoice, Carbon $periodStart, Carbon $periodEnd, ?array $allowedContractRoomIds = null): void
+    private function refreshDraftInvoiceRentalDetails(Invoice $invoice, Carbon $periodStart, Carbon $periodEnd, ?array $allowedContractRoomIds = null, ?int $periodNumber = null): void
     {
         $contract = $invoice->contract_id ? Contract::find($invoice->contract_id) : null;
         if (! $contract) {
@@ -1790,10 +1901,10 @@ class InvoiceGenerationService
             ]))
             ->all();
 
-        DB::transaction(function () use ($invoice, $contract, $periodStart, $periodEnd, $billedRentals, $allowedContractRoomIds) {
+        DB::transaction(function () use ($invoice, $contract, $periodStart, $periodEnd, $billedRentals, $allowedContractRoomIds, $periodNumber) {
             $existingCount = $invoice->invoiceRentalDetails()->count();
 
-            $pairs = $this->computeBillableRentalPairs($contract, $periodStart, $periodEnd, $billedRentals, $allowedContractRoomIds);
+            $pairs = $this->computeBillableRentalPairs($contract, $periodStart, $periodEnd, $billedRentals, $allowedContractRoomIds, $periodNumber);
             foreach ($pairs as $pair) {
                 $this->createInvoiceDetail($invoice, $pair['job'], $pair['rental']);
             }

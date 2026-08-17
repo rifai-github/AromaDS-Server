@@ -5702,6 +5702,31 @@ class JobController extends Controller
                 'notes' => 'Penggantian unit via aplikasi teknisi'
             ]);
 
+            // 7. Leave a warehouse paper trail for both sides of the swap: the old unit
+            // going back to the warehouse (Inventory Receiving, pending physical return) and
+            // the new unit going out (Inventory Issuing, already issued — it's already
+            // installed in the field). Without this, swapped units were invisible to
+            // Inventory Issuing/Receiving entirely: the new SN jumped straight to `in_use`
+            // with no record of leaving the warehouse, and the old SN had no record of
+            // needing to come back. Best-effort: failing to log the paper trail should not
+            // block the swap the technician already performed in the field.
+            try {
+                $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
+                $reflection = new \ReflectionClass($jobScheduleController);
+
+                if ($oldSnModel) {
+                    $queueReceivingMethod = $reflection->getMethod('queueRemovedUnitReceiving');
+                    $queueReceivingMethod->setAccessible(true);
+                    $queueReceivingMethod->invoke($jobScheduleController, $job, $uow, $oldSnModel);
+                }
+
+                $queueIssuingMethod = $reflection->getMethod('queueSwappedUnitIssuing');
+                $queueIssuingMethod->setAccessible(true);
+                $queueIssuingMethod->invoke($jobScheduleController, $job, $newSnModel);
+            } catch (\Exception $e) {
+                \Log::error("swapSerialNumber: Failed to record Inventory Issuing/Receiving trail for Job {$job->job_number}: " . $e->getMessage());
+            }
+
             DB::commit();
 
             return response()->json([

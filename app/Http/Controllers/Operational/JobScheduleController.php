@@ -7564,6 +7564,77 @@ class JobScheduleController extends Controller
         }
     }
 
+    /**
+     * Record the warehouse-out side of a mobile "Ganti Unit" (swap serial number) action.
+     * The technician has already physically installed the replacement unit by the time this
+     * runs, so — unlike a normal Material Assign issuing that's prepared ahead of the visit —
+     * this is retroactive documentation: the Inventory Issuing is created already 'issued'
+     * and received, not 'pending'. Mirrors queueRemovedUnitReceiving()'s warehouse-in
+     * counterpart for the old unit being swapped out.
+     */
+    private function queueSwappedUnitIssuing(JobSchedule $job, \App\Models\SerialNumber $newSerialNumber): void
+    {
+        $productId = $newSerialNumber->master_product_id;
+        if (!$productId) {
+            \Log::warning("Job {$job->job_number}: cannot create swap-unit Inventory Issuing for Serial Number {$newSerialNumber->id} because product is missing.");
+            return;
+        }
+
+        $warehouse = $this->resolveRemoveUnitReceivingWarehouse($job, $newSerialNumber);
+        if (!$warehouse || !$warehouse->branch_id) {
+            \Log::warning("Job {$job->job_number}: cannot create swap-unit Inventory Issuing because warehouse/branch cannot be resolved.", [
+                'serial_number_id' => $newSerialNumber->id,
+            ]);
+            return;
+        }
+
+        $issuingNotePrefix = "Auto-generated: Ganti Unit via aplikasi teknisi pada Job {$job->job_number}";
+        $existing = \App\Models\InventoryIssuing::where('reference_no', $job->job_number)
+            ->where('remarks', 'like', $issuingNotePrefix . '%')
+            ->whereHas('items', function ($query) use ($newSerialNumber) {
+                $query->where('serial_number_id', $newSerialNumber->id);
+            })
+            ->first();
+        if ($existing) {
+            return;
+        }
+
+        $issuingNumber = app(\App\Services\DocumentNumberService::class)
+            ->generate('inventory_issuing', warehouseId: $warehouse->id);
+
+        $assignedReceiverId = $job->assigned_technician_id ?: \Auth::id();
+
+        $issuing = \App\Models\InventoryIssuing::create([
+            'issuing_number' => $issuingNumber,
+            'branch_id' => $warehouse->branch_id,
+            'warehouse_id' => $warehouse->id,
+            'issue_date' => now()->toDateString(),
+            'reference_no' => $job->job_number,
+            'requested_by' => \Auth::id(),
+            'issued_by' => \Auth::id(),
+            'received_by' => $assignedReceiverId,
+            'status' => 'issued',
+            'remarks' => "{$issuingNotePrefix} (unit sudah terpasang di lapangan, SN {$newSerialNumber->serial_number}).",
+            'issued_at' => now(),
+            'received_at' => now(),
+            'created_by' => \Auth::id(),
+            'updated_by' => \Auth::id(),
+        ]);
+
+        $issuing->items()->create([
+            'product_id' => $productId,
+            'serial_number_id' => $newSerialNumber->id,
+            'quantity_requested' => 1,
+            'quantity_issued' => 1,
+            'quantity_received' => 1,
+            'unit_price' => 0,
+            'total_price' => 0,
+            'notes' => "Ganti Unit: SN {$newSerialNumber->serial_number}",
+            'created_by' => \Auth::id(),
+            'updated_by' => \Auth::id(),
+        ]);
+    }
+
     private function resolveRemoveUnitReceivingWarehouse(JobSchedule $removeJob, ?\App\Models\SerialNumber $serialNumber): ?\App\Models\Warehouse
     {
         if ($serialNumber?->warehouse_id) {

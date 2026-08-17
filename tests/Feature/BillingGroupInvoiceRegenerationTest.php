@@ -234,6 +234,7 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->foreignId('job_advice_id')->nullable();
             $table->foreignId('room_id')->nullable();
             $table->integer('period')->nullable();
+            $table->integer('service_frequency')->nullable();
             $table->date('schedule_date')->nullable();
             $table->date('ba_date')->nullable();
             $table->text('internal_notes')->nullable();
@@ -2112,6 +2113,85 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             'room_name' => 'Ruang TOP',
             'total_price' => 1000000,
         ]);
+    }
+
+    /**
+     * Regression test for a bug found live on contract SBY-CA/26-08/0006 (17 Aug 2026):
+     * a 3x/month service inside a 1-month TOP interval put the 4th service's schedule_date
+     * on Period 1's last calendar day even though its own sequence number (period=4) puts it
+     * in Period 2. Before the fix, Period 1's job count silently included that Period-2 job,
+     * so Period 1's invoice never triggered after its own 3 services (periods 1-3) finished —
+     * only after the unrelated Period-2 job also finished.
+     */
+    public function test_sequence_derived_invoice_period_wins_over_calendar_drift_for_recurring_services(): void
+    {
+        $customer = Customer::create(['name' => 'Test Sequence Drift PT']);
+        $contract = Contract::create([
+            'contract_number' => 'SBY-CA/26-08/9999',
+            'customer_id' => $customer->id,
+            'payment_terms' => '1 bulan 1x',
+            'start_date' => '2026-08-15',
+            'end_date' => '2027-07-15',
+        ]);
+
+        $jobAdviceId = DB::table('job_advices')->insertGetId([
+            'contract_id' => $contract->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Period 1's calendar window is [2026-08-15, 2026-09-14] (1-month TOP from start_date).
+        JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-08/9001',
+            'type' => 'service',
+            'status' => 'done_job',
+            'job_advice_id' => $jobAdviceId,
+            'schedule_date' => '2026-08-25',
+            'ba_date' => '2026-08-15',
+            'period' => 2,
+            'service_frequency' => 3,
+        ]);
+        JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-09/9002',
+            'type' => 'service',
+            'status' => 'done_job',
+            'job_advice_id' => $jobAdviceId,
+            'schedule_date' => '2026-09-04',
+            'ba_date' => '2026-08-15',
+            'period' => 3,
+            'service_frequency' => 3,
+        ]);
+        // Sequence period 4 -> ceil(4/3) = Period 2, but its schedule_date (2026-09-14) still
+        // falls inside Period 1's calendar window — the exact drift that caused the bug.
+        // Left NOT done, to prove Period 1 does not wait for it.
+        JobSchedule::create([
+            'job_number' => 'SBY-CSR/26-09/9003',
+            'type' => 'service',
+            'status' => 'scheduled',
+            'job_advice_id' => $jobAdviceId,
+            'schedule_date' => '2026-09-14',
+            'period' => 4,
+            'service_frequency' => 3,
+        ]);
+
+        $service = new InvoiceGenerationService(new DocumentNumberService);
+        $periods = collect($service->getRentalPeriodsForContract($contract->id));
+
+        $period1 = $periods->firstWhere('rental_period', 'Period 1');
+        $period2 = $periods->firstWhere('rental_period', 'Period 2');
+
+        $this->assertNotNull($period1);
+        $this->assertNotNull($period2);
+        $this->assertSame(
+            'completed',
+            $period1['status'],
+            'Period 1 should complete once its own periods 1-3 are done, without waiting for the drifted Period-2 job.'
+        );
+        $this->assertNotSame(
+            'completed',
+            $period2['status'],
+            'Period 2 must not be marked completed while its own job (sequence period 4) is still unstarted.'
+        );
     }
 
     private function makeContractWithRentalFlow(
