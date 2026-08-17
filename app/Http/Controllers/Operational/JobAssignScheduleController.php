@@ -1244,11 +1244,21 @@ class JobAssignScheduleController extends Controller
                     $productTypeName = $detail->productType->name ?? null;
                     $productTypeId = $detail->product_type_id;
                     
+                    // A multiplier of 0 means "due once, at install only" (see
+                    // RentalDetail::isDueAtServiceSequence) regardless of whether the
+                    // material is a physical unit or a consumable/spare-part. Without this
+                    // exemption, a non-unit item with multiplier 0 (e.g. a spare-part filter
+                    // meant to ship once with the install) passes the frequency check above
+                    // but is then silently dropped by the is_unit filter below on every job,
+                    // since it's only ever "due" on the one job type (install) that filter excludes it from.
+                    $isPermanentNonUnitDueAtInstall = $jobType === 'install'
+                        && (int) ($detail->service_frequency_multiplier ?? -1) === 0;
+
                     // FILTER: Check is_unit flag based on job type (only for install and service jobs)
                     // Install job: only include units (is_unit = true)
                     // Service job: only include non-units (is_unit = false) - refill, cleaner, etc.
                     // Other job types: include all materials (no filter)
-                    if ($filterByUnitType) {
+                    if ($filterByUnitType && !$isPermanentNonUnitDueAtInstall) {
                         // Check is_unit from productCategory relationship first
                         $detailProductCategory = $detail->productCategory;
                         $detailProductType = $detail->productType;
