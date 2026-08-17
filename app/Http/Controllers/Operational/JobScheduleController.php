@@ -546,9 +546,9 @@ class JobScheduleController extends Controller
                 $targetKey = $normalizedKey;
                 if ($viewMode === 'room') {
                     $jobColumns = [
-                        'job_number', 'type', 'company_name', 'contract_number', 'period', 
-                        'p_invoice', 'schedule_date', 'expected_date', 'ba_date', 
-                        'assign_date', 'issue_date', 'postal_code', 'district', 
+                        'job_number', 'type', 'company_name', 'contract_number', 'period',
+                        'schedule_date', 'expected_date', 'ba_date',
+                        'assign_date', 'issue_date', 'postal_code', 'district',
                         'internal_notes', 'reference_number'
                     ];
                     if (in_array($key, $jobColumns)) {
@@ -561,9 +561,9 @@ class JobScheduleController extends Controller
                 }
                 
                 $allowedDirectColumns = [
-                    'job_number', 'type', 'company_name', 'contract_number', 'period', 
-                    'p_invoice', 'schedule_date', 'expected_date', 'ba_date', 
-                    'assign_date', 'issue_date', 'postal_code', 'district', 
+                    'job_number', 'type', 'company_name', 'contract_number', 'period',
+                    'schedule_date', 'expected_date', 'ba_date',
+                    'assign_date', 'issue_date', 'postal_code', 'district',
                     'internal_notes', 'reference_number', 'status', 'day', 'sub_district'
                 ];
                 
