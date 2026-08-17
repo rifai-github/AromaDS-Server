@@ -282,6 +282,15 @@
                         return $serviceCategory['name'];
                     }
 
+                    // A non-unit component (e.g. a replacement part/prefilter) is being
+                    // serviced even when its category name doesn't literally say "refill".
+                    // Presence of a unit category alongside it (unit_refill flow) does not
+                    // mean there is nothing to print — only "no non-unit category at all"
+                    // does, which is handled below.
+                    if ($nonUnitCategory) {
+                        return $nonUnitCategory['name'] ?: 'Refill';
+                    }
+
                     $rentalText = strtolower(trim(collect([
                         data_get($rental, 'category'),
                         data_get($rental, 'rental_name'),
@@ -295,11 +304,17 @@
                         return 'Refill';
                     }
 
-                    if ($unitCategory) {
+                    // Rental has known material composition (rentalDetails were resolved)
+                    // and it's unit-only with no refill/part component - nothing to print.
+                    if ($categories->isNotEmpty() && $unitCategory) {
                         return null;
                     }
 
-                    return $nonUnitCategory ? 'Refill' : null;
+                    // No composition data available at all - fall back to the rental's own
+                    // name rather than silently dropping a legitimate service item.
+                    return data_get($rental, 'category')
+                        ?: (data_get($rental, 'rental_name')
+                        ?: (data_get($jobAdviceRoom, 'rental_name') ?: $fallback));
                 }
 
                 $category = $unitCategory['name'] ?? $firstCategory['name'] ?? null;
