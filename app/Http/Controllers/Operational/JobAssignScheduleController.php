@@ -1466,7 +1466,7 @@ class JobAssignScheduleController extends Controller
                     }
                     
                     // DOUBLE CHECK: Verify product's is_unit matches job type requirement (only for install and service jobs)
-                    if ($filterByUnitType) {
+                    if ($filterByUnitType && !$isPermanentNonUnitDueAtInstall) {
                         // Load productType if not already loaded
                         if (!$product->relationLoaded('productType')) {
                             $product->load('productType');
