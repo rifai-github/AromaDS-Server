@@ -1327,7 +1327,7 @@ class JobAssignScheduleController extends Controller
                     if ($isAromaType && $aromaProduct) {
                         // PRIORITY: Aroma dari Quotation (yang dipilih di quotation) > Aroma dari Master Rental
                         // But verify is_unit matches job type requirement
-                        if ($filterByUnitType) {
+                        if ($filterByUnitType && !$isPermanentNonUnitDueAtInstall) {
                             $aromaProductIsUnit = $aromaProduct->productType && $aromaProduct->productType->is_unit;
                             if ($needUnits && !$aromaProductIsUnit) {
                                 $product = null; // Don't use aromaProduct, try other sources
@@ -1357,7 +1357,7 @@ class JobAssignScheduleController extends Controller
                         }
                         
                         // Early validation: Check if product's is_unit matches job type requirement
-                        if ($filterByUnitType) {
+                        if ($filterByUnitType && !$isPermanentNonUnitDueAtInstall) {
                             // Normalize is_unit check
                             $candidateProductIsUnit = false;
                             
@@ -1409,7 +1409,7 @@ class JobAssignScheduleController extends Controller
                         
                         if ($selectedProducts->count() > 0) {
                             // Filter by is_unit if needed
-                            if ($filterByUnitType) {
+                            if ($filterByUnitType && !$isPermanentNonUnitDueAtInstall) {
                                 $filteredProducts = $selectedProducts->filter(function($p) use ($needUnits, $needNonUnits) {
                                     // Normalize is_unit check (can be 1/0 or true/false)
                                     $pIsUnit = false;
@@ -1436,7 +1436,7 @@ class JobAssignScheduleController extends Controller
                                 ->get();
                             
                             if ($allAllowedProducts->count() > 0) {
-                                if ($filterByUnitType) {
+                                if ($filterByUnitType && !$isPermanentNonUnitDueAtInstall) {
                                     $filteredProducts = $allAllowedProducts->filter(function($p) use ($needUnits, $needNonUnits) {
                                         // Normalize is_unit check (can be 1/0 or true/false)
                                         $pIsUnit = false;
