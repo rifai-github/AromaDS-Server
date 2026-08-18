@@ -25,7 +25,7 @@ class TaxFileImportProcessingTest extends TestCase
         Schema::create('tax_file_imports', function (Blueprint $table) {
             $table->id();
             $table->string('import_number')->unique();
-            $table->string('file_name');
+            $table->string('file_name')->nullable();
             $table->date('import_date');
             $table->foreignId('bank_id')->nullable();
             $table->string('file_format');
@@ -37,8 +37,7 @@ class TaxFileImportProcessingTest extends TestCase
             $table->unsignedInteger('not_approved')->default(0);
             $table->unsignedInteger('rejected')->default(0);
             $table->boolean('auto_process')->default(false);
-            $table->boolean('skip_header')->default(true);
-            $table->string('delimiter')->default(',');
+            $table->string('delimiter')->nullable();
             $table->text('notes')->nullable();
             $table->text('error_log')->nullable();
             $table->string('status')->default('pending');
@@ -97,6 +96,18 @@ class TaxFileImportProcessingTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('invoice_files', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('invoice_id');
+            $table->string('file_name')->nullable();
+            $table->string('file_path')->nullable();
+            $table->string('file_type')->nullable();
+            $table->text('description')->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->timestamps();
+        });
+
         DB::table('invoices')->insert([
             [
                 'id' => 1,
@@ -150,6 +161,7 @@ class TaxFileImportProcessingTest extends TestCase
             }
         }
 
+        Schema::dropIfExists('invoice_files');
         Schema::dropIfExists('invoice_activities');
         Schema::dropIfExists('invoices');
         Schema::dropIfExists('tax_file_import_details');
@@ -165,7 +177,6 @@ class TaxFileImportProcessingTest extends TestCase
             'file_name' => basename($this->testFilePath),
             'import_date' => '2026-07-19',
             'file_format' => 'csv',
-            'skip_header' => true,
             'delimiter' => ',',
             'status' => 'processing',
             'created_at' => now(),
@@ -218,7 +229,6 @@ class TaxFileImportProcessingTest extends TestCase
                 'file_name' => basename($tabFilePath),
                 'import_date' => '2026-07-19',
                 'file_format' => 'csv',
-                'skip_header' => true,
                 'delimiter' => TaxFileImport::DELIMITER_TAB,
                 'status' => 'processing',
                 'created_at' => now(),
@@ -270,7 +280,6 @@ class TaxFileImportProcessingTest extends TestCase
             'success_count' => 1,
             'failed_count' => 0,
             'success_rate' => 100,
-            'skip_header' => true,
             'delimiter' => ';',
             'status' => 'completed',
             'processed_at' => now(),
@@ -303,51 +312,23 @@ class TaxFileImportProcessingTest extends TestCase
         $response->assertSee('Matched with Invoice: INV-001');
     }
 
-    public function test_store_accepts_each_supported_delimiter(): void
-    {
-        $delimiters = [
-            'comma' => TaxFileImport::DELIMITER_COMMA,
-            'semicolon' => TaxFileImport::DELIMITER_SEMICOLON,
-            'tab' => TaxFileImport::DELIMITER_TAB,
-        ];
-
-        foreach ($delimiters as $label => $delimiter) {
-            $file = UploadedFile::fake()->create(
-                "delimiter-{$label}.csv",
-                1,
-                'text/csv',
-            );
-
-            $response = $this
-                ->withoutMiddleware()
-                ->withHeaders([
-                    'Accept' => 'application/json',
-                    'X-Requested-With' => 'XMLHttpRequest',
-                ])
-                ->post(route('finance.tax-file-imports.store'), [
-                    'file' => $file,
-                    'auto_process' => '0',
-                    'skip_header' => '1',
-                    'delimiter' => $delimiter,
-                    'notes' => "delimiter-test-{$label}",
-                ]);
-
-            $response->assertOk();
-            $response->assertJsonPath('status', 'success');
-
-            $import = TaxFileImport::where('notes', "delimiter-test-{$label}")->firstOrFail();
-
-            $this->assertSame($delimiter, $import->delimiter);
-            $this->uploadedImportFiles[] = public_path('uploads/tax-file-imports/'.$import->file_name);
-        }
-    }
-
     /**
-     * The create form no longer asks for a delimiter or skip-header: the parser
-     * finds the header row and the separator itself.
+     * The create form no longer asks for Auto Process, delimiter, or
+     * skip-header: every import is processed immediately, and the parser
+     * finds the header row and the separator itself. The file input is also
+     * an array now (`files[]`) to make room for the multi-PDF path.
      */
-    public function test_store_no_longer_requires_import_settings(): void
+    public function test_store_no_longer_requires_import_settings_and_processes_immediately(): void
     {
+        // Real content matters now: processing is mandatory, so a random-bytes
+        // fake file (fine when Auto Process could be left off) would fail to
+        // parse and turn this happy-path test into a failure-path test.
+        $file = UploadedFile::fake()->createWithContent(
+            'coretax-result.csv',
+            "Reference,TaxInvoiceNumber,TaxInvoiceDate,TaxInvoiceStatus,VAT\n"
+            ."INV-001,0400250035384444,2026-07-19T00:00:00,APPROVED,110000\n",
+        );
+
         $response = $this
             ->withoutMiddleware()
             ->withHeaders([
@@ -355,8 +336,7 @@ class TaxFileImportProcessingTest extends TestCase
                 'X-Requested-With' => 'XMLHttpRequest',
             ])
             ->post(route('finance.tax-file-imports.store'), [
-                'file' => UploadedFile::fake()->create('coretax-result.csv', 1, 'text/csv'),
-                'auto_process' => '0',
+                'files' => [$file],
                 'notes' => 'no-import-settings-test',
             ]);
 
@@ -366,7 +346,85 @@ class TaxFileImportProcessingTest extends TestCase
         $import = TaxFileImport::where('notes', 'no-import-settings-test')->firstOrFail();
 
         $this->assertSame(TaxFileImport::DELIMITER_COMMA, $import->delimiter);
+        $this->assertTrue((bool) $import->auto_process);
+        // "Processed immediately" means the response already reflects a
+        // finished run, not a lingering 'pending' row waiting on the Process
+        // button that used to gate Auto Process = No.
+        $this->assertSame('completed', $import->status);
         $this->uploadedImportFiles[] = public_path('uploads/tax-file-imports/'.$import->file_name);
+    }
+
+    /**
+     * A batch that isn't a spreadsheet at all, or that mixes CSV with PDF, or
+     * that submits more than one CSV, must be rejected before anything
+     * touches disk or the database.
+     */
+    public function test_store_rejects_mixed_or_multiple_spreadsheet_files(): void
+    {
+        $mixed = $this
+            ->withoutMiddleware()
+            ->withHeaders(['Accept' => 'application/json', 'X-Requested-With' => 'XMLHttpRequest'])
+            ->post(route('finance.tax-file-imports.store'), [
+                'files' => [
+                    UploadedFile::fake()->create('a.csv', 1, 'text/csv'),
+                    UploadedFile::fake()->create('b.pdf', 1, 'application/pdf'),
+                ],
+            ]);
+
+        $mixed->assertStatus(422);
+        $mixed->assertJsonPath('status', 'error');
+
+        $twoCsv = $this
+            ->withoutMiddleware()
+            ->withHeaders(['Accept' => 'application/json', 'X-Requested-With' => 'XMLHttpRequest'])
+            ->post(route('finance.tax-file-imports.store'), [
+                'files' => [
+                    UploadedFile::fake()->create('a.csv', 1, 'text/csv'),
+                    UploadedFile::fake()->create('b.csv', 1, 'text/csv'),
+                ],
+            ]);
+
+        $twoCsv->assertStatus(422);
+        $twoCsv->assertJsonPath('status', 'error');
+
+        $this->assertDatabaseCount('tax_file_imports', 0);
+    }
+
+    /**
+     * This is the transaction landmine we found: store() used to wrap file
+     * creation AND processing in one DB transaction, so a processing failure
+     * rolled the import record itself back out of existence, taking the only
+     * trace of what was uploaded with it. Processing is no longer optional —
+     * there is no Auto Process choice — so this path runs on every single
+     * submission now, and the record plus the uploaded file must survive a
+     * processing failure so there is something left to diagnose or retry.
+     */
+    public function test_a_processing_failure_leaves_the_import_record_and_file_in_place(): void
+    {
+        // No recognisable "Reference"/"TaxInvoiceStatus" header -> CoreTaxImportService
+        // throws, which is exactly the failure mode this test guards against.
+        $badFile = UploadedFile::fake()->createWithContent('not-a-coretax-file.csv', "foo,bar\n1,2\n");
+
+        $response = $this
+            ->withoutMiddleware()
+            ->withHeaders(['Accept' => 'application/json', 'X-Requested-With' => 'XMLHttpRequest'])
+            ->post(route('finance.tax-file-imports.store'), [
+                'files' => [$badFile],
+                'notes' => 'processing-failure-test',
+            ]);
+
+        // A clean, friendly failure response — not Laravel's default exception page.
+        $response->assertServerError();
+        $response->assertJsonPath('status', 'error');
+
+        $import = TaxFileImport::where('notes', 'processing-failure-test')->first();
+        $this->assertNotNull($import, 'the import record was rolled back / deleted on a processing failure');
+        $this->assertSame('failed', $import->status);
+        $this->assertNotNull($import->error_log);
+
+        $storedPath = public_path('uploads/tax-file-imports/'.$import->file_name);
+        $this->assertFileExists($storedPath, 'the uploaded file was deleted on a processing failure');
+        $this->uploadedImportFiles[] = $storedPath;
     }
 
     public function test_store_accepts_exported_csv_detected_as_plain_text(): void
@@ -375,8 +433,8 @@ class TaxFileImportProcessingTest extends TestCase
         file_put_contents(
             $temporaryCsvPath,
             implode("\n", [
-                'NPWP,Nama,Alamat,"Tanggal Faktur","Nomor Faktur",DPP,PPN,Keterangan',
-                '0002026072072026,XYZ,"Jalan Pajak Raya Manunggal Surabaya Raya",2026-07-03,SBY-INV/26-07/0002,300000.00,33000.00,"Period 2"',
+                'Reference,TaxInvoiceNumber,TaxInvoiceDate,TaxInvoiceStatus,VAT',
+                'INV-001,0400250035384444,2026-07-19T00:00:00,APPROVED,110000',
             ])."\n",
         );
 
@@ -397,10 +455,7 @@ class TaxFileImportProcessingTest extends TestCase
                 'X-Requested-With' => 'XMLHttpRequest',
             ])
             ->post(route('finance.tax-file-imports.store'), [
-                'file' => $file,
-                'auto_process' => '0',
-                'skip_header' => '1',
-                'delimiter' => TaxFileImport::DELIMITER_COMMA,
+                'files' => [$file],
                 'notes' => 'plain-text-csv-upload-test',
             ]);
 
@@ -471,14 +526,11 @@ class TaxFileImportProcessingTest extends TestCase
                     'X-Requested-With' => 'XMLHttpRequest',
                 ])
                 ->post(route('finance.tax-file-imports.store'), [
-                    'file' => UploadedFile::fake()->create(
+                    'files' => [UploadedFile::fake()->create(
                         $originalFileName,
                         1,
                         'text/csv',
-                    ),
-                    'auto_process' => '0',
-                    'skip_header' => '1',
-                    'delimiter' => TaxFileImport::DELIMITER_COMMA,
+                    )],
                 ]);
 
             $response->assertServerError();
@@ -492,5 +544,84 @@ class TaxFileImportProcessingTest extends TestCase
                 unlink($orphanedFile);
             }
         }
+    }
+
+    /**
+     * End-to-end through the real HTTP endpoint: multiple PDFs in one
+     * request, matched, promoted, archived onto the invoice, and zipped for
+     * the Download button — the plumbing that is unique to going through
+     * store() rather than calling CoreTaxFakturPdfImportService directly
+     * (which CoreTaxFakturPdfImportTest already covers in depth).
+     */
+    public function test_store_accepts_a_pdf_batch_and_issues_the_matched_invoice(): void
+    {
+        $pdfOne = UploadedFile::fake()->createWithContent(
+            'faktur-1.pdf',
+            file_get_contents($this->makeFakturPdfFixture('INV-001', '04002600321184875')),
+        );
+        $pdfTwo = UploadedFile::fake()->createWithContent(
+            'faktur-2.pdf',
+            file_get_contents($this->makeFakturPdfFixture('INV-DOES-NOT-EXIST', '04002600321184999')),
+        );
+
+        $response = $this
+            ->withoutMiddleware()
+            ->withHeaders(['Accept' => 'application/json', 'X-Requested-With' => 'XMLHttpRequest'])
+            ->post(route('finance.tax-file-imports.store'), [
+                'files' => [$pdfOne, $pdfTwo],
+                'notes' => 'pdf-batch-http-test',
+            ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('status', 'success');
+
+        $import = TaxFileImport::where('notes', 'pdf-batch-http-test')->firstOrFail();
+        $this->assertSame('pdf', $import->file_format);
+        $this->assertSame('completed', $import->status);
+        $this->assertSame(2, $import->total_records);
+        $this->assertSame(1, $import->success_count);
+        $this->assertSame(1, $import->failed_count);
+
+        // Uploads are archived as a zip so the existing Download button keeps working.
+        $this->assertStringEndsWith('.zip', $import->file_name);
+        $zipPath = public_path('uploads/tax-file-imports/'.$import->file_name);
+        $this->assertFileExists($zipPath);
+        $this->uploadedImportFiles[] = $zipPath;
+
+        $invoice = DB::table('invoices')->where('id', 1)->first();
+        $this->assertSame('tax_approved', $invoice->invoice_status);
+        $this->assertSame('04002600321184875', $invoice->coretax_faktur_number);
+
+        $archived = DB::table('invoice_files')->where('invoice_id', 1)->first();
+        $this->assertNotNull($archived, 'the matched faktur pajak PDF was not archived onto the invoice');
+        $this->uploadedImportFiles[] = public_path($archived->file_path);
+    }
+
+    private function makeFakturPdfFixture(string $reference, string $fakturNumber): string
+    {
+        $html = <<<HTML
+            <html><body style="font-family: sans-serif; font-size: 12px;">
+            <p style="text-align:center;">Faktur Pajak</p>
+            <p>Kode dan Nomor Seri Faktur Pajak: {$fakturNumber}</p>
+            <p>Pengusaha Kena Pajak:</p>
+            <p>Nama : PT CONTOH PENJUAL</p>
+            <p>NPWP : 0017556507035000</p>
+            <p>Pembeli Barang Kena Pajak/Penerima Jasa Kena Pajak:</p>
+            <p>Nama : PT CONTOH PEMBELI</p>
+            <p>NPWP : 0010613925093000</p>
+            <p>Dasar Pengenaan Pajak &nbsp;&nbsp;&nbsp;&nbsp; 1.000.000,00</p>
+            <p>Jumlah PPN (Pajak Pertambahan Nilai) &nbsp;&nbsp;&nbsp;&nbsp; 110.000,00</p>
+            <p>Sesuai dengan ketentuan yang berlaku, faktur pajak ini ditandatangani secara elektronik.</p>
+            <p>KOTA ADM. JAKARTA BARAT, 19 Juli 2026</p>
+            <p>Ditandatangani secara elektronik</p>
+            <p>(Referensi: {$reference})</p>
+            </body></html>
+            HTML;
+
+        $path = sys_get_temp_dir().'/store_pdf_fixture_'.uniqid().'.pdf';
+        file_put_contents($path, \Barryvdh\DomPDF\Facade\Pdf::loadHTML($html)->output());
+        $this->uploadedImportFiles[] = $path;
+
+        return $path;
     }
 }

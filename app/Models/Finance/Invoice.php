@@ -9,6 +9,7 @@ use App\Models\JobSchedule;
 use App\Models\TaxSetting;
 use App\Models\User;
 use App\Services\DocumentNumberService;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -556,6 +557,48 @@ class Invoice extends Model
                 ? self::STATUS_APPROVED
                 : $this->invoice_status,
         ]);
+    }
+
+    /**
+     * Apply a faktur pajak CoreTax issued for this invoice: stamp the number,
+     * promote approved -> tax_approved, and log the activity. Shared by both
+     * the CSV/XLSX result import and the individual PDF import so the two
+     * paths cannot silently diverge in what counts as "issued".
+     *
+     * A cancelled invoice is left untouched — a faktur that arrives after the
+     * invoice was already cancelled here should not resurrect it.
+     *
+     * @return array{applied: bool, promoted: bool, note: string}
+     */
+    public function applyCoreTaxFaktur(string $fakturNumber, ?Carbon $fakturDate, string $status, string $source): array
+    {
+        if ($this->invoice_status === self::STATUS_CANCELLED) {
+            return [
+                'applied' => false,
+                'promoted' => false,
+                'note' => 'Invoice sudah dibatalkan, tidak diubah.',
+            ];
+        }
+
+        $promoted = $this->invoice_status === self::STATUS_APPROVED;
+
+        $this->update(array_merge([
+            'coretax_faktur_number' => $fakturNumber,
+            'coretax_faktur_date' => $fakturDate,
+            'coretax_status' => $status,
+        ], $promoted ? ['invoice_status' => self::STATUS_TAX_APPROVED] : []));
+
+        $note = $promoted
+            ? 'Faktur Pajak '.$fakturNumber.' diterima dari CoreTax; invoice terbit (Tax Approved).'
+            : 'Faktur Pajak '.$fakturNumber.' diterima dari CoreTax; status invoice tetap '.$this->invoice_status.'.';
+
+        $this->invoiceActivities()->create([
+            'activity_type' => 'updated',
+            'notes' => $note.' Sumber: '.$source.'.',
+            'created_by' => auth()->id(),
+        ]);
+
+        return ['applied' => true, 'promoted' => $promoted, 'note' => $note];
     }
 
     /**

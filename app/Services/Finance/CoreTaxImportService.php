@@ -98,34 +98,17 @@ class CoreTaxImportService
             return;
         }
 
-        if ($invoice->invoice_status === Invoice::STATUS_CANCELLED) {
+        $result = $invoice->applyCoreTaxFaktur($fakturNumber, $fakturDate, $status, 'import '.$import->import_number);
+
+        if (! $result['applied']) {
             $summary['skipped']++;
-            $this->writeDetail($import, $reference, $fakturNumber, $fakturDate, $vat, 'warning',
-                'Invoice sudah dibatalkan, tidak diubah.');
+            $this->writeDetail($import, $reference, $fakturNumber, $fakturDate, $vat, 'warning', $result['note']);
 
             return;
         }
 
-        $promoted = $invoice->invoice_status === Invoice::STATUS_APPROVED;
-
-        $invoice->update(array_merge([
-            'coretax_faktur_number' => $fakturNumber,
-            'coretax_faktur_date' => $fakturDate,
-            'coretax_status' => $status,
-        ], $promoted ? ['invoice_status' => Invoice::STATUS_TAX_APPROVED] : []));
-
-        $note = $promoted
-            ? 'Faktur Pajak '.$fakturNumber.' diterima dari CoreTax; invoice terbit (Tax Approved).'
-            : 'Faktur Pajak '.$fakturNumber.' diterima dari CoreTax; status invoice tetap '.$invoice->invoice_status.'.';
-
-        $invoice->invoiceActivities()->create([
-            'activity_type' => 'updated',
-            'notes' => $note.' Sumber: import '.$import->import_number.'.',
-            'created_by' => Auth::id(),
-        ]);
-
         $summary['approved']++;
-        $this->writeDetail($import, $reference, $fakturNumber, $fakturDate, $vat, 'approved', $note);
+        $this->writeDetail($import, $reference, $fakturNumber, $fakturDate, $vat, 'approved', $result['note']);
     }
 
     private function writeDetail(

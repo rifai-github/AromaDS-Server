@@ -1029,18 +1029,10 @@ function openCreateModal() {
             <div class="modal-section">
                 <div class="modal-section-title">Import Information</div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="form-group">
+                    <div class="form-group" style="grid-column: 1 / -1;">
                         <label class="form-label">File *</label>
-                        <input type="file" name="file" class="form-input" accept=".csv,.xlsx,.xls" required>
-                        <small class="text-gray-500">File hasil dari CoreTax &mdash; CSV atau Excel (.xlsx, .xls), maksimal 10 MB. Baris header dan pemisah kolom dikenali otomatis.</small>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Auto Process</label>
-                        <select name="auto_process" class="form-input">
-                            <option value="1">Yes</option>
-                            <option value="0">No</option>
-                        </select>
-                        <small class="text-gray-500">Yes: file langsung diproses. No: tersimpan sebagai Pending sampai tombol Process ditekan.</small>
+                        <input type="file" name="files[]" class="form-input" accept=".csv,.xlsx,.xls,.pdf" multiple required>
+                        <small class="text-gray-500">Satu file CSV/Excel hasil dari CoreTax, ATAU satu&ndash;banyak file PDF Faktur Pajak (&ldquo;Output Tax Invoice&rdquo;) yang diunduh satuan &mdash; jangan dicampur. Maksimal 10 MB per file. Diproses langsung begitu Start Import ditekan.</small>
                     </div>
                     <div class="form-group" style="grid-column: 1 / -1;">
                         <label class="form-label">Notes</label>
@@ -1050,11 +1042,11 @@ function openCreateModal() {
             </div>
         </form>
     `;
-    
+
     // Add modal footer
     document.getElementById('modalFooter').innerHTML = `
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-        <button type="submit" form="form" class="btn btn-primary">Create Import</button>
+        <button type="submit" form="form" class="btn btn-primary">Start Import</button>
     `;
 }
 
