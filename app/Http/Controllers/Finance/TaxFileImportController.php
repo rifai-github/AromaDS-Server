@@ -125,7 +125,11 @@ class TaxFileImportController extends Controller
         try {
             $import = TaxFileImport::create([
                 'import_number' => $importNumber,
-                'file_name' => null,
+                // `file_name` is NOT NULL in the DB. The zip's name is
+                // predictable up front (see archivePdfImportFolder()), so
+                // there is no need to leave this blank until processing
+                // finishes — that would violate the column's constraint.
+                'file_name' => $importNumber.'.zip',
                 'import_date' => now()->toDateString(),
                 'bank_id' => null,
                 'file_format' => 'pdf',
@@ -164,25 +168,28 @@ class TaxFileImportController extends Controller
     /**
      * Zips the uploaded PDFs into a single archive so the existing "Download"
      * button on the list — built for one file per import — keeps working
-     * unmodified for a PDF-batch import too.
+     * unmodified for a PDF-batch import too. `file_name` is already set to
+     * this exact name at creation (see store()); throwing here, rather than
+     * silently skipping a failed zip::open(), stops the import from being
+     * marked 'completed' with a Download button that points at a file that
+     * was never actually written.
      */
     private function archivePdfImportFolder(TaxFileImport $import, string $folder): void
     {
-        $zipName = $import->import_number.'.zip';
-        $zipPath = public_path('uploads/tax-file-imports/'.$zipName);
+        $zipPath = public_path('uploads/tax-file-imports/'.$import->file_name);
 
         $zip = new \ZipArchive;
 
-        if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === true) {
-            foreach (glob($folder.'/*') ?: [] as $file) {
-                $zip->addFile($file, basename($file));
-            }
-            $zip->close();
+        if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            throw new \RuntimeException('Could not create archive for the uploaded PDFs.');
         }
 
-        $this->deleteDirectory($folder);
+        foreach (glob($folder.'/*') ?: [] as $file) {
+            $zip->addFile($file, basename($file));
+        }
+        $zip->close();
 
-        $import->update(['file_name' => $zipName]);
+        $this->deleteDirectory($folder);
     }
 
     private function deleteDirectory(string $path): void

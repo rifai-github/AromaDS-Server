@@ -63,7 +63,7 @@ class CoreTaxFakturPdfImportTest extends TestCase
         Schema::create('invoice_files', function (Blueprint $table) {
             $table->id();
             $table->foreignId('invoice_id');
-            $table->string('file_name')->nullable();
+            $table->string('file_name');
             $table->string('file_path')->nullable();
             $table->string('file_type')->nullable();
             $table->text('description')->nullable();
@@ -75,7 +75,7 @@ class CoreTaxFakturPdfImportTest extends TestCase
         Schema::create('tax_file_imports', function (Blueprint $table) {
             $table->id();
             $table->string('import_number');
-            $table->string('file_name')->nullable();
+            $table->string('file_name');
             $table->date('import_date')->nullable();
             $table->string('file_format')->nullable();
             $table->integer('total_records')->default(0);
@@ -290,8 +290,14 @@ class CoreTaxFakturPdfImportTest extends TestCase
 
     private function makeImport(): TaxFileImport
     {
+        $importNumber = 'TFI-PDF-TEST-'.uniqid();
+
         return TaxFileImport::create([
-            'import_number' => 'TFI-PDF-TEST-'.uniqid(),
+            'import_number' => $importNumber,
+            // NOT NULL in the real DB; the controller sets this to the
+            // eventual zip name up front (see store()) — mirrored here since
+            // this test calls the service directly, bypassing the controller.
+            'file_name' => $importNumber.'.zip',
             'import_date' => now()->toDateString(),
             'file_format' => 'pdf',
             'status' => 'processing',

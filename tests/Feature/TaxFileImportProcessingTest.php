@@ -25,7 +25,7 @@ class TaxFileImportProcessingTest extends TestCase
         Schema::create('tax_file_imports', function (Blueprint $table) {
             $table->id();
             $table->string('import_number')->unique();
-            $table->string('file_name')->nullable();
+            $table->string('file_name');
             $table->date('import_date');
             $table->foreignId('bank_id')->nullable();
             $table->string('file_format');
@@ -99,7 +99,7 @@ class TaxFileImportProcessingTest extends TestCase
         Schema::create('invoice_files', function (Blueprint $table) {
             $table->id();
             $table->foreignId('invoice_id');
-            $table->string('file_name')->nullable();
+            $table->string('file_name');
             $table->string('file_path')->nullable();
             $table->string('file_type')->nullable();
             $table->text('description')->nullable();
