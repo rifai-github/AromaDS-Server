@@ -989,7 +989,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('tax-settings/trends', [TaxSettingController::class, 'trends'])->name('tax-settings.trends')->middleware('permission:tax-settings.view');
         Route::get('tax-settings/summary-by-type', [TaxSettingController::class, 'summaryByType'])->name('tax-settings.summary-by-type')->middleware('permission:tax-settings.view');
         Route::get('tax-settings/summary-by-status', [TaxSettingController::class, 'summaryByStatus'])->name('tax-settings.summary-by-status')->middleware('permission:tax-settings.view');
-        Route::resource('tax-file-imports', TaxFileImportController::class);
+        Route::resource('tax-file-imports', TaxFileImportController::class)->except(['edit', 'update']);
         Route::post('tax-file-imports/bulk-delete', [TaxFileImportController::class, 'bulkDelete'])->name('tax-file-imports.bulk-delete');
         Route::post('tax-file-imports/{taxFileImport}/process', [TaxFileImportController::class, 'processImport'])->name('tax-file-imports.process');
         Route::get('tax-file-imports/{taxFileImport}/download', [TaxFileImportController::class, 'downloadFile'])->name('tax-file-imports.download');

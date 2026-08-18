@@ -286,7 +286,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('virtual-account-imports', VirtualAccountImportController::class);
         Route::apiResource('virtual-account-exports', VirtualAccountExportController::class);
         Route::apiResource('tax-settings', TaxSettingController::class);
-        Route::apiResource('tax-file-imports', TaxFileImportController::class);
+        Route::apiResource('tax-file-imports', TaxFileImportController::class)->except(['update']);
         Route::post('tax-file-imports/bulk-delete', [TaxFileImportController::class, 'bulkDelete']);
         Route::post('tax-file-imports/{taxFileImport}/process', [TaxFileImportController::class, 'processImport']);
         Route::get('tax-file-imports/{taxFileImport}/download', [TaxFileImportController::class, 'downloadFile']);

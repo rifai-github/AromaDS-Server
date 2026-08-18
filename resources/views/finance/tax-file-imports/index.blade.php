@@ -861,9 +861,6 @@
                                 <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); openViewModal({{ $import->id }})">
                                     <i class="fas fa-eye"></i>
                                 </button>
-                                <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); openEditModal({{ $import->id }})">
-                                    <i class="fas fa-edit"></i>
-                                </button>
                                 @if($import->canDownload())
                                 <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); downloadFile({{ $import->id }})">
                                     <i class="fas fa-download"></i>
@@ -1202,7 +1199,6 @@ function openViewModal(id) {
         // Add modal footer for view modal
             document.getElementById('modalFooter').innerHTML = `
             <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
-            <button type="button" class="btn btn-primary" onclick="openEditModal(${id})">Edit Import</button>
         `;
         })
         .catch(error => {
@@ -1214,81 +1210,13 @@ function openViewModal(id) {
         });
 }
 
-function openEditModal(id) {
-    openModal('Edit Tax File Import');
-    document.getElementById('modalBody').innerHTML = '<div style="text-align: center; padding: 40px;"><div style="display: inline-block; width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite;"></div><p style="margin-top: 16px; color: #666;">Loading...</p></div>';
-    
-    fetch(`/finance/tax-file-imports/${id}/edit`, {
-        headers: {
-            'Accept': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            document.getElementById('modalBody').innerHTML = `
-                <form id="form" onsubmit="submitForm(event, ${id})">
-                    <input type="hidden" name="id" value="${data.data.id}">
-                    <div class="modal-section">
-                        <div class="modal-section-title">Import Information</div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="form-group">
-                                <label class="form-label">Status</label>
-                                <select name="status" class="form-input">
-                                    <option value="pending" ${data.data.status === 'pending' ? 'selected' : ''}>Pending</option>
-                                    <option value="processing" ${data.data.status === 'processing' ? 'selected' : ''}>Processing</option>
-                                    <option value="completed" ${data.data.status === 'completed' ? 'selected' : ''}>Completed</option>
-                                    <option value="failed" ${data.data.status === 'failed' ? 'selected' : ''}>Failed</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Auto Process</label>
-                                <select name="auto_process" class="form-input">
-                                    <option value="0" ${!data.data.auto_process ? 'selected' : ''}>No</option>
-                                    <option value="1" ${data.data.auto_process ? 'selected' : ''}>Yes</option>
-                                </select>
-                            </div>
-                            <div class="form-group" style="grid-column: 1 / -1;">
-                                <label class="form-label">Notes</label>
-                                <textarea name="notes" class="form-input form-textarea" placeholder="Additional notes about this import">${data.data.notes || ''}</textarea>
-                            </div>
-                        </div>
-                    </div>
-                </form>
-            `;
-            
-            // Add modal footer for edit modal
-            document.getElementById('modalFooter').innerHTML = `
-                <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                <button type="submit" form="form" class="btn btn-primary">Update Import</button>
-            `;
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            document.getElementById('modalBody').innerHTML = '<div style="text-align: center; padding: 40px; color: #ef4444;">Error loading details.</div>';
-            document.getElementById('modalFooter').innerHTML = `
-                <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
-            `;
-        });
-}
-
-function submitForm(event, id = null) {
+function submitForm(event) {
     event.preventDefault();
 
     const formData = new FormData(event.target);
 
-    const url = id ? `/finance/tax-file-imports/${id}` : '/finance/tax-file-imports';
-
-    // Add CSRF token and method
+    // Add CSRF token
     formData.append('_token', document.querySelector('meta[name="csrf-token"]').getAttribute('content'));
-    if (id) {
-        formData.append('_method', 'PUT');
-    }
 
     // Every import now processes synchronously in this same request — for a
     // batch of PDFs that can take a few seconds, so the button needs to show
@@ -1306,7 +1234,7 @@ function submitForm(event, id = null) {
         }
     };
 
-    fetch(url, {
+    fetch('/finance/tax-file-imports', {
         method: 'POST',
         headers: {
             'Accept': 'application/json',

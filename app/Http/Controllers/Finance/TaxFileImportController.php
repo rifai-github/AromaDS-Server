@@ -12,7 +12,6 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
 
 class TaxFileImportController extends Controller
 {
@@ -227,77 +226,6 @@ class TaxFileImportController extends Controller
         }
 
         return view('finance.tax-file-imports.show', compact('import'));
-    }
-
-    public function edit($id)
-    {
-        $import = TaxFileImport::with(['bank'])->findOrFail($id);
-        $banks = Bank::where('is_active', true)->orderBy('bank_name')->get();
-
-        if (request()->ajax()) {
-            return response()->json([
-                'status' => 'success',
-                'data' => $import,
-                'banks' => $banks,
-            ]);
-        }
-
-        return view('finance.tax-file-imports.edit', compact('import', 'banks'));
-    }
-
-    public function update(Request $request, $id)
-    {
-        $request->validate([
-            'status' => 'required|in:pending,processing,completed,failed',
-            'auto_process' => 'boolean',
-            // Delimiter is no longer asked for — the parser detects it — but older
-            // clients may still submit one, so accept it when it is valid.
-            'delimiter' => ['nullable', Rule::in(TaxFileImport::DELIMITERS)],
-            'notes' => 'nullable|string|max:1000',
-        ]);
-
-        try {
-            DB::beginTransaction();
-
-            $import = TaxFileImport::findOrFail($id);
-
-            $payload = [
-                'status' => $request->status,
-                'auto_process' => $request->boolean('auto_process'),
-                'notes' => $request->notes,
-                'updated_by' => Auth::id(),
-            ];
-
-            if (filled($request->delimiter)) {
-                $payload['delimiter'] = $request->delimiter;
-            }
-
-            $import->update($payload);
-
-            DB::commit();
-
-            if ($request->ajax()) {
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Tax file import updated successfully.',
-                    'data' => $import->load('bank', 'updatedBy'),
-                ]);
-            }
-
-            return redirect()->route('tax-file-imports.index')
-                ->with('success', 'Tax file import updated successfully.');
-        } catch (\Exception $e) {
-            DB::rollback();
-
-            if ($request->ajax()) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Failed to update import: '.$e->getMessage(),
-                ], 500);
-            }
-
-            return back()->with('error', 'Failed to update import: '.$e->getMessage());
-        }
     }
 
     public function destroy($id)
