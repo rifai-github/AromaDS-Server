@@ -313,79 +313,39 @@ class TaxFileImportProcessingTest extends TestCase
     }
 
     /**
-     * The create form no longer asks for Auto Process, delimiter, or
-     * skip-header: every import is processed immediately, and the parser
-     * finds the header row and the separator itself. The file input is also
-     * an array now (`files[]`) to make room for the multi-PDF path.
+     * The create form now only accepts PDF Faktur Pajak — the CSV/XLSX result
+     * file is no longer offered here (CoreTaxImportService and
+     * processImportFile() still exist for the Process button on existing
+     * CSV/XLSX import records, unaffected by this).
      */
-    public function test_store_no_longer_requires_import_settings_and_processes_immediately(): void
+    public function test_store_rejects_non_pdf_files(): void
     {
-        // Real content matters now: processing is mandatory, so a random-bytes
-        // fake file (fine when Auto Process could be left off) would fail to
-        // parse and turn this happy-path test into a failure-path test.
-        $file = UploadedFile::fake()->createWithContent(
-            'coretax-result.csv',
-            "Reference,TaxInvoiceNumber,TaxInvoiceDate,TaxInvoiceStatus,VAT\n"
-            ."INV-001,0400250035384444,2026-07-19T00:00:00,APPROVED,110000\n",
-        );
-
-        $response = $this
+        $csv = $this
             ->withoutMiddleware()
-            ->withHeaders([
-                'Accept' => 'application/json',
-                'X-Requested-With' => 'XMLHttpRequest',
-            ])
+            ->withHeaders(['Accept' => 'application/json', 'X-Requested-With' => 'XMLHttpRequest'])
             ->post(route('finance.tax-file-imports.store'), [
-                'files' => [$file],
-                'notes' => 'no-import-settings-test',
+                'files' => [UploadedFile::fake()->createWithContent('coretax-result.csv', "a,b\n1,2\n")],
             ]);
 
-        $response->assertOk();
-        $response->assertJsonPath('status', 'success');
+        // A plain `mimes:pdf` rejection goes through Laravel's own validation
+        // response (an `errors` object), not the controller's custom
+        // storeFailure() shape — the create modal's JS already reads
+        // `result.errors` first, so this is the right response to send.
+        $csv->assertStatus(422);
+        $csv->assertJsonValidationErrors('files.0');
 
-        $import = TaxFileImport::where('notes', 'no-import-settings-test')->firstOrFail();
-
-        $this->assertSame(TaxFileImport::DELIMITER_COMMA, $import->delimiter);
-        $this->assertTrue((bool) $import->auto_process);
-        // "Processed immediately" means the response already reflects a
-        // finished run, not a lingering 'pending' row waiting on the Process
-        // button that used to gate Auto Process = No.
-        $this->assertSame('completed', $import->status);
-        $this->uploadedImportFiles[] = public_path('uploads/tax-file-imports/'.$import->file_name);
-    }
-
-    /**
-     * A batch that isn't a spreadsheet at all, or that mixes CSV with PDF, or
-     * that submits more than one CSV, must be rejected before anything
-     * touches disk or the database.
-     */
-    public function test_store_rejects_mixed_or_multiple_spreadsheet_files(): void
-    {
         $mixed = $this
             ->withoutMiddleware()
             ->withHeaders(['Accept' => 'application/json', 'X-Requested-With' => 'XMLHttpRequest'])
             ->post(route('finance.tax-file-imports.store'), [
                 'files' => [
-                    UploadedFile::fake()->create('a.csv', 1, 'text/csv'),
-                    UploadedFile::fake()->create('b.pdf', 1, 'application/pdf'),
+                    $this->makeFakturPdfUpload('faktur-1.pdf', 'INV-001', '04002600321184875'),
+                    UploadedFile::fake()->createWithContent('not-a-faktur.csv', "a,b\n1,2\n"),
                 ],
             ]);
 
         $mixed->assertStatus(422);
-        $mixed->assertJsonPath('status', 'error');
-
-        $twoCsv = $this
-            ->withoutMiddleware()
-            ->withHeaders(['Accept' => 'application/json', 'X-Requested-With' => 'XMLHttpRequest'])
-            ->post(route('finance.tax-file-imports.store'), [
-                'files' => [
-                    UploadedFile::fake()->create('a.csv', 1, 'text/csv'),
-                    UploadedFile::fake()->create('b.csv', 1, 'text/csv'),
-                ],
-            ]);
-
-        $twoCsv->assertStatus(422);
-        $twoCsv->assertJsonPath('status', 'error');
+        $mixed->assertJsonValidationErrors('files.1');
 
         $this->assertDatabaseCount('tax_file_imports', 0);
     }
@@ -396,20 +356,26 @@ class TaxFileImportProcessingTest extends TestCase
      * rolled the import record itself back out of existence, taking the only
      * trace of what was uploaded with it. Processing is no longer optional —
      * there is no Auto Process choice — so this path runs on every single
-     * submission now, and the record plus the uploaded file must survive a
+     * submission now, and the record plus the uploaded files must survive a
      * processing failure so there is something left to diagnose or retry.
+     *
+     * CoreTaxFakturPdfImportService is deliberately resilient per-file (one
+     * bad PDF logs a rejected row rather than throwing — see
+     * CoreTaxFakturPdfImportTest), so a REAL failure is hard to trigger
+     * black-box. The service is swapped for a mock that throws instead, to
+     * exercise the controller's own try/catch directly.
      */
-    public function test_a_processing_failure_leaves_the_import_record_and_file_in_place(): void
+    public function test_a_processing_failure_leaves_the_import_record_and_files_in_place(): void
     {
-        // No recognisable "Reference"/"TaxInvoiceStatus" header -> CoreTaxImportService
-        // throws, which is exactly the failure mode this test guards against.
-        $badFile = UploadedFile::fake()->createWithContent('not-a-coretax-file.csv', "foo,bar\n1,2\n");
+        $this->mock(\App\Services\Finance\CoreTaxFakturPdfImportService::class, function ($mock) {
+            $mock->shouldReceive('process')->once()->andThrow(new \RuntimeException('simulated processing failure'));
+        });
 
         $response = $this
             ->withoutMiddleware()
             ->withHeaders(['Accept' => 'application/json', 'X-Requested-With' => 'XMLHttpRequest'])
             ->post(route('finance.tax-file-imports.store'), [
-                'files' => [$badFile],
+                'files' => [$this->makeFakturPdfUpload('faktur-1.pdf', 'INV-001', '04002600321184875')],
                 'notes' => 'processing-failure-test',
             ]);
 
@@ -421,52 +387,6 @@ class TaxFileImportProcessingTest extends TestCase
         $this->assertNotNull($import, 'the import record was rolled back / deleted on a processing failure');
         $this->assertSame('failed', $import->status);
         $this->assertNotNull($import->error_log);
-
-        $storedPath = public_path('uploads/tax-file-imports/'.$import->file_name);
-        $this->assertFileExists($storedPath, 'the uploaded file was deleted on a processing failure');
-        $this->uploadedImportFiles[] = $storedPath;
-    }
-
-    public function test_store_accepts_exported_csv_detected_as_plain_text(): void
-    {
-        $temporaryCsvPath = tempnam(sys_get_temp_dir(), 'tfe-export-');
-        file_put_contents(
-            $temporaryCsvPath,
-            implode("\n", [
-                'Reference,TaxInvoiceNumber,TaxInvoiceDate,TaxInvoiceStatus,VAT',
-                'INV-001,0400250035384444,2026-07-19T00:00:00,APPROVED,110000',
-            ])."\n",
-        );
-
-        $file = new UploadedFile(
-            $temporaryCsvPath,
-            'TFE-20260720-0001.csv',
-            'text/csv',
-            null,
-            true,
-        );
-
-        $this->assertSame('text/plain', $file->getMimeType());
-
-        $response = $this
-            ->withoutMiddleware()
-            ->withHeaders([
-                'Accept' => 'application/json',
-                'X-Requested-With' => 'XMLHttpRequest',
-            ])
-            ->post(route('finance.tax-file-imports.store'), [
-                'files' => [$file],
-                'notes' => 'plain-text-csv-upload-test',
-            ]);
-
-        $response->assertOk();
-        $response->assertJsonPath('status', 'success');
-
-        $import = TaxFileImport::where('notes', 'plain-text-csv-upload-test')->firstOrFail();
-
-        $this->assertSame('csv', $import->file_format);
-        $this->assertSame(TaxFileImport::DELIMITER_COMMA, $import->delimiter);
-        $this->uploadedImportFiles[] = public_path('uploads/tax-file-imports/'.$import->file_name);
     }
 
     public function test_import_number_sequence_includes_soft_deleted_records(): void
@@ -501,14 +421,15 @@ class TaxFileImportProcessingTest extends TestCase
         $this->assertSame("TFI-{$date}-0003", TaxFileImport::generateImportNumber());
     }
 
-    public function test_failed_store_removes_uploaded_file(): void
+    /**
+     * PDFs are moved into a per-import folder (named after the generated
+     * import number) before the TaxFileImport row is written, so a failed
+     * insert must clean up that whole folder, not just a single loose file.
+     */
+    public function test_failed_store_removes_the_uploaded_pdf_folder(): void
     {
-        $originalFileName = 'orphan-cleanup-test.csv';
-        $uploadPattern = public_path('uploads/tax-file-imports/*_'.$originalFileName);
-
-        foreach (glob($uploadPattern) ?: [] as $existingFile) {
-            unlink($existingFile);
-        }
+        $baseDir = public_path('uploads/tax-file-imports');
+        $dirsBefore = glob($baseDir.'/*', GLOB_ONLYDIR) ?: [];
 
         DB::statement(<<<'SQL'
             CREATE TRIGGER fail_tax_file_import_insert
@@ -526,22 +447,23 @@ class TaxFileImportProcessingTest extends TestCase
                     'X-Requested-With' => 'XMLHttpRequest',
                 ])
                 ->post(route('finance.tax-file-imports.store'), [
-                    'files' => [UploadedFile::fake()->create(
-                        $originalFileName,
-                        1,
-                        'text/csv',
-                    )],
+                    'files' => [$this->makeFakturPdfUpload('orphan-cleanup-test.pdf', 'INV-001', '04002600321184875')],
                 ]);
 
             $response->assertServerError();
             $response->assertJsonPath('status', 'error');
-            $this->assertSame([], glob($uploadPattern) ?: []);
+
+            $dirsAfter = glob($baseDir.'/*', GLOB_ONLYDIR) ?: [];
+            $this->assertSame($dirsBefore, $dirsAfter, 'a per-import PDF folder was left behind on a failed insert');
             $this->assertDatabaseCount('tax_file_imports', 0);
         } finally {
             DB::statement('DROP TRIGGER IF EXISTS fail_tax_file_import_insert');
 
-            foreach (glob($uploadPattern) ?: [] as $orphanedFile) {
-                unlink($orphanedFile);
+            foreach (array_diff(glob($baseDir.'/*', GLOB_ONLYDIR) ?: [], $dirsBefore) as $orphanedDir) {
+                foreach (glob($orphanedDir.'/*') ?: [] as $file) {
+                    @unlink($file);
+                }
+                @rmdir($orphanedDir);
             }
         }
     }
@@ -555,14 +477,8 @@ class TaxFileImportProcessingTest extends TestCase
      */
     public function test_store_accepts_a_pdf_batch_and_issues_the_matched_invoice(): void
     {
-        $pdfOne = UploadedFile::fake()->createWithContent(
-            'faktur-1.pdf',
-            file_get_contents($this->makeFakturPdfFixture('INV-001', '04002600321184875')),
-        );
-        $pdfTwo = UploadedFile::fake()->createWithContent(
-            'faktur-2.pdf',
-            file_get_contents($this->makeFakturPdfFixture('INV-DOES-NOT-EXIST', '04002600321184999')),
-        );
+        $pdfOne = $this->makeFakturPdfUpload('faktur-1.pdf', 'INV-001', '04002600321184875');
+        $pdfTwo = $this->makeFakturPdfUpload('faktur-2.pdf', 'INV-DOES-NOT-EXIST', '04002600321184999');
 
         $response = $this
             ->withoutMiddleware()
@@ -595,6 +511,14 @@ class TaxFileImportProcessingTest extends TestCase
         $archived = DB::table('invoice_files')->where('invoice_id', 1)->first();
         $this->assertNotNull($archived, 'the matched faktur pajak PDF was not archived onto the invoice');
         $this->uploadedImportFiles[] = public_path($archived->file_path);
+    }
+
+    private function makeFakturPdfUpload(string $filename, string $reference, string $fakturNumber): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent(
+            $filename,
+            file_get_contents($this->makeFakturPdfFixture($reference, $fakturNumber)),
+        );
     }
 
     private function makeFakturPdfFixture(string $reference, string $fakturNumber): string

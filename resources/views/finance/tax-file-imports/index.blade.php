@@ -1030,9 +1030,9 @@ function openCreateModal() {
                 <div class="modal-section-title">Import Information</div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="form-group" style="grid-column: 1 / -1;">
-                        <label class="form-label">File *</label>
-                        <input type="file" name="files[]" class="form-input" accept=".csv,.xlsx,.xls,.pdf" multiple required>
-                        <small class="text-gray-500">Satu file CSV/Excel hasil dari CoreTax, ATAU satu&ndash;banyak file PDF Faktur Pajak (&ldquo;Output Tax Invoice&rdquo;) yang diunduh satuan &mdash; jangan dicampur. Maksimal 10 MB per file. Diproses langsung begitu Start Import ditekan.</small>
+                        <label class="form-label">File PDF Faktur Pajak *</label>
+                        <input type="file" name="files[]" class="form-input" accept=".pdf" multiple required>
+                        <small class="text-gray-500">Satu atau banyak file PDF Faktur Pajak (&ldquo;Output Tax Invoice&rdquo;) yang diunduh dari CoreTax. Maksimal 10 MB per file. Diproses langsung begitu Start Import ditekan.</small>
                     </div>
                     <div class="form-group" style="grid-column: 1 / -1;">
                         <label class="form-label">Notes</label>
