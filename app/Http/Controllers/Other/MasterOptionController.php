@@ -21,6 +21,8 @@ class MasterOptionController extends Controller
             ? MasterOption::onlyTrashed()->with(['updatedBy', 'createdBy'])
             : MasterOption::with(['updatedBy', 'createdBy']);
 
+        $query->whereNotIn('name', array_keys(MasterOption::MANAGED_ELSEWHERE));
+
         $this->applyColumnFilters($query, null, [
             'name' => ['column' => 'name'],
             'description' => ['column' => 'description'],
@@ -132,6 +134,10 @@ class MasterOptionController extends Controller
 
     public function show(MasterOption $masterOption)
     {
+        if ($redirect = $this->redirectIfManagedElsewhere($masterOption)) {
+            return $redirect;
+        }
+
         $masterOption->load([
             'updatedBy',
             'createdBy',
@@ -152,6 +158,10 @@ class MasterOptionController extends Controller
 
     public function edit(MasterOption $masterOption)
     {
+        if ($redirect = $this->redirectIfManagedElsewhere($masterOption)) {
+            return $redirect;
+        }
+
         if (request()->ajax()) {
             return response()->json([
                 'masterOption' => $masterOption,
@@ -164,6 +174,10 @@ class MasterOptionController extends Controller
 
     public function update(Request $request, MasterOption $masterOption)
     {
+        if ($redirect = $this->redirectIfManagedElsewhere($masterOption)) {
+            return $redirect;
+        }
+
         $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -553,6 +567,23 @@ class MasterOptionController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
         }
+    }
+
+    private function redirectIfManagedElsewhere(MasterOption $masterOption)
+    {
+        $routeName = MasterOption::MANAGED_ELSEWHERE[$masterOption->name] ?? null;
+
+        if (! $routeName) {
+            return null;
+        }
+
+        $message = "'{$masterOption->name}' dikelola dari halaman tersendiri, bukan dari Master Options.";
+
+        if (request()->ajax()) {
+            return response()->json(['status' => 'error', 'message' => $message], 403);
+        }
+
+        return redirect()->route($routeName)->with('error', $message);
     }
 
     private function validateOptionValue($type, $value)

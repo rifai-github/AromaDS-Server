@@ -27,6 +27,21 @@ class MasterOption extends Model
     ];
 
     /**
+     * Master options that have their own dedicated management screen elsewhere
+     * in the app. They still live in this table (other code reads them via
+     * MasterOption::firstOrCreate/where('name', ...)), but editing them through
+     * the generic Master Options CRUD is unsafe: that screen only knows about
+     * option_name/label/code and has no fields for the structured data
+     * (e.g. Term of Payment's billing_mode/months/payment_count JSON) the
+     * dedicated screen manages, so a generic edit can desync label vs behavior.
+     * Hide them from the generic list/edit/update routes and point users to
+     * the dedicated route name instead.
+     */
+    public const MANAGED_ELSEWHERE = [
+        'Term of Payment' => 'system.master-term-of-payments.index',
+    ];
+
+    /**
      * Names looked up directly via MasterOption::where('name', ...) elsewhere in the app
      * (dropdowns in wizards, product/rental forms, employee profile fields, etc). Deleting
      * one of these would silently break whatever reads it, so deletion is blocked for these
