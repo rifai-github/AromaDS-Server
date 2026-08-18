@@ -148,7 +148,7 @@
         border-collapse: separate;
         border-spacing: 0;
         margin: 0;
-        min-width: 960px;
+        min-width: 1240px;
         width: 100%;
     }
 
@@ -363,10 +363,13 @@
                     <thead>
                         <tr>
                             <th scope="col">#</th>
+                            <th scope="col">No. Faktur Pajak</th>
                             <th scope="col">Invoice Number</th>
-                            <th scope="col">Tax Number</th>
-                            <th scope="col">Tax Date</th>
-                            <th scope="col">Tax Amount</th>
+                            <th scope="col">Tanggal Faktur</th>
+                            <th scope="col">Nama Pembeli</th>
+                            <th scope="col">NPWP Pembeli</th>
+                            <th scope="col">DPP</th>
+                            <th scope="col">PPN</th>
                             <th scope="col">Status</th>
                             <th scope="col">Remarks</th>
                         </tr>
@@ -375,9 +378,20 @@
                         @forelse($details as $detail)
                             <tr>
                                 <td>{{ $loop->iteration }}</td>
-                                <td class="font-semibold text-slate-700">{{ $detail->invoice_number ?? 'N/A' }}</td>
-                                <td>{{ $detail->tax_number ?? 'N/A' }}</td>
+                                <td>{{ $detail->tax_number && $detail->tax_number !== 'N/A' ? $detail->tax_number : '-' }}</td>
+                                <td class="font-semibold text-slate-700">
+                                    @if($detail->matchedInvoice)
+                                        <a href="{{ route('finance.invoices.show', $detail->matchedInvoice->id) }}" class="text-blue-600 hover:underline">
+                                            {{ $detail->invoice_number }}
+                                        </a>
+                                    @else
+                                        {{ $detail->invoice_number ?? 'N/A' }}
+                                    @endif
+                                </td>
                                 <td>{{ $detail->formatted_tax_date ?? '-' }}</td>
+                                <td>{{ $detail->buyer_name ?: '-' }}</td>
+                                <td>{{ $detail->buyer_npwp ?: '-' }}</td>
+                                <td>{{ $detail->formatted_dpp ?? '-' }}</td>
                                 <td>{{ $detail->formatted_tax_amount ?? 'Rp 0' }}</td>
                                 <td>
                                     <span class="detail-status-badge status-{{ $detail->status ?? 'pending' }}">
@@ -388,7 +402,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="import-empty-state">
+                                <td colspan="10" class="import-empty-state">
                                     <i class="fas fa-inbox text-2xl mb-2" aria-hidden="true"></i>
                                     <div>No import details are available yet.</div>
                                 </td>

@@ -792,55 +792,66 @@
                             <input type="checkbox" id="headerSelectAll" class="w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer">
                         </th>
                         <th data-column="import_number">Import Number</th>
-                        <th data-no-filter>File Name</th>
-                        <th data-column="import_date" data-type="date">Import Date</th>
-                        <th data-no-filter>File Format</th>
+                        <th data-no-filter>No. Faktur Pajak</th>
+                        <th data-no-filter>No. Invoice</th>
+                        <th data-no-filter>Pembeli</th>
+                        <th data-column="import_date" data-type="date">Tanggal Faktur</th>
+                        <th data-no-filter data-type="numeric">DPP</th>
+                        <th data-no-filter data-type="numeric">PPN</th>
                         <th data-column="status">Status</th>
-                        <th data-column="record_count" data-type="numeric">Total Records</th>
-                        <th data-column="approval_success" data-type="numeric">Success Count</th>
-                        <th data-column="rejected" data-type="numeric">Failed Count</th>
-                        <th data-no-filter>Success Rate</th>
+                        <th data-no-filter>File</th>
                         <th data-column="creator.name">Created By</th>
                         <th data-column="created_at" data-type="date">Created At</th>
-                        <th data-column="updater.name">Last Updated By</th>
-                        <th data-column="updated_at" data-type="date">Last Updated At</th>
                         <th data-no-filter>Actions</th>
                     </tr>
                 </thead>
                 <!-- Table Body -->
                 <tbody>
                     @forelse($imports ?? [] as $import)
+                    @php($detail = $import->details->first())
                     <tr data-id="{{ $import->id }}" onclick="openViewModal({{ $import->id }})">
                         <td class="text-center">
                             <input type="checkbox" class="row-checkbox w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer" value="{{ $import->id }}" onclick="event.stopPropagation()">
                         </td>
                         <td class="font-medium">{{ $import->import_number ?? '-' }}</td>
-                        <td>{{ $import->file_name ?? '-' }}</td>
-                        <td>{{ $import->formatted_import_date ?? '-' }}</td>
-                        <td>{{ $import->format_label ?? '-' }}</td>
+                        <td>{{ ($detail && $detail->tax_number !== 'N/A') ? $detail->tax_number : '-' }}</td>
                         <td>
-                            <span class="status-badge status-{{ $import->status ?? 'pending' }}">
-                                {{ ucfirst($import->status ?? 'Pending') }}
-                            </span>
+                            @if($detail && $detail->matchedInvoice)
+                                <a href="{{ route('finance.invoices.show', $detail->matchedInvoice->id) }}" onclick="event.stopPropagation()" class="text-blue-600 hover:underline font-medium">
+                                    {{ $detail->invoice_number }}
+                                </a>
+                            @elseif($detail && $detail->invoice_number !== 'N/A')
+                                <span title="Tidak ditemukan di sistem">{{ $detail->invoice_number }}</span>
+                            @else
+                                -
+                            @endif
                         </td>
-                        <td>{{ number_format($import->total_records ?? 0) }}</td>
-                        <td>{{ number_format($import->success_count ?? 0) }}</td>
-                        <td>{{ number_format($import->failed_count ?? 0) }}</td>
-                        <td>{{ $import->formatted_success_rate ?? '0%' }}</td>
+                        <td>
+                            @if($detail && $detail->buyer_name)
+                                {{ $detail->buyer_name }}
+                                @if($detail->buyer_npwp)
+                                    <br><small class="text-gray-500">{{ $detail->buyer_npwp }}</small>
+                                @endif
+                            @else
+                                -
+                            @endif
+                        </td>
+                        <td>{{ $detail->formatted_tax_date ?? $import->formatted_import_date ?? '-' }}</td>
+                        <td>{{ $detail->formatted_dpp ?? '-' }}</td>
+                        <td>{{ $detail ? $detail->formatted_tax_amount : '-' }}</td>
+                        <td>
+                            @if($detail)
+                                <span class="status-badge status-{{ $detail->status }}">{{ $detail->status_label }}</span>
+                            @else
+                                <span class="status-badge status-{{ $import->status ?? 'pending' }}">{{ ucfirst($import->status ?? 'Pending') }}</span>
+                            @endif
+                        </td>
+                        <td>{{ $import->file_name ?? '-' }}</td>
                         <td>{{ $import->createdBy->name ?? '-' }}</td>
                         <td>
                             @if($import->created_at)
                                 {{ \Carbon\Carbon::parse($import->created_at)->format('d/M/Y') }}<br>
                                 at {{ \Carbon\Carbon::parse($import->created_at)->format('H.i') }} WIB
-                            @else
-                                -
-                            @endif
-                        </td>
-                        <td>{{ $import->updatedBy->name ?? '-' }}</td>
-                        <td>
-                            @if($import->updated_at)
-                                {{ \Carbon\Carbon::parse($import->updated_at)->format('d/M/Y') }}<br>
-                                at {{ \Carbon\Carbon::parse($import->updated_at)->format('H.i') }} WIB
                             @else
                                 -
                             @endif
@@ -878,7 +889,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="15" class="p-8 text-center">
+                        <td colspan="13" class="p-8 text-center">
                             <div class="text-gray-600">
                                 <i class="fas fa-file-import text-4xl mb-3"></i>
                                 <p class="text-lg">No tax file imports found</p>
@@ -1067,6 +1078,56 @@ function openViewModal(id) {
             return response.json();
         })
         .then(data => {
+            const idr = (v) => v === null || v === undefined ? '-' : 'Rp ' + Number(v).toLocaleString('id-ID');
+            const details = data.data.details || [];
+
+            const fakturSection = (d) => `
+                <div class="modal-section">
+                    <div class="modal-section-title">
+                        Faktur Pajak
+                        <span class="status-badge status-${d.status}" style="margin-left: 8px;">${d.status_label || d.status}</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="detail-item">
+                            <label class="form-label">No. Faktur Pajak</label>
+                            <p class="detail-value">${d.tax_number && d.tax_number !== 'N/A' ? d.tax_number : '-'}</p>
+                        </div>
+                        <div class="detail-item">
+                            <label class="form-label">No. Invoice</label>
+                            <p class="detail-value">
+                                ${d.matched_invoice
+                                    ? `<a href="/finance/invoices/${d.matched_invoice.id}" class="text-blue-600 hover:underline font-medium">${d.invoice_number}</a>`
+                                    : (d.invoice_number && d.invoice_number !== 'N/A' ? `${d.invoice_number} <small class="text-gray-500">(tidak ditemukan di sistem)</small>` : '-')}
+                            </p>
+                        </div>
+                        <div class="detail-item">
+                            <label class="form-label">Tanggal Faktur</label>
+                            <p class="detail-value">${d.tax_date ? new Date(d.tax_date).toLocaleDateString('id-ID') : '-'}</p>
+                        </div>
+                        <div class="detail-item">
+                            <label class="form-label">Nama Pembeli</label>
+                            <p class="detail-value">${d.buyer_name || '-'}</p>
+                        </div>
+                        <div class="detail-item">
+                            <label class="form-label">NPWP Pembeli</label>
+                            <p class="detail-value">${d.buyer_npwp || '-'}</p>
+                        </div>
+                        <div class="detail-item">
+                            <label class="form-label">DPP</label>
+                            <p class="detail-value">${idr(d.dpp)}</p>
+                        </div>
+                        <div class="detail-item">
+                            <label class="form-label">PPN</label>
+                            <p class="detail-value">${idr(d.tax_amount)}</p>
+                        </div>
+                        <div class="detail-item" style="grid-column: 1 / -1;">
+                            <label class="form-label">Keterangan</label>
+                            <p class="detail-value">${d.remarks || '-'}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+
             document.getElementById('modalBody').innerHTML = `
                 <div class="modal-section">
                     <div class="modal-section-title">Import Information</div>
@@ -1083,47 +1144,46 @@ function openViewModal(id) {
                             <label class="form-label">Import Date</label>
                             <p class="detail-value">${data.data.import_date ? new Date(data.data.import_date).toLocaleDateString('id-ID') : '-'}</p>
                         </div>
-                        ${data.data.bank_id ? `
-                        <div class="detail-item">
-                            <label class="form-label">Bank</label>
-                            <p class="detail-value">${data.data.bank?.name || '-'}</p>
-                        </div>
-                        ` : ''}
                         <div class="detail-item">
                             <label class="form-label">Status</label>
                             <p class="detail-value">
                                 <span class="status-badge status-${data.data.status || 'pending'}">${data.data.status ? data.data.status.charAt(0).toUpperCase() + data.data.status.slice(1) : 'Pending'}</span>
                             </p>
                         </div>
-                        <div class="detail-item">
-                            <label class="form-label">Auto Process</label>
-                            <p class="detail-value">${data.data.auto_process ? 'Yes' : 'No'}</p>
-                        </div>
                     </div>
                 </div>
-                
+
+                ${details.length === 1 ? fakturSection(details[0]) : ''}
+
+                ${details.length > 1 ? `
                 <div class="modal-section">
-                    <div class="modal-section-title">Import Results</div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="detail-item">
-                            <label class="form-label">Total Records</label>
-                            <p class="detail-value">${data.data.total_records ? parseInt(data.data.total_records).toLocaleString('id-ID') : '0'}</p>
-                        </div>
-                        <div class="detail-item">
-                            <label class="form-label">Success Count</label>
-                            <p class="detail-value">${data.data.success_count ? parseInt(data.data.success_count).toLocaleString('id-ID') : '0'}</p>
-                        </div>
-                        <div class="detail-item">
-                            <label class="form-label">Failed Count</label>
-                            <p class="detail-value">${data.data.failed_count ? parseInt(data.data.failed_count).toLocaleString('id-ID') : '0'}</p>
-                        </div>
-                        <div class="detail-item">
-                            <label class="form-label">Success Rate</label>
-                            <p class="detail-value">${data.data.success_rate || '0'}%</p>
-                        </div>
+                    <div class="modal-section-title">Faktur Pajak (${details.length} baris — hasil import batch lama)</div>
+                    <div style="overflow-x: auto;">
+                        <table class="responsive-table">
+                            <thead><tr><th>No. Faktur Pajak</th><th>No. Invoice</th><th>Tanggal</th><th>PPN</th><th>Status</th></tr></thead>
+                            <tbody>
+                                ${details.map(d => `
+                                    <tr>
+                                        <td>${d.tax_number && d.tax_number !== 'N/A' ? d.tax_number : '-'}</td>
+                                        <td>${d.matched_invoice ? `<a href="/finance/invoices/${d.matched_invoice.id}" class="text-blue-600 hover:underline">${d.invoice_number}</a>` : (d.invoice_number || '-')}</td>
+                                        <td>${d.tax_date ? new Date(d.tax_date).toLocaleDateString('id-ID') : '-'}</td>
+                                        <td>${idr(d.tax_amount)}</td>
+                                        <td><span class="status-badge status-${d.status}">${d.status_label || d.status}</span></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-                
+                ` : ''}
+
+                ${details.length === 0 ? `
+                <div class="modal-section">
+                    <div class="modal-section-title">Faktur Pajak</div>
+                    <p class="text-gray-500">Belum ada hasil — import ini belum diproses.</p>
+                </div>
+                ` : ''}
+
                 <div class="modal-section">
                     <div class="modal-section-title">Additional Information</div>
                     <div class="grid grid-cols-1 gap-6">
@@ -1135,14 +1195,10 @@ function openViewModal(id) {
                             <label class="form-label">Created At</label>
                             <p class="detail-value">${data.data.created_at ? new Date(data.data.created_at).toLocaleString('id-ID') : '-'}</p>
                         </div>
-                        <div class="detail-item">
-                            <label class="form-label">Updated At</label>
-                            <p class="detail-value">${data.data.updated_at ? new Date(data.data.updated_at).toLocaleString('id-ID') : '-'}</p>
-                        </div>
                     </div>
                 </div>
             `;
-        
+
         // Add modal footer for view modal
             document.getElementById('modalFooter').innerHTML = `
             <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
@@ -1223,18 +1279,33 @@ function openEditModal(id) {
 
 function submitForm(event, id = null) {
     event.preventDefault();
-    
+
     const formData = new FormData(event.target);
-    
+
     const url = id ? `/finance/tax-file-imports/${id}` : '/finance/tax-file-imports';
-    const method = id ? 'PUT' : 'POST';
-    
+
     // Add CSRF token and method
     formData.append('_token', document.querySelector('meta[name="csrf-token"]').getAttribute('content'));
     if (id) {
         formData.append('_method', 'PUT');
     }
-    
+
+    // Every import now processes synchronously in this same request — for a
+    // batch of PDFs that can take a few seconds, so the button needs to show
+    // it's actually doing something rather than sitting there looking frozen.
+    const submitButton = document.querySelector('#modalFooter button[type="submit"]');
+    const originalButtonHtml = submitButton ? submitButton.innerHTML : null;
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Memproses...';
+    }
+    const restoreButton = () => {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.innerHTML = originalButtonHtml;
+        }
+    };
+
     fetch(url, {
         method: 'POST',
         headers: {
@@ -1263,13 +1334,15 @@ function submitForm(event, id = null) {
     .then(result => {
         if (result.status === 'success') {
             closeModal();
-            location.reload();
+            showSuccessModal(result.message || 'Berhasil.');
         } else {
+            restoreButton();
             showErrorModal(result.message || 'Terjadi kesalahan.');
         }
     })
     .catch(error => {
         console.error('Error:', error);
+        restoreButton();
         showErrorModal(error.message || 'Terjadi kesalahan.');
     });
 }

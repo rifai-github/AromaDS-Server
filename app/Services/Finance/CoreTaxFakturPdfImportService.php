@@ -6,15 +6,14 @@ use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceFile;
 use App\Models\Finance\TaxFileImportDetail;
 use App\Models\TaxFileImport;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * Imports individually-downloaded CoreTax "Output Tax Invoice" PDFs — the
+ * Imports ONE individually-downloaded CoreTax "Output Tax Invoice" PDF — the
  * actual signed faktur pajak document for one invoice — as opposed to the
  * batched CSV/XLSX result file the export flow expects.
  *
- * Each PDF supplies the faktur number the same way the CSV/XLSX path does,
+ * A PDF supplies the faktur number the same way the CSV/XLSX path does,
  * matched on the "(Referensi: ...)" line CoreTax echoes back — the invoice
  * number we wrote into the export — via the same Invoice::applyCoreTaxFaktur()
  * both paths share. But a matched PDF is ALSO the faktur document itself, so
@@ -22,44 +21,16 @@ use Illuminate\Support\Facades\Auth;
  * Faktur Pajak field already looks for a file whose description contains
  * "Faktur Pajak", so nothing else needs to change for it to show up there.
  *
- * One bad file (unreadable, wrong document, no matching invoice) is recorded
- * as a rejected row and does not stop the rest of the batch.
+ * Each PDF becomes its own tax_file_imports row with exactly one detail row
+ * underneath (one row per FILE, not one row per batch) — so a failure here
+ * only ever affects this one row; the caller loops over the upload and
+ * creates a fresh TaxFileImport per file.
  */
 class CoreTaxFakturPdfImportService
 {
     public function __construct(private readonly CoreTaxFakturPdfParser $parser) {}
 
-    /**
-     * @param  array<int, array{original_name: string, full_path: string}>  $files
-     * @return array{total: int, approved: int, unmatched: int, skipped: int}
-     */
-    public function process(TaxFileImport $import, array $files): array
-    {
-        $summary = ['total' => 0, 'approved' => 0, 'unmatched' => 0, 'skipped' => 0];
-
-        foreach ($files as $file) {
-            $summary['total']++;
-            $this->handleFile($import, $file['original_name'], $file['full_path'], $summary);
-        }
-
-        $import->update([
-            'total_records' => $summary['total'],
-            'success_count' => $summary['approved'],
-            'failed_count' => $summary['unmatched'] + $summary['skipped'],
-            'success_rate' => $summary['total'] > 0
-                ? round(($summary['approved'] / $summary['total']) * 100, 2)
-                : 0,
-            'approval_success' => $summary['approved'],
-            'not_approved' => $summary['skipped'],
-            'rejected' => $summary['unmatched'],
-            'status' => 'completed',
-            'processed_at' => now(),
-        ]);
-
-        return $summary;
-    }
-
-    private function handleFile(TaxFileImport $import, string $originalName, string $fullPath, array &$summary): void
+    public function process(TaxFileImport $import, string $originalName, string $fullPath): void
     {
         $data = null;
 
@@ -78,8 +49,7 @@ class CoreTaxFakturPdfImportService
             $invoice = Invoice::where('invoice_number', $reference)->first();
 
             if (! $invoice) {
-                $summary['unmatched']++;
-                $this->writeDetail($import, $reference, $fakturNumber, $data['faktur_date'], $data['ppn'] ?? 0, 'rejected',
+                $this->finish($import, $data, 'rejected',
                     'Tidak ada invoice dengan nomor "'.$reference.'" di sistem.');
 
                 return;
@@ -93,35 +63,23 @@ class CoreTaxFakturPdfImportService
             );
 
             if (! $result['applied']) {
-                $summary['skipped']++;
-                $this->writeDetail($import, $reference, $fakturNumber, $data['faktur_date'], $data['ppn'] ?? 0, 'warning', $result['note']);
+                $this->finish($import, $data, 'warning', $result['note']);
 
                 return;
             }
 
             $this->archiveOnInvoice($invoice, $originalName, $fullPath, $fakturNumber);
 
-            $summary['approved']++;
-            $this->writeDetail($import, $reference, $fakturNumber, $data['faktur_date'], $data['ppn'] ?? 0, 'approved', $result['note']);
+            $this->finish($import, $data, 'approved', $result['note']);
         } catch (\Throwable $e) {
-            $summary['unmatched']++;
-            $this->writeDetail(
-                $import,
-                $data['reference'] ?? 'N/A',
-                $data['faktur_number'] ?? 'N/A',
-                $data['faktur_date'] ?? null,
-                $data['ppn'] ?? 0,
-                'rejected',
-                "File \"{$originalName}\" gagal diproses: ".$e->getMessage()
-            );
+            $this->finish($import, $data, 'rejected', "File \"{$originalName}\" gagal diproses: ".$e->getMessage());
         }
     }
 
     /**
      * Copy the faktur pajak PDF onto the invoice's FILE(S) tab. Skips
      * re-attaching if this exact faktur number is already archived there, so
-     * re-importing the same PDF (or a batch containing it) does not pile up
-     * duplicate copies.
+     * re-importing the same PDF does not pile up duplicate copies.
      */
     private function archiveOnInvoice(Invoice $invoice, string $originalName, string $sourcePath, string $fakturNumber): void
     {
@@ -156,24 +114,41 @@ class CoreTaxFakturPdfImportService
         ]);
     }
 
-    private function writeDetail(
-        TaxFileImport $import,
-        string $invoiceNumber,
-        string $fakturNumber,
-        ?Carbon $fakturDate,
-        float $vat,
-        string $status,
-        string $remarks
-    ): void {
+    /**
+     * Writes the one detail row this PDF produces, carrying every field the
+     * parser managed to extract (best-effort ones fall back to null), and
+     * rolls the outcome up onto the (1:1) parent import row.
+     */
+    private function finish(TaxFileImport $import, ?array $data, string $status, string $remarks): void
+    {
+        $data ??= [];
+
         TaxFileImportDetail::create([
             'tax_file_import_id' => $import->id,
-            'invoice_number' => $invoiceNumber,
-            'tax_number' => $fakturNumber !== '' ? $fakturNumber : 'N/A',
-            'tax_date' => $fakturDate ?? $import->import_date ?? now(),
-            'tax_amount' => $vat,
+            'invoice_number' => $data['reference'] ?? null ?: 'N/A',
+            'tax_number' => $data['faktur_number'] ?? null ?: 'N/A',
+            'buyer_npwp' => $data['buyer_npwp'] ?? null,
+            'buyer_name' => $data['buyer_name'] ?? null,
+            'tax_date' => $data['faktur_date'] ?? $import->import_date ?? now(),
+            'tax_amount' => $data['ppn'] ?? 0,
+            'dpp' => $data['dpp'] ?? null,
             'status' => $status,
             'remarks' => $remarks,
             'created_by' => Auth::id(),
+        ]);
+
+        $approved = $status === 'approved';
+
+        $import->update([
+            'total_records' => 1,
+            'success_count' => $approved ? 1 : 0,
+            'failed_count' => $approved ? 0 : 1,
+            'success_rate' => $approved ? 100 : 0,
+            'approval_success' => $approved ? 1 : 0,
+            'not_approved' => $status === 'warning' ? 1 : 0,
+            'rejected' => $status === 'rejected' ? 1 : 0,
+            'status' => 'completed',
+            'processed_at' => now(),
         ]);
     }
 }

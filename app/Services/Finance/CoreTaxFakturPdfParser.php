@@ -29,12 +29,17 @@ class CoreTaxFakturPdfParser
 
     /**
      * @return array{faktur_number: ?string, reference: ?string, seller_npwp: ?string,
-     *   buyer_npwp: ?string, faktur_date: ?Carbon, dpp: ?float, ppn: ?float}
+     *   seller_name: ?string, buyer_npwp: ?string, buyer_name: ?string,
+     *   faktur_date: ?Carbon, dpp: ?float, ppn: ?float}
      */
     public function parse(string $fullPath): array
     {
         $text = (new Parser)->parseFile($fullPath)->getText();
 
+        // Safe by ordinal position: the only "NPWP :" labelled lines are the
+        // seller's and the buyer's — the letterhead prints the seller's NPWP
+        // as an unlabelled "#0017556507035000000000" ID TKU, so it never
+        // matches this pattern and never shifts the index.
         preg_match_all('/NPWP\s*:\s*(\d+)/u', $text, $npwpMatches);
         $npwps = $npwpMatches[1] ?? [];
 
@@ -42,11 +47,31 @@ class CoreTaxFakturPdfParser
             'faktur_number' => $this->find('/Kode dan Nomor Seri Faktur Pajak\s*:?\s*(\d+)/u', $text),
             'reference' => $this->find('/\(Referensi\s*:\s*([^)]+)\)/u', $text),
             'seller_npwp' => $npwps[0] ?? null,
+            'seller_name' => $this->findAfterLabel($text, 'Pengusaha Kena Pajak', '/Nama\s*:\s*(.+)/u'),
             'buyer_npwp' => $npwps[1] ?? null,
+            'buyer_name' => $this->findAfterLabel($text, 'Pembeli Barang Kena Pajak', '/Nama\s*:\s*(.+)/u'),
             'faktur_date' => $this->findDate($text),
             'dpp' => $this->findAmount('/Dasar Pengenaan Pajak\s+([\d.,]+)/u', $text),
             'ppn' => $this->findAmount('/Jumlah PPN[^\n]*\s+([\d.,]+)/u', $text),
         ];
+    }
+
+    /**
+     * Finds $fieldPattern's first match AFTER $sectionLabel — unlike a bare
+     * ordinal count, this survives the letterhead printing "Nama:" (no space)
+     * for the seller before either the "Pengusaha Kena Pajak" or "Pembeli"
+     * section is reached, which would otherwise shift a plain 1st/2nd-match
+     * index by one and hand the seller's name back as the buyer's.
+     */
+    private function findAfterLabel(string $text, string $sectionLabel, string $fieldPattern): ?string
+    {
+        if (! preg_match('/'.preg_quote($sectionLabel, '/').'/u', $text, $label, PREG_OFFSET_CAPTURE)) {
+            return null;
+        }
+
+        $remainder = substr($text, $label[0][1] + strlen($label[0][0]));
+
+        return $this->find($fieldPattern, $remainder);
     }
 
     private function find(string $pattern, string $text): ?string

@@ -20,7 +20,7 @@ class TaxFileImportController extends Controller
 
     public function index(Request $request)
     {
-        $query = TaxFileImport::with(['bank', 'createdBy', 'updatedBy']);
+        $query = TaxFileImport::with(['bank', 'createdBy', 'updatedBy', 'details.matchedInvoice']);
 
         // Apply access control filter (hierarchical data)
         // Default: Jika tidak set hirarki, hanya bisa lihat data sendiri
@@ -77,9 +77,14 @@ class TaxFileImportController extends Controller
 
     /**
      * Accepts one-or-more PDF "Output Tax Invoice" files — the individually
-     * downloaded faktur pajak DJP issues per invoice. There is no Auto
-     * Process choice: every import is processed immediately, in the same
-     * request, so the button really does what it says.
+     * downloaded faktur pajak DJP issues per invoice. Each PDF becomes its
+     * OWN tax_file_imports row (one file, one list row, no zip) rather than
+     * one row summarising a batch — so a problem with one file never hides
+     * or blocks the others, and every row's own faktur pajak fields are
+     * front and center in the list instead of being buried in a "detail"
+     * only reachable via a batch-summary row. There is no Auto Process
+     * choice: every row is processed immediately, in the same request, so
+     * the button really does what it says.
      *
      * The older batched CSV/XLSX result-file flow is no longer offered here —
      * PDF supersedes it, since a matched PDF is both the data AND the
@@ -101,122 +106,95 @@ class TaxFileImportController extends Controller
         /** @var UploadedFile[] $files */
         $files = $request->file('files');
 
-        $importNumber = TaxFileImport::generateImportNumber();
-        $folder = 'tax-file-imports/'.$importNumber;
-        $fullFolder = public_path('uploads/'.$folder);
+        $uploadPath = 'tax-file-imports';
+        $fullPath = public_path('uploads/'.$uploadPath);
 
-        if (! is_dir($fullFolder)) {
-            mkdir($fullFolder, 0755, true);
+        if (! file_exists($fullPath)) {
+            mkdir($fullPath, 0755, true);
         }
 
-        $stored = [];
+        $created = 0;
+        $approved = 0;
+        $firstImport = null;
+
         foreach ($files as $file) {
             /** @var UploadedFile $file */
             $originalName = $file->getClientOriginalName();
             $storedName = time().'_'.preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
-            $file->move($fullFolder, $storedName);
+            $storedPath = $fullPath.DIRECTORY_SEPARATOR.$storedName;
+            $file->move($fullPath, $storedName);
 
-            $stored[] = [
-                'original_name' => $originalName,
-                'full_path' => $fullFolder.DIRECTORY_SEPARATOR.$storedName,
-            ];
+            try {
+                $import = TaxFileImport::create([
+                    'import_number' => TaxFileImport::generateImportNumber(),
+                    'file_name' => $storedName,
+                    'import_date' => now()->toDateString(),
+                    'bank_id' => null,
+                    'file_format' => 'pdf',
+                    'total_records' => 0,
+                    'success_count' => 0,
+                    'failed_count' => 0,
+                    'success_rate' => 0,
+                    'auto_process' => true,
+                    'delimiter' => TaxFileImport::DELIMITER_COMMA,
+                    'notes' => $request->notes,
+                    'status' => 'processing',
+                    'created_by' => Auth::id(),
+                ]);
+            } catch (\Throwable $e) {
+                // No row exists to record this against — clean up and move
+                // on rather than aborting the rest of the files in this batch.
+                if (file_exists($storedPath)) {
+                    unlink($storedPath);
+                }
+
+                continue;
+            }
+
+            $created++;
+            $firstImport ??= $import;
+
+            try {
+                app(CoreTaxFakturPdfImportService::class)->process($import, $originalName, $storedPath);
+
+                if ((int) $import->fresh()->success_count > 0) {
+                    $approved++;
+                }
+            } catch (\Throwable $e) {
+                // The service already writes its own detail row before it can
+                // throw; this only catches something truly unexpected (disk
+                // full, DB down mid-write). The row and the file stay in
+                // place either way so there is something to diagnose.
+                $import->update([
+                    'status' => 'failed',
+                    'error_log' => $e->getMessage(),
+                    'processed_at' => now(),
+                ]);
+            }
         }
 
-        try {
-            $import = TaxFileImport::create([
-                'import_number' => $importNumber,
-                // `file_name` is NOT NULL in the DB. The zip's name is
-                // predictable up front (see archivePdfImportFolder()), so
-                // there is no need to leave this blank until processing
-                // finishes — that would violate the column's constraint.
-                'file_name' => $importNumber.'.zip',
-                'import_date' => now()->toDateString(),
-                'bank_id' => null,
-                'file_format' => 'pdf',
-                'total_records' => 0,
-                'success_count' => 0,
-                'failed_count' => 0,
-                'success_rate' => 0,
-                'auto_process' => true,
-                'delimiter' => TaxFileImport::DELIMITER_COMMA,
-                'notes' => $request->notes,
-                'status' => 'processing',
-                'created_by' => Auth::id(),
-            ]);
-        } catch (\Throwable $e) {
-            $this->deleteDirectory($fullFolder);
-
-            return $this->storeFailure($request, 'Failed to create import: '.$e->getMessage());
+        if ($created === 0) {
+            return $this->storeFailure($request, 'Gagal membuat import untuk file yang diupload.');
         }
 
-        try {
-            app(CoreTaxFakturPdfImportService::class)->process($import, $stored);
-            $this->archivePdfImportFolder($import, $fullFolder);
-        } catch (\Throwable $e) {
-            $import->update([
-                'status' => 'failed',
-                'error_log' => $e->getMessage(),
-                'processed_at' => now(),
-            ]);
-
-            return $this->storeFailure($request, 'Failed to process import: '.$e->getMessage());
-        }
-
-        return $this->storeSuccess($request, $import);
+        return $this->storeSuccess($request, $firstImport, $created, $approved);
     }
 
-    /**
-     * Zips the uploaded PDFs into a single archive so the existing "Download"
-     * button on the list — built for one file per import — keeps working
-     * unmodified for a PDF-batch import too. `file_name` is already set to
-     * this exact name at creation (see store()); throwing here, rather than
-     * silently skipping a failed zip::open(), stops the import from being
-     * marked 'completed' with a Download button that points at a file that
-     * was never actually written.
-     */
-    private function archivePdfImportFolder(TaxFileImport $import, string $folder): void
+    private function storeSuccess(Request $request, TaxFileImport $firstImport, int $created, int $approved)
     {
-        $zipPath = public_path('uploads/tax-file-imports/'.$import->file_name);
+        $message = $created === 1
+            ? 'Faktur Pajak berhasil diimpor.'
+            : "{$created} Faktur Pajak diimpor — {$approved} berhasil, ".($created - $approved).' gagal/tidak cocok.';
 
-        $zip = new \ZipArchive;
-
-        if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
-            throw new \RuntimeException('Could not create archive for the uploaded PDFs.');
-        }
-
-        foreach (glob($folder.'/*') ?: [] as $file) {
-            $zip->addFile($file, basename($file));
-        }
-        $zip->close();
-
-        $this->deleteDirectory($folder);
-    }
-
-    private function deleteDirectory(string $path): void
-    {
-        if (! is_dir($path)) {
-            return;
-        }
-
-        foreach (glob($path.'/*') ?: [] as $file) {
-            is_dir($file) ? $this->deleteDirectory($file) : @unlink($file);
-        }
-
-        @rmdir($path);
-    }
-
-    private function storeSuccess(Request $request, TaxFileImport $import)
-    {
         if ($request->ajax()) {
             return response()->json([
                 'status' => 'success',
-                'message' => 'Tax file import created successfully.',
-                'data' => $import->load('bank', 'createdBy'),
+                'message' => $message,
+                'data' => $firstImport->load('bank', 'createdBy'),
             ]);
         }
 
-        return redirect()->route('tax-file-imports.index')
-            ->with('success', 'Tax file import created successfully.');
+        return redirect()->route('tax-file-imports.index')->with('success', $message);
     }
 
     /**
@@ -239,7 +217,7 @@ class TaxFileImportController extends Controller
 
     public function show($id)
     {
-        $import = TaxFileImport::with(['bank', 'createdBy', 'updatedBy', 'details'])->findOrFail($id);
+        $import = TaxFileImport::with(['bank', 'createdBy', 'updatedBy', 'details.matchedInvoice'])->findOrFail($id);
 
         if (request()->ajax()) {
             return response()->json([

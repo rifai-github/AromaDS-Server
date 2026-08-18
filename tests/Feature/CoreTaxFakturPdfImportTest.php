@@ -17,6 +17,11 @@ use Tests\TestCase;
  * file. Fixture PDFs are generated on the fly with dompdf rather than
  * checking in a real CoreTax PDF, which would carry a real customer's NPWP
  * and business data.
+ *
+ * The service processes exactly ONE PDF per call — one file, one
+ * tax_file_imports row, one detail row — so "does one bad file in a batch
+ * stop the rest" is a CONTROLLER-level concern (store()'s loop), covered in
+ * TaxFileImportProcessingTest, not here.
  */
 class CoreTaxFakturPdfImportTest extends TestCase
 {
@@ -101,8 +106,11 @@ class CoreTaxFakturPdfImportTest extends TestCase
             $table->foreignId('tax_file_import_id');
             $table->string('invoice_number')->nullable();
             $table->string('tax_number')->nullable();
+            $table->string('buyer_npwp', 30)->nullable();
+            $table->string('buyer_name')->nullable();
             $table->date('tax_date')->nullable();
             $table->decimal('tax_amount', 15, 2)->default(0);
+            $table->decimal('dpp', 15, 2)->nullable();
             $table->string('status')->nullable();
             $table->text('remarks')->nullable();
             $table->unsignedBigInteger('created_by')->nullable();
@@ -131,16 +139,12 @@ class CoreTaxFakturPdfImportTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_matched_pdf_issues_the_invoice_and_archives_the_faktur_file(): void
+    public function test_matched_pdf_issues_the_invoice_archives_the_file_and_records_full_detail(): void
     {
         $pdf = $this->makeFakturPdf(['reference' => 'TEST-INV/26-08/0001']);
 
         $import = $this->makeImport();
-        $summary = app(CoreTaxFakturPdfImportService::class)->process($import, [
-            ['original_name' => 'faktur-1.pdf', 'full_path' => $pdf],
-        ]);
-
-        $this->assertSame(['total' => 1, 'approved' => 1, 'unmatched' => 0, 'skipped' => 0], $summary);
+        app(CoreTaxFakturPdfImportService::class)->process($import, 'faktur-1.pdf', $pdf);
 
         $invoice = Invoice::find(1);
         $this->assertSame('tax_approved', $invoice->invoice_status);
@@ -155,9 +159,25 @@ class CoreTaxFakturPdfImportTest extends TestCase
         $this->assertFileExists(public_path($file->file_path));
         $this->scratchFiles[] = public_path($file->file_path);
 
+        // The detail row is now the one place that carries every field
+        // pulled from the document, since it's a one-file-one-row model.
         $detail = TaxFileImportDetail::where('tax_file_import_id', $import->id)->sole();
         $this->assertSame('approved', $detail->status);
+        $this->assertSame('TEST-INV/26-08/0001', $detail->invoice_number);
         $this->assertSame('04002600321184875', $detail->tax_number);
+        $this->assertSame('0010613925093000', $detail->buyer_npwp);
+        $this->assertSame('PT CONTOH PEMBELI', $detail->buyer_name);
+        $this->assertSame('2026-08-12', $detail->tax_date->toDateString());
+        $this->assertEqualsWithDelta(550000.0, (float) $detail->dpp, 0.01);
+        $this->assertEqualsWithDelta(66000.0, (float) $detail->tax_amount, 0.01);
+        $this->assertSame($invoice->id, $detail->matchedInvoice->id);
+
+        // 1 file -> exactly 1 row, rolled up onto the (1:1) parent import.
+        $import->refresh();
+        $this->assertSame('completed', $import->status);
+        $this->assertSame(1, $import->total_records);
+        $this->assertSame(1, $import->success_count);
+        $this->assertSame(0, $import->failed_count);
     }
 
     public function test_unmatched_reference_is_recorded_as_rejected_without_touching_any_invoice(): void
@@ -165,17 +185,19 @@ class CoreTaxFakturPdfImportTest extends TestCase
         $pdf = $this->makeFakturPdf(['reference' => 'NOT-A-REAL-INVOICE']);
 
         $import = $this->makeImport();
-        $summary = app(CoreTaxFakturPdfImportService::class)->process($import, [
-            ['original_name' => 'faktur-x.pdf', 'full_path' => $pdf],
-        ]);
-
-        $this->assertSame(['total' => 1, 'approved' => 0, 'unmatched' => 1, 'skipped' => 0], $summary);
+        app(CoreTaxFakturPdfImportService::class)->process($import, 'faktur-x.pdf', $pdf);
 
         $detail = TaxFileImportDetail::where('tax_file_import_id', $import->id)->sole();
         $this->assertSame('rejected', $detail->status);
         $this->assertStringContainsString('Tidak ada invoice', $detail->remarks);
+        $this->assertNull($detail->matchedInvoice);
 
         $this->assertSame('approved', Invoice::find(1)->invoice_status);
+
+        $import->refresh();
+        $this->assertSame('completed', $import->status);
+        $this->assertSame(0, $import->success_count);
+        $this->assertSame(1, $import->failed_count);
     }
 
     public function test_a_cancelled_invoice_is_never_resurrected(): void
@@ -183,66 +205,55 @@ class CoreTaxFakturPdfImportTest extends TestCase
         $pdf = $this->makeFakturPdf(['reference' => 'TEST-INV/26-08/0002']);
 
         $import = $this->makeImport();
-        app(CoreTaxFakturPdfImportService::class)->process($import, [
-            ['original_name' => 'faktur-cancelled.pdf', 'full_path' => $pdf],
-        ]);
+        app(CoreTaxFakturPdfImportService::class)->process($import, 'faktur-cancelled.pdf', $pdf);
 
         $invoice = Invoice::find(2);
         $this->assertSame('cancelled', $invoice->invoice_status);
         $this->assertNull($invoice->coretax_faktur_number);
         $this->assertSame(0, DB::table('invoice_files')->where('invoice_id', 2)->count());
+
+        $detail = TaxFileImportDetail::where('tax_file_import_id', $import->id)->sole();
+        $this->assertSame('warning', $detail->status);
     }
 
-    /**
-     * One bad file in a batch must not stop the rest — this is exactly the
-     * scenario a real multi-PDF upload will hit whenever a user drops in a
-     * stray file that isn't a faktur pajak at all.
-     */
-    public function test_a_file_missing_the_referensi_line_is_rejected_without_aborting_the_batch(): void
+    public function test_a_file_missing_the_referensi_line_is_rejected_with_a_clear_remark(): void
     {
-        $good = $this->makeFakturPdf(['reference' => 'TEST-INV/26-08/0001']);
         $bad = $this->makeFakturPdf(['reference' => null]);
 
         $import = $this->makeImport();
-        $summary = app(CoreTaxFakturPdfImportService::class)->process($import, [
-            ['original_name' => 'no-referensi.pdf', 'full_path' => $bad],
-            ['original_name' => 'faktur-1.pdf', 'full_path' => $good],
-        ]);
+        app(CoreTaxFakturPdfImportService::class)->process($import, 'no-referensi.pdf', $bad);
 
-        $this->assertSame(['total' => 2, 'approved' => 1, 'unmatched' => 1, 'skipped' => 0], $summary);
-        $this->assertSame('tax_approved', Invoice::find(1)->invoice_status);
-
-        $rejected = TaxFileImportDetail::where('tax_file_import_id', $import->id)->where('status', 'rejected')->sole();
-        $this->assertStringContainsString('no-referensi.pdf', $rejected->remarks);
+        $detail = TaxFileImportDetail::where('tax_file_import_id', $import->id)->sole();
+        $this->assertSame('rejected', $detail->status);
+        $this->assertStringContainsString('no-referensi.pdf', $detail->remarks);
+        $this->assertSame('N/A', $detail->invoice_number);
     }
 
-    public function test_a_corrupt_file_is_rejected_without_aborting_the_batch(): void
+    public function test_a_corrupt_file_is_rejected_with_a_clear_remark(): void
     {
         $corrupt = sys_get_temp_dir().'/corrupt_'.uniqid().'.pdf';
         file_put_contents($corrupt, 'this is not a pdf');
         $this->scratchFiles[] = $corrupt;
 
-        $good = $this->makeFakturPdf(['reference' => 'TEST-INV/26-08/0001']);
-
         $import = $this->makeImport();
-        $summary = app(CoreTaxFakturPdfImportService::class)->process($import, [
-            ['original_name' => 'corrupt.pdf', 'full_path' => $corrupt],
-            ['original_name' => 'faktur-1.pdf', 'full_path' => $good],
-        ]);
+        app(CoreTaxFakturPdfImportService::class)->process($import, 'corrupt.pdf', $corrupt);
 
-        $this->assertSame(1, $summary['approved']);
-        $this->assertSame(1, $summary['unmatched']);
-        $this->assertSame('tax_approved', Invoice::find(1)->invoice_status);
+        $detail = TaxFileImportDetail::where('tax_file_import_id', $import->id)->sole();
+        $this->assertSame('rejected', $detail->status);
+        $this->assertStringContainsString('corrupt.pdf', $detail->remarks);
+
+        $import->refresh();
+        $this->assertSame('completed', $import->status);
+        $this->assertSame(1, $import->failed_count);
     }
 
     public function test_reimporting_the_same_faktur_does_not_duplicate_the_archived_file(): void
     {
         $pdf = $this->makeFakturPdf(['reference' => 'TEST-INV/26-08/0001']);
-
-        $import = $this->makeImport();
         $service = app(CoreTaxFakturPdfImportService::class);
-        $service->process($import, [['original_name' => 'faktur-1.pdf', 'full_path' => $pdf]]);
-        $service->process($import, [['original_name' => 'faktur-1-copy.pdf', 'full_path' => $pdf]]);
+
+        $service->process($this->makeImport(), 'faktur-1.pdf', $pdf);
+        $service->process($this->makeImport(), 'faktur-1-copy.pdf', $pdf);
 
         $files = DB::table('invoice_files')->where('invoice_id', 1)->get();
         $this->assertCount(1, $files, 'the same faktur pajak was archived twice');
@@ -294,10 +305,9 @@ class CoreTaxFakturPdfImportTest extends TestCase
 
         return TaxFileImport::create([
             'import_number' => $importNumber,
-            // NOT NULL in the real DB; the controller sets this to the
-            // eventual zip name up front (see store()) — mirrored here since
-            // this test calls the service directly, bypassing the controller.
-            'file_name' => $importNumber.'.zip',
+            // One row per PDF now, so file_name is a plain filename — no
+            // zip involved, mirroring what store() actually sets it to.
+            'file_name' => $importNumber.'.pdf',
             'import_date' => now()->toDateString(),
             'file_format' => 'pdf',
             'status' => 'processing',

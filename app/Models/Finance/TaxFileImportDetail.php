@@ -2,9 +2,9 @@
 
 namespace App\Models\Finance;
 
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\User;
 
 class TaxFileImportDetail extends Model
 {
@@ -14,8 +14,11 @@ class TaxFileImportDetail extends Model
         'tax_file_import_id',
         'invoice_number',
         'tax_number',
+        'buyer_npwp',
+        'buyer_name',
         'tax_date',
         'tax_amount',
+        'dpp',
         'status',
         'remarks',
         'created_by',
@@ -25,12 +28,22 @@ class TaxFileImportDetail extends Model
     protected $casts = [
         'tax_date' => 'date',
         'tax_amount' => 'decimal:2',
+        'dpp' => 'decimal:2',
     ];
 
     // Relationships
     public function taxFileImport()
     {
         return $this->belongsTo(TaxFileImport::class);
+    }
+
+    /**
+     * The invoice this faktur pajak was matched against, if any — resolves to
+     * null for rejected rows, where invoice_number is the literal 'N/A'.
+     */
+    public function matchedInvoice()
+    {
+        return $this->belongsTo(Invoice::class, 'invoice_number', 'invoice_number');
     }
 
     public function creator()
@@ -77,7 +90,7 @@ class TaxFileImportDetail extends Model
     // Accessors & Mutators
     public function getFormattedTaxAmountAttribute()
     {
-        return 'Rp ' . number_format($this->tax_amount, 0, ',', '.');
+        return 'Rp '.number_format($this->tax_amount, 0, ',', '.');
     }
 
     public function getStatusBadgeAttribute()
@@ -107,5 +120,10 @@ class TaxFileImportDetail extends Model
     public function getFormattedTaxDateAttribute()
     {
         return $this->tax_date->format('d M Y');
+    }
+
+    public function getFormattedDppAttribute()
+    {
+        return $this->dpp === null ? '-' : 'Rp '.number_format((float) $this->dpp, 0, ',', '.');
     }
 }

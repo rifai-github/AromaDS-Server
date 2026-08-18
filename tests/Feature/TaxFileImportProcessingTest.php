@@ -53,8 +53,11 @@ class TaxFileImportProcessingTest extends TestCase
             $table->foreignId('tax_file_import_id');
             $table->string('invoice_number');
             $table->string('tax_number');
+            $table->string('buyer_npwp', 30)->nullable();
+            $table->string('buyer_name')->nullable();
             $table->date('tax_date');
             $table->decimal('tax_amount', 15, 2);
+            $table->decimal('dpp', 15, 2)->nullable();
             $table->enum('status', ['pending', 'approved', 'rejected', 'warning'])->default('pending');
             $table->text('remarks')->nullable();
             $table->foreignId('created_by')->nullable();
@@ -356,8 +359,13 @@ class TaxFileImportProcessingTest extends TestCase
      * rolled the import record itself back out of existence, taking the only
      * trace of what was uploaded with it. Processing is no longer optional —
      * there is no Auto Process choice — so this path runs on every single
-     * submission now, and the record plus the uploaded files must survive a
+     * submission now, and the record plus the uploaded file must survive a
      * processing failure so there is something left to diagnose or retry.
+     *
+     * Each file gets its own row and its own try/catch in the store() loop
+     * now, so one file's processing exception marks only that row 'failed'
+     * — it no longer fails the whole HTTP request, since $created > 0 still
+     * gets a success response summarizing the batch.
      *
      * CoreTaxFakturPdfImportService is deliberately resilient per-file (one
      * bad PDF logs a rejected row rather than throwing — see
@@ -365,7 +373,7 @@ class TaxFileImportProcessingTest extends TestCase
      * black-box. The service is swapped for a mock that throws instead, to
      * exercise the controller's own try/catch directly.
      */
-    public function test_a_processing_failure_leaves_the_import_record_and_files_in_place(): void
+    public function test_a_processing_failure_leaves_the_import_record_and_file_in_place(): void
     {
         $this->mock(\App\Services\Finance\CoreTaxFakturPdfImportService::class, function ($mock) {
             $mock->shouldReceive('process')->once()->andThrow(new \RuntimeException('simulated processing failure'));
@@ -379,14 +387,18 @@ class TaxFileImportProcessingTest extends TestCase
                 'notes' => 'processing-failure-test',
             ]);
 
-        // A clean, friendly failure response — not Laravel's default exception page.
-        $response->assertServerError();
-        $response->assertJsonPath('status', 'error');
+        // The row itself was still created, so the request as a whole succeeds.
+        $response->assertOk();
+        $response->assertJsonPath('status', 'success');
 
         $import = TaxFileImport::where('notes', 'processing-failure-test')->first();
         $this->assertNotNull($import, 'the import record was rolled back / deleted on a processing failure');
         $this->assertSame('failed', $import->status);
         $this->assertNotNull($import->error_log);
+
+        $filePath = public_path('uploads/tax-file-imports/'.$import->file_name);
+        $this->assertFileExists($filePath, 'the uploaded PDF was deleted despite the row surviving');
+        $this->uploadedImportFiles[] = $filePath;
     }
 
     public function test_import_number_sequence_includes_soft_deleted_records(): void
@@ -422,14 +434,14 @@ class TaxFileImportProcessingTest extends TestCase
     }
 
     /**
-     * PDFs are moved into a per-import folder (named after the generated
-     * import number) before the TaxFileImport row is written, so a failed
-     * insert must clean up that whole folder, not just a single loose file.
+     * Each PDF is stored directly under uploads/tax-file-imports/ (no
+     * per-import subfolder, no zip), so a failed row insert only ever needs
+     * to clean up that one loose file.
      */
-    public function test_failed_store_removes_the_uploaded_pdf_folder(): void
+    public function test_failed_store_removes_the_uploaded_pdf_file(): void
     {
         $baseDir = public_path('uploads/tax-file-imports');
-        $dirsBefore = glob($baseDir.'/*', GLOB_ONLYDIR) ?: [];
+        $filesBefore = glob($baseDir.'/*') ?: [];
 
         DB::statement(<<<'SQL'
             CREATE TRIGGER fail_tax_file_import_insert
@@ -450,32 +462,29 @@ class TaxFileImportProcessingTest extends TestCase
                     'files' => [$this->makeFakturPdfUpload('orphan-cleanup-test.pdf', 'INV-001', '04002600321184875')],
                 ]);
 
+            // Every file failed to become a row, so the endpoint has nothing to report success on.
             $response->assertServerError();
             $response->assertJsonPath('status', 'error');
 
-            $dirsAfter = glob($baseDir.'/*', GLOB_ONLYDIR) ?: [];
-            $this->assertSame($dirsBefore, $dirsAfter, 'a per-import PDF folder was left behind on a failed insert');
+            $filesAfter = glob($baseDir.'/*') ?: [];
+            $this->assertSame($filesBefore, $filesAfter, 'an uploaded PDF was left behind on a failed insert');
             $this->assertDatabaseCount('tax_file_imports', 0);
         } finally {
             DB::statement('DROP TRIGGER IF EXISTS fail_tax_file_import_insert');
 
-            foreach (array_diff(glob($baseDir.'/*', GLOB_ONLYDIR) ?: [], $dirsBefore) as $orphanedDir) {
-                foreach (glob($orphanedDir.'/*') ?: [] as $file) {
-                    @unlink($file);
-                }
-                @rmdir($orphanedDir);
+            foreach (array_diff(glob($baseDir.'/*') ?: [], $filesBefore) as $orphanedFile) {
+                @unlink($orphanedFile);
             }
         }
     }
 
     /**
      * End-to-end through the real HTTP endpoint: multiple PDFs in one
-     * request, matched, promoted, archived onto the invoice, and zipped for
-     * the Download button — the plumbing that is unique to going through
-     * store() rather than calling CoreTaxFakturPdfImportService directly
-     * (which CoreTaxFakturPdfImportTest already covers in depth).
+     * request now become separate tax_file_imports rows — one per file, no
+     * zip — each matched/promoted/archived independently, so one file
+     * failing to match never blocks or hides another file's own row.
      */
-    public function test_store_accepts_a_pdf_batch_and_issues_the_matched_invoice(): void
+    public function test_store_accepts_multiple_pdfs_as_separate_rows_and_issues_the_matched_invoice(): void
     {
         $pdfOne = $this->makeFakturPdfUpload('faktur-1.pdf', 'INV-001', '04002600321184875');
         $pdfTwo = $this->makeFakturPdfUpload('faktur-2.pdf', 'INV-DOES-NOT-EXIST', '04002600321184999');
@@ -491,18 +500,28 @@ class TaxFileImportProcessingTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('status', 'success');
 
-        $import = TaxFileImport::where('notes', 'pdf-batch-http-test')->firstOrFail();
-        $this->assertSame('pdf', $import->file_format);
-        $this->assertSame('completed', $import->status);
-        $this->assertSame(2, $import->total_records);
-        $this->assertSame(1, $import->success_count);
-        $this->assertSame(1, $import->failed_count);
+        $imports = TaxFileImport::where('notes', 'pdf-batch-http-test')->orderBy('id')->get();
+        $this->assertCount(2, $imports, 'two uploaded PDFs should create two separate import rows');
 
-        // Uploads are archived as a zip so the existing Download button keeps working.
-        $this->assertStringEndsWith('.zip', $import->file_name);
-        $zipPath = public_path('uploads/tax-file-imports/'.$import->file_name);
-        $this->assertFileExists($zipPath);
-        $this->uploadedImportFiles[] = $zipPath;
+        foreach ($imports as $import) {
+            $this->assertSame('pdf', $import->file_format);
+            $this->assertSame('completed', $import->status);
+            $this->assertSame(1, $import->total_records);
+
+            // No zip anymore — each row keeps its own plain PDF filename.
+            $this->assertStringEndsNotWith('.zip', $import->file_name);
+            $filePath = public_path('uploads/tax-file-imports/'.$import->file_name);
+            $this->assertFileExists($filePath);
+            $this->uploadedImportFiles[] = $filePath;
+        }
+
+        [$matchedImport, $unmatchedImport] = $imports[0]->success_count === 1
+            ? [$imports[0], $imports[1]]
+            : [$imports[1], $imports[0]];
+
+        $this->assertSame(1, $matchedImport->success_count);
+        $this->assertSame(0, $unmatchedImport->success_count);
+        $this->assertSame(1, $unmatchedImport->failed_count);
 
         $invoice = DB::table('invoices')->where('id', 1)->first();
         $this->assertSame('tax_approved', $invoice->invoice_status);
