@@ -2570,12 +2570,13 @@ class QuotationController extends Controller
     private function recalculateQuotationTotals(Quotation $quotation)
     {
         $totalAmount = $quotation->quotationDetails()->sum('total_price');
-        
-        // Apply discount and tax if any
+
+        // Apply discount only. PPN is intentionally excluded from Quotation totals
+        // per report-mom5.md ("Quotation & Contract should show total price without PPN");
+        // PPN is added later at Invoice stage from TaxSetting.
         $discountAmount = $quotation->discount_amount ?? 0;
-        $taxAmount = $quotation->tax_amount ?? 0;
-        
-        $grandTotal = $totalAmount - $discountAmount + $taxAmount;
+
+        $grandTotal = $totalAmount - $discountAmount;
 
         $quotation->update([
             'total_amount' => $totalAmount,
