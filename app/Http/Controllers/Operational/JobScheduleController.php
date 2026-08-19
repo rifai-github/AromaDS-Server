@@ -7428,8 +7428,9 @@ class JobScheduleController extends Controller
                 }
 
                 $units = $unitsQuery->get();
-                
+
                 if ($units->isEmpty()) {
+                    \Log::warning("Remove Job {$removeJob->job_number}: no active Unit On Wall matched for JA Room {$jaRoom->id} (room_id={$roomId}, rental_id={$rental->id}, building_id={$removeJob->building_id}, SN filter=" . (empty($installJobSns) ? 'none' : implode(',', $installJobSns)) . "). Nothing removed/queued for this room.");
                     continue;
                 }
                 
