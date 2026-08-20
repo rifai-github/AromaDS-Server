@@ -5710,21 +5710,30 @@ class JobController extends Controller
             // with no record of leaving the warehouse, and the old SN had no record of
             // needing to come back. Best-effort: failing to log the paper trail should not
             // block the swap the technician already performed in the field.
-            try {
-                $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
-                $reflection = new \ReflectionClass($jobScheduleController);
+            //
+            // Each side gets its own try/catch — confirmed live (20 Aug 2026, job
+            // SBY-IR/26-08/0009) that a single shared try/catch let a receiving-side
+            // failure silently swallow the issuing call entirely, so only the old SN's
+            // Inventory Receiving appeared and the new SN's Inventory Issuing never ran.
+            $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
+            $reflection = new \ReflectionClass($jobScheduleController);
 
-                if ($oldSnModel) {
+            if ($oldSnModel) {
+                try {
                     $queueReceivingMethod = $reflection->getMethod('queueRemovedUnitReceiving');
                     $queueReceivingMethod->setAccessible(true);
                     $queueReceivingMethod->invoke($jobScheduleController, $job, $uow, $oldSnModel);
+                } catch (\Exception $e) {
+                    \Log::error("swapSerialNumber: Failed to record Inventory Receiving trail for Job {$job->job_number}: " . $e->getMessage());
                 }
+            }
 
+            try {
                 $queueIssuingMethod = $reflection->getMethod('queueSwappedUnitIssuing');
                 $queueIssuingMethod->setAccessible(true);
                 $queueIssuingMethod->invoke($jobScheduleController, $job, $newSnModel);
             } catch (\Exception $e) {
-                \Log::error("swapSerialNumber: Failed to record Inventory Issuing/Receiving trail for Job {$job->job_number}: " . $e->getMessage());
+                \Log::error("swapSerialNumber: Failed to record Inventory Issuing trail for Job {$job->job_number}: " . $e->getMessage());
             }
 
             DB::commit();
