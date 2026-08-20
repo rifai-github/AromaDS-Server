@@ -10395,14 +10395,26 @@ class JobScheduleController extends Controller
                     }
 
                     if ($product) {
-                        
+
                         // MOM: Unit marker comes from product_categories.is_unit.
                         $isUnitProduct = $this->isUnitProductByCategory($product);
-                        
-                        if ($isUnitOnly && !$isUnitProduct) {
+
+                        // A multiplier of 0 means "due once, at install only" (see
+                        // RentalDetail::isDueAtServiceSequence) regardless of whether the
+                        // material is a physical unit or a consumable/spare-part. Without this
+                        // exemption, a non-unit item with multiplier 0 (e.g. a spare-part filter
+                        // meant to ship once with the install) passes the sequence check above
+                        // but is then silently dropped by the is_unit filter below on every job,
+                        // since it's only ever "due" on the one job type (install) that filter
+                        // excludes it from. Mirrors the exemption in
+                        // JobAssignScheduleController::autoCreateMaterialIssuesFromRental().
+                        $isPermanentNonUnitDueAtInstall = $isUnitOnly
+                            && (int) ($detail->service_frequency_multiplier ?? -1) === 0;
+
+                        if ($isUnitOnly && !$isUnitProduct && !$isPermanentNonUnitDueAtInstall) {
                             continue;
                         }
-                        
+
                         if ($isNonUnitOnly && $isUnitProduct) {
                             continue;
                         }
