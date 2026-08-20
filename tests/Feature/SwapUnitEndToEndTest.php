@@ -137,6 +137,21 @@ class SwapUnitEndToEndTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('product_types', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('master_products', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('product_type_id')->nullable();
+            $table->string('name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('branches', function (Blueprint $table) {
             $table->id();
             $table->string('code')->nullable();
@@ -282,6 +297,8 @@ class SwapUnitEndToEndTest extends TestCase
         Schema::dropIfExists('unit_on_walls');
         Schema::dropIfExists('serial_numbers');
         Schema::dropIfExists('warehouses');
+        Schema::dropIfExists('master_products');
+        Schema::dropIfExists('product_types');
         Schema::dropIfExists('branches');
         Schema::dropIfExists('job_assign_schedules');
         Schema::dropIfExists('job_schedule_room_assignments');
@@ -391,5 +408,23 @@ class SwapUnitEndToEndTest extends TestCase
             'inventory_issuing_id' => $issuing->id ?? 0,
             'serial_number_id' => $newSn->id,
         ]);
+
+        // The Job Schedule "Serial Numbers" tab must also pick up the swapped-in unit
+        // (JobScheduleController::resolveSwapIssuedSerialNumbersForJob()) — the swap's own
+        // Inventory Issuing uses status 'issued' / reference_no = job_number, which the
+        // pre-existing MaterialIssue-driven resolution never matches.
+        $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
+        $method = new \ReflectionMethod($jobScheduleController, 'resolveSwapIssuedSerialNumbersForJob');
+        $method->setAccessible(true);
+        $tabSerialNumbers = $method->invoke($jobScheduleController, $job->fresh());
+
+        $this->assertTrue(
+            $tabSerialNumbers->contains(fn ($sn) => $sn->serial_number === 'DW300W2606014'),
+            'Expected the swapped-in serial number to appear on the Job Schedule Serial Numbers tab.'
+        );
+        $this->assertFalse(
+            $tabSerialNumbers->contains(fn ($sn) => $sn->serial_number === 'DW300W2606010'),
+            'The old (swapped-out) serial number belongs to Inventory Receiving, not this job\'s issued list.'
+        );
     }
 }

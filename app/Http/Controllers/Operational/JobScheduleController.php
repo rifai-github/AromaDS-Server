@@ -2685,6 +2685,14 @@ class JobScheduleController extends Controller
             }
         }
 
+        // Swap Unit (Ganti Unit via APK) records its own Inventory Issuing per job_number
+        // (JobScheduleController::queueSwappedUnitIssuing()), separate from the Material
+        // Assign-driven MaterialIssue flow above: status 'issued', reference_no = job_number
+        // rather than a MaterialIssue issue_number. The branches above never match those, so
+        // a swapped-in unit was invisible here even after the Inventory Issuing record itself
+        // existed.
+        $serialNumbers = collect($serialNumbers)->concat($this->resolveSwapIssuedSerialNumbersForJob($jobSchedule));
+
         $serialNumbers = collect($serialNumbers)
             ->filter()
             ->unique(fn ($serialNumber) => trim((string) $serialNumber->serial_number) ?: $serialNumber->id)
@@ -7628,6 +7636,31 @@ class JobScheduleController extends Controller
             'created_by' => \Auth::id(),
             'updated_by' => \Auth::id(),
         ]);
+    }
+
+    /**
+     * Serial numbers issued to this job via Swap Unit (queueSwappedUnitIssuing()), for
+     * display on the Job Schedule "Serial Numbers" tab. Each swap issuing item points at
+     * exactly one already-known unit (no batch/pointer resolution needed), so read
+     * serial_number_id directly.
+     */
+    private function resolveSwapIssuedSerialNumbersForJob(JobSchedule $jobSchedule): \Illuminate\Support\Collection
+    {
+        if (! $jobSchedule->job_number) {
+            return collect();
+        }
+
+        return \App\Models\InventoryIssuingItem::whereHas('inventoryIssuing', function ($query) use ($jobSchedule) {
+            $query->where('reference_no', $jobSchedule->job_number)
+                ->where('status', 'issued')
+                ->where('remarks', 'like', 'Auto-generated: Ganti Unit%');
+        })
+            ->whereNotNull('serial_number_id')
+            ->with('serialNumber.masterProduct.productType', 'serialNumber.warehouse')
+            ->get()
+            ->pluck('serialNumber')
+            ->filter()
+            ->values();
     }
 
     private function resolveRemoveUnitReceivingWarehouse(JobSchedule $removeJob, ?\App\Models\SerialNumber $serialNumber): ?\App\Models\Warehouse
