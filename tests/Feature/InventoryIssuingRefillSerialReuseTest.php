@@ -726,6 +726,61 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
         $this->assertStringContainsString('Reissued to Job SBY-CSR/26-08/0004 on', $serialNumber->notes);
     }
 
+    public function test_resolve_allocated_serials_for_display_follows_true_allocation_not_stale_pointer(): void
+    {
+        $this->seedProduct(12, 102, 'All Purpose Cleaner 100 ml', hasSerialNumber: false, isUnit: false);
+        $this->actingAs(User::findOrFail(1));
+
+        // 6 candidate rows sharing one batch code, all scanned into the SAME representative
+        // pointer (id 500) at material-check time -- realistic when staff scan whichever
+        // "ready" row comes up first, before any of them have moved.
+        foreach (range(500, 505) as $id) {
+            DB::table('serial_numbers')->insert([
+                'id' => $id,
+                'serial_number' => 'CLN1000002',
+                'master_product_id' => 102,
+                'warehouse_id' => 1,
+                'status' => 'ready',
+                'location_type' => 'warehouse',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        DB::table('inventory_issuings')->insert([
+            ['id' => 1, 'issuing_number' => 'SBY-MI/26-08/0001', 'warehouse_id' => 1, 'received_by' => 1, 'status' => 'sent', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 2, 'issuing_number' => 'SBY-MI/26-08/0002', 'warehouse_id' => 1, 'received_by' => 1, 'status' => 'sent', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 3, 'issuing_number' => 'SBY-MI/26-08/0003', 'warehouse_id' => 1, 'received_by' => 1, 'status' => 'sent', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        // Three separate jobs' issuing items, each requesting qty 2, all pointing at the
+        // same representative serial_number_id (500) -- exactly like SBY-CSR/26-08/0019 and
+        // SBY-CSR/26-09/0017 both pointing at SN 459 for "All Purpose Cleaner 100 ml".
+        DB::table('inventory_issuing_items')->insert([
+            ['id' => 100, 'inventory_issuing_id' => 1, 'product_id' => 102, 'serial_number_id' => 500, 'quantity_requested' => 2, 'quantity_issued' => 2, 'quantity_received' => 2, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 200, 'inventory_issuing_id' => 2, 'product_id' => 102, 'serial_number_id' => 500, 'quantity_requested' => 2, 'quantity_issued' => 2, 'quantity_received' => 2, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 300, 'inventory_issuing_id' => 3, 'product_id' => 102, 'serial_number_id' => 500, 'quantity_requested' => 2, 'quantity_issued' => 2, 'quantity_received' => 2, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $service = app(InventoryIssuingService::class);
+
+        // Job 1 Done Job: allocates [500, 501] to customer 10.
+        $service->moveSerialNumbersToCustomerForItems(InventoryIssuingItem::where('id', 100)->get(), 10, 1);
+        // Job 2 Done Job: allocates [502, 503] to customer 20 -- but item 200's own
+        // serial_number_id pointer still says 500, which now belongs to job 1's customer.
+        $service->moveSerialNumbersToCustomerForItems(InventoryIssuingItem::where('id', 200)->get(), 20, 1);
+
+        $resolved = $service->resolveAllocatedSerialNumbersForItems(
+            InventoryIssuingItem::where('id', 200)->get()
+        );
+
+        $this->assertSame([502, 503], $resolved->pluck('id')->sort()->values()->all());
+        foreach ($resolved as $serialNumber) {
+            $this->assertSame('in_use', $serialNumber->status);
+            $this->assertSame(20, $serialNumber->location_id);
+        }
+    }
+
     public function test_available_serial_list_keeps_reused_refill_serials_but_excludes_reused_unit_serials(): void
     {
         $this->seedProduct(10, 100, 'Aroma Diffuser Premium', hasSerialNumber: true, isUnit: false);

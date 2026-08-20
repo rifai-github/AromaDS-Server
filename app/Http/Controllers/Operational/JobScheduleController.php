@@ -2650,11 +2650,16 @@ class JobScheduleController extends Controller
         } else {
             // Other jobs: Get serial numbers from inventory_issuing_items that were registered during material check via apps
             // Only show serial numbers that were actually scanned/registered during material verification.
-            // A qty > 1 unit item stores every SN in serialLinks while serial_number_id
-            // retains only the first SN for backwards compatibility, so collect both.
+            // Batch/refill products (non-unique serial, qty > 1) only ever keep ONE representative
+            // pointer on serial_number_id/serialLinks (see InventoryIssuingItem::requiredSerialCount) --
+            // the real per-unit rows actually allocated to this job are resolved dynamically by
+            // InventoryIssuingService, the same way moveSerialNumbersToCustomerForItems does at
+            // Done Job time. Reading item->serialNumber directly here would show that stale
+            // pointer's current status instead of the truth (e.g. a batch code stuck showing
+            // "Ready" even though this job's actual units are correctly "In Use").
             $materialIssueNumbers = $materialIssues->pluck('issue_number')->toArray();
 
-            $issuedItemRelations = ['serialNumber'];
+            $issuedItemRelations = ['product', 'serialNumber'];
             if (\Illuminate\Support\Facades\Schema::hasTable('inventory_issuing_item_serials')) {
                 $issuedItemRelations[] = 'serialLinks.serialNumber';
             }
@@ -2666,20 +2671,9 @@ class JobScheduleController extends Controller
                 ->with($issuedItemRelations)
                 ->get();
 
-            $serialNumbers = $issuedItems
-                ->flatMap(function ($item) {
-                    $linkedSerials = $item->relationLoaded('serialLinks')
-                        ? $item->serialLinks->pluck('serialNumber')->filter()
-                        : collect();
-
-                    if ($linkedSerials->isEmpty() && $item->serialNumber) {
-                        $linkedSerials = collect([$item->serialNumber]);
-                    }
-
-                    return $linkedSerials;
-                })
+            $serialNumbers = app(\App\Services\Warehouse\InventoryIssuingService::class)
+                ->resolveAllocatedSerialNumbersForItems($issuedItems)
                 ->filter(fn ($serialNumber) => !empty($serialNumber->serial_number))
-                ->unique(fn ($serialNumber) => trim((string) $serialNumber->serial_number) ?: $serialNumber->id)
                 ->values();
 
             $serialNumbers->each->loadMissing(['masterProduct.productType', 'warehouse']);

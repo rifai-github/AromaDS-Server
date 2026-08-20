@@ -289,6 +289,33 @@ class InventoryIssuingService
         ]);
     }
 
+    /**
+     * Resolve the SerialNumber rows actually allocated to a set of issuing items, without
+     * mutating anything. For batch/refill products (non-unique serial, quantity > 1), the
+     * item's serial_number_id / serialLinks pivot only ever holds ONE representative pointer
+     * row (see InventoryIssuingItem::requiredSerialCount) -- the real per-unit rows are the
+     * ones resolveSerialNumberIdsForItems computes by offset against issuing history, which is
+     * also what moveSerialNumbersToCustomerForItems actually flips to in_use. Callers that need
+     * to DISPLAY current allocation/status (e.g. the Job Schedule Serial Numbers tab) must
+     * resolve through here instead of reading item->serialNumber directly, or they show the
+     * stale pointer's status instead of the truth.
+     */
+    public function resolveAllocatedSerialNumbersForItems(Collection $items): Collection
+    {
+        $items->load(['product', 'serialNumber', 'serialLinks.serialNumber']);
+
+        $serialNumberIds = $this->resolveSerialNumberIdsForItems(
+            $items,
+            ['on_hand', 'ready', 'available', 'in_use']
+        );
+
+        if (empty($serialNumberIds)) {
+            return collect();
+        }
+
+        return SerialNumber::whereIn('id', $serialNumberIds)->get();
+    }
+
     public function moveSerialNumbersToCustomerForItems(Collection $items, ?int $customerId, ?int $actorId = null, ?string $reissuedToJobNumber = null): int
     {
         // QA "1 Rental banyak Qty": serialLinks carries every SN linked to a qty>1 unit row.
