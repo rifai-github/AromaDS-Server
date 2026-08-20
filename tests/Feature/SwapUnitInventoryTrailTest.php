@@ -183,7 +183,7 @@ class SwapUnitInventoryTrailTest extends TestCase
         $issuing = InventoryIssuing::where('reference_no', $job->job_number)->first();
 
         $this->assertNotNull($issuing, 'Swap Unit must create an Inventory Issuing record for the new serial number.');
-        $this->assertSame('issued', $issuing->status);
+        $this->assertSame('sent', $issuing->status);
         $this->assertSame($warehouse->id, $issuing->warehouse_id);
         $this->assertNotNull($issuing->issued_at);
         $this->assertNotNull($issuing->received_at);

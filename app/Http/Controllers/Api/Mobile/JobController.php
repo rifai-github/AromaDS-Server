@@ -5728,13 +5728,11 @@ class JobController extends Controller
                 }
             }
 
-            $tempDiagIssuingError = null;
             try {
                 $queueIssuingMethod = $reflection->getMethod('queueSwappedUnitIssuing');
                 $queueIssuingMethod->setAccessible(true);
                 $queueIssuingMethod->invoke($jobScheduleController, $job, $newSnModel);
             } catch (\Exception $e) {
-                $tempDiagIssuingError = get_class($e) . ': ' . $e->getMessage();
                 \Log::error("swapSerialNumber: Failed to record Inventory Issuing trail for Job {$job->job_number}: " . $e->getMessage());
             }
 
@@ -5745,8 +5743,7 @@ class JobController extends Controller
                 'message' => 'Berhasil mengganti unit.',
                 'data' => [
                     'old_sn' => $oldSn,
-                    'new_sn' => $newSn,
-                    'temp_diag_issuing_error' => $tempDiagIssuingError,
+                    'new_sn' => $newSn
                 ]
             ]);
 

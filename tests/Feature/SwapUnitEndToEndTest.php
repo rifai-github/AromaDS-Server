@@ -409,9 +409,11 @@ class SwapUnitEndToEndTest extends TestCase
             'serial_number_id' => $newSn->id,
         ]);
 
+        $this->assertSame('sent', $issuing->status, 'inventory_issuings.status is a DB enum (pending/processed/sent/received/cancelled) — must be a real value, not "issued".');
+
         // The Job Schedule "Serial Numbers" tab must also pick up the swapped-in unit
         // (JobScheduleController::resolveSwapIssuedSerialNumbersForJob()) — the swap's own
-        // Inventory Issuing uses status 'issued' / reference_no = job_number, which the
+        // Inventory Issuing uses status 'sent' / reference_no = job_number, which the
         // pre-existing MaterialIssue-driven resolution never matches.
         $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
         $method = new \ReflectionMethod($jobScheduleController, 'resolveSwapIssuedSerialNumbersForJob');

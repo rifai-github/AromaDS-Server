@@ -7571,9 +7571,16 @@ class JobScheduleController extends Controller
      * Record the warehouse-out side of a mobile "Ganti Unit" (swap serial number) action.
      * The technician has already physically installed the replacement unit by the time this
      * runs, so — unlike a normal Material Assign issuing that's prepared ahead of the visit —
-     * this is retroactive documentation: the Inventory Issuing is created already 'issued'
-     * and received, not 'pending'. Mirrors queueRemovedUnitReceiving()'s warehouse-in
-     * counterpart for the old unit being swapped out.
+     * this is retroactive documentation: the Inventory Issuing is created already fully
+     * issued, not 'pending'. Mirrors queueRemovedUnitReceiving()'s warehouse-in counterpart
+     * for the old unit being swapped out.
+     *
+     * status must be 'sent' ("Material Issued" — see InventoryIssuing::getStatusTextAttribute()),
+     * not 'issued': inventory_issuings.status is a DB enum limited to pending/processed/sent/
+     * received/cancelled. Confirmed live (20 Aug 2026, job SBY-IR/26-08/0009): the earlier
+     * 'issued' value silently failed the insert with "Data truncated for column 'status'"
+     * every time, which is exactly why no Inventory Issuing record ever appeared for the new
+     * serial number even after the shared-try/catch fix.
      */
     private function queueSwappedUnitIssuing(JobSchedule $job, \App\Models\SerialNumber $newSerialNumber): void
     {
@@ -7616,7 +7623,7 @@ class JobScheduleController extends Controller
             'requested_by' => \Auth::id(),
             'issued_by' => \Auth::id(),
             'received_by' => $assignedReceiverId,
-            'status' => 'issued',
+            'status' => 'sent',
             'remarks' => "{$issuingNotePrefix} (unit sudah terpasang di lapangan, SN {$newSerialNumber->serial_number}).",
             'issued_at' => now(),
             'received_at' => now(),
@@ -7652,7 +7659,7 @@ class JobScheduleController extends Controller
 
         return \App\Models\InventoryIssuingItem::whereHas('inventoryIssuing', function ($query) use ($jobSchedule) {
             $query->where('reference_no', $jobSchedule->job_number)
-                ->where('status', 'issued')
+                ->where('status', 'sent')
                 ->where('remarks', 'like', 'Auto-generated: Ganti Unit%');
         })
             ->whereNotNull('serial_number_id')
