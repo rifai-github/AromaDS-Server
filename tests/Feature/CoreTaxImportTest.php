@@ -93,6 +93,18 @@ class CoreTaxImportTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('invoice_files', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('invoice_id');
+            $table->string('file_name');
+            $table->string('file_path')->nullable();
+            $table->string('file_type')->nullable();
+            $table->text('description')->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->timestamps();
+        });
+
         DB::table('invoices')->insert([
             ['id' => 1, 'invoice_number' => 'ADS-INV/25-10/0633', 'invoice_status' => 'approved', 'tax_obligation' => true, 'invoice_date' => '2025-10-20', 'tax_amount' => 60500, 'created_at' => now(), 'updated_at' => now()],
             ['id' => 2, 'invoice_number' => 'ADS-INV/25-10/0638', 'invoice_status' => 'approved', 'tax_obligation' => true, 'invoice_date' => '2025-10-20', 'tax_amount' => 71500, 'created_at' => now(), 'updated_at' => now()],
@@ -111,6 +123,7 @@ class CoreTaxImportTest extends TestCase
             @unlink($file);
         }
 
+        Schema::dropIfExists('invoice_files');
         Schema::dropIfExists('tax_file_import_details');
         Schema::dropIfExists('tax_file_imports');
         Schema::dropIfExists('invoice_activities');

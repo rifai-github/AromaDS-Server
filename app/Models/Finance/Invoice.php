@@ -550,6 +550,8 @@ class Invoice extends Model
      */
     public function cancelCoreTaxFaktur(): void
     {
+        $this->deleteArchivedFakturPajakFile();
+
         $this->update([
             'coretax_status' => self::CORETAX_STATUS_CANCELLED,
             'faktur_pajak_status' => 'cancelled',
@@ -557,6 +559,33 @@ class Invoice extends Model
                 ? self::STATUS_APPROVED
                 : $this->invoice_status,
         ]);
+    }
+
+    /**
+     * The faktur pajak PDF that CoreTaxFakturPdfImportService::archiveOnInvoice()
+     * copies onto this invoice's FILE(S) tab is only valid for as long as the
+     * faktur itself is — once cancelled here, a re-export gets a brand new
+     * number, so the stale copy must go rather than sit in FILE(S)/the BA
+     * bundle looking like a still-valid document.
+     */
+    private function deleteArchivedFakturPajakFile(): void
+    {
+        if (blank($this->coretax_faktur_number)) {
+            return;
+        }
+
+        $marker = 'Faktur Pajak '.$this->coretax_faktur_number;
+
+        $this->invoiceFiles()
+            ->where('description', 'like', '%'.$marker.'%')
+            ->get()
+            ->each(function (InvoiceFile $file) {
+                if ($file->file_path && file_exists(public_path($file->file_path))) {
+                    @unlink(public_path($file->file_path));
+                }
+
+                $file->delete();
+            });
     }
 
     /**

@@ -264,6 +264,27 @@ class CoreTaxFakturPdfImportTest extends TestCase
     }
 
     /**
+     * QA-reported: cancelling a faktur pajak flipped the invoice's status
+     * back but left the now-invalid PDF sitting in FILE(S)/the BA bundle
+     * looking like a still-valid document — Invoice::cancelCoreTaxFaktur()
+     * must remove what archiveOnInvoice() copied there.
+     */
+    public function test_cancelling_the_faktur_removes_the_archived_pdf_from_the_invoice(): void
+    {
+        $pdf = $this->makeFakturPdf(['reference' => 'TEST-INV/26-08/0001']);
+        app(CoreTaxFakturPdfImportService::class)->process($this->makeImport(), 'faktur-1.pdf', $pdf);
+
+        $archived = DB::table('invoice_files')->where('invoice_id', 1)->sole();
+        $filePath = public_path($archived->file_path);
+        $this->assertFileExists($filePath);
+
+        Invoice::find(1)->cancelCoreTaxFaktur();
+
+        $this->assertSame(0, DB::table('invoice_files')->where('invoice_id', 1)->count());
+        $this->assertFileDoesNotExist($filePath);
+    }
+
+    /**
      * @param  array{reference?: ?string, faktur_number?: string}  $overrides
      */
     private function makeFakturPdf(array $overrides = []): string
