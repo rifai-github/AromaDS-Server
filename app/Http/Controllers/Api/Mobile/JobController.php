@@ -5664,6 +5664,49 @@ class JobController extends Controller
                 }
             }
 
+            // The replacement must be the SAME product as the unit it replaces. The rental
+            // contract is written against that product, and without this check a completely
+            // unrelated unit can be mounted on the slot — then, when it is swapped back out,
+            // it is dragged into THIS job's Inventory Receiving. Confirmed live 24 Aug 2026:
+            // ADS W100 SN ADSW10026080005 (contract SBY-CA/26-08/0006) ended up on a Diffuser
+            // W300 slot of contract SBY-CA/26-08/0010 and then inside RR SBY-IRC/26-08/0010.
+            $expectedProductId = $uow->product_id ?: ($uow->serialNumber?->master_product_id);
+            if ($expectedProductId && (int) $newSnModel->master_product_id !== (int) $expectedProductId) {
+                $expectedProductName = \App\Models\MasterProduct::find($expectedProductId)?->name;
+                $newProductName = $newSnModel->masterProduct?->name ?? 'produk lain';
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Serial Number {$newSn} adalah {$newProductName}, tidak sama dengan produk unit yang diganti"
+                        . ($expectedProductName ? " ({$expectedProductName})" : '') . '.',
+                    'code' => 'PRODUCT_MISMATCH',
+                ], 400);
+            }
+
+            // The replacement must be stock the technician can actually install. `pending`
+            // means the unit is still queued into an Inventory Receiving that the warehouse
+            // has NOT finalized — it is on paper on its way back to the gudang, not available
+            // stock — and `on_hand_remove` is a unit just pulled off a wall. Installing either
+            // leaves the serial number linked to an open RR while it sits in the field, which
+            // is exactly how DW300W2606014 stayed stuck on RR SBY-IRC/26-08/0010 (24 Aug 2026).
+            // 'available' is the legacy synonym of 'ready' (see SerialNumber::scopeAvailable).
+            $installableStatuses = ['ready', 'available', 'on_hand'];
+            if (! in_array((string) $newSnModel->status, $installableStatuses, true)) {
+                $pendingReceiving = $newSnModel->status === 'pending' && $newSnModel->inventory_receiving_id
+                    ? \App\Models\InventoryReceiving::find($newSnModel->inventory_receiving_id)
+                    : null;
+
+                $message = $pendingReceiving && $pendingReceiving->status !== 'received'
+                    ? "Serial Number {$newSn} masih menunggu penerimaan gudang di {$pendingReceiving->receiving_number}. Selesaikan Inventory Receiving tersebut sebelum unit dipasang kembali."
+                    : "Serial Number {$newSn} berstatus {$newSnModel->status_text} sehingga belum bisa dipasang.";
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $message,
+                    'code' => 'SN_NOT_AVAILABLE',
+                ], 400);
+            }
+
             // 3. Update Old Serial Number Status
             $oldSnModel = \App\Models\SerialNumber::where('serial_number', $oldSn)->first();
             if ($oldSnModel) {
@@ -5681,6 +5724,12 @@ class JobController extends Controller
                 'location_type' => 'customer',
                 'location_id' => $job->jobAdvice->customer_id
             ]);
+
+            // A unit going back INTO the field must stop counting as inbound warehouse stock.
+            // serial_numbers.inventory_receiving_id doubles as the RR queue marker AND as what
+            // the Receiving detail "Serial Numbers" tab lists, so leaving it set kept an
+            // already-installed unit visible on an open RR and inflated that RR item's qty.
+            app(\App\Services\Warehouse\SerialNumberReceivingQueueService::class)->release($newSnModel);
 
             // 5. Update UnitOnWall
             $uow->update([

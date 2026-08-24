@@ -316,6 +316,211 @@ class SwapUnitEndToEndTest extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * Minimal branch/warehouse/user/team/job/unit-on-wall fixture shared by the guard tests
+     * below. Returns the pieces each test needs to tweak.
+     */
+    private function seedSwapFixture(): array
+    {
+        DB::table('branches')->insert([
+            'id' => 1, 'code' => 'SBY', 'name' => 'Surabaya', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $warehouse = Warehouse::create([
+            'warehouse_code' => 'WH-SBY', 'name' => 'Gudang Surabaya', 'branch_id' => 1, 'is_active' => true,
+        ]);
+
+        DB::table('master_products')->insert([
+            ['id' => 31, 'name' => 'Diffuser W300 White', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 1147, 'name' => 'ADS W100', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $user = User::create(['name' => 'Test Teknisi', 'email' => 'teknisi@test.local']);
+
+        $teamId = DB::table('teams')->insertGetId([
+            'team_name' => 'Tim Teknisi', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('team_members')->insert([
+            'team_id' => $teamId, 'user_id' => $user->id, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $jobAdvice = JobAdvice::create(['customer_id' => 500, 'type' => 'install']);
+
+        $job = JobSchedule::create([
+            'job_number' => 'SBY-IR/26-08/0009',
+            'type' => 'install',
+            'status' => 'in_progress',
+            'job_advice_id' => $jobAdvice->id,
+            'building_id' => 206,
+            'room_id' => 99,
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'job_schedule_id' => $job->id,
+            'team_id' => $teamId,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $oldSn = SerialNumber::create([
+            'serial_number' => 'DW300W2606010',
+            'status' => 'in_use',
+            'condition_status' => 'new',
+            'location_type' => 'customer',
+            'master_product_id' => 31,
+            'warehouse_id' => $warehouse->id,
+        ]);
+
+        $uow = UnitOnWall::create([
+            'customer_id' => 500,
+            'building_id' => 206,
+            'room_id' => 99,
+            'product_id' => 31,
+            'serial_number_id' => $oldSn->id,
+            'serial_number' => 'DW300W2606010',
+            'status' => 'active',
+        ]);
+
+        Auth::login($user);
+
+        return compact('warehouse', 'user', 'job', 'oldSn', 'uow');
+    }
+
+    private function performSwap(JobSchedule $job, string $oldSn, string $newSn): array
+    {
+        return app(JobController::class)->swapSerialNumber(Request::create(
+            "/api/v1/mobile/jobs/{$job->id}/swap-serial-number",
+            'POST',
+            [
+                'old_serial_number' => $oldSn,
+                'new_serial_number' => $newSn,
+                'room_id' => 99,
+            ]
+        ), $job->id)->getData(true);
+    }
+
+    /**
+     * QA 24 Aug 2026, RR SBY-IRC/26-08/0010: DW300W2606014 was queued out of the field at
+     * 16:25 and re-installed by a second swap at 16:46 while still `pending` — i.e. while the
+     * warehouse had not yet received it back. It is not stock until that RR is finalized.
+     */
+    public function test_swap_rejects_serial_number_still_waiting_to_be_received(): void
+    {
+        $fixture = $this->seedSwapFixture();
+
+        $receiving = \App\Models\InventoryReceiving::create([
+            'receiving_number' => 'SBY-IRC/26-08/0010',
+            'reference_no' => 'SBY-IR/26-08/0009',
+            'branch_id' => 1,
+            'status' => 'pending',
+            'notes' => 'Auto-return dari Remove Job SBY-IR/26-08/0009 (Unit remove menunggu penerimaan gudang).',
+        ]);
+
+        SerialNumber::create([
+            'serial_number' => 'DW300W2606014',
+            'status' => 'pending',
+            'condition_status' => 'new',
+            'location_type' => 'technician',
+            'master_product_id' => 31,
+            'warehouse_id' => $fixture['warehouse']->id,
+            'inventory_receiving_id' => $receiving->id,
+        ]);
+
+        $payload = $this->performSwap($fixture['job'], 'DW300W2606010', 'DW300W2606014');
+
+        $this->assertSame('error', $payload['status']);
+        $this->assertSame('SN_NOT_AVAILABLE', $payload['code'] ?? null);
+        $this->assertStringContainsString('SBY-IRC/26-08/0010', $payload['message']);
+        $this->assertSame('active', $fixture['uow']->fresh()->status);
+        $this->assertSame('in_use', $fixture['oldSn']->fresh()->status, 'A rejected swap must not touch the unit already on the wall.');
+    }
+
+    /**
+     * QA 24 Aug 2026: an ADS W100 (SN ADSW10026080005, contract SBY-CA/26-08/0006) was
+     * swapped onto a Diffuser W300 slot of contract SBY-CA/26-08/0010, and was therefore
+     * dragged into that job's Inventory Receiving when it came back off the wall.
+     */
+    public function test_swap_rejects_serial_number_of_a_different_product(): void
+    {
+        $fixture = $this->seedSwapFixture();
+
+        SerialNumber::create([
+            'serial_number' => 'ADSW10026080005',
+            'status' => 'ready',
+            'condition_status' => 'new',
+            'location_type' => 'warehouse',
+            'master_product_id' => 1147,
+            'warehouse_id' => $fixture['warehouse']->id,
+        ]);
+
+        $payload = $this->performSwap($fixture['job'], 'DW300W2606010', 'ADSW10026080005');
+
+        $this->assertSame('error', $payload['status']);
+        $this->assertSame('PRODUCT_MISMATCH', $payload['code'] ?? null);
+        $this->assertStringContainsString('ADS W100', $payload['message']);
+        $this->assertStringContainsString('Diffuser W300 White', $payload['message']);
+        $this->assertDatabaseMissing('inventory_receivings', ['reference_no' => 'SBY-IR/26-08/0009']);
+    }
+
+    /**
+     * Belt-and-braces for the same QA report: even when a serial number reaches the field by
+     * some other route while still pointing at an unfinalized RR, installing it must drop it
+     * off that RR and shrink the RR item back down — otherwise the warehouse is asked to
+     * receive a unit that is hanging on a customer's wall.
+     */
+    public function test_installing_a_still_queued_serial_number_releases_it_from_the_open_receiving(): void
+    {
+        $fixture = $this->seedSwapFixture();
+
+        $receiving = \App\Models\InventoryReceiving::create([
+            'receiving_number' => 'SBY-IRC/26-08/0010',
+            'reference_no' => 'SBY-IR/26-08/0008',
+            'branch_id' => 1,
+            'status' => 'pending',
+        ]);
+
+        $item = \App\Models\InventoryReceivingItem::create([
+            'inventory_receiving_id' => $receiving->id,
+            'master_product_id' => 31,
+            'quantity' => 2,
+            'quantity_received' => 0,
+            'notes' => 'Auto-return dari Remove Job SBY-IR/26-08/0008 (Product 31)',
+        ]);
+
+        SerialNumber::create([
+            'serial_number' => 'DW300W2606011',
+            'status' => 'pending',
+            'condition_status' => 'new',
+            'location_type' => 'technician',
+            'master_product_id' => 31,
+            'warehouse_id' => $fixture['warehouse']->id,
+            'inventory_receiving_id' => $receiving->id,
+        ]);
+
+        $newSn = SerialNumber::create([
+            'serial_number' => 'DW300W2606014',
+            'status' => 'ready',
+            'condition_status' => 'new',
+            'location_type' => 'warehouse',
+            'master_product_id' => 31,
+            'warehouse_id' => $fixture['warehouse']->id,
+            'inventory_receiving_id' => $receiving->id,
+            'notes' => "Reissued to Job SBY-IR/26-08/0009.\nQueued to RR SBY-IRC/26-08/0010 from Remove Job SBY-IR/26-08/0008.",
+        ]);
+
+        $payload = $this->performSwap($fixture['job'], 'DW300W2606010', 'DW300W2606014');
+
+        $this->assertSame('success', $payload['status'], json_encode($payload));
+
+        $newSn->refresh();
+        $this->assertSame('in_use', $newSn->status);
+        $this->assertNull($newSn->inventory_receiving_id, 'An installed unit must not stay linked to an open Inventory Receiving.');
+        $this->assertStringNotContainsString('Queued to RR SBY-IRC/26-08/0010', (string) $newSn->notes);
+        $this->assertStringContainsString('Reissued to Job SBY-IR/26-08/0009.', (string) $newSn->notes);
+
+        $this->assertSame(1, (int) $item->fresh()->quantity, 'The RR item must only count the units still on their way back to the warehouse.');
+    }
+
     public function test_swap_serial_number_creates_both_issuing_and_receiving(): void
     {
         DB::table('branches')->insert([
@@ -415,7 +620,7 @@ class SwapUnitEndToEndTest extends TestCase
         // (JobScheduleController::resolveSwapIssuedSerialNumbersForJob()) — the swap's own
         // Inventory Issuing uses status 'sent' / reference_no = job_number, which the
         // pre-existing MaterialIssue-driven resolution never matches.
-        $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController();
+        $jobScheduleController = new \App\Http\Controllers\Operational\JobScheduleController;
         $method = new \ReflectionMethod($jobScheduleController, 'resolveSwapIssuedSerialNumbersForJob');
         $method->setAccessible(true);
         $tabSerialNumbers = $method->invoke($jobScheduleController, $job->fresh());
