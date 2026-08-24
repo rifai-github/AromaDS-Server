@@ -2592,6 +2592,13 @@ class JobScheduleController extends Controller
                 $renewalSourceContract = $this->resolveRenewalSourceContractForJobAdvice($jobAdvice);
                 $installJobSns = $this->getInstalledSerialNumberIdsForRemoveJob($jobSchedule, $jobAdvice, $renewalSourceContract);
 
+                // One room can hold units from several contracts at the same time - same
+                // customer, same building, even the same rental. QA room "Ruang 1" (room 460)
+                // carried 8 active units across contracts SBY-CA/26-08/0007..0010, all on
+                // rental_id 4, so a Remove job for a 2-unit contract listed all 8.
+                $removeJobContractIds = $this->removeJobContractIds($jobAdvice, $renewalSourceContract);
+                $this->scopeUnitOnWallsToContracts($unitOnWallQuery, $removeJobContractIds);
+
                 // MOM: Strict Install-Remove Mirroring
                 // If we found specific SNs that were installed via the related install job in this JA, 
                 // we should ONLY show those SNs for the remove job. This prevents "stray" SNs from other
@@ -2601,12 +2608,16 @@ class JobScheduleController extends Controller
                         ? array_merge($activeUnitOnWallStatuses, ['removed'])
                         : $activeUnitOnWallStatuses;
 
-                    $unitOnWalls = \App\Models\UnitOnWall::whereIn('serial_number_id', $installJobSns)
+                    $mirroredUnitsQuery = \App\Models\UnitOnWall::whereIn('serial_number_id', $installJobSns)
                         ->where('customer_id', $jobAdvice->customer_id)
                         ->where('building_id', $jobSchedule->building_id)
                         ->whereIn('status', $displayUnitStatuses)
                         ->when(!empty($roomIds), fn ($query) => $query->whereIn('room_id', $roomIds))
-                        ->when(!empty($rentalIds), fn ($query) => $query->whereIn('rental_id', $rentalIds))
+                        ->when(!empty($rentalIds), fn ($query) => $query->whereIn('rental_id', $rentalIds));
+
+                    $this->scopeUnitOnWallsToContracts($mirroredUnitsQuery, $removeJobContractIds);
+
+                    $unitOnWalls = $mirroredUnitsQuery
                         ->with(['serialNumber.masterProduct.productType', 'serialNumber.warehouse'])
                         ->get();
                     
@@ -7429,6 +7440,17 @@ class JobScheduleController extends Controller
                     $unitsQuery->whereIn('serial_number_id', $installJobSns);
                 }
 
+                // A manually created Remove JA has no Install job of its own, so $installJobSns
+                // is empty and the room+rental filter above is all that is left - and a room can
+                // hold units from several contracts at once (QA room 460: 8 active units across
+                // contracts SBY-CA/26-08/0007..0010, all rental_id 4). Without this scope a
+                // Remove job for a 2-unit contract marked all 8 removed and queued all 8 into
+                // one Inventory Receiving.
+                $this->scopeUnitOnWallsToContracts(
+                    $unitsQuery,
+                    $this->removeJobContractIds($jobAdvice, $renewalSourceContract)
+                );
+
                 $units = $unitsQuery->get();
 
                 if ($units->isEmpty()) {
@@ -8083,6 +8105,47 @@ class JobScheduleController extends Controller
             \Log::error("Failed to fetch installed SNs for Remove Job {$removeJob->job_number}: " . $e->getMessage());
             return [];
         }
+    }
+
+    /**
+     * The contracts a Remove job is allowed to take units off the wall for: its own, plus
+     * the source contract when this Remove belongs to a renewal.
+     */
+    private function removeJobContractIds($jobAdvice, ?Contract $renewalSourceContract = null): array
+    {
+        return collect([$jobAdvice?->contract_id, $renewalSourceContract?->id])
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Narrow a Unit On Wall query to the Remove job's own contract(s).
+     *
+     * customer + building + room + rental is NOT enough to identify what a Remove job may
+     * touch: the same customer can rent the same rental into the same room under several
+     * contracts, and every one of those units matches all four filters. unit_on_walls has
+     * carried the unit's own contract since 5fc9b84 (backfilled on QA and staging), so use it.
+     *
+     * The probe matters. Legacy rows predating that backfill have a NULL contract_id, and so
+     * does a unit whose room was moved to a different contract by Contract Switching. Tightening
+     * unconditionally would make those units invisible to the only job type that can get them
+     * off the wall, so when nothing in the candidate set carries a matching contract_id the
+     * query is left exactly as it was.
+     */
+    private function scopeUnitOnWallsToContracts($query, array $contractIds): void
+    {
+        if (empty($contractIds)) {
+            return;
+        }
+
+        if (! (clone $query)->whereIn('contract_id', $contractIds)->exists()) {
+            return;
+        }
+
+        $query->whereIn('contract_id', $contractIds);
     }
 
     private function getSerialNumberIdsFromInventoryIssuingReferences(array $referenceNumbers): array
