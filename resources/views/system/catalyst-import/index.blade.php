@@ -218,6 +218,16 @@
         background: #f8fafc;
     }
 
+    .catalyst-disabled-note {
+        margin: 0 0 10px;
+        padding: 8px 10px;
+        border-left: 3px solid #f59e0b;
+        background: #fffbeb;
+        color: #92400e;
+        font-size: 12px;
+        line-height: 1.5;
+    }
+
     .catalyst-action-card h3 {
         margin: 0 0 8px;
         font-size: 15px;
@@ -495,7 +505,8 @@
                                 @php
                                     $isBackgroundAction = ($action['execution'] ?? 'sync') === 'background';
                                     $requiresConfirmation = (bool) ($action['requires_confirmation'] ?? false);
-                                    $disabled = $hasActiveRun && $isBackgroundAction;
+                                    $disabledReason = $action['disabled'] ?? null;
+                                    $disabled = $disabledReason !== null || ($hasActiveRun && $isBackgroundAction);
                                     $buttonClass = $isBackgroundAction || str_contains($action['key'], 'apply') || str_contains($action['key'], 'sync')
                                         ? 'btn btn-primary'
                                         : 'btn btn-secondary';
@@ -510,7 +521,14 @@
                                         @if($requiresConfirmation)
                                             <span class="catalyst-chip warning">Perlu Konfirmasi</span>
                                         @endif
+                                        @if($disabledReason)
+                                            <span class="catalyst-chip warning">Dimatikan</span>
+                                        @endif
                                     </div>
+
+                                    @if($disabledReason)
+                                        <p class="catalyst-disabled-note">{{ $disabledReason }}</p>
+                                    @endif
 
                                     <form method="POST" action="{{ route('system.catalyst-import.run') }}">
                                         @csrf
@@ -531,7 +549,13 @@
                                         @endif
 
                                         <button type="submit" class="{{ $buttonClass }}" {{ $disabled ? 'disabled' : '' }}>
-                                            {{ $disabled ? 'Menunggu Run Aktif Selesai' : $action['label'] }}
+                                            @if($disabledReason)
+                                                Dimatikan
+                                            @elseif($disabled)
+                                                Menunggu Run Aktif Selesai
+                                            @else
+                                                {{ $action['label'] }}
+                                            @endif
                                         </button>
                                     </form>
                                 </div>

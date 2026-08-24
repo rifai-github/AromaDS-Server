@@ -119,6 +119,29 @@ Implementation facts to preserve:
 - Unit-only periodic jobs keep the **IR** document-number prefix even though their stored `type` is `service_routine` — prefix and type intentionally differ; do not "fix" the prefix.
 - Locked by `tests/Unit/JobScheduleDisplayTypeTest.php` and `tests/Feature/JobScheduleCheckMaterialBypassTest.php`. If you touch the logic, update those tests and confirm they pass.
 
+## Catalyst Import — Product / Rental Steps Are Disabled
+
+Catalyst import (`catalyst:import-masters`, source = SQL Server `PinkAds` via `CATALYST_SOURCE_*`) still covers 36 steps, but the ones producing Product Structure, Produk, and Rental are **switched off** since 24 Aug 2026. Those tables are now seeded from the client's `Master Product.xlsx` through the root `aroma_fresh_bootstrap.sql` — see the "Product / Rental Master Data Source" section in the root `CLAUDE.md`.
+
+Where the switches live:
+
+| File | Role |
+|---|---|
+| `CatalystMasterDataImporter::DISABLED_STEPS` | The 7 disabled steps. Enforced in `resolveSteps()`, which every path funnels through. **Empty this array to re-enable.** |
+| `CatalystMasterDataImporter::noValidStepsMessage()` | Explains *why* a requested step was refused instead of the generic "No valid import steps were requested". |
+| `CatalystImportConsoleService::DISABLED_COMMANDS` | Artisan commands that write to product/rental tables **without** going through the importer (`catalyst:backfill-*`, `normalize-rental-detail-duplicates`, `repair-merged-rental-details`, `bootstrap-fresh`). |
+| `CatalystImportConsoleService::markDisabledActions()` | Auto-tags any console action whose commands hit a disabled step or command — 11 of 33 today. |
+| `CatalystImportController::run()` | Server-side refusal, so a forged POST cannot bypass the greyed-out button. |
+| `CatalystMigrationExecutor::excludedSteps()` | Full Migration exclusions = its own warehouse steps **merged with** `DISABLED_STEPS`; the list is not duplicated. |
+
+Rules when working here:
+
+- Do **not** re-add a manual `'disabled'` key to a console action — detection is automatic. If you add an action that legitimately must run, it will be blocked only if it references a disabled step/command.
+- A step that depends on a disabled one still works: `--step=contract_rentals` resolves fine, it just no longer drags `master_rentals` in. Rental mapping for `quotation_rentals` / `contract_rentals` / `job_advice_rooms` relies on `source_import_maps` rows that Excel-seeded rentals do **not** have — expect those steps to skip rows they cannot map.
+- `catalyst:backfill-rental-material-options` needs an `MsRentalBOMDt` export; the Excel's Material column is category-level, so `rental_detail_materials` cannot be filled from it.
+- `export_warehouse_links` and `export_rental_materials` remain enabled (read-only CSV exports).
+- Locked by `tests/Feature/CatalystDisabledActionTest.php` (8 tests): each disabled step is refused, `--exact-steps` too, a full run never carries one, a dependent step still runs without dragging one in, the 11 console actions are flagged automatically, unrelated actions stay enabled, and the controller refuses the POST without running any command. Update it if you change the switches.
+
 ## API Patterns In This Codebase
 
 Auth:

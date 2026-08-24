@@ -42,6 +42,30 @@ class CatalystMasterDataImporter
         'job_advice_rooms' => ['job_advices', 'contract_rooms', 'contract_rentals', 'quotation_rooms', 'quotation_rentals'],
     ];
 
+    /**
+     * Step yang sengaja DIMATIKAN, bukan dihapus.
+     *
+     * Product Structure, Produk, dan Rental sekarang bersumber dari
+     * "Master Product.xlsx" milik klien (sudah di-seed ke aroma_fresh_bootstrap.sql),
+     * bukan lagi dari source Catalyst. Kalau step ini tetap jalan, dia akan
+     * menimpa data Excel tersebut dengan data Catalyst.
+     *
+     * Implementasinya di resolveSteps(), jadi berlaku untuk SEMUA jalur:
+     * CLI `--step=`, Full Migration, maupun bootstrap-fresh.
+     *
+     * Untuk menghidupkan lagi: cukup kosongkan array ini. Kode step-nya
+     * (product_categories(), master_rentals(), dst) sengaja dibiarkan utuh.
+     */
+    public const DISABLED_STEPS = [
+        'product_categories',
+        'product_types',
+        'master_products',
+        'warehouse_product_links',
+        'master_rentals',
+        'rental_components',
+        'rental_details',
+    ];
+
     private array $steps = [
         'product_categories',
         'product_types',
@@ -1899,6 +1923,17 @@ class CatalystMasterDataImporter
 
     protected function resolveSteps(array $requestedSteps, bool $includeDependencies = true, array $excludeSteps = []): array
     {
+        // Kalau SEMUA yang diminta ternyata step yang dimatikan, tolak terang-terangan.
+        // Tanpa ini, permintaan seperti --step=warehouse_product_links akan lolos diam-diam
+        // menjalankan dependency-nya (warehouses) - jalan, tapi bukan yang diminta.
+        if ($requestedSteps !== [] && array_diff($requestedSteps, self::DISABLED_STEPS) === []) {
+            throw new RuntimeException($this->noValidStepsMessage($requestedSteps));
+        }
+
+        // Step yang dimatikan dibuang di semua jalur, termasuk kalau dia ikut
+        // terbawa sebagai dependency step lain.
+        $excludeSteps = array_values(array_unique(array_merge($excludeSteps, self::DISABLED_STEPS)));
+
         if ($requestedSteps === []) {
             return array_values(array_diff($this->steps, $excludeSteps));
         }
@@ -1906,7 +1941,7 @@ class CatalystMasterDataImporter
         if (! $includeDependencies) {
             $steps = array_values(array_diff(array_intersect($this->steps, $requestedSteps), $excludeSteps));
             if ($steps === []) {
-                throw new RuntimeException('No valid import steps were requested.');
+                throw new RuntimeException($this->noValidStepsMessage($requestedSteps));
             }
 
             return $steps;
@@ -1919,10 +1954,28 @@ class CatalystMasterDataImporter
 
         $steps = array_values(array_diff(array_intersect($this->steps, $resolved), $excludeSteps));
         if ($steps === []) {
-            throw new RuntimeException('No valid import steps were requested.');
+            throw new RuntimeException($this->noValidStepsMessage($requestedSteps));
         }
 
         return $steps;
+    }
+
+    /**
+     * Pesan error yang menjelaskan kalau yang diminta ternyata step yang dimatikan,
+     * supaya tidak membingungkan seperti "No valid import steps were requested."
+     */
+    protected function noValidStepsMessage(array $requestedSteps): string
+    {
+        $blocked = array_values(array_intersect($requestedSteps, self::DISABLED_STEPS));
+
+        if ($blocked !== []) {
+            return 'Step berikut sengaja dimatikan karena Product Structure, Produk, dan Rental '
+                . 'sekarang bersumber dari Master Product.xlsx, bukan Catalyst: '
+                . implode(', ', $blocked) . '. '
+                . 'Lihat CatalystMasterDataImporter::DISABLED_STEPS kalau memang perlu dihidupkan lagi.';
+        }
+
+        return 'No valid import steps were requested.';
     }
 
     protected function collectStepDependencies(string $step, array &$resolved): void

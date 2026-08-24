@@ -2,19 +2,41 @@
 
 namespace App\Services\System;
 
+use App\Services\Imports\Catalyst\CatalystMasterDataImporter;
 use InvalidArgumentException;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
 class CatalystImportConsoleService
 {
+    public const DISABLED_REASON = 'Dimatikan: Product Structure, Produk, dan Rental sekarang '
+        . 'bersumber dari Master Product.xlsx (aroma_fresh_bootstrap.sql), bukan Catalyst. '
+        . 'Menjalankan ini akan menimpa data tersebut.';
+
+    /**
+     * Artisan command yang menulis LANGSUNG ke master_products / rental_details /
+     * warehouse_products tanpa lewat importer, jadi tidak tertangkap oleh
+     * CatalystMasterDataImporter::DISABLED_STEPS dan harus disebut di sini.
+     *
+     * Action yang memanggil salah satu command ini otomatis ikut dimatikan.
+     */
+    public const DISABLED_COMMANDS = [
+        'catalyst:bootstrap-fresh',
+        'catalyst:backfill-product-warehouses',
+        'catalyst:backfill-product-relations',
+        'catalyst:backfill-rental-details',
+        'catalyst:normalize-rental-detail-duplicates',
+        'catalyst:backfill-rental-material-options',
+        'catalyst:repair-merged-rental-details',
+    ];
+
     public function __construct(protected CatalystMigrationRunService $migrationRunService)
     {
     }
 
     public function actions(): array
     {
-        return [
+        return $this->markDisabledActions([
             'check_source_connection' => [
                 'label' => 'Check Source Connection',
                 'description' => 'Verifikasi koneksi SQL Server Catalyst dan pastikan database source bisa dibaca dari server ini.',
@@ -384,7 +406,47 @@ class CatalystImportConsoleService
                     $this->artisanCommand(['catalyst:diagnose-job-advices']),
                 ],
             ],
-        ];
+        ]);
+    }
+
+    /**
+     * Tandai otomatis action yang menyentuh pekerjaan Product Structure / Produk /
+     * Rental, supaya tidak perlu ditulis manual satu per satu. Action baru yang
+     * memanggil step atau command terlarang akan ikut mati dengan sendirinya.
+     */
+    protected function markDisabledActions(array $actions): array
+    {
+        foreach ($actions as $key => $action) {
+            if (array_key_exists('disabled', $action)) {
+                continue; // sudah ditandai eksplisit, hormati
+            }
+
+            if ($this->touchesDisabledWork($action)) {
+                $actions[$key]['disabled'] = self::DISABLED_REASON;
+            }
+        }
+
+        return $actions;
+    }
+
+    protected function touchesDisabledWork(array $action): bool
+    {
+        foreach ($action['commands'] ?? [] as $command) {
+            foreach ((array) $command as $argument) {
+                $argument = (string) $argument;
+
+                if (in_array($argument, self::DISABLED_COMMANDS, true)) {
+                    return true;
+                }
+
+                if (str_starts_with($argument, '--step=')
+                    && in_array(substr($argument, 7), CatalystMasterDataImporter::DISABLED_STEPS, true)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     public function groupedActions(): array
@@ -404,6 +466,15 @@ class CatalystImportConsoleService
         }
 
         return $definition;
+    }
+
+    /**
+     * Alasan kenapa sebuah action dimatikan, atau null kalau memang aktif.
+     * Dipakai controller untuk menolak eksekusi dan blade untuk mematikan tombol.
+     */
+    public function disabledReason(string $action): ?string
+    {
+        return $this->actions()[$action]['disabled'] ?? null;
     }
 
     public function isBackgroundAction(string $action): bool

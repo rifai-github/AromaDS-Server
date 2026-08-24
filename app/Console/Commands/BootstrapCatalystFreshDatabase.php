@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Imports\Catalyst\CatalystMasterDataImporter;
 use Illuminate\Console\Command;
 use Symfony\Component\Process\Process;
 
@@ -35,6 +36,16 @@ class BootstrapCatalystFreshDatabase extends Command
             'building_customers',
         ];
 
+        // Product Structure, Produk, dan Rental bersumber dari Master Product.xlsx,
+        // bukan Catalyst. Dibuang di sini juga supaya rencana yang dicetak jujur -
+        // importer memang sudah menolaknya sendiri lewat DISABLED_STEPS.
+        $skipped = array_values(array_intersect($steps, CatalystMasterDataImporter::DISABLED_STEPS));
+        $steps = array_values(array_diff($steps, CatalystMasterDataImporter::DISABLED_STEPS));
+
+        if ($skipped !== []) {
+            $this->warn('Step dimatikan (sumbernya Master Product.xlsx): ' . implode(', ', $skipped));
+        }
+
         $plan = [];
 
         if ($this->option('migrate')) {
@@ -47,11 +58,14 @@ class BootstrapCatalystFreshDatabase extends Command
         }
 
         $plan[] = ['type' => 'artisan', 'label' => 'Import master core', 'command' => $importCommand];
-        $plan[] = ['type' => 'artisan', 'label' => 'Backfill product relations', 'command' => ['catalyst:backfill-product-relations']];
-        $plan[] = ['type' => 'artisan', 'label' => 'Backfill rental details', 'command' => ['catalyst:backfill-rental-details']];
-        $plan[] = ['type' => 'artisan', 'label' => 'Normalize rental detail duplicates', 'command' => ['catalyst:normalize-rental-detail-duplicates']];
-        $plan[] = ['type' => 'process', 'label' => 'Export rental materials', 'command' => ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_rental_materials.ps1')]];
-        $plan[] = ['type' => 'artisan', 'label' => 'Backfill rental material options', 'command' => ['catalyst:backfill-rental-material-options', '--file=storage/app/catalyst/rental_materials.csv']];
+        // Backfill produk & rental sengaja tidak diikutkan: semuanya menulis ke
+        // master_products / rental_details / rental_detail_materials, yang sekarang
+        // isinya berasal dari Master Product.xlsx. Perintahnya masih ada dan bisa
+        // dijalankan manual kalau memang sedang menyambung ke Catalyst lagi:
+        //   catalyst:backfill-product-relations
+        //   catalyst:backfill-rental-details
+        //   catalyst:normalize-rental-detail-duplicates
+        //   catalyst:backfill-rental-material-options
         $plan[] = ['type' => 'process', 'label' => 'Export customer completeness', 'command' => ['powershell', '-ExecutionPolicy', 'Bypass', '-File', base_path('scripts\export_catalyst_customer_completeness.ps1')]];
         $plan[] = ['type' => 'artisan', 'label' => 'Import customer completeness', 'command' => [
             'catalyst:import-customer-completeness-export',

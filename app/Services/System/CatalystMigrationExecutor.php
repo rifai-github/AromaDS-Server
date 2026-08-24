@@ -10,10 +10,23 @@ use Throwable;
 
 class CatalystMigrationExecutor
 {
+    /**
+     * Warehouse master sengaja tidak ikut Full Migration - digenerate manual.
+     * Step Product Structure / Produk / Rental TIDAK didaftar ulang di sini:
+     * sumbernya CatalystMasterDataImporter::DISABLED_STEPS, supaya daftarnya
+     * cuma ada di satu tempat.
+     */
     private const EXCLUDED_STEPS = [
-        'warehouse_types', 'warehouses', 'warehouse_product_links',
-        'master_rentals', 'rental_components', 'rental_details',
+        'warehouse_types', 'warehouses',
     ];
+
+    private function excludedSteps(): array
+    {
+        return array_values(array_unique(array_merge(
+            self::EXCLUDED_STEPS,
+            CatalystMasterDataImporter::DISABLED_STEPS,
+        )));
+    }
 
     public function __construct(
         protected CatalystMigrationRunService $runService,
@@ -82,7 +95,7 @@ class CatalystMigrationExecutor
             requestedSteps: [],
             apply: $apply,
             batchName: $label . ' #' . $runId,
-            excludeSteps: self::EXCLUDED_STEPS,
+            excludeSteps: $this->excludedSteps(),
             progressCallback: function (string $step, array $summary) use ($runId): void {
                 $batchId = $this->detectLatestRunningBatchId();
                 $message = $this->formatProgressMessage($summary);

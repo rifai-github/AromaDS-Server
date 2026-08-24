@@ -71,6 +71,10 @@ class CatalystImportController extends Controller
         $action = $request->string('action')->toString();
         $definition = $this->consoleService->definition($action);
 
+        if ($disabledReason = ($definition['disabled'] ?? null)) {
+            return back()->with('error', $definition['label'] . ' tidak bisa dijalankan. ' . $disabledReason);
+        }
+
         if (($definition['requires_confirmation'] ?? false) === true) {
             $expected = (string) ($definition['confirmation_value'] ?? 'MIGRASI');
             $provided = $request->string('confirmation')->trim()->toString();
