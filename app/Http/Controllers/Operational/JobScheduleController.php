@@ -3860,7 +3860,9 @@ class JobScheduleController extends Controller
                 // "untuk unit yang sudah terpasang akan otomatis terdata di unit-on-walls"
                 // MOM8: Remove job hanya dibuat SETELAH Unit On Wall berhasil dibuat
                 $unitOnWallCreated = false;
-                $installTypes = ['install', 'Install', 'Install Free', 'install_free'];
+                // 'change' is the schedule type a Change Rental / Change Unit JA produces: it
+                // physically installs a unit too, so its unit must land on the wall as well.
+                $installTypes = ['install', 'Install', 'Install Free', 'install_free', 'change', 'change_rental', 'change rental'];
                 if (in_array($jobSchedule->type, $installTypes) && $jobSchedule->areAllRoomsCompleted()) {
                     $unitOnWallCreated = $this->autoCreateUnitOnWall($jobSchedule, $jobAdvice);
                 }
@@ -3927,7 +3929,13 @@ class JobScheduleController extends Controller
                     // Auto-update last_service_date in UnitOnWall when service job is completed
                     $this->autoUpdateUnitOnWallLastServiceDate($jobSchedule, $jobAdvice);
                 }
-                
+
+                // Ganti Rental: move the contract + remaining service periods onto the new
+                // rental and raise the RV job that returns the replaced unit. No-ops for
+                // every other job type.
+                app(\App\Services\Operational\ChangeRentalCompletionService::class)
+                    ->handleCompletedJob($jobSchedule->fresh(), $jobAdvice);
+
                 // AUTO-REMOVE/HIDE UNIT ON WALL when remove job is completed
                 // "ketika remove job sudah selesai, unit on wall akan otomatis ter-hide/removed"
                 if (
@@ -4861,7 +4869,7 @@ class JobScheduleController extends Controller
 
                 // AUTO-CREATE UNIT ON WALL (Runs per room / JobSchedule)
                 $unitOnWallCreated = false;
-                $installTypes = ['install', 'Install', 'Install Free', 'install_free', 'service', 'Service', 'change_rental', 'change rental'];
+                $installTypes = ['install', 'Install', 'Install Free', 'install_free', 'service', 'Service', 'change', 'change_rental', 'change rental'];
                 if (in_array($completedSchedule->type, $installTypes) && $completedSchedule->areAllRoomsCompleted()) {
                     $unitOnWallCreated = $this->autoCreateUnitOnWall($completedSchedule, $jobAdvice);
                 }
@@ -4894,6 +4902,12 @@ class JobScheduleController extends Controller
                     $this->checkAndCreateRemoveJobAfterAllServicesComplete($completedSchedule, $jobAdvice);
                     $this->autoUpdateUnitOnWallLastServiceDate($completedSchedule, $jobAdvice);
                 }
+
+                // Ganti Rental: move the contract + remaining service periods onto the new
+                // rental and raise the RV job that returns the replaced unit. No-ops for
+                // every other job type.
+                app(\App\Services\Operational\ChangeRentalCompletionService::class)
+                    ->handleCompletedJob($completedSchedule, $jobAdvice);
             }
 
             // AUTO-REMOVE/HIDE UNIT ON WALL when remove job (Return) is completed

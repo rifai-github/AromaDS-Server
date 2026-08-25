@@ -257,6 +257,11 @@ class JobReportController extends Controller
                         $jobAdviceController = new \App\Http\Controllers\Marketing\JobAdviceController();
                         $jobAdviceController->generateAutoRemoveDailySchedule($jobSchedule->jobAdvice, $jobSchedule);
                     }
+
+                    // Ganti Rental: move the contract + remaining service periods onto the new
+                    // rental and raise the RV job for the replaced unit. No-ops for other types.
+                    app(\App\Services\Operational\ChangeRentalCompletionService::class)
+                        ->handleCompletedJob($jobSchedule->fresh(), $jobSchedule->jobAdvice);
                 } else {
                     // Not all rooms completed, keep status as in_progress
                     if ($jobSchedule->status !== 'in_progress') {

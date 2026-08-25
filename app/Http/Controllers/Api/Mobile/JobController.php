@@ -1683,7 +1683,28 @@ class JobController extends Controller
                 $unitOnWalls = $unitOnWallQuery
                     ->with(['product.productType', 'serialNumber'])
                     ->get();
-                
+
+                // A room can legitimately hold more than one active unit at once — a Ganti
+                // Rental leaves the replaced unit on the wall until its RV job runs, right
+                // next to the freshly installed one. This Remove job is only allowed to take
+                // back the rental(s) actually assigned to it, so narrow the list to those
+                // when they resolve to something. Never narrow to nothing: legacy/manual
+                // Remove JAs whose rental does not line up with unit_on_walls.rental_id must
+                // keep showing the room's units exactly as before.
+                $removeRentalIds = \App\Models\JobAdviceRoom::whereIn(
+                    'id',
+                    \App\Models\JobScheduleRoom::where('job_schedule_id', $specificJobScheduleId)
+                        ->whereNotNull('job_advice_room_id')
+                        ->pluck('job_advice_room_id')
+                )->pluck('rental_product_id')->filter()->unique()->values()->all();
+
+                if (!empty($removeRentalIds)) {
+                    $scopedUnits = $unitOnWalls->whereIn('rental_id', $removeRentalIds)->values();
+                    if ($scopedUnits->isNotEmpty()) {
+                        $unitOnWalls = $scopedUnits;
+                    }
+                }
+
                 foreach ($unitOnWalls as $unit) {
                     if ($unit->product) {
                         // Only show unit products (is_unit = true), not liquids/cleaners
@@ -4028,7 +4049,7 @@ class JobController extends Controller
             $job->load('jobAdvice');
             $jobAdvice = $job->jobAdvice;
             if ($jobAdvice) {
-                $installTypes = ['install', 'ir', 'install_free', 'install free', 'if', 'service', 'service_first', 'service_routine', 'csr', 'customer_service_report', 'customer service report', 'change_rental', 'change rental'];
+                $installTypes = ['install', 'ir', 'install_free', 'install free', 'if', 'service', 'service_first', 'service_routine', 'csr', 'customer_service_report', 'customer service report', 'change', 'change_rental', 'change rental'];
                 $serviceTypes = ['service', 'service_first', 'service_routine', 'csr', 'customer_service_report', 'customer service report'];
                 $jobTypeLower = strtolower(trim($job->type));
                 if (in_array($jobTypeLower, $installTypes)) {
@@ -4051,6 +4072,11 @@ class JobController extends Controller
                         $generateFollowUpMethod->setAccessible(true);
                         $generateFollowUpMethod->invoke($jobScheduleController, $job, $jobAdvice);
                     }
+
+                    // Ganti Rental: move the contract + remaining service periods onto the new
+                    // rental and raise the RV job for the replaced unit.
+                    app(\App\Services\Operational\ChangeRentalCompletionService::class)
+                        ->handleCompletedJob($job->fresh(), $jobAdvice);
                 }
             }
         } catch (\Exception $e) {
@@ -4937,7 +4963,7 @@ class JobController extends Controller
                 $jobAdvice = $job->jobAdvice;
                 
                 if ($jobAdvice) {
-                    $installTypes = ['install', 'ir', 'install_free', 'install free', 'if', 'service', 'csr', 'customer_service_report', 'customer service report', 'change_rental', 'change rental'];
+                    $installTypes = ['install', 'ir', 'install_free', 'install free', 'if', 'service', 'csr', 'customer_service_report', 'customer service report', 'change', 'change_rental', 'change rental'];
                     $jobTypeLower = strtolower(trim($job->type));
                     if (in_array($jobTypeLower, $installTypes)) {
                         // Trigger auto-create logic from JobScheduleController
@@ -4968,6 +4994,11 @@ class JobController extends Controller
                                 if (in_array(strtolower(trim((string) $completedSchedule->type)), ['install', 'ir', 'install_free', 'install free', 'if'], true)) {
                                     $generateUnitOnlyChecksMethod->invoke($jobScheduleController, $completedSchedule, $jobAdvice);
                                 }
+
+                                // Ganti Rental: move the contract + remaining service periods onto
+                                // the new rental and raise the RV job for the replaced unit.
+                                app(\App\Services\Operational\ChangeRentalCompletionService::class)
+                                    ->handleCompletedJob($completedSchedule, $jobAdvice);
                             }
                             
                             // If unit on wall created and remove_date exists, create remove job for install free
