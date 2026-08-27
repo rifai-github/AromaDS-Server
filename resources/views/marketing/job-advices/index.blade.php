@@ -1364,14 +1364,14 @@
                             </div>
                         </div>
                         <div class="form-row" id="extra_options_group" style="display: none;">
-                            <div class="form-group">
+                            <div class="form-group" id="with_invoicing_group">
                                 <label class="form-label" for="with_invoicing">With Invoice</label>
                                 <select class="form-select" id="with_invoicing" name="with_invoicing">
                                     <option value="0" selected>No</option>
                                     <option value="1">Yes</option>
                                 </select>
                             </div>
-                            <div class="form-group">
+                            <div class="form-group" id="with_materials_group">
                                 <label class="form-label" for="with_materials">With Materials</label>
                                 <select class="form-select" id="with_materials" name="with_materials">
                                     <option value="0" selected>No</option>
@@ -1942,7 +1942,20 @@ window.toggleRemoveDate = function() {
 
         if (extraOptionsGroup) {
             const shouldShowExtraOptions = normalizedType === 'extra';
-            extraOptionsGroup.style.display = shouldShowExtraOptions ? 'flex' : 'none';
+            // A Complain Job Advice needs to answer "With Materials" too: since 1a8bb8e a
+            // Complain marked "No" skips Material Assign entirely, so the person creating it
+            // must be able to say so - and, just as importantly, must be able to say "Yes".
+            // With Invoice stays Extra-only; billing a Complain is not a decided flow.
+            const shouldShowWithMaterials = shouldShowExtraOptions || normalizedType === 'complain';
+            extraOptionsGroup.style.display = (shouldShowExtraOptions || shouldShowWithMaterials) ? 'flex' : 'none';
+            const withInvoicingGroup = document.getElementById('with_invoicing_group');
+            const withMaterialsGroup = document.getElementById('with_materials_group');
+            if (withInvoicingGroup) {
+                withInvoicingGroup.style.display = shouldShowExtraOptions ? 'block' : 'none';
+            }
+            if (withMaterialsGroup) {
+                withMaterialsGroup.style.display = shouldShowWithMaterials ? 'block' : 'none';
+            }
             if (extraUnitOnWallGroup) {
                 extraUnitOnWallGroup.style.display = shouldShowExtraOptions ? 'flex' : 'none';
             }
@@ -1960,7 +1973,6 @@ window.toggleRemoveDate = function() {
 
             if (!shouldShowExtraOptions) {
                 if (withInvoicingSelect) withInvoicingSelect.value = '0';
-                if (withMaterialsSelect) withMaterialsSelect.value = '0';
                 if (extraUnitOnWallSelect) {
                     extraUnitOnWallSelect.value = '';
                     extraUnitOnWallSelect.disabled = true;
@@ -1969,6 +1981,15 @@ window.toggleRemoveDate = function() {
                 pendingExtraContractRoomId = null;
             } else {
                 loadExtraOnWallUnits(getSelectedMarketingUserId());
+            }
+
+            if (withMaterialsSelect) {
+                // Complain defaults to "Yes" - that is what every Complain did before the flag
+                // was wired up, so leaving the picker untouched must not silently route a job
+                // past the warehouse. Types that don't show the field stay at "No".
+                withMaterialsSelect.value = shouldShowWithMaterials
+                    ? (normalizedType === 'complain' ? '1' : withMaterialsSelect.value)
+                    : '0';
             }
         }
 
