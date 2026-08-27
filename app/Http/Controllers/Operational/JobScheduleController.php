@@ -8138,28 +8138,12 @@ class JobScheduleController extends Controller
     /**
      * Narrow a Unit On Wall query to the Remove job's own contract(s).
      *
-     * customer + building + room + rental is NOT enough to identify what a Remove job may
-     * touch: the same customer can rent the same rental into the same room under several
-     * contracts, and every one of those units matches all four filters. unit_on_walls has
-     * carried the unit's own contract since 5fc9b84 (backfilled on QA and staging), so use it.
-     *
-     * The probe matters. Legacy rows predating that backfill have a NULL contract_id, and so
-     * does a unit whose room was moved to a different contract by Contract Switching. Tightening
-     * unconditionally would make those units invisible to the only job type that can get them
-     * off the wall, so when nothing in the candidate set carries a matching contract_id the
-     * query is left exactly as it was.
+     * The rule and the reason it probes first live on the model, so the Lost Unit Report
+     * retirement path applies exactly the same scoping - see UnitOnWall::scopeScopedToContracts().
      */
     private function scopeUnitOnWallsToContracts($query, array $contractIds): void
     {
-        if (empty($contractIds)) {
-            return;
-        }
-
-        if (! (clone $query)->whereIn('contract_id', $contractIds)->exists()) {
-            return;
-        }
-
-        $query->whereIn('contract_id', $contractIds);
+        $query->scopedToContracts($contractIds);
     }
 
     private function getSerialNumberIdsFromInventoryIssuingReferences(array $referenceNumbers): array
@@ -8596,6 +8580,7 @@ class JobScheduleController extends Controller
         $type = strtolower(trim((string) $job->type));
 
         return in_array($type, ['remove', 'remove_free', 'remove free', 'removal', 'check'], true)
+            || $job->skipsMaterialByJobAdviceDeclaration()
             || $this->jobScheduleRepresentsUnitOnlyCheck($job);
     }
 

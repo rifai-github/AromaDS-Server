@@ -591,6 +591,12 @@ class LostUnitReportController extends Controller
                 $unitQuery->where('customer_id', $lostUnitReport->contract->customer_id);
             }
 
+            // One room can hold units from several contracts at once, all on the same rental
+            // (QA room 460: 8 active units across four contracts). Without this, approving a
+            // Lost Unit Report retires units belonging to somebody else's contract and marks
+            // their serial numbers lost. Same rule as the Remove job fix in 8ce6d11.
+            $unitQuery->scopedToContracts([$lostUnitReport->contract_id]);
+
             $units = $unitQuery->with('serialNumber')->get();
 
             foreach ($units as $unit) {

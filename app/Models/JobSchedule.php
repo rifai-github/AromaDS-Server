@@ -712,9 +712,55 @@ class JobSchedule extends Model
             return true;
         }
 
+        if ($this->skipsMaterialByJobAdviceDeclaration()) {
+            return true;
+        }
+
         return in_array($type, ['service', 'service_first', 'service_routine'], true)
             && $this->material_checked
             && $this->hasOnlyRentalFlow(['unit_only']);
+    }
+
+    /**
+     * Whether the Job Advice itself declared there is no material to prepare
+     * ("With Materials: No" on the Job Advice form).
+     *
+     * Until now that answer was stored and displayed but never read by the workflow, so a
+     * Complain Job Advice marked "No" still had to go through Material Assign - QA could not
+     * test the no-material path at all (25 Aug 2026).
+     *
+     * Deliberately scoped to Complain Job Advices. The create form's "With Materials"
+     * default is "No", so honouring the flag for every type would let real installs walk
+     * past the warehouse: 52 install Job Advices on QA alone carry that unintended "No".
+     * Widening this to other types is a data-cleanup task, not a one-line change.
+     *
+     * Guarded on material_checked so a job whose material was already prepared never
+     * retroactively claims to be material-less and strands what the warehouse issued.
+     */
+    public function skipsMaterialByJobAdviceDeclaration(): bool
+    {
+        if ($this->material_checked) {
+            return false;
+        }
+
+        // Resolve without touching the database when there is nothing to resolve: a job with
+        // no job_advice_id can never have a declaration, and jobs are asked this question in
+        // list loops where an extra query per row would be pure waste.
+        if (! $this->relationLoaded('jobAdvice') && empty($this->job_advice_id)) {
+            return false;
+        }
+
+        $jobAdvice = $this->relationLoaded('jobAdvice')
+            ? $this->jobAdvice
+            : $this->jobAdvice()->first();
+
+        if (! $jobAdvice) {
+            return false;
+        }
+
+        $jobAdviceType = strtolower(trim(str_replace(['-', ' '], '_', (string) $jobAdvice->type)));
+
+        return $jobAdviceType === 'complain' && ! $jobAdvice->with_materials;
     }
 
     /**
@@ -733,6 +779,10 @@ class JobSchedule extends Model
         $type = strtolower(trim((string) ($this->type ?? '')));
 
         if (in_array($type, ['remove', 'remove_free', 'remove free', 'removal', 'check'], true)) {
+            return true;
+        }
+
+        if ($this->skipsMaterialByJobAdviceDeclaration()) {
             return true;
         }
 

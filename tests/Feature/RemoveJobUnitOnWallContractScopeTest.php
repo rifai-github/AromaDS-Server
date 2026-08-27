@@ -147,6 +147,38 @@ class RemoveJobUnitOnWallContractScopeTest extends TestCase
         $this->assertSame(2, $query->count());
     }
 
+    public function test_lost_unit_retirement_uses_the_same_shared_scope(): void
+    {
+        // LostUnitReportController::retireLostUnits() builds this exact query and then marks
+        // every match 'removed' with its serial number 'retired'. Unscoped, approving one Lost
+        // Unit Report writes off units belonging to three other contracts in the same room.
+        $this->seedUnit(5948, 'DIFF3030021');
+        $this->seedUnit(5950, 'DW300W2606011');
+        $this->seedUnit(5965, 'DW300W2606014');
+        $this->seedUnit(5965, 'DW300W2606008');
+
+        $query = UnitOnWall::where('room_id', 460)
+            ->where('rental_id', 4)
+            ->where('status', 'active')
+            ->where('building_id', 206)
+            ->where('customer_id', 10)
+            ->scopedToContracts([5965]);
+
+        $this->assertSame(
+            ['DW300W2606008', 'DW300W2606014'],
+            $query->pluck('serial_number')->sort()->values()->all()
+        );
+    }
+
+    public function test_model_scope_ignores_empty_and_null_contract_ids(): void
+    {
+        $this->seedUnit(5948, 'DIFF3030021');
+        $this->seedUnit(5965, 'DW300W2606014');
+
+        $this->assertSame(2, UnitOnWall::where('room_id', 460)->scopedToContracts([])->count());
+        $this->assertSame(2, UnitOnWall::where('room_id', 460)->scopedToContracts([null])->count());
+    }
+
     public function test_contract_ids_collect_the_job_advice_and_renewal_source(): void
     {
         $jobAdvice = (object) ['contract_id' => 5965];

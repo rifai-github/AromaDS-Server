@@ -192,6 +192,42 @@ class UnitOnWall extends Model
         return $query->whereBetween('temperature', [$minTemp, $maxTemp]);
     }
 
+    /**
+     * Narrow a Unit On Wall query to units that belong to the given contract(s).
+     *
+     * customer + building + room + rental is NOT enough to identify a contract's units: the
+     * same customer can rent the same rental into the same room under several contracts at
+     * once, and every one of those units matches all four filters. QA room 460 held 8 active
+     * units across contracts SBY-CA/26-08/0007..0010, all on rental_id 4 - which is how a
+     * Remove job for a 2-unit contract listed 8 serial numbers (fixed in 8ce6d11) and how a
+     * Lost Unit Report can retire units belonging to someone else's contract.
+     *
+     * The probe is deliberate. Rows predating the unit_on_walls.contract_id backfill
+     * (5fc9b84), and units whose room was moved to another contract by Contract Switching,
+     * carry no matching contract_id. Tightening unconditionally would make those units
+     * unreachable to the very processes that exist to take them off the wall, so when
+     * nothing in the candidate set carries a matching contract the query is left untouched.
+     */
+    public function scopeScopedToContracts($query, array $contractIds)
+    {
+        $contractIds = collect($contractIds)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($contractIds)) {
+            return $query;
+        }
+
+        if (! (clone $query)->whereIn('contract_id', $contractIds)->exists()) {
+            return $query;
+        }
+
+        return $query->whereIn('contract_id', $contractIds);
+    }
+
     // Accessors
     public function getFormattedInstallDateAttribute()
     {

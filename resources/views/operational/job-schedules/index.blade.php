@@ -2515,7 +2515,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
         if (skipsMaterialAssignment(type, displayType, skipsMaterialFlag)) {
             Swal.fire({
                 title: 'Aksi Tidak Sesuai',
-                text: 'Service unit-only/Remove tidak menggunakan alur material. Silakan gunakan Assign Team atau Unassign Team sesuai kebutuhan.',
+                text: 'Job ini tidak menggunakan alur material (Remove, Service unit-only, atau Job Advice dengan With Materials = No). Silakan gunakan Assign Team atau Unassign Team sesuai kebutuhan.',
                 icon: 'warning',
                 confirmButtonColor: '#214589'
             });
