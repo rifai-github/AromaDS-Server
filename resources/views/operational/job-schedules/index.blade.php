@@ -3454,7 +3454,7 @@ function loadRoomsForJobSchedule(unitId, selectedRoomId = null) {
 
             Swal.fire({
                 title: 'Aksi Tidak Sesuai',
-                text: `Service unit-only/Remove tidak menggunakan alur material, sehingga ${actionLabels[actionType]} tidak dapat dilakukan. Silakan gunakan Assign Team atau Unassign Team sesuai kebutuhan.`,
+                text: `Job yang dipilih tidak menggunakan alur material (Remove, Service unit-only, atau Job Advice dengan With Materials = No), sehingga ${actionLabels[actionType]} tidak dapat dilakukan. Silakan gunakan Assign Team atau Unassign Team sesuai kebutuhan.`,
                 icon: 'warning',
                 confirmButtonColor: '#214589'
             });
