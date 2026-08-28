@@ -908,6 +908,10 @@
                         <th data-column="rental_name">Rental</th>
                         <th data-column="room_name">Room</th>
                         <th data-column="status">Status</th>
+                        {{-- What a loss report is actually asked at review time: has the unit
+                             been put back, and has the customer paid for the one they lost. --}}
+                        <th data-column="replacement_status_text">Penggantian</th>
+                        <th data-column="payment_status_text">Pembayaran</th>
                         <th data-column="reporter.name">Report By</th>
                         <th data-column="created_at" data-type="date">Created At</th>
                         <th data-column="creator.name">Created By</th>
@@ -963,6 +967,20 @@
                                    ($report->status == 'submitted' ? 'bg-blue-100 text-blue-800' : 
                                    'bg-yellow-100 text-yellow-800')) }}">
                                 {{ $report->status_text ?? ucfirst($report->status ?? 'N/A') }}
+                            </span>
+                        </td>
+                        @php
+                            $replacementText = $report->replacement_status_text;
+                            $paymentText = $report->payment_status_text;
+                        @endphp
+                        <td>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $replacementText === 'Sudah diganti' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800' }}">
+                                {{ $replacementText }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $paymentText === 'Sudah dibayar' ? 'bg-green-100 text-green-800' : ($paymentText === 'Tidak ditagih' ? 'bg-gray-100 text-gray-700' : 'bg-yellow-100 text-yellow-800') }}">
+                                {{ $paymentText }}
                             </span>
                         </td>
                         <td>{{ $report->reporter->name ?? 'N/A' }}</td>

@@ -722,7 +722,8 @@
                 'damaged' => 'Rusak',
                 'technician' => 'Di Teknisi',
                 'customer' => 'Di Customer',
-                'retired' => 'Hilang / Retired',
+                'lost' => 'Hilang',
+                'retired' => 'Retired',
             ];
         @endphp
         <div class="flex flex-wrap gap-2 items-center w-full p-4 bg-white border-t border-gray-100">
@@ -943,6 +944,18 @@
 </div>
 
 <script>
+// The one list of serial-number statuses, shared with the Blade forms above so every screen
+// words them identically. Legacy synonyms are normalised onto their modern equivalent.
+const SN_STATUS_LABELS = @json(\App\Models\SerialNumber::STATUS_EDIT_LABELS);
+function snNormalizeStatus(status) {
+    return ({ available: 'ready', damaged: 'broken', maintenance: 'on_service' })[status] || status;
+}
+function snStatusOptions(selected) {
+    const current = snNormalizeStatus(selected);
+    return Object.entries(SN_STATUS_LABELS)
+        .map(([value, label]) => `<option value="${value}" ${current === value ? 'selected' : ''}>${label}</option>`)
+        .join('');
+}
 // Global variables
 let selectedIdsForRetry = [];
 let successModalTimer = null;
@@ -1171,11 +1184,14 @@ function openCreateModal() {
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="form-group">
                         <label class="form-label">Status *</label>
+                        {{-- Same list, same wording, as the detail page and the status column.
+                             This used to offer only the legacy synonyms (available/maintenance/
+                             damaged), so creating or editing from here quietly wrote a status
+                             the rest of the app displays under a different name. --}}
                         <select name="status" class="form-input" required>
-                            <option value="available">Available</option>
-                            <option value="in_use">In Use</option>
-                            <option value="maintenance">Maintenance</option>
-                            <option value="damaged">Damaged</option>
+                            @foreach (\App\Models\SerialNumber::STATUS_EDIT_LABELS as $statusValue => $statusLabel)
+                                <option value="{{ $statusValue }}" {{ $statusValue === 'ready' ? 'selected' : '' }}>{{ $statusLabel }}</option>
+                            @endforeach
                         </select>
                     </div>
                     <div class="form-group">
@@ -1371,10 +1387,7 @@ function openEditModal(id) {
                             <div class="form-group">
                                 <label class="form-label">Status *</label>
                                 <select name="status" class="form-input" required>
-                                    <option value="available" ${data.data.status === 'available' ? 'selected' : ''}>Available</option>
-                                    <option value="in_use" ${data.data.status === 'in_use' ? 'selected' : ''}>In Use</option>
-                                    <option value="maintenance" ${data.data.status === 'maintenance' ? 'selected' : ''}>Maintenance</option>
-                                    <option value="damaged" ${data.data.status === 'damaged' ? 'selected' : ''}>Damaged</option>
+                                    ${snStatusOptions(data.data.status)}
                                 </select>
                             </div>
                             <div class="form-group">

@@ -32,7 +32,7 @@ class LostUnitReportController extends Controller
     {
         $this->mergeTableHeaderFilters($request);
 
-        $query = LostUnitReport::with(['contract', 'contract.customer', 'masterRental', 'room', 'items', 'items.room', 'items.masterRental', 'reporter', 'approver', 'updater', 'creator']);
+        $query = LostUnitReport::with(['contract', 'contract.customer', 'masterRental', 'room', 'items', 'items.room', 'items.masterRental', 'reporter', 'approver', 'updater', 'creator', 'invoice', 'jobAdvice.jobSchedules']);
 
         // Filter by report number
         if ($request->filled('report_number')) {
@@ -602,16 +602,20 @@ class LostUnitReportController extends Controller
             foreach ($units as $unit) {
                 $unit->update([
                     'status' => 'removed',
-                    'notes' => trim(($unit->notes ? $unit->notes . "\n" : '') . "Retired by lost unit report {$lostUnitReport->report_number}."),
+                    'notes' => trim(($unit->notes ? $unit->notes . "\n" : '') . "Dilaporkan hilang pada {$lostUnitReport->report_number}."),
                     'updated_by' => Auth::id(),
                 ]);
 
                 if ($unit->serialNumber) {
                     $unit->serialNumber->update([
-                        'status' => 'retired',
-                        'condition_status' => SerialNumber::CONDITION_DAMAGED,
+                        // 'lost', not 'retired' + damaged. A missing unit is not a broken one,
+                        // and recording it as damaged made lost units impossible to tell apart
+                        // from units that came back broken - exactly what a loss report needs
+                        // to answer (QA, 28 Aug 2026). Condition is left as last known: nobody
+                        // inspected the unit, it is gone.
+                        'status' => SerialNumber::STATUS_LOST,
                         'location_type' => 'customer',
-                        'notes' => trim(($unit->serialNumber->notes ? $unit->serialNumber->notes . "\n" : '') . "Retired by lost unit report {$lostUnitReport->report_number}."),
+                        'notes' => trim(($unit->serialNumber->notes ? $unit->serialNumber->notes . "\n" : '') . "Dilaporkan hilang pada {$lostUnitReport->report_number}."),
                         'updated_by' => Auth::id(),
                     ]);
                 }
@@ -1316,7 +1320,8 @@ class LostUnitReportController extends Controller
                         'company_name' => $contract->customer->name,
                         'schedule_date' => now(), // Tanggal report di-approve
                         'expected_date' => now()->addDays(7), // Expected completion in 7 days
-                        'period' => ($jobType === 'service_first') ? 1 : null,
+                        // Always null: a replacement job carries no service period of its own.
+                        'period' => null,
                         'status' => 'new_job',
                         'internal_notes' => "Auto-generated from Lost Unit Report: {$report->report_number} | Job Advice: {$jobAdvice->job_advice_number}",
                         'reference_number' => $jobAdvice->job_advice_number,
@@ -1351,28 +1356,29 @@ class LostUnitReportController extends Controller
      */
     private function determineJobTypes($rental)
     {
+        // A replacement only needs the unit put back on the wall. The contract's periodic
+        // services keep running on their own schedule and will service whatever unit is in
+        // the room, so raising a fresh service here would visit - and bill - the customer
+        // twice in the same period. It used to create a `service_first` stamped period 1,
+        // which on a contract already at period 5 collided with the real first period.
+        // Client decision 28 Aug 2026: "service penggantinya ikut service berjalan aja".
         $jobTypes = [];
-        
-        // Tentukan job types berdasarkan rental type
+
         switch ($rental->rental_type) {
             case 'unit_only':
-                // Unit only = Install saja (IR)
+            case 'unit_refill':
                 $jobTypes = ['install'];
                 break;
-                
+
             case 'refill_only':
-                // Refill only = CSR saja
-                $jobTypes = ['service_first'];
+                // A refill-only rental has no unit, so there is nothing to replace.
+                \Log::warning("Lost Unit Report: rental {$rental->id} is refill-only, no replacement job created.");
+                $jobTypes = [];
                 break;
-                
-            case 'unit_refill':
-                // Unit + Refill = Install + CSR (IR + CSR)
-                $jobTypes = ['install', 'service_first'];
-                break;
-                
+
             default:
-                // Fallback: assume unit_refill untuk backward compatibility
-                $jobTypes = ['install', 'service_first'];
+                // Unknown rental type: assume it carries a unit, same as before.
+                $jobTypes = ['install'];
                 break;
         }
         

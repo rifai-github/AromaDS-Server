@@ -17,6 +17,47 @@ class SerialNumber extends Model
 
     public const CONDITION_DAMAGED = 'damaged';
 
+    public const STATUS_LOST = 'lost';
+
+    /**
+     * How each stored status is written wherever a user sees it.
+     *
+     * Public so the Serial Number edit form can be built from the SAME list the list and
+     * detail pages display. It used to hardcode its own wording ("Ready", "In Use") while the
+     * pages showed another ("In Warehouse", "In Customer"), which is why QA reported the
+     * warehouse status as not editable - the option was there, just under a different name.
+     *
+     * 'available' and 'damaged'/'maintenance' are legacy synonyms kept for existing rows; they
+     * are deliberately absent from STATUS_EDIT_LABELS so nobody writes a new one.
+     */
+    public const STATUS_LABELS = [
+        'ready' => 'In Warehouse',
+        'available' => 'In Warehouse',
+        'broken' => 'Broken',
+        'damaged' => 'Broken',
+        'on_service' => 'On Service',
+        'maintenance' => 'On Service',
+        'in_use' => 'In Customer',
+        self::STATUS_LOST => 'Hilang',
+        'retired' => 'Retired',
+        'on_hand' => 'On Hand - Teknisi',
+        'on_hand_remove' => 'On Hand Remove - Teknisi',
+    ];
+
+    /**
+     * The statuses a user may pick in the edit form, in workflow order.
+     */
+    public const STATUS_EDIT_LABELS = [
+        'ready' => 'In Warehouse',
+        'on_hand' => 'On Hand - Teknisi',
+        'on_hand_remove' => 'On Hand Remove - Teknisi',
+        'in_use' => 'In Customer',
+        'on_service' => 'On Service',
+        'broken' => 'Broken',
+        self::STATUS_LOST => 'Hilang',
+        'retired' => 'Retired',
+    ];
+
     public const CONDITION_LABELS = [
         self::CONDITION_NEW => 'Baru',
         self::CONDITION_SECOND_READY => 'Bekas / Siap Pakai',
@@ -196,20 +237,7 @@ class SerialNumber extends Model
     // Accessors
     public function getStatusTextAttribute()
     {
-        $statuses = [
-            'ready' => 'In Warehouse',
-            'available' => 'In Warehouse',
-            'broken' => 'Broken',
-            'damaged' => 'Broken',
-            'on_service' => 'On Service',
-            'maintenance' => 'On Service',
-            'in_use' => 'In Customer',
-            'retired' => 'Retired',
-            'on_hand' => 'On Hand - Teknisi',
-            'on_hand_remove' => 'On Hand Remove - Teknisi',
-        ];
-
-        return $statuses[$this->status] ?? ucfirst(str_replace('_', ' ', $this->status));
+        return self::STATUS_LABELS[$this->status] ?? ucfirst(str_replace('_', ' ', $this->status));
     }
 
     public function getEffectiveConditionStatusAttribute(): string
@@ -238,6 +266,14 @@ class SerialNumber extends Model
 
     public function getCanInstallAttribute(): bool
     {
+        // A unit that is gone or permanently withdrawn can never be installed, whatever its
+        // last known condition was. This is checked on STATUS rather than folded into
+        // effective_condition_status on purpose: a lost unit is not "Rusak", and reporting it
+        // as damaged is exactly what made lost units indistinguishable from broken ones.
+        if (in_array($this->status, [self::STATUS_LOST, 'retired'], true)) {
+            return false;
+        }
+
         return $this->effective_condition_status !== self::CONDITION_DAMAGED;
     }
 
@@ -245,6 +281,14 @@ class SerialNumber extends Model
     {
         if ($this->can_install) {
             return null;
+        }
+
+        if ($this->status === self::STATUS_LOST) {
+            return 'Unit berstatus Hilang sehingga tidak bisa dipasang.';
+        }
+
+        if ($this->status === 'retired') {
+            return 'Unit sudah tidak dipakai (Retired) sehingga tidak bisa dipasang.';
         }
 
         return 'Unit dalam kondisi Rusak sehingga tidak boleh dipasang. Proses retur ke pusat diperlukan.';

@@ -135,6 +135,57 @@ class LostUnitReport extends Model
         return $this->hasOne(JobAdvice::class, 'reference_number', 'report_number');
     }
 
+    /**
+     * Has the replacement unit actually been installed yet?
+     *
+     * Approving a loss report raises a replacement Job Advice (linked by report number) whose
+     * install job is the actual re-fit. A loss is only closed out when that job is done, so a
+     * loss report needs to say so without anyone cross-checking the Job Schedule list by hand.
+     */
+    public function getReplacementStatusTextAttribute(): string
+    {
+        $jobAdvice = $this->jobAdvice;
+
+        if (! $jobAdvice) {
+            return 'Belum ada JA pengganti';
+        }
+
+        $schedules = $jobAdvice->relationLoaded('jobSchedules')
+            ? $jobAdvice->jobSchedules
+            : $jobAdvice->jobSchedules()->get();
+
+        if ($schedules->isEmpty()) {
+            return 'Belum dijadwalkan';
+        }
+
+        $done = $schedules->every(
+            fn ($schedule) => in_array(strtolower((string) $schedule->status), ['done_job', 'completed', 'selesai'], true)
+        );
+
+        return $done ? 'Sudah diganti' : 'Belum diganti';
+    }
+
+    /**
+     * Has the customer paid for the unit they lost?
+     *
+     * A report where the customer is not charged has no invoice at all - that is a legitimate
+     * outcome, not an unpaid one, so it is named differently.
+     */
+    public function getPaymentStatusTextAttribute(): string
+    {
+        if (! $this->invoice_id) {
+            return $this->charge_customer ? 'Belum ada invoice' : 'Tidak ditagih';
+        }
+
+        $invoice = $this->invoice;
+
+        if (! $invoice) {
+            return 'Belum ada invoice';
+        }
+
+        return $invoice->invoice_status === 'paid' ? 'Sudah dibayar' : 'Belum dibayar';
+    }
+
     // Scopes
     public function scopeByStatus($query, $status)
     {

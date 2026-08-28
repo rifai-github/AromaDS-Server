@@ -453,14 +453,22 @@
             <div class="modal-body p-3">
                 <div class="mb-3 text-dark">
                     <label class="form-label font-weight-bold">Status <span class="text-danger">*</span></label>
+                    {{-- Built from SerialNumber::STATUS_EDIT_LABELS so the options read exactly
+                         like the status shown on this page and in the list. They used to be
+                         worded differently ("Ready" here vs "In Warehouse" there), which is why
+                         the warehouse status looked like it could not be edited at all. --}}
+                    @php
+                        $currentStatus = match ($serialNumber->status) {
+                            'available' => 'ready',
+                            'damaged' => 'broken',
+                            'maintenance' => 'on_service',
+                            default => $serialNumber->status,
+                        };
+                    @endphp
                     <select name="status" class="form-select" required>
-                        <option value="ready" {{ in_array($serialNumber->status, ['ready', 'available']) ? 'selected' : '' }}>Ready</option>
-                        <option value="on_hand" {{ $serialNumber->status === 'on_hand' ? 'selected' : '' }}>On Hand</option>
-                        <option value="on_hand_remove" {{ $serialNumber->status === 'on_hand_remove' ? 'selected' : '' }}>On Hand Remove</option>
-                        <option value="broken" {{ in_array($serialNumber->status, ['broken', 'damaged']) ? 'selected' : '' }}>Broken</option>
-                        <option value="on_service" {{ in_array($serialNumber->status, ['on_service', 'maintenance']) ? 'selected' : '' }}>On Service</option>
-                        <option value="in_use" {{ $serialNumber->status === 'in_use' ? 'selected' : '' }}>In Use</option>
-                        <option value="retired" {{ $serialNumber->status === 'retired' ? 'selected' : '' }}>Retired</option>
+                        @foreach (\App\Models\SerialNumber::STATUS_EDIT_LABELS as $statusValue => $statusLabel)
+                            <option value="{{ $statusValue }}" {{ $currentStatus === $statusValue ? 'selected' : '' }}>{{ $statusLabel }}</option>
+                        @endforeach
                     </select>
                 </div>
                 <div class="mb-3 text-dark">

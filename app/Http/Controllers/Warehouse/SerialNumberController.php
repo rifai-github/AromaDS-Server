@@ -48,11 +48,11 @@ class SerialNumberController extends Controller
             'new' => $query->where(function ($nested) {
                 $nested->whereNull('condition_status')
                     ->orWhere('condition_status', SerialNumber::CONDITION_NEW);
-            })->whereNotIn('status', ['broken', 'damaged', 'retired']),
+            })->whereNotIn('status', ['broken', 'damaged', 'retired', SerialNumber::STATUS_LOST]),
             'second_ready' => $query->whereIn('condition_status', [
                 SerialNumber::CONDITION_SECOND_READY,
                 'used',
-            ])->whereNotIn('status', ['broken', 'damaged', 'retired']),
+            ])->whereNotIn('status', ['broken', 'damaged', 'retired', SerialNumber::STATUS_LOST]),
             'damaged' => $query->where(function ($nested) {
                 $nested->where('condition_status', SerialNumber::CONDITION_DAMAGED)
                     ->orWhereIn('status', ['broken', 'damaged']);
@@ -66,6 +66,7 @@ class SerialNumberController extends Controller
                     ->orWhere('status', 'in_use')
                     ->orWhereHas('unitOnWalls', fn ($unitQuery) => $unitQuery->where('status', 'active'));
             }),
+            'lost' => $query->where('status', SerialNumber::STATUS_LOST),
             'retired' => $query->where('status', 'retired'),
             default => null,
         };
@@ -426,7 +427,7 @@ class SerialNumberController extends Controller
         $rules = [];
 
         if ($request->has('status')) {
-            $rules['status'] = 'required|in:ready,broken,on_service,in_use,retired,available,maintenance,damaged,on_hand,on_hand_remove'; // Include legacy statuses
+            $rules['status'] = 'required|in:ready,broken,on_service,in_use,lost,retired,available,maintenance,damaged,on_hand,on_hand_remove'; // Include legacy statuses
         }
 
         if ($request->has('condition_status')) {
