@@ -7716,6 +7716,16 @@ class JobScheduleController extends Controller
      */
     private function serialNumberAlreadyIssuedForJob(JobSchedule $job, \App\Models\SerialNumber $serialNumber): bool
     {
+        // This is a de-duplication check, not a correctness gate: if the Material Assign trail
+        // cannot be read, fall through to the original behaviour and write the issuing. Same
+        // Schema::hasTable() guarding as getSerialNumberIdsFromInventoryIssuingReferences()
+        // below, which exists because callers reach this code with partial schemas.
+        foreach (['material_issues', 'job_assign_material_issues', 'job_assign_schedules'] as $table) {
+            if (! \Illuminate\Support\Facades\Schema::hasTable($table)) {
+                return false;
+            }
+        }
+
         $materialIssueNumbers = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function ($query) use ($job) {
             $query->where('job_schedule_id', $job->id);
         })
