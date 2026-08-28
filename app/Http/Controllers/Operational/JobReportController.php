@@ -262,6 +262,11 @@ class JobReportController extends Controller
                     // rental and raise the RV job for the replaced unit. No-ops for other types.
                     app(\App\Services\Operational\ChangeRentalCompletionService::class)
                         ->handleCompletedJob($jobSchedule->fresh(), $jobSchedule->jobAdvice);
+
+                    // Extra: raise the standalone invoice for a "With Invoicing: Yes" Extra
+                    // job. No-ops for every other job type.
+                    app(\App\Services\Operational\ExtraJobInvoiceService::class)
+                        ->handleCompletedJob($jobSchedule->fresh(), $jobSchedule->jobAdvice);
                 } else {
                     // Not all rooms completed, keep status as in_progress
                     if ($jobSchedule->status !== 'in_progress') {

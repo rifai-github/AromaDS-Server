@@ -3936,6 +3936,11 @@ class JobScheduleController extends Controller
                 app(\App\Services\Operational\ChangeRentalCompletionService::class)
                     ->handleCompletedJob($jobSchedule->fresh(), $jobAdvice);
 
+                // Extra: raise the standalone invoice for a "With Invoicing: Yes" Extra job.
+                // No-ops for every other job type.
+                app(\App\Services\Operational\ExtraJobInvoiceService::class)
+                    ->handleCompletedJob($jobSchedule->fresh(), $jobAdvice);
+
                 // AUTO-REMOVE/HIDE UNIT ON WALL when remove job is completed
                 // "ketika remove job sudah selesai, unit on wall akan otomatis ter-hide/removed"
                 if (
@@ -4907,6 +4912,11 @@ class JobScheduleController extends Controller
                 // rental and raise the RV job that returns the replaced unit. No-ops for
                 // every other job type.
                 app(\App\Services\Operational\ChangeRentalCompletionService::class)
+                    ->handleCompletedJob($completedSchedule, $jobAdvice);
+
+                // Extra: raise the standalone invoice for a "With Invoicing: Yes" Extra job.
+                // No-ops for every other job type.
+                app(\App\Services\Operational\ExtraJobInvoiceService::class)
                     ->handleCompletedJob($completedSchedule, $jobAdvice);
             }
 
@@ -7645,6 +7655,18 @@ class JobScheduleController extends Controller
             return;
         }
 
+        // Ganti Unit is now offered on Complain jobs too, and those DO go through Material
+        // Assign: the replacement unit is handed to the technician by the warehouse before
+        // it is swapped in. Writing a second Inventory Issuing for the same physical unit
+        // would make it look issued twice on every issuing report. Stock is unaffected
+        // either way - this method only ever wrote paperwork - but the duplicate is real,
+        // so when the warehouse already issued this serial number for this job, leave it be.
+        if ($this->serialNumberAlreadyIssuedForJob($job, $newSerialNumber)) {
+            \Log::info("Job {$job->job_number}: swap-unit Inventory Issuing skipped for SN {$newSerialNumber->serial_number} - already issued to this job via Material Assign.");
+
+            return;
+        }
+
         $issuingNumber = app(\App\Services\DocumentNumberService::class)
             ->generate('inventory_issuing', warehouseId: $warehouse->id);
 
@@ -7687,6 +7709,33 @@ class JobScheduleController extends Controller
      * exactly one already-known unit (no batch/pointer resolution needed), so read
      * serial_number_id directly.
      */
+    /**
+     * Did the warehouse already hand this serial number to this job through the normal
+     * Material Assign flow? Reuses the Material Issue -> Inventory Issuing resolution the
+     * Remove job uses, so batch-linked rows are matched the same way as direct ones.
+     */
+    private function serialNumberAlreadyIssuedForJob(JobSchedule $job, \App\Models\SerialNumber $serialNumber): bool
+    {
+        $materialIssueNumbers = \App\Models\MaterialIssue::whereHas('jobAssignMaterialIssues.jobAssignSchedule', function ($query) use ($job) {
+            $query->where('job_schedule_id', $job->id);
+        })
+            ->pluck('issue_number')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($materialIssueNumbers)) {
+            return false;
+        }
+
+        return in_array(
+            (int) $serialNumber->id,
+            $this->getSerialNumberIdsFromInventoryIssuingReferences($materialIssueNumbers),
+            true
+        );
+    }
+
     private function resolveSwapIssuedSerialNumbersForJob(JobSchedule $jobSchedule): \Illuminate\Support\Collection
     {
         if (! $jobSchedule->job_number) {

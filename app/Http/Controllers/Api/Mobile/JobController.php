@@ -4077,6 +4077,11 @@ class JobController extends Controller
                     // rental and raise the RV job for the replaced unit.
                     app(\App\Services\Operational\ChangeRentalCompletionService::class)
                         ->handleCompletedJob($job->fresh(), $jobAdvice);
+
+                    // Extra: raise the standalone invoice for a "With Invoicing: Yes" Extra
+                    // job. No-ops for every other job type.
+                    app(\App\Services\Operational\ExtraJobInvoiceService::class)
+                        ->handleCompletedJob($job->fresh(), $jobAdvice);
                 }
             }
         } catch (\Exception $e) {
@@ -4998,6 +5003,11 @@ class JobController extends Controller
                                 // Ganti Rental: move the contract + remaining service periods onto
                                 // the new rental and raise the RV job for the replaced unit.
                                 app(\App\Services\Operational\ChangeRentalCompletionService::class)
+                                    ->handleCompletedJob($completedSchedule, $jobAdvice);
+
+                                // Extra: raise the standalone invoice for a "With Invoicing:
+                                // Yes" Extra job. No-ops for every other job type.
+                                app(\App\Services\Operational\ExtraJobInvoiceService::class)
                                     ->handleCompletedJob($completedSchedule, $jobAdvice);
                             }
                             

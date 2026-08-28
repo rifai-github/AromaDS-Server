@@ -25,6 +25,9 @@ class Invoice extends Model
         'po_number',
         'contract_id',
         'contract_number',
+        // What an ad-hoc invoice was raised for: a Lost Unit Report number, or the job
+        // number of an Extra. Period invoices leave it null - they are keyed by period_invoice.
+        'reference_number',
         'customer_id',
         'billing_address',
         'period_invoice',
