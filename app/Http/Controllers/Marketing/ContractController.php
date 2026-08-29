@@ -2285,6 +2285,16 @@ class ContractController extends Controller
             ]);
         }
 
+        // Whatever the renewal dropped - a room taken out, or a quantity reduced - still has
+        // units on the wall that nobody has asked for back. Raise their Remove jobs now that
+        // the renewal is live. Never allowed to break activation: it logs and moves on.
+        try {
+            app(\App\Services\Operational\ContractRenewalRemovalService::class)
+                ->handleActivatedRenewal($contract, $oldContract);
+        } catch (\Throwable $e) {
+            Log::error("Renewal {$contract->contract_number}: failed to raise Remove jobs for dropped rooms/quantities: " . $e->getMessage());
+        }
+
         Log::info('Renewal source contract linked to successor', [
             'old_contract_id' => $oldContract->id,
             'old_contract_number' => $oldContract->contract_number,
