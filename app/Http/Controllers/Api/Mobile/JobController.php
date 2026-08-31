@@ -4078,11 +4078,15 @@ class JobController extends Controller
                     app(\App\Services\Operational\ChangeRentalCompletionService::class)
                         ->handleCompletedJob($job->fresh(), $jobAdvice);
 
-                    // Extra: raise the standalone invoice for a "With Invoicing: Yes" Extra
-                    // job. No-ops for every other job type.
-                    app(\App\Services\Operational\ExtraJobInvoiceService::class)
-                        ->handleCompletedJob($job->fresh(), $jobAdvice);
                 }
+
+                // Extra: raise the standalone invoice for a "With Invoicing: Yes" Extra job.
+                // Deliberately OUTSIDE the $installTypes guard above: 'extra' is not in that
+                // list (nor should it be - an Extra creates no Unit On Wall), so anything
+                // nested inside it never runs for the very job type this exists to bill.
+                // That is exactly how SBY-EXT/26-08/0008 completed with no invoice.
+                app(\App\Services\Operational\ExtraJobInvoiceService::class)
+                    ->handleCompletedJob($job->fresh(), $jobAdvice);
             }
         } catch (\Exception $e) {
             \Log::error("submitSignature: ❌ Failed to trigger auto-create Unit On Wall for job {$job->job_number}: " . $e->getMessage());
@@ -5004,11 +5008,6 @@ class JobController extends Controller
                                 // the new rental and raise the RV job for the replaced unit.
                                 app(\App\Services\Operational\ChangeRentalCompletionService::class)
                                     ->handleCompletedJob($completedSchedule, $jobAdvice);
-
-                                // Extra: raise the standalone invoice for a "With Invoicing:
-                                // Yes" Extra job. No-ops for every other job type.
-                                app(\App\Services\Operational\ExtraJobInvoiceService::class)
-                                    ->handleCompletedJob($completedSchedule, $jobAdvice);
                             }
                             
                             // If unit on wall created and remove_date exists, create remove job for install free
@@ -5048,6 +5047,13 @@ class JobController extends Controller
             $jobAdvice = $job->jobAdvice;
             
             if ($jobAdvice) {
+                // Extra: raise the standalone invoice for a "With Invoicing: Yes" Extra job.
+                // It lives here, and not in the auto-create block above, because that block is
+                // gated on $installTypes - a list 'extra' is not on. handleCompletedJob() does
+                // its own status and type checks, so it is a no-op for anything else.
+                app(\App\Services\Operational\ExtraJobInvoiceService::class)
+                    ->handleCompletedJob($job->fresh(), $jobAdvice);
+
                 // Auto-update last_service_date for service jobs
                 if (in_array(strtolower($job->type), ['service', 'service_first', 'service_routine', 'csr', 'customer_service_report', 'customer service report'])) {
                     try {
