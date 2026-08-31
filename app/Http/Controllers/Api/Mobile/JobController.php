@@ -523,6 +523,64 @@ class JobController extends Controller
         return null;
     }
 
+    /**
+     * The schedule that actually owns this room, when the app named a sibling of it.
+     *
+     * A Job Advice with several rooms gets one schedule chain per room, and every schedule of
+     * a given period shares the SAME job number. The app posts completions against whichever
+     * schedule id it is holding, so "complete Ruang Complain" can arrive addressed to the
+     * schedule that belongs to Ruang Extra. completeRoom() then found no room row for it and
+     * created one (ensureMobileRentalScheduleRoom, note "Mobile rental-level tracking"),
+     * leaving the room recorded on both jobs and the original still showing pending.
+     *
+     * Confirmed on QA 30 Aug 2026, job SBY-CSR/26-09/0020: schedules 717 (Ruang Complain) and
+     * 720 (Ruang Extra) each ended up carrying both rooms, and 717 showed Ruang Complain
+     * "pending" for seven hours after the technician had already completed it.
+     *
+     * Scoped to siblings sharing the same job number on purpose: that is one job in the
+     * technician's hands, so redirecting within it is a correction. Jumping to a schedule with
+     * a different number would be moving work between jobs, which this must never do. When no
+     * sibling owns the room the original schedule is returned untouched, preserving the
+     * existing behaviour for legacy data and genuinely new rooms.
+     */
+    private function resolveRoomOwningSibling(?JobSchedule $jobSchedule, $jobAdviceRoom): ?JobSchedule
+    {
+        if (! $jobSchedule || ! $jobAdviceRoom || ! $jobSchedule->job_number) {
+            return $jobSchedule;
+        }
+
+        $alreadyOwnsRoom = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
+            ->where('job_advice_room_id', $jobAdviceRoom->id)
+            ->exists();
+
+        if ($alreadyOwnsRoom) {
+            return $jobSchedule;
+        }
+
+        $ownerRoom = \App\Models\JobScheduleRoom::where('job_advice_room_id', $jobAdviceRoom->id)
+            ->whereHas('jobSchedule', function ($query) use ($jobSchedule) {
+                $query->where('job_number', $jobSchedule->job_number)
+                    ->where('id', '!=', $jobSchedule->id);
+            })
+            ->with('jobSchedule')
+            ->orderBy('id')
+            ->first();
+
+        if (! $ownerRoom || ! $ownerRoom->jobSchedule) {
+            return $jobSchedule;
+        }
+
+        \Log::info(sprintf(
+            'completeRoom: room %d belongs to job schedule %d, not %d (both %s) - completing it on its own schedule.',
+            $jobAdviceRoom->id,
+            $ownerRoom->jobSchedule->id,
+            $jobSchedule->id,
+            $jobSchedule->job_number
+        ));
+
+        return $ownerRoom->jobSchedule;
+    }
+
     private function ensureMobileRentalScheduleRoom(JobSchedule $jobSchedule, $jobAdviceRoom, ?int $roomId = null)
     {
         $existing = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
@@ -2444,6 +2502,12 @@ class JobController extends Controller
                 }
             }
             
+            // The app sends whichever schedule it has open, and Priority 1 above trusts it.
+            // When a Job Advice has one schedule chain PER ROOM, that is not always the
+            // schedule this room lives on - and completing it here used to graft a brand new
+            // room row onto the wrong job instead. Route to the sibling that owns the room.
+            $jobSchedule = $this->resolveRoomOwningSibling($jobSchedule, $room);
+
             if (!$jobSchedule) {
                 \Log::warning("completeRoom: No job schedule found for room {$roomId}, job_advice_id: " . ($jobAdvice->id ?? 'N/A'));
                 return response()->json([
