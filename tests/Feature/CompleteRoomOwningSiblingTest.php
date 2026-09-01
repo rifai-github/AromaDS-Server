@@ -200,6 +200,19 @@ class CompleteRoomOwningSiblingTest extends TestCase
         $this->assertSame($job->id, $this->resolve($job, 18287)->id);
     }
 
+    public function test_a_cancelled_room_row_on_a_sibling_is_not_treated_as_the_owner(): void
+    {
+        // A cancelled row is work that was called off. Redirecting a completion into it would
+        // revive it - staying on the schedule the app named is the lesser evil.
+        $job = $this->schedule('SBY-IR/26-06/0012');
+        $cancelledSibling = $this->schedule('SBY-IR/26-06/0012');
+        $this->attachLeftover($job, 35, 'Ruang Test', 'pending');
+        $cancelled = $this->attach($cancelledSibling, 35, 'Ruang Test');
+        $cancelled->update(['status' => 'cancelled']);
+
+        $this->assertSame($job->id, $this->resolve($job, 35)->id);
+    }
+
     public function test_a_missing_schedule_or_room_is_handled(): void
     {
         $job = $this->schedule('SBY-CSR/26-09/0020');

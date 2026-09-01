@@ -587,9 +587,11 @@ class JobController extends Controller
             return $jobSchedule;
         }
 
-        // Only a genuine room row can pull the completion away - a placeholder on a sibling is
-        // the same leftover in the other direction and must not be chased either.
+        // Only a genuine, live room row can pull the completion away. A placeholder on a
+        // sibling is the same leftover in the other direction, and a cancelled row is work that
+        // was called off - completing either there would be worse than staying put.
         $ownerRoom = \App\Models\JobScheduleRoom::where('job_advice_room_id', $jobAdviceRoom->id)
+            ->where('status', '!=', \App\Models\JobScheduleRoom::STATUS_CANCELLED)
             ->whereHas('jobSchedule', function ($query) use ($jobSchedule) {
                 $query->where('job_number', $jobSchedule->job_number)
                     ->where('id', '!=', $jobSchedule->id);
