@@ -492,7 +492,7 @@
                 <form action="{{ route('marketing.lost-unit-reports.update', $report->id) }}" method="POST" enctype="multipart/form-data">
                     @csrf
                     @method('PUT')
-                    <input type="hidden" name="lost_unit_price" value="{{ $report->lost_unit_price }}">
+                    <input type="hidden" name="lost_unit_price" id="lost-unit-price-input" value="{{ $report->lost_unit_price }}">
                     <div class="mb-3">
                         <textarea name="remark" class="form-control" rows="4" placeholder="Enter description about the lost unit..." required>{{ $report->remark }}</textarea>
                     </div>
@@ -514,7 +514,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold">Nominal Charge</label>
-                        <input type="number" name="charge_amount" class="form-control" min="0" step="0.01" value="{{ old('charge_amount', $report->charge_amount ?? $report->lost_unit_price) }}">
+                        <input type="number" name="charge_amount" id="charge-amount-input" class="form-control" min="0" step="0.01" value="{{ old('charge_amount', $report->charge_amount ?? $report->lost_unit_price) }}">
                     </div>
                     <div class="text-end">
                         <button type="submit" class="btn-action btn-primary btn-sm">
@@ -638,6 +638,13 @@ $(document).ready(function() {
             success: function(response) {
                 // Update total display
                 $('#total-price-display').text(response.formatted_total);
+
+                // Keep the charge form in step with the new total, otherwise saving the
+                // remark afterwards would post back the price shown when the page loaded.
+                $('#lost-unit-price-input').val(response.total);
+                if (response.charge_amount !== undefined && response.charge_amount !== null) {
+                    $('#charge-amount-input').val(response.charge_amount);
+                }
                 
                 // Show success message
                 if (typeof toastr !== 'undefined') {

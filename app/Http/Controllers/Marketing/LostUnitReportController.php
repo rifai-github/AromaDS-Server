@@ -494,21 +494,33 @@ class LostUnitReportController extends Controller
                 $updateData['bap_file'] = $this->storeBapFile($request);
             }
 
-            if ($request->has('charge_customer')) {
-                $chargeCustomer = $request->boolean('charge_customer');
-                $updateData['charge_customer'] = $chargeCustomer;
-                $updateData['charge_amount'] = $chargeCustomer
-                    ? ($request->charge_amount ?? $lostUnitReport->lost_unit_price)
-                    : 0;
-            }
+            // With per-room item rows the total is always the sum of those rows. The form
+            // posts back a hidden lost_unit_price rendered with the page, so trusting it
+            // would undo any inline item-price edit made since that render.
+            $itemsTotal = $lostUnitReport->items()->exists()
+                ? (float) $lostUnitReport->items()->sum('price')
+                : null;
 
-            // Check if price is manually changed
-            if ($request->has('lost_unit_price')) {
+            if ($itemsTotal !== null) {
+                $updateData['lost_unit_price'] = $itemsTotal;
+                $updateData['is_price_manual'] = ((float) $lostUnitReport->original_price != $itemsTotal);
+            } elseif ($request->has('lost_unit_price')) {
+                // Check if price is manually changed
                 $newPrice = $request->lost_unit_price;
                 $originalPrice = $lostUnitReport->original_price;
-                
+
                 $updateData['lost_unit_price'] = $newPrice;
                 $updateData['is_price_manual'] = ($newPrice != $originalPrice);
+            }
+
+            if ($request->has('charge_customer')) {
+                $chargeCustomer = $request->boolean('charge_customer');
+                $effectiveTotal = $updateData['lost_unit_price'] ?? $lostUnitReport->lost_unit_price;
+
+                $updateData['charge_customer'] = $chargeCustomer;
+                $updateData['charge_amount'] = $chargeCustomer
+                    ? ($request->charge_amount ?? $effectiveTotal)
+                    : 0;
             }
 
             $lostUnitReport->update($updateData);
@@ -655,6 +667,20 @@ class LostUnitReportController extends Controller
     }
 
     /**
+     * Is the report's "Nominal Charge" still following the lost unit total?
+     *
+     * It only becomes an override once someone types a figure that differs from the
+     * total, so an untouched (or previously matching) charge must be re-synced when the
+     * item prices change.
+     */
+    private function chargeAmountTracksTotal(LostUnitReport $report, float $previousTotal): bool
+    {
+        $charge = (float) ($report->charge_amount ?? 0);
+
+        return $charge <= 0 || round($charge, 2) === round($previousTotal, 2);
+    }
+
+    /**
      * Update individual item price
      */
     public function updateItemPrice(Request $request, $itemId)
@@ -677,15 +703,28 @@ class LostUnitReportController extends Controller
 
             DB::beginTransaction();
 
+            $previousTotal = (float) $report->lost_unit_price;
+
             // Update item price
             $item->update(['price' => $request->price]);
 
             // Recalculate total
-            $total = $report->items()->sum('price');
-            $report->update([
+            $total = (float) $report->items()->sum('price');
+
+            $reportUpdate = [
                 'lost_unit_price' => $total,
                 'updated_by' => Auth::id(),
-            ]);
+            ];
+
+            // "Nominal Charge" is seeded from the lost unit total and is what the generated
+            // invoice bills, so it has to follow the total whenever it was still tracking it.
+            // Leaving it behind is what made the invoice bill the old price while its own
+            // detail row showed the new one.
+            if ($this->chargeAmountTracksTotal($report, $previousTotal)) {
+                $reportUpdate['charge_amount'] = $report->charge_customer ? $total : 0;
+            }
+
+            $report->update($reportUpdate);
 
             DB::commit();
 
@@ -693,7 +732,8 @@ class LostUnitReportController extends Controller
                 'status' => 'success',
                 'message' => 'Price updated successfully',
                 'total' => $total,
-                'formatted_total' => 'Rp ' . number_format($total, 0, ',', '.')
+                'formatted_total' => 'Rp ' . number_format($total, 0, ',', '.'),
+                'charge_amount' => (float) $report->fresh()->charge_amount,
             ]);
         } catch (\Exception $e) {
             DB::rollback();
@@ -1168,7 +1208,14 @@ class LostUnitReportController extends Controller
     {
         try {
             $contract = $report->contract;
-            $unitPrice = (float) ($report->charge_amount ?? $report->lost_unit_price);
+
+            // What actually gets billed. The detail rows below are made to add up to this
+            // figure, so the invoice header can never disagree with its own rows (Finance
+            // reads the subtotal as the sum of the rows - see
+            // InvoiceController::calculateInvoiceSubtotal()).
+            $chargedAmount = (float) ($report->charge_amount ?? $report->lost_unit_price);
+            $lines = $this->buildLostUnitInvoiceLines($report, $chargedAmount);
+            $subtotal = round(array_sum(array_column($lines, 'total_price')), 2);
             
             // Auto-generate invoice number using DocumentNumberService
             $documentNumberService = app(\App\Services\DocumentNumberService::class);
@@ -1184,8 +1231,8 @@ class LostUnitReportController extends Controller
             $taxResolver = app(\App\Services\Finance\InvoiceTaxResolver::class);
             $taxContext = $taxResolver->resolve($contract->customer, $contract->ppn_code, $invoiceDate);
             $taxObligation = $taxContext['applies_ppn'];
-            $taxAmount = $taxResolver->taxAmount((float) $unitPrice, $taxContext);
-            $grandTotal = round($unitPrice + $taxAmount, 2);
+            $taxAmount = $taxResolver->taxAmount($subtotal, $taxContext);
+            $grandTotal = round($subtotal + $taxAmount, 2);
 
             // Helper to get Billing Group
             $billingGroup = $contract->billingGroup;
@@ -1202,10 +1249,14 @@ class LostUnitReportController extends Controller
                 'email' => $billingGroup->pic_email ?? $contract->customer->email ?? '',
                 'invoice_date' => $invoiceDate,
                 'due_date' => $invoiceDate->copy()->addDays(30),
-                'subtotal' => $unitPrice,
+                'subtotal' => $subtotal,
+                'discount_amount' => 0,
+                'subtotal_after_discount' => $subtotal,
                 'tax_amount' => $taxAmount,
                 'grand_total' => $grandTotal,
                 'total_amount' => $grandTotal,
+                'total_paid' => 0,
+                'outstanding' => $grandTotal,
                 'tax_setting_id' => $taxContext['default_vat_setting']?->id,
                 'tax_code' => $taxContext['tax_code'],
                 'kirim' => $billingGroup->invoice_type ?? 'manual',
@@ -1223,17 +1274,17 @@ class LostUnitReportController extends Controller
             // Do NOT also create a summary InvoiceDetail row here: calculateInvoiceSubtotal()
             // and the invoice Detail tab sum invoiceDetails + invoiceRentalDetails together,
             // so adding both a summary row and per-item rows for the same charge double-counts it.
-            foreach ($report->items as $item) {
+            foreach ($lines as $line) {
                 \App\Models\Finance\InvoiceRentalDetail::create([
                     'invoice_id' => $invoice->id,
-                    'master_rental_id' => $item->master_rental_id,
+                    'master_rental_id' => $line['master_rental_id'],
                     'job_no' => $report->report_number,
-                    'building_name' => $item->room->building->building_name ?? $report->building->building_name ?? '',
-                    'room_name' => $item->room->room_name ?? $item->room_name ?? '',
-                    'rental_name' => $item->masterRental->rental_name ?? $item->rental_name ?? 'Service',
+                    'building_name' => $line['building_name'],
+                    'room_name' => $line['room_name'],
+                    'rental_name' => $line['rental_name'],
                     'quantity' => 1,
-                    'unit_price' => $item->price,
-                    'total_price' => $item->price,
+                    'unit_price' => $line['total_price'],
+                    'total_price' => $line['total_price'],
                     'created_by' => Auth::id(),
                 ]);
             }
@@ -1246,6 +1297,73 @@ class LostUnitReportController extends Controller
             \Log::error("Failed to auto-generate Lost Unit Invoice for Report {$report->report_number}: " . $e->getMessage());
             return null;
         }
+    }
+
+    /**
+     * Invoice detail rows for a lost unit report, made to add up to the charged amount.
+     *
+     * The rows describe the loss per room; the charged amount is what Finance bills. They
+     * are normally identical, but "Nominal Charge" can be overridden (a partial charge),
+     * and the invoice must not show rows that contradict its own totals - so an override
+     * is spread over the rows in proportion to their prices, with the last row absorbing
+     * the rounding remainder.
+     */
+    private function buildLostUnitInvoiceLines(LostUnitReport $report, float $chargedAmount): array
+    {
+        $lines = [];
+
+        foreach ($report->items as $item) {
+            $lines[] = [
+                'master_rental_id' => $item->master_rental_id,
+                'building_name' => $item->room->building->building_name ?? $report->building->building_name ?? '',
+                'room_name' => $item->room->room_name ?? $item->room_name ?? '',
+                'rental_name' => $item->masterRental->rental_name ?? $item->rental_name ?? 'Service',
+                'total_price' => (float) $item->price,
+            ];
+        }
+
+        // A report without item rows still has to bill something, otherwise the invoice
+        // carries a subtotal with an empty Detail tab.
+        if (empty($lines)) {
+            $lines[] = [
+                'master_rental_id' => $report->master_rental_id,
+                'building_name' => $report->building->building_name ?? '',
+                'room_name' => $report->room_name ?? '',
+                'rental_name' => $report->masterRental->rental_name ?? $report->rental_name ?? 'Service',
+                'total_price' => $chargedAmount,
+            ];
+        }
+
+        return $this->distributeChargeAcrossLines($lines, $chargedAmount);
+    }
+
+    /**
+     * Rescale line prices so they sum to the charged amount.
+     */
+    private function distributeChargeAcrossLines(array $lines, float $chargedAmount): array
+    {
+        $chargedAmount = round(max($chargedAmount, 0), 2);
+        $linesTotal = round(array_sum(array_column($lines, 'total_price')), 2);
+
+        if ($linesTotal <= 0 || $linesTotal === $chargedAmount) {
+            return $lines;
+        }
+
+        $allocated = 0.0;
+        $lastIndex = array_key_last($lines);
+
+        foreach ($lines as $index => $line) {
+            if ($index === $lastIndex) {
+                $lines[$index]['total_price'] = round($chargedAmount - $allocated, 2);
+                break;
+            }
+
+            $share = round($chargedAmount * ((float) $line['total_price'] / $linesTotal), 2);
+            $lines[$index]['total_price'] = $share;
+            $allocated = round($allocated + $share, 2);
+        }
+
+        return $lines;
     }
 
     /**
