@@ -44,6 +44,7 @@ class CompleteRoomOwningSiblingTest extends TestCase
             $table->string('room_name')->nullable();
             $table->unsignedBigInteger('room_id')->nullable();
             $table->string('status')->nullable();
+            $table->text('notes')->nullable();
             $table->unsignedBigInteger('created_by')->nullable();
             $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamps();
@@ -75,6 +76,21 @@ class CompleteRoomOwningSiblingTest extends TestCase
             'job_advice_room_id' => $jobAdviceRoomId,
             'room_name' => $roomName,
             'status' => 'pending',
+        ]);
+    }
+
+    /**
+     * The row completeRoom() grafts on when it is handed a schedule that has no row for the
+     * room - what every job hit before the redirect existed is still carrying.
+     */
+    private function attachLeftover(JobSchedule $schedule, int $jobAdviceRoomId, string $roomName, string $status = 'completed'): JobScheduleRoom
+    {
+        return JobScheduleRoom::create([
+            'job_schedule_id' => $schedule->id,
+            'job_advice_room_id' => $jobAdviceRoomId,
+            'room_name' => $roomName,
+            'status' => $status,
+            'notes' => 'Mobile rental-level tracking',
         ]);
     }
 
@@ -143,6 +159,45 @@ class CompleteRoomOwningSiblingTest extends TestCase
         $this->attach($other, 18287, 'Ruang Complain');
 
         $this->assertSame($unnumbered->id, $this->resolve($unnumbered, 18287)->id);
+    }
+
+    public function test_a_leftover_row_from_the_old_bug_does_not_count_as_owning_the_room(): void
+    {
+        // QA 1 Sep 2026, SBY-CSR/26-10/0011: the old bug had already grafted Ruang Complain onto
+        // the Ruang Extra schedule before the redirect shipped. Reading that leftover as
+        // ownership left the job unfixable from the app - every retry landed back on the wrong
+        // sibling and was answered "duplicate", so schedule 718 stayed at teknisi_tiba_dilokasi.
+        $complainJob = $this->schedule('SBY-CSR/26-10/0011');   // 718, real owner, still pending
+        $extraJob = $this->schedule('SBY-CSR/26-10/0011');      // 721, carries the leftover row
+        $this->attach($complainJob, 18287, 'Ruang Complain');
+        $this->attach($extraJob, 18286, 'Ruang Extra');
+        $this->attachLeftover($extraJob, 18287, 'Ruang Complain');
+
+        $this->assertSame($complainJob->id, $this->resolve($extraJob, 18287)->id);
+    }
+
+    public function test_a_leftover_row_on_a_sibling_is_not_chased_either(): void
+    {
+        // Same leftover, other direction: the schedule holding the room for real must keep the
+        // completion instead of being redirected into another job's placeholder.
+        $complainJob = $this->schedule('SBY-CSR/26-10/0011');
+        $extraJob = $this->schedule('SBY-CSR/26-10/0011');
+        $this->attach($complainJob, 18287, 'Ruang Complain');
+        $this->attachLeftover($extraJob, 18287, 'Ruang Complain');
+
+        $this->assertSame($complainJob->id, $this->resolve($complainJob, 18287)->id);
+    }
+
+    public function test_a_placeholder_room_no_sibling_owns_keeps_the_original_schedule(): void
+    {
+        // Rental-level rooms that only ever existed as a placeholder must still complete where
+        // they are - there is no better owner to route them to.
+        $job = $this->schedule('SBY-CSR/26-10/0011');
+        $sibling = $this->schedule('SBY-CSR/26-10/0011');
+        $this->attachLeftover($job, 18287, 'Ruang Complain');
+        $this->attach($sibling, 18286, 'Ruang Extra');
+
+        $this->assertSame($job->id, $this->resolve($job, 18287)->id);
     }
 
     public function test_a_missing_schedule_or_room_is_handled(): void

@@ -17,6 +17,9 @@ use Carbon\Carbon;
 
 class JobController extends Controller
 {
+    /** Marks a job_schedule_rooms row this controller created on the fly, not one the schedule was built with. */
+    private const MOBILE_TRACKING_ROOM_NOTE = 'Mobile rental-level tracking';
+
     private array $favoriteLookup = [];
     private array $locationNameLookup = [
         'cities' => [],
@@ -472,12 +475,28 @@ class JobController extends Controller
         $completionChecks = $roomGroup->map(function ($room) use ($job, $masterRoomId) {
             $roomJob = $job;
 
-            if ($job->job_number && $masterRoomId) {
+            if ($job->job_number) {
+                // Same room_id trap as getJobRooms (a43550a): job_schedules.room_id is only
+                // populated on a period's FIRST schedule, so on auto-generated period-2+
+                // schedules this lookup always missed and fell back to $job - and a sibling's
+                // room, which has no row on $job, was then counted "not completed". QA 1 Sep
+                // 2026, SBY-CSR/26-10/0011: job detail said "1 of 2 rooms" while getJobRooms
+                // reported both rooms completed. Resolve the owner by an actual room row.
                 $roomJob = JobSchedule::where('job_number', $job->job_number)
                     ->where('job_advice_id', $job->job_advice_id)
                     ->where('type', $job->type)
-                    ->where('room_id', $masterRoomId)
-                    ->first() ?? $job;
+                    ->whereHas('jobScheduleRooms', function ($query) use ($room) {
+                        $query->where('job_advice_room_id', $room->id);
+                    })
+                    ->first()
+                    ?? ($masterRoomId
+                        ? JobSchedule::where('job_number', $job->job_number)
+                            ->where('job_advice_id', $job->job_advice_id)
+                            ->where('type', $job->type)
+                            ->where('room_id', $masterRoomId)
+                            ->first()
+                        : null)
+                    ?? $job;
             }
 
             return $this->isJobScheduleRoomCompleted($roomJob, $room, $masterRoomId);
@@ -542,6 +561,14 @@ class JobController extends Controller
      * a different number would be moving work between jobs, which this must never do. When no
      * sibling owns the room the original schedule is returned untouched, preserving the
      * existing behaviour for legacy data and genuinely new rooms.
+     *
+     * A room row this same code once grafted on does NOT count as owning the room. Jobs that
+     * were hit before the redirect above existed still carry that leftover row, and treating it
+     * as ownership made them unfixable from the app: the technician re-taps "Selesai", the call
+     * lands right back on the wrong sibling, is answered "duplicate", and the schedule that
+     * really owns the room stays pending forever (QA 1 Sep 2026, SBY-CSR/26-10/0011 - schedule
+     * 718 sat at teknisi_tiba_dilokasi while the leftover row on 721 was the completed one).
+     * A real room row on a sibling therefore outranks a placeholder row on this one.
      */
     private function resolveRoomOwningSibling(?JobSchedule $jobSchedule, $jobAdviceRoom): ?JobSchedule
     {
@@ -549,14 +576,19 @@ class JobController extends Controller
             return $jobSchedule;
         }
 
-        $alreadyOwnsRoom = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
+        $ownRoom = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
             ->where('job_advice_room_id', $jobAdviceRoom->id)
-            ->exists();
+            ->orderBy('id')
+            ->get();
 
-        if ($alreadyOwnsRoom) {
+        $ownsRoomForReal = $ownRoom->contains(fn ($row) => ! $this->isMobileTrackingPlaceholderRoom($row));
+
+        if ($ownsRoomForReal) {
             return $jobSchedule;
         }
 
+        // Only a genuine room row can pull the completion away - a placeholder on a sibling is
+        // the same leftover in the other direction and must not be chased either.
         $ownerRoom = \App\Models\JobScheduleRoom::where('job_advice_room_id', $jobAdviceRoom->id)
             ->whereHas('jobSchedule', function ($query) use ($jobSchedule) {
                 $query->where('job_number', $jobSchedule->job_number)
@@ -564,7 +596,8 @@ class JobController extends Controller
             })
             ->with('jobSchedule')
             ->orderBy('id')
-            ->first();
+            ->get()
+            ->first(fn ($row) => ! $this->isMobileTrackingPlaceholderRoom($row) && $row->jobSchedule);
 
         if (! $ownerRoom || ! $ownerRoom->jobSchedule) {
             return $jobSchedule;
@@ -579,6 +612,16 @@ class JobController extends Controller
         ));
 
         return $ownerRoom->jobSchedule;
+    }
+
+    /**
+     * A room row this controller grafted on itself, rather than one the schedule was created
+     * with. It only ever means "the app asked about a room this job had no row for".
+     */
+    private function isMobileTrackingPlaceholderRoom($jobScheduleRoom): bool
+    {
+        return $jobScheduleRoom
+            && trim((string) $jobScheduleRoom->notes) === self::MOBILE_TRACKING_ROOM_NOTE;
     }
 
     private function ensureMobileRentalScheduleRoom(JobSchedule $jobSchedule, $jobAdviceRoom, ?int $roomId = null)
@@ -611,7 +654,7 @@ class JobController extends Controller
             'room_id' => $roomId ?? $pivotRoom?->room_id,
             'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
             'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
-            'notes' => 'Mobile rental-level tracking',
+            'notes' => self::MOBILE_TRACKING_ROOM_NOTE,
             'created_by' => auth()->id(),
             'updated_by' => auth()->id(),
         ]);

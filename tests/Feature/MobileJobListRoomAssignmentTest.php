@@ -1016,6 +1016,62 @@ class MobileJobListRoomAssignmentTest extends TestCase
         );
     }
 
+    public function test_mobile_job_detail_counts_a_sibling_rooms_completion_when_schedule_room_id_is_null(): void
+    {
+        // QA 1 Sep 2026, SBY-CSR/26-10/0011: after both rooms of the period were completed,
+        // getJobRooms() reported both "completed" while the job detail still said 1 of 2 - the
+        // room counter resolved a room's owning schedule through job_schedules.room_id, which
+        // auto-generated period-2+ schedules never have, so a sibling's room was checked
+        // against the anchor job (where it has no row) and counted unfinished.
+        DB::table('master_rooms')->insert([
+            ['id' => 520, 'room_name' => 'Ruang Complain', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 521, 'room_name' => 'Ruang Extra', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('contract_rooms')->insert([
+            ['id' => 84, 'room_id' => 520, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 85, 'room_id' => 521, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            ['id' => 96, 'job_advice_id' => 30, 'contract_room_id' => 84, 'room_name' => 'Ruang Complain', 'status' => 'completed', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 97, 'job_advice_id' => 30, 'contract_room_id' => 85, 'room_name' => 'Ruang Extra', 'status' => 'completed', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_schedules')->insert([
+            ['id' => 47, 'job_number' => 'SBY-CSR/26-10/0011', 'job_advice_id' => 30, 'type' => 'service', 'status' => 'teknisi_selesai_pengerjaan', 'room_id' => null, 'material_checked' => true, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 48, 'job_number' => 'SBY-CSR/26-10/0011', 'job_advice_id' => 30, 'type' => 'service', 'status' => 'teknisi_selesai_pengerjaan', 'room_id' => null, 'material_checked' => true, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            ['id' => 162, 'job_schedule_id' => 47, 'job_advice_room_id' => 96, 'room_name' => 'Ruang Complain', 'room_id' => 520, 'status' => 'completed', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 163, 'job_schedule_id' => 48, 'job_advice_room_id' => 97, 'room_name' => 'Ruang Extra', 'room_id' => 521, 'status' => 'completed', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            ['id' => 72, 'job_schedule_id' => 47, 'team_id' => 10, 'status' => 'assigned', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 73, 'job_schedule_id' => 48, 'team_id' => 10, 'status' => 'assigned', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $this->actingAs(User::find(1));
+
+        // Whichever of the two the app is anchored on must agree that the work is 2 of 2 done.
+        foreach ([47, 48] as $anchorJobId) {
+            $request = Request::create("/api/v1/mobile/jobs/{$anchorJobId}", 'GET');
+            $request->setUserResolver(fn () => User::find(1));
+
+            $payload = app(JobController::class)->getJobDetail($request, $anchorJobId)->getData(true);
+
+            $this->assertSame('success', $payload['status']);
+            $this->assertSame(2, $payload['data']['total_rooms'], "Job {$anchorJobId} should see both rooms.");
+            $this->assertSame(
+                2,
+                $payload['data']['completed_rooms'],
+                "Job {$anchorJobId} must count the sibling's completed room too."
+            );
+        }
+    }
+
     private function createSchema(): void
     {
         Schema::create('users', function (Blueprint $table) {
