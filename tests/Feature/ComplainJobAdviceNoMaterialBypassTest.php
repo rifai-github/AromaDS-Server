@@ -44,10 +44,29 @@ class ComplainJobAdviceNoMaterialBypassTest extends TestCase
             $table->timestamps();
             $table->softDeletes();
         });
+
+        Schema::create('job_assign_schedules', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('job_schedule_id')->nullable();
+            $table->unsignedBigInteger('team_id')->nullable();
+            $table->string('status')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('job_assign_material_issues', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('job_assign_schedule_id')->nullable();
+            $table->unsignedBigInteger('material_issue_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
     }
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('job_assign_material_issues');
+        Schema::dropIfExists('job_assign_schedules');
         Schema::dropIfExists('job_schedules');
         Schema::dropIfExists('job_advices');
 
@@ -112,11 +131,39 @@ class ComplainJobAdviceNoMaterialBypassTest extends TestCase
     public function test_job_whose_material_was_already_prepared_never_claims_to_be_material_less(): void
     {
         // Flipping the Job Advice to "No" after the warehouse already issued material would
-        // otherwise strand what was issued.
+        // otherwise strand what was issued. A real MaterialIssue - not just material_checked
+        // - is what proves material was actually prepared; see the next test for why the flag
+        // alone can't be trusted for this.
         $job = $this->makeJob('Complain', false, 'complain', materialChecked: true);
 
+        $jobAssignSchedule = \App\Models\JobAssignSchedule::create([
+            'job_schedule_id' => $job->id,
+            'status' => 'assigned',
+        ]);
+        \App\Models\JobAssignMaterialIssue::create([
+            'job_assign_schedule_id' => $jobAssignSchedule->id,
+            'material_issue_id' => 1,
+        ]);
+
+        $this->assertTrue($job->hasRecordedMaterialIssue());
         $this->assertFalse($job->skipsMaterialByJobAdviceDeclaration());
         $this->assertFalse($job->canBypassMaterialAssignFlow());
+    }
+
+    public function test_material_checked_auto_flag_alone_does_not_block_the_bypass(): void
+    {
+        // QA 30 Aug 2026, job 725 (SBY-NR/26-08/0004): a genuinely material-less Complain
+        // (with_materials=false) gets material_checked auto-flipped to true the first time the
+        // technician opens the job (Api\Mobile\JobController::markJobMaterialCheckedIfNeeded,
+        // a display convenience — not a real warehouse issuance). Guarding on that flag made
+        // the very next check of THIS SAME method report "already prepared" and block "Tiba di
+        // Lokasi" with "Material issue tidak ditemukan", even though no MaterialIssue was ever
+        // created. The guard must key off a real MaterialIssue, not material_checked.
+        $job = $this->makeJob('Complain', false, 'complain', materialChecked: true);
+
+        $this->assertFalse($job->hasRecordedMaterialIssue());
+        $this->assertTrue($job->skipsMaterialByJobAdviceDeclaration());
+        $this->assertTrue($job->canBypassMaterialAssignFlow());
     }
 
     public function test_job_without_a_job_advice_is_left_alone(): void

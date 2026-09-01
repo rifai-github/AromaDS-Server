@@ -1972,7 +1972,16 @@ class JobController extends Controller
             // UnitDetailDialog/_handleSwapUnit's productsWithSn filter). Merge in the
             // room's active Unit On Wall device(s) here so the swap has a real SN to
             // validate against, without disturbing the refill materials already listed.
-            if ($this->isServiceLikeJob($job)) {
+            //
+            // Complain jobs need this too: since 30d3eae the mobile "Ganti Unit" button is
+            // shown for `complain` jobs as well (client decision 25 Aug 2026 — reuse Ganti
+            // Unit instead of a second button), but isServiceLikeJob() deliberately does not
+            // include `complain` (it also gates IR-CSR blocking and other service-only
+            // behavior that must not apply to Complain). Checked separately here so this
+            // merge stays in sync with the mobile button's own gate without widening
+            // isServiceLikeJob() itself.
+            $isComplainJob = strtolower(trim((string) ($job->type ?? ''))) === 'complain';
+            if ($this->isServiceLikeJob($job) || $isComplainJob) {
                 $swapUnitOnWallQuery = \App\Models\UnitOnWall::where('status', 'active')
                     ->where('customer_id', $job->jobAdvice->customer_id)
                     ->where('building_id', $job->building_id);

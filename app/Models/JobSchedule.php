@@ -734,18 +734,26 @@ class JobSchedule extends Model
      * past the warehouse: 52 install Job Advices on QA alone carry that unintended "No".
      * Widening this to other types is a data-cleanup task, not a one-line change.
      *
-     * Guarded on material_checked so a job whose material was already prepared never
-     * retroactively claims to be material-less and strands what the warehouse issued.
+     * Guarded on an actual recorded MaterialIssue, NOT the material_checked flag: a
+     * Complain job that legitimately bypasses Material Assign has its material_checked
+     * auto-flipped to true as a display convenience the very first time the technician
+     * opens the job (Api\Mobile\JobController::markJobMaterialCheckedIfNeeded, called from
+     * getJobDetail's "auto-set material_checked for jobs that do not need warehouse pickup"
+     * branch). Guarding on that same flag here made the check self-defeating - viewing the
+     * job once permanently locked out its own bypass, blocking "Tiba di Lokasi" with
+     * "Material issue tidak ditemukan" even though nothing was ever assigned by the
+     * warehouse (confirmed live 30 Aug 2026, job 725 SBY-NR/26-08/0004: material_checked
+     * true, with_materials false, status still assign_team, zero MaterialIssue rows).
+     * Checking for a real MaterialIssue instead only trips the guard when material was
+     * genuinely prepared.
      */
     public function skipsMaterialByJobAdviceDeclaration(): bool
     {
-        if ($this->material_checked) {
-            return false;
-        }
-
         // Resolve without touching the database when there is nothing to resolve: a job with
         // no job_advice_id can never have a declaration, and jobs are asked this question in
-        // list loops where an extra query per row would be pure waste.
+        // list loops where an extra query per row would be pure waste. Keep this ahead of the
+        // hasRecordedMaterialIssue() query below for the same reason - it should only run for
+        // the narrow set of jobs that can actually match.
         if (! $this->relationLoaded('jobAdvice') && empty($this->job_advice_id)) {
             return false;
         }
@@ -760,7 +768,24 @@ class JobSchedule extends Model
 
         $jobAdviceType = strtolower(trim(str_replace(['-', ' '], '_', (string) $jobAdvice->type)));
 
-        return $jobAdviceType === 'complain' && ! $jobAdvice->with_materials;
+        if ($jobAdviceType !== 'complain' || $jobAdvice->with_materials) {
+            return false;
+        }
+
+        return ! $this->hasRecordedMaterialIssue();
+    }
+
+    /**
+     * Whether the warehouse has actually issued material for this job (a real
+     * MaterialIssue row exists), as opposed to `material_checked` which can also be
+     * true purely because a bypass path (Remove/check/no-material Complain) auto-flags
+     * it for display. See skipsMaterialByJobAdviceDeclaration() for why this matters.
+     */
+    public function hasRecordedMaterialIssue(): bool
+    {
+        return $this->jobAssignSchedules()
+            ->whereHas('jobAssignMaterialIssues')
+            ->exists();
     }
 
     /**
