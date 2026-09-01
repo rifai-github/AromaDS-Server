@@ -909,6 +909,113 @@ class MobileJobListRoomAssignmentTest extends TestCase
         $this->assertFalse($roomsPayload['data'][0]['is_blocked_by_ir']);
     }
 
+    /**
+     * QA 1 Sep 2026, JA SBY-JA/26-08/0039 period 3 (jobs 718 "Ruang Complain" / 721 "Ruang
+     * Extra"): Ruang Extra's Fragrance Lemongrass Mix showed up in Ruang Complain's product
+     * list too. Auto-generated period-2+ service schedules never get job_schedules.room_id
+     * populated (only the first period's schedule does), so the "which schedule actually owns
+     * this room group" resolution in getJobRooms() always missed and fell back to whichever
+     * schedule the request happened to be anchored on - collapsing every room of a multi-room
+     * Job Advice onto one schedule's job_assign_schedule_id when matching material issue items.
+     */
+    public function test_mobile_job_rooms_do_not_leak_materials_between_sibling_rooms_with_null_schedule_room_id(): void
+    {
+        DB::table('product_types')->insert([
+            'id' => 710,
+            'name' => 'Refill',
+            'is_unit' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('master_products')->insert([
+            ['id' => 910, 'product_type_id' => 710, 'name' => 'Fragrance Amberwood Sport Mix 1 100 ml', 'sku' => 'AMB100', 'unit' => 'unit', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 911, 'product_type_id' => 710, 'name' => 'All Purpose Cleaner 100 ml', 'sku' => 'APC100', 'unit' => 'unit', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 912, 'product_type_id' => 710, 'name' => 'Fragrance Lemongrass Mix 100 ml', 'sku' => 'LMG100', 'unit' => 'unit', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('master_rooms')->insert([
+            ['id' => 510, 'room_name' => 'Ruang Complain', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 511, 'room_name' => 'Ruang Extra', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('contract_rooms')->insert([
+            ['id' => 80, 'room_id' => 510, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 81, 'room_id' => 511, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            ['id' => 94, 'job_advice_id' => 30, 'contract_room_id' => 80, 'room_name' => 'Ruang Complain', 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 95, 'job_advice_id' => 30, 'contract_room_id' => 81, 'room_name' => 'Ruang Extra', 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        // Both auto-generated for period 3, sharing one job_number - and both with room_id
+        // left NULL, exactly like ServiceSchedulingService::generateAllRemainingServices()
+        // creates them.
+        DB::table('job_schedules')->insert([
+            ['id' => 45, 'job_number' => 'SBY-CSR/26-10/0011', 'job_advice_id' => 30, 'type' => 'service', 'status' => 'in_progress', 'room_id' => null, 'material_checked' => true, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 46, 'job_number' => 'SBY-CSR/26-10/0011', 'job_advice_id' => 30, 'type' => 'service', 'status' => 'in_progress', 'room_id' => null, 'material_checked' => true, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            ['id' => 160, 'job_schedule_id' => 45, 'job_advice_room_id' => 94, 'room_name' => 'Ruang Complain', 'room_id' => 510, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 161, 'job_schedule_id' => 46, 'job_advice_room_id' => 95, 'room_name' => 'Ruang Extra', 'room_id' => 511, 'status' => 'completed', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            ['id' => 70, 'job_schedule_id' => 45, 'team_id' => 10, 'status' => 'assigned', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 71, 'job_schedule_id' => 46, 'team_id' => 10, 'status' => 'assigned', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        // One Material Issue covers both rooms - exactly the QA data shape (job_assign_
+        // material_issues links it to BOTH job 45's and job 46's assignment).
+        DB::table('material_issues')->insert([
+            'id' => 95, 'issue_number' => 'SBY-MI/26-08/0080', 'status' => 'issued', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('job_assign_material_issues')->insert([
+            ['id' => 96, 'job_assign_schedule_id' => 70, 'material_issue_id' => 95, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 97, 'job_assign_schedule_id' => 71, 'material_issue_id' => 95, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('inventory_issuings')->insert([
+            'id' => 97, 'issuing_number' => 'SBY-WI/26-08/0069', 'reference_no' => 'SBY-MI/26-08/0080', 'status' => 'sent', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('inventory_issuing_items')->insert([
+            ['id' => 98, 'inventory_issuing_id' => 97, 'job_assign_schedule_id' => 70, 'room_name' => 'Ruang Complain', 'product_id' => 910, 'quantity_requested' => 1, 'quantity_issued' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 99, 'inventory_issuing_id' => 97, 'job_assign_schedule_id' => 70, 'room_name' => 'Ruang Complain', 'product_id' => 911, 'quantity_requested' => 1, 'quantity_issued' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 100, 'inventory_issuing_id' => 97, 'job_assign_schedule_id' => 71, 'room_name' => 'Ruang Extra', 'product_id' => 912, 'quantity_requested' => 1, 'quantity_issued' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 101, 'inventory_issuing_id' => 97, 'job_assign_schedule_id' => 71, 'room_name' => 'Ruang Extra', 'product_id' => 911, 'quantity_requested' => 1, 'quantity_issued' => 1, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $this->actingAs(User::find(1));
+
+        // The app is anchored on job 46 (Ruang Extra) but the response must still list Ruang
+        // Complain's own materials only - not job 46's assignment's materials.
+        $roomsResponse = app(JobController::class)->getJobRooms(46);
+        $roomsPayload = $roomsResponse->getData(true);
+
+        $this->assertSame('success', $roomsPayload['status']);
+
+        $complainRoom = collect($roomsPayload['data'])->firstWhere('name', 'Ruang Complain');
+        $this->assertNotNull($complainRoom, 'Expected Ruang Complain to still be listed.');
+
+        $complainProducts = collect($complainRoom['products'])->pluck('product_name')->all();
+        $this->assertSame(
+            ['Fragrance Amberwood Sport Mix 1 100 ml', 'All Purpose Cleaner 100 ml'],
+            $complainProducts,
+            'Ruang Complain must only show its own materials, not Ruang Extra\'s Lemongrass Mix.'
+        );
+
+        $extraRoom = collect($roomsPayload['data'])->firstWhere('name', 'Ruang Extra');
+        $this->assertNotNull($extraRoom);
+        $extraProducts = collect($extraRoom['products'])->pluck('product_name')->all();
+        $this->assertSame(
+            ['Fragrance Lemongrass Mix 100 ml', 'All Purpose Cleaner 100 ml'],
+            $extraProducts,
+            'Ruang Extra must only show its own materials, not Ruang Complain\'s Amberwood Sport Mix.'
+        );
+    }
+
     private function createSchema(): void
     {
         Schema::create('users', function (Blueprint $table) {

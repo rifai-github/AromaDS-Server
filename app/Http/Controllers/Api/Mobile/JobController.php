@@ -1700,12 +1700,27 @@ class JobController extends Controller
             
             // ALIGNMENT: Get the specific JobSchedule ID for this room from our group
             // This is CRITICAL for ensuring the App uses the correct JobSchedule context for each room
+            //
+            // job_schedules.room_id is only ever populated on the first period's schedule
+            // (JobAdviceController::createJobSchedule). Auto-generated period-2+ schedules
+            // (ServiceSchedulingService::generateAllRemainingServices) are created with
+            // room_id NULL, so matching on it here always misses for those and silently
+            // falls back to $job->id below - collapsing EVERY room group of a multi-room
+            // JA onto whichever job the app happened to be anchored on. Match on an actual
+            // JobScheduleRoom row for this room group instead, which is populated for every
+            // period. Confirmed live 1 Sep 2026, JA SBY-JA/26-08/0039 period 3 (jobs 718
+            // "Ruang Complain" / 721 "Ruang Extra"): the room_id-NULL fallback made both
+            // rooms resolve to job 721, so the material-item matching below (job_assign_
+            // schedule_id) keyed off 721's assignment even while listing "Ruang Complain",
+            // leaking Ruang Extra's Lemongrass Mix into Ruang Complain's product list.
             $specificJobScheduleId = null;
             if ($job->job_number) {
-                 $roomId = $masterRoom?->id;
+                 $roomAdviceIds = $roomGroup->pluck('id')->filter()->all();
                  $match = JobSchedule::where('job_number', $job->job_number)
                     ->where('job_advice_id', $job->job_advice_id)
-                    ->where('room_id', $roomId)
+                    ->whereHas('jobScheduleRooms', function ($query) use ($roomAdviceIds) {
+                        $query->whereIn('job_advice_room_id', $roomAdviceIds);
+                    })
                     ->first();
                  $specificJobScheduleId = $match->id ?? $job->id;
             } else {
