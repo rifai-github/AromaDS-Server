@@ -614,7 +614,7 @@ class LostUnitReportController extends Controller
             foreach ($units as $unit) {
                 $unit->update([
                     'status' => 'removed',
-                    'notes' => trim(($unit->notes ? $unit->notes . "\n" : '') . "Dilaporkan hilang pada {$lostUnitReport->report_number}."),
+                    'notes' => $this->appendLossMarker($unit->notes, $lostUnitReport),
                     'updated_by' => Auth::id(),
                 ]);
 
@@ -627,12 +627,182 @@ class LostUnitReportController extends Controller
                         // inspected the unit, it is gone.
                         'status' => SerialNumber::STATUS_LOST,
                         'location_type' => 'customer',
-                        'notes' => trim(($unit->serialNumber->notes ? $unit->serialNumber->notes . "\n" : '') . "Dilaporkan hilang pada {$lostUnitReport->report_number}."),
+                        'notes' => $this->appendLossMarker($unit->serialNumber->notes, $lostUnitReport),
                         'updated_by' => Auth::id(),
                     ]);
                 }
             }
         }
+    }
+
+    /**
+     * The note line that records a unit (or its serial) as lost under a given report.
+     *
+     * It is the ONLY trace tying a retired unit back to the report that retired it - there is
+     * no lost_unit_report_id on unit_on_walls - so unposting reads it back to know exactly
+     * which rows to restore. Retire and restore must therefore write and match the same text.
+     */
+    private function lossMarker(LostUnitReport $lostUnitReport): string
+    {
+        return "Dilaporkan hilang pada {$lostUnitReport->report_number}.";
+    }
+
+    private function appendLossMarker(?string $notes, LostUnitReport $lostUnitReport): string
+    {
+        return trim(($notes ? $notes . "\n" : '') . $this->lossMarker($lostUnitReport));
+    }
+
+    private function stripLossMarker(?string $notes, string $marker): ?string
+    {
+        if (! $notes) {
+            return $notes;
+        }
+
+        $kept = array_filter(
+            preg_split('/\r\n|\r|\n/', $notes),
+            fn ($line) => trim($line) !== $marker
+        );
+
+        $remaining = trim(implode("\n", $kept));
+
+        return $remaining === '' ? null : $remaining;
+    }
+
+    /**
+     * Replacement jobs that have gone too far for the report to be unposted.
+     *
+     * Unposting rolls the replacement Job Advice back, and rolling back a job a technician has
+     * already been sent on - or finished - would throw away real field work. Only a job still
+     * sitting unassigned in the list may be withdrawn; anything else has to be cancelled by
+     * hand first, so the user is told which job is in the way.
+     *
+     * @return array<int, string>
+     */
+    private function replacementJobsBlockingUnpost(LostUnitReport $lostUnitReport): array
+    {
+        $blocking = [];
+
+        foreach ($this->replacementJobAdvices($lostUnitReport) as $jobAdvice) {
+            foreach ($jobAdvice->jobSchedules as $schedule) {
+                if (! $this->replacementJobIsWithdrawable($schedule)) {
+                    $blocking[] = ($schedule->job_number ?: 'Job tanpa nomor')
+                        . ' (' . ($schedule->status_text ?: $schedule->status) . ')';
+                }
+            }
+        }
+
+        return $blocking;
+    }
+
+    /**
+     * A replacement job may only be withdrawn while nobody has picked it up yet: still on a
+     * not-started status AND still without a job number, which is handed out at assignment.
+     */
+    private function replacementJobIsWithdrawable(\App\Models\JobSchedule $schedule): bool
+    {
+        return in_array($schedule->status, ['new_job', 'scheduled'], true)
+            && empty($schedule->job_number);
+    }
+
+    /**
+     * Every Job Advice raised for this report.
+     *
+     * Deliberately a collection, not the model's hasOne: a report approved, unposted and
+     * approved again before this rollback existed carries several, and unposting has to clear
+     * all of them - that duplication is exactly what QA reported (30 Aug 2026).
+     */
+    private function replacementJobAdvices(LostUnitReport $lostUnitReport)
+    {
+        return JobAdvice::where('reference_number', $lostUnitReport->report_number)
+            ->with(['jobSchedules', 'rooms'])
+            ->get();
+    }
+
+    /**
+     * Undo everything approving the report set in motion.
+     *
+     * Approving retires the units, marks their serials lost and raises a replacement Job
+     * Advice with its Job Schedules. Unposting used to only flip the status back to draft, so
+     * the serials stayed "Hilang" for good and re-approving raised a SECOND Job Advice - QA saw
+     * the same lost unit twice in the JA and Job Schedule lists (30 Aug 2026).
+     *
+     * @return array{job_advices: int, job_schedules: int, units: int, serial_numbers: int}
+     */
+    private function revertApprovalSideEffects(LostUnitReport $lostUnitReport): array
+    {
+        return array_merge(
+            $this->withdrawReplacementJobAdvices($lostUnitReport),
+            $this->restoreLostUnits($lostUnitReport)
+        );
+    }
+
+    /**
+     * @return array{job_advices: int, job_schedules: int}
+     */
+    private function withdrawReplacementJobAdvices(LostUnitReport $lostUnitReport): array
+    {
+        $jobAdviceCount = 0;
+        $scheduleCount = 0;
+
+        foreach ($this->replacementJobAdvices($lostUnitReport) as $jobAdvice) {
+            foreach ($jobAdvice->jobSchedules as $schedule) {
+                \App\Models\JobScheduleRoom::where('job_schedule_id', $schedule->id)->delete();
+                $schedule->delete();
+                $scheduleCount++;
+            }
+
+            foreach ($jobAdvice->rooms as $room) {
+                $room->delete();
+            }
+
+            $jobAdvice->delete();
+            $jobAdviceCount++;
+        }
+
+        return ['job_advices' => $jobAdviceCount, 'job_schedules' => $scheduleCount];
+    }
+
+    /**
+     * Put the retired units back on the wall and their serials back in the customer's hands.
+     *
+     * Matched on the loss marker rather than room+rental: one room can hold units from several
+     * contracts (see retireLostUnits), and the marker names the report that retired them, so
+     * only this report's units come back.
+     *
+     * @return array{units: int, serial_numbers: int}
+     */
+    private function restoreLostUnits(LostUnitReport $lostUnitReport): array
+    {
+        $marker = $this->lossMarker($lostUnitReport);
+
+        $units = UnitOnWall::where('status', 'removed')
+            ->where('notes', 'like', '%' . $marker . '%')
+            ->get();
+
+        foreach ($units as $unit) {
+            $unit->update([
+                'status' => 'active',
+                'notes' => $this->stripLossMarker($unit->notes, $marker),
+                'updated_by' => Auth::id(),
+            ]);
+        }
+
+        // Swept separately from the units so a serial still marked lost is recovered even if
+        // its unit row was since removed for another reason.
+        $serialNumbers = SerialNumber::where('status', SerialNumber::STATUS_LOST)
+            ->where('notes', 'like', '%' . $marker . '%')
+            ->get();
+
+        foreach ($serialNumbers as $serialNumber) {
+            $serialNumber->update([
+                // Back to where it physically is: on the customer's wall.
+                'status' => 'in_use',
+                'notes' => $this->stripLossMarker($serialNumber->notes, $marker),
+                'updated_by' => Auth::id(),
+            ]);
+        }
+
+        return ['units' => $units->count(), 'serial_numbers' => $serialNumbers->count()];
     }
 
     public function bulkDelete(Request $request)
@@ -982,7 +1152,28 @@ class LostUnitReportController extends Controller
             return back()->with('error', 'Report dengan status ini tidak dapat di-unpost.');
         }
 
+        $blockingJobs = $this->replacementJobsBlockingUnpost($lostUnitReport);
+
+        if (! empty($blockingJobs)) {
+            $message = 'Report tidak dapat di-unpost karena Job pengganti sudah diproses: '
+                . implode(', ', $blockingJobs)
+                . '. Batalkan Job tersebut terlebih dahulu.';
+
+            if ($request->expectsJson()) {
+                return response()->json(['status' => 'error', 'message' => $message], 400);
+            }
+
+            return back()->with('error', $message);
+        }
+
         try {
+            DB::beginTransaction();
+
+            // Unposting has to undo what approving did, not just relabel the report: leaving
+            // the replacement Job Advice standing made re-approval raise a second one, and
+            // leaving the serials at "Hilang" made the loss permanent (QA, 30 Aug 2026).
+            $reverted = $this->revertApprovalSideEffects($lostUnitReport);
+
             $lostUnitReport->update([
                 'status' => 'draft',
                 'finalized_at' => null,
@@ -992,15 +1183,30 @@ class LostUnitReportController extends Controller
                 'updated_by' => Auth::id(),
             ]);
 
+            DB::commit();
+
+            $message = 'Laporan Unit Hilang berhasil di-unpost ke status Draft.';
+
+            if ($reverted['job_advices'] > 0) {
+                $message .= " Job Advice pengganti dibatalkan ({$reverted['job_advices']} JA, {$reverted['job_schedules']} Job Schedule).";
+            }
+
+            if ($reverted['units'] > 0 || $reverted['serial_numbers'] > 0) {
+                $message .= " Unit dikembalikan ke Unit On Wall ({$reverted['units']}) dan Serial Number kembali ke status In Customer ({$reverted['serial_numbers']}).";
+            }
+
             if ($request->expectsJson()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Laporan Unit Hilang berhasil di-unpost ke status Draft.'
+                    'message' => $message,
+                    'reverted' => $reverted,
                 ]);
             }
 
-            return back()->with('success', 'Laporan Unit Hilang berhasil di-unpost ke status Draft.');
+            return back()->with('success', $message);
         } catch (\Exception $e) {
+            DB::rollback();
+
             if ($request->expectsJson()) {
                 return response()->json([
                     'status' => 'error',

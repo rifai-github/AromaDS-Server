@@ -263,7 +263,7 @@
                     @if(!$report->hasInvoice())
                         <form action="{{ route('marketing.lost-unit-reports.unpost', $report->id) }}" method="POST" style="display: inline;">
                             @csrf
-                            <button type="submit" class="btn-action btn-secondary" onclick="return confirm('Apakah Anda yakin ingin unpost ke Draft?')">
+                            <button type="submit" class="btn-action btn-secondary" onclick="return confirm('Unpost ke Draft? Job Advice pengganti akan dibatalkan dan Serial Number kembali ke status In Customer.')">
                                 <i class="fas fa-undo"></i> Unpost
                             </button>
                         </form>
