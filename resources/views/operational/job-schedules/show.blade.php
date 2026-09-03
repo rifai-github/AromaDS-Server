@@ -964,9 +964,20 @@
                                         // $allJobReportsPerJS di-index by job_schedule_id dari controller
                                         $reportsToDisplay = collect();
                                         if (isset($relatedJobScheduleRooms) && $relatedJobScheduleRooms->count() > 0) {
+                                            // Satu ruangan fisik bisa punya lebih dari satu baris rental
+                                            // (kasus "1 room qty 2"), jadi $relatedJobScheduleRooms berisi
+                                            // 2 baris dengan job_schedule_id yang SAMA. job_reports disimpan
+                                            // per job schedule - bukan per rental - sehingga kedua baris itu
+                                            // menunjuk BA yang sama dan BA tampil dobel. Satu job = satu BA.
+                                            // QA 30 Agu 2026: SBY-IR/26-08/0013.
+                                            $seenReportIds = [];
                                             foreach ($relatedJobScheduleRooms as $jsr) {
                                                 $rpt = isset($allJobReportsPerJS) ? ($allJobReportsPerJS[$jsr->job_schedule_id] ?? null) : null;
                                                 if ($rpt && ($rpt->pic_name || $rpt->notes || $rpt->photo_pic || $rpt->signature_file)) {
+                                                    if (in_array($rpt->id, $seenReportIds, true)) {
+                                                        continue;
+                                                    }
+                                                    $seenReportIds[] = $rpt->id;
                                                     $reportsToDisplay->push([
                                                         'report' => $rpt,
                                                         'room_name' => $jsr->room_name,

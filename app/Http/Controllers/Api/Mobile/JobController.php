@@ -372,7 +372,13 @@ class JobController extends Controller
             return $roomId && in_array($roomId, $assignedRoomIds);
         });
 
-        $targetRoomGroups = $this->groupJobAdviceRoomsByPhysicalRoom($targetRooms);
+        // Count the same way getJobRooms() lists them: a room holding several
+        // rentals becomes one task per rental, so the job card's "x of y" matches
+        // the cards the technician actually sees.
+        $targetRoomGroups = $this->splitRoomGroupsByRental(
+            $this->groupJobAdviceRoomsByPhysicalRoom($targetRooms),
+            $this->rentalOwnershipCheckerForVisit($job, $siblingJobIds)
+        );
         $completedRooms = $targetRoomGroups->filter(function ($roomGroup) use ($job, $assignedScheduleRooms) {
             return $this->isJobAdviceRoomGroupCompleted($job, $roomGroup, $assignedScheduleRooms);
         })->count();
@@ -380,9 +386,11 @@ class JobController extends Controller
         return [
             'total_rooms' => $targetRoomGroups->count(),
             'completed_rooms' => $completedRooms,
+            // Rental splits repeat the same physical room name; the job card lists
+            // room names, not tasks, so show each room once.
             'room_names' => $targetRoomGroups->map(function ($roomGroup) {
                 return $roomGroup->first()?->room_name;
-            })->filter()->values()->all(),
+            })->filter()->unique()->values()->all(),
         ];
     }
 
@@ -436,6 +444,106 @@ class JobController extends Controller
             ->values();
     }
 
+    /**
+     * Tells whether a rental (JobAdviceRoom) is actually a task of this visit,
+     * used to decide which rentals may become their own mobile card.
+     *
+     * A job_schedule_rooms row already sitting on one of the visit's jobs is the
+     * ground truth. The owner pointers on job_advice_rooms are not enough on their
+     * own: service_job_schedule_id is overwritten by every newly generated service
+     * period, so on CSR period 1 it already points at period 4 and every rental
+     * would look foreign. The pointer check still runs for rentals whose row is
+     * only created later (ensureMobileRentalScheduleRoom).
+     */
+    private function rentalOwnershipCheckerForVisit(JobSchedule $job, array $siblingJobIds): callable
+    {
+        $jobIds = !empty($siblingJobIds) ? $siblingJobIds : [$job->id];
+
+        $visitJobs = JobSchedule::whereIn('id', $jobIds)->get();
+        if ($visitJobs->isEmpty()) {
+            $visitJobs = collect([$job]);
+        }
+
+        $visitAdviceRoomIds = \App\Models\JobScheduleRoom::whereIn('job_schedule_id', $jobIds)
+            ->whereNotNull('job_advice_room_id')
+            ->pluck('job_advice_room_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->all();
+
+        return function ($adviceRoom) use ($visitJobs, $visitAdviceRoomIds) {
+            if (!$adviceRoom) {
+                return false;
+            }
+
+            if (in_array((int) $adviceRoom->id, $visitAdviceRoomIds, true)) {
+                return true;
+            }
+
+            return $visitJobs->contains(
+                fn ($sibling) => $this->jobAdviceRoomBelongsToJobSchedule($adviceRoom, $sibling)
+            );
+        };
+    }
+
+    /**
+     * One physical room can hold more than one rental at the same time — the
+     * client's "1 room qty 2" case, where a room carries two separate rentals
+     * (JA rooms 18295/18296 on SBY-IR/26-08/0013, QA 30 Aug 2026). Those arrive
+     * here as ONE physical-room group, which collapsed into a single mobile task
+     * card: the technician had to work the room twice, with no way to see or
+     * choose which rental they were doing. Give every unit-bearing rental its own
+     * selectable card instead.
+     *
+     * The Unit + Refill packaging deliberately stays merged: a group holding at
+     * most one unit-bearing rental keeps its refill-only siblings on the same
+     * card, mirroring closePhysicalRoomSiblingsForCompletedUnitRoom(), which
+     * auto-closes those siblings once the unit room is completed. Splitting there
+     * would show a card that silently disappears.
+     *
+     * $isOwnedByThisVisit keeps rentals that are not a task of this visit out of
+     * the split (the refill leg of a Unit + Refill room lives on the CSR job, not
+     * this IR job) — that is the cross-link bug fixed in fe22050. They stay
+     * attached to the first sub-group exactly as before, only contributing their
+     * rental name and components.
+     */
+    private function splitRoomGroupsByRental($roomGroups, callable $isOwnedByThisVisit)
+    {
+        return collect($roomGroups)
+            ->flatMap(fn ($roomGroup) => $this->splitRoomGroupByRental($roomGroup, $isOwnedByThisVisit))
+            ->values();
+    }
+
+    private function splitRoomGroupByRental($roomGroup, callable $isOwnedByThisVisit)
+    {
+        $roomGroup = collect($roomGroup)->values();
+
+        if ($roomGroup->count() < 2) {
+            return collect([$roomGroup]);
+        }
+
+        $ownRooms = $roomGroup->filter($isOwnedByThisVisit)->values();
+        $foreignRooms = $roomGroup->reject($isOwnedByThisVisit)->values();
+
+        $unitRooms = $ownRooms->filter(fn ($room) => $this->jobAdviceRoomRequiresUnit($room))->values();
+        $refillRooms = $ownRooms->reject(fn ($room) => $this->jobAdviceRoomRequiresUnit($room))->values();
+
+        if ($unitRooms->count() >= 2) {
+            $subGroups = $unitRooms->map(fn ($room) => collect([$room]))->values()->all();
+            // Refill-only siblings have no card of their own; keep them packaged
+            // with the first unit rental, the same one that auto-closes them.
+            $subGroups[0] = $subGroups[0]->concat($refillRooms)->concat($foreignRooms)->values();
+
+            return collect($subGroups);
+        }
+
+        // Fewer than two units to install/service: either a single rental with its
+        // refill siblings, or rows with no rental_product_id at all (legacy data,
+        // where a refill-only leg is indistinguishable from a second rental).
+        // Both stay on one card, exactly as before.
+        return collect([$roomGroup]);
+    }
+
     private function getRelatedAdviceRoomsForPhysicalRoom($jobAdvice, $jobAdviceRoom)
     {
         if (!$jobAdvice || !$jobAdviceRoom) {
@@ -462,8 +570,20 @@ class JobController extends Controller
             ->first();
 
         if ($assignedScheduleRooms && $masterRoomId) {
+            $groupAdviceRoomIds = $roomGroup->pluck('id')->filter()->map(fn ($id) => (int) $id)->all();
+
             $assignedRoomCompleted = collect($assignedScheduleRooms)
                 ->where('room_id', $masterRoomId)
+                // A room split per rental ("1 room qty 2") has one assigned row per
+                // rental. Matching on the physical room alone counted every rental
+                // of that room as done the moment the first one was completed.
+                ->filter(function ($scheduleRoom) use ($groupAdviceRoomIds) {
+                    if (empty($groupAdviceRoomIds) || !$scheduleRoom->job_advice_room_id) {
+                        return true;
+                    }
+
+                    return in_array((int) $scheduleRoom->job_advice_room_id, $groupAdviceRoomIds, true);
+                })
                 ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
                 ->isNotEmpty();
 
@@ -1713,7 +1833,13 @@ class JobController extends Controller
         }
     
 
-            $targetRoomGroups = $this->groupJobAdviceRoomsByPhysicalRoom($targetRooms);
+            // A physical room can carry several rentals at once ("1 room qty 2").
+            // Give each of this visit's rentals its own task card so the technician
+            // can choose which rental to work first — see splitRoomGroupsByRental().
+            $targetRoomGroups = $this->splitRoomGroupsByRental(
+                $this->groupJobAdviceRoomsByPhysicalRoom($targetRooms),
+                $this->rentalOwnershipCheckerForVisit($job, $siblingJobIds)
+            );
             $rooms = $targetRoomGroups->map(function($roomGroup) use ($job, $jobAssign) {
             $roomGroup = collect($roomGroup)->values();
             $room = $roomGroup->first();
@@ -6763,10 +6889,14 @@ class JobController extends Controller
             $targetRooms = $job->room_id ? collect([]) : $allRooms;
         }
         
-        // Calculate total and completed physical rooms for THIS SPECIFIC job.
-        // One physical room can have multiple rental rows; mobile should not count
-        // those rental rows as separate rooms.
-        $targetRoomGroups = $this->groupJobAdviceRoomsByPhysicalRoom($targetRooms);
+        // Calculate total and completed rooms for THIS SPECIFIC job, counted the
+        // same way getJobRooms() lists them: one task per physical room, except a
+        // room holding several rentals ("1 room qty 2"), which is one task per
+        // rental so the technician can pick which rental to work.
+        $targetRoomGroups = $this->splitRoomGroupsByRental(
+            $this->groupJobAdviceRoomsByPhysicalRoom($targetRooms),
+            $this->rentalOwnershipCheckerForVisit($job, $this->getSiblingJobIdsForMobileJob($job))
+        );
         $totalRooms = $targetRoomGroups->count();
         $completedRooms = $targetRoomGroups->filter(function ($roomGroup) use ($job) {
             return $this->isJobAdviceRoomGroupCompleted($job, $roomGroup);

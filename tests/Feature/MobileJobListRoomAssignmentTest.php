@@ -621,8 +621,21 @@ class MobileJobListRoomAssignmentTest extends TestCase
         $products = collect($roomsPayload['data'][0]['products']);
 
         $this->assertSame('success', $roomsPayload['status']);
-        $this->assertCount(1, $roomsPayload['data']);
-        $this->assertSame('ADS W300 300 ml baterai, Rental Unit Only', $roomsPayload['data'][0]['rental_name']);
+
+        // "Lobby" holds two rentals that each bring their own unit (Unit + Refill
+        // plus Unit Only). QA 30 Aug 2026 on SBY-IR/26-08/0013: merged into one
+        // card the technician had to work the room twice with no way to tell, or
+        // pick, which rental they were on. Each rental is its own selectable task.
+        $this->assertCount(2, $roomsPayload['data']);
+        $this->assertSame([92, 93], collect($roomsPayload['data'])->pluck('id')->all());
+        $this->assertSame(
+            ['ADS W300 300 ml baterai', 'Rental Unit Only'],
+            collect($roomsPayload['data'])->pluck('rental_name')->all()
+        );
+        $this->assertSame(
+            ['Lobby - ADS W300 300 ml baterai', 'Lobby - Rental Unit Only'],
+            collect($roomsPayload['data'])->pluck('display_name')->all()
+        );
         $this->assertSame(
             ['Diffuser W300 Black', 'PURE Dispenser 7200'],
             $products->pluck('product_name')->all()
@@ -643,10 +656,166 @@ class MobileJobListRoomAssignmentTest extends TestCase
         $roomsResponse = app(JobController::class)->getJobRooms(44);
         $roomsPayload = $roomsResponse->getData(true);
 
+        // Finishing one rental closes only that card; the other stays open and
+        // keeps its own identity instead of silently taking over the same card.
         $this->assertSame('success', $roomsPayload['status']);
-        $this->assertCount(1, $roomsPayload['data']);
-        $this->assertSame('pending', $roomsPayload['data'][0]['status']);
-        $this->assertSame(93, $roomsPayload['data'][0]['id']);
+        $this->assertCount(2, $roomsPayload['data']);
+        $this->assertSame('completed', $roomsPayload['data'][0]['status']);
+        $this->assertSame(92, $roomsPayload['data'][0]['id']);
+        $this->assertSame('pending', $roomsPayload['data'][1]['status']);
+        $this->assertSame(93, $roomsPayload['data'][1]['id']);
+
+        $detailRequest = Request::create('/api/v1/mobile/jobs/44', 'GET');
+        $detailRequest->setUserResolver(fn () => User::find(1));
+        $detailPayload = app(JobController::class)->getJobDetail($detailRequest, 44)->getData(true);
+
+        // The job card's counter has to agree with the cards actually listed.
+        $this->assertSame(2, $detailPayload['data']['total_rooms']);
+        $this->assertSame(1, $detailPayload['data']['completed_rooms']);
+    }
+
+    public function test_mobile_service_job_splits_room_per_rental_when_owner_pointer_moved_on(): void
+    {
+        DB::table('master_rooms')->insert([
+            'id' => 502,
+            'room_name' => 'Ruang Anggrek',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('contract_rooms')->insert([
+            'id' => 72,
+            'room_id' => 502,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('master_rentals')->insert([
+            [
+                'id' => 711,
+                'rental_name' => 'Rental07 - 1 x 1 Bulan',
+                'rental_type' => 'unit_refill',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 712,
+                'rental_name' => 'Rental 1x 1bln',
+                'rental_type' => 'unit_refill',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        // job_advice_rooms.service_job_schedule_id is rewritten every time a new
+        // service period is generated, so while the technician works period 1 it
+        // already points at the LAST period (47 here). The rentals are still this
+        // job's tasks — job_schedule_rooms rows on job 46 say so.
+        DB::table('job_advice_rooms')->insert([
+            [
+                'id' => 94,
+                'job_advice_id' => 30,
+                'contract_room_id' => 72,
+                'rental_product_id' => 711,
+                'room_name' => 'Ruang Anggrek',
+                'rental_name' => 'Rental07 - 1 x 1 Bulan',
+                'status' => 'pending',
+                'service_job_schedule_id' => 47,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 95,
+                'job_advice_id' => 30,
+                'contract_room_id' => 72,
+                'rental_product_id' => 712,
+                'room_name' => 'Ruang Anggrek',
+                'rental_name' => 'Rental 1x 1bln',
+                'status' => 'pending',
+                'service_job_schedule_id' => 47,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_schedules')->insert([
+            [
+                'id' => 46,
+                'job_number' => 'SBY-CSR/26-08/0023',
+                'job_advice_id' => 30,
+                'type' => 'service_first',
+                'status' => 'in_progress',
+                'room_id' => 502,
+                'room_name' => 'Ruang Anggrek',
+                'period' => 1,
+                'schedule_date' => '2026-08-20',
+                'material_checked' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 47,
+                'job_number' => null,
+                'job_advice_id' => 30,
+                'type' => 'service',
+                'status' => 'scheduled',
+                'room_id' => 502,
+                'room_name' => 'Ruang Anggrek',
+                'period' => 4,
+                'schedule_date' => '2026-11-20',
+                'material_checked' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            [
+                'id' => 54,
+                'job_schedule_id' => 46,
+                'job_advice_room_id' => 94,
+                'room_name' => 'Ruang Anggrek',
+                'room_id' => 502,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 55,
+                'job_schedule_id' => 46,
+                'job_advice_room_id' => 95,
+                'room_name' => 'Ruang Anggrek',
+                'room_id' => 502,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 66,
+            'job_schedule_id' => 46,
+            'team_id' => 10,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs(User::find(1));
+
+        $roomsPayload = app(JobController::class)->getJobRooms(46)->getData(true);
+
+        $this->assertSame('success', $roomsPayload['status']);
+        $this->assertCount(2, $roomsPayload['data']);
+        $this->assertSame([94, 95], collect($roomsPayload['data'])->pluck('id')->all());
+        $this->assertSame(
+            ['Rental07 - 1 x 1 Bulan', 'Rental 1x 1bln'],
+            collect($roomsPayload['data'])->pluck('rental_name')->all()
+        );
+        $this->assertSame(
+            [46, 46],
+            collect($roomsPayload['data'])->pluck('job_schedule_id')->all()
+        );
     }
 
     public function test_mobile_job_rooms_reconcile_install_room_completed_from_active_unit_on_wall(): void
@@ -1227,6 +1396,8 @@ class MobileJobListRoomAssignmentTest extends TestCase
             $table->string('rental_name')->nullable();
             $table->integer('quantity')->nullable();
             $table->string('status')->nullable();
+            $table->foreignId('install_job_schedule_id')->nullable();
+            $table->foreignId('service_job_schedule_id')->nullable();
             $table->foreignId('remove_job_schedule_id')->nullable();
             $table->foreignId('existing_unit_on_wall_id')->nullable();
             $table->boolean('unit_already_installed')->default(false);
@@ -1246,6 +1417,7 @@ class MobileJobListRoomAssignmentTest extends TestCase
             $table->foreignId('building_id')->nullable();
             $table->foreignId('room_id')->nullable();
             $table->string('room_name')->nullable();
+            $table->integer('period')->nullable();
             $table->date('schedule_date')->nullable();
             $table->boolean('material_checked')->default(false);
             $table->timestamp('material_checked_at')->nullable();
