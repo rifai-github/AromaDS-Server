@@ -2166,8 +2166,7 @@ class JobController extends Controller
             // behavior that must not apply to Complain). Checked separately here so this
             // merge stays in sync with the mobile button's own gate without widening
             // isServiceLikeJob() itself.
-            $isComplainJob = strtolower(trim((string) ($job->type ?? ''))) === 'complain';
-            if ($this->isServiceLikeJob($job) || $isComplainJob) {
+            if ($this->isServiceLikeJob($job) || $this->isComplainJobType($job)) {
                 $swapUnitOnWallQuery = \App\Models\UnitOnWall::where('status', 'active')
                     ->where('customer_id', $job->jobAdvice->customer_id)
                     ->where('building_id', $job->building_id);
@@ -3283,6 +3282,23 @@ class JobController extends Controller
             'change_rental',
             'change rental',
         ], true);
+    }
+
+    /**
+     * Complain jobs are deliberately NOT part of isServiceLikeJob() - that helper also
+     * gates IR-CSR blocking, requires_start_work and other service-only behavior that
+     * must not apply to Complain. But a Complain technician always works on a unit that
+     * is already on the wall (that is the whole point of a complaint), so wherever the
+     * question is narrowly "may this job resolve a serial number from Unit On Wall?",
+     * the answer for Complain is yes. Kept as its own helper so those points stay in
+     * sync without widening isServiceLikeJob() itself.
+     */
+    private function isComplainJobType($jobOrType): bool
+    {
+        $type = is_string($jobOrType) ? $jobOrType : ($jobOrType->type ?? '');
+        $normalized = strtolower(trim(str_replace(['-', ' '], '_', (string) $type)));
+
+        return in_array($normalized, ['complain', 'complaint'], true);
     }
 
     private function isRemoveJobType($jobOrType): bool
@@ -4414,8 +4430,11 @@ class JobController extends Controller
             ->with(['masterProduct.productType', 'warehouse'])
             ->first();
             
-        // Fallback for Service/Change Rental: allow scanning unit that is already on wall
-        if (!$serialNumber && ($this->isServiceLikeJob($jobSchedule) || in_array(strtolower($jobSchedule->type), ['check'], true))) {
+        // Fallback for Service/Change Rental/Complain: allow scanning unit that is already on wall.
+        // Complain has no material of its own to match against (QA 3 Sep 2026, job 725
+        // SBY-NR/26-08/0004), so without it the unit lookup falls through to the MAC branch
+        // and the technician gets "Gagal Mendapatkan Data Unit" for a perfectly valid SN.
+        if (!$serialNumber && ($this->isServiceLikeJob($jobSchedule) || $this->isComplainJobType($jobSchedule) || in_array(strtolower($jobSchedule->type), ['check'], true))) {
             $serialNumber = \App\Models\SerialNumber::where('serial_number', $input)
                 ->with(['masterProduct.productType', 'warehouse'])
                 ->first();
@@ -6531,9 +6550,18 @@ class JobController extends Controller
             }
         }
         
-        // STEP 3: If not found in materials, for SERVICE jobs ONLY (including Change Rental), also check unit on wall
-        // Only Service/Change Rental jobs can use existing unit_on_wall SNs. Install jobs MUST use verified materials.
-        if (!$serialNumber && $this->isServiceLikeJob($job)) {
+        // STEP 3: If not found in materials, for SERVICE-like jobs (including Change Rental)
+        // and COMPLAIN jobs, also check unit on wall.
+        // Only these can use existing unit_on_wall SNs. Install jobs MUST use verified materials.
+        //
+        // Complain belongs here for the same reason it was added to the room product merge
+        // in 82d5a60: the technician is sent to a unit that is already installed, and a
+        // no-material Complain has no inventory issuing at all to match the SN against - so
+        // Step 1 can never succeed and every scan died on the final 404 "Serial number tidak
+        // terdaftar untuk job ini" (confirmed live on QA 3 Sep 2026, job 725
+        // SBY-NR/26-08/0004, SN DW300W2606017 which is active on the wall in the job's own
+        // room). The customer/building/room/room-name checks below still apply unchanged.
+        if (!$serialNumber && ($this->isServiceLikeJob($job) || $this->isComplainJobType($job))) {
             // Web Alignment: Even for fallback, we must stay within the job's registered rooms
             $jobAdvice = $job->jobAdvice;
             $roomIds = [];
