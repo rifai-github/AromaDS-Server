@@ -521,12 +521,15 @@ class ContractRenewalController extends Controller
                     $resolvedRoomId = $rental->room_id;
                     $resolvedRoomName = $rental->room->room_name ?? '';
                     $resolvedRoomType = $rental->room->room_type ?? '';
-                    $resolvedSurveyId = $contract->quotation->survey_id; // Default to main survey
+                    // Imported contracts have no quotation at all, so every lookup through
+                    // it has to survive a null - the contract's own rooms and rentals carry
+                    // the renewal on their own.
+                    $resolvedSurveyId = $contract->quotation?->survey_id; // Default to main survey
 
                     if (!$resolvedRoomId) {
                         // Try to find ANY quotation detail with same rental (first match)
                         // Ideally we should match by some other unique prop, but for renewal likely 1:1 or good enough
-                        $quotDetail = $contract->quotation->quotationDetails
+                        $quotDetail = $contract->quotation?->quotationDetails
                             ->where('master_rental_id', $rental->master_rental_id)
                             ->first();
 
@@ -551,11 +554,11 @@ class ContractRenewalController extends Controller
                     // Resolve Survey ID for this Room
                     if ($resolvedRoomId) {
                         // Check if the main survey has this room
-                        $mainSurveyHasRoom = $contract->quotation->survey 
+                        $mainSurveyHasRoom = $contract->quotation?->survey
                             && $contract->quotation->survey->surveyDetails
                             && $contract->quotation->survey->surveyDetails->contains('room_id', $resolvedRoomId);
-                        
-                        if (!$mainSurveyHasRoom && $contract->quotation->quotationSurveys->isNotEmpty()) {
+
+                        if (!$mainSurveyHasRoom && $contract->quotation?->quotationSurveys?->isNotEmpty()) {
                             // Check additional surveys
                             foreach ($contract->quotation->quotationSurveys as $quotSurvey) {
                                 if ($quotSurvey->survey->surveyDetails->contains('room_id', $resolvedRoomId)) {
@@ -678,25 +681,25 @@ class ContractRenewalController extends Controller
     {
         $rooms = $contract->contractRooms->map(function ($room) use ($contract, $activeUnitOnWalls) {
                     $unitOnWall = $this->findUnitOnWallForRoom($activeUnitOnWalls, $room);
-                    $quotRoom = $contract->quotation->quotationRooms->where('room_id', $room->room_id)->first();
+                    $quotRoom = $contract->quotation?->quotationRooms->where('room_id', $room->room_id)->first();
                     
                     // Fallback to name match if room_id match fails
                     if (!$quotRoom && $room->room) {
                         $roomName = $room->room->room_name;
-                        $quotRoom = $contract->quotation->quotationRooms
+                        $quotRoom = $contract->quotation?->quotationRooms
                             ->filter(function($qr) use ($roomName) {
                                 return strtolower(trim($qr->room_name)) === strtolower(trim($roomName));
                             })->first();
                     }
 
                     $surveyDetail = null;
-                    if ($contract->quotation->survey && $room->room_id) {
+                    if ($contract->quotation?->survey && $room->room_id) {
                         $surveyDetail = $contract->quotation->survey->surveyDetails
                             ->where('room_id', $room->room_id)
                             ->first();
                     }
 
-                    if (!$surveyDetail && $contract->quotation->survey && $room->room) {
+                    if (!$surveyDetail && $contract->quotation?->survey && $room->room) {
                         $roomName = strtolower(trim((string) $room->room->room_name));
                         $surveyDetail = $contract->quotation->survey->surveyDetails
                             ->filter(function ($detail) use ($roomName) {
@@ -735,7 +738,7 @@ class ContractRenewalController extends Controller
                 $resolvedRoomType = $rental->room->room_type ?? '';
 
                 if (!$resolvedRoomId) {
-                    $quotDetail = $contract->quotation->quotationDetails
+                    $quotDetail = $contract->quotation?->quotationDetails
                         ->where('master_rental_id', $rental->master_rental_id)
                         ->first();
 
@@ -762,7 +765,7 @@ class ContractRenewalController extends Controller
                 }
 
                 $surveyDetail = null;
-                if ($contract->quotation->survey && $resolvedRoomId) {
+                if ($contract->quotation?->survey && $resolvedRoomId) {
                     $surveyDetail = $contract->quotation->survey->surveyDetails
                         ->where('room_id', $resolvedRoomId)
                         ->first();
@@ -770,12 +773,12 @@ class ContractRenewalController extends Controller
 
                 $quotRoom = null;
                 if ($resolvedRoomId) {
-                    $quotRoom = $contract->quotation->quotationRooms->where('room_id', $resolvedRoomId)->first();
+                    $quotRoom = $contract->quotation?->quotationRooms->where('room_id', $resolvedRoomId)->first();
                 }
 
                 if (!$quotRoom && trim((string) $resolvedRoomName) !== '') {
                     $roomName = strtolower(trim((string) $resolvedRoomName));
-                    $quotRoom = $contract->quotation->quotationRooms
+                    $quotRoom = $contract->quotation?->quotationRooms
                         ->filter(fn ($qr) => strtolower(trim((string) $qr->room_name)) === $roomName)
                         ->first();
                 }
