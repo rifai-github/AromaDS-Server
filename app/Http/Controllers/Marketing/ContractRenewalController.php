@@ -371,15 +371,22 @@ class ContractRenewalController extends Controller
                 }
             }
 
-            $contracts = $window
-                ->filter(function ($contract) use ($includeId) {
-                    if ($includeId && $contract->id == $includeId) {
-                        return true;
-                    }
+            // Stop checking as soon as the page is full: over the whole window the guard
+            // costs 1.4s on QA, against 0.3s for the ~25 contracts a page actually needs.
+            $eligible = collect();
 
-                    return $contract->getRenewalAlreadyInProgressBlockReason() === null;
-                })
-                ->take($limit)
+            foreach ($window as $contract) {
+                if ($eligible->count() >= $limit) {
+                    break;
+                }
+
+                if (($includeId && $contract->id == $includeId)
+                    || $contract->getRenewalAlreadyInProgressBlockReason() === null) {
+                    $eligible->push($contract);
+                }
+            }
+
+            $contracts = $eligible
                 ->values()
                 ->map(function ($contract) use ($includeId) {
                     $blockReason = $contract->getRenewalBlockReason();
