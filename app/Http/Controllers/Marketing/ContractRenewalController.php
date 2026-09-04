@@ -710,7 +710,7 @@ class ContractRenewalController extends Controller
 
                     return [
                         'room_id' => $surveyDetail->id ?? $room->room_id,
-                        'survey_detail_id' => $surveyDetail->id,
+                        'survey_detail_id' => $surveyDetail?->id,
                         'survey_id' => $surveyDetail->survey_id ?? null,
                         'master_room_id' => $room->room_id,
                         'contract_room_id' => $room->id,
