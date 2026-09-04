@@ -10,7 +10,9 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
     {
         $controller = file_get_contents(app_path('Http/Controllers/Marketing/ContractRenewalController.php'));
 
-        $this->assertStringContainsString("'survey_detail_id' => \$surveyDetail->id", $controller);
+        // Null-safe: a contract imported without a quotation has no survey to find the
+        // room in, and survey_detail_id is allowed to come back empty for it.
+        $this->assertStringContainsString("'survey_detail_id' => \$surveyDetail?->id", $controller);
         $this->assertStringContainsString("'master_room_id' => \$room->room_id", $controller);
         $this->assertStringContainsString("'room_id' => \$surveyDetail->id ?? \$room->room_id", $controller);
         $this->assertStringContainsString("'survey_detail_id' => \$resolvedSurveyDetailId", $controller);
