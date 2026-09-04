@@ -31,6 +31,30 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('private function masterRoomSpecifications', $controller);
     }
 
+    public function test_renewal_endpoint_survives_a_contract_without_a_quotation(): void
+    {
+        // 2325 live contracts were imported without a quotation. They stayed invisible
+        // while the picker scoped branch through the quotation; now that they can be
+        // picked, every lookup through $contract->quotation has to tolerate a null or
+        // opening one for renewal 500s (QA contract 4905 SBY-AG/23-03/0011).
+        $controller = file_get_contents(app_path('Http/Controllers/Marketing/ContractRenewalController.php'));
+
+        // ?? coalesces the whole chain, so those reads are already safe.
+        $unguarded = array_filter(
+            preg_grep(
+                '/\$contract->quotation->(survey_id|quotationDetails|quotationRooms|quotationSurveys)\b/',
+                explode("\n", $controller)
+            ),
+            fn ($line) => ! str_contains($line, '??')
+        );
+
+        $this->assertSame([], array_values($unguarded), 'Reach the quotation with ?-> : it can be null.');
+
+        $this->assertStringContainsString('$contract->quotation?->survey_id', $controller);
+        $this->assertStringContainsString('$contract->quotation?->quotationDetails', $controller);
+        $this->assertStringContainsString('$contract->quotation?->quotationRooms', $controller);
+    }
+
     public function test_eligible_contracts_use_same_renewal_block_rule_as_contract_detail_endpoint(): void
     {
         $controller = file_get_contents(app_path('Http/Controllers/Marketing/ContractRenewalController.php'));

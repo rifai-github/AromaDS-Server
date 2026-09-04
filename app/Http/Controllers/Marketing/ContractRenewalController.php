@@ -560,7 +560,7 @@ class ContractRenewalController extends Controller
 
                         if (!$mainSurveyHasRoom && $contract->quotation?->quotationSurveys?->isNotEmpty()) {
                             // Check additional surveys
-                            foreach ($contract->quotation->quotationSurveys as $quotSurvey) {
+                            foreach ($contract->quotation?->quotationSurveys ?? [] as $quotSurvey) {
                                 if ($quotSurvey->survey->surveyDetails->contains('room_id', $resolvedRoomId)) {
                                     $resolvedSurveyId = $quotSurvey->survey_id;
                                     break;
