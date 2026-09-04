@@ -17,6 +17,25 @@ use Illuminate\Support\Facades\Validator;
 
 class ContractRenewalController extends Controller
 {
+    /** How many contracts one page of the renewal contract picker returns. */
+    private const ELIGIBLE_CONTRACTS_PAGE_SIZE = 25;
+
+    /**
+     * SQL expression resolving which branch a contract belongs to.
+     *
+     * A contract normally inherits the branch of the quotation it came from. Contracts
+     * imported without a quotation - 2.325 live ones - fall back to the branch of their
+     * marketing user, which is the only complete signal available: buildings.branch_id
+     * is empty for every row and customers carry no branch column at all.
+     */
+    private function contractBranchExpression(): string
+    {
+        return '(COALESCE('
+            . '(SELECT q.branch_id FROM quotations q WHERE q.id = contracts.quotation_id),'
+            . '(SELECT u.branch_id FROM users u WHERE u.id = contracts.marketing_id)'
+            . '))';
+    }
+
     public function index(Request $request)
     {
         $query = ContractRenewal::with([
@@ -285,9 +304,13 @@ class ContractRenewalController extends Controller
     public function getEligibleContracts(Request $request)
     {
         try {
+            $branchId = $request->filled('branch_id') ? (int) $request->integer('branch_id') : null;
+            $search = trim((string) ($request->input('q') ?? ''));
+            $limit = max(1, min((int) $request->input('limit', self::ELIGIBLE_CONTRACTS_PAGE_SIZE), 100));
+
             $query = Contract::query()
-                ->orderBy('end_date', 'asc') // Sort by expiry date (soonest first)
-                ->with(['customer', 'contractRooms.room', 'contractRooms.billingGroup'])
+                ->with(['customer:id,name'])
+                ->withCount('contractRooms')
                 ->where(function ($statusQuery) {
                     $statusQuery->whereNull('status')
                         ->orWhereRaw('LOWER(TRIM(status)) != ?', ['terminated']);
@@ -302,16 +325,53 @@ class ContractRenewalController extends Controller
                 $query->where('customer_id', $request->customer_id);
             }
 
-            if ($request->filled('branch_id')) {
-                $branchId = $request->integer('branch_id');
-                $query->whereHas('quotation', fn ($quotationQuery) => $quotationQuery->where('branch_id', $branchId));
+            if ($search !== '') {
+                $like = '%' . addcslashes($search, '%_\\') . '%';
+                $query->where(function ($searchQuery) use ($like) {
+                    $searchQuery->where('contract_number', 'like', $like)
+                        ->orWhereHas('customer', fn ($customerQuery) => $customerQuery->where('name', 'like', $like));
+                });
             }
+
+            if ($branchId !== null) {
+                $branchExpression = $this->contractBranchExpression();
+
+                if ($search === '') {
+                    // Nothing typed yet: keep the list scoped to the branch the quotation
+                    // is being written for.
+                    $query->whereRaw($branchExpression . ' = ?', [$branchId]);
+                } else {
+                    // Once someone types, branch only ranks the results. Branch attribution
+                    // on imported contracts is unreliable - their contract number and their
+                    // marketing's branch disagree for roughly a fifth of them - and a hard
+                    // filter over that turns into "contract not found" all over again.
+                    $query->orderByRaw('CASE WHEN ' . $branchExpression . ' = ? THEN 0 ELSE 1 END', [$branchId]);
+                }
+            }
+
+            $query->orderBy('end_date', 'asc'); // Sort by expiry date (soonest first)
 
             // Include specific contract ID if provided (for edit mode)
             $includeId = $request->input('include_id');
 
-            $contracts = $query->get()
-                ->values()
+            // getRenewalAlreadyInProgressBlockReason() costs a few existence queries per
+            // contract, so it runs over a bounded window instead of over every contract in
+            // the database - that full sweep is what made this endpoint take 23s on a
+            // branch with 316 contracts and time out completely without a branch filter.
+            $window = $query->limit(max($limit * 4, 100))->get()->values();
+
+            if ($includeId && ! $window->contains(fn ($contract) => $contract->id == $includeId)) {
+                $current = Contract::query()
+                    ->with(['customer:id,name'])
+                    ->withCount('contractRooms')
+                    ->find($includeId);
+
+                if ($current) {
+                    $window->prepend($current);
+                }
+            }
+
+            $contracts = $window
                 ->filter(function ($contract) use ($includeId) {
                     if ($includeId && $contract->id == $includeId) {
                         return true;
@@ -319,6 +379,7 @@ class ContractRenewalController extends Controller
 
                     return $contract->getRenewalAlreadyInProgressBlockReason() === null;
                 })
+                ->take($limit)
                 ->values()
                 ->map(function ($contract) use ($includeId) {
                     $blockReason = $contract->getRenewalBlockReason();
@@ -351,8 +412,9 @@ class ContractRenewalController extends Controller
                     'contract_value' => $contract->contract_value,
                     // Pass formatted string for frontend
                     'remaining_duration' => 'sisa masa kontrak ' . $remainingDuration,
-                    'contract_rooms_count' => $contract->contractRooms->count(),
-                    'contract_rooms' => $contract->contractRooms,
+                    // The room rows themselves are not sent: the wizard never read them,
+                    // and serialising them for every contract is most of the payload.
+                    'contract_rooms_count' => $contract->contract_rooms_count ?? 0,
                     'eligible' => $blockReason === null,
                     'block_reason' => $blockReason,
                     'is_current' => ($includeId && $contract->id == $includeId)

@@ -2181,11 +2181,48 @@ $(document).ready(function() {
             select.select2('destroy');
         }
 
+        // Contracts are searched on the server, one page at a time. Loading every
+        // contract up front took 23 seconds on a mid-sized branch and timed out
+        // completely on a large one, which is what made this dropdown look empty.
         select.select2({
             placeholder: 'Cari nomor contract atau customer...',
             allowClear: true,
             width: '100%',
-            dropdownParent: $('body')
+            dropdownParent: $('body'),
+            minimumInputLength: 0,
+            ajax: {
+                url: '{{ route("marketing.contract-renewals.eligible-contracts") }}',
+                dataType: 'json',
+                delay: 300,
+                data: function (params) {
+                    return {
+                        q: params.term || '',
+                        branch_id: getCurrentBranchId(),
+                        marketing_id: $('#marketing_id').val()
+                    };
+                },
+                processResults: function (response) {
+                    const contracts = Array.isArray(response.data)
+                        ? response.data
+                        : Object.values(response.data || {});
+
+                    return {
+                        results: contracts.map(function (contract) {
+                            return {
+                                id: contract.id,
+                                text: `${contract.contract_number} - ${contract.customer_name || ''}`,
+                                contract: contract
+                            };
+                        })
+                    };
+                },
+                cache: true
+            },
+            language: {
+                inputTooShort: () => 'Ketik nomor contract atau nama customer...',
+                searching: () => 'Mencari contract...',
+                noResults: () => 'Contract tidak ditemukan'
+            }
         });
     }
 
@@ -2215,7 +2252,9 @@ $(document).ready(function() {
         }
 
         if ($('#quotation_type').val() === 'renewal' && $('#contract-field').hasClass('show')) {
-            $('#existing_contract_id').val('');
+            // The branch changed, so whatever was picked no longer belongs here.
+            // The next search will fetch against the new branch on its own.
+            $('#existing_contract_id').val('').trigger('change.select2');
             loadEligibleContracts();
         }
     }
@@ -2311,11 +2350,11 @@ $(document).ready(function() {
         }
 
         if ($('#quotation_type').val() === 'renewal' && $('#contract-field').hasClass('show')) {
-            $('#existing_contract_id').val('');
+            $('#existing_contract_id').val('').trigger('change.select2');
             loadEligibleContracts();
         }
     });
-    
+
     // Load branches on page load if marketing is pre-selected
     // REMOVED: This is now handled by restoreStep1Data() inside showStep(1) 
     // to prevent race conditions during page initialization.
@@ -6038,10 +6077,13 @@ $(document).ready(function() {
         }
     });
 
-    // Load eligible contracts for renewal
-    // Load eligible contracts for renewal
+    // Restore the contract a saved quotation already points at.
+    //
+    // Searching is handled by select2 itself (see initializeExistingContractSearch),
+    // so the only thing left to fetch here is the one contract that is already
+    // selected - asked for by id, because an already-renewed contract is filtered
+    // out of the normal results and would otherwise vanish from its own quotation.
     function loadEligibleContracts() {
-        // If we're in edit mode, get the current contract ID to ensure it's included
         let includeId = null;
         const savedData = localStorage.getItem('quotation_step1_data');
         if (savedData) {
@@ -6050,105 +6092,82 @@ $(document).ready(function() {
                 includeId = data.existing_contract_id;
             } catch(e) {}
         }
-        
-        console.log('Loading eligible contracts. Including ID:', includeId);
-        
-        // Prepare data object
-        const requestData = {
-            marketing_id: $('#marketing_id').val(),
-            branch_id: getCurrentBranchId()
-        };
-        if (includeId) {
-            requestData.include_id = includeId;
+
+        if (!includeId) {
+            return;
         }
+
+        console.log('Restoring selected contract:', includeId);
 
         $.ajax({
             url: '{{ route("marketing.contract-renewals.eligible-contracts") }}',
             method: 'GET',
-            data: requestData,
+            data: {
+                include_id: includeId,
+                marketing_id: $('#marketing_id').val(),
+                branch_id: getCurrentBranchId()
+            },
             success: function(response) {
-                if (response.status === 'success') {
-                    const select = $('#existing_contract_id');
-                    const previousValue = select.val();
-                    select.empty().append('<option value="">Pilih contract...</option>');
-                    
-                    // Use all returned contracts (backend already handles filtering active status).
-                    // Object.values keeps the dropdown compatible with older cached responses whose
-                    // filtered Laravel collection keys were serialized as an object.
-                    const eligibleContracts = Array.isArray(response.data)
-                        ? response.data
-                        : Object.values(response.data || {});
-                    
-                    eligibleContracts.forEach(function(contract) {
-                        // Display format: No. Contract - Customer Name
-                        const label = `${contract.contract_number} - ${contract.customer_name}`;
-                        
-                        const option = $('<option></option>')
-                            .val(contract.id)
-                            .text(label)
-                            .data('contract', contract);
-                        
-                        select.append(option);
-                    });
-
-                    initializeExistingContractSearch();
-
-                    if (previousValue && select.find(`option[value="${previousValue}"]`).length) {
-                        select.val(previousValue).trigger('change.select2');
-                    }
-                    
-                    console.log('Loaded ' + eligibleContracts.length + ' eligible contracts');
-                    
-                    // If we have a pre-selected value (from edit/restore), re-select it
-                    const savedData = localStorage.getItem('quotation_step1_data');
-                    if (savedData) {
-                        try {
-                            const data = JSON.parse(savedData);
-                            if (data.existing_contract_id) {
-                                console.log('Restoring existing_contract_id after load:', data.existing_contract_id);
-                                
-                                // FIX: Prevent infinite loop by checking if we're just restoring the same contract
-                                if (window.currentLoadingContractId && window.currentLoadingContractId == data.existing_contract_id) {
-                                    console.log('Preventing infinite loop: Setting value without triggering change event');
-                                    select.val(data.existing_contract_id); // Set value WITHOUT triggering change
-                                } else {
-                                    select.val(data.existing_contract_id).trigger('change');
-                                }
-                                
-                                // Critical: Update button state after select is populated
-                                setTimeout(() => {
-                                    updateNextButtonState();
-                                }, 100);
-                            }
-                        } catch(e) {
-                            console.error('Error restoring existing_contract_id:', e);
-                        }
-                    }
-                } else {
+                if (response.status !== 'success') {
                     console.error('Failed to load contracts:', response);
-                    // alert('Failed to load contracts'); // Suppress alert to avoid UI noise
+                    return;
                 }
+
+                const select = $('#existing_contract_id');
+                const contracts = Array.isArray(response.data)
+                    ? response.data
+                    : Object.values(response.data || {});
+                const current = contracts.find(contract => contract.id == includeId);
+
+                if (!current) {
+                    console.warn('Selected contract not returned by server:', includeId);
+                    return;
+                }
+
+                if (select.find(`option[value="${current.id}"]`).length === 0) {
+                    select.append(new Option(
+                        `${current.contract_number} - ${current.customer_name || ''}`,
+                        current.id,
+                        true,
+                        true
+                    ));
+                }
+
+                // prefill:false - this is a restore, not the user picking a new contract.
+                // Prefilling here would copy the source contract over the quotation's own
+                // remarks and rentals, wiping edits the user had already saved.
+                select.val(String(current.id)).trigger('change', [{ prefill: false }]);
+
+                setTimeout(updateNextButtonState, 100);
             },
             error: function(xhr) {
                 console.error('Error loading contracts:', xhr);
-                // alert('Error loading contracts: ' + (xhr.responseJSON?.message || 'Unknown error'));
             }
         });
     }
 
-    // Contract selection change - copy data from existing contract
-    $('#existing_contract_id').on('change', function() {
+    // Contract selection change - copy data from existing contract.
+    // Restoring a saved quotation passes { prefill: false }: see loadContractDataForRenewal().
+    $('#existing_contract_id').on('change', function(event, options) {
         const contractId = $(this).val();
         if (contractId) {
-            loadContractDataForRenewal(contractId);
+            loadContractDataForRenewal(contractId, options || {});
         }
     });
 
-    // Load contract data for renewal
-    function loadContractDataForRenewal(contractId) {
-        console.log('Loading contract data for renewal:', contractId);
+    // Load contract data for renewal.
+    //
+    // options.prefill === false means "just fetch the contract for reference, do not
+    // touch the form". That is what edit mode needs: the saved quotation is the source
+    // of truth there, and copying the contract over it silently reverted the user's
+    // remarks and brought back rentals they had removed from the renewal.
+    function loadContractDataForRenewal(contractId, options = {}) {
+        const prefillFromContract = options.prefill !== false;
+        console.log('Loading contract data for renewal:', contractId, 'prefill:', prefillFromContract);
         window.currentLoadingContractId = contractId; // Track which contract is being loaded/restored
-        clearRenewalContractScopedWizardData();
+        if (prefillFromContract) {
+            clearRenewalContractScopedWizardData();
+        }
         $.ajax({
             url: `/marketing/contract-renewals/${contractId}/for-renewal`,
             method: 'GET',
@@ -6157,7 +6176,16 @@ $(document).ready(function() {
                     const data = response.data;
                     console.log('Contract data loaded:', data);
                     window.renewalContractData = data;
-                    
+
+                    if (!prefillFromContract) {
+                        // Edit mode: keep the contract visible in the dropdown and stop here.
+                        // Everything below would overwrite what the quotation already holds.
+                        keepExistingContractSelection(data);
+                        updateNextButtonState();
+                        console.log('Edit mode: skipped prefill from source contract');
+                        return;
+                    }
+
                     // Populate step 1 fields
                     window.isPopulatingData = true;
                     keepExistingContractSelection(data);

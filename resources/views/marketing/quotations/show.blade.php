@@ -586,8 +586,16 @@
                                                 $contractRental = null;
 
                                                 if ($contractRoom && $quotation->existingContract) {
-                                                    $contractRental = $quotation->existingContract->contractRentals
-                                                        ->firstWhere('room_id', $contractRoom->room_id);
+                                                    // One room can hold several rentals, so the room alone does not
+                                                    // identify which contract rental this line came from - match the
+                                                    // rental too, or a renewal that dropped one of them shows the
+                                                    // dropped rental's name against the kept rental's price.
+                                                    $contractRoomRentals = $quotation->existingContract->contractRentals
+                                                        ->where('room_id', $contractRoom->room_id);
+
+                                                    $contractRental = $detail->master_rental_id
+                                                        ? $contractRoomRentals->firstWhere('master_rental_id', $detail->master_rental_id)
+                                                        : $contractRoomRentals->first();
                                                 }
                                                 $contractRoomRental = $contractRental?->masterRental ?: $contractRoom?->rentalProduct;
 
@@ -602,10 +610,16 @@
                                                     $specs = $masterRoomSpecs($contractRoom->room);
                                                 }
 
-                                                $displayRentalName = $detail->rental_alias
-                                                    ?? ($contractRental?->rental_alias ?: null)
-                                                    ?? ($contractRoomRental?->rental_name ?: null)
-                                                    ?? ($detail->masterRental->rental_name ?? '-');
+                                                // The line's own rental outranks anything carried over from the
+                                                // source contract: on a renewal the line is what was actually
+                                                // quoted, the contract is only where it started. A contract alias
+                                                // still wins, but only the alias of the matched rental.
+                                                $displayRentalName = collect([
+                                                    $detail->rental_alias,
+                                                    $contractRental?->rental_alias,
+                                                    $detail->masterRental?->rental_name,
+                                                    $contractRoomRental?->rental_name,
+                                                ])->first(fn ($name) => filled($name)) ?? '-';
                                             @endphp
                                             <td>{{ $index + 1 }}</td>
                                             <td>
