@@ -283,11 +283,11 @@ class DocumentNumberService
             }
         }
         
-        // Try from contract
+        // Try from contract. resolveBuilding() also covers contracts whose quotation
+        // has no survey by falling back to where their rooms are.
         if ($contractId) {
-            $contract = Contract::with(['quotation.survey.building.city', 'quotation.survey.building.province'])->find($contractId);
-            if ($contract && $contract->quotation && $contract->quotation->survey && $contract->quotation->survey->building) {
-                $building = $contract->quotation->survey->building;
+            $building = $this->resolveBuilding(null, $contractId);
+            if ($building) {
                 $branch = $this->getBranchFromLocation($building->city_id, $building->province_id);
                 if ($branch) {
                     return $branch->code;
@@ -393,6 +393,11 @@ class DocumentNumberService
             if ($building) {
                 return $building;
             }
+
+            $building = $this->buildingFromContractRooms($contractId);
+            if ($building) {
+                return $building;
+            }
         }
 
         if ($quotationId) {
@@ -409,6 +414,29 @@ class DocumentNumberService
         }
 
         return null;
+    }
+
+    /**
+     * Where a contract's rooms physically are.
+     *
+     * The survey is the usual route to a building, but a renewal quotation is allowed
+     * to carry no survey and an imported contract has no quotation at all. Those
+     * contracts used to resolve to no building, which silently stamped every document
+     * they produced with the JKT default - a Surabaya contract terminating as
+     * JKT-CT/26-09/0001 (QA, 5 Sep 2026). The rooms know where they are.
+     */
+    private function buildingFromContractRooms(int $contractId): ?Building
+    {
+        // contract_rooms is not soft-deleted; master_rooms is.
+        $buildingId = DB::table('contract_rooms')
+            ->join('master_rooms', 'master_rooms.id', '=', 'contract_rooms.room_id')
+            ->where('contract_rooms.contract_id', $contractId)
+            ->whereNull('master_rooms.deleted_at')
+            ->whereNotNull('master_rooms.building_id')
+            ->orderBy('contract_rooms.id')
+            ->value('master_rooms.building_id');
+
+        return $buildingId ? Building::find($buildingId) : null;
     }
 
     /**

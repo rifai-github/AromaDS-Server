@@ -498,12 +498,23 @@ class ContractTerminationController extends Controller
             $roomsWithoutActiveUnitSkipped = 0;
             $processedRemoveKeys = [];
             
-            // Get building ID from contract
+            // Get building ID from contract.
+            // contracts has no building_id column, so this only ever resolved through the
+            // quotation's survey - and a renewal quotation is allowed to have no survey.
+            // job_schedules.building_id is NOT NULL, so approving the termination of such
+            // a contract died on the insert (QA 5 Sep 2026, JKT-CT/26-09/0001). The rooms
+            // being terminated know which building they are in.
             $buildingId = $contract->building_id;
             if (!$buildingId && $contract->quotation && $contract->quotation->survey) {
                 $buildingId = $contract->quotation->survey->building_id;
             }
-            
+            if (!$buildingId) {
+                $buildingId = $contractRooms
+                    ->map(fn ($contractRoom) => $contractRoom->room?->building_id)
+                    ->filter()
+                    ->first();
+            }
+
             foreach ($contractRooms as $contractRoom) {
                 $rentalType = strtolower(trim((string) ($contractRoom->rental_product?->rental_type ?? '')));
                 $rentalId = $contractRoom->rental_product?->id;

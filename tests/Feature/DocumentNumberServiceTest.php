@@ -72,11 +72,56 @@ class DocumentNumberServiceTest extends TestCase
             $table->timestamps();
             $table->softDeletes();
         });
+
+        Schema::create('contracts', function (Blueprint $table) {
+            $table->id();
+            $table->string('contract_number')->nullable();
+            $table->foreignId('quotation_id')->nullable();
+            $table->foreignId('marketing_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('quotations', function (Blueprint $table) {
+            $table->id();
+            $table->string('quotation_number')->nullable();
+            $table->foreignId('survey_id')->nullable();
+            $table->foreignId('branch_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('contract_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('contract_id')->nullable();
+            $table->foreignId('room_id')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('master_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->string('room_name')->nullable();
+            $table->foreignId('building_id')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('contract_terminations', function (Blueprint $table) {
+            $table->id();
+            $table->string('termination_number')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
     }
 
     protected function tearDown(): void
     {
         Carbon::setTestNow();
+        Schema::dropIfExists('contract_terminations');
+        Schema::dropIfExists('master_rooms');
+        Schema::dropIfExists('contract_rooms');
+        Schema::dropIfExists('quotations');
+        Schema::dropIfExists('contracts');
         Schema::dropIfExists('provinces');
         Schema::dropIfExists('cities');
         Schema::dropIfExists('operational_areas');
@@ -295,5 +340,111 @@ class DocumentNumberServiceTest extends TestCase
         );
 
         $this->assertSame('SMG-IF/26-08/0001', $number);
+    }
+
+    /**
+     * A renewal quotation is allowed to carry no survey, and the survey was the only
+     * route from a contract to a building - so every document such a contract produced
+     * fell back to the JKT default. QA terminated a Surabaya contract on 5 Sep 2026 and
+     * got JKT-CT/26-09/0001.
+     */
+    public function test_contract_without_a_survey_takes_its_branch_from_its_rooms(): void
+    {
+        $this->seedSurabayaContractWithoutSurvey();
+
+        $number = app(DocumentNumberService::class)->generate(
+            documentType: 'contract_termination',
+            contractId: 1,
+            documentDate: '2026-09-05',
+        );
+
+        $this->assertSame('SBY-CT/26-09/0001', $number);
+    }
+
+    public function test_remove_job_of_a_contract_without_a_survey_uses_the_service_branch(): void
+    {
+        $this->seedSurabayaContractWithoutSurvey();
+
+        // The operational area answers for the room's city, the same way it does when
+        // the building is passed in directly.
+        DB::table('operational_areas')->insert([
+            'branch_id' => 1,
+            'city_id' => 629,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $number = app(DocumentNumberService::class)->generate(
+            documentType: 'remove',
+            contractId: 1,
+            documentDate: '2026-09-05',
+        );
+
+        $this->assertSame('SBY-RV/26-09/0001', $number);
+    }
+
+    private function seedSurabayaContractWithoutSurvey(): void
+    {
+        DB::table('branches')->insert([
+            'id' => 1,
+            'code' => 'SBY',
+            'name' => 'SURABAYA',
+            'city_id' => 444,
+            'province_id' => 29, // Jawa Timur, which is what the room's city rolls up to
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('buildings')->insert([
+            'id' => 206,
+            'name' => 'Gedung Probolinggo',
+            'city_id' => 629,
+            'province_id' => 29,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('cities')->insert([
+            'id' => 629,
+            'province_id' => 29,
+            'name' => 'KOTA PROBOLINGGO',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('quotations')->insert([
+            'id' => 1,
+            'quotation_number' => 'SBY-SQ/26-09/0001',
+            'survey_id' => null, // renewal quotation, no survey
+            'branch_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('contracts')->insert([
+            'id' => 1,
+            'contract_number' => 'SBY-CA/26-09/0001',
+            'quotation_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('master_rooms')->insert([
+            'id' => 13264,
+            'room_name' => 'Ruang Lost Unit',
+            'building_id' => 206,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('contract_rooms')->insert([
+            'id' => 1,
+            'contract_id' => 1,
+            'room_id' => 13264,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 }
