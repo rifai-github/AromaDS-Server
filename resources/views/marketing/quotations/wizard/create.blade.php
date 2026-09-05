@@ -1853,25 +1853,29 @@ function initializeFromExistingQuotation(data) {
     console.log('✓ Restored Step 1 Data');
     
     // STEP 2: Surveys
+    // What the quotation actually recorded as its survey selection.
     let surveyIds = [];
-    
-    // Extract from details
-    if (data.quotation_details && data.quotation_details.length > 0) {
-        const detailSurveyIds = data.quotation_details.map(d => d.survey_id).filter(id => id != null);
-        surveyIds = [...surveyIds, ...detailSurveyIds];
-    }
-    
+
     // Extract from attached surveys relation (Many-to-Many)
     if (data.surveys && data.surveys.length > 0) {
         const attachedSurveyIds = data.surveys.map(s => s.id);
         surveyIds = [...surveyIds, ...attachedSurveyIds];
     }
-    
+
     // Extract from single survey relation
     if (data.survey_id && !surveyIds.includes(data.survey_id)) {
         surveyIds.push(data.survey_id);
     }
-    
+
+    // A line's survey_id only says which survey the room came from. It can widen a
+    // selection the quotation already has, but it must not invent one: a renewal may
+    // be saved with no survey at all, and its lines still carry the source contract's
+    // survey - which showed up in the edit form as a survey nobody had picked.
+    if (surveyIds.length > 0 && data.quotation_details && data.quotation_details.length > 0) {
+        const detailSurveyIds = data.quotation_details.map(d => d.survey_id).filter(id => id != null);
+        surveyIds = [...surveyIds, ...detailSurveyIds];
+    }
+
     // De-duplicate
     surveyIds = [...new Set(surveyIds)];
     
