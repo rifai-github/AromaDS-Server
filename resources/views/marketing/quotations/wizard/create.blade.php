@@ -3569,8 +3569,22 @@ $(document).ready(function() {
             `;
         });
         
+        // Re-rendering the table builds fresh, unticked checkboxes. Carry the ticks
+        // over, or removing one room silently unticks every other room that was kept.
+        const previouslyChecked = new Set(
+            $('#custom-rooms-tbody .custom-room-checkbox:checked').map(function () {
+                return String(this.value);
+            }).get()
+        );
+
         $('#custom-rooms-tbody').html(rows);
-        
+
+        if (previouslyChecked.size > 0) {
+            $('#custom-rooms-tbody .custom-room-checkbox').each(function () {
+                this.checked = previouslyChecked.has(String(this.value));
+            });
+        }
+
         // Setup handlers
         $(document).off('change', '.custom-room-checkbox').on('change', '.custom-room-checkbox', function() {
             window.rebuildAromaDropdownsForCustomRooms();
@@ -3594,6 +3608,17 @@ $(document).ready(function() {
             if (result.isConfirmed) {
                 window.customRooms = window.customRooms.filter(room => room.id !== roomId);
                 window.displayCustomRooms();
+
+                // The aroma list is a separate block; without this it keeps offering the
+                // room that was just deleted (QA video, 5 Sep 2026: "Ruang Complain" stayed
+                // in Aroma/Variant Lama after being removed from the table).
+                if (typeof window.rebuildAromaDropdownsForCustomRooms === 'function') {
+                    window.rebuildAromaDropdownsForCustomRooms();
+                }
+                if (typeof updateRoomSelections === 'function') {
+                    updateRoomSelections();
+                }
+
                 Swal.fire({ icon: 'success', title: 'Dihapus!', timer: 1500, showConfirmButton: false });
             }
         });
