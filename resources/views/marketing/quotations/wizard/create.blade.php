@@ -3662,6 +3662,19 @@ $(document).ready(function() {
             && window.renewalContractData.rooms.length > 0;
     }
 
+    function hasStoredRoomSelection() {
+        if (Array.isArray(window.globalRoomSelections) && window.globalRoomSelections.length > 0) {
+            return true;
+        }
+
+        try {
+            const stored = JSON.parse(localStorage.getItem('quotation_room_selections') || '[]');
+            return Array.isArray(stored) && stored.length > 0;
+        } catch (e) {
+            return false;
+        }
+    }
+
     function renderRenewalExistingRoomsWithoutSurvey() {
         const sanitizeRenewalRoomName = value => String(value || '')
             .replace(/\s*Aroma\s*Lama\s*:.*$/i, '')
@@ -3709,7 +3722,12 @@ $(document).ready(function() {
 
         $('#room-selection-container').html('');
         window.displayCustomRooms();
-        $('.custom-room-checkbox').prop('checked', true);
+
+        // Starting a renewal renews every room of the contract, so they all begin
+        // ticked. Reopening a saved one must not: restoreRoomSelections() below only
+        // ever ticks boxes, so pre-ticking them all would silently bring back rooms
+        // the quotation had dropped.
+        $('.custom-room-checkbox').prop('checked', !hasStoredRoomSelection());
 
         if (window.aromaProductsList && window.aromaProductsList.length > 0
             && typeof window.rebuildAromaDropdownsForCustomRooms === 'function') {
