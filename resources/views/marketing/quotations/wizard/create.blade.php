@@ -1808,6 +1808,8 @@ function clearRenewalContractScopedWizardData() {
     selectedRooms = [];
     rentalConfigurations = [];
     window.persistentAromaMap = {};
+    // Rooms removed from the previous contract say nothing about this one.
+    window.deletedRenewalRoomKeys = new Set();
 
     console.log('Cleared renewal room/rental cache before loading contract data');
 }
@@ -3097,7 +3099,9 @@ $(document).ready(function() {
             window.renewalContractData.rooms.length > 0) {
             
             console.log('Strategy 4: Found in window.renewalContractData (Renewal Fallback)');
-            selectionsToRestore = window.renewalContractData.rooms.map(room => ({
+            selectionsToRestore = window.renewalContractData.rooms
+                .filter(room => !(window.deletedRenewalRoomKeys && window.deletedRenewalRoomKeys.has(window.renewalRoomKey(room))))
+                .map(room => ({
                 room_id: room.survey_detail_id || room.room_id,
                 survey_detail_id: room.survey_detail_id || null,
                 master_room_id: room.master_room_id || room.room_id || null,
@@ -3606,6 +3610,15 @@ $(document).ready(function() {
             cancelButtonText: 'Batal'
         }).then((result) => {
             if (result.isConfirmed) {
+                const deletedRoom = (window.customRooms || []).find(room => room.id === roomId);
+
+                // Remember it, or Step 3 hands it back the next time it is rebuilt from
+                // the source contract.
+                if (deletedRoom && deletedRoom.is_renewal_existing) {
+                    window.deletedRenewalRoomKeys = window.deletedRenewalRoomKeys || new Set();
+                    window.deletedRenewalRoomKeys.add(window.renewalRoomKey(deletedRoom));
+                }
+
                 window.customRooms = window.customRooms.filter(room => room.id !== roomId);
                 window.displayCustomRooms();
 
@@ -3700,19 +3713,36 @@ $(document).ready(function() {
         }
     }
 
+    // Identity of an existing-contract room that survives a re-render. The room's own
+    // id cannot be used: it carries its position in the list, which shifts as soon as
+    // one room is removed.
+    window.renewalRoomKey = function(room) {
+        const name = String(room?.room_name || '')
+            .replace(/\s*Aroma\s*Lama\s*:.*$/i, '')
+            .trim()
+            .toLowerCase();
+
+        return [
+            room?.contract_room_id || '',
+            room?.master_room_id || room?.room_id || '',
+            name
+        ].join('|');
+    };
+
+    // Rooms the user removed from this renewal. Step 3 rebuilds its room list from the
+    // source contract every time it is opened, so without this a deleted room came
+    // straight back on Next then Previous (QA, 6 Sep 2026).
+    window.deletedRenewalRoomKeys = window.deletedRenewalRoomKeys || new Set();
+
     function renderRenewalExistingRoomsWithoutSurvey() {
         const sanitizeRenewalRoomName = value => String(value || '')
             .replace(/\s*Aroma\s*Lama\s*:.*$/i, '')
             .trim();
         const seenRenewalRooms = new Set();
         const renewalRooms = window.renewalContractData.rooms.filter(room => {
-            const key = [
-                room.contract_room_id || '',
-                room.master_room_id || room.room_id || '',
-                sanitizeRenewalRoomName(room.room_name).toLowerCase()
-            ].join('|');
+            const key = window.renewalRoomKey(room);
 
-            if (seenRenewalRooms.has(key)) {
+            if (seenRenewalRooms.has(key) || window.deletedRenewalRoomKeys.has(key)) {
                 return false;
             }
 
