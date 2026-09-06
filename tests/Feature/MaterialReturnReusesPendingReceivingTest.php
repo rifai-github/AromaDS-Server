@@ -8,22 +8,23 @@ use App\Models\MaterialReturn;
 use App\Models\SerialNumber;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * completeMaterialReturn() must not silently credit WarehouseProduct.quantity for
- * Serial Number-tracked (unit) products - that leaves the SN pointing at the
- * technician (on_hand) forever (the bug QA reported). Instead it should queue the
- * item into an InventoryReceiving and move the SN to 'pending' + inventory_receiving_id,
- * exactly like JobWebCompletionService::processPartialCompletionMaterialReturnItems()
- * does for partial completion. Stock/SN only finalize to 'ready' when a warehouse
- * staff finalizes that Inventory Receiving. Bulk (non-SN) items are unaffected -
- * they still credit WarehouseProduct.quantity directly on complete.
+ * QA (06 Sep 2026, job SBY-CSR/26-10/0015): leaving a job unfinished auto-creates a
+ * MaterialReturn plus a pending InventoryReceiving that already holds the returned
+ * item and its Serial Number. Completing that same return then opened a SECOND
+ * receiving and moved the SN over to it - the SN "disappeared" from the first
+ * receiving (SBY-IRC/26-09/0004), and both pending receivings would each credit the
+ * warehouse for the one unit that actually came back.
+ *
+ * completeMaterialReturn() must reuse the receiving that is already waiting for the
+ * goods: no second document, the SN stays put, and no direct stock credit for a line
+ * the warehouse will finalize later.
  */
-class MaterialReturnSerialNumberQueueingTest extends TestCase
+class MaterialReturnReusesPendingReceivingTest extends TestCase
 {
     protected function setUp(): void
     {
@@ -215,40 +216,144 @@ class MaterialReturnSerialNumberQueueingTest extends TestCase
         });
     }
 
-    private function makeJobAndWarehouse(): array
+    private function seedJobWarehouseAndProduct(): JobSchedule
     {
-        DB::table('job_schedules')->insert(['id' => 10, 'job_number' => 'BDG-IR/26-05/0008', 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('warehouses')->insert(['id' => 1, 'name' => 'Gudang Cabang', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('job_schedules')->insert(['id' => 10, 'job_number' => 'SBY-CSR/26-10/0015', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('warehouses')->insert(['id' => 1, 'name' => 'Gudang Surabaya', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('job_assign_schedules')->insert(['id' => 1, 'job_schedule_id' => 10, 'created_at' => now(), 'updated_at' => now()]);
 
-        return [JobSchedule::findOrFail(10)];
-    }
+        // Refill carrying a (batch) Serial Number, like the Amberwood fragrance QA used.
+        DB::table('product_categories')->insert(['id' => 1, 'name' => 'Fragrance', 'has_serial_number' => true, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('master_products')->insert(['id' => 1, 'name' => 'Fragrance Amberwood Sport Mix 1 100 ml', 'product_category_id' => 1, 'created_at' => now(), 'updated_at' => now()]);
 
-    public function test_serial_number_item_is_queued_to_inventory_receiving_not_credited_directly(): void
-    {
-        [$job] = $this->makeJobAndWarehouse();
-
-        DB::table('product_categories')->insert(['id' => 1, 'name' => 'Diffuser Unit', 'has_serial_number' => true, 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('master_products')->insert(['id' => 1, 'name' => 'Diffuser W300 White', 'product_category_id' => 1, 'created_at' => now(), 'updated_at' => now()]);
-
-        DB::table('serial_numbers')->insert([
-            'id' => 1, 'serial_number' => 'SN-0001', 'status' => 'on_hand', 'master_product_id' => 1,
-            'created_at' => now(), 'updated_at' => now(),
+        DB::table('material_issue_items')->insert([
+            'id' => 693, 'job_assign_schedule_id' => 1, 'product_id' => 1, 'room_name' => 'Ruang Ganti Rental 1 Room',
+            'quantity' => 1, 'created_at' => now(), 'updated_at' => now(),
         ]);
 
         DB::table('inventory_issuings')->insert(['id' => 1, 'status' => 'sent', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('inventory_issuing_items')->insert([
-            'inventory_issuing_id' => 1, 'job_assign_schedule_id' => 1, 'room_name' => 'Ruang Meeting VIP',
+            'inventory_issuing_id' => 1, 'job_assign_schedule_id' => 1, 'room_name' => 'Ruang Ganti Rental 1 Room',
             'product_id' => 1, 'serial_number_id' => 1, 'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        DB::table('material_issue_items')->insert([
-            'id' => 1, 'job_assign_schedule_id' => 1, 'product_id' => 1, 'room_name' => 'Ruang Meeting VIP',
-            'quantity' => 1, 'created_at' => now(), 'updated_at' => now(),
+        return JobSchedule::findOrFail(10);
+    }
+
+    /**
+     * Recreate what JobWebCompletionService::processPartialCompletionMaterialReturnItems()
+     * leaves behind when the technician leaves the job unfinished.
+     */
+    private function seedAutoReturnQueue(): MaterialReturn
+    {
+        DB::table('inventory_receivings')->insert([
+            'id' => 83,
+            'receiving_number' => 'SBY-IRC/26-09/0004',
+            'reference_no' => 'SBY-CSR/26-10/0015',
+            'branch_id' => 2,
+            'schedule_date' => now()->toDateString(),
+            'status' => 'pending',
+            'notes' => 'Auto-return dari Job SBY-CSR/26-10/0015 (Pekerjaan tidak selesai). Room: Ruang Ganti Rental 1 Room',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_receiving_items')->insert([
+            'inventory_receiving_id' => 83,
+            'master_product_id' => 1,
+            'quantity' => 1,
+            'quantity_received' => 0,
+            'notes' => 'Auto-return dari Room Ruang Ganti Rental 1 Room (MI Item 693)',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        DB::table('serial_numbers')->insert([
+            'id' => 1, 'serial_number' => 'AS1002606002', 'status' => 'pending', 'master_product_id' => 1,
+            'warehouse_id' => 1, 'location_type' => 'technician', 'inventory_receiving_id' => 83,
+            'created_at' => now(), 'updated_at' => now(),
         ]);
 
         $materialReturn = MaterialReturn::create([
-            'return_number' => 'BDG-RTR/26-07/0001',
+            'return_number' => 'SBY-ADS-RTR/26-09/0001',
+            'job_schedule_id' => 10,
+            'warehouse_id' => 1,
+            'status' => MaterialReturn::STATUS_APPROVED,
+            'return_date' => now()->toDateString(),
+        ]);
+
+        DB::table('material_return_items')->insert([
+            'material_return_id' => $materialReturn->id,
+            'material_issue_item_id' => 693,
+            'product_id' => 1,
+            'room_name' => 'Ruang Ganti Rental 1 Room',
+            'quantity' => 1,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        return $materialReturn;
+    }
+
+    private function complete(JobSchedule $job, MaterialReturn $materialReturn)
+    {
+        return (new JobScheduleController)->completeMaterialReturn(
+            Request::create('/operational/job-schedules/10/material-returns/'.$materialReturn->id.'/complete', 'POST'),
+            $job,
+            $materialReturn->id
+        );
+    }
+
+    public function test_completing_an_auto_return_reuses_the_pending_receiving_and_keeps_its_serial_number(): void
+    {
+        $job = $this->seedJobWarehouseAndProduct();
+        $materialReturn = $this->seedAutoReturnQueue();
+
+        $response = $this->complete($job, $materialReturn);
+        $payload = json_decode($response->getContent(), true);
+
+        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
+
+        // No second receiving document.
+        $this->assertSame(1, DB::table('inventory_receivings')->count());
+        $this->assertStringContainsString('SBY-IRC/26-09/0004', $payload['message']);
+
+        // The SN stays on the receiving that is already waiting for it.
+        $this->assertSame(83, SerialNumber::find(1)->inventory_receiving_id);
+
+        // The line is not duplicated inside that receiving either.
+        $this->assertSame(1, DB::table('inventory_receiving_items')->where('inventory_receiving_id', 83)->count());
+
+        // And stock is left to the warehouse finalize - not credited here as well.
+        $this->assertSame(0, DB::table('warehouse_products')->count());
+
+        $this->assertSame(MaterialReturn::STATUS_RETURNED, $materialReturn->fresh()->status);
+    }
+
+    public function test_completing_the_same_return_twice_does_not_duplicate_the_queue(): void
+    {
+        $job = $this->seedJobWarehouseAndProduct();
+        $materialReturn = $this->seedAutoReturnQueue();
+
+        $this->complete($job, $materialReturn);
+
+        // Re-approve and complete again (QA retry / double click).
+        $materialReturn->update(['status' => MaterialReturn::STATUS_APPROVED]);
+        $this->complete($job, $materialReturn);
+
+        $this->assertSame(1, DB::table('inventory_receivings')->count());
+        $this->assertSame(1, DB::table('inventory_receiving_items')->count());
+        $this->assertSame(0, DB::table('warehouse_products')->count());
+    }
+
+    public function test_return_without_a_pending_receiving_still_opens_one_for_the_serial_number(): void
+    {
+        $job = $this->seedJobWarehouseAndProduct();
+
+        DB::table('serial_numbers')->insert([
+            'id' => 1, 'serial_number' => 'AS1002606002', 'status' => 'on_hand', 'master_product_id' => 1,
+            'location_type' => 'technician', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $materialReturn = MaterialReturn::create([
+            'return_number' => 'SBY-ADS-RTR/26-09/0002',
             'job_schedule_id' => 10,
             'warehouse_id' => 1,
             'status' => MaterialReturn::STATUS_APPROVED,
@@ -256,88 +361,46 @@ class MaterialReturnSerialNumberQueueingTest extends TestCase
         ]);
         DB::table('material_return_items')->insert([
             'material_return_id' => $materialReturn->id,
-            'material_issue_item_id' => 1,
+            'material_issue_item_id' => 693,
             'product_id' => 1,
-            'room_name' => 'Ruang Meeting VIP',
+            'room_name' => 'Ruang Ganti Rental 1 Room',
             'quantity' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        $response = (new JobScheduleController())->completeMaterialReturn(
-            Request::create('/operational/job-schedules/10/material-returns/'.$materialReturn->id.'/complete', 'POST'),
-            $job,
-            $materialReturn->id
-        );
+        $response = $this->complete($job, $materialReturn);
+        $this->assertSame(200, $response->getStatusCode());
 
-        $payload = json_decode($response->getContent(), true);
-
-        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
-        $this->assertStringContainsString('Inventory Receiving', $payload['message']);
-        $this->assertStringContainsString('finalize', $payload['message']);
-
-        // Stock must NOT be credited directly for the SN item.
-        $this->assertDatabaseMissing('warehouse_products', [
-            'warehouse_id' => 1,
-            'master_product_id' => 1,
-        ]);
-
-        // SN queued into a new Inventory Receiving, not left dangling on_hand.
         $sn = SerialNumber::find(1);
         $this->assertNotNull($sn->inventory_receiving_id);
         $this->assertSame('pending', $sn->status);
-        $this->assertSame(1, $sn->warehouse_id);
-
-        $this->assertDatabaseHas('inventory_receivings', [
-            'id' => $sn->inventory_receiving_id,
-            'reference_no' => 'BDG-RTR/26-07/0001',
-            'status' => 'pending',
-        ]);
-        $this->assertDatabaseHas('inventory_receiving_items', [
-            'inventory_receiving_id' => $sn->inventory_receiving_id,
-            'master_product_id' => 1,
-            'quantity' => 1,
-        ]);
+        $this->assertSame(1, DB::table('inventory_receivings')->count());
+        $this->assertSame(0, DB::table('warehouse_products')->count());
     }
 
-    public function test_bulk_item_without_serial_number_still_credits_stock_directly(): void
+    public function test_completing_a_return_whose_receiving_was_already_finalized_does_not_credit_again(): void
     {
-        [$job] = $this->makeJobAndWarehouse();
+        $job = $this->seedJobWarehouseAndProduct();
+        $materialReturn = $this->seedAutoReturnQueue();
 
-        DB::table('product_categories')->insert(['id' => 2, 'name' => 'Refill Bulk', 'has_serial_number' => false, 'created_at' => now(), 'updated_at' => now()]);
-        DB::table('master_products')->insert(['id' => 2, 'name' => 'PURE Hand Sanitizer (Gel) 1000 mL', 'product_category_id' => 2, 'created_at' => now(), 'updated_at' => now()]);
-
-        $materialReturn = MaterialReturn::create([
-            'return_number' => 'BDG-RTR/26-07/0002',
-            'job_schedule_id' => 10,
-            'warehouse_id' => 1,
-            'status' => MaterialReturn::STATUS_APPROVED,
-            'return_date' => now()->toDateString(),
-        ]);
-        DB::table('material_return_items')->insert([
-            'material_return_id' => $materialReturn->id,
-            'product_id' => 2,
-            'room_name' => 'Ruang Meeting VIP',
-            'quantity' => 3,
-            'created_at' => now(),
-            'updated_at' => now(),
+        // Warehouse already received the goods back: stock credited, SN back to ready.
+        DB::table('inventory_receivings')->where('id', 83)->update(['status' => 'received']);
+        DB::table('inventory_receiving_items')->where('inventory_receiving_id', 83)->update(['quantity_received' => 1]);
+        DB::table('serial_numbers')->where('id', 1)->update(['status' => 'ready', 'location_type' => 'warehouse']);
+        DB::table('warehouse_products')->insert([
+            'warehouse_id' => 1, 'master_product_id' => 1, 'quantity' => 54,
+            'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        $response = (new JobScheduleController())->completeMaterialReturn(
-            Request::create('/operational/job-schedules/10/material-returns/'.$materialReturn->id.'/complete', 'POST'),
-            $job,
-            $materialReturn->id
-        );
+        $response = $this->complete($job, $materialReturn);
+        $this->assertSame(200, $response->getStatusCode());
 
-        $payload = json_decode($response->getContent(), true);
+        // No extra receiving, no second credit, and the SN is not dragged back to pending.
+        $this->assertSame(1, DB::table('inventory_receivings')->count());
+        $this->assertSame(54.0, (float) DB::table('warehouse_products')->where('master_product_id', 1)->value('quantity'));
 
-        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
-        $this->assertStringNotContainsString('Serial Number', $payload['message']);
-        $this->assertDatabaseHas('warehouse_products', [
-            'warehouse_id' => 1,
-            'master_product_id' => 2,
-            'quantity' => 3,
-        ]);
-        $this->assertSame(0, DB::table('inventory_receivings')->count());
+        $sn = SerialNumber::find(1);
+        $this->assertSame('ready', $sn->status);
+        $this->assertSame(83, $sn->inventory_receiving_id);
     }
 }

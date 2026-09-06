@@ -117,8 +117,32 @@ class MaterialReturnForwardSerialNumberGuardTest extends TestCase
         Schema::create('material_return_items', function (Blueprint $table) {
             $table->id();
             $table->foreignId('material_return_id');
+            $table->unsignedBigInteger('material_issue_item_id')->nullable();
             $table->unsignedBigInteger('product_id')->nullable();
             $table->decimal('quantity', 10, 2)->default(0);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        // Forwarding to center also checks whether the goods are still queued in a
+        // pending Inventory Receiving (not physically back at the branch yet).
+        Schema::create('inventory_receivings', function (Blueprint $table) {
+            $table->id();
+            $table->string('receiving_number')->nullable();
+            $table->string('reference_no')->nullable();
+            $table->string('status')->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('inventory_receiving_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('inventory_receiving_id');
+            $table->unsignedBigInteger('master_product_id')->nullable();
+            $table->decimal('quantity', 10, 2)->default(0);
+            $table->decimal('quantity_received', 10, 2)->default(0);
+            $table->text('notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });

@@ -5361,6 +5361,19 @@ class JobScheduleController extends Controller
             return 'Return ini mengandung produk ber-Serial Number (unit). Forward ke gudang pusat untuk produk ber-SN belum didukung karena perpindahan SN belum tersinkron otomatis. Gunakan "Simpan di gudang cabang" untuk return ini, atau proses perpindahan SN secara manual.';
         }
 
+        // Goods still queued in a pending Inventory Receiving are physically not back
+        // in the branch warehouse yet, so their stock has not been credited. Forwarding
+        // them now would ship quantities the branch does not hold.
+        $pendingReceiving = $this->findReceivingForReturn($materialReturn);
+        if ($pendingReceiving && $pendingReceiving->status === 'pending') {
+            $queued = $materialReturn->items()->get()
+                ->contains(fn ($item) => $this->findReturnReceivingItem($pendingReceiving, $item) !== null);
+
+            if ($queued) {
+                return "Barang return ini masih menunggu penerimaan gudang di Inventory Receiving {$pendingReceiving->receiving_number}. Finalize penerimaan tersebut dulu sebelum meneruskan return ke gudang pusat.";
+            }
+        }
+
         return true;
     }
 
@@ -5597,6 +5610,82 @@ class JobScheduleController extends Controller
     }
 
     /**
+     * Find an Inventory Receiving that is ALREADY waiting for the goods of this
+     * material return, so completing the return reuses it instead of opening a
+     * second document for the same physical items.
+     *
+     * Two producers can queue the same returned goods:
+     *  - JobWebCompletionService::processPartialCompletionMaterialReturnItems()
+     *    (technician leaves the job unfinished -> auto-return, receiving keyed by
+     *    the JOB number with the "(Pekerjaan tidak selesai)" note), and
+     *  - queueSerialNumberReturnItem() below (receiving keyed by the RETURN number).
+     *
+     * Before this lookup existed, completing the auto-return created a second
+     * pending receiving and re-pointed the Serial Number to it - the SN vanished
+     * from the first receiving (QA: "di Inventory Receiving SBY-IRC/26-09/0004 SN
+     * nya tiba-tiba hilang") and both receivings would have credited stock for the
+     * same single unit once finalized.
+     *
+     * A receiving that is already 'received' counts too: the goods are physically
+     * back and its finalize already credited the stock, so completing the return
+     * afterwards must not credit (or re-queue) them a second time.
+     */
+    private function findReceivingForReturn(\App\Models\MaterialReturn $materialReturn): ?\App\Models\InventoryReceiving
+    {
+        // Read the job number without hydrating (and later serialising) the JobSchedule
+        // relation - its appended accessors re-query rooms on every response.
+        $jobNumber = $materialReturn->relationLoaded('jobSchedule')
+            ? $materialReturn->jobSchedule?->job_number
+            : JobSchedule::where('id', $materialReturn->job_schedule_id)->value('job_number');
+
+        return \App\Models\InventoryReceiving::whereIn('status', ['pending', 'received'])
+            ->where(function ($query) use ($materialReturn, $jobNumber) {
+                $query->where('reference_no', $materialReturn->return_number);
+
+                if ($jobNumber) {
+                    $query->orWhere(function ($sub) use ($jobNumber) {
+                        $sub->where('reference_no', $jobNumber)
+                            ->where('notes', 'like', '%Job '.$jobNumber.' (Pekerjaan tidak selesai)%');
+                    });
+                }
+            })
+            ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
+            ->latest('id')
+            ->first();
+    }
+
+    /**
+     * Whether $receiving already carries a line for this exact returned item.
+     * Matched on the note both producers stamp with their own source id
+     * ("Return item #{id} dari ..." here, "(MI Item {id})" in the partial-completion
+     * path) so a receiving covering several rooms keeps one line per room instead of
+     * being collapsed to one line per product.
+     */
+    private function findReturnReceivingItem(
+        \App\Models\InventoryReceiving $receiving,
+        \App\Models\MaterialReturnItem $item
+    ): ?\App\Models\InventoryReceivingItem {
+        return \App\Models\InventoryReceivingItem::where('inventory_receiving_id', $receiving->id)
+            ->where('master_product_id', $item->product_id)
+            ->where(function ($query) use ($item) {
+                $query->where('notes', 'like', "%Return item #{$item->id} dari%");
+
+                if ($item->material_issue_item_id) {
+                    $query->orWhere('notes', 'like', "%(MI Item {$item->material_issue_item_id})%");
+                }
+            })
+            ->first();
+    }
+
+    /**
+     * Pass through only a receiving that can still take items (status 'pending').
+     */
+    private function pendingOrNull(?\App\Models\InventoryReceiving $receiving): ?\App\Models\InventoryReceiving
+    {
+        return $receiving && $receiving->status === 'pending' ? $receiving : null;
+    }
+
+    /**
      * Queue a Serial Number-tracked returned item into an InventoryReceiving instead
      * of crediting WarehouseProduct.quantity directly. Mirrors
      * JobWebCompletionService::processPartialCompletionMaterialReturnItems(): the SN
@@ -5620,7 +5709,42 @@ class JobScheduleController extends Controller
             return false;
         }
 
-        if (!$inventoryReceiving) {
+        // The unit may already sit in a pending receiving queued by the partial-completion
+        // auto-return. Leave it there: moving it to a second document strips the SN from
+        // the first one and lets two receivings credit stock for the same unit.
+        $currentReceiving = $serialNumber->inventory_receiving_id
+            ? \App\Models\InventoryReceiving::where('id', $serialNumber->inventory_receiving_id)
+                ->where('status', 'pending')
+                ->first()
+            : null;
+
+        if ($currentReceiving) {
+            $inventoryReceiving = $this->pendingOrNull($inventoryReceiving) ?: $currentReceiving;
+
+            if (!$this->findReturnReceivingItem($currentReceiving, $item)) {
+                \App\Models\InventoryReceivingItem::create([
+                    'inventory_receiving_id' => $currentReceiving->id,
+                    'master_product_id' => $item->product_id,
+                    'notes' => "Return item #{$item->id} dari {$materialReturn->return_number}",
+                    'quantity' => $item->quantity,
+                    'quantity_received' => 0,
+                ]);
+            }
+
+            \Log::info("Material return {$materialReturn->return_number}: SN {$serialNumber->serial_number} already queued in Receiving {$currentReceiving->receiving_number}; reusing it instead of creating a second one.");
+
+            return true;
+        }
+
+        // Only a still-pending receiving can take this item; a finalized one already did
+        // its job (the items it covers never reach here - completeMaterialReturn() skips
+        // them before calling this), so fall through and open a fresh document instead.
+        $targetReceiving = $this->pendingOrNull($inventoryReceiving)
+            ?: $this->pendingOrNull($this->findReceivingForReturn($materialReturn));
+
+        if ($targetReceiving) {
+            $inventoryReceiving = $targetReceiving;
+        } else {
             $receivingNumber = app(\App\Services\DocumentNumberService::class)
                 ->generate('inventory_receiving', $warehouse->branch_id ? \App\Models\Branch::find($warehouse->branch_id)?->code : null);
 
@@ -5638,17 +5762,15 @@ class JobScheduleController extends Controller
             ]);
         }
 
-        \App\Models\InventoryReceivingItem::firstOrCreate(
-            [
+        if (!$this->findReturnReceivingItem($inventoryReceiving, $item)) {
+            \App\Models\InventoryReceivingItem::create([
                 'inventory_receiving_id' => $inventoryReceiving->id,
                 'master_product_id' => $item->product_id,
                 'notes' => "Return item #{$item->id} dari {$materialReturn->return_number}",
-            ],
-            [
                 'quantity' => $item->quantity,
                 'quantity_received' => 0,
-            ]
-        );
+            ]);
+        }
 
         $existingNotes = trim((string) ($serialNumber->notes ?? ''));
         $returnNote = "Queued to RR {$inventoryReceiving->receiving_number} from Material Return {$materialReturn->return_number}.";
@@ -5695,7 +5817,11 @@ class JobScheduleController extends Controller
             $warehouse = $materialReturn->warehouse
                 ? app(\App\Services\Warehouse\WarehousePlacementService::class)->resolveForMaterialReturn($materialReturn, $materialReturn->warehouse)
                 : null;
-            $snInventoryReceiving = null;
+            // An Inventory Receiving may already be waiting for these goods (auto-return
+            // from a partial completion), or may already have received them back. Reuse
+            // it so the return is finalised through a single document instead of a second
+            // one that double-credits the stock.
+            $snInventoryReceiving = $this->findReceivingForReturn($materialReturn);
             if ($warehouse) {
                 foreach ($materialReturn->items as $item) {
                     $product = $item->product;
@@ -5703,6 +5829,14 @@ class JobScheduleController extends Controller
 
                     $qtyToReturn = $item->quantity ?? 0;
                     if ($qtyToReturn <= 0) continue;
+
+                    // Already handled by that receiving (with or without a Serial Number):
+                    // the warehouse credits the stock when it finalizes it - or already
+                    // did. Crediting here too would count the same goods twice.
+                    if ($snInventoryReceiving && $this->findReturnReceivingItem($snInventoryReceiving, $item)) {
+                        \Log::info("Material return {$materialReturn->return_number}: item #{$item->id} ({$product->name}) already queued in Receiving {$snInventoryReceiving->receiving_number}; skipping direct stock credit.");
+                        continue;
+                    }
 
                     // Serial Number-tracked (unit) products: don't credit WarehouseProduct
                     // directly. Queue into an Inventory Receiving instead, matching the
@@ -5819,8 +5953,8 @@ class JobScheduleController extends Controller
             \Log::info("✅ STUDY CASE B1: Completed material return {$materialReturn->return_number} and updated warehouse stock");
 
             $message = 'Material return completed successfully and warehouse stock updated.';
-            if ($snInventoryReceiving) {
-                $message .= " {$snInventoryReceiving->items()->count()} item ber-Serial Number di-queue ke Inventory Receiving {$snInventoryReceiving->receiving_number} (menunggu verifikasi & finalize gudang sebelum stok/SN benar-benar masuk).";
+            if ($snInventoryReceiving && $snInventoryReceiving->fresh()?->status === 'pending') {
+                $message .= " {$snInventoryReceiving->items()->count()} item menunggu di Inventory Receiving {$snInventoryReceiving->receiving_number} (stok/SN baru masuk setelah gudang verifikasi & finalize penerimaan tersebut).";
             }
             if ($forwardedTransfer) {
                 $message .= " Transfer ke gudang pusat dibuat (Draft): {$forwardedTransfer->transfer_number}. Proses pengiriman & penerimaan dilakukan dari menu Inventory Transfer.";

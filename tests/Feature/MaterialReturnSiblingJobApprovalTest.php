@@ -165,6 +165,35 @@ class MaterialReturnSiblingJobApprovalTest extends TestCase
             $table->foreignId('updated_by')->nullable();
             $table->timestamps();
         });
+
+        // completeMaterialReturn() checks whether an Inventory Receiving is already
+        // waiting for the returned goods before crediting stock.
+        Schema::create('inventory_receivings', function (Blueprint $table) {
+            $table->id();
+            $table->string('receiving_number')->nullable();
+            $table->string('reference_no')->nullable();
+            $table->foreignId('branch_id')->nullable();
+            $table->unsignedBigInteger('received_from')->nullable();
+            $table->unsignedBigInteger('received_by_old')->nullable();
+            $table->date('schedule_date')->nullable();
+            $table->string('status')->nullable();
+            $table->text('notes')->nullable();
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('inventory_receiving_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('inventory_receiving_id');
+            $table->unsignedBigInteger('master_product_id')->nullable();
+            $table->decimal('quantity', 10, 2)->default(0);
+            $table->decimal('quantity_received', 10, 2)->default(0);
+            $table->text('notes')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
     }
 
     public function test_material_return_can_be_approved_from_sibling_job_schedule_detail(): void
