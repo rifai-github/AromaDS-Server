@@ -20,6 +20,9 @@ class JobController extends Controller
     /** Marks a job_schedule_rooms row this controller created on the fly, not one the schedule was built with. */
     private const MOBILE_TRACKING_ROOM_NOTE = 'Mobile rental-level tracking';
 
+    /** Memoised "does any job_advice_rooms row name this job?" answers, keyed by job id + column. */
+    private array $explicitJobAdviceRoomClaims = [];
+
     private array $favoriteLookup = [];
     private array $locationNameLookup = [
         'cities' => [],
@@ -1836,6 +1839,8 @@ class JobController extends Controller
             // A physical room can carry several rentals at once ("1 room qty 2").
             // Give each of this visit's rentals its own task card so the technician
             // can choose which rental to work first — see splitRoomGroupsByRental().
+            $targetRooms = $this->rejectForeignRentalsForRemoveJob($job, $targetRooms);
+
             $targetRoomGroups = $this->splitRoomGroupsByRental(
                 $this->groupJobAdviceRoomsByPhysicalRoom($targetRooms),
                 $this->rentalOwnershipCheckerForVisit($job, $siblingJobIds)
@@ -3337,6 +3342,28 @@ class JobController extends Controller
      * install_job_schedule_id / service_job_schedule_id / remove_job_schedule_id,
      * otherwise a rental gets cross-linked into the wrong document (IR vs CSR).
      */
+    /**
+     * A Remove job only removes the rentals it was raised for. ChangeRentalCompletionService
+     * freezes the REPLACED rental onto its own job_advice_rooms row and stamps the RV job on
+     * it; the rental that was just installed keeps NULL pointers and used to ride along on
+     * the physical-room grouping, so the RV job showed both rentals (QA 6 Sep 2026,
+     * SBY-RV/26-09/0003). Drop those unclaimed rows once at least one row names this RV job -
+     * a Remove job with no explicit rows at all (legacy data) keeps the old grouping.
+     */
+    private function rejectForeignRentalsForRemoveJob(JobSchedule $job, $adviceRooms)
+    {
+        if (!$this->isRemoveJobType($job->type)
+            || !$this->jobAdviceRoomsExplicitlyClaimJob($job, 'remove_job_schedule_id')) {
+            return $adviceRooms;
+        }
+
+        $owned = collect($adviceRooms)
+            ->filter(fn ($room) => (int) ($room->remove_job_schedule_id ?? 0) === (int) $job->id)
+            ->values();
+
+        return $owned->isNotEmpty() ? $owned : $adviceRooms;
+    }
+
     private function jobAdviceRoomBelongsToJobSchedule($jobAdviceRoom, JobSchedule $jobSchedule): bool
     {
         if (!$jobAdviceRoom) {
@@ -3344,20 +3371,51 @@ class JobController extends Controller
         }
 
         if ($this->isRemoveJobType($jobSchedule->type)) {
-            $ownerId = $jobAdviceRoom->remove_job_schedule_id;
+            $ownerColumn = 'remove_job_schedule_id';
         } elseif ($this->isServiceLikeJob($jobSchedule)) {
-            $ownerId = $jobAdviceRoom->service_job_schedule_id;
+            $ownerColumn = 'service_job_schedule_id';
         } else {
-            $ownerId = $jobAdviceRoom->install_job_schedule_id;
+            $ownerColumn = 'install_job_schedule_id';
         }
 
-        // Not yet linked to any specific sibling job — safe to fall back to
-        // physical-room grouping (legacy data / single-rental rooms).
+        $ownerId = $jobAdviceRoom->{$ownerColumn};
+
         if (!$ownerId) {
-            return true;
+            // Not yet linked to any specific sibling job — normally safe to fall back to
+            // physical-room grouping (legacy data / single-rental rooms).
+            //
+            // Not on a Remove job that already has rentals named explicitly, though:
+            // ChangeRentalCompletionService stamps the RV job onto the REPLACED rental's
+            // row only, while the newly installed rental keeps a NULL remove pointer. The
+            // fallback used to hand that new rental to the RV job too, so the Remove job
+            // (web and APK) listed two rentals and offered the just-installed unit for
+            // removal. When at least one row claims this RV job, membership is defined.
+            return !($ownerColumn === 'remove_job_schedule_id'
+                && $this->jobAdviceRoomsExplicitlyClaimJob($jobSchedule, $ownerColumn));
         }
 
         return (int) $ownerId === (int) $jobSchedule->id;
+    }
+
+    /**
+     * Whether any job_advice_rooms row of this job's Job Advice points at the job
+     * through $ownerColumn. Memoised: getJobRooms() asks once per advice room.
+     */
+    private function jobAdviceRoomsExplicitlyClaimJob(JobSchedule $jobSchedule, string $ownerColumn): bool
+    {
+        if (!$jobSchedule->job_advice_id) {
+            return false;
+        }
+
+        $key = $jobSchedule->id.':'.$ownerColumn;
+
+        if (!array_key_exists($key, $this->explicitJobAdviceRoomClaims)) {
+            $this->explicitJobAdviceRoomClaims[$key] = \App\Models\JobAdviceRoom::where('job_advice_id', $jobSchedule->job_advice_id)
+                ->where($ownerColumn, $jobSchedule->id)
+                ->exists();
+        }
+
+        return $this->explicitJobAdviceRoomClaims[$key];
     }
 
     private function materialIssuesForJob(JobSchedule $job)
@@ -6921,6 +6979,8 @@ class JobController extends Controller
         // same way getJobRooms() lists them: one task per physical room, except a
         // room holding several rentals ("1 room qty 2"), which is one task per
         // rental so the technician can pick which rental to work.
+        $targetRooms = $this->rejectForeignRentalsForRemoveJob($job, $targetRooms);
+
         $targetRoomGroups = $this->splitRoomGroupsByRental(
             $this->groupJobAdviceRoomsByPhysicalRoom($targetRooms),
             $this->rentalOwnershipCheckerForVisit($job, $this->getSiblingJobIdsForMobileJob($job))

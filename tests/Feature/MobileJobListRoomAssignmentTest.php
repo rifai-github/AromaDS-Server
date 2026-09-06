@@ -818,6 +818,160 @@ class MobileJobListRoomAssignmentTest extends TestCase
         );
     }
 
+    /**
+     * QA 6 Sep 2026 (SBY-EXT/26-09/0001 -> SBY-RV/26-09/0003): after Done Job on a Change
+     * Rental, ChangeRentalCompletionService raises the RV job for the REPLACED rental and
+     * stamps all three pointers of that frozen job_advice_rooms row onto it. The newly
+     * installed rental keeps NULL pointers, and the "no owner yet -> belongs everywhere"
+     * fallback handed it to the RV job as well: the Remove job listed two rentals (web and
+     * APK) and getJobRooms() even created a second job_schedule_rooms row for it.
+     */
+    public function test_mobile_remove_job_from_change_rental_only_lists_the_replaced_rental(): void
+    {
+        DB::table('master_rooms')->insert([
+            'id' => 560,
+            'room_name' => 'Ruang Ganti Rental 1 Room',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('contract_rooms')->insert([
+            'id' => 88,
+            'room_id' => 560,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('master_rentals')->insert([
+            [
+                'id' => 811,
+                'rental_name' => 'Rental07 - 1 x 1 Bulan',
+                'rental_type' => 'unit_refill',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 812,
+                'rental_name' => 'Rental 1x 1bln',
+                'rental_type' => 'unit_refill',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            [
+                // The rental the Change Rental job installed - no pointer of its own.
+                'id' => 120,
+                'job_advice_id' => 30,
+                'contract_room_id' => 88,
+                'rental_product_id' => 812,
+                'room_name' => 'Ruang Ganti Rental 1 Room',
+                'rental_name' => 'Rental 1x 1bln',
+                'status' => 'completed',
+                'install_job_schedule_id' => null,
+                'service_job_schedule_id' => null,
+                'remove_job_schedule_id' => null,
+                'notes' => 'pasang ganti rental',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                // The replaced rental, frozen onto the RV job by ChangeRentalCompletionService.
+                'id' => 121,
+                'job_advice_id' => 30,
+                'contract_room_id' => 88,
+                'rental_product_id' => 811,
+                'room_name' => 'Ruang Ganti Rental 1 Room',
+                'rental_name' => 'Rental07 - 1 x 1 Bulan',
+                'status' => 'scheduled',
+                'install_job_schedule_id' => 61,
+                'service_job_schedule_id' => 61,
+                'remove_job_schedule_id' => 61,
+                'notes' => 'Rental lama, digantikan oleh Change Rental SBY-EXT/26-09/0001.',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_schedules')->insert([
+            [
+                'id' => 60,
+                'job_number' => 'SBY-EXT/26-09/0001',
+                'job_advice_id' => 30,
+                'type' => 'change',
+                'status' => 'done_job',
+                'room_id' => 560,
+                'room_name' => 'Ruang Ganti Rental 1 Room',
+                'schedule_date' => '2026-09-06',
+                'material_checked' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 61,
+                'job_number' => 'SBY-RV/26-09/0003',
+                'job_advice_id' => 30,
+                'type' => 'remove',
+                'status' => 'assign_team',
+                'room_id' => 560,
+                'room_name' => 'Ruang Ganti Rental 1 Room',
+                'schedule_date' => '2026-09-06',
+                'material_checked' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_schedule_rooms')->insert([
+            [
+                'id' => 70,
+                'job_schedule_id' => 60,
+                'job_advice_room_id' => 120,
+                'room_name' => 'Ruang Ganti Rental 1 Room',
+                'room_id' => 560,
+                'status' => 'completed',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 71,
+                'job_schedule_id' => 61,
+                'job_advice_room_id' => 121,
+                'room_name' => 'Ruang Ganti Rental 1 Room',
+                'room_id' => 560,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('job_assign_schedules')->insert([
+            'id' => 80,
+            'job_schedule_id' => 61,
+            'team_id' => 10,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs(User::find(1));
+
+        $roomsPayload = app(JobController::class)->getJobRooms(61)->getData(true);
+
+        $this->assertSame('success', $roomsPayload['status']);
+        $this->assertSame(
+            ['Rental07 - 1 x 1 Bulan'],
+            collect($roomsPayload['data'])->pluck('rental_name')->all()
+        );
+        $this->assertSame([121], collect($roomsPayload['data'])->pluck('id')->all());
+
+        // The new rental must not be grafted onto the Remove job as a room row either -
+        // that row is what makes the web Rental & Team tab show it too.
+        $this->assertSame(1, DB::table('job_schedule_rooms')->where('job_schedule_id', 61)->count());
+        $this->assertSame(0, DB::table('job_schedule_rooms')->where('job_schedule_id', 61)->where('job_advice_room_id', 120)->count());
+    }
+
     public function test_mobile_job_rooms_reconcile_install_room_completed_from_active_unit_on_wall(): void
     {
         DB::table('buildings')->insert([
