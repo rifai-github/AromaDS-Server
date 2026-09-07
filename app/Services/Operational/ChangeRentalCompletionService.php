@@ -158,7 +158,23 @@ class ChangeRentalCompletionService
             return;
         }
 
-        $this->syncContractRental($jobAdvice, (int) $roomId, $contractRental, $newRental, $newJaRoom);
+        // How much of the line is actually moving. A room can hold several units of the
+        // same rental and the customer may swap only some of them: QA 6 Sep 2026 changed
+        // ONE of the two units in "Ruang Ganti Rental Qty 2" and lost the other, because
+        // every step below treated the change as replacing the whole line.
+        $changedQuantity = max(1, (int) ($newJaRoom->quantity ?: 1));
+        $lineQuantity = (int) ($contractRental?->quantity ?: $replacedJaRoom?->quantity ?: 0);
+        $remainingQuantity = $lineQuantity > $changedQuantity ? $lineQuantity - $changedQuantity : 0;
+
+        $newContractRental = $this->syncContractRental(
+            $jobAdvice,
+            (int) $roomId,
+            $contractRental,
+            $newRental,
+            $newJaRoom,
+            $changedQuantity,
+            $remainingQuantity
+        );
 
         $removeJob = null;
         if ($oldRental) {
@@ -168,14 +184,24 @@ class ChangeRentalCompletionService
                 $newJaRoom,
                 $replacedJaRoom,
                 $oldRental,
-                (int) $roomId
+                (int) $roomId,
+                $changedQuantity
             );
         } else {
             Log::warning("Change Rental job {$job->job_number}: could not identify the replaced rental for room {$roomId}. No Remove job created.");
         }
 
         // Done last: it overwrites the rental the steps above read from.
-        $this->moveRemainingServicesToNewRental($jobAdvice, (int) $roomId, $newJaRoom, $newRental);
+        $this->moveRemainingServicesToNewRental(
+            $jobAdvice,
+            (int) $roomId,
+            $newJaRoom,
+            $newRental,
+            $job,
+            $changedQuantity,
+            $remainingQuantity,
+            $newContractRental
+        );
 
         Log::info(sprintf(
             'Change Rental job %s: room %d moved from rental %s to rental %s%s.',
@@ -318,16 +344,23 @@ class ChangeRentalCompletionService
      * Point the contract at the new rental. The contract row is updated in place: it is
      * what invoicing reads for the NEXT period, and already-issued invoices keep their own
      * snapshot in invoice_rental_details.
+     *
+     * When only part of a multi-unit line moves, the old row is kept at the remaining
+     * quantity and the new rental gets a row of its own instead - otherwise the units that
+     * were never touched stop being billed and disappear from every later service.
+     *
+     * @return ContractRental|null the row the NEW rental now lives on
      */
     private function syncContractRental(
         JobAdvice $jobAdvice,
         int $roomId,
         ?ContractRental $contractRental,
         MasterRental $newRental,
-        JobAdviceRoom $newJaRoom
-    ): void {
-        $quantity = (int) ($newJaRoom->quantity ?: $contractRental?->quantity ?: 1);
-        $quantity = max(1, $quantity);
+        JobAdviceRoom $newJaRoom,
+        int $changedQuantity = 1,
+        int $remainingQuantity = 0
+    ): ?ContractRental {
+        $quantity = max(1, $changedQuantity);
         $qtyFree = (int) ($newJaRoom->qty_free ?? $contractRental?->qty_free ?? 0);
 
         // The Change Rental JA has no negotiated price of its own, so the new rental's
@@ -350,13 +383,29 @@ class ChangeRentalCompletionService
             'updated_by' => $this->actorId(),
         ];
 
+        if ($contractRental && $remainingQuantity > 0) {
+            $oldUnitPrice = (float) ($contractRental->unit_price ?? 0);
+
+            $contractRental->update([
+                'quantity' => $remainingQuantity,
+                'total_price' => $oldUnitPrice * $remainingQuantity,
+                'updated_by' => $this->actorId(),
+            ]);
+
+            return ContractRental::create(array_merge($payload, [
+                'contract_id' => $jobAdvice->contract_id,
+                'room_id' => $roomId,
+                'created_by' => $this->actorId(),
+            ]));
+        }
+
         if ($contractRental) {
             $contractRental->update($payload);
 
-            return;
+            return $contractRental;
         }
 
-        ContractRental::create(array_merge($payload, [
+        return ContractRental::create(array_merge($payload, [
             'contract_id' => $jobAdvice->contract_id,
             'room_id' => $roomId,
             'created_by' => $this->actorId(),
@@ -367,8 +416,16 @@ class ChangeRentalCompletionService
      * Move every service period that has not run yet onto the new rental, so material
      * assign and the CSR document both follow the change.
      */
-    private function moveRemainingServicesToNewRental(JobAdvice $jobAdvice, int $roomId, JobAdviceRoom $newJaRoom, MasterRental $newRental): void
-    {
+    private function moveRemainingServicesToNewRental(
+        JobAdvice $jobAdvice,
+        int $roomId,
+        JobAdviceRoom $newJaRoom,
+        MasterRental $newRental,
+        JobSchedule $job,
+        int $changedQuantity = 1,
+        int $remainingQuantity = 0,
+        ?ContractRental $newContractRental = null
+    ): void {
         $jaRoomIds = collect($this->openServiceJobAdviceRoomIds($jobAdvice, $roomId))
             ->reject(fn ($id) => (int) $id === (int) $newJaRoom->id)
             ->values();
@@ -381,6 +438,25 @@ class ChangeRentalCompletionService
             ->where('rental_product_id', '!=', $newRental->id)
             ->get();
 
+        if ($rooms->isEmpty()) {
+            return;
+        }
+
+        if ($remainingQuantity > 0) {
+            $this->splitRemainingServicesForPartialChange(
+                $jobAdvice,
+                $roomId,
+                $rooms,
+                $newRental,
+                $job,
+                $changedQuantity,
+                $remainingQuantity,
+                $newContractRental
+            );
+
+            return;
+        }
+
         foreach ($rooms as $room) {
             $room->update([
                 'rental_product_id' => $newRental->id,
@@ -390,6 +466,105 @@ class ChangeRentalCompletionService
                 'updated_by' => $this->actorId(),
             ]);
         }
+    }
+
+    /**
+     * Only some of the room's units moved, so the later service periods must carry BOTH
+     * rentals: the old one at its reduced quantity, and a sibling row for the new one.
+     *
+     * The sibling is modelled exactly like a room that was sold with two rentals from the
+     * start - one job_advice_rooms row per rental, one job_schedule_rooms row per service
+     * period - which is the shape the mobile card list, material assign and the BA already
+     * understand. service_job_schedule_id names the latest period by convention; ownership
+     * of a period is decided by its job_schedule_rooms row, not by that pointer.
+     */
+    private function splitRemainingServicesForPartialChange(
+        JobAdvice $jobAdvice,
+        int $roomId,
+        $oldRooms,
+        MasterRental $newRental,
+        JobSchedule $job,
+        int $changedQuantity,
+        int $remainingQuantity,
+        ?ContractRental $newContractRental
+    ): void {
+        foreach ($oldRooms as $room) {
+            $room->update([
+                'quantity' => $remainingQuantity,
+                'updated_by' => $this->actorId(),
+            ]);
+        }
+
+        $scheduleRooms = $this->openServiceScheduleRooms($jobAdvice, $roomId);
+
+        if ($scheduleRooms->isEmpty()) {
+            return;
+        }
+
+        $template = $oldRooms->first();
+
+        $siblingRoom = JobAdviceRoom::create([
+            'job_advice_id' => $template->job_advice_id,
+            'contract_room_id' => $template->contract_room_id,
+            'contract_rental_id' => $newContractRental?->id,
+            'rental_product_id' => $newRental->id,
+            'room_name' => $template->room_name,
+            'rental_name' => $newRental->rental_name,
+            'quantity' => $changedQuantity,
+            'qty_free' => 0,
+            'status' => JobAdviceRoom::STATUS_SCHEDULED,
+            'service_job_schedule_id' => (int) $scheduleRooms->max('job_schedule_id'),
+            'notes' => "Rental baru dari Change Rental {$job->job_number}.",
+            'created_by' => $this->actorId(),
+            'updated_by' => $this->actorId(),
+        ]);
+
+        foreach ($scheduleRooms->groupBy('job_schedule_id') as $scheduleId => $rows) {
+            $existing = JobScheduleRoom::where('job_schedule_id', $scheduleId)
+                ->where('job_advice_room_id', $siblingRoom->id)
+                ->exists();
+
+            if ($existing) {
+                continue;
+            }
+
+            JobScheduleRoom::create([
+                'job_schedule_id' => $scheduleId,
+                'job_advice_room_id' => $siblingRoom->id,
+                'room_name' => $template->room_name,
+                'room_id' => $roomId,
+                'status' => JobScheduleRoom::STATUS_PENDING,
+                'created_by' => $this->actorId(),
+                'updated_by' => $this->actorId(),
+            ]);
+        }
+
+        Log::info(sprintf(
+            'Change Rental job %s: room %d split - %d unit(s) stay on the old rental, %d moved to %s (JA room %d).',
+            $job->job_number,
+            $roomId,
+            $remainingQuantity,
+            $changedQuantity,
+            $newRental->rental_name,
+            $siblingRoom->id
+        ));
+    }
+
+    /**
+     * The job_schedule_rooms rows of every service period of this room that has not run yet.
+     */
+    private function openServiceScheduleRooms(JobAdvice $jobAdvice, int $roomId)
+    {
+        $contractJobAdviceIds = JobAdvice::where('contract_id', $jobAdvice->contract_id)->pluck('id');
+
+        return JobScheduleRoom::where('room_id', $roomId)
+            ->whereNotNull('job_advice_room_id')
+            ->whereHas('jobSchedule', function ($query) use ($contractJobAdviceIds) {
+                $query->whereIn('job_advice_id', $contractJobAdviceIds)
+                    ->whereIn(DB::raw('LOWER(type)'), self::SERVICE_SCHEDULE_TYPES)
+                    ->whereNotIn(DB::raw('LOWER(status)'), self::OPEN_SCHEDULE_STATUSES_EXCLUDED);
+            })
+            ->get();
     }
 
     /**
@@ -407,7 +582,8 @@ class ChangeRentalCompletionService
         JobAdviceRoom $newJaRoom,
         ?JobAdviceRoom $replacedJaRoom,
         MasterRental $oldRental,
-        int $roomId
+        int $roomId,
+        int $changedQuantity = 1
     ): ?JobSchedule {
         $scheduleDate = $changeJob->schedule_date ?? now()->toDateString();
 
@@ -458,7 +634,10 @@ class ChangeRentalCompletionService
             'rental_product_id' => $oldRental->id,
             'room_name' => $newJaRoom->room_name,
             'rental_name' => $oldRental->rental_name,
-            'quantity' => (int) ($replacedJaRoom?->quantity ?: 1),
+            // Only the units that were actually swapped come off the wall. Taking the whole
+            // line's quantity pulled BOTH units of a qty-2 room when one was replaced
+            // (QA 6 Sep 2026, SBY-RV/26-09/0006 emptied "Ruang Ganti Rental Qty 2").
+            'quantity' => max(1, min($changedQuantity, (int) ($replacedJaRoom?->quantity ?: $changedQuantity))),
             'qty_free' => (int) ($replacedJaRoom?->qty_free ?? 0),
             'status' => JobAdviceRoom::STATUS_SCHEDULED,
             // All three pointers deliberately name the Remove job: this row exists only to

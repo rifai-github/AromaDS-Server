@@ -7551,6 +7551,7 @@ class JobScheduleController extends Controller
             
             $renewalSourceContract = $this->resolveRenewalSourceContractForJobAdvice($jobAdvice);
             $installJobSns = $this->getInstalledSerialNumberIdsForRemoveJob($removeJob, $jobAdvice, $renewalSourceContract);
+            $recordedUnitOnWallIds = $this->unitOnWallIdsRecordedByRemoveJob($removeJob);
 
             if ($renewalSourceContract && empty($installJobSns)) {
                 \Log::warning("Remove Job {$removeJob->job_number}: Renewal source contract {$renewalSourceContract->contract_number} has no installed SNs available. Skipping Unit On Wall auto-remove to avoid removing unrelated units.");
@@ -7609,7 +7610,35 @@ class JobScheduleController extends Controller
                     $this->removeJobContractIds($jobAdvice, $renewalSourceContract)
                 );
 
-                $units = $unitsQuery->get();
+                $units = $unitsQuery->orderBy('id')->get();
+
+                // The technician says which units actually came off the wall - the Remove
+                // job's job_schedule_units rows. Honour that over the room+rental match:
+                // a room can hold several units of the SAME rental and only some of them
+                // may be leaving. QA 6 Sep 2026, SBY-RV/26-09/0006 (auto-created by the
+                // Change Rental on SBY-CA/26-09/0003) recorded exactly one unit,
+                // DW300B2606024 / Unit On Wall 77, yet BOTH units of the room were marked
+                // removed and queued into Inventory Receiving SBY-IRC/26-09/0009.
+                if (!empty($recordedUnitOnWallIds)) {
+                    $recorded = $units->whereIn('id', $recordedUnitOnWallIds)->values();
+
+                    // Only narrow when this room is one the technician reported on. An empty
+                    // intersection means the records belong to another room of the same job,
+                    // and must not silently cancel this room's removal.
+                    if ($recorded->isNotEmpty()) {
+                        $units = $recorded;
+                    }
+                }
+
+                // Backstop for a Remove job nobody reported units on (auto-completed RVs):
+                // never take more units than the room asked for. A row carrying no quantity
+                // at all keeps the old "remove everything that matches" behaviour, which is
+                // what contract termination relies on.
+                $declaredQuantity = (int) ($jaRoom->quantity ?? 0);
+                if ($declaredQuantity > 0 && $units->count() > $declaredQuantity) {
+                    \Log::info("Remove Job {$removeJob->job_number}: JA Room {$jaRoom->id} asks for {$declaredQuantity} unit(s) but {$units->count()} matched; taking the oldest {$declaredQuantity}.");
+                    $units = $units->take($declaredQuantity)->values();
+                }
 
                 if ($units->isEmpty()) {
                     \Log::warning("Remove Job {$removeJob->job_number}: no active Unit On Wall matched for JA Room {$jaRoom->id} (room_id={$roomId}, rental_id={$rental->id}, building_id={$removeJob->building_id}, SN filter=" . (empty($installJobSns) ? 'none' : implode(',', $installJobSns)) . "). Nothing removed/queued for this room.");
@@ -7663,6 +7692,49 @@ class JobScheduleController extends Controller
             \Log::error("Failed to auto-remove Unit On Wall for Remove Job {$removeJob->job_number}: " . $e->getMessage());
             // Don't throw - non-critical error
         }
+    }
+
+    /**
+     * Unit On Wall ids the technician actually reported taking down on this Remove job.
+     *
+     * job_schedule_units carries either the unit_on_wall_id directly or the serial number
+     * the technician scanned (the `mac` column stores an SN, not a MAC). Both are resolved
+     * so a partially emptied room only loses the units that really came off the wall.
+     *
+     * @return array<int, int>
+     */
+    private function unitOnWallIdsRecordedByRemoveJob(JobSchedule $removeJob): array
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('job_schedule_units')) {
+            return [];
+        }
+
+        $rows = DB::table('job_schedule_units')
+            ->where('job_schedule_id', $removeJob->id)
+            ->get(['unit_on_wall_id', 'mac']);
+
+        if ($rows->isEmpty()) {
+            return [];
+        }
+
+        $unitIds = $rows->pluck('unit_on_wall_id')->filter()->map(fn ($id) => (int) $id)->all();
+
+        $serials = $rows->pluck('mac')
+            ->map(fn ($mac) => trim((string) $mac))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (! empty($serials)) {
+            $serialBackedIds = \App\Models\UnitOnWall::whereIn('serial_number_id', function ($query) use ($serials) {
+                $query->select('id')->from('serial_numbers')->whereIn('serial_number', $serials);
+            })->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+            $unitIds = array_merge($unitIds, $serialBackedIds);
+        }
+
+        return array_values(array_unique($unitIds));
     }
 
     private function queueRemovedUnitReceiving(JobSchedule $removeJob, \App\Models\UnitOnWall $unit, ?\App\Models\SerialNumber $serialNumber): void

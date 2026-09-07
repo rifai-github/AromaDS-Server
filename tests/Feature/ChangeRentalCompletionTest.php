@@ -411,6 +411,110 @@ class ChangeRentalCompletionTest extends TestCase
         $this->assertSame((int) $removeJob->id, (int) $removeAdviceRoom->service_job_schedule_id);
     }
 
+    /**
+     * QA 6 Sep 2026, contract SBY-CA/26-09/0003: "Ruang Ganti Rental Qty 2" held two units
+     * of one rental and only ONE was swapped. Every step treated the change as replacing
+     * the whole line, so the contract row was overwritten (2 x Rental 1 became 1 x
+     * Rental07), the later service periods lost Rental 1 entirely, and the auto Remove job
+     * asked for both units - emptying the room.
+     */
+    private function makePartialScenario(): array
+    {
+        $scenario = $this->makeScenario();
+
+        // The room really holds two units of the old rental; only one is being changed.
+        $scenario['contractRental']->update(['quantity' => 2, 'total_price' => 3000000]);
+        $scenario['oldRoom']->update(['quantity' => 2]);
+
+        DB::table('unit_on_walls')->insert([
+            'contract_id' => 5,
+            'customer_id' => 9,
+            'contract_room_id' => 18,
+            'install_job_schedule_id' => $scenario['installJob']->id,
+            'building_id' => 7,
+            'room_id' => 13,
+            'rental_id' => 10,
+            'serial_number' => 'DIFF3030006',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return $scenario;
+    }
+
+    public function test_changing_one_unit_of_a_two_unit_line_keeps_the_other_on_the_contract(): void
+    {
+        $scenario = $this->makePartialScenario();
+
+        $this->service()->handleCompletedJob($scenario['changeJob']);
+
+        $oldContractRental = $scenario['contractRental']->fresh();
+
+        // The untouched unit stays on the old rental and keeps being billed.
+        $this->assertSame(10, (int) $oldContractRental->master_rental_id);
+        $this->assertSame(1, (int) $oldContractRental->quantity);
+        $this->assertSame(1500000.0, (float) $oldContractRental->total_price);
+
+        $newContractRental = ContractRental::where('contract_id', 5)
+            ->where('master_rental_id', 4)
+            ->first();
+
+        $this->assertNotNull($newContractRental, 'The changed unit needs a contract row of its own.');
+        $this->assertSame(1, (int) $newContractRental->quantity);
+        $this->assertSame(13, (int) $newContractRental->room_id);
+
+        $this->assertSame(2, ContractRental::where('contract_id', 5)->count());
+    }
+
+    public function test_a_partial_change_gives_the_later_services_both_rentals(): void
+    {
+        $scenario = $this->makePartialScenario();
+
+        $this->service()->handleCompletedJob($scenario['changeJob']);
+
+        $oldRoom = $scenario['oldRoom']->fresh();
+
+        // The old row keeps its rental, only its quantity drops.
+        $this->assertSame(10, (int) $oldRoom->rental_product_id);
+        $this->assertSame(1, (int) $oldRoom->quantity);
+
+        foreach ($scenario['pendingServiceJobs'] as $serviceJob) {
+            $rentalIds = JobScheduleRoom::where('job_schedule_id', $serviceJob->id)
+                ->get()
+                ->map(fn ($scheduleRoom) => (int) JobAdviceRoom::find($scheduleRoom->job_advice_room_id)->rental_product_id)
+                ->sort()
+                ->values()
+                ->all();
+
+            $this->assertSame(
+                [4, 10],
+                $rentalIds,
+                'Every remaining service period must cover the unit that stayed AND the one that changed.'
+            );
+        }
+    }
+
+    public function test_a_partial_change_only_takes_back_the_unit_that_was_swapped(): void
+    {
+        $scenario = $this->makePartialScenario();
+
+        $this->service()->handleCompletedJob($scenario['changeJob']);
+
+        $removeJob = JobSchedule::where('type', 'remove')->first();
+        $this->assertNotNull($removeJob);
+
+        $removeScheduleRoom = JobScheduleRoom::where('job_schedule_id', $removeJob->id)->first();
+        $removeAdviceRoom = JobAdviceRoom::find($removeScheduleRoom->job_advice_room_id);
+
+        $this->assertSame(10, (int) $removeAdviceRoom->rental_product_id);
+        $this->assertSame(
+            1,
+            (int) $removeAdviceRoom->quantity,
+            'Only the swapped unit comes off the wall; the other one stays.'
+        );
+    }
+
     public function test_change_rental_completion_is_idempotent(): void
     {
         $scenario = $this->makeScenario();

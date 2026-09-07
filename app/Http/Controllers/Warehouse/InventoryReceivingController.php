@@ -1562,6 +1562,30 @@ class InventoryReceivingController extends Controller
     /**
      * Delete a serial number from this receiving (AJAX).
      */
+    /**
+     * Does this serial number exist independently of the receiving it is attached to?
+     *
+     * True for any unit that has been on a wall or handed out by an issuing - i.e. one that
+     * came BACK through a return receiving rather than entering stock through it. Such a row
+     * must survive the line being removed, or the install job, the stock detail and every
+     * reference to it lose the unit.
+     */
+    private function serialNumberHasLifeOutsideReceiving(\App\Models\SerialNumber $serialNumber): bool
+    {
+        if (\App\Models\UnitOnWall::where('serial_number_id', $serialNumber->id)->exists()) {
+            return true;
+        }
+
+        if (
+            \Illuminate\Support\Facades\Schema::hasTable('inventory_issuing_item_serials')
+            && DB::table('inventory_issuing_item_serials')->where('serial_number_id', $serialNumber->id)->exists()
+        ) {
+            return true;
+        }
+
+        return DB::table('inventory_issuing_items')->where('serial_number_id', $serialNumber->id)->exists();
+    }
+
     public function deleteSerialNumber(Request $request, InventoryReceiving $inventoryReceiving)
     {
         $request->validate([
@@ -1594,8 +1618,25 @@ class InventoryReceivingController extends Controller
             $productId = $serialNumber->master_product_id;
             $snCode = $serialNumber->serial_number;
 
-            // Hard delete the serial number
-            $serialNumber->forceDelete();
+            // A receiving that BROUGHT a serial into the system owns it, so dropping the
+            // line drops the row. A return receiving does not: the unit already existed,
+            // was installed, and is referenced by unit_on_walls, job_schedule_units and the
+            // issuing that handed it out. Hard-deleting one of those wipes the unit from
+            // the install job and from stock and leaves those references dangling - QA
+            // 7 Sep 2026 removed DW300B2606022 from the auto-return SBY-IRC/26-09/0009 and
+            // it vanished from SBY-IR/26-09/0006 and from Detail Stock, while
+            // unit_on_walls 76 still pointed at the deleted row.
+            $keepMasterRow = $this->serialNumberHasLifeOutsideReceiving($serialNumber);
+
+            if ($keepMasterRow) {
+                $serialNumber->update([
+                    'inventory_receiving_id' => null,
+                    'updated_by' => Auth::id(),
+                ]);
+            } else {
+                // Hard delete the serial number this receiving created.
+                $serialNumber->forceDelete();
+            }
 
             // Update receiving item quantity_received
             $requestedQty = (float) $inventoryReceiving->items()
@@ -1610,11 +1651,18 @@ class InventoryReceivingController extends Controller
 
             DB::commit();
 
-            \Log::info("Serial Number {$snCode} deleted from Inventory Receiving {$inventoryReceiving->receiving_number}");
+            \Log::info(sprintf(
+                'Serial Number %s %s Inventory Receiving %s',
+                $snCode,
+                $keepMasterRow ? 'detached from' : 'deleted from',
+                $inventoryReceiving->receiving_number
+            ));
 
             return response()->json([
                 'status' => 'success',
-                'message' => "Serial Number {$snCode} berhasil dihapus!",
+                'message' => $keepMasterRow
+                    ? "Serial Number {$snCode} dikeluarkan dari receiving ini. Data SN-nya tetap disimpan karena unit ini punya riwayat pemasangan - kalau unit ini sebenarnya tidak dibongkar, perbaiki Job Remove-nya."
+                    : "Serial Number {$snCode} berhasil dihapus!",
                 'data' => [
                     'product_id' => $productId,
                     'remaining_quantity' => max(0, $requestedQty - $currentSNCount),
