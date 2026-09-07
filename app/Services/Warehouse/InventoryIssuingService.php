@@ -82,6 +82,52 @@ class InventoryIssuingService
      *
      * @throws Exception when any batch row asks for more units than its code has.
      */
+    /**
+     * Every unit a serial-tracked row hands over must have its own registered serial.
+     *
+     * InventoryIssuingController::process() checks this before flipping an issuing to
+     * Ready, but that is one path of several and it only runs at that moment - an item's
+     * quantity can also be edited afterwards. SBY-WI/26-09/0016 reached Ready with
+     * quantity 2 and a single serial linked (QA 6 Sep 2026), so the job only ever knew
+     * about one of the two Diffusers it was handed: the room asked for one scan, closed
+     * on it, and the second unit was never recorded anywhere.
+     *
+     * Checking it again where stock is actually deducted makes the rule path-independent,
+     * which is the same reason assertBatchSerialStockIsSufficient() lives here.
+     */
+    public function assertUnitSerialsAreComplete(InventoryIssuing $issuing): void
+    {
+        $issuing->loadMissing(['items.product.productCategory', 'items.product.productType', 'items.serialLinks']);
+
+        $incomplete = [];
+
+        foreach ($issuing->items as $item) {
+            $product = $item->product;
+
+            if (!$product || !$product->requiresSerialNumber() || !$product->requiresUniqueSerialNumber()) {
+                continue;
+            }
+
+            $required = $item->requiredSerialCount();
+            $linked = $item->linkedSerialCount();
+
+            if ($required > 0 && $linked < $required) {
+                $productName = $product->name ?? "Product ID: {$item->product_id}";
+                $room = trim((string) ($item->room_name ?? ''));
+                $label = $room !== '' ? "{$productName} ({$room})" : $productName;
+
+                $incomplete[] = "{$label}: {$linked}/{$required} SN";
+            }
+        }
+
+        if (!empty($incomplete)) {
+            throw new Exception(
+                'Serial Number belum lengkap untuk Ready to Issue: ' . implode(', ', array_unique($incomplete))
+                . '. Setiap unit wajib punya SN sendiri - lengkapi di tab Serial Number atau turunkan qty item.'
+            );
+        }
+    }
+
     public function assertBatchSerialStockIsSufficient(InventoryIssuing $issuing): void
     {
         $issuing->loadMissing(['items.product.productCategory', 'items.product.productType', 'items.serialNumber']);
@@ -91,8 +137,8 @@ class InventoryIssuingService
         foreach ($issuing->items as $item) {
             $product = $item->product;
 
-            // Unit rows already need one distinct SN per unit, enforced by
-            // requiredSerialCount(); only batch (non-unit) rows are unguarded.
+            // Unit rows are covered by assertUnitSerialsAreComplete(); this one
+            // only has to answer for batch (non-unit) rows.
             if (!$product || !$product->requiresSerialNumber() || $product->requiresUniqueSerialNumber()) {
                 continue;
             }
@@ -172,7 +218,9 @@ class InventoryIssuingService
 
         // Stock is posted exactly once, here, when the issuing first reaches Ready.
         // Guard it at the same point so no path (web Ready to Issue, mobile material
-        // verification, legacy finalize) can deduct units a batch SN cannot back.
+        // verification, legacy finalize) can deduct units the serial numbers cannot back
+        // - neither a batch SN short of stock, nor a unit row missing a serial per unit.
+        $this->assertUnitSerialsAreComplete($issuing);
         $this->assertBatchSerialStockIsSufficient($issuing);
 
         $this->createInventoryMovements($issuing);

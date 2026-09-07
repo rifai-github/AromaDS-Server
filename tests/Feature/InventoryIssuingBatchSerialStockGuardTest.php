@@ -332,4 +332,60 @@ class InventoryIssuingBatchSerialStockGuardTest extends TestCase
 
         $this->assertSame(3.0, (float) DB::table('warehouse_products')->find(2)->quantity);
     }
+
+    /**
+     * QA 6 Sep 2026, SBY-WI/26-09/0016: two Diffusers were issued on a row carrying a
+     * single registered serial. process() checks this before flipping an issuing to Ready,
+     * but that row reached Ready anyway - and the job then only ever knew about one of the
+     * two units, so the room asked for one scan and closed on it. Stock posting is the one
+     * place every path goes through, so the rule is enforced there too.
+     */
+    public function test_ready_to_issue_is_blocked_when_a_unit_row_has_fewer_serials_than_units(): void
+    {
+        $this->actingAs(User::findOrFail(1));
+
+        DB::table('product_categories')->insert([
+            'id' => 22, 'name' => 'Diffuser', 'has_serial_number' => true, 'is_unit' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('master_products')->insert([
+            'id' => 30, 'product_category_id' => 22, 'name' => 'Diffuser W300 Black',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('warehouse_products')->insert([
+            'id' => 3, 'warehouse_id' => 2, 'master_product_id' => 30, 'quantity' => 5,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('serial_numbers')->insert([
+            'id' => 511, 'serial_number' => 'DW300B2606024', 'master_product_id' => 30,
+            'warehouse_id' => 2, 'status' => 'ready', 'location_type' => 'warehouse',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        DB::table('inventory_issuings')->insert([
+            'id' => 255, 'issuing_number' => 'SBY-WI/26-09/0016', 'reference_no' => 'SBY-MI/26-09/0015',
+            'warehouse_id' => 2, 'branch_id' => 1, 'received_by' => 1, 'issue_date' => now()->toDateString(),
+            'status' => 'pending', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('inventory_issuing_items')->insert([
+            'id' => 541, 'inventory_issuing_id' => 255, 'product_id' => 30, 'serial_number_id' => 511,
+            'room_name' => 'Ruang Ganti Rental Qty 2', 'quantity_requested' => 2,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('inventory_issuing_item_serials')->insert([
+            'inventory_issuing_item_id' => 541, 'serial_number_id' => 511, 'unit_index' => 1,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        try {
+            app(InventoryIssuingService::class)->postReadyStockIfMissing(InventoryIssuing::findOrFail(255));
+            $this->fail('Two units handed over on one registered serial must not reach Ready.');
+        } catch (\Exception $e) {
+            $this->assertStringContainsString('Serial Number belum lengkap', $e->getMessage());
+            $this->assertStringContainsString('1/2 SN', $e->getMessage());
+        }
+
+        // Stock must be untouched: the guard runs before any movement is written.
+        $this->assertSame(5.0, (float) DB::table('warehouse_products')->find(3)->quantity);
+    }
 }
