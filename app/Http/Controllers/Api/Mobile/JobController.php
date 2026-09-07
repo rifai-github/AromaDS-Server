@@ -2358,6 +2358,10 @@ class JobController extends Controller
                 'area' => $area,
                 'volume' => $volume,
                 'remark' => $masterRoom->room_remark ?? '-',
+                // How many units of this rental the contract covers. The app shows one
+                // work slot per unit actually on the wall and warns when the room holds
+                // fewer than this.
+                'rental_quantity' => (int) ($displayRoom->quantity ?? 0),
                 // Products/Materials for this room
                 'products' => $products,
             ];
@@ -2896,6 +2900,24 @@ class JobController extends Controller
             if ($jobScheduleUnitId !== null) {
                 $missingUnitSerials = $this->getMissingUnitSerialNumbersForRoom($jobSchedule, $roomId, $room->room_name);
                 $unitsMissingPhotos = $this->getUnitsMissingPhotosForRoom($jobSchedule->id, $roomId, $jobScheduleRoom->id);
+
+                // getMissingUnitSerialNumbersForRoom() derives the units it expects from
+                // the warehouse issuing, which a service job does not have - so a room
+                // holding two installed units used to close as soon as the first one was
+                // photographed (QA 7 Sep 2026, SBY-CSR/26-09/0023). For a service job the
+                // units on the wall are what must be worked, so they are checked too.
+                $missingWallUnits = $this->getWallUnitsMissingWorkForServiceRoom(
+                    $jobSchedule,
+                    $room,
+                    $jobScheduleRoom->id
+                );
+
+                if (!empty($missingWallUnits)) {
+                    $missingUnitSerials = array_merge(
+                        $missingUnitSerials,
+                        array_fill_keys($missingWallUnits, true)
+                    );
+                }
 
                 if (!empty($missingUnitSerials) || !empty($unitsMissingPhotos)) {
                     \DB::commit();
@@ -4027,6 +4049,81 @@ class JobController extends Controller
      * Used to gate multi-unit room completion so unit #2's photos can't silently
      * overwrite/short-circuit unit #1's the way a flat room-level photo check did.
      */
+    /**
+     * Serial numbers of units on the wall in a service room that have not been worked yet.
+     *
+     * A service job carries no warehouse issuing, so the units it must cover are the ones
+     * physically in the room - the same list getJobRooms() already sends to the app. Each
+     * needs its own job_schedule_units row with both a Before and an After photo.
+     *
+     * Deliberately limited to rooms holding more than one unit: that is the case that was
+     * broken, and a single-unit room must not start failing to close because its Unit On
+     * Wall record happens to be stale.
+     */
+    private function getWallUnitsMissingWorkForServiceRoom(
+        JobSchedule $job,
+        \App\Models\JobAdviceRoom $room,
+        int $jobScheduleRoomId
+    ): array {
+        if (!$this->isServiceLikeJob($job)) {
+            return [];
+        }
+
+        $masterRoomId = $room->contractRoom?->room_id;
+        $roomName = $room->room_name;
+
+        $query = \App\Models\UnitOnWall::where('status', 'active')
+            ->where('customer_id', $job->jobAdvice->customer_id ?? 0);
+
+        if ($job->building_id) {
+            $query->where('building_id', $job->building_id);
+        }
+
+        if ($masterRoomId) {
+            $query->where('room_id', $masterRoomId);
+        } elseif ($roomName) {
+            $query->where('room_name', $roomName);
+        } else {
+            return [];
+        }
+
+        $wallUnits = $query->with('serialNumber')->get();
+
+        if ($wallUnits->count() < 2) {
+            return [];
+        }
+
+        $missing = [];
+
+        foreach ($wallUnits as $wallUnit) {
+            $serial = $wallUnit->serialNumber->serial_number ?? $wallUnit->serial_number ?? '';
+            if ($serial === '') {
+                continue;
+            }
+
+            $unitRow = \DB::table('job_schedule_units')
+                ->where('job_schedule_id', $job->id)
+                ->where('job_advice_room_id', $room->id)
+                ->where('mac', $serial)
+                ->first(['id']);
+
+            if (!$unitRow) {
+                $missing[] = $serial;
+
+                continue;
+            }
+
+            $hasBefore = $this->jobScheduleRoomHasPhotoType($jobScheduleRoomId, 'Before Work', (int) $unitRow->id);
+            $hasAfter = $this->jobScheduleRoomHasPhotoType($jobScheduleRoomId, 'After Work', (int) $unitRow->id);
+
+            if (!$hasBefore || !$hasAfter) {
+                $missing[] = $serial;
+            }
+        }
+
+        return $missing;
+    }
+
     private function getUnitsMissingPhotosForRoom(int $jobScheduleId, int $jobAdviceRoomId, int $jobScheduleRoomId): array
     {
         $units = \DB::table('job_schedule_units')
