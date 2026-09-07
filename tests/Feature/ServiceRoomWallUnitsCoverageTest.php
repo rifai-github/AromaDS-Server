@@ -51,6 +51,7 @@ class ServiceRoomWallUnitsCoverageTest extends TestCase
             $table->foreignId('job_advice_id')->nullable();
             $table->foreignId('contract_room_id')->nullable();
             $table->string('room_name')->nullable();
+            $table->foreignId('rental_product_id')->nullable();
             $table->decimal('quantity', 8, 2)->nullable();
             $table->timestamps();
             $table->softDeletes();
@@ -71,6 +72,8 @@ class ServiceRoomWallUnitsCoverageTest extends TestCase
             $table->string('room_name')->nullable();
             $table->foreignId('serial_number_id')->nullable();
             $table->string('serial_number')->nullable();
+            $table->foreignId('rental_id')->nullable();
+            $table->foreignId('contract_id')->nullable();
             $table->string('status')->nullable();
             $table->timestamps();
             $table->softDeletes();
@@ -160,6 +163,34 @@ class ServiceRoomWallUnitsCoverageTest extends TestCase
         $this->assertSame([], $this->missingWallUnits($job->fresh(), $room));
     }
 
+    public function test_units_of_another_contract_sharing_the_room_are_ignored(): void
+    {
+        // One physical room is often rented by several customers' contracts at once -
+        // QA room 460 holds eight active units across four contracts, two each. Only
+        // this job's own two may be demanded, or the room could never be closed.
+        [$job, $room] = $this->makeServiceRoomWithTwoUnits();
+
+        foreach (['SN-OTHER-1', 'SN-OTHER-2'] as $serial) {
+            DB::table('unit_on_walls')->insert([
+                'customer_id' => 10,
+                'building_id' => 206,
+                'room_id' => 13269,
+                'room_name' => 'Ruang Ganti Rental Qty 2',
+                'serial_number' => $serial,
+                'rental_id' => 4,
+                'contract_id' => 5948,
+                'status' => 'active',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $this->assertSame(
+            ['SN-UNIT-1', 'SN-UNIT-2'],
+            $this->missingWallUnits($job, $room)
+        );
+    }
+
     /** @return array{0: JobSchedule, 1: JobAdviceRoom} */
     private function makeServiceRoomWithTwoUnits(): array
     {
@@ -184,6 +215,7 @@ class ServiceRoomWallUnitsCoverageTest extends TestCase
             'job_advice_id' => $advice->id,
             'contract_room_id' => $contractRoomId,
             'room_name' => 'Ruang Ganti Rental Qty 2',
+            'rental_product_id' => 4,
             'quantity' => 2,
         ]);
 
@@ -194,6 +226,8 @@ class ServiceRoomWallUnitsCoverageTest extends TestCase
                 'room_id' => 13269,
                 'room_name' => 'Ruang Ganti Rental Qty 2',
                 'serial_number' => $serial,
+                'rental_id' => 4,
+                'contract_id' => 5972,
                 'status' => 'active',
                 'created_at' => now(),
                 'updated_at' => now(),

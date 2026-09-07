@@ -2362,6 +2362,13 @@ class JobController extends Controller
                 // work slot per unit actually on the wall and warns when the room holds
                 // fewer than this.
                 'rental_quantity' => (int) ($displayRoom->quantity ?? 0),
+                // The units this job must actually service, one entry each. Unlike the
+                // Unit On Wall entries merged into `products` - which stay wide on
+                // purpose so Ganti Unit can validate any serial in the room - this list
+                // is narrowed to the job's own contract and rental. One physical room is
+                // often shared by several contracts (QA room 460 holds eight active units
+                // across four of them), and only this contract's two belong to this job.
+                'service_units' => $this->serviceUnitsForRoom($job, $displayRoom, $masterRoom, $roomName),
                 // Products/Materials for this room
                 'products' => $products,
             ];
@@ -4050,6 +4057,82 @@ class JobController extends Controller
      * overwrite/short-circuit unit #1's the way a flat room-level photo check did.
      */
     /**
+     * The units a service job has to work in one room, scoped to its own contract.
+     *
+     * Shared by the room payload and by the completion gate so the app and the server
+     * always agree on which units belong to the job.
+     *
+     * @return \Illuminate\Support\Collection<int, \App\Models\UnitOnWall>
+     */
+    private function wallUnitsForServiceRoom(
+        JobSchedule $job,
+        ?\App\Models\JobAdviceRoom $room,
+        $masterRoom = null,
+        ?string $roomName = null
+    ) {
+        if (!$room || !$this->isServiceLikeJob($job)) {
+            return collect();
+        }
+
+        $masterRoomId = $masterRoom->id ?? $room->contractRoom?->room_id;
+        $roomName = $roomName ?: $room->room_name;
+
+        $query = \App\Models\UnitOnWall::where('status', 'active')
+            ->where('customer_id', $job->jobAdvice->customer_id ?? 0);
+
+        if ($job->building_id) {
+            $query->where('building_id', $job->building_id);
+        }
+
+        if ($masterRoomId) {
+            $query->where('room_id', $masterRoomId);
+        } elseif ($roomName) {
+            $query->where('room_name', $roomName);
+        } else {
+            return collect();
+        }
+
+        if ($room->rental_product_id) {
+            $query->where('rental_id', $room->rental_product_id);
+        }
+
+        $contractId = $room->contractRoom?->contract_id;
+        if ($contractId) {
+            // Fail-open on legacy rows that carry no contract_id - see the scope itself.
+            $query->scopedToContracts([$contractId]);
+        }
+
+        return $query->with(['serialNumber', 'product'])->get();
+    }
+
+    /**
+     * Room payload shape for the units a service job must work.
+     */
+    private function serviceUnitsForRoom(
+        JobSchedule $job,
+        ?\App\Models\JobAdviceRoom $room,
+        $masterRoom = null,
+        ?string $roomName = null
+    ): array {
+        return $this->wallUnitsForServiceRoom($job, $room, $masterRoom, $roomName)
+            ->map(function ($unit) {
+                return [
+                    'unit_on_wall_id' => $unit->id,
+                    'serial_number' => $unit->serialNumber->serial_number ?? $unit->serial_number ?? '',
+                    'product_id' => $unit->product_id,
+                    'product_name' => $unit->product->name ?? '-',
+                    'product_type' => $unit->product->productType->name ?? $unit->product->productCategory->name ?? '-',
+                    'quantity' => 1,
+                    'unit' => $unit->product->unit ?? 'pcs',
+                    'source' => 'unit_on_wall',
+                ];
+            })
+            ->filter(fn ($unit) => $unit['serial_number'] !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
      * Serial numbers of units on the wall in a service room that have not been worked yet.
      *
      * A service job carries no warehouse issuing, so the units it must cover are the ones
@@ -4065,29 +4148,7 @@ class JobController extends Controller
         \App\Models\JobAdviceRoom $room,
         int $jobScheduleRoomId
     ): array {
-        if (!$this->isServiceLikeJob($job)) {
-            return [];
-        }
-
-        $masterRoomId = $room->contractRoom?->room_id;
-        $roomName = $room->room_name;
-
-        $query = \App\Models\UnitOnWall::where('status', 'active')
-            ->where('customer_id', $job->jobAdvice->customer_id ?? 0);
-
-        if ($job->building_id) {
-            $query->where('building_id', $job->building_id);
-        }
-
-        if ($masterRoomId) {
-            $query->where('room_id', $masterRoomId);
-        } elseif ($roomName) {
-            $query->where('room_name', $roomName);
-        } else {
-            return [];
-        }
-
-        $wallUnits = $query->with('serialNumber')->get();
+        $wallUnits = $this->wallUnitsForServiceRoom($job, $room);
 
         if ($wallUnits->count() < 2) {
             return [];
