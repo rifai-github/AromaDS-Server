@@ -332,6 +332,15 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
         return $method->invoke($controller, $job, $roomId, $roomName);
     }
 
+    private function invokeRequiredUnitSlotCountForRoom(JobSchedule $job, $room, ?string $roomName): int
+    {
+        $controller = app(JobController::class);
+        $method = new \ReflectionMethod($controller, 'requiredUnitSlotCountForRoom');
+        $method->setAccessible(true);
+
+        return $method->invoke($controller, $job, $room, $roomName, null);
+    }
+
     public function test_room_with_unit_and_refill_reports_missing_unit_when_only_refill_was_scanned(): void
     {
         $jobAdvice = JobAdvice::create(['customer_id' => 7, 'type' => 'install']);
@@ -538,6 +547,188 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
         ]);
 
         $this->assertSame([], $this->invokeGetMissingUnitSerialNumbersForRoom($job, $room->id, $room->room_name));
+    }
+
+    /**
+     * QA 6 Sep 2026, SBY-IR/26-09/0006: the warehouse issued TWO Diffusers for a
+     * qty-2 room (SBY-WI/26-09/0016, quantity_requested/issued/received = 2) but
+     * only ONE of them was ever registered as a serial number on the row. The
+     * requirement used to be capped at the number of linked serials, so the room
+     * asked for a single scan and closed on it - the technician could not tell
+     * which of the two units was already on the wall, and the second one was never
+     * recorded. Cap at the quantity the row says was issued instead.
+     */
+    public function test_required_unit_count_follows_issued_quantity_when_a_serial_was_not_registered(): void
+    {
+        $jobAdvice = JobAdvice::create(['customer_id' => 7, 'type' => 'install']);
+        $job = JobSchedule::create([
+            'job_number' => 'SBY-IR/26-09/0006',
+            'type' => 'install',
+            'status' => 'in_progress',
+            'job_advice_id' => $jobAdvice->id,
+        ]);
+
+        $unitCategory = ProductCategory::create(['code' => 'UNIT', 'name' => 'Diffuser', 'is_unit' => true]);
+        $unitProduct = MasterProduct::create(['product_category_id' => $unitCategory->id, 'name' => 'Diffuser W300 Black']);
+        $rentalId = 6309;
+
+        \DB::table('rental_details')->insert([
+            'master_rental_id' => $rentalId,
+            'item_type' => 'product',
+            'master_product_id' => $unitProduct->id,
+            'product_category_id' => $unitCategory->id,
+            'bom_rental_qty' => 1,
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $room = \App\Models\JobAdviceRoom::create([
+            'job_advice_id' => $jobAdvice->id,
+            'rental_product_id' => $rentalId,
+            'room_name' => 'Ruang Ganti Rental Qty 2',
+            'quantity' => 2,
+        ]);
+
+        // Only the first of the two issued units made it into the serial master.
+        $registeredSn = SerialNumber::create(['serial_number' => 'DW300B2606024', 'master_product_id' => $unitProduct->id, 'status' => 'pending']);
+        $materialIssue = MaterialIssue::create(['issue_number' => 'SBY-MI/26-09/0015', 'status' => 'issued']);
+        $jobAssignSchedule = JobAssignSchedule::create(['job_schedule_id' => $job->id, 'status' => 'assigned']);
+        JobAssignMaterialIssue::create([
+            'job_assign_schedule_id' => $jobAssignSchedule->id,
+            'material_issue_id' => $materialIssue->id,
+        ]);
+
+        $inventoryIssuing = InventoryIssuing::create([
+            'issuing_number' => 'SBY-WI/26-09/0016',
+            'reference_no' => $materialIssue->issue_number,
+            'status' => 'sent',
+            'warehouse_id' => 1,
+        ]);
+
+        $item = InventoryIssuingItem::create([
+            'inventory_issuing_id' => $inventoryIssuing->id,
+            'product_id' => $unitProduct->id,
+            'serial_number_id' => $registeredSn->id,
+            'room_name' => $room->room_name,
+            'quantity_requested' => 2,
+            'quantity_issued' => 2,
+            'quantity_received' => 2,
+        ]);
+
+        \DB::table('inventory_issuing_item_serials')->insert([
+            'inventory_issuing_item_id' => $item->id,
+            'serial_number_id' => $registeredSn->id,
+            'unit_index' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        \DB::table('job_schedule_units')->insert([
+            'job_schedule_id' => $job->id,
+            'job_advice_room_id' => $room->id,
+            'mac' => $registeredSn->serial_number,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->assertArrayHasKey(
+            'Diffuser (x1)',
+            $this->invokeGetMissingUnitSerialNumbersForRoom($job, $room->id, $room->room_name),
+            'Two units were issued, so scanning one of them must not be enough to close the room.'
+        );
+
+        // The second unit is not in the serial master at all - the technician scans
+        // the code off the box, and the unknown-scan tolerance credits it.
+        \DB::table('job_schedule_units')->insert([
+            'job_schedule_id' => $job->id,
+            'job_advice_room_id' => $room->id,
+            'mac' => 'DW300B2606022',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->assertSame(
+            [],
+            $this->invokeGetMissingUnitSerialNumbersForRoom($job, $room->id, $room->room_name)
+        );
+    }
+
+    /**
+     * The slot count the room payload sends the app must match what the completion
+     * gate demands, or the technician is shown one work slot for a room the server
+     * will refuse to close (QA 6 Sep 2026, SBY-IR/26-09/0006).
+     */
+    public function test_room_payload_slot_count_matches_the_units_the_gate_demands(): void
+    {
+        $jobAdvice = JobAdvice::create(['customer_id' => 7, 'type' => 'install']);
+        $job = JobSchedule::create([
+            'job_number' => 'SBY-IR/26-09/0007',
+            'type' => 'install',
+            'status' => 'in_progress',
+            'job_advice_id' => $jobAdvice->id,
+        ]);
+
+        $unitCategory = ProductCategory::create(['code' => 'UNIT', 'name' => 'Diffuser', 'is_unit' => true]);
+        $unitProduct = MasterProduct::create(['product_category_id' => $unitCategory->id, 'name' => 'Diffuser W300 Black']);
+        $rentalId = 6310;
+
+        \DB::table('rental_details')->insert([
+            'master_rental_id' => $rentalId,
+            'item_type' => 'product',
+            'master_product_id' => $unitProduct->id,
+            'product_category_id' => $unitCategory->id,
+            'bom_rental_qty' => 1,
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $room = \App\Models\JobAdviceRoom::create([
+            'job_advice_id' => $jobAdvice->id,
+            'rental_product_id' => $rentalId,
+            'room_name' => 'Ruang Qty 2 Rental Sama',
+            'quantity' => 2,
+        ]);
+
+        $registeredSn = SerialNumber::create(['serial_number' => 'DW300B2606044', 'master_product_id' => $unitProduct->id, 'status' => 'pending']);
+        $materialIssue = MaterialIssue::create(['issue_number' => 'SBY-MI/26-09/0016', 'status' => 'issued']);
+        $jobAssignSchedule = JobAssignSchedule::create(['job_schedule_id' => $job->id, 'status' => 'assigned']);
+        JobAssignMaterialIssue::create([
+            'job_assign_schedule_id' => $jobAssignSchedule->id,
+            'material_issue_id' => $materialIssue->id,
+        ]);
+
+        $inventoryIssuing = InventoryIssuing::create([
+            'issuing_number' => 'SBY-WI/26-09/0017',
+            'reference_no' => $materialIssue->issue_number,
+            'status' => 'sent',
+            'warehouse_id' => 1,
+        ]);
+
+        $item = InventoryIssuingItem::create([
+            'inventory_issuing_id' => $inventoryIssuing->id,
+            'product_id' => $unitProduct->id,
+            'serial_number_id' => $registeredSn->id,
+            'room_name' => $room->room_name,
+            'quantity_requested' => 2,
+            'quantity_issued' => 2,
+            'quantity_received' => 2,
+        ]);
+
+        \DB::table('inventory_issuing_item_serials')->insert([
+            'inventory_issuing_item_id' => $item->id,
+            'serial_number_id' => $registeredSn->id,
+            'unit_index' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->assertSame(
+            2,
+            $this->invokeRequiredUnitSlotCountForRoom($job, $room, $room->room_name),
+            'A qty-2 room must offer two work slots, one per unit the warehouse issued.'
+        );
     }
 
     public function test_material_verification_exposes_two_prepared_serials_and_rejects_only_one_scan(): void

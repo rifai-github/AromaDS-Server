@@ -23,6 +23,9 @@ class JobController extends Controller
     /** Memoised "does any job_advice_rooms row name this job?" answers, keyed by job id + column. */
     private array $explicitJobAdviceRoomClaims = [];
 
+    /** Memoised issued unit items per job + room name - getJobRooms asks once per room. */
+    private array $issuedUnitItemsCache = [];
+
     private array $favoriteLookup = [];
     private array $locationNameLookup = [
         'cities' => [],
@@ -2369,6 +2372,13 @@ class JobController extends Controller
                 // often shared by several contracts (QA room 460 holds eight active units
                 // across four of them), and only this contract's two belong to this job.
                 'service_units' => $this->serviceUnitsForRoom($job, $displayRoom, $masterRoom, $roomName),
+                // How many units this room's work is made of, and which of them are
+                // already scanned. One advice row can cover several units of the same
+                // rental (quantity > 1), so the app cannot infer this from the card:
+                // without it a qty-2 install asked for one serial and gave no sign the
+                // second unit was still pending (QA 6 Sep 2026).
+                'unit_slots_required' => $this->requiredUnitSlotCountForRoom($job, $displayRoom, $roomName, $masterRoom),
+                'scanned_units' => $this->scannedUnitsForRoom($job, $displayRoom, $jobScheduleRoom?->id),
                 // Products/Materials for this room
                 'products' => $products,
             ];
@@ -3570,25 +3580,37 @@ class JobController extends Controller
     }
 
     /**
-     * Unit-tracked products (e.g. Diffuser) issued for this job/room that have no
-     * matching scan in job_schedule_units yet. A room can have several serialized
-     * products (unit + refill + cleaner); verifying material at pickup only confirms
-     * the warehouse handed them over, it does not confirm which physical SN the
-     * technician actually installed in this room. Without this check, scanning a
-     * single SN (e.g. the refill) was enough to mark the whole room "completed",
-     * leaving the unit's SN never verified by the technician even though
-     * autoCreateUnitOnWall() later treats it as installed based on the issuing record.
+     * The serial-tracked unit items the warehouse issued for one room of this job,
+     * one entry per registered serial (a qty-N row's slots live in serialLinks).
+     *
+     * Pulled out of getMissingUnitSerialNumbersForRoom() so the room payload can
+     * count the same units the completion gate demands - the app must not invent
+     * its own idea of how many units a room holds.
+     *
+     * @return \Illuminate\Support\Collection<int, \App\Models\InventoryIssuingItem>
      */
-    private function getMissingUnitSerialNumbersForRoom(JobSchedule $job, int $jobAdviceRoomId, ?string $roomName): array
+    private function issuedUnitItemsForRoom(JobSchedule $job, ?string $roomName)
+    {
+        $cacheKey = $job->id . '|' . strtolower(trim((string) $roomName));
+        if (array_key_exists($cacheKey, $this->issuedUnitItemsCache)) {
+            return $this->issuedUnitItemsCache[$cacheKey];
+        }
+
+        $this->issuedUnitItemsCache[$cacheKey] = $this->resolveIssuedUnitItemsForRoom($job, $roomName);
+
+        return $this->issuedUnitItemsCache[$cacheKey];
+    }
+
+    private function resolveIssuedUnitItemsForRoom(JobSchedule $job, ?string $roomName)
     {
         $materialIssues = $this->materialIssuesForJob($job);
         if ($materialIssues->isEmpty()) {
-            return [];
+            return collect();
         }
 
         $issueNumbers = $materialIssues->pluck('issue_number')->filter()->values()->toArray();
         if (empty($issueNumbers)) {
-            return [];
+            return collect();
         }
 
         $inventoryIssuingIds = \App\Models\InventoryIssuing::whereIn('reference_no', $issueNumbers)
@@ -3597,7 +3619,7 @@ class JobController extends Controller
             ->toArray();
 
         if (empty($inventoryIssuingIds)) {
-            return [];
+            return collect();
         }
 
         $unitItemsQuery = \App\Models\InventoryIssuingItem::whereIn('inventory_issuing_id', $inventoryIssuingIds)
@@ -3624,7 +3646,7 @@ class JobController extends Controller
             $unitItemRelations[] = 'serialLinks.serialNumber.masterProduct.productCategory';
         }
 
-        $unitItems = $unitItemsQuery
+        return $unitItemsQuery
             ->with($unitItemRelations)
             ->get()
             ->flatMap(function ($item) {
@@ -3644,6 +3666,21 @@ class JobController extends Controller
                 });
             })
             ->values();
+    }
+
+    /**
+     * Unit-tracked products (e.g. Diffuser) issued for this job/room that have no
+     * matching scan in job_schedule_units yet. A room can have several serialized
+     * products (unit + refill + cleaner); verifying material at pickup only confirms
+     * the warehouse handed them over, it does not confirm which physical SN the
+     * technician actually installed in this room. Without this check, scanning a
+     * single SN (e.g. the refill) was enough to mark the whole room "completed",
+     * leaving the unit's SN never verified by the technician even though
+     * autoCreateUnitOnWall() later treats it as installed based on the issuing record.
+     */
+    private function getMissingUnitSerialNumbersForRoom(JobSchedule $job, int $jobAdviceRoomId, ?string $roomName): array
+    {
+        $unitItems = $this->issuedUnitItemsForRoom($job, $roomName);
 
         if ($unitItems->isEmpty()) {
             return [];
@@ -3661,7 +3698,7 @@ class JobController extends Controller
         // BUG #25: a single physical room can host 2+ DIFFERENT rentals (e.g. one
         // "unit+refill" rental and a separate "unit only" rental), each tracked
         // under its own job_advice_room_id but sharing the same room_name. The
-        // query above matches inventory items by room_name only, so it used to
+        // issuing lookup matches inventory items by room_name only, so it used to
         // pull in BOTH rentals' units and demand every one of their exact serial
         // numbers be scanned under THIS $jobAdviceRoomId — failing the "unit
         // komplit" rental's completion because the other rental's unit serial
@@ -3788,11 +3825,10 @@ class JobController extends Controller
         // category's requirement at the count of units actually issued so the
         // room can be completed once every issued unit has been scanned, while
         // still honouring the per-rental BOM scoping from Bug #25.
-        $effectiveRequiredByCategoryId = [];
-        foreach ($requiredQtyByCategoryId as $categoryId => $requiredQty) {
-            $issuedCount = $itemsByCategoryId->get($categoryId, collect())->count();
-            $effectiveRequiredByCategoryId[$categoryId] = min($requiredQty, $issuedCount);
-        }
+        $effectiveRequiredByCategoryId = $this->effectiveUnitRequirementByCategory(
+            $requiredQtyByCategoryId,
+            $itemsByCategoryId
+        );
 
         foreach ($effectiveRequiredByCategoryId as $categoryId => $requiredQty) {
             while (($scannedCounts[$categoryId] ?? 0) < $requiredQty && ! empty($unknownScans)) {
@@ -3821,6 +3857,147 @@ class JobController extends Controller
         }
 
         return $missing;
+    }
+
+    /**
+     * How many units the technician has to work in this room, one slot each.
+     *
+     * A room can hold several units of the SAME rental (job_advice_rooms.quantity
+     * > 1). Those arrive as ONE advice row, so splitRoomGroupByRental() - which
+     * gives a card per rental - cannot split them, and the app used to ask for a
+     * single serial number with no sign that a second unit was still pending
+     * (QA 6 Sep 2026, SBY-IR/26-09/0006: the technician could not tell which of
+     * the two units was already on the wall). The count is taken from exactly the
+     * sources the completion gate uses, so the slots the app shows and the units
+     * the server demands can never disagree:
+     *   - a service-like job (CSR / Job Check) works the units on the wall,
+     *   - an install job works the units the warehouse issued for the room.
+     */
+    private function requiredUnitSlotCountForRoom(
+        JobSchedule $job,
+        ?\App\Models\JobAdviceRoom $room,
+        ?string $roomName = null,
+        $masterRoom = null
+    ): int {
+        if (!$room) {
+            return 0;
+        }
+
+        if ($this->isServiceLikeJob($job)) {
+            return $this->wallUnitsForServiceRoom($job, $room, $masterRoom, $roomName)->count();
+        }
+
+        if (!$this->jobAdviceRoomRequiresUnit($room)) {
+            return 0;
+        }
+
+        $unitItems = $this->issuedUnitItemsForRoom($job, $roomName ?: $room->room_name);
+        if ($unitItems->isEmpty()) {
+            return 0;
+        }
+
+        $requiredQtyByCategoryId = $this->unitQuantitiesRequiredForRentalRoom($room);
+        if (empty($requiredQtyByCategoryId)) {
+            // No rental BOM to scope by - the gate falls back to demanding every
+            // issued serial, so every issued serial is a slot.
+            return $unitItems->count();
+        }
+
+        $itemsByCategoryId = $unitItems
+            ->groupBy(fn ($item) => $item->serialNumber->masterProduct->product_category_id ?? null);
+
+        return (int) array_sum(
+            $this->effectiveUnitRequirementByCategory($requiredQtyByCategoryId, $itemsByCategoryId)
+        );
+    }
+
+    /**
+     * The units already scanned into this room on this job, with whether each one
+     * still owes a Before or After photo. Lets the app mark a slot done instead of
+     * silently re-opening the scanner on a room that is half finished.
+     */
+    private function scannedUnitsForRoom(
+        JobSchedule $job,
+        ?\App\Models\JobAdviceRoom $room,
+        ?int $jobScheduleRoomId
+    ): array {
+        if (!$room || !\Illuminate\Support\Facades\Schema::hasTable('job_schedule_units')) {
+            return [];
+        }
+
+        return \DB::table('job_schedule_units')
+            ->where('job_schedule_id', $job->id)
+            ->where('job_advice_room_id', $room->id)
+            ->orderBy('id')
+            ->get(['id', 'mac', 'device_type', 'device_name'])
+            ->map(fn ($unit) => [
+                'serial_number' => trim((string) $unit->mac),
+                'product_name' => $unit->device_name ?: '-',
+                'product_type' => $unit->device_type ?: '-',
+                'quantity' => 1,
+                'source' => 'scanned',
+                'has_before_photo' => $this->jobScheduleRoomHasPhotoType(
+                    $jobScheduleRoomId,
+                    'Before Work',
+                    (int) $unit->id
+                ),
+                'has_after_photo' => $this->jobScheduleRoomHasPhotoType(
+                    $jobScheduleRoomId,
+                    'After Work',
+                    (int) $unit->id
+                ),
+            ])
+            ->filter(fn ($unit) => $unit['serial_number'] !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Per-category unit requirement capped at what the warehouse actually issued.
+     *
+     * Shared by the completion gate and by the room payload's slot count so the
+     * technician is never shown a slot the gate does not demand, or vice versa.
+     */
+    private function effectiveUnitRequirementByCategory(array $requiredQtyByCategoryId, $itemsByCategoryId): array
+    {
+        $effective = [];
+
+        foreach ($requiredQtyByCategoryId as $categoryId => $requiredQty) {
+            $issuedCount = $this->issuedUnitCountForCategory($itemsByCategoryId->get($categoryId, collect()));
+            $effective[$categoryId] = min($requiredQty, $issuedCount);
+        }
+
+        return $effective;
+    }
+
+    /**
+     * How many physical units of one category the warehouse actually handed over.
+     *
+     * NOT the number of registered serial numbers. An issuing row can carry a
+     * quantity of two with only one serial linked - QA 6 Sep 2026, SBY-WI/26-09/0016
+     * issued two Diffusers to SBY-IR/26-09/0006 with a single serial on the row -
+     * and counting links made the room demand one scan, close after it, and leave
+     * the second unit unrecorded and invisible to the technician. The row's own
+     * issued quantity is the honest count of units in the van.
+     *
+     * A row that carries no quantity at all still counts as one unit per linked
+     * serial, which is exactly what this cap meant before (the "kode IF" case where
+     * the BOM asked for two Diffusers but the warehouse only issued one).
+     */
+    private function issuedUnitCountForCategory($categoryItems): int
+    {
+        return (int) collect($categoryItems)
+            ->unique('id')
+            ->sum(function ($item) {
+                foreach (['quantity_received', 'quantity_issued', 'quantity_requested'] as $field) {
+                    $quantity = (float) ($item->{$field} ?? 0);
+                    if ($quantity > 0) {
+                        return max(1, (int) ceil($quantity));
+                    }
+                }
+
+                return 1;
+            });
     }
 
     /**
