@@ -1291,7 +1291,10 @@ class JobAssignMaterialIssueController extends Controller
             if ($assignedRooms->isNotEmpty()) {
                 // Get list of selected aroma variants from all rooms
                 $selectedAromaVariants = $assignedRooms->map(function($jaRoom) {
-                    return $jaRoom->quotationRoom->aromaProduct->variant_name ?? null;
+                    // The stored label is the room's actual choice; the FK-backed
+                    // variant_name is only present on the few rows that have a product.
+                    return $jaRoom->quotationRoom?->aroma_variant
+                        ?: ($jaRoom->quotationRoom?->aromaProduct->variant_name ?? null);
                 })->filter()->unique()->toArray();
 
                 foreach ($assignedRooms as $jaRoom) {
@@ -1565,10 +1568,15 @@ class JobAssignMaterialIssueController extends Controller
                             ->first();
                     }
                     
-                    // Get aromaProduct from quotation room (priority over master rental)
-                    if ($quotationRoom && $quotationRoom->aromaProduct) {
-                        $aromaProduct = $quotationRoom->aromaProduct;
-                        \Log::info("📋 Aroma dari Quotation ditemukan untuk room '{$jaRoom->room_name}': {$aromaProduct->name} (ID: {$aromaProduct->id})");
+                    // Get aromaProduct from quotation room (priority over master rental).
+                    // resolveAromaProduct(), not the FK: aroma_product_id is empty on nearly
+                    // every room and only the `aroma_variant` label is stored.
+                    if ($quotationRoom) {
+                        $aromaProduct = $quotationRoom->resolveAromaProduct();
+
+                        if ($aromaProduct) {
+                            \Log::info("📋 Aroma dari Quotation ditemukan untuk room '{$jaRoom->room_name}': {$aromaProduct->name} (ID: {$aromaProduct->id})");
+                        }
                     }
                 }
                 
@@ -1858,9 +1866,13 @@ class JobAssignMaterialIssueController extends Controller
                             ->first();
                     }
                     
-                    // Get aromaProduct from quotation room (priority over master rental)
-                    if ($quotationRoom && $quotationRoom->aromaProduct) {
-                        $aromaProduct = $quotationRoom->aromaProduct;
+                    // Get aromaProduct from quotation room (priority over master rental).
+                    // See resolveAromaProduct(): the aroma_product_id FK is usually null.
+                    if ($quotationRoom) {
+                        $aromaProduct = $quotationRoom->resolveAromaProduct();
+                    }
+
+                    if ($aromaProduct) {
                         // MOM12: Ensure category/type loaded for is_unit checks later
                         if (!$aromaProduct->relationLoaded('productCategory')) $aromaProduct->load('productCategory');
                         if (!$aromaProduct->relationLoaded('productType')) $aromaProduct->load('productType');

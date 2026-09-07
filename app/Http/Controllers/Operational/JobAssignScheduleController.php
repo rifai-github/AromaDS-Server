@@ -1177,8 +1177,15 @@ class JobAssignScheduleController extends Controller
                     if ($jaRoom->quotation_room_id) {
                         $quotationRoom = $quotation->quotationRooms->where('id', $jaRoom->quotation_room_id)->first();
                     }
-                    if ($quotationRoom && $quotationRoom->aromaProduct) {
-                        $aromaProduct = $quotationRoom->aromaProduct;
+                    // resolveAromaProduct(), not the aromaProduct relation: the FK is empty
+                    // on nearly every room (only the `aroma_variant` label is stored), and
+                    // reading the FK alone silently issues the rental BOM's default aroma
+                    // instead of the scent the room was sold with.
+                    if ($quotationRoom) {
+                        $aromaProduct = $quotationRoom->resolveAromaProduct();
+                    }
+
+                    if ($aromaProduct) {
                         // Load productCategory to check is_unit flag
                         if (!$aromaProduct->relationLoaded('productCategory')) {
                             $aromaProduct->load('productCategory');
@@ -1743,8 +1750,9 @@ class JobAssignScheduleController extends Controller
                             ->first();
                     }
                     
-                    if ($quotationRoom && $quotationRoom->aromaProduct) {
-                        $aromaProduct = $quotationRoom->aromaProduct;
+                    if ($quotationRoom) {
+                        // See resolveAromaProduct(): the aroma_product_id FK is usually null.
+                        $aromaProduct = $quotationRoom->resolveAromaProduct();
                     }
                 }
 

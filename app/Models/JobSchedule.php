@@ -1189,19 +1189,48 @@ class JobSchedule extends Model
             return $this->cachedServiceSequenceNumber = null;
         }
 
-        // Count anchor jobs of the same contract up to and including this one,
-        // ordered by (schedule_date, id). Install = 1, first service = 2, ...
-        return $this->cachedServiceSequenceNumber = static::query()
+        // Position of this job among the contract's anchor jobs, ordered by
+        // (date, install-before-service, id). Install = 1, first service = 2, ...
+        //
+        // The install-before-service tie-break is load-bearing: install and the first
+        // service are routinely created on the SAME date, and ordering by id alone puts
+        // whichever row was inserted first at #1. When that was the service, install
+        // became #2 and every material's due-service shifted by one for the whole
+        // contract. Install anchors the timeline by definition (see the class constant
+        // docblock), so it must win a same-date tie regardless of insertion order.
+        $anchors = static::query()
             ->whereHas('jobAdvice', fn ($q) => $q->where('contract_id', $contractId))
             ->whereIn('type', self::SERVICE_SEQUENCE_ANCHOR_TYPES)
-            ->where(function ($q) use ($date) {
-                $q->whereDate('schedule_date', '<', $date)
-                    ->orWhere(function ($q2) use ($date) {
-                        $q2->whereDate('schedule_date', $date)
-                            ->where('id', '<=', $this->id ?? PHP_INT_MAX);
-                    });
-            })
-            ->count();
+            ->get(['id', 'type', 'schedule_date', 'expected_date'])
+            ->sortBy(fn ($anchor) => sprintf(
+                '%s|%d|%012d',
+                $this->anchorDateKey($anchor),
+                $this->anchorTypeRank($anchor),
+                (int) $anchor->id
+            ))
+            ->values();
+
+        $position = $anchors->search(fn ($anchor) => (int) $anchor->id === (int) $this->id);
+
+        if ($position === false) {
+            return $this->cachedServiceSequenceNumber = null;
+        }
+
+        return $this->cachedServiceSequenceNumber = $position + 1;
+    }
+
+    /** Sortable date for the service timeline; falls back to expected_date. */
+    private function anchorDateKey($schedule): string
+    {
+        $date = $schedule->schedule_date ?? $schedule->expected_date;
+
+        return $date ? $date->format('Y-m-d') : '9999-12-31';
+    }
+
+    /** Install types sort before service types on the same date. */
+    private function anchorTypeRank($schedule): int
+    {
+        return in_array($schedule->type, ['install', 'install_free'], true) ? 0 : 1;
     }
 
     /**

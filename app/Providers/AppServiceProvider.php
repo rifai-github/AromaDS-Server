@@ -16,7 +16,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Shared per request so generating material for a job with many rooms resolves
+        // each repeated aroma label once instead of once per room.
+        $this->app->singleton(\App\Services\Marketing\AromaProductResolver::class);
     }
 
     /**

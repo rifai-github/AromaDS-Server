@@ -163,40 +163,14 @@ class QuotationWizardController extends Controller
         return in_array((int) $marketingId, array_map('intval', $this->getAccessibleUserIds($user)), true);
     }
 
+    private function aromaResolver(): \App\Services\Marketing\AromaProductResolver
+    {
+        return app(\App\Services\Marketing\AromaProductResolver::class);
+    }
+
     private function isSelectableAromaProduct(?MasterProduct $product): bool
     {
-        if (!$product) {
-            return false;
-        }
-
-        $name = strtolower(trim((string) $product->name));
-        $sku = strtolower(trim((string) $product->sku));
-        $variant = strtolower(trim((string) $product->variant_name));
-        $categoryName = strtolower($product->productCategory?->name ?? '');
-        $typeName = strtolower($product->productType?->name ?? '');
-
-        $isUnit = (bool) ($product->productCategory?->is_unit ?? $product->productType?->is_unit ?? false);
-        $hasSerialNumber = (bool) ($product->productCategory?->has_serial_number ?? $product->productType?->has_serial_number ?? false);
-        $isTestProduct = str_contains($name, 'test')
-            || str_contains($sku, 'test')
-            || str_contains($variant, 'test')
-            || preg_match('/^ta\d*/i', (string) $product->sku);
-
-        $looksLikeAroma = str_contains($name, 'fragrance')
-            || str_contains($name, 'aroma')
-            || str_contains($name, 'refill')
-            || str_contains($name, 'scent')
-            || str_contains($categoryName, 'refill')
-            || str_contains($categoryName, 'aroma')
-            || str_contains($categoryName, 'fragrance')
-            || str_contains($categoryName, 'scent')
-            || str_contains($typeName, 'aroma')
-            || str_contains($typeName, 'fragrance')
-            || str_contains($typeName, 'scent')
-            || str_contains($typeName, 'variant')
-            || str_contains($typeName, 'refill');
-
-        return !$isUnit && !$hasSerialNumber && !$isTestProduct && $looksLikeAroma;
+        return $this->aromaResolver()->isSelectableAromaProduct($product);
     }
 
     private function resolveCanonicalAromaProductId($productId): ?int
@@ -249,59 +223,7 @@ class QuotationWizardController extends Controller
 
     private function resolveCanonicalAromaProductIdFromBrandVariant(int $brandVariantId): ?int
     {
-        $brandVariant = \App\Models\BrandVariant::active()
-            ->with('brandLine')
-            ->find($brandVariantId);
-
-        if (!$brandVariant) {
-            return null;
-        }
-
-        $product = MasterProduct::with(['productCategory', 'productType', 'packagingSize'])
-            ->where('is_active', true)
-            ->where('brand_variant_id', $brandVariant->id)
-            ->get()
-            ->filter(fn ($candidate) => $this->isSelectableAromaProduct($candidate))
-            ->sortBy(function ($candidate) {
-                $categoryName = strtolower($candidate->productCategory?->name ?? '');
-                $packageName = strtolower($candidate->packagingSize?->name ?? '');
-
-                return [
-                    str_contains($categoryName, 'refill') ? 0 : 1,
-                    $packageName === '100ml' ? 0 : 1,
-                    $candidate->id,
-                ];
-            })
-            ->first();
-
-        if ($product) {
-            return (int) $product->id;
-        }
-
-        $brandLineName = trim((string) $brandVariant->brandLine?->option_name);
-        $variantName = trim((string) $brandVariant->name);
-
-        if ($variantName === '') {
-            return null;
-        }
-
-        return MasterProduct::with(['productCategory', 'productType', 'packagingSize'])
-            ->where('is_active', true)
-            ->whereRaw('LOWER(TRIM(variant_name)) = ?', [strtolower($variantName)])
-            ->when($brandLineName !== '', fn ($query) => $query->whereRaw('LOWER(TRIM(brand_line)) = ?', [strtolower($brandLineName)]))
-            ->get()
-            ->filter(fn ($candidate) => $this->isSelectableAromaProduct($candidate))
-            ->sortBy(function ($candidate) {
-                $categoryName = strtolower($candidate->productCategory?->name ?? '');
-                $packageName = strtolower($candidate->packagingSize?->name ?? '');
-
-                return [
-                    str_contains($categoryName, 'refill') ? 0 : 1,
-                    $packageName === '100ml' ? 0 : 1,
-                    $candidate->id,
-                ];
-            })
-            ->first()?->id;
+        return $this->aromaResolver()->resolveFromBrandVariant($brandVariantId)?->id;
     }
 
     /**

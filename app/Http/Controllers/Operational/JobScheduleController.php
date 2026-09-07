@@ -10714,6 +10714,10 @@ class JobScheduleController extends Controller
             $aromaProduct = null;
             $sourceType = null;
             
+            // QuotationRoom::resolveAromaProduct() is used instead of the aromaProduct
+            // relation directly: the FK is empty on nearly every room (only the
+            // `aroma_variant` label is stored), and reading the FK alone silently drops
+            // the room's scent and issues the rental BOM's default aroma instead.
             if ($jobAdviceRoom->contractRoom) {
                 // For contract rooms, we need to find the aroma from the original quotation room
                 $contract = $jobAdviceRoom->contractRoom->contract;
@@ -10721,15 +10725,19 @@ class JobScheduleController extends Controller
                     $matchingQuotationRoom = $contract->quotation->quotationRooms
                         ->where('room_id', $jobAdviceRoom->contractRoom->room_id)
                         ->first();
-                    
-                    if ($matchingQuotationRoom && $matchingQuotationRoom->aromaProduct) {
-                        $aromaProduct = $matchingQuotationRoom->aromaProduct;
-                        $sourceType = 'ContractRoom->QuotationRoom->AromaProduct';
+
+                    if ($matchingQuotationRoom) {
+                        $aromaProduct = $matchingQuotationRoom->resolveAromaProduct();
+                        $sourceType = $aromaProduct ? 'ContractRoom->QuotationRoom->AromaProduct' : null;
                     }
                 }
-            } elseif ($jobAdviceRoom->quotationRoom && $jobAdviceRoom->quotationRoom->aromaProduct) {
-                $aromaProduct = $jobAdviceRoom->quotationRoom->aromaProduct;
-                $sourceType = 'QuotationRoom->AromaProduct';
+            }
+
+            // Not an elseif: a JA room can carry both links, and the contract-side lookup
+            // fails whenever the contract's quotation has no matching room_id.
+            if (!$aromaProduct && $jobAdviceRoom->quotationRoom) {
+                $aromaProduct = $jobAdviceRoom->quotationRoom->resolveAromaProduct();
+                $sourceType = $aromaProduct ? 'QuotationRoom->AromaProduct' : null;
             }
 
             $hasSubstitutedAroma = false;

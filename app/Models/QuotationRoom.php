@@ -44,6 +44,25 @@ class QuotationRoom extends Model
         return $this->belongsTo(MasterProduct::class, 'aroma_product_id');
     }
 
+    /**
+     * The aroma this room was actually sold with, as a product.
+     *
+     * `aroma_product_id` is only filled when the wizard could map the picked brand
+     * variant to a concrete product; for the overwhelming majority of rooms only the
+     * label in `aroma_variant` survives. Consumers that read the FK alone silently fall
+     * back to the rental BOM's default scent, so always go through this accessor — it
+     * resolves the label when the FK is missing.
+     */
+    public function resolveAromaProduct(): ?MasterProduct
+    {
+        if ($this->aroma_product_id && $this->aromaProduct) {
+            return $this->aromaProduct;
+        }
+
+        return app(\App\Services\Marketing\AromaProductResolver::class)
+            ->resolveFromVariantText($this->aroma_variant);
+    }
+
     public function quotationRentals()
     {
         return $this->hasMany(QuotationRental::class);
