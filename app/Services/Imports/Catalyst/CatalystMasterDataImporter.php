@@ -2,6 +2,8 @@
 
 namespace App\Services\Imports\Catalyst;
 
+use App\Models\Branch;
+use App\Services\Warehouse\BranchWarehouseProvisioner;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -107,6 +109,7 @@ class CatalystMasterDataImporter
     ];
 
     private bool $apply = false;
+    private array $activeSteps = [];
     private int $batchId;
     private int $chunkSize;
     private int $heartbeatEvery;
@@ -150,6 +153,7 @@ class CatalystMasterDataImporter
         $this->progressCallback = $progressCallback;
 
         $steps = $this->resolveSteps($requestedSteps, ! $exactSteps, $excludeSteps);
+        $this->activeSteps = $steps;
         $this->source()->getPdo();
         $this->ensureImportMapIndexes();
         $this->loadSourceLookups();
@@ -277,7 +281,7 @@ class CatalystMasterDataImporter
     }
     protected function branches(): array
     {
-        return $this->runStep('branches', 'MsBranch', 'BranchCode', function (array $row) {
+        $summary = $this->runStep('branches', 'MsBranch', 'BranchCode', function (array $row) {
             $sourceKey = $this->makeKey($row['BranchCode'] ?? null);
             $name = $this->cleanString($row['BranchName'] ?? null);
             $city = $this->resolveSourceCity($row['City'] ?? null);
@@ -307,6 +311,51 @@ class CatalystMasterDataImporter
                 ]),
             ], $row);
         });
+
+        $summary['warehouses_provisioned'] = $this->provisionWarehousesFromBranches();
+
+        return $summary;
+    }
+
+    /**
+     * Isi master warehouse dari master branch, langsung setelah step branches.
+     *
+     * Warehouse Catalyst tidak lagi ikut alur bootstrap / Full Migration -
+     * gudang digenerate dari data branch, satu per branch. Branch yang sudah
+     * punya warehouse dilewati, jadi gudang yang ditambahkan manual tidak
+     * pernah tersentuh dan step ini aman diulang.
+     *
+     * Sengaja dilewati kalau step 'warehouses' Catalyst ikut dijalankan di batch
+     * yang sama: sumber gudangnya sudah ada, tidak perlu digenerate dari branch.
+     * Branch non-aktif tidak ikut - untuk itu jalankan manual:
+     *   php artisan warehouses:sync-from-branches --apply --include-inactive
+     */
+    private function provisionWarehousesFromBranches(): int
+    {
+        if (!$this->apply || in_array('warehouses', $this->activeSteps, true)) {
+            return 0;
+        }
+
+        $provisioner = app(BranchWarehouseProvisioner::class);
+        $created = 0;
+
+        Branch::query()
+            ->where('is_active', true)
+            ->whereDoesntHave('warehouses')
+            ->orderBy('code')
+            ->each(function (Branch $branch) use ($provisioner, &$created) {
+                if ($provisioner->provisionForBranch($branch, $this->actorId())) {
+                    $created++;
+                }
+            });
+
+        if ($created > 0) {
+            $this->log('branches', 'info', "Generated {$created} default warehouse(s) from the branch master.", [
+                'target_table' => 'warehouses',
+            ]);
+        }
+
+        return $created;
     }
 
     protected function departments(): array

@@ -48,14 +48,14 @@ class CatalystImportConsoleService
             ],
             'migration_full_dry_run' => [
                 'label' => 'Full Migration Dry Run',
-                'description' => 'Jalankan simulasi full import Catalyst di background tanpa menulis perubahan ke database target. Warehouse dan Master Rental tidak diikutkan, dijalankan manual terpisah.',
+                'description' => 'Jalankan simulasi full import Catalyst di background tanpa menulis perubahan ke database target. Master Rental tidak diikutkan, dijalankan manual terpisah. Warehouse Catalyst juga tidak diikutkan - master warehouse digenerate dari master branch tepat setelah step branches.',
                 'group' => 'migration',
                 'execution' => 'background',
                 'mode' => 'dry-run',
             ],
             'migration_full_apply' => [
                 'label' => 'Backup + Full Migration Apply',
-                'description' => 'Backup MySQL target dulu, lalu jalankan full import Catalyst di background. Warehouse dan Master Rental tidak diikutkan, dijalankan manual terpisah. Wajib konfirmasi karena akan menulis data staging QA.',
+                'description' => 'Backup MySQL target dulu, lalu jalankan full import Catalyst di background. Master Rental tidak diikutkan, dijalankan manual terpisah. Warehouse Catalyst juga tidak diikutkan - master warehouse digenerate dari master branch tepat setelah step branches. Wajib konfirmasi karena akan menulis data staging QA.',
                 'group' => 'migration',
                 'execution' => 'background',
                 'mode' => 'apply',
@@ -133,7 +133,7 @@ class CatalystImportConsoleService
             ],
             'bootstrap_fresh_database' => [
                 'label' => 'Bootstrap Fresh Database',
-                'description' => 'One-command flow untuk DB kosong: import core dan rental, import users, lalu audit akhir. Warehouse tidak diimport, akan digenerate ulang manual.',
+                'description' => 'One-command flow untuk DB kosong: import core dan rental, import users, lalu audit akhir. Warehouse tidak diimport dari Catalyst - digenerate otomatis dari master branch tepat setelah step branches.',
                 'group' => 'warehouse',
                 'execution' => 'sync',
                 'commands' => [

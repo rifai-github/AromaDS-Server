@@ -11,7 +11,8 @@ use Throwable;
 class CatalystMigrationExecutor
 {
     /**
-     * Warehouse master sengaja tidak ikut Full Migration - digenerate manual.
+     * Warehouse master sengaja tidak ikut Full Migration - digenerate dari
+     * master branch oleh CatalystMasterDataImporter tepat setelah step branches.
      * Step Product Structure / Produk / Rental TIDAK didaftar ulang di sini:
      * sumbernya CatalystMasterDataImporter::DISABLED_STEPS, supaya daftarnya
      * cuma ada di satu tempat.
