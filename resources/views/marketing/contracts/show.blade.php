@@ -363,13 +363,8 @@
                             </button>
                         </li>
                         <li class="nav-item" role="presentation" style="flex: 1;">
-                            <button class="nav-link" id="rooms-tab" data-bs-toggle="tab" data-bs-target="#rooms" type="button" role="tab" aria-controls="rooms" aria-selected="false" style="color: #6c757d; padding: 12px 20px; width: 100%; text-align: center;">
-                                <i class="fas fa-door-open me-2"></i>ROOMS
-                            </button>
-                        </li>
-                        <li class="nav-item" role="presentation" style="flex: 1;">
-                            <button class="nav-link" id="rentals-tab" data-bs-toggle="tab" data-bs-target="#rentals" type="button" role="tab" aria-controls="rentals" aria-selected="false" style="color: #6c757d; padding: 12px 20px; width: 100%; text-align: center;">
-                                <i class="fas fa-boxes me-2"></i>RENTALS
+                            <button class="nav-link" id="contract-detail-tab" data-bs-toggle="tab" data-bs-target="#contract-detail" type="button" role="tab" aria-controls="contract-detail" aria-selected="false" style="color: #6c757d; padding: 12px 20px; width: 100%; text-align: center;">
+                                <i class="fas fa-list-alt me-2"></i>CONTRACT DETAIL
                             </button>
                         </li>
                         <li class="nav-item" role="presentation" style="flex: 1;">
@@ -1114,26 +1109,68 @@
                     </div>
                 </div>
 
-                <!-- Rooms Tab -->
-                <div class="tab-pane fade" id="rooms" role="tabpanel" aria-labelledby="rooms-tab">
+                <!-- Contract Detail Tab (Rooms + Rentals merged) -->
+                <div class="tab-pane fade" id="contract-detail" role="tabpanel" aria-labelledby="contract-detail-tab">
                     <div class="card" style="width: 100%; min-height: 500px;">
                         <div class="card-header" style="background-color: #f8f9fa; border-bottom: 2px solid #1e3a8a;">
                             <div class="d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0" style="color: #1e3a8a;">
-                                    <i class="fas fa-door-open me-2"></i>
-                                    Contract Rooms
+                                    <i class="fas fa-list-alt me-2"></i>
+                                    Contract Detail
                                 </h5>
-                                <!-- Add Button hidden for read-only -->
-                                <!--
-                                <button class="btn btn-primary btn-sm" onclick="openAddRoomModal({{ $contract->id }})" {{ $contract->contract_status !== 'draft' ? 'disabled' : '' }}>
-                                    <i class="fas fa-plus me-1"></i> ADD ROOM
-                                </button>
-                                -->
                             </div>
                         </div>
                         <div class="card-body p-0">
-                            <div class="table-responsive">
-                                <table class="table table-bordered table-striped" id="roomsTable">
+                            @php
+                                $contractRoomsList = collect($contract->contractRooms ?? []);
+                                $contractRentalsList = collect($contract->contractRentals ?? []);
+
+                                $contractRoomIds = $contractRoomsList->pluck('room_id')->filter()->map(fn ($id) => (int) $id)->all();
+
+                                // A room can hold more than one rental, so group instead of matching one-to-one.
+                                $rentalsByRoom = $contractRentalsList
+                                    ->filter(fn ($rental) => $rental->room_id && in_array((int) $rental->room_id, $contractRoomIds, true))
+                                    ->groupBy(fn ($rental) => (int) $rental->room_id);
+
+                                // Legacy / unit-only rows: room_id is NULL or points outside this contract's rooms.
+                                $looseRentals = $contractRentalsList
+                                    ->reject(fn ($rental) => $rental->room_id && in_array((int) $rental->room_id, $contractRoomIds, true))
+                                    ->values();
+
+                                // Same fallback as ContractRoom::getRentalProductAttribute(): on a single-room
+                                // contract the unassigned rentals can only belong to that room.
+                                if ($contractRoomsList->count() === 1 && $looseRentals->isNotEmpty()) {
+                                    $onlyRoomId = (int) $contractRoomsList->first()->room_id;
+                                    $rentalsByRoom = $rentalsByRoom->put(
+                                        $onlyRoomId,
+                                        collect($rentalsByRoom->get($onlyRoomId, collect()))->concat($looseRentals)
+                                    );
+                                    $looseRentals = collect();
+                                }
+
+                                $contractDetailRows = collect();
+
+                                foreach ($contractRoomsList as $contractDetailRoom) {
+                                    $roomRentals = collect($rentalsByRoom->get((int) $contractDetailRoom->room_id, collect()));
+
+                                    if ($roomRentals->isEmpty()) {
+                                        $contractDetailRows->push(['room' => $contractDetailRoom, 'rental' => null]);
+                                        continue;
+                                    }
+
+                                    foreach ($roomRentals as $roomRental) {
+                                        $contractDetailRows->push(['room' => $contractDetailRoom, 'rental' => $roomRental]);
+                                    }
+                                }
+
+                                foreach ($looseRentals as $looseRental) {
+                                    $contractDetailRows->push(['room' => null, 'rental' => $looseRental]);
+                                }
+
+                                $contractDetailTotal = $contractDetailRows->sum(fn ($row) => (float) ($row['rental']->total_price ?? 0));
+                            @endphp
+                            <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
+                                <table class="table table-bordered table-striped" id="contractDetailTable" style="min-width: 1200px; white-space: nowrap;">
                                     <thead>
                                         <tr>
                                             <th data-no-filter>No</th>
@@ -1141,117 +1178,63 @@
                                             <th data-column="room.room_name">Room</th>
                                             <th data-column="room.room_type">Room Type</th>
                                             <th data-column="room.floor">Floor</th>
-                                            <!-- <th data-no-filter>Actions</th> -->
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @forelse($contract->contractRooms ?? [] as $index => $contractRoom)
-                                        <tr>
-                                            <td>{{ $index + 1 }}</td>
-                                            <td>
-                                                @if($contractRoom->building)
-                                                    <a href="{{ route('operational.buildings.show', $contractRoom->building) }}" target="_blank" rel="noopener noreferrer">{{ $contractRoom->building->building_name ?? '-' }}</a>
-                                                @else
-                                                    -
-                                                @endif
-                                            </td>
-                                            <td>{{ $contractRoom->room->room_name ?? '-' }}</td>
-                                            <td>{{ $contractRoom->room->room_type ?? '-' }}</td>
-                                            <td>{{ $contractRoom->room->room_floor ?? '-' }}</td>
-                                            <!-- Actions column hidden for read-only -->
-                                            <!--
-                                            <td>
-                                                <div class="btn-group btn-group-sm" role="group">
-                                                    <button type="button" class="btn btn-primary btn-sm" onclick="openEditRoomModal({{ $contractRoom->id }})" {{ $contract->contract_status !== 'draft' ? 'disabled' : '' }}>
-                                                        <i class="fas fa-edit"></i> EDIT
-                                                    </button>
-                                                    <button type="button" class="btn btn-danger btn-sm" onclick="confirmDeleteRoom({{ $contractRoom->id }})" {{ $contract->contract_status !== 'draft' ? 'disabled' : '' }}>
-                                                        <i class="fas fa-trash"></i> DELETE
-                                                    </button>
-                                                </div>
-                                            </td>
-                                            -->
-                                        </tr>
-                                        @empty
-                                        <tr>
-                                            <td colspan="6" class="text-center text-muted">
-                                                <i class="fas fa-info-circle me-2"></i>
-                                                No rooms found.
-                                            </td>
-                                        </tr>
-                                        @endforelse
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Rentals Tab -->
-                <div class="tab-pane fade" id="rentals" role="tabpanel" aria-labelledby="rentals-tab">
-                    <div class="card" style="width: 100%; min-height: 500px;">
-                        <div class="card-header" style="background-color: #f8f9fa; border-bottom: 2px solid #1e3a8a;">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <h5 class="card-title mb-0" style="color: #1e3a8a;">
-                                    <i class="fas fa-boxes me-2"></i>
-                                    Contract Rentals
-                                </h5>
-                                <!-- Add Button hidden for read-only -->
-                                <!--
-                                <button class="btn btn-primary btn-sm">
-                                    <i class="fas fa-plus me-1"></i> ADD RENTAL
-                                </button>
-                                -->
-                            </div>
-                        </div>
-                        <div class="card-body p-0">
-                            <div class="table-responsive">
-                                <table class="table table-bordered table-striped" id="rentalsTable">
-                                    <thead>
-                                        <tr>
-                                            <th data-no-filter>No</th>
                                             <th data-column="masterRental.rental_name">Rental Name</th>
                                             <th data-column="quantity">Qty</th>
                                             <th data-column="qty_free">Qty Free</th>
                                             <th data-column="unit_price">Price</th>
                                             <th data-column="total_price">Total</th>
                                             <th data-column="masterRental.description">Description</th>
-                                            <!-- <th data-no-filter>Actions</th> -->
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @forelse($contract->contractRentals ?? [] as $index => $contractRental)
-                                        <tr id="rental-row-{{ $contractRental->id }}">
+                                        @forelse($contractDetailRows as $index => $row)
+                                        @php
+                                            $rowRoom = $row['room'];
+                                            $rowRental = $row['rental'];
+                                        @endphp
+                                        <tr @if($rowRental) id="rental-row-{{ $rowRental->id }}" @endif>
                                             <td>{{ $index + 1 }}</td>
-                                            <td>{{ $contractRental->masterRental->rental_name ?? ($contractRental->rental_alias ?: '-') }}</td>
-                                            <td>{{ $contractRental->quantity}}</td>
-                                            <td>{{ $contractRental->qty_free ?? 0 }}</td>
-                                            <td>Rp {{ number_format($contractRental->unit_price, 0, ',', '.') }}</td>
-                                            <td>Rp {{ number_format($contractRental->total_price, 0, ',', '.') }}</td>
-                                            <td>{{ $contractRental->masterRental->description ?? '-' }}</td>
-                                            <!-- Actions column hidden for read-only -->
-                                            <!--
                                             <td>
-                                                <div class="btn-group btn-group-sm" role="group">
-                                                    <button type="button" class="btn btn-primary btn-sm" onclick="openEditRentalModal({{ $contractRental->id }}, '{{ $contractRental->rental_alias }}', {{ $contractRental->quantity }}, {{ $contractRental->unit_price }})">
-                                                        <i class="fas fa-edit"></i> EDIT
-                                                    </button>
-                                                    <button type="button" class="btn btn-danger btn-sm" onclick="deleteRental({{ $contractRental->id }})">
-                                                        <i class="fas fa-trash"></i> DELETE
-                                                    </button>
-                                                </div>
+                                                @if($rowRoom && $rowRoom->building)
+                                                    <a href="{{ route('operational.buildings.show', $rowRoom->building) }}" target="_blank" rel="noopener noreferrer">{{ $rowRoom->building->building_name ?? '-' }}</a>
+                                                @else
+                                                    -
+                                                @endif
                                             </td>
-                                            -->
+                                            <td>{{ $rowRoom?->room?->room_name ?? ($rowRental?->room?->room_name ?? '-') }}</td>
+                                            <td>{{ $rowRoom?->room?->room_type ?? '-' }}</td>
+                                            <td>{{ $rowRoom?->room?->room_floor ?? '-' }}</td>
+                                            <td>
+                                                @if($rowRental)
+                                                    {{ $rowRental->masterRental->rental_name ?? ($rowRental->rental_alias ?: '-') }}
+                                                @else
+                                                    <span class="text-muted">-</span>
+                                                @endif
+                                            </td>
+                                            <td>{{ $rowRental->quantity ?? '-' }}</td>
+                                            <td>{{ $rowRental ? ($rowRental->qty_free ?? 0) : '-' }}</td>
+                                            <td>{{ $rowRental ? 'Rp ' . number_format($rowRental->unit_price, 0, ',', '.') : '-' }}</td>
+                                            <td>{{ $rowRental ? 'Rp ' . number_format($rowRental->total_price, 0, ',', '.') : '-' }}</td>
+                                            <td>{{ $rowRental?->masterRental?->description ?? '-' }}</td>
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="6" class="text-center text-muted">
+                                            <td colspan="11" class="text-center text-muted">
                                                 <i class="fas fa-info-circle me-2"></i>
-                                                No rentals found.
+                                                No rooms or rentals found.
                                             </td>
                                         </tr>
                                         @endforelse
                                     </tbody>
+                                    @if($contractDetailRows->isNotEmpty())
+                                    <tfoot>
+                                        <tr>
+                                            <td colspan="9"><strong>Total</strong></td>
+                                            <td><strong>Rp {{ number_format($contractDetailTotal, 0, ',', '.') }}</strong></td>
+                                            <td></td>
+                                        </tr>
+                                    </tfoot>
+                                    @endif
                                 </table>
                             </div>
                         </div>
