@@ -329,9 +329,12 @@
                                 <span class="badge badge-success fs-6 me-2">
                                     Active
                                 </span>
+                                {{-- Edit button hidden per client request; modal + handlers left intact --}}
+                                {{--
                                 <button class="btn btn-primary btn-sm me-2" onclick="openActiveContractEditModal()">
                                     <i class="fas fa-edit"></i> Edit
                                 </button>
+                                --}}
                                 <button class="btn btn-warning btn-sm" onclick="unpostContract({{ $contract->id }})">
                                     <i class="fas fa-undo"></i> UNPOST
                                 </button>
@@ -579,11 +582,11 @@
                                             <div class="btn-group btn-group-sm" role="group" aria-label="BA Files Supported Toggle">
                                                 <button type="button" 
                                                         id="btnBaSupportedYes"
-                                                        class="btn btn-{{ $contract->ba_files_supported ? 'success' : 'outline-success' }}" 
+                                                        class="btn {{ $contract->ba_files_supported ? 'btn-success' : 'btn-outline-secondary' }}" 
                                                         onclick="updateBaFilesSupported({{ $contract->id }}, true)">YES</button>
                                                 <button type="button" 
                                                         id="btnBaSupportedNo"
-                                                        class="btn btn-{{ !$contract->ba_files_supported ? 'danger' : 'outline-danger' }}" 
+                                                        class="btn {{ !$contract->ba_files_supported ? 'btn-danger' : 'btn-outline-secondary' }}" 
                                                         onclick="updateBaFilesSupported({{ $contract->id }}, false)">NO</button>
                                             </div>
                                             <small class="text-muted d-block mt-1" id="baSupportedStatus">
@@ -597,11 +600,11 @@
                                             <div class="btn-group btn-group-sm" role="group" aria-label="Hold Invoice Toggle">
                                                 <button type="button" 
                                                         id="btnHoldInvoiceYes"
-                                                        class="btn btn-{{ $contract->hold_invoice ? 'warning' : 'outline-warning' }}" 
+                                                        class="btn {{ $contract->hold_invoice ? 'btn-success' : 'btn-outline-secondary' }}" 
                                                         onclick="updateHoldInvoice({{ $contract->id }}, true)">YES</button>
                                                 <button type="button" 
                                                         id="btnHoldInvoiceNo"
-                                                        class="btn btn-{{ !$contract->hold_invoice ? 'success' : 'outline-success' }}" 
+                                                        class="btn {{ !$contract->hold_invoice ? 'btn-danger' : 'btn-outline-secondary' }}" 
                                                         onclick="updateHoldInvoice({{ $contract->id }}, false)">NO</button>
                                             </div>
                                             <small class="text-muted d-block mt-1" id="holdInvoiceStatus">
@@ -616,13 +619,11 @@
                                                 <div class="btn-group btn-group-sm" role="group" aria-label="Contract Target Toggle">
                                                     <button type="button" 
                                                             id="btnContractTargetYes"
-                                                            class="btn btn-{{ $contract->is_contract ? 'success' : 'outline-secondary' }}" 
-                                                            style="{{ $contract->is_contract ? 'color: white;' : 'color: #6c757d;' }}"
+                                                            class="btn {{ $contract->is_contract ? 'btn-success' : 'btn-outline-secondary' }}" 
                                                             onclick="updateContractTarget({{ $contract->id }}, true)">YES</button>
                                                     <button type="button" 
                                                             id="btnContractTargetNo"
-                                                            class="btn btn-{{ !$contract->is_contract ? 'danger' : 'outline-secondary' }}" 
-                                                            style="{{ !$contract->is_contract ? 'color: white;' : 'color: #6c757d;' }}"
+                                                            class="btn {{ !$contract->is_contract ? 'btn-danger' : 'btn-outline-secondary' }}" 
                                                             onclick="updateContractTarget({{ $contract->id }}, false)">NO</button>
                                                 </div>
                                             @else
@@ -4653,6 +4654,21 @@ function rejectContract(contractId) {
     });
 }
 
+// Uniform YES/NO toggle styling for every toggle on Contract Detail:
+// active YES = solid green, active NO = solid red, inactive side = grey outline.
+function applyYesNoToggle(btnYes, btnNo, isYes) {
+    const active   = ['btn-success', 'btn-danger'];
+    const inactive = 'btn-outline-secondary';
+
+    [btnYes, btnNo].forEach(btn => {
+        btn.classList.remove(...active, inactive);
+        btn.style.color = '';
+    });
+
+    btnYes.classList.add(isYes ? 'btn-success' : inactive);
+    btnNo.classList.add(isYes ? inactive : 'btn-danger');
+}
+
 function updateBaFilesSupported(contractId, supported) {
     const message = supported 
         ? "Anda yakin memilih Yes? Invoice akan membutuhkan verifikasi BA files."
@@ -4692,19 +4708,10 @@ function updateBaFilesSupported(contractId, supported) {
             .then(data => {
                 if (data.success) {
                     // Update UI
-                    if (supported) {
-                        btnYes.classList.remove('btn-outline-success');
-                        btnYes.classList.add('btn-success');
-                        btnNo.classList.remove('btn-danger');
-                        btnNo.classList.add('btn-outline-danger');
-                        statusText.textContent = 'Invoice requires BA Files';
-                    } else {
-                        btnYes.classList.remove('btn-success');
-                        btnYes.classList.add('btn-outline-success');
-                        btnNo.classList.remove('btn-outline-danger');
-                        btnNo.classList.add('btn-danger');
-                        statusText.textContent = 'Invoice can generate without BA Files';
-                    }
+                    applyYesNoToggle(btnYes, btnNo, supported);
+                    statusText.textContent = supported
+                        ? 'Invoice requires BA Files'
+                        : 'Invoice can generate without BA Files';
                     
                     Swal.fire({
                         icon: 'success',
@@ -4772,19 +4779,10 @@ function updateHoldInvoice(contractId, hold) {
             .then(data => {
                 if (data.success) {
                     // Update UI
-                    if (hold) {
-                        btnYes.classList.remove('btn-outline-warning');
-                        btnYes.classList.add('btn-warning');
-                        btnNo.classList.remove('btn-success');
-                        btnNo.classList.add('btn-outline-success');
-                        statusText.textContent = 'Invoices are currently HELD';
-                    } else {
-                        btnYes.classList.remove('btn-warning');
-                        btnYes.classList.add('btn-outline-warning');
-                        btnNo.classList.remove('btn-outline-success');
-                        btnNo.classList.add('btn-success');
-                        statusText.textContent = 'Invoices are generated normally';
-                    }
+                    applyYesNoToggle(btnYes, btnNo, hold);
+                    statusText.textContent = hold
+                        ? 'Invoices are currently HELD'
+                        : 'Invoices are generated normally';
                     
                     Swal.fire({
                         icon: 'success',
@@ -4852,23 +4850,7 @@ function updateContractTarget(contractId, isContract) {
             .then(data => {
                 if (data.success) {
                     // Update UI
-                    if (isContract) {
-                        btnYes.classList.remove('btn-outline-secondary');
-                        btnYes.classList.add('btn-success');
-                        btnYes.style.color = 'white';
-                        
-                        btnNo.classList.remove('btn-danger');
-                        btnNo.classList.add('btn-outline-secondary');
-                        btnNo.style.color = '#6c757d';
-                    } else {
-                        btnYes.classList.remove('btn-success');
-                        btnYes.classList.add('btn-outline-secondary');
-                        btnYes.style.color = '#6c757d';
-                        
-                        btnNo.classList.remove('btn-outline-secondary');
-                        btnNo.classList.add('btn-danger');
-                        btnNo.style.color = 'white';
-                    }
+                    applyYesNoToggle(btnYes, btnNo, isContract);
                     
                     Swal.fire({
                         icon: 'success',
