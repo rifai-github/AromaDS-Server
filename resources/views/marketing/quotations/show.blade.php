@@ -693,13 +693,18 @@
                                             </td>
                                             <td>
                                                 {{ $displayRoomName !== '' ? $displayRoomName : '-' }}
-                                                @if($quotationRoom && $quotationRoom->aromaProduct)
+                                                @if($quotationRoom && ($quotationRoom->aromaProduct || $quotationRoom->aroma_variant))
                                                     <br>
                                                     <small class="text-success">
                                                         <i class="fas fa-leaf me-1"></i>
-                                                        <strong>Aroma:</strong> {{ $quotationRoom->aromaProduct->name }}
-                                                        @if($quotationRoom->aroma_variant)
-                                                            - {{ $quotationRoom->aroma_variant }}
+                                                        <strong>Aroma:</strong>
+                                                        @if($quotationRoom->aromaProduct)
+                                                            {{ $quotationRoom->aromaProduct->name }}
+                                                            @if($quotationRoom->aroma_variant)
+                                                                - {{ $quotationRoom->aroma_variant }}
+                                                            @endif
+                                                        @else
+                                                            {{ $quotationRoom->aroma_variant }}
                                                         @endif
                                                     </small>
                                                 @endif
