@@ -15,4 +15,24 @@ return [
     |
     */
     'sn_bypass_enabled' => env('SN_BYPASS_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Hostname access restriction
+    |--------------------------------------------------------------------------
+    |
+    | The ERP is meant to be reached by server IP only. A third party's domain
+    | ("www.wappin.id") has an A record pointing at the production IP, so the
+    | app was being served -- and indexed by search engines -- under a domain
+    | the team never registered. With this on, any request whose Host is a
+    | hostname rather than an IP gets a bare 404 + noindex.
+    |
+    | Bare IPs, localhost and *.test always pass. List extra hostnames in
+    | APP_ALLOWED_HOSTS (comma separated) once the ERP gets a real domain.
+    | See App\Http\Middleware\RestrictHostAccess.
+    |
+    */
+    'block_hostname_access' => env('BLOCK_HOSTNAME_ACCESS', true),
+
+    'allowed_hosts' => env('APP_ALLOWED_HOSTS', ''),
 ];

@@ -15,6 +15,11 @@ return Application::configure(basePath: dirname(__DIR__))
         \App\Console\Commands\RepairPackagingSizeDeletedCodes::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
+            // Reject requests that arrive through a hostname instead of the
+            // server IP. Prepended so a stray domain never even starts a
+            // session. See App\Http\Middleware\RestrictHostAccess.
+            $middleware->prepend(\App\Http\Middleware\RestrictHostAccess::class);
+
             // Register custom middleware
             $middleware->alias([
                 'role' => \App\Http\Middleware\CheckRole::class,
