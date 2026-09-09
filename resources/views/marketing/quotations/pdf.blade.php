@@ -339,7 +339,7 @@
         $billToAddress = trim(
             (string) ($quotation->prospect->company_address ?? ($quotation->customer->address ?? '-')),
         );
-        $picName = trim((string) ($quotation->prospect->contact_person ?? ($quotation->pic_name ?? '')));
+        $picName = trim((string) ($quotation->pic_name ?: ($quotation->prospect->contact_person ?? '')));
         $picPhone = trim((string) ($quotation->prospect->contact_phone ?? ''));
 
         /* ===== Periode / Syarat Pembayaran / SC ===== */
@@ -632,7 +632,7 @@ $qrFooterSrc = $qrPng($companyWebsite !== '' ? $companyWebsite : 'https://www.ad
     <!-- ===== Terms / notes ===== -->
     <div class="terms-info">
         <div class="terms-info-row">Harga tersebut adalah harga nett belum termasuk PPN sesuai Peraturan Pajak yang
-            berlaku</div>
+            berlaku.</div>
         <div class="terms-info-row">Penawaran berlaku selama 30 (tiga puluh) hari, terhitung dari tanggal penawaran ini.
         </div>
         @if ($quotation->terms_conditions)
