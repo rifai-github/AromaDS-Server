@@ -1071,6 +1071,8 @@
                                         <select class="form-control" id="pic_quotation" name="pic_quotation" required>
                                             <option value="">Pilih PIC Customer...</option>
                                         </select>
+                                        <input type="hidden" id="pic_email" name="pic_email">
+                                        <input type="hidden" id="pic_phone" name="pic_phone">
                                         <div class="invalid-feedback"></div>
                                         <small class="text-muted">Pilih PIC dari pihak customer yang akan menerima quotation ini</small>
                                     </div>
@@ -2150,6 +2152,12 @@ function initializeFromExistingQuotation(data) {
     });
 }
 
+$(document).on('change', '#pic_quotation', function() {
+    const selectedOption = $(this).find('option:selected');
+    $('#pic_email').val(selectedOption.attr('data-email') || '');
+    $('#pic_phone').val(selectedOption.attr('data-phone') || '');
+});
+
 $(document).ready(function() {
     // Define existing quotation data from server
     @if(isset($quotation))
@@ -2514,8 +2522,16 @@ $(document).ready(function() {
                         const position = contact.position ? ` - ${contact.position}` : '';
                         const phone = contact.phone ? ` (${contact.phone})` : '';
                         const label = `${contact.name}${position}${phone}`;
-                        
-                        picSelect.append(`<option value="${contact.name}">${label}</option>`);
+                        const email = contact.email || '';
+                        const rawPhone = contact.phone || '';
+
+                        picSelect.append(
+                            $('<option></option>')
+                                .attr('value', contact.name)
+                                .attr('data-email', email)
+                                .attr('data-phone', rawPhone)
+                                .text(label)
+                        );
                     });
                 } else {
                     picSelect.append('<option value="" disabled>Tidak ada kontak tersedia</option>');

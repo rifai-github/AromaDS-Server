@@ -830,6 +830,8 @@ class QuotationWizardController extends Controller
                 'valid_until' => \Carbon\Carbon::parse($quotationDate)->addDays(30)->toDateString(), // 30 days validity
                 'company_name' => $survey && $survey->customer ? $survey->customer->name : ($survey && $survey->prospect ? $survey->prospect->company_name : ($renewalCompanyName ?? 'Unknown Company')),
                 'pic_name' => $request->get('pic_quotation') ?? 'Unknown PIC',
+                'pic_email' => $request->get('pic_email'),
+                'pic_phone' => $request->get('pic_phone'),
                 'billing_methods' => $request->get('payment_method'),
                 'payment_method' => $request->get('payment_method'),
                 'status' => 'draft',
@@ -1129,6 +1131,8 @@ class QuotationWizardController extends Controller
                     'valid_until' => \Carbon\Carbon::parse($quotationDate)->addDays(30)->toDateString(),
                     'company_name' => $survey && $survey->customer ? $survey->customer->name : ($survey && $survey->prospect ? $survey->prospect->company_name : ($renewalCompanyName ?? 'Unknown Company')),
                     'pic_name' => $request->get('pic_quotation') ?? 'Unknown PIC',
+                    'pic_email' => $request->get('pic_email'),
+                    'pic_phone' => $request->get('pic_phone'),
                     'billing_methods' => $request->get('payment_method'),
                     'payment_method' => $request->get('payment_method'),
                     'status' => 'draft',
@@ -1804,6 +1808,8 @@ class QuotationWizardController extends Controller
                     'external_remark' => $request->external_remark,
                     'tax_setting_id' => $request->tax_setting_id,
                     'pic_name' => $request->pic_quotation,
+                    'pic_email' => $request->pic_email,
+                    'pic_phone' => $request->pic_phone,
                     'price_basis' => $request->price_basis,
                     'updated_by' => Auth::id()
                 ]);
@@ -1832,6 +1838,8 @@ class QuotationWizardController extends Controller
                     'external_remark' => $request->external_remark,
                     'tax_setting_id' => $request->tax_setting_id,
                     'pic_name' => $request->pic_quotation,
+                    'pic_email' => $request->pic_email,
+                    'pic_phone' => $request->pic_phone,
                     'price_basis' => $request->price_basis,
                     'status' => 'draft',
                     'created_by' => Auth::id(),

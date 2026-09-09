@@ -21,6 +21,8 @@ class Quotation extends Model
         'valid_until',
         'company_name',
         'pic_name',
+        'pic_email',
+        'pic_phone',
         'billing_methods',
         'status',
         'rental_period',

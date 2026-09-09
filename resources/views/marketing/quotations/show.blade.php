@@ -401,13 +401,13 @@
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">PIC Email</div>
                                         <div class="quotation-field-value">
-                                            {{ $quotation->prospect->contact_email ?? ($quotation->customer->email ?? '-') }}
+                                            {{ $quotation->pic_email ?? ($quotation->prospect->contact_email ?? ($quotation->customer->email ?? '-')) }}
                                         </div>
                                     </div>
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">PIC Phone</div>
                                         <div class="quotation-field-value">
-                                            {{ $quotation->prospect->contact_phone ?? ($quotation->customer->phone ?? '-') }}
+                                            {{ $quotation->pic_phone ?? ($quotation->prospect->contact_phone ?? ($quotation->customer->phone ?? '-')) }}
                                         </div>
                                     </div>
                                     <div class="quotation-field">
