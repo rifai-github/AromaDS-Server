@@ -18,6 +18,7 @@ class QuotationContractCreationGuardTest extends TestCase
         Schema::create('quotations', function (Blueprint $table) {
             $table->id();
             $table->string('status')->nullable();
+            $table->boolean('is_latest_revision')->default(true);
             $table->timestamps();
             $table->softDeletes();
         });
@@ -55,7 +56,7 @@ class QuotationContractCreationGuardTest extends TestCase
     {
         $quotation = Quotation::create(['status' => 'approved']);
 
-        $this->assertTrue($quotation->canCreateContract());
+        $this->assertTrue($quotation->fresh()->canCreateContract());
     }
 
     public function test_approved_quotation_with_existing_contract_cannot_create_another_contract(): void
@@ -73,6 +74,13 @@ class QuotationContractCreationGuardTest extends TestCase
             'quotation_id' => $quotation->id,
             'status' => 'active',
         ]);
+
+        $this->assertFalse($quotation->fresh()->canCreateContract());
+    }
+
+    public function test_non_latest_revision_cannot_create_contract(): void
+    {
+        $quotation = Quotation::create(['status' => 'approved', 'is_latest_revision' => false]);
 
         $this->assertFalse($quotation->fresh()->canCreateContract());
     }

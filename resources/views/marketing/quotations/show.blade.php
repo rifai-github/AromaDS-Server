@@ -116,6 +116,11 @@
                             </h3>
                         </div>
                         <div>
+                            @if(!$quotation->is_latest_revision)
+                                <span class="badge bg-secondary" title="Quotation ini sudah digantikan oleh revisi terbaru">
+                                    Revisi Lama (Revisi {{ $quotation->revision_number }})
+                                </span>
+                            @else
                             @php
                                 $canPrintQuotation = in_array($quotation->status, ['approved', 'accepted', 'contract'], true)
                                     && (auth()->user()->hasPermission('marketing.quotations.download')
@@ -178,6 +183,7 @@
                                 <span class="badge bg-secondary">Cancelled</span>
                             @elseif($quotation->status === 'expired')
                                 <span class="badge bg-secondary">Expired</span>
+                            @endif
                             @endif
                         </div>
                     </div>

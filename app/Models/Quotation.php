@@ -545,6 +545,7 @@ class Quotation extends Model
     public function canCreateContract()
     {
         return $this->status === 'approved'
+            && $this->is_latest_revision
             && !$this->contracts()->exists()
             && !$this->hasActiveFreeTrials()
             && empty($this->getServiceFrequencyPeriodValidationErrors());
