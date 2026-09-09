@@ -5664,14 +5664,19 @@ class JobController extends Controller
                             $schedulesToComplete = \App\Models\JobSchedule::where('job_number', $job->job_number)
                                 ->whereIn('status', ['done_job', 'completed', 'selesai'])
                                 ->get();
-                                
-                            $anyUnitCreated = false;
-                            
+
+                            // Check once whether this Job Advice is an Install Free (trial) flow.
+                            $isInstallFree = false;
+                            if ($jobAdvice && $jobAdvice->type) {
+                                $jaTypeLower = strtolower(trim($jobAdvice->type));
+                                $isInstallFree = ($jaTypeLower === 'install_free' || $jaTypeLower === 'install free');
+                            }
+
                             foreach ($schedulesToComplete as $completedSchedule) {
                                 $unitCreated = $autoCreateUnitOnWallMethod->invoke($jobScheduleController, $completedSchedule, $jobAdvice);
-                                if ($unitCreated) $anyUnitCreated = true;
+                                $isInstallTypeSchedule = in_array(strtolower(trim((string) $completedSchedule->type)), ['install', 'ir', 'install_free', 'install free', 'if'], true);
 
-                                if (in_array(strtolower(trim((string) $completedSchedule->type)), ['install', 'ir', 'install_free', 'install free', 'if'], true)) {
+                                if ($isInstallTypeSchedule) {
                                     $generateUnitOnlyChecksMethod->invoke($jobScheduleController, $completedSchedule, $jobAdvice);
                                 }
 
@@ -5679,20 +5684,19 @@ class JobController extends Controller
                                 // the new rental and raise the RV job for the replaced unit.
                                 app(\App\Services\Operational\ChangeRentalCompletionService::class)
                                     ->handleCompletedJob($completedSchedule, $jobAdvice);
-                            }
-                            
-                            // If unit on wall created and remove_date exists, create remove job for install free
-                            if ($anyUnitCreated && $jobAdvice->remove_date) {
-                                // Check if this is Install Free
-                                $isInstallFree = false;
-                                if ($jobAdvice && $jobAdvice->type) {
-                                    $jaTypeLower = strtolower(trim($jobAdvice->type));
-                                    $isInstallFree = ($jaTypeLower === 'install_free' || $jaTypeLower === 'install free');
-                                }
-                                
-                                if ($isInstallFree) {
-                                    // Call autoCreateRemoveJob securely ONCE
-                                    $autoCreateRemoveJobMethod->invoke($jobScheduleController, $job, $jobAdvice);
+
+                                // Generate Remove Free PER completed schedule, not just for the card the
+                                // technician tapped. A single job_number can be split across several
+                                // job_schedules rows (one per room/rental - see JobAdviceController::
+                                // createJobScheduleForRoom), and each row owns a disjoint set of rooms.
+                                // Calling this only once with $job silently orphaned every sibling row's
+                                // rooms from any Remove Free job (job_advice_rooms.remove_job_schedule_id
+                                // stayed null forever, e.g. a Lobby room installed alongside a Meeting
+                                // room never got its own remove). Mirrors the web path in
+                                // JobScheduleController::runCompletionAutomation(), which already loops
+                                // $schedulesToComplete and calls generateRemoveFreeSchedule() per schedule.
+                                if ($isInstallFree && $jobAdvice->remove_date && $unitCreated && $isInstallTypeSchedule) {
+                                    $autoCreateRemoveJobMethod->invoke($jobScheduleController, $completedSchedule, $jobAdvice);
                                 }
                             }
                         } catch (\Throwable $e) {
