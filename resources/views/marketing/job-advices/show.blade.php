@@ -543,7 +543,6 @@
                                             <th>Nama Rental</th>
                                             <th>Qty</th>
                                             <th>Qty Free</th>
-                                            <th>Rental Price</th>
                                             <th>Nama Perusahaan</th>
                                             <th>Gedung</th>
                                             <th>Jenis Ruangan</th>
@@ -641,21 +640,6 @@
                                             $rentalName = $rental?->rental_name ?? ($rentalAlias ?: ($jaRoom->rental_name ?: 'N/A'));
                                             $billingSource = $jaRoom->contractRental ?? $jaRoom->quotationRental ?? $jaRoom->quotationDetail ?? null;
                                             
-                                            // MOM9: Get rental price from quotation detail or quotation rental if available
-                                            $rentalPrice = null;
-                                            if ($quotationDetail && $quotationDetail->unit_price) {
-                                                $rentalPrice = $quotationDetail->unit_price;
-                                            } elseif ($jobAdvice->quotation && $quotationRoom) {
-                                                // Try to get from quotation_rentals
-                                                $quotationRental = \App\Models\QuotationRental::where('quotation_room_id', $quotationRoom->id)
-                                                    ->where('master_rental_id', $jaRoom->rental_product_id)
-                                                    ->first();
-                                                
-                                                if ($quotationRental && $quotationRental->unit_price) {
-                                                    $rentalPrice = $quotationRental->unit_price;
-                                                }
-                                            }
-
                                             if (!$billingSource && isset($contractRental) && $contractRental) {
                                                 $billingSource = $contractRental;
                                             }
@@ -663,21 +647,6 @@
                                             $displayQty = $billingSource ? ($billingSource->quantity ?? 0) : ($jaRoom->quantity ?? 1);
                                             $displayQtyFree = $billingSource ? ($billingSource->qty_free ?? 0) : ($jaRoom->qty_free ?? 0);
 
-                                            $displayPrice = null;
-                                            if ($billingSource && $billingSource->total_price !== null) {
-                                                $displayPrice = $billingSource->total_price;
-                                            } elseif ($billingSource && $billingSource->unit_price !== null) {
-                                                $displayPrice = ((float) ($billingSource->quantity ?? 0)) * ((float) $billingSource->unit_price);
-                                            } elseif ($quotationDetail && $quotationDetail->total_price !== null) {
-                                                $displayPrice = $quotationDetail->total_price;
-                                            } elseif ($quotationDetail && $quotationDetail->unit_price !== null) {
-                                                $displayPrice = ((float) ($quotationDetail->quantity ?? 0)) * ((float) $quotationDetail->unit_price);
-                                            } elseif ($rentalPrice !== null) {
-                                                $displayPrice = $rentalPrice;
-                                            } elseif ($rental?->monthly_price !== null) {
-                                                $displayPrice = $rental->monthly_price;
-                                            }
-                                            
                                             // MOM9: Get aroma from quotation room (for wangi column)
                                             $aromaProduct = null;
                                             $aromaVariant = null;
@@ -771,9 +740,6 @@
                                             </td>
                                             <td class="text-center">{{ $displayQty }}</td>
                                             <td class="text-center">{{ $displayQtyFree }}</td>
-                                            <td class="text-right">
-                                                {{ $displayPrice !== null ? 'Rp ' . number_format((float) $displayPrice, 0, ',', '.') : '-' }}
-                                            </td>
                                             <td>{{ $customer?->name ?? 'N/A' }}</td>
                                             <td>{{ $building?->building_name ?? 'N/A' }}</td>
                                             <td>{{ $room?->room_type ?? $roomSpecs['room_type'] ?? 'N/A' }}</td>
