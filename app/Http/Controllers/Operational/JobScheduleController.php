@@ -2913,6 +2913,11 @@ class JobScheduleController extends Controller
             $relatedJobScheduleRooms = $this->buildFallbackRentalTeamRows($jobSchedule);
         }
 
+        // A visit is split across sibling job schedules that share one job number, but the
+        // technician taps "Mulai Kerja" once - so only the schedule that was open at that
+        // moment gets started_at, and every other room in the same visit renders blank.
+        $visitStart = $this->resolveVisitStart($siblingJobIds, $teamLocations);
+
         // [MOM] Aggregate BA Files for all related sibling jobs to ensure they all show up in Job View
         $baFiles = \App\Models\JobScheduleBaFile::whereIn('job_schedule_id', $siblingJobIds)
             ->with(['uploader'])
@@ -3029,6 +3034,7 @@ class JobScheduleController extends Controller
             'materialReturns',
             'baFiles',
             'relatedJobScheduleRooms',
+            'visitStart',
             'viewMode',
             'filterRoomId',
             'filterBuildingId',
@@ -3039,6 +3045,40 @@ class JobScheduleController extends Controller
             'inventoryIssuings',
             'webIssuedMaterialRows'
         ));
+    }
+
+    /**
+     * Earliest recorded start of the whole visit, used when a room's own schedule has none.
+     *
+     * Resolved once per page instead of per row: the Rental & Team tab can list a dozen
+     * rooms, and the location lookup used to run two extra queries for each of them.
+     */
+    private function resolveVisitStart(array $siblingJobIds, $teamLocations): array
+    {
+        $schedule = \App\Models\JobSchedule::whereIn('id', $siblingJobIds)
+            ->whereNotNull('started_at')
+            ->orderBy('started_at')
+            ->first(['id', 'started_at', 'latitude', 'longitude']);
+
+        $latitude = $schedule?->latitude;
+        $longitude = $schedule?->longitude;
+
+        if (!$latitude || !$longitude) {
+            $location = collect($teamLocations)
+                ->filter(fn ($row) => $row->action === 'arrived' || str_contains((string) $row->action, 'start'))
+                ->filter(fn ($row) => $row->latitude && $row->longitude)
+                ->sortBy('recorded_at')
+                ->first();
+
+            $latitude = $location?->latitude;
+            $longitude = $location?->longitude;
+        }
+
+        return [
+            'started_at' => $schedule?->started_at,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+        ];
     }
 
     private function relatedJobScheduleRoomsQuery(array $siblingJobIds): \Illuminate\Database\Eloquent\Builder

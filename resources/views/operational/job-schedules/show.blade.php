@@ -1209,27 +1209,39 @@
                                             </td>
                                             <td>
                                                 @php
-                                                    $startAt = $roomJobSchedule && $roomJobSchedule->started_at ? \Carbon\Carbon::parse($roomJobSchedule->started_at) : null;
-                                                    $startLat = $roomJobSchedule?->latitude;
-                                                    $startLng = $roomJobSchedule?->longitude;
+                                                    // Three tiers, narrowest first: the room's own recorded start, then the
+                                                    // start of the schedule owning it, then the visit's. Only the first is
+                                                    // per-room - a visit splits across sibling schedules sharing one job
+                                                    // number, but "Mulai Kerja" is tapped once, so the other two are the
+                                                    // same figure for every room and are labelled as inherited.
+                                                    $ownStart = $jobScheduleRoom->started_at;
+                                                    $startAt = $ownStart ?? $roomJobSchedule?->started_at ?? ($visitStart['started_at'] ?? null);
+                                                    $startAt = $startAt ? \Carbon\Carbon::parse($startAt) : null;
+                                                    $startIsInherited = $startAt && !$ownStart;
 
-                                                    // MOM: Backup location from Team Location History if missing
-                                                    if ($roomJobSchedule && (!$startLat || !$startLng)) {
-                                                        $locStart = \App\Models\JobTeamLocation::where('job_schedule_id', $roomJobSchedule->id)
-                                                            ->where(function($q) {
-                                                                $q->where('action', 'arrived')
-                                                                  ->orWhere('action', 'like', '%start%');
-                                                            })
-                                                            ->orderBy('recorded_at', 'asc')
+                                                    $startLat = $ownStart ? $jobScheduleRoom->start_latitude : $roomJobSchedule?->latitude;
+                                                    $startLng = $ownStart ? $jobScheduleRoom->start_longitude : $roomJobSchedule?->longitude;
+
+                                                    if ((!$startLat || !$startLng) && $roomJobSchedule) {
+                                                        $locStart = collect($teamLocations)
+                                                            ->where('job_schedule_id', $roomJobSchedule->id)
+                                                            ->filter(fn ($row) => ($row->action === 'arrived' || str_contains((string) $row->action, 'start')) && $row->latitude && $row->longitude)
+                                                            ->sortBy('recorded_at')
                                                             ->first();
-                                                        if ($locStart && $locStart->latitude && $locStart->longitude) {
-                                                            $startLat = $locStart->latitude;
-                                                            $startLng = $locStart->longitude;
-                                                        }
+                                                        $startLat = $locStart?->latitude;
+                                                        $startLng = $locStart?->longitude;
+                                                    }
+
+                                                    if (!$startLat || !$startLng) {
+                                                        $startLat = $visitStart['latitude'] ?? null;
+                                                        $startLng = $visitStart['longitude'] ?? null;
                                                     }
                                                 @endphp
                                                 @if($startAt)
-                                                    <div style="font-size: 0.85rem;">{{ $startAt->format('d/M/Y H:i') }}</div>
+                                                    <div style="font-size: 0.85rem;{{ $startIsInherited ? ' font-style: italic; color: #6c757d;' : '' }}"
+                                                         @if($startIsInherited) title="Waktu mulai kunjungan ini, bukan catatan khusus ruangan ini." @endif>
+                                                        {{ $startAt->format('d/M/Y H:i') }}
+                                                    </div>
                                                     @if($startLat && $startLng)
                                                         <a href="https://www.google.com/maps?q={{ $startLat }},{{ $startLng }}" target="_blank" rel="noopener noreferrer" class="badge badge-info mt-1" style="text-decoration: none;">
                                                             <i class="fas fa-map-marker-alt"></i> View Map
@@ -1243,38 +1255,47 @@
                                                 @php
                                                     $finishTime = $jobScheduleRoom->completed_at ?? $roomJobSchedule?->completed_at;
                                                     if ($finishTime) $finishTime = \Carbon\Carbon::parse($finishTime);
-                                                    
-                                                    $finishLat = $roomJobSchedule?->latitude;
-                                                    $finishLng = $roomJobSchedule?->longitude;
-                                                    
-                                                    // Try to get location from JobReport
-                                                    $report = $roomJobSchedule?->jobReports->first();
+
+                                                    // Only a report or a "left/finish" trace says where work actually ended.
+                                                    // Falling back to the arrival pin is still useful, but it is a different
+                                                    // place at a different time, so it must not pose as the finish location.
+                                                    $finishLat = null;
+                                                    $finishLng = null;
+                                                    $finishIsArrivalPin = false;
+
+                                                    $report = $roomJobSchedule ? ($allJobReportsPerJS[$roomJobSchedule->id] ?? null) : null;
                                                     if ($report && $report->latitude && $report->longitude) {
                                                         $finishLat = $report->latitude;
                                                         $finishLng = $report->longitude;
                                                     }
-                                                    
-                                                    // MOM: Backup location from Team Location History if still missing
-                                                    if ($roomJobSchedule && (!$finishLat || !$finishLng)) {
-                                                        $locFinish = \App\Models\JobTeamLocation::where('job_schedule_id', $roomJobSchedule->id)
-                                                            ->where(function($q) {
-                                                                $q->where('action', 'left')
-                                                                  ->orWhere('action', 'like', '%finish%')
-                                                                  ->orWhere('action', 'arrived'); // Fallback to arrived if only one location
-                                                            })
-                                                            ->orderBy('recorded_at', 'desc')
+
+                                                    $scheduleLocations = $roomJobSchedule
+                                                        ? collect($teamLocations)->where('job_schedule_id', $roomJobSchedule->id)
+                                                              ->filter(fn ($row) => $row->latitude && $row->longitude)
+                                                        : collect();
+
+                                                    if (!$finishLat || !$finishLng) {
+                                                        $locFinish = $scheduleLocations
+                                                            ->filter(fn ($row) => $row->action === 'left' || str_contains((string) $row->action, 'finish'))
+                                                            ->sortByDesc('recorded_at')
                                                             ->first();
-                                                        if ($locFinish && $locFinish->latitude && $locFinish->longitude) {
-                                                            $finishLat = $locFinish->latitude;
-                                                            $finishLng = $locFinish->longitude;
-                                                        }
+                                                        $finishLat = $locFinish?->latitude;
+                                                        $finishLng = $locFinish?->longitude;
+                                                    }
+
+                                                    if (!$finishLat || !$finishLng) {
+                                                        $locArrived = $scheduleLocations->sortByDesc('recorded_at')->first();
+                                                        $finishLat = $locArrived?->latitude ?? $roomJobSchedule?->latitude;
+                                                        $finishLng = $locArrived?->longitude ?? $roomJobSchedule?->longitude;
+                                                        $finishIsArrivalPin = (bool) ($finishLat && $finishLng);
                                                     }
                                                 @endphp
                                                 @if($finishTime)
                                                     <div style="font-size: 0.85rem;">{{ $finishTime->format('d/M/Y H:i') }}</div>
                                                     @if($finishLat && $finishLng)
-                                                        <a href="https://www.google.com/maps?q={{ $finishLat }},{{ $finishLng }}" target="_blank" rel="noopener noreferrer" class="badge badge-success mt-1" style="text-decoration: none;">
-                                                            <i class="fas fa-map-marker-alt"></i> View Map
+                                                        <a href="https://www.google.com/maps?q={{ $finishLat }},{{ $finishLng }}" target="_blank" rel="noopener noreferrer" class="badge badge-{{ $finishIsArrivalPin ? 'secondary' : 'success' }} mt-1" style="text-decoration: none;"
+                                                           @if($finishIsArrivalPin) title="Lokasi kedatangan - tidak ada catatan lokasi saat pekerjaan selesai." @endif>
+                                                            <i class="fas fa-map-marker-alt"></i> {{ $finishIsArrivalPin ? 'Lokasi Tiba' : 'View Map' }}
                                                         </a>
                                                     @endif
                                                 @else
