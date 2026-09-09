@@ -159,6 +159,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::post('jobs/{jobScheduleId}/arrived', [App\Http\Controllers\Api\Mobile\JobController::class, 'arrivedAtLocation'])->name('jobs.arrived');
         Route::post('jobs/{jobScheduleId}/start', [App\Http\Controllers\Api\Mobile\JobController::class, 'startWork'])->name('jobs.start');
+        Route::post('rooms/{roomId}/start', [App\Http\Controllers\Api\Mobile\JobController::class, 'startRoom'])->name('rooms.start');
         Route::post('rooms/{roomId}/complete', [App\Http\Controllers\Api\Mobile\JobController::class, 'completeRoom'])->name('rooms.complete');
         Route::post('jobs/{jobScheduleId}/upload-photo', [App\Http\Controllers\Api\Mobile\JobController::class, 'uploadPhoto'])->name('jobs.upload-photo');
         Route::post('jobs/{jobScheduleId}/signature', [App\Http\Controllers\Api\Mobile\JobController::class, 'submitSignature'])->name('jobs.signature');

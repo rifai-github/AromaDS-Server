@@ -2536,6 +2536,123 @@ class JobController extends Controller
             ]
         ]);
     }
+
+    /**
+     * Record that work on one room began - the per-room counterpart of startWork().
+     *
+     * startWork() fires once per visit, before the room picker, so a multi-room visit has
+     * a single timestamp that every room then shows as its own. This records the moment
+     * THIS room was opened.
+     *
+     * It is telemetry, not a gate: it never moves job status, never blocks the technician,
+     * and when the owning room cannot be resolved it records nothing rather than guessing.
+     */
+    public function startRoom(Request $request, $roomId)
+    {
+        $request->validate([
+            'job_schedule_id' => 'nullable|integer',
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'client_clicked_at' => 'nullable|date',
+        ]);
+
+        $room = \App\Models\JobAdviceRoom::find($roomId);
+
+        if (!$room) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Room not found'
+            ], 404);
+        }
+
+        $jobSchedule = null;
+        if ($request->filled('job_schedule_id')) {
+            $jobSchedule = JobSchedule::find($request->job_schedule_id);
+        }
+
+        if (!$jobSchedule) {
+            $jobSchedule = \App\Models\JobScheduleRoom::where('job_advice_room_id', $room->id)
+                ->where('status', '!=', \App\Models\JobScheduleRoom::STATUS_CANCELLED)
+                ->with('jobSchedule')
+                ->orderBy('id')
+                ->get()
+                ->first(fn ($jsr) => $jsr->jobSchedule)?->jobSchedule;
+        }
+
+        // The same routing completeRoom uses. Without it a visit split across sibling
+        // schedules would record the start on the job the app happens to have open and
+        // the completion on the sibling that owns the room - the exact gap this closes.
+        $jobSchedule = $this->resolveRoomOwningSibling($jobSchedule, $room);
+
+        if (!$jobSchedule) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Job schedule untuk room ini tidak dapat ditentukan, waktu mulai tidak dicatat.',
+                'data' => ['recorded' => false],
+            ]);
+        }
+
+        // Deliberately no denyIfNotAssigned() here: completeRoom() has no team check either,
+        // and this call must never be stricter than the action it accompanies. A 403 would be
+        // swallowed by the app and the room would silently lose its start while the very same
+        // technician goes on to complete it. Both are behind auth:sanctum.
+        if ($jobSchedule->status === 'undone') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat dikerjakan ulang dari aplikasi teknisi.'
+            ], 423);
+        }
+
+        $jobScheduleRoom = \App\Models\JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
+            ->where('job_advice_room_id', $room->id)
+            ->first();
+
+        if (!$jobScheduleRoom) {
+            $masterRoomId = $room->contractRoom?->room_id ?? $room->quotationRoom?->room_id ?? null;
+            $jobScheduleRoom = $this->ensureMobileRentalScheduleRoom($jobSchedule, $room, $masterRoomId);
+        }
+
+        if (!$jobScheduleRoom) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Room ini belum terdaftar pada job schedule, waktu mulai tidak dicatat.',
+                'data' => ['recorded' => false],
+            ]);
+        }
+
+        // Offline work replays hours later, so the device's own tap time is the truth -
+        // now() would stamp every queued room with the moment the phone regained signal.
+        // A skewed clock reporting the future is the one case where now() is safer.
+        $startedAt = now();
+        if ($request->filled('client_clicked_at')) {
+            $clientClickedAt = \Carbon\Carbon::parse($request->input('client_clicked_at'));
+            if ($clientClickedAt->lessThanOrEqualTo($startedAt)) {
+                $startedAt = $clientClickedAt;
+            }
+        }
+
+        $recorded = $jobScheduleRoom->markAsStarted(
+            Auth::id(),
+            $startedAt,
+            $request->input('latitude'),
+            $request->input('longitude')
+        );
+
+        $this->recordMobileSync($request, 'start_room', $jobSchedule->id, $jobScheduleRoom->id);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $recorded
+                ? 'Waktu mulai ruangan dicatat'
+                : 'Waktu mulai ruangan sudah tercatat sebelumnya',
+            'data' => [
+                'job_schedule_id' => $jobSchedule->id,
+                'job_schedule_room_id' => $jobScheduleRoom->id,
+                'started_at' => $jobScheduleRoom->started_at?->toIso8601String(),
+                'recorded' => $recorded,
+            ],
+        ]);
+    }
     
     /**
      * Complete work on a room

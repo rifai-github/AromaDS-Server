@@ -16,6 +16,10 @@ class JobScheduleRoom extends Model
         'room_name',
         'room_id',
         'status',
+        'started_at',
+        'started_by',
+        'start_latitude',
+        'start_longitude',
         'completed_at',
         'completed_by',
         'material_return_status',
@@ -30,6 +34,7 @@ class JobScheduleRoom extends Model
     ];
 
     protected $casts = [
+        'started_at' => 'datetime',
         'completed_at' => 'datetime',
         'material_return_at' => 'datetime',
     ];
@@ -68,6 +73,11 @@ class JobScheduleRoom extends Model
     public function completedBy()
     {
         return $this->belongsTo(User::class, 'completed_by');
+    }
+
+    public function startedBy()
+    {
+        return $this->belongsTo(User::class, 'started_by');
     }
 
     public function materialReturnBy()
@@ -176,6 +186,33 @@ class JobScheduleRoom extends Model
         }
 
         $this->update($updateData);
+    }
+
+    /**
+     * Record when the technician opened this room, once.
+     *
+     * First open wins: a technician reopens a room card several times per visit, and
+     * overwriting would drag the start towards the finish until the pair says nothing.
+     * A room already closed keeps its status - only a pending room moves to in_progress.
+     */
+    public function markAsStarted($userId = null, $startedAt = null, $latitude = null, $longitude = null): bool
+    {
+        if ($this->started_at) {
+            return false;
+        }
+
+        $this->started_at = $startedAt ?? now();
+        $this->started_by = $userId ?? auth()->id();
+        $this->start_latitude = $latitude;
+        $this->start_longitude = $longitude;
+
+        if ($this->status === self::STATUS_PENDING) {
+            $this->status = self::STATUS_IN_PROGRESS;
+        }
+
+        $this->save();
+
+        return true;
     }
 
     /**
