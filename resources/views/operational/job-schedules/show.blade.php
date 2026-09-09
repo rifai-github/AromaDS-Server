@@ -1149,14 +1149,29 @@
                                             $isRoomEditable = $roomJobSchedule && $roomJobSchedule->status === 'assign_team';
                                             $roomDoneAllowedStatuses = ['in_progress', 'teknisi_sedang_pengerjaan', 'teknisi_selesai_pengerjaan'];
                                             $canCompleteRoomFromWeb = $roomJobSchedule && in_array($roomJobSchedule->status, $roomDoneAllowedStatuses, true);
-                                            $displayRentalName = $jaRoom?->rentalProduct?->rental_name
-                                                ?? $jaRoom?->rental_name
-                                                ?? null;
-                                            if (($displayRentalName === '-' || blank($displayRentalName)) && filled($jobScheduleRoom->fallback_rental_name ?? null)) {
-                                                $displayRentalName = $jobScheduleRoom->fallback_rental_name;
-                                            }
-                                            if (($displayRentalName === '-' || blank($displayRentalName))) {
+                                            // A single room row can carry more than one linked rental via the
+                                            // job_schedule_room_rentals pivot (e.g. a wall-unit refill and a
+                                            // VirusGuard prefilter swap booked in the same room/visit - see
+                                            // syncJobScheduleRoomsFromJobAdvice()). Showing only the primary
+                                            // jobAdviceRoom's name silently dropped every other linked rental
+                                            // from this column, so prefer the accessor that combines all of
+                                            // them whenever there's more than one.
+                                            $rentalLinksCount = $jobScheduleRoom->relationLoaded('rentals')
+                                                ? $jobScheduleRoom->rentals->count()
+                                                : $jobScheduleRoom->rentals()->count();
+
+                                            if ($rentalLinksCount > 1) {
                                                 $displayRentalName = $jobScheduleRoom->display_rental_name;
+                                            } else {
+                                                $displayRentalName = $jaRoom?->rentalProduct?->rental_name
+                                                    ?? $jaRoom?->rental_name
+                                                    ?? null;
+                                                if (($displayRentalName === '-' || blank($displayRentalName)) && filled($jobScheduleRoom->fallback_rental_name ?? null)) {
+                                                    $displayRentalName = $jobScheduleRoom->fallback_rental_name;
+                                                }
+                                                if (($displayRentalName === '-' || blank($displayRentalName))) {
+                                                    $displayRentalName = $jobScheduleRoom->display_rental_name;
+                                                }
                                             }
                                         @endphp
                                         <tr data-room-id="{{ $jobScheduleRoom->id }}">
