@@ -442,6 +442,24 @@
                     </div>
                     
                     <div class="quotation-info">
+                        <h4><i class="fas fa-city mr-2"></i>Informasi Building</h4>
+                        <div class="table-responsive">
+                            <table class="table" id="quotationBuildingRoomsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Building</th>
+                                        <th>Lantai</th>
+                                        <th>Ruangan</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="quotationBuildingRoomsBody">
+                                    <!-- Building / lantai / ruangan akan dimuat di sini -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="quotation-info">
                         <h4><i class="fas fa-list mr-2"></i>List Penawaran</h4>
                         <div class="table-responsive">
                             <table class="table" id="quotationItemsTable">
@@ -1145,6 +1163,9 @@ function loadQuotationData(quotationId) {
                 quotationData.quotationBuildings = Array.isArray(data.quotationBuildings)
                     ? data.quotationBuildings
                     : (Array.isArray(data.quotation_buildings) ? data.quotation_buildings : []);
+                quotationData.quotationRoomLocations = Array.isArray(data.quotationRoomLocations)
+                    ? data.quotationRoomLocations
+                    : (Array.isArray(data.quotation_room_locations) ? data.quotation_room_locations : []);
                 console.log('✓ Quotation data stored globally');
                 console.log('Quotation data:', quotationData);
                 console.log('Customer data:', quotationData.customer);
@@ -1573,10 +1594,14 @@ function loadQuotationDetails() {
                     quotationData.quotationBuildings = Array.isArray(data.quotationBuildings)
                         ? data.quotationBuildings
                         : (Array.isArray(data.quotation_buildings) ? data.quotation_buildings : []);
+                    quotationData.quotationRoomLocations = Array.isArray(data.quotationRoomLocations)
+                        ? data.quotationRoomLocations
+                        : (Array.isArray(data.quotation_room_locations) ? data.quotation_room_locations : []);
                 }
                 console.log('Quotation details count:', data.quotationDetails ? data.quotationDetails.length : 'undefined');
                 displayQuotationInfo(data.quotation);
                 displayCustomerInfo(data.customer);
+                displayQuotationRoomLocations(quotationData ? quotationData.quotationRoomLocations : data.quotationRoomLocations);
                 displayQuotationItems(data.quotationDetails);
                 displayQuotationSummary(data.quotation);
 
@@ -1603,6 +1628,7 @@ function renderQuotationDetailsFromCache() {
 
     displayQuotationInfo(quotationData);
     displayCustomerInfo(quotationData.customer || {});
+    displayQuotationRoomLocations(quotationData.quotationRoomLocations);
     displayQuotationItems(Array.isArray(quotationData.quotationDetails) ? quotationData.quotationDetails : []);
     displayQuotationSummary(quotationData);
 }
@@ -1713,6 +1739,40 @@ function displayCustomerInfo(customer) {
             <div class="info-value">${customer.company_type || '-'}</div>
         </div>
     `;
+}
+
+// Step 2: Building / Lantai / Ruangan dari quotation (display only)
+function displayQuotationRoomLocations(locations) {
+    const tbody = document.getElementById('quotationBuildingRoomsBody');
+    if (!tbody) {
+        return;
+    }
+
+    tbody.innerHTML = '';
+
+    if (!Array.isArray(locations) || locations.length === 0) {
+        const emptyRow = document.createElement('tr');
+        const emptyCell = document.createElement('td');
+        emptyCell.colSpan = 3;
+        emptyCell.className = 'text-center';
+        emptyCell.textContent = 'Tidak ada data building untuk quotation ini';
+        emptyRow.appendChild(emptyCell);
+        tbody.appendChild(emptyRow);
+        return;
+    }
+
+    locations.forEach(location => {
+        const row = document.createElement('tr');
+
+        ['building', 'floor', 'room'].forEach(key => {
+            const cell = document.createElement('td');
+            const value = (location && location[key] ? String(location[key]).trim() : '');
+            cell.textContent = value !== '' ? value : '-';
+            row.appendChild(cell);
+        });
+
+        tbody.appendChild(row);
+    });
 }
 
 function displayQuotationItems(items) {

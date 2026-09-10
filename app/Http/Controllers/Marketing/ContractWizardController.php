@@ -40,6 +40,7 @@ class ContractWizardController extends Controller
             'quotationRooms.room.building.city',
             'quotationRooms.room.building.district',
             'quotationRooms.room.building.subdistrict',
+            'quotationDetails.room.room.building',
         ]);
 
         if ($quotation->customer) {
@@ -48,6 +49,7 @@ class ContractWizardController extends Controller
         }
 
         $quotationBuildings = $this->resolveQuotationBuildings($quotation);
+        $quotationRoomLocations = $this->resolveQuotationRoomLocations($quotation, $quotationBuildings);
 
         return [
             'success' => true,
@@ -57,7 +59,63 @@ class ContractWizardController extends Controller
             'quotationDetails' => $quotation->quotationDetails->values(),
             'quotationBuildings' => $quotationBuildings,
             'quotation_buildings' => $quotationBuildings,
+            'quotationRoomLocations' => $quotationRoomLocations,
+            'quotation_room_locations' => $quotationRoomLocations,
         ];
+    }
+
+    /**
+     * Building / lantai / ruangan yang dipakai quotation ini, untuk ditampilkan di Step 2.
+     *
+     * Sumber utama adalah quotationRooms (room_id -> MasterRoom, yang membawa building
+     * dan room_floor). Quotation lama / renewal kadang tidak punya baris QuotationRoom,
+     * jadi fallback-nya lewat quotationDetails.room (SurveyDetail) -> room (MasterRoom).
+     */
+    private function resolveQuotationRoomLocations(Quotation $quotation, array $quotationBuildings = []): array
+    {
+        $rows = collect();
+
+        foreach ($quotation->quotationRooms as $quotationRoom) {
+            $masterRoom = $quotationRoom->room;
+
+            $rows->push([
+                'building' => $masterRoom?->building?->building_name,
+                'floor' => $masterRoom?->room_floor,
+                'room' => $quotationRoom->room_name ?: $masterRoom?->room_name,
+            ]);
+        }
+
+        if ($rows->isEmpty()) {
+            $fallbackBuilding = count($quotationBuildings) === 1
+                ? ($quotationBuildings[0]['name'] ?? null)
+                : null;
+
+            foreach ($quotation->quotationDetails as $detail) {
+                $masterRoom = $detail->room?->room;
+
+                $rows->push([
+                    'building' => $masterRoom?->building?->building_name ?: $fallbackBuilding,
+                    'floor' => $masterRoom?->room_floor,
+                    'room' => $detail->room_name ?: $masterRoom?->room_name,
+                ]);
+            }
+        }
+
+        return $rows
+            ->map(fn (array $row) => [
+                'building' => trim((string) ($row['building'] ?? '')),
+                'floor' => trim((string) ($row['floor'] ?? '')),
+                'room' => trim((string) ($row['room'] ?? '')),
+            ])
+            ->filter(fn (array $row) => $row['building'] !== '' || $row['room'] !== '')
+            ->unique(fn (array $row) => mb_strtolower($row['building'].'|'.$row['floor'].'|'.$row['room']))
+            ->sortBy([
+                fn (array $a, array $b) => strnatcasecmp($a['building'], $b['building']),
+                fn (array $a, array $b) => strnatcasecmp($a['floor'], $b['floor']),
+                fn (array $a, array $b) => strnatcasecmp($a['room'], $b['room']),
+            ])
+            ->values()
+            ->all();
     }
 
     private function resolveQuotationBuildings(Quotation $quotation): array
