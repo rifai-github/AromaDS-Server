@@ -1256,15 +1256,15 @@
                                         $currentProductTypeName = $currentProduct && $currentProduct->productType ? (string) $currentProduct->productType->name : '';
                                         $currentProductCategoryName = $currentProduct && $currentProduct->productCategory ? (string) $currentProduct->productCategory->name : '';
 
-                                        // QA bug: variant_name on master_products is a generic brand-line code
-                                        // (e.g. "Luxo GHI", "Artisan DEF") shared by MULTIPLE distinct aromas
-                                        // within the same brand line (e.g. "Loco Floral" and "Ginger Blossom"
-                                        // both carry variant_name "Luxo GHI"). Filtering by variant_name alone
-                                        // therefore mixed unrelated aromas into the same dropdown — the
-                                        // requirement is "show only size (ml) variants of THIS SAME aroma,
-                                        // never switch to a different aroma." The product NAME (with the size
-                                        // suffix stripped) is the only field that actually identifies which
-                                        // aroma this is, so that's what we group by.
+                                        // CLIENT RULE (Sep 2026): the aroma dropdown is scoped to the BRAND
+                                        // LINE, not to a single aroma. An "Artisan" row must list every
+                                        // Artisan material in the SAME product category, in every packaging
+                                        // size, with the aroma picked up front (quotation/contract) staying
+                                        // pre-selected. This deliberately WIDENS the earlier "same aroma,
+                                        // size variants only" rule — product_category_id stays in the scope
+                                        // so refills never mix with dispensers or other categories.
+                                        // The stripped base name below is now only the FALLBACK, used when a
+                                        // product carries no brand_line at all.
                                         $currentBaseName = $currentProduct ? trim(preg_replace([
                                             '/\b\d+(?:[\.,]\d+)?\s*ml\b/i',
                                             '/[-_\[\]\(\)]+/',
@@ -1323,11 +1323,23 @@
                                         $hasSpecificVariant = $isAromaType && !empty($normalizedCurrentVariant);
                                         $hasStrictAllowedProductList = $rentalDetailId && !empty($allowedProductIds);
 
+                                        // Brand-line scope: same brand_line + same product_category, all sizes.
+                                        // Only applies to aroma/refill rows that actually have a brand_line;
+                                        // everything else keeps the per-aroma base-name fallback.
+                                        $currentCategoryId = $currentProduct && $currentProduct->product_category_id
+                                            ? (int) $currentProduct->product_category_id
+                                            : null;
+                                        $hasBrandFamilyScope = $isAromaType && !empty($normalizedCurrentBrandLine);
+
+                                        // An aroma row with a brand_line but no variant_name must still take
+                                        // the family-expansion branches below, not the narrow allowed-ids path.
+                                        $hasSpecificVariant = $hasSpecificVariant || $hasBrandFamilyScope;
+
                                         // Filter products list to the checked Material List for this rental detail.
-                                        // Aroma/refill variants are expanded by BASE PRODUCT NAME (size suffix
-                                        // stripped) so all packaging sizes of the SAME aroma appear, never a
-                                        // different aroma — variant_name is too coarse for this (see note above).
-                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBaseName, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $item, $allowedProductIds, $rentalDetailId) {
+                                        // Aroma/refill rows are expanded to the whole BRAND LINE within the
+                                        // same product category (all aromas, all packaging sizes). Rows with
+                                        // no brand_line fall back to the per-aroma base-name grouping.
+                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBaseName, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $hasBrandFamilyScope, $currentCategoryId, $item, $allowedProductIds, $rentalDetailId) {
                                             $productBrandLine = $p->brand_line
                                                 ? strtolower(trim(preg_replace('/\s+/', ' ', $p->brand_line)))
                                                 : null;
@@ -1345,12 +1357,19 @@
                                                 ' ',
                                             ], $p->name ?? ''));
                                             $normalizedProductBaseName = strtolower($productBaseName);
-                                            $sameVariant = $normalizedCurrentBaseName
-                                                ? $normalizedProductBaseName === $normalizedCurrentBaseName
-                                                : ($normalizedCurrentVariant && (
-                                                    $productVariant === $normalizedCurrentVariant
-                                                    || str_contains($productName, $normalizedCurrentVariant)
-                                                ));
+
+                                            if ($hasBrandFamilyScope) {
+                                                // Same brand line + same product category = same family.
+                                                $sameVariant = $productBrandLine === $normalizedCurrentBrandLine
+                                                    && (!$currentCategoryId || (int) $p->product_category_id === $currentCategoryId);
+                                            } else {
+                                                $sameVariant = $normalizedCurrentBaseName
+                                                    ? $normalizedProductBaseName === $normalizedCurrentBaseName
+                                                    : ($normalizedCurrentVariant && (
+                                                        $productVariant === $normalizedCurrentVariant
+                                                        || str_contains($productName, $normalizedCurrentVariant)
+                                                    ));
+                                            }
 
                                             if ($hasStrictAllowedProductList) {
                                                 if ($hasSpecificVariant) {
@@ -1905,6 +1924,50 @@ function isPackageConversionMaterialProduct(product) {
         || /\boil\b/.test(haystack);
 }
 
+function normalizeProductCategoryId(product) {
+    const raw = product?.product_category_id ?? product?.productCategory?.id ?? product?.product_category?.id;
+    return (raw === null || raw === undefined || raw === '') ? null : String(raw);
+}
+
+/**
+ * CLIENT RULE (Sep 2026): scope the material dropdown to the whole BRAND LINE
+ * (Artisan / Signature / Luxo / ...) within the same product category, in every
+ * packaging size — not to a single aroma. The product chosen up front stays
+ * selected; the operator may switch to any other aroma of that same brand.
+ *
+ * Rows without a brand_line fall back to filterSamePackageMaterialFamily so
+ * they keep the old per-aroma behaviour instead of opening up to everything.
+ */
+function filterSameBrandFamily(currentProduct, productList) {
+    if (!isPackageConversionMaterialProduct(currentProduct)) {
+        return productList;
+    }
+
+    const currentBrandLine = normalizeProductBrandLine(currentProduct);
+    if (!currentBrandLine) {
+        return filterSamePackageMaterialFamily(currentProduct, productList);
+    }
+
+    const currentCategoryId = normalizeProductCategoryId(currentProduct);
+
+    return productList.filter(product => {
+        if (String(product.id) === String(currentProduct.id)) {
+            return true;
+        }
+
+        if (normalizeProductBrandLine(product) !== currentBrandLine) {
+            return false;
+        }
+
+        if (!currentCategoryId) {
+            return true;
+        }
+
+        const productCategoryId = normalizeProductCategoryId(product);
+        return !productCategoryId || productCategoryId === currentCategoryId;
+    });
+}
+
 function filterSamePackageMaterialFamily(currentProduct, productList) {
     if (!isPackageConversionMaterialProduct(currentProduct)) {
         return productList;
@@ -2279,7 +2342,7 @@ function openEditModal(id) {
                                         }
 
                                         if (!isUnit) {
-                                            filteredProducts = filterSamePackageMaterialFamily(item.product, filteredProducts);
+                                            filteredProducts = filterSameBrandFamily(item.product, filteredProducts);
                                         }
 
                                         // Unit row styling
@@ -2501,7 +2564,7 @@ function handleComponentChange(selectElement, rowIndex) {
         filteredProducts = window.availableProducts.filter(p => p.product_category_id == productCategoryId || (p.productCategory && p.productCategory.id == productCategoryId));
     }
 
-    filteredProducts = filterSamePackageMaterialFamily(originalProduct, filteredProducts);
+    filteredProducts = filterSameBrandFamily(originalProduct, filteredProducts);
     
     // Rebuild options
     let options = '<option value="">-- Select Product --</option>';
@@ -2565,6 +2628,9 @@ function handlePackagingSizeChange(selectElement, index) {
     }
 
     if (!isUnit) {
+        // Deliberately per-aroma, NOT filterSameBrandFamily: changing the packaging
+        // size must swap to the SAME aroma in the new size, never to another aroma
+        // of the same brand line. Widening the dropdown does not widen this.
         candidates = filterSamePackageMaterialFamily(currentProduct, candidates);
     }
 
