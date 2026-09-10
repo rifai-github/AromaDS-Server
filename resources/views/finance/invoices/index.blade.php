@@ -46,11 +46,23 @@
         background-color: #eff6ff;
         transition: background-color 0.2s ease;
     }
-    
+
     .responsive-table tbody tr {
         cursor: pointer;
     }
-    
+
+    /* Potong teks kolom yang terlalu panjang -> "..." (nilai penuh muncul saat hover) */
+    .cell-ellipsis {
+        display: block;
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .cell-ellipsis-200 { max-width: 200px; }
+    .cell-ellipsis-250 { max-width: 250px; }
+    .cell-ellipsis-280 { max-width: 280px; }
+
     /* Mobile Responsive */
     @media (max-width: 768px) {
         .responsive-table th,
@@ -732,7 +744,7 @@
                         </th>
                         <th class="w-[120px]" data-column="invoice_number">Invoice No</th>
                         <th class="w-[120px]" data-column="contract_number">Contract No</th>
-                        <th class="w-[200px]" data-column="customer__name">Customer</th>
+                        <th class="w-[280px]" data-column="customer__name">Customer</th>
                         <th class="w-[150px]" data-column="billing_group">Billing Group</th>
                         <th class="w-[150px]" data-no-filter style="display:none">Jobs</th>
                         <th class="w-[100px]" data-column="ba_date" data-type="date">BA Date</th>
@@ -771,8 +783,12 @@
                         </td>
                         <td class="font-medium">{{ $invoice->invoice_number ?? '-' }}</td>
                         <td>{{ $invoice->contract_number ?? '-' }}</td>
-                        <td>{{ $invoice->customer->name ?? '-' }}</td>
-                        <td>{{ $invoice->billingGroup->billing_group_name ?? $invoice->contract->billingGroup->billing_group_name ?? '-' }}</td>
+                        @php
+                            $customerName = $invoice->customer->name ?? '-';
+                            $billingGroupName = $invoice->billingGroup->billing_group_name ?? $invoice->contract->billingGroup->billing_group_name ?? '-';
+                        @endphp
+                        <td><span class="cell-ellipsis cell-ellipsis-280" title="{{ $customerName }}">{{ $customerName }}</span></td>
+                        <td><span class="cell-ellipsis" title="{{ $billingGroupName }}">{{ $billingGroupName }}</span></td>
                         <td class="text-xs" style="display:none">
                             {{ $invoice->jobSchedules->pluck('job_number')->filter()->implode(', ') ?: '-' }}
                         </td>
@@ -790,7 +806,7 @@
                             @endphp
                             <span class="badge {{ $badge['class'] }}">{{ $badge['label'] }}</span>
                         </td>
-                        <td>{{ $invoice->diterima_oleh ?? '-' }}</td>
+                        <td><span class="cell-ellipsis" title="{{ $invoice->diterima_oleh ?? '-' }}">{{ $invoice->diterima_oleh ?? '-' }}</span></td>
                         <td>{{ $invoice->pada ? \Carbon\Carbon::parse($invoice->pada)->format('d/M/Y - H:i') : '-' }}</td>
                         <td>{{ $invoice->invoice_date ? \Carbon\Carbon::parse($invoice->invoice_date)->format('d/M/Y') : '-' }}</td>
                         <td class="text-center">
@@ -847,17 +863,28 @@
                             </span>
                         </td>
                         <td class="text-center">{{ $invoice->umur_invoice ?? '0' }}</td>
-                        <td>{{ $invoice->pic_finance ?: ($invoice->billingGroup->pic_name ?? $invoice->contract->billingGroup->pic_name ?? '-') }}</td>
-                        <td>{{ $invoice->email ?: ($invoice->billingGroup->pic_email ?? $invoice->contract->billingGroup->pic_email ?? $invoice->customer->email ?? '-') }}</td>
+                        @php
+                            $picFinance = $invoice->pic_finance ?: ($invoice->billingGroup->pic_name ?? $invoice->contract->billingGroup->pic_name ?? '-');
+                            $picEmail = $invoice->email ?: ($invoice->billingGroup->pic_email ?? $invoice->contract->billingGroup->pic_email ?? $invoice->customer->email ?? '-');
+                            $fakturPajak = $invoice->faktur_pajak ?? '-';
+                            $gedung = $invoice->contract->quotation->survey->building_name ?? '-';
+                            $alamat1 = $invoice->billing_address ?: ($invoice->customer->address ?? '-');
+                            $alamat2 = $invoice->city_name ?: ($invoice->customer->city ?? '-');
+                            $catatanInternal = $invoice->internal_notes ?: ($invoice->contract->notes_finance ?? $invoice->contract->internal_remark ?? '-');
+                            $catatanCustomer = $invoice->additional_notes ?: ($invoice->contract->notes ?? '-');
+                            $updaterName = $invoice->updater->name ?? '-';
+                        @endphp
+                        <td><span class="cell-ellipsis" title="{{ $picFinance }}">{{ $picFinance }}</span></td>
+                        <td><span class="cell-ellipsis cell-ellipsis-200" title="{{ $picEmail }}">{{ $picEmail }}</span></td>
                         <td class="text-center">{{ $invoice->tax_code ?: ($invoice->contract->ppn_code ?? '-') }}</td>
-                        <td>{{ $invoice->faktur_pajak ?? '-' }}</td>
-                        <td>{{ $invoice->contract->quotation->survey->building_name ?? '-' }}</td>
-                        <td>{{ $invoice->billing_address ?: ($invoice->customer->address ?? '-') }}</td>
-                        <td>{{ $invoice->city_name ?: ($invoice->customer->city ?? '-') }}</td>
-                        <td>{{ $invoice->internal_notes ?: ($invoice->contract->notes_finance ?? $invoice->contract->internal_remark ?? '-') }}</td>
-                        <td>{{ $invoice->additional_notes ?: ($invoice->contract->notes ?? '-') }}</td>
+                        <td><span class="cell-ellipsis" title="{{ $fakturPajak }}">{{ $fakturPajak }}</span></td>
+                        <td><span class="cell-ellipsis cell-ellipsis-200" title="{{ $gedung }}">{{ $gedung }}</span></td>
+                        <td><span class="cell-ellipsis cell-ellipsis-250" title="{{ $alamat1 }}">{{ $alamat1 }}</span></td>
+                        <td><span class="cell-ellipsis cell-ellipsis-250" title="{{ $alamat2 }}">{{ $alamat2 }}</span></td>
+                        <td><span class="cell-ellipsis" title="{{ $catatanInternal }}">{{ $catatanInternal }}</span></td>
+                        <td><span class="cell-ellipsis" title="{{ $catatanCustomer }}">{{ $catatanCustomer }}</span></td>
                         <td>{{ $invoice->updated_at ? \Carbon\Carbon::parse($invoice->updated_at)->format('d/M/Y - H:i') : '-' }}</td>
-                        <td>{{ $invoice->updater->name ?? '-' }}</td>
+                        <td><span class="cell-ellipsis" title="{{ $updaterName }}">{{ $updaterName }}</span></td>
                     </tr>
                     @empty
                     <tr>
