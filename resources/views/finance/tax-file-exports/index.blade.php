@@ -1213,56 +1213,22 @@ function openCreateModal() {
         
         document.getElementById('modalBody').innerHTML = `
             <form id="form" onsubmit="submitForm(event)">
-                <div class="modal-section">
-                    <div class="modal-section-title">Export Mode</div>
-                    <div class="form-group">
-                        <label class="form-label">Select Export Mode *</label>
-                        <div style="display: flex; gap: 20px; margin-top: 8px;">
-                            <label style="display: flex; align-items: center; cursor: pointer;">
-                                <input type="radio" name="selection_mode" value="date_range" checked onchange="toggleExportMode()" style="margin-right: 8px;">
-                                <span>By Date Range</span>
-                            </label>
-                            <label style="display: flex; align-items: center; cursor: pointer;">
-                                <input type="radio" name="selection_mode" value="specific_invoices" onchange="toggleExportMode()" style="margin-right: 8px;">
-                                <span>By Specific Invoices</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-                
+                <input type="hidden" name="selection_mode" value="specific_invoices">
+                <input type="hidden" name="export_date" value="${new Date().toLocaleDateString('en-CA')}">
+                <input type="hidden" name="export_type" value="custom">
+                <input type="hidden" name="file_format" value="xlsx">
+                <input type="hidden" name="include_details" value="0">
+
                 <div class="modal-section">
                     <div class="modal-section-title">Export Information</div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="form-group">
-                            <label class="form-label">Export Date *</label>
-                            <input type="text" id="modal_export_date" name="export_date" class="form-input" value="${new Date().toLocaleDateString('en-CA')}" required readonly>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Export Type *</label>
-                            <select name="export_type" class="form-input" required>
-                                <option value="">Select Type</option>
-                                <option value="monthly">Monthly</option>
-                                <option value="quarterly">Quarterly</option>
-                                <option value="yearly">Yearly</option>
-                                <option value="custom" selected>Custom Period</option>
-                            </select>
-                        </div>
-                        <div class="form-group" id="period_from_group">
-                            <label class="form-label">Period From *</label>
-                            <input type="text" id="modal_period_from" name="period_from" class="form-input" readonly>
-                        </div>
-                        <div class="form-group" id="period_to_group">
-                            <label class="form-label">Period To *</label>
-                            <input type="text" id="modal_period_to" name="period_to" class="form-input" readonly>
-                        </div>
-                    </div>
-                    
-                    <!-- Invoice Selection Section -->
-                    <div id="invoice_selection_section" style="display: none; margin-top: 20px;">
+                    <div class="form-group">
                         <label class="form-label">Select Invoices *</label>
+                        ${invoices.length > 0 ? `
+                            <input type="text" id="invoice_search" class="form-input" placeholder="Cari nomor invoice atau nama customer..." oninput="filterInvoiceList()" autocomplete="off" style="margin-top: 8px;">
+                        ` : ''}
                         <div style="max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-top: 8px;">
                             ${invoices.length > 0 ? invoices.map(inv => `
-                                <label style="display: flex; align-items: center; padding: 8px; cursor: pointer; border-bottom: 1px solid #f3f4f6;">
+                                <label class="invoice-option" style="display: flex; align-items: center; padding: 8px; cursor: pointer; border-bottom: 1px solid #f3f4f6;">
                                     <input type="checkbox" name="invoice_ids[]" value="${inv.id}" style="margin-right: 12px;">
                                     <div style="flex: 1;">
                                         <strong>${inv.invoice_number}</strong> - ${inv.customer_name || 'N/A'}
@@ -1270,31 +1236,16 @@ function openCreateModal() {
                                     </div>
                                 </label>
                             `).join('') : '<p style="text-align: center; color: #9ca3af; padding: 20px;">No invoices available</p>'}
+                            <p id="invoice_no_result" style="display: none; text-align: center; color: #9ca3af; padding: 20px;">No invoices match your search</p>
                         </div>
                         <small style="color: #6b7280; margin-top: 8px; display: block;">Period dates will be auto-calculated from selected invoices</small>
                     </div>
                 </div>
-                
+
                 <div class="modal-section">
-                    <div class="modal-section-title">Export Settings</div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="form-group">
-                            <label class="form-label">File Format *</label>
-                            <select name="file_format" class="form-input" required>
-                                <option value="xlsx" selected>CoreTax (XLSX)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Include Details</label>
-                            <select name="include_details" class="form-input">
-                                <option value="0">No</option>
-                                <option value="1">Yes</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="grid-column: 1 / -1;">
-                            <label class="form-label">Notes</label>
-                            <textarea name="notes" class="form-input form-textarea" placeholder="Additional notes about this export"></textarea>
-                        </div>
+                    <div class="modal-section-title">Notes</div>
+                    <div class="form-group">
+                        <textarea name="notes" class="form-input form-textarea" placeholder="Additional notes about this export"></textarea>
                     </div>
                 </div>
             </form>
@@ -1305,7 +1256,12 @@ function openCreateModal() {
             <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
             <button type="submit" form="form" class="btn btn-primary">Create Export</button>
         `;
-        
+
+        // Index each row's own text so the search never has to re-escape markup.
+        document.querySelectorAll('#modalBody .invoice-option').forEach(option => {
+            option.dataset.search = option.textContent.replace(/\s+/g, ' ').trim().toLowerCase();
+        });
+
         initModalFlatpickr();
     })
     .catch(error => {
@@ -1315,26 +1271,29 @@ function openCreateModal() {
     });
 }
 
-function toggleExportMode() {
-    const mode = document.querySelector('input[name="selection_mode"]:checked').value;
-    const invoiceSection = document.getElementById('invoice_selection_section');
-    const periodFromGroup = document.getElementById('period_from_group');
-    const periodToGroup = document.getElementById('period_to_group');
-    const periodFromInput = document.getElementById('modal_period_from');
-    const periodToInput = document.getElementById('modal_period_to');
-    
-    if (mode === 'specific_invoices') {
-        invoiceSection.style.display = 'block';
-        periodFromGroup.style.display = 'none';
-        periodToGroup.style.display = 'none';
-        periodFromInput.removeAttribute('required');
-        periodToInput.removeAttribute('required');
-    } else {
-        invoiceSection.style.display = 'none';
-        periodFromGroup.style.display = 'block';
-        periodToGroup.style.display = 'block';
-        periodFromInput.setAttribute('required', 'required');
-        periodToInput.setAttribute('required', 'required');
+function filterInvoiceList() {
+    const searchInput = document.getElementById('invoice_search');
+    if (!searchInput) return;
+
+    const keyword = searchInput.value.replace(/\s+/g, ' ').trim().toLowerCase();
+    const options = document.querySelectorAll('#modalBody .invoice-option');
+    let visibleCount = 0;
+
+    options.forEach(option => {
+        const checkbox = option.querySelector('input[type="checkbox"]');
+        // Keep already-selected invoices visible so a search can never hide
+        // a row that is about to be submitted.
+        const matches = keyword === ''
+            || (checkbox && checkbox.checked)
+            || (option.dataset.search || '').includes(keyword);
+
+        option.style.display = matches ? 'flex' : 'none';
+        if (matches) visibleCount++;
+    });
+
+    const emptyState = document.getElementById('invoice_no_result');
+    if (emptyState) {
+        emptyState.style.display = visibleCount === 0 ? 'block' : 'none';
     }
 }
 
