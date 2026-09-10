@@ -643,20 +643,12 @@
                                     <td class="text-end fw-bold" id="detail-subtotal">Rp {{ number_format($invoice->subtotal, 0, ',', '.') }}</td>
                                     <td colspan="2"></td>
                                 </tr>
-                                <tr id="detail-discount-row" style="{{ $invoice->invoice_status === 'draft' || $showDiscountSummary ? '' : 'display:none;' }}">
+                                {{-- Read-only here: the discount is entered per rental line on the
+                                     Rental tab, and this row only totals it up so the summary adds up. --}}
+                                <tr id="detail-discount-row" style="{{ $showDiscountSummary ? '' : 'display:none;' }}">
                                     <td colspan="6" class="text-end fw-bold text-danger" id="detail-discount-label">Discount</td>
                                     <td class="text-end fw-bold text-danger">
-                                        @if($invoice->invoice_status === 'draft')
-                                            <input type="number"
-                                                   class="form-control form-control-sm text-end discount-amount-input"
-                                                   data-invoice-id="{{ $invoice->id }}"
-                                                   value="{{ $invoice->discount_amount }}"
-                                                   step="1000"
-                                                   min="0"
-                                                   style="width: 150px; display: inline-block;">
-                                        @else
-                                            <span id="detail-discount">Rp {{ number_format($invoice->discount_amount, 0, ',', '.') }}</span>
-                                        @endif
+                                        <span id="detail-discount">Rp {{ number_format($invoice->discount_amount, 0, ',', '.') }}</span>
                                     </td>
                                     <td colspan="2"></td>
                                 </tr>
@@ -689,6 +681,8 @@
                                     <th class="text-center">Qty Free</th>
                                     <th class="text-end">Price</th>
                                     <th class="text-end">Total</th>
+                                    <th class="text-end">Discount</th>
+                                    <th class="text-end">Total Setelah Diskon</th>
                                     <th>Terakhir Update</th>
                                     <th>Oleh</th>
                                 </tr>
@@ -706,18 +700,49 @@
                                         Rp {{ number_format($rental->unit_price, 0, ',', '.') }}
                                     </td>
                                     <td class="text-end rental-total-{{ $rental->id }}">Rp {{ number_format($rental->total_price, 0, ',', '.') }}</td>
+                                    <td class="text-end text-danger fw-bold">
+                                        @if($invoice->invoice_status === 'draft')
+                                            <input type="number"
+                                                   class="form-control form-control-sm text-end rental-discount-input"
+                                                   data-invoice-id="{{ $invoice->id }}"
+                                                   data-rental-id="{{ $rental->id }}"
+                                                   data-line-total="{{ (float) $rental->total_price }}"
+                                                   value="{{ (float) ($rental->discount_amount ?? 0) }}"
+                                                   step="1000"
+                                                   min="0"
+                                                   max="{{ (float) $rental->total_price }}"
+                                                   style="width: 140px; display: inline-block;">
+                                        @else
+                                            <span class="rental-discount-{{ $rental->id }}">Rp {{ number_format($rental->discount_amount ?? 0, 0, ',', '.') }}</span>
+                                        @endif
+                                    </td>
+                                    <td class="text-end fw-bold rental-net-total-{{ $rental->id }}">Rp {{ number_format($rental->net_total, 0, ',', '.') }}</td>
                                     <td>{{ $rental->updated_at->format('d/M/Y - H:i') }}</td>
                                     <td>{{ $invoice->updater->name ?? '-' }}</td>
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="10" class="text-center py-5 text-muted">
+                                    <td colspan="12" class="text-center py-5 text-muted">
                                         <i class="fas fa-info-circle me-2"></i>No data found in rentals.
                                     </td>
                                 </tr>
                                 @endforelse
                             </tbody>
+                            @if($invoice->invoiceRentalDetails->isNotEmpty())
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td colspan="8" class="text-end fw-bold">Total Diskon Rental</td>
+                                    <td class="text-end fw-bold text-danger" id="rental-total-discount">Rp {{ number_format($invoice->invoiceRentalDetails->sum('discount_amount'), 0, ',', '.') }}</td>
+                                    <td colspan="3"></td>
+                                </tr>
+                            </tfoot>
+                            @endif
                         </table>
+                        @if($invoice->invoice_status === 'draft')
+                            <small class="text-muted d-block mt-2">
+                                <i class="fas fa-info-circle me-1"></i>Isi diskon per baris rental dalam rupiah. Nilainya langsung tersimpan dan Subtotal, PPN, serta Grand Total ikut dihitung ulang.
+                            </small>
+                        @endif
                     </div>
                 </div>
 
@@ -1623,8 +1648,9 @@ $(document).ready(function() {
         $('#basic-grand-total').text('Rp ' + response.formatted_grand_total);
         $('#basic-outstanding').text('Rp ' + response.formatted_outstanding);
 
-        $('#basic-discount-row').toggle(!!response.show_discount || $('.discount-amount-input').length > 0);
-        $('#detail-discount-row').toggle(!!response.show_discount || $('.discount-amount-input').length > 0);
+        $('#basic-discount-row').toggle(!!response.show_discount);
+        $('#detail-discount-row').toggle(!!response.show_discount);
+        $('#detail-discount').text('Rp ' + response.formatted_discount);
         $('#basic-tax-row').toggle(!!response.show_tax);
         $('#detail-tax-row').toggle(!!response.show_tax);
 
@@ -1634,15 +1660,55 @@ $(document).ready(function() {
         }
     }
 
-    $('.discount-amount-input').on('change', function() {
-        const invoiceId = $(this).data('invoice-id');
-        const discountAmount = $(this).val();
+    // Repaint every rental line from the server's own figures. Without this a
+    // row can keep showing a discount that was never stored - the input would
+    // then already hold that number, no change event fires, and the value stays
+    // unsaved while the screen insists otherwise.
+    function syncRentalDiscountLines(lines) {
+        if (!Array.isArray(lines)) {
+            return;
+        }
+
+        lines.forEach(function(line) {
+            const $input = $('.rental-discount-input[data-rental-id="' + line.id + '"]');
+
+            if ($input.length) {
+                if (!$input.is(':focus')) {
+                    $input.val(line.discount_amount);
+                }
+                $input.data('previous-value', line.discount_amount);
+            }
+
+            $('.rental-discount-' + line.id).text('Rp ' + line.formatted_discount);
+            $('.rental-net-total-' + line.id).text('Rp ' + line.formatted_net_total);
+        });
+    }
+
+    // Discount is entered per rental line on the Rental tab. Each change saves
+    // on its own and the invoice totals are re-derived server-side.
+    $('.rental-discount-input').on('change', function() {
         const $input = $(this);
+        const invoiceId = $input.data('invoice-id');
+        const rentalId = $input.data('rental-id');
+        const lineTotal = parseFloat($input.data('line-total')) || 0;
+        const previousValue = $input.data('previous-value') ?? $input.prop('defaultValue');
+        let discountAmount = parseFloat($input.val());
+
+        if (isNaN(discountAmount) || discountAmount < 0) {
+            discountAmount = 0;
+            $input.val(0);
+        }
+
+        if (discountAmount > lineTotal) {
+            showNotification('error', 'Diskon tidak boleh melebihi total baris ini.');
+            $input.val(previousValue);
+            return;
+        }
 
         $input.prop('disabled', true);
 
         $.ajax({
-            url: `/finance/invoices/${invoiceId}/update-discount`,
+            url: `/finance/invoices/${invoiceId}/rental-details/${rentalId}/discount`,
             method: 'POST',
             data: {
                 _token: '{{ csrf_token() }}',
@@ -1650,16 +1716,17 @@ $(document).ready(function() {
             },
             success: function(response) {
                 syncInvoiceTotals(response);
+                syncRentalDiscountLines(response.lines);
 
-                showNotification('success', 'Diskon berhasil diperbarui.');
+                $('#rental-total-discount').text('Rp ' + response.formatted_discount);
+                $input.prop('disabled', false);
 
-                setTimeout(function() {
-                    window.location.reload();
-                }, 1000);
+                showNotification('success', 'Diskon rental berhasil diperbarui.');
             },
             error: function(xhr) {
-                const errorMsg = xhr.responseJSON?.message || 'Gagal memperbarui diskon.';
+                const errorMsg = xhr.responseJSON?.message || 'Gagal memperbarui diskon rental.';
                 showNotification('error', errorMsg);
+                $input.val(previousValue);
                 $input.prop('disabled', false);
             }
         });

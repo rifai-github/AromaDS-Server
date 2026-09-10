@@ -2,10 +2,10 @@
 
 namespace App\Models\Finance;
 
+use App\Models\MasterRental;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\User;
-use App\Models\MasterRental;
 
 class InvoiceRentalDetail extends Model
 {
@@ -22,6 +22,7 @@ class InvoiceRentalDetail extends Model
         'qty_free',
         'unit_price',
         'total_price',
+        'discount_amount',
         'created_by',
         'updated_by',
     ];
@@ -31,6 +32,7 @@ class InvoiceRentalDetail extends Model
         'qty_free' => 'integer',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
     ];
 
     // Relationships
@@ -72,11 +74,30 @@ class InvoiceRentalDetail extends Model
 
     public function getFormattedUnitPriceAttribute()
     {
-        return 'Rp ' . number_format($this->unit_price, 0, ',', '.');
+        return 'Rp '.number_format($this->unit_price, 0, ',', '.');
     }
 
     public function getFormattedTotalPriceAttribute()
     {
-        return 'Rp ' . number_format($this->total_price, 0, ',', '.');
+        return 'Rp '.number_format($this->total_price, 0, ',', '.');
+    }
+
+    public function getFormattedDiscountAmountAttribute()
+    {
+        return 'Rp '.number_format($this->discount_amount ?? 0, 0, ',', '.');
+    }
+
+    /**
+     * Line total after its own discount. total_price stays gross so the invoice
+     * subtotal keeps matching the sum of the line totals.
+     */
+    public function getNetTotalAttribute()
+    {
+        return max((float) $this->total_price - (float) ($this->discount_amount ?? 0), 0);
+    }
+
+    public function getFormattedNetTotalAttribute()
+    {
+        return 'Rp '.number_format($this->net_total, 0, ',', '.');
     }
 }

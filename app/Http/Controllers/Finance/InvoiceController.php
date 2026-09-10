@@ -10,6 +10,7 @@ use App\Models\Customer;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceActivity;
 use App\Models\Finance\InvoiceFile;
+use App\Models\Finance\InvoiceRentalDetail;
 use App\Models\FinanceTaxCode;
 use App\Models\TaxSetting;
 use App\Models\User;
@@ -26,6 +27,12 @@ use Illuminate\Support\Facades\Validator;
 class InvoiceController extends Controller
 {
     use AccessControlFilterTrait, ColumnFilterTrait;
+
+    /**
+     * Each invoice in a bulk print costs a DomPDF render plus a Node.js merge,
+     * so the batch is capped to keep the request inside the PHP timeout.
+     */
+    public const BULK_PRINT_LIMIT = 25;
 
     public function index(Request $request)
     {
@@ -1212,6 +1219,25 @@ class InvoiceController extends Controller
     }
 
     /**
+     * The invoice discount is the sum of its per-rental discounts.
+     *
+     * Invoices raised before the discount moved onto the rental lines carry the
+     * old header amount with no rental discounts behind it. Those keep their
+     * stored value, so opening or recalculating one never silently drops a
+     * discount that was already agreed.
+     */
+    private function calculateInvoiceDiscount(Invoice $invoice): float
+    {
+        $rentalDiscount = (float) $invoice->invoiceRentalDetails()->sum('discount_amount');
+
+        if ($rentalDiscount > 0) {
+            return round($rentalDiscount, 2);
+        }
+
+        return round((float) ($invoice->discount_amount ?? 0), 2);
+    }
+
+    /**
      * Explicitly recalculate a draft invoice's financial snapshot.
      *
      * This used to run from show()/edit(), which meant merely opening an
@@ -1260,10 +1286,11 @@ class InvoiceController extends Controller
         }
 
         $subtotal = $this->calculateInvoiceSubtotal($invoice);
+        $discount = $this->calculateInvoiceDiscount($invoice);
         $taxPayload = $this->buildInvoiceTaxPayload(
             $invoice->customer,
             $subtotal,
-            (float) ($invoice->discount_amount ?? 0),
+            $discount,
             $invoice->tax_code,
             $invoice->invoice_date
         );
@@ -1271,6 +1298,7 @@ class InvoiceController extends Controller
         $expectedOutstanding = max($taxPayload['grand_total'] - ((float) $invoice->total_paid), 0);
 
         $shouldSync = round((float) $invoice->subtotal, 2) !== $subtotal
+            || round((float) $invoice->discount_amount, 2) !== $discount
             || round((float) $invoice->subtotal_after_discount, 2) !== round($taxPayload['subtotal_after_discount'], 2)
             || round((float) $invoice->tax_amount, 2) !== round($taxPayload['tax_amount'], 2)
             || round((float) $invoice->grand_total, 2) !== round($taxPayload['grand_total'], 2)
@@ -1287,6 +1315,7 @@ class InvoiceController extends Controller
 
         $invoice->forceFill([
             'subtotal' => $subtotal,
+            'discount_amount' => $discount,
             'tax_setting_id' => $taxPayload['tax_setting_id'],
             'tax_code' => $taxPayload['tax_code'],
             'tax_number' => $taxPayload['tax_number'],
@@ -1577,140 +1606,16 @@ class InvoiceController extends Controller
         }
 
         try {
-            // 1. Generate Invoice PDF
-            // Ensure necessary data is loaded (Matching printInvoice method)
-            $invoice->load([
-                'invoiceDetails',
-                'invoiceRentalDetails.masterRental',
-                'invoiceRentalDetails.jobSchedule.room',
-                'invoiceRentalDetails.jobSchedule.building.city',
-                'invoiceRentalDetails.jobSchedule.building.district',
-                'invoiceRentalDetails.jobSchedule.building.subdistrict',
-                'invoiceRentalDetails.jobSchedule.building.province',
-                'customer.defaultBankPayment.bank',
-                'billingGroup',
-                'contract.billingGroup',
-                'contract.branch.invoiceAuthorizedByUser',
-                'contractById.branch.invoiceAuthorizedByUser',
-                'bankReceipts',
-                'taxSetting',
-            ]);
-
-            // Generate PDF using existing view.
-            // enable_php is required for the in-template page_text() page-numbering script.
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('finance.invoices.print_template', compact('invoice'))
-                ->setOption('enable_php', true);
-            $invoicePdfContent = $pdf->output();
-
-            // Save temp invoice PDF
-            $tempInvoicePath = storage_path('app/temp/invoice_'.$invoice->id.'_'.time().'.pdf');
-            if (! file_exists(dirname($tempInvoicePath))) {
-                mkdir(dirname($tempInvoicePath), 0755, true);
-            }
-            file_put_contents($tempInvoicePath, $invoicePdfContent);
-
-            // 2. Prepare paths for Node.js script
-            $mergePaths = [$tempInvoicePath];
-
-            // 3. (REMOVED) Static CSR Generation block was here.
-            // Now handled dynamically in Step 4 below based on selectedIds (including sys-csr virtual IDs).
-
-            $generatedTempPdfs = []; // Track generated PDFs to cleanup later
-
-            // 4. Collect Additional Attachments
-            foreach ($selectedIds as $id) {
-                if (strpos($id, 'sys-csr-') === 0) {
-                    // Logic for System Generated CSR
-                    try {
-                        $jobId = str_replace('sys-csr-', '', $id);
-                        $baseJob = \App\Models\JobSchedule::find($jobId);
-
-                        if ($baseJob && in_array($baseJob->status, ['done_job', 'completed'])) {
-                            // Fetch all sibling jobs in the same group to include all rooms
-                            $jobs = \App\Models\JobSchedule::with($this->csrPrintRelations())
-                                ->where('job_number', $baseJob->job_number)
-                                ->whereIn('status', ['done_job', 'completed'])
-                                ->get();
-
-                            // Match grouping logic from JobScheduleController.printCsr
-                            $groupedJobs = $jobs->groupBy('job_number');
-
-                            $csrPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('operational.job-schedules.pdf-csr-invoice', [
-                                'groupedJobs' => $groupedJobs,
-                                'selectedRoomIds' => null,
-                            ]);
-
-                            $tempCsrPath = storage_path('app/temp/dyn_csr_'.$jobId.'_'.time().'.pdf');
-                            file_put_contents($tempCsrPath, $csrPdf->output());
-
-                            $mergePaths[] = $tempCsrPath;
-                            $generatedTempPdfs[] = $tempCsrPath;
-                        }
-                    } catch (\Exception $e) {
-                        \Log::warning("Failed to include Sys CSR $id in merge: ".$e->getMessage());
-                    }
-
-                    continue;
-                }
-
-                $parts = explode('-', $id);
-                $prefix = $parts[0];
-                $dbId = $parts[1] ?? 0;
-
-                $fileModel = null;
-                if ($prefix === 'inv') {
-                    $fileModel = \App\Models\Finance\InvoiceFile::find($dbId);
-                } elseif ($prefix === 'cont') {
-                    $fileModel = \App\Models\ContractFile::find($dbId);
-                } elseif ($prefix === 'ba') {
-                    $fileModel = \App\Models\JobScheduleBaFile::find($dbId);
-                }
-
-                if ($fileModel && $fileModel->file_path) {
-                    $filePath = $this->resolveAttachmentPath($fileModel->file_path);
-                    if ($filePath) {
-                        $mergePaths[] = $filePath;
-                    }
-                }
-            }
-
-            if ($isHeaderPrint) {
-                $receiptPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('finance.invoices.delivery_receipt_pdf', compact('invoice'));
-                $tempReceiptPath = storage_path('app/temp/delivery_receipt_'.$invoice->id.'_'.time().'.pdf');
-                file_put_contents($tempReceiptPath, $receiptPdf->output());
-
-                $mergePaths[] = $tempReceiptPath;
-                $generatedTempPdfs[] = $tempReceiptPath;
-            }
+            $generatedTempPdfs = [];
+            $mergePaths = $this->collectInvoicePrintPaths($invoice, $selectedIds, $isHeaderPrint, $generatedTempPdfs);
 
             // 5. Call Node.js script to merge
             $tempOutputPath = storage_path('app/temp/merged_'.$invoice->id.'_'.time().'.pdf');
-            $scriptPath = base_path('app/Scripts/pdf-merge.js');
 
-            // Escape paths for shell
-            $escapedOutput = escapeshellarg($tempOutputPath);
-            $escapedInputs = array_map('escapeshellarg', $mergePaths);
-            $command = "node $scriptPath $escapedOutput ".implode(' ', $escapedInputs);
-
-            exec($command.' 2>&1', $output, $returnVar);
-
-            // Cleanup temp PDFs
-            if (file_exists($tempInvoicePath)) {
-                unlink($tempInvoicePath);
-            }
-            foreach ($generatedTempPdfs as $tp) {
-                if (file_exists($tp)) {
-                    unlink($tp);
-                }
-            }
-
-            if ($returnVar !== 0) {
-                $errorMsg = implode("\n", $output);
-                throw new \Exception("Node.js merge failed ($returnVar): ".$errorMsg);
-            }
-
-            if (! file_exists($tempOutputPath)) {
-                throw new \Exception('Merged PDF output file not created.');
+            try {
+                $this->mergePdfFiles($mergePaths, $tempOutputPath);
+            } finally {
+                $this->cleanupTempPdfs($generatedTempPdfs);
             }
 
             // Mark as printed
@@ -1728,29 +1633,311 @@ class InvoiceController extends Controller
             $sanitizedNumber = preg_replace('/[^a-zA-Z0-9_-]/', '_', $invoice->invoice_number);
             $outputFilename = 'Invoice_Combined_'.$sanitizedNumber.'.pdf';
 
-            $response = response()->stream(function () use ($tempOutputPath) {
-                $stream = fopen($tempOutputPath, 'rb');
-                fpassthru($stream);
-                fclose($stream);
-                // Unlink after streaming
-                if (file_exists($tempOutputPath)) {
-                    unlink($tempOutputPath);
-                }
-            }, 200, [
-                'Content-Type' => 'application/pdf',
-                'Content-Disposition' => ($request->query('inline') === 'true' ? 'inline' : 'attachment').'; filename="'.$outputFilename.'"',
-            ]);
-
-            return $response;
+            return $this->streamTempPdf($tempOutputPath, $outputFilename, $request->query('inline') === 'true');
 
         } catch (\Exception $e) {
             \Log::error('Error generating combined PDF: '.$e->getMessage());
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Error generating combined PDF: '.$e->getMessage(),
+                'message' => 'Failed to generate combined PDF: '.$e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Build the ordered list of PDF paths that make up one invoice's printout:
+     * the invoice itself, its selected attachments, and (for the Print button)
+     * the delivery receipt page. Temp files created here are appended to
+     * $generatedTempPdfs so the caller can clean them up after merging.
+     */
+    private function collectInvoicePrintPaths(Invoice $invoice, array $selectedIds, bool $isHeaderPrint, array &$generatedTempPdfs): array
+    {
+        // 1. Generate Invoice PDF
+        // Ensure necessary data is loaded (Matching printInvoice method)
+        $invoice->load([
+            'invoiceDetails',
+            'invoiceRentalDetails.masterRental',
+            'invoiceRentalDetails.jobSchedule.room',
+            'invoiceRentalDetails.jobSchedule.building.city',
+            'invoiceRentalDetails.jobSchedule.building.district',
+            'invoiceRentalDetails.jobSchedule.building.subdistrict',
+            'invoiceRentalDetails.jobSchedule.building.province',
+            'customer.defaultBankPayment.bank',
+            'billingGroup',
+            'contract.billingGroup',
+            'contract.branch.invoiceAuthorizedByUser',
+            'contractById.branch.invoiceAuthorizedByUser',
+            'bankReceipts',
+            'taxSetting',
+        ]);
+
+        // Generate PDF using existing view.
+        // enable_php is required for the in-template page_text() page-numbering script.
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('finance.invoices.print_template', compact('invoice'))
+            ->setOption('enable_php', true);
+        $invoicePdfContent = $pdf->output();
+
+        // Save temp invoice PDF
+        $tempInvoicePath = storage_path('app/temp/invoice_'.$invoice->id.'_'.uniqid().'.pdf');
+        if (! file_exists(dirname($tempInvoicePath))) {
+            mkdir(dirname($tempInvoicePath), 0755, true);
+        }
+        file_put_contents($tempInvoicePath, $invoicePdfContent);
+
+        // 2. Prepare paths for Node.js script
+        $mergePaths = [$tempInvoicePath];
+        $generatedTempPdfs[] = $tempInvoicePath;
+
+        // 3. (REMOVED) Static CSR Generation block was here.
+        // Now handled dynamically in Step 4 below based on selectedIds (including sys-csr virtual IDs).
+
+        // 4. Collect Additional Attachments
+        foreach ($selectedIds as $id) {
+            if (strpos($id, 'sys-csr-') === 0) {
+                // Logic for System Generated CSR
+                try {
+                    $jobId = str_replace('sys-csr-', '', $id);
+                    $baseJob = \App\Models\JobSchedule::find($jobId);
+
+                    if ($baseJob && in_array($baseJob->status, ['done_job', 'completed'])) {
+                        // Fetch all sibling jobs in the same group to include all rooms
+                        $jobs = \App\Models\JobSchedule::with($this->csrPrintRelations())
+                            ->where('job_number', $baseJob->job_number)
+                            ->whereIn('status', ['done_job', 'completed'])
+                            ->get();
+
+                        // Match grouping logic from JobScheduleController.printCsr
+                        $groupedJobs = $jobs->groupBy('job_number');
+
+                        $csrPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('operational.job-schedules.pdf-csr-invoice', [
+                            'groupedJobs' => $groupedJobs,
+                            'selectedRoomIds' => null,
+                        ]);
+
+                        $tempCsrPath = storage_path('app/temp/dyn_csr_'.$jobId.'_'.uniqid().'.pdf');
+                        file_put_contents($tempCsrPath, $csrPdf->output());
+
+                        $mergePaths[] = $tempCsrPath;
+                        $generatedTempPdfs[] = $tempCsrPath;
+                    }
+                } catch (\Exception $e) {
+                    \Log::warning("Failed to include Sys CSR $id in merge: ".$e->getMessage());
+                }
+
+                continue;
+            }
+
+            $parts = explode('-', $id);
+            $prefix = $parts[0];
+            $dbId = $parts[1] ?? 0;
+
+            $fileModel = null;
+            if ($prefix === 'inv') {
+                $fileModel = \App\Models\Finance\InvoiceFile::find($dbId);
+            } elseif ($prefix === 'cont') {
+                $fileModel = \App\Models\ContractFile::find($dbId);
+            } elseif ($prefix === 'ba') {
+                $fileModel = \App\Models\JobScheduleBaFile::find($dbId);
+            }
+
+            if ($fileModel && $fileModel->file_path) {
+                $filePath = $this->resolveAttachmentPath($fileModel->file_path);
+                if ($filePath) {
+                    $mergePaths[] = $filePath;
+                }
+            }
+        }
+
+        if ($isHeaderPrint) {
+            $receiptPdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('finance.invoices.delivery_receipt_pdf', compact('invoice'));
+            $tempReceiptPath = storage_path('app/temp/delivery_receipt_'.$invoice->id.'_'.uniqid().'.pdf');
+            file_put_contents($tempReceiptPath, $receiptPdf->output());
+
+            $mergePaths[] = $tempReceiptPath;
+            $generatedTempPdfs[] = $tempReceiptPath;
+        }
+
+        return $mergePaths;
+    }
+
+    /**
+     * Merge the given PDF paths into $outputPath using the Node.js merge script.
+     */
+    private function mergePdfFiles(array $mergePaths, string $outputPath): void
+    {
+        if (! file_exists(dirname($outputPath))) {
+            mkdir(dirname($outputPath), 0755, true);
+        }
+
+        $scriptPath = base_path('app/Scripts/pdf-merge.js');
+
+        // Escape paths for shell
+        $escapedOutput = escapeshellarg($outputPath);
+        $escapedInputs = array_map('escapeshellarg', $mergePaths);
+        $command = "node $scriptPath $escapedOutput ".implode(' ', $escapedInputs);
+
+        exec($command.' 2>&1', $output, $returnVar);
+
+        if ($returnVar !== 0) {
+            $errorMsg = implode("\n", $output);
+            throw new \Exception("Node.js merge failed ($returnVar): ".$errorMsg);
+        }
+
+        if (! file_exists($outputPath)) {
+            throw new \Exception('Merged PDF output file not created.');
+        }
+    }
+
+    private function cleanupTempPdfs(array $paths): void
+    {
+        foreach ($paths as $path) {
+            if (file_exists($path)) {
+                unlink($path);
+            }
+        }
+    }
+
+    /**
+     * Print several invoices as one merged PDF, so the user can send a whole
+     * batch to the printer in a single pass instead of opening them one by one.
+     * Each invoice contributes exactly what the single Print button produces.
+     */
+    public function printBulk(Request $request)
+    {
+        $request->validate([
+            'invoice_ids' => 'required|array|min:1|max:'.self::BULK_PRINT_LIMIT,
+            'invoice_ids.*' => 'integer',
+        ], [], ['invoice_ids' => 'invoice']);
+
+        $invoices = Invoice::whereIn('id', $request->input('invoice_ids'))
+            ->orderBy('invoice_number')
+            ->get();
+
+        if ($invoices->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Invoice tidak ditemukan.',
+            ], 404);
+        }
+
+        $printable = $invoices->filter(fn (Invoice $invoice) => $invoice->invoice_status !== 'draft' && $invoice->canPrintDocuments());
+
+        if ($printable->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tidak ada invoice terpilih yang bisa dicetak. Invoice harus sudah di-approve, dan kalau kena PPN harus sudah punya Faktur Pajak CoreTax yang aktif.',
+            ], 422);
+        }
+
+        // One invoice takes several seconds (DomPDF render + Node merge), so a
+        // full batch runs well past PHP's default limit.
+        set_time_limit(0);
+
+        $generatedTempPdfs = [];
+        $mergePaths = [];
+
+        try {
+            foreach ($printable as $invoice) {
+                // Mirror the single Print button: all attachments plus the
+                // delivery receipt page.
+                $attachments = $this->getAllInvoiceAttachments($invoice);
+                $selectedIds = $this->getDefaultPrintAttachmentIds($attachments);
+
+                $mergePaths = array_merge(
+                    $mergePaths,
+                    $this->collectInvoicePrintPaths($invoice, $selectedIds, true, $generatedTempPdfs)
+                );
+            }
+
+            $tempOutputPath = storage_path('app/temp/invoices_bulk_'.uniqid().'.pdf');
+
+            try {
+                $this->mergePdfFiles($mergePaths, $tempOutputPath);
+            } finally {
+                $this->cleanupTempPdfs($generatedTempPdfs);
+            }
+
+            Invoice::whereIn('id', $printable->pluck('id'))->update([
+                'is_printed' => true,
+                'printed_at' => now(),
+            ]);
+
+            $outputFilename = 'Invoices_'.$printable->count().'_'.now()->format('Ymd_His').'.pdf';
+
+            return $this->streamTempPdf($tempOutputPath, $outputFilename, true);
+
+        } catch (\Exception $e) {
+            $this->cleanupTempPdfs($generatedTempPdfs);
+            \Log::error('Error generating bulk invoice PDF: '.$e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal membuat PDF gabungan: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Report which of the selected invoices can actually be printed, so the UI
+     * can warn about the skipped ones before starting a slow bulk render.
+     */
+    public function printBulkPreview(Request $request)
+    {
+        $request->validate([
+            'invoice_ids' => 'required|array|min:1',
+            'invoice_ids.*' => 'integer',
+        ]);
+
+        $invoices = Invoice::whereIn('id', $request->input('invoice_ids'))
+            ->orderBy('invoice_number')
+            ->get();
+
+        $printable = [];
+        $skipped = [];
+
+        foreach ($invoices as $invoice) {
+            $entry = [
+                'id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'customer_name' => $invoice->customer->name ?? null,
+                'is_printed' => (bool) $invoice->is_printed,
+            ];
+
+            if ($invoice->invoice_status === 'draft') {
+                $skipped[] = $entry + ['reason' => 'Masih Draft'];
+            } elseif (! $invoice->canPrintDocuments()) {
+                $skipped[] = $entry + ['reason' => trim($invoice->documentBlockReason()) ?: 'Belum bisa dicetak'];
+            } else {
+                $printable[] = $entry;
+            }
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'limit' => self::BULK_PRINT_LIMIT,
+            'printable' => $printable,
+            'skipped' => $skipped,
+        ]);
+    }
+
+    /**
+     * Stream a generated temp PDF to the browser and delete it afterwards.
+     */
+    private function streamTempPdf(string $tempOutputPath, string $outputFilename, bool $inline)
+    {
+        return response()->stream(function () use ($tempOutputPath) {
+            $stream = fopen($tempOutputPath, 'rb');
+            fpassthru($stream);
+            fclose($stream);
+            // Unlink after streaming
+            if (file_exists($tempOutputPath)) {
+                unlink($tempOutputPath);
+            }
+        }, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => ($inline ? 'inline' : 'attachment').'; filename="'.$outputFilename.'"',
+        ]);
     }
 
     /**
@@ -2524,6 +2711,123 @@ class InvoiceController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to update discount: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Set the discount on one rental line. The invoice header discount is then
+     * re-derived as the sum of its lines, so the print template, tax figures
+     * and every report that reads invoices.discount_amount stay correct.
+     */
+    public function updateRentalDiscount(Request $request, Invoice $invoice, InvoiceRentalDetail $rentalDetail)
+    {
+        $request->validate([
+            'discount_amount' => 'required|numeric|min:0',
+        ]);
+
+        if ($rentalDetail->invoice_id !== $invoice->id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Rental ini bukan milik invoice tersebut.',
+            ], 404);
+        }
+
+        if ($invoice->invoice_status !== 'draft') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Hanya invoice dengan status Draft yang dapat diedit.',
+            ], 403);
+        }
+
+        $discountAmount = round((float) $request->discount_amount, 2);
+        $lineTotal = round((float) $rentalDetail->total_price, 2);
+
+        if ($discountAmount > $lineTotal) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Diskon tidak boleh melebihi total baris ini (Rp '.number_format($lineTotal, 0, ',', '.').').',
+            ], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            $rentalDetail->update([
+                'discount_amount' => $discountAmount,
+                'updated_by' => Auth::id(),
+            ]);
+
+            $invoice->load('invoiceRentalDetails');
+
+            $subtotal = $this->calculateInvoiceSubtotal($invoice);
+            $totalDiscount = round((float) $invoice->invoiceRentalDetails->sum('discount_amount'), 2);
+
+            $taxPayload = $this->buildInvoiceTaxPayload(
+                $invoice->customer,
+                $subtotal,
+                $totalDiscount,
+                $invoice->tax_code,
+                $invoice->invoice_date
+            );
+
+            $invoice->update([
+                'subtotal' => $subtotal,
+                'discount_amount' => $totalDiscount,
+                'tax_setting_id' => $taxPayload['tax_setting_id'],
+                'tax_code' => $taxPayload['tax_code'],
+                'tax_number' => $taxPayload['tax_number'],
+                'npwp_number' => $taxPayload['npwp_number'],
+                'tax_address' => $taxPayload['tax_address'],
+                'subtotal_after_discount' => $taxPayload['subtotal_after_discount'],
+                'tax_amount' => $taxPayload['tax_amount'],
+                'total_amount' => $taxPayload['grand_total'],
+                'grand_total' => $taxPayload['grand_total'],
+                'outstanding' => max($taxPayload['grand_total'] - ($invoice->total_paid ?? 0), 0),
+                'updated_by' => Auth::id(),
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Diskon rental berhasil diperbarui.',
+                'rental_detail_id' => $rentalDetail->id,
+                'line_discount' => $discountAmount,
+                'formatted_line_discount' => number_format($discountAmount, 0, ',', '.'),
+                'line_net_total' => max($lineTotal - $discountAmount, 0),
+                'formatted_line_net_total' => number_format(max($lineTotal - $discountAmount, 0), 0, ',', '.'),
+                // Every line, not just the edited one: the browser may be showing
+                // values that no longer match the database, and a stale figure on
+                // screen reads as a discount that was never actually saved.
+                'lines' => $invoice->invoiceRentalDetails->map(fn (InvoiceRentalDetail $line) => [
+                    'id' => $line->id,
+                    'discount_amount' => (float) $line->discount_amount,
+                    'formatted_discount' => number_format((float) $line->discount_amount, 0, ',', '.'),
+                    'net_total' => $line->net_total,
+                    'formatted_net_total' => number_format($line->net_total, 0, ',', '.'),
+                ])->values(),
+                'subtotal' => $invoice->subtotal,
+                'formatted_subtotal' => number_format($invoice->subtotal, 0, ',', '.'),
+                'discount_amount' => $invoice->discount_amount,
+                'formatted_discount' => number_format($invoice->discount_amount, 0, ',', '.'),
+                'subtotal_after_discount' => $invoice->subtotal_after_discount,
+                'formatted_subtotal_after_discount' => number_format($invoice->subtotal_after_discount, 0, ',', '.'),
+                'tax_amount' => $invoice->tax_amount,
+                'formatted_tax' => number_format($invoice->tax_amount, 0, ',', '.'),
+                'show_tax' => $taxPayload['tax_amount'] > 0 || ($taxPayload['finance_tax_code']?->hasZeroTaxPrint() ?? false),
+                'tax_label' => ($taxPayload['finance_tax_code']?->hasZeroTaxPrint() ?? false) ? 'PPN (0%)' : 'PPN',
+                'show_discount' => (float) $invoice->discount_amount > 0,
+                'grand_total' => $invoice->grand_total,
+                'formatted_grand_total' => number_format($invoice->grand_total, 0, ',', '.'),
+                'outstanding' => $invoice->outstanding,
+                'formatted_outstanding' => number_format($invoice->outstanding, 0, ',', '.'),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollback();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal memperbarui diskon rental: '.$e->getMessage(),
             ], 500);
         }
     }

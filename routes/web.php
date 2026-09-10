@@ -898,6 +898,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('invoices/{invoice}/email', [InvoiceController::class, 'emailInvoice'])->name('finance.invoices.email')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/rental-details/{rentalDetail}/update-price', [InvoiceController::class, 'updateRentalPrice'])->name('finance.invoices.update-rental-price');
         Route::post('invoices/{invoice}/update-discount', [InvoiceController::class, 'updateDiscount'])->name('finance.invoices.update-discount');
+        Route::post('invoices/{invoice}/rental-details/{rentalDetail}/discount', [InvoiceController::class, 'updateRentalDiscount'])->name('finance.invoices.rental-details.discount');
         Route::post('invoices/{invoice}/recalculate', [InvoiceController::class, 'recalculate'])->name('finance.invoices.recalculate')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/update-notes', [InvoiceController::class, 'updateNotes'])->name('finance.invoices.update-notes');
         Route::post('invoices/{invoice}/update-internal-notes', [InvoiceController::class, 'updateInternalNotes'])->name('finance.invoices.update-internal-notes');
@@ -918,6 +919,8 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('invoices/{invoice}/update-date-preference', [InvoiceController::class, 'updateDatePreference'])->name('invoices.update-date-preference')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/reload-tax', [InvoiceController::class, 'reloadTaxData'])->name('invoices.reload-tax')->middleware('permission:finance.invoices.update');
         Route::get('invoices/{invoice}/print', [InvoiceController::class, 'printInvoice'])->name('invoices.print')->middleware('permission:finance.invoices.view');
+        Route::post('invoices/print-bulk/preview', [InvoiceController::class, 'printBulkPreview'])->name('invoices.print-bulk.preview')->middleware('permission:finance.invoices.view');
+        Route::post('invoices/print-bulk', [InvoiceController::class, 'printBulk'])->name('invoices.print-bulk')->middleware('permission:finance.invoices.view');
         Route::get('invoices/{invoice}/delivery-receipt', [InvoiceController::class, 'exportDeliveryReceipt'])->name('invoices.delivery-receipt')->middleware('permission:finance.invoices.view');
         // Invoice Generation Enhancement routes
         Route::post('invoices/auto-generate-rental-period', [InvoiceController::class, 'autoGenerateInvoiceForRentalPeriod'])->name('invoices.auto-generate-rental-period')->middleware('permission:finance.invoices.create');

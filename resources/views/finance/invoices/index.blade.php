@@ -92,6 +92,98 @@
         }
     }
     
+    /* Filter bar — one shared style instead of repeating inline CSS per field,
+       so every control lines up on the same baseline and height. */
+    .filter-card {
+        width: 100%;
+        background: white;
+        border-radius: 10px;
+        padding: 20px 24px;
+        margin-bottom: 16px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    .filter-grid {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 16px 20px;
+    }
+
+    .filter-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .filter-field > span {
+        font-size: 13px;
+        font-weight: 600;
+        color: #374151;
+    }
+
+    .filter-input {
+        height: 42px;
+        box-sizing: border-box;
+        background: #f9fafb;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 0 14px;
+        font-size: 14px;
+        font-weight: 500;
+        color: #374151;
+        outline: none;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .filter-input:focus {
+        border-color: #214589;
+        box-shadow: 0 0 0 3px rgba(33, 69, 137, 0.1);
+    }
+
+    .filter-field-date .filter-input {
+        width: 150px;
+        cursor: pointer;
+    }
+
+    .filter-field-status .filter-input {
+        width: 150px;
+        cursor: pointer;
+    }
+
+    .filter-field-search {
+        flex: 1 1 260px;
+        min-width: 220px;
+    }
+
+    .filter-field-search .filter-input {
+        width: 100%;
+    }
+
+    .filter-actions {
+        display: flex;
+        gap: 10px;
+        margin-left: auto;
+    }
+
+    .filter-actions .btn {
+        height: 42px;
+        padding: 0 28px;
+        font-weight: 600;
+    }
+
+    /* Toolbar: selection on the left, bulk actions grouped on the right. */
+    .controls-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+
+    .controls-actions .btn {
+        white-space: nowrap;
+    }
+
     /* Button Styles */
     .btn {
         padding: 8px 16px;
@@ -644,7 +736,7 @@
                 </div> -->
             </div>
             
-            <button type="button" class="btn btn-primary" onclick="openRegenerateMissingModal()">
+            <button type="button" class="btn btn-primary" style="white-space: nowrap;" onclick="openRegenerateMissingModal()">
                 <i class="fas fa-sync-alt"></i>
                 <span>Regenerate Invoice</span>
             </button>
@@ -656,42 +748,39 @@
         </div>
         
         <!-- Date Range Filter -->
-        <div style="background: white; border-radius: 16px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-            <div style="display: flex; align-items: center; gap: 32px; flex-wrap: wrap;">
+        <div class="filter-card">
+            <div class="filter-grid">
                 <!-- Date From -->
-                <div class="flex items-center" style="gap: 20px;">
-                    <span style="font-size: 14px; font-weight: 600; color: #374151;">Dari</span>
-                    <input type="text" id="filterDateFrom" 
-                        class="cursor-pointer"
-                        style="background: #f9fafb; border: 1px solid #d1d5db; border-radius: 12px; padding: 12px 20px; font-size: 14px; font-weight: 600; color: #374151; width: 160px; outline: none;"
+                <div class="filter-field filter-field-date">
+                    <span>Dari</span>
+                    <input type="text" id="filterDateFrom"
+                        class="filter-input"
                         data-date="{{ request('date_from', now()->toDateString()) }}"
                         readonly>
                 </div>
 
                 <!-- Date To -->
-                <div class="flex items-center" style="gap: 20px;">
-                    <span style="font-size: 14px; font-weight: 600; color: #374151;">Sampai</span>
-                    <input type="text" id="filterDateTo" 
-                        class="cursor-pointer"
-                        style="background: #f9fafb; border: 1px solid #d1d5db; border-radius: 12px; padding: 12px 20px; font-size: 14px; font-weight: 600; color: #374151; width: 160px; outline: none;"
+                <div class="filter-field filter-field-date">
+                    <span>Sampai</span>
+                    <input type="text" id="filterDateTo"
+                        class="filter-input"
                         data-date="{{ request('date_to', now()->addDays(14)->toDateString()) }}"
                         readonly>
                 </div>
 
                 <!-- Search Box -->
-                <div class="flex items-center" style="gap: 20px;">
-                    <span style="font-size: 14px; font-weight: 600; color: #374151;">Search</span>
-                    <input type="text" id="searchInput" 
+                <div class="filter-field filter-field-search">
+                    <span>Search</span>
+                    <input type="text" id="searchInput"
+                        class="filter-input"
                         placeholder="Invoice, Contract, Customer, Job No..."
-                        style="background: #f9fafb; border: 1px solid #d1d5db; border-radius: 12px; padding: 12px 20px; font-size: 14px; font-weight: 600; color: #374151; width: 280px; outline: none;"
                         value="{{ request('search', '') }}">
                 </div>
 
                 <!-- Print Status Filter -->
-                <div class="flex items-center" style="gap: 20px;">
-                    <span style="font-size: 14px; font-weight: 600; color: #374151;">Status Print</span>
-                    <select id="filterPrintStatus" onchange="applyPrintStatusFilter()"
-                        style="background: #f9fafb; border: 1px solid #d1d5db; border-radius: 12px; padding: 12px 20px; font-size: 14px; font-weight: 600; color: #374151; width: 140px; outline: none; appearance: none; cursor: pointer;">
+                <div class="filter-field filter-field-status">
+                    <span>Status Print</span>
+                    <select id="filterPrintStatus" class="filter-input" onchange="applyPrintStatusFilter()">
                         <option value="semua" {{ request('print_status') === 'semua' || !request()->has('print_status') ? 'selected' : '' }}>Semua</option>
                         <option value="belum" {{ request('print_status') === 'belum' ? 'selected' : '' }}>Belum</option>
                         <option value="sudah" {{ request('print_status') === 'sudah' ? 'selected' : '' }}>Sudah</option>
@@ -699,38 +788,36 @@
                 </div>
 
                 <!-- Action Buttons -->
-                <div class="flex items-center" style="gap: 24px;">
-                    <button type="button" 
-                        style="background: #214589; color: white; padding: 14px 40px; font-size: 14px; font-weight: 700; border-radius: 16px; border: none; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);"
-                        onclick="applyFilters()">
-                        Apply
-                    </button>
-                    
-                    <button type="button" 
-                        style="background: #3b82f6; color: white; padding: 14px 40px; font-size: 14px; font-weight: 700; border-radius: 16px; border: none; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);"
-                        onclick="resetFilters()">
-                        Reset
-                    </button>
+                <div class="filter-actions">
+                    <button type="button" class="btn btn-primary" onclick="applyFilters()">Apply</button>
+                    <button type="button" class="btn btn-outline" onclick="resetFilters()">Reset</button>
                 </div>
             </div>
         </div>
-        
+
         <!-- Controls Row -->
         <div class="flex flex-row justify-between items-center w-full p-4 bg-white controls-row">
-            <div class="flex flex-row justify-start items-center w-full controls-left">
-                <div class="flex flex-row justify-start items-center w-auto">
-                    <div class="flex flex-row items-center">
-                        <input type="checkbox" id="selectAll" class="w-4 h-4 bg-white border border-[#888888] rounded cursor-pointer">
-                        <label for="selectAll" class="ml-2 text-sm text-[#3d3d3d] cursor-pointer">Select all</label>
-                    </div>
-                </div>
-                
-                <button class="btn btn-secondary ml-4" onclick="openHideModal()">
+            <div class="flex flex-row justify-start items-center controls-left">
+                <input type="checkbox" id="selectAll" class="w-4 h-4 bg-white border border-[#888888] rounded cursor-pointer">
+                <label for="selectAll" class="ml-2 text-sm text-[#3d3d3d] cursor-pointer">Select all</label>
+            </div>
+
+            <div class="controls-actions">
+                <button class="btn btn-secondary" onclick="openHideModal()">
                     <i class="fas fa-eye-slash"></i>
                     <span>Hide</span>
                 </button>
+
+                <button class="btn btn-outline" onclick="openTaxFileExportModal()">
+                    <i class="fas fa-file-export"></i>
+                    <span>Tax File Export</span>
+                </button>
+
+                <button class="btn btn-primary" onclick="openBulkPrintModal()">
+                    <i class="fas fa-print"></i>
+                    <span>Print</span>
+                </button>
             </div>
-            
         </div>
         
         <!-- Table Container -->
@@ -1920,6 +2007,311 @@ function confirmHide() {
     .catch(error => {
         console.error('Error:', error);
         showErrorDialog('Terjadi kesalahan jaringan.');
+    });
+}
+
+// Bulk print — send several invoices to the printer in one pass. Each invoice
+// contributes the same content as the single Print button (invoice + delivery
+// receipt + attachments), all merged into one PDF.
+let bulkPrintIds = [];
+
+function openBulkPrintModal() {
+    const checked = Array.from(document.querySelectorAll('.row-checkbox:checked'));
+
+    if (checked.length === 0) {
+        showWarningDialog('Pilih minimal satu invoice untuk di-print.');
+        return;
+    }
+
+    openModal();
+    document.getElementById('modalTitle').textContent = 'Print Invoice';
+    document.getElementById('modalBody').innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">Memeriksa invoice yang bisa di-print...</div>';
+    document.getElementById('modalFooter').innerHTML = '';
+
+    fetch('/finance/invoices/print-bulk/preview', {
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({ invoice_ids: checked.map(checkbox => checkbox.value) })
+    })
+    .then(async response => {
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.message || 'Gagal memeriksa invoice.');
+        }
+        return result;
+    })
+    .then(result => {
+        if (result.printable.length === 0) {
+            closeModal();
+            const reasons = [...new Set(result.skipped.map(inv => inv.reason))].join(' / ');
+            showWarningDialog('Tidak ada invoice terpilih yang bisa di-print.' + (reasons ? ' Penyebab: ' + reasons : ''));
+            return;
+        }
+
+        renderBulkPrintModal(result);
+    })
+    .catch(error => {
+        console.error('Error checking printable invoices:', error);
+        closeModal();
+        showErrorDialog(error.message || 'Gagal memeriksa invoice.');
+    });
+}
+
+function renderBulkPrintModal(result) {
+    const overLimit = result.printable.length > result.limit;
+    bulkPrintIds = overLimit ? [] : result.printable.map(inv => inv.id);
+
+    const rows = result.printable.map(inv => `
+        <div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #f3f4f6;">
+            <div style="flex: 1;">
+                <strong>${inv.invoice_number}</strong> - ${inv.customer_name || 'N/A'}
+            </div>
+            ${inv.is_printed ? '<span style="font-size: 12px; color: #b45309; background: #fef3c7; padding: 2px 8px; border-radius: 10px;">Sudah pernah di-print</span>' : ''}
+        </div>
+    `).join('');
+
+    const skippedNotice = result.skipped.length === 0 ? '' : `
+        <div style="margin-top: 16px; padding: 12px; border: 1px solid #fde68a; background: #fffbeb; border-radius: 8px; font-size: 13px; color: #92400e;">
+            <strong>${result.skipped.length} invoice dilewati:</strong>
+            <br>${result.skipped.map(inv => `${inv.invoice_number || '(tanpa nomor)'} — ${inv.reason}`).join('<br>')}
+        </div>
+    `;
+
+    const limitNotice = !overLimit ? '' : `
+        <div style="margin-top: 16px; padding: 12px; border: 1px solid #fecaca; background: #fef2f2; border-radius: 8px; font-size: 13px; color: #991b1b;">
+            <strong>Terlalu banyak.</strong> Maksimal ${result.limit} invoice sekali print
+            (dipilih ${result.printable.length}). Kurangi centangnya, lalu print sisanya di batch berikutnya.
+        </div>
+    `;
+
+    document.getElementById('modalBody').innerHTML = `
+        <div class="form-group">
+            <label class="form-label">Invoice yang akan di-print (${result.printable.length})</label>
+            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
+                ${rows}
+            </div>
+            <small style="color: #6b7280; margin-top: 8px; display: block;">
+                Setiap invoice ikut halaman tanda terima dan lampirannya, digabung jadi satu PDF.
+                Proses ini butuh waktu — jangan tutup tab sampai PDF terbuka.
+            </small>
+            ${limitNotice}
+            ${skippedNotice}
+        </div>
+    `;
+
+    document.getElementById('modalFooter').innerHTML = `
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="button" id="bulkPrintSubmitBtn" class="btn btn-primary" onclick="submitBulkPrint()" ${overLimit ? 'disabled' : ''}>Print ${result.printable.length} Invoice</button>
+    `;
+}
+
+function submitBulkPrint() {
+    if (bulkPrintIds.length === 0) {
+        return;
+    }
+
+    // Submit through a real form targeting a new tab: the browser then renders
+    // the streamed PDF in its own viewer, and the print dialog is one Ctrl+P
+    // away. A fetch + blob would be blocked as a popup here.
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/finance/invoices/print-bulk';
+    form.target = '_blank';
+    form.style.display = 'none';
+
+    const token = document.createElement('input');
+    token.type = 'hidden';
+    token.name = '_token';
+    token.value = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    form.appendChild(token);
+
+    bulkPrintIds.forEach(id => {
+        const field = document.createElement('input');
+        field.type = 'hidden';
+        field.name = 'invoice_ids[]';
+        field.value = id;
+        form.appendChild(field);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+
+    closeModal();
+    showInfoDialog('PDF sedang dibuat di tab baru. Setelah terbuka, tekan Ctrl+P untuk print. Halaman ini akan dimuat ulang agar Status Print ikut ter-update.');
+
+    // The invoices are marked as printed server-side, so refresh to show it.
+    setTimeout(() => location.reload(), 4000);
+}
+
+// Tax File Export — create an export straight from the invoice list, so the
+// user does not have to re-pick the same invoices on the Tax File Export page.
+let taxExportEligibleIds = [];
+
+function openTaxFileExportModal() {
+    const checked = Array.from(document.querySelectorAll('.row-checkbox:checked'));
+
+    if (checked.length === 0) {
+        showWarningDialog('Pilih minimal satu invoice untuk di-export.');
+        return;
+    }
+
+    const selected = checked.map(checkbox => ({
+        id: String(checkbox.value),
+        number: invoiceNumberOfRow(checkbox),
+    }));
+
+    openModal();
+    document.getElementById('modalTitle').textContent = 'Create Tax File Export';
+    document.getElementById('modalBody').innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">Memeriksa invoice yang bisa di-export...</div>';
+    document.getElementById('modalFooter').innerHTML = '';
+
+    // The export only accepts approved invoices that already have an invoice
+    // date, so ask the server which of the selected rows actually qualify.
+    fetch('/finance/tax-file-exports/create', {
+        headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(result => {
+        const eligible = new Map((result.invoices || []).map(inv => [String(inv.id), inv]));
+        const usable = selected.filter(row => eligible.has(row.id));
+        const skipped = selected.filter(row => !eligible.has(row.id));
+
+        taxExportEligibleIds = usable.map(row => row.id);
+
+        if (usable.length === 0) {
+            closeModal();
+            showWarningDialog('Tidak ada invoice terpilih yang bisa di-export. Hanya invoice berstatus Approved dan sudah punya Tanggal Invoice yang bisa masuk Tax File Export.');
+            return;
+        }
+
+        renderTaxFileExportModal(usable, skipped, eligible);
+    })
+    .catch(error => {
+        console.error('Error loading exportable invoices:', error);
+        closeModal();
+        showErrorDialog('Gagal memuat daftar invoice yang bisa di-export.');
+    });
+}
+
+function invoiceNumberOfRow(checkbox) {
+    const cell = checkbox.closest('tr')?.querySelector('td:nth-child(2)');
+    return cell ? cell.textContent.trim() : '';
+}
+
+function renderTaxFileExportModal(usable, skipped, eligible) {
+    const rows = usable.map(row => {
+        const inv = eligible.get(row.id);
+        const date = inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString('id-ID') : '-';
+        return `
+            <div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #f3f4f6;">
+                <div style="flex: 1;">
+                    <strong>${inv.invoice_number}</strong> - ${inv.customer_name || 'N/A'}
+                    <br><small style="color: #6b7280;">${date} | ${inv.formatted_total_amount || 'Rp 0'}</small>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    const skippedNotice = skipped.length === 0 ? '' : `
+        <div style="margin-top: 16px; padding: 12px; border: 1px solid #fde68a; background: #fffbeb; border-radius: 8px; font-size: 13px; color: #92400e;">
+            <strong>${skipped.length} invoice dilewati</strong> karena belum Approved atau belum punya Tanggal Invoice:
+            <br>${skipped.map(row => row.number || '(tanpa nomor)').join(', ')}
+        </div>
+    `;
+
+    document.getElementById('modalBody').innerHTML = `
+        <div class="form-group">
+            <label class="form-label">Invoice yang akan di-export (${usable.length})</label>
+            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
+                ${rows}
+            </div>
+            <small style="color: #6b7280; margin-top: 8px; display: block;">Periode export dihitung otomatis dari tanggal invoice yang terpilih.</small>
+            ${skippedNotice}
+        </div>
+        <div class="form-group">
+            <label class="form-label">Notes</label>
+            <textarea id="taxExportNotes" class="form-input" rows="3" placeholder="Additional notes about this export"></textarea>
+        </div>
+    `;
+
+    document.getElementById('modalFooter').innerHTML = `
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="button" id="taxExportSubmitBtn" class="btn btn-primary" onclick="submitTaxFileExport()">Create Export</button>
+    `;
+}
+
+function submitTaxFileExport() {
+    if (taxExportEligibleIds.length === 0) {
+        return;
+    }
+
+    const submitBtn = document.getElementById('taxExportSubmitBtn');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Creating...';
+    }
+
+    const notesField = document.getElementById('taxExportNotes');
+
+    fetch('/finance/tax-file-exports', {
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+            selection_mode: 'specific_invoices',
+            export_date: new Date().toLocaleDateString('en-CA'),
+            export_type: 'custom',
+            file_format: 'xlsx',
+            include_details: 0,
+            invoice_ids: taxExportEligibleIds,
+            notes: notesField ? notesField.value : null
+        })
+    })
+    .then(async response => {
+        const result = await response.json();
+        if (!response.ok) {
+            const validationMessage = result.errors
+                ? Object.values(result.errors).flat().join('\n')
+                : null;
+            throw new Error(validationMessage || result.message || 'Terjadi kesalahan.');
+        }
+        return result;
+    })
+    .then(result => {
+        closeModal();
+        const exportNumber = result.data?.export_number ? ` (${result.data.export_number})` : '';
+        showConfirmDialog({
+            title: 'Tax File Export dibuat',
+            text: `Export${exportNumber} berhasil dibuat dari ${taxExportEligibleIds.length} invoice.`,
+            icon: 'success',
+            confirmButtonText: 'Buka Tax File Export',
+            cancelButtonText: 'Tetap di sini'
+        }).then(result => {
+            if (result && result.isConfirmed) {
+                window.location.href = '/finance/tax-file-exports';
+            }
+        });
+    })
+    .catch(error => {
+        console.error('Error creating tax file export:', error);
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Create Export';
+        }
+        showErrorDialog(error.message || 'Gagal membuat Tax File Export.');
     });
 }
 
