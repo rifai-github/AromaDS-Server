@@ -774,19 +774,16 @@
                             Length: <span id="modal_tax_number_counter" class="font-semibold text-blue-600">0</span> / <span id="modal_tax_number_max" class="font-semibold">25</span> characters
                         </small>
                     </div>
-                    <div class="form-group">
-                        {{-- Kode transaksi PPN tidak dipilih ulang di sini: nilainya mengikuti Kode PPN yang sudah dipilih di Step 3. --}}
-                        <label class="form-label">Kode Transaksi PPN</label>
-                        <input type="text" id="modal_tax_code_display" class="form-control bg-gray-100 cursor-not-allowed" readonly tabindex="-1" placeholder="Mengikuti Kode PPN di Step 3">
-                        <div id="modal_tax_code_description" class="text-gray-600 mt-2" style="font-size: 12px; line-height: 1.45; white-space: normal; overflow-wrap: anywhere;"></div>
-                        <input type="hidden" name="tax_type" id="modal_tax_type">
-                        <input type="hidden" name="ppn_code" id="modal_ppn_code">
-                    </div>
+                    {{-- Kode transaksi PPN sengaja tidak ditampilkan di sini: kodenya milik kontrak
+                         (dipilih di Step 3) supaya tiap kontrak bisa beda, bukan properti data pajak
+                         customer. Nilainya tetap dikirim karena endpoint customer-taxes mewajibkannya. --}}
+                    <input type="hidden" name="tax_type" id="modal_tax_type">
+                    <input type="hidden" name="ppn_code" id="modal_ppn_code">
                     <div class="form-group">
                         <label class="form-label">Tax Rate (%) *</label>
                         <input type="text" id="modal_tax_rate_display" class="form-control bg-gray-100 cursor-not-allowed" readonly tabindex="-1" value="{{ number_format((float) ($defaultVatSetting->tax_rate ?? 0), 2, '.', '') }}%">
                         <input type="hidden" name="tax_rate" id="modal_tax_rate" value="{{ number_format((float) ($defaultVatSetting->tax_rate ?? 0), 2, '.', '') }}">
-                        <small class="text-gray-600 mt-1 block">Tax rate otomatis mengikuti Master Tax default dan kode transaksi PPN.</small>
+                        <small class="text-gray-600 mt-1 block">Tax rate otomatis mengikuti Master Tax default.</small>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Effective Date *</label>
@@ -4333,16 +4330,15 @@ function applyPpnCodeFromCustomer(rawCode) {
     }
 }
 
-// Kode transaksi PPN untuk data pajak customer mengikuti Kode PPN di Step 3,
-// jadi user tidak memilihnya dua kali. Tax rate tetap ikut aturan kode tersebut
-// (kode fasilitas 07/08 dicetak nol).
+// Kode transaksi PPN tidak lagi diisi di data pajak customer: kodenya milik
+// kontrak (Kode PPN Step 3) supaya tiap kontrak bisa berbeda. Nilai itu tetap
+// dikirim diam-diam karena kolom tax_type wajib, dan tax rate mengikuti
+// aturan kode tersebut (kode fasilitas 07/08 dicetak nol).
 function syncModalTaxRateFromCode() {
     const taxTypeInput = document.getElementById('modal_tax_type');
     const ppnCodeInput = document.getElementById('modal_ppn_code');
-    const taxCodeDisplay = document.getElementById('modal_tax_code_display');
     const taxRateInput = document.getElementById('modal_tax_rate');
     const taxRateDisplay = document.getElementById('modal_tax_rate_display');
-    const taxCodeDescription = document.getElementById('modal_tax_code_description');
     const selectedCode = document.getElementById('ppnCode')?.value || '';
     const selectedRule = selectedCode ? financeTaxCodeRules[selectedCode] : null;
     const formattedTaxRate = Number((selectedRule && selectedRule.zero_tax ? 0 : defaultVatTaxRate) || 0).toFixed(2);
@@ -4355,24 +4351,12 @@ function syncModalTaxRateFromCode() {
         ppnCodeInput.value = selectedCode;
     }
 
-    if (taxCodeDisplay) {
-        taxCodeDisplay.value = selectedRule
-            ? `${selectedCode} - ${selectedRule.customer_status || ''}`.trim()
-            : selectedCode;
-    }
-
     if (taxRateInput) {
         taxRateInput.value = formattedTaxRate;
     }
 
     if (taxRateDisplay) {
         taxRateDisplay.value = `${formattedTaxRate}%`;
-    }
-
-    if (taxCodeDescription) {
-        taxCodeDescription.textContent = selectedRule
-            ? `${selectedRule.description} ${selectedRule.ppn_status ? '- ' + selectedRule.ppn_status : ''}`
-            : '';
     }
 }
 
