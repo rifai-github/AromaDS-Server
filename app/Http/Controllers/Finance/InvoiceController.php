@@ -584,6 +584,9 @@ class InvoiceController extends Controller
                 'payment_method' => $request->payment_method ?? 'virtual_account',
                 'virtual_account_number' => $request->virtual_account_number,
                 'created_by' => Auth::id(),
+                // The only path where a person authors the invoice. Everything
+                // else defaults to 'auto', so Created By is hidden there.
+                'creation_source' => 'manual',
             ]);
 
             // Create activity log
