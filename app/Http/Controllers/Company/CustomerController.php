@@ -10,6 +10,7 @@ use App\Models\Building;
 use App\Models\City;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\FinanceTaxCode;
 use App\Models\CustomerCategory;
 use App\Models\CustomerContact;
 use App\Models\CustomerCreditLimit;
@@ -729,6 +730,14 @@ class CustomerController extends Controller
             ->orderBy('option_name')
             ->get();
 
+        // Label kode transaksi PPN untuk Tax Data List di Payment Information.
+        // Kode non-aktif tetap ikut supaya baris pajak lama tidak kehilangan keterangannya.
+        $financeTaxCodeLabels = FinanceTaxCode::query()
+            ->orderBy('sort_order')
+            ->orderBy('code')
+            ->get()
+            ->keyBy('code');
+
         $ppnCodes = Customer::getPpnCodes();
         $bankPayments = BankPayment::active()->with('bank')->orderBy('account_name')->get();
         $allContacts = CustomerContact::active()->orderBy('name')->get();
@@ -767,7 +776,7 @@ class CustomerController extends Controller
         $classificationMaster = \App\Models\MasterOption::where('name', 'Customer Classification')->first();
         $classificationOptions = $classificationMaster ? \App\Models\OptionDetail::where('master_option_id', $classificationMaster->id)->where('is_active', 1)->orderBy('option_name')->get() : collect();
 
-        return view('company.customers.show', compact('customer', 'categories', 'ppnCodes', 'bankPayments', 'allContacts', 'provinces', 'cities', 'districts', 'subdistricts', 'companyTypeOptions', 'classificationOptions'));
+        return view('company.customers.show', compact('customer', 'categories', 'ppnCodes', 'bankPayments', 'allContacts', 'provinces', 'cities', 'districts', 'subdistricts', 'companyTypeOptions', 'classificationOptions', 'financeTaxCodeLabels'));
     }
 
     public function edit(Customer $customer)

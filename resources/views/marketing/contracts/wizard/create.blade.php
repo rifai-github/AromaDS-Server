@@ -775,16 +775,11 @@
                         </small>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Kode Transaksi PPN *</label>
-                        <select name="tax_type" id="modal_tax_type" class="form-control" required onchange="syncModalTaxRateFromCode()">
-                            <option value="">Pilih Kode Transaksi</option>
-                            @foreach(($financeTaxCodes ?? collect()) as $taxCode)
-                                <option value="{{ $taxCode->code }}" data-zero-tax="{{ $taxCode->hasZeroTaxPrint() ? '1' : '0' }}">
-                                    {{ $taxCode->code }} - {{ $taxCode->customer_status }}
-                                </option>
-                            @endforeach
-                        </select>
+                        {{-- Kode transaksi PPN tidak dipilih ulang di sini: nilainya mengikuti Kode PPN yang sudah dipilih di Step 3. --}}
+                        <label class="form-label">Kode Transaksi PPN</label>
+                        <input type="text" id="modal_tax_code_display" class="form-control bg-gray-100 cursor-not-allowed" readonly tabindex="-1" placeholder="Mengikuti Kode PPN di Step 3">
                         <div id="modal_tax_code_description" class="text-gray-600 mt-2" style="font-size: 12px; line-height: 1.45; white-space: normal; overflow-wrap: anywhere;"></div>
+                        <input type="hidden" name="tax_type" id="modal_tax_type">
                         <input type="hidden" name="ppn_code" id="modal_ppn_code">
                     </div>
                     <div class="form-group">
@@ -4218,6 +4213,12 @@ function openAddTaxModal(addressIndex) {
         return;
     }
 
+    // tax_type dikirim dari Kode PPN Step 3, jadi kodenya harus sudah dipilih.
+    if (!document.getElementById('ppnCode')?.value) {
+        alert('Kode PPN belum dipilih. Silakan pilih Kode PPN di Step 3 terlebih dahulu.');
+        return;
+    }
+
     document.getElementById('addTaxForm').reset();
     document.getElementById('taxModalCustomerId').value = quotationData.customer.id;
 
@@ -4332,18 +4333,32 @@ function applyPpnCodeFromCustomer(rawCode) {
     }
 }
 
+// Kode transaksi PPN untuk data pajak customer mengikuti Kode PPN di Step 3,
+// jadi user tidak memilihnya dua kali. Tax rate tetap ikut aturan kode tersebut
+// (kode fasilitas 07/08 dicetak nol).
 function syncModalTaxRateFromCode() {
-    const taxCodeSelect = document.getElementById('modal_tax_type');
+    const taxTypeInput = document.getElementById('modal_tax_type');
     const ppnCodeInput = document.getElementById('modal_ppn_code');
+    const taxCodeDisplay = document.getElementById('modal_tax_code_display');
     const taxRateInput = document.getElementById('modal_tax_rate');
     const taxRateDisplay = document.getElementById('modal_tax_rate_display');
     const taxCodeDescription = document.getElementById('modal_tax_code_description');
-    const selectedCode = taxCodeSelect ? taxCodeSelect.value : '';
+    const selectedCode = document.getElementById('ppnCode')?.value || '';
     const selectedRule = selectedCode ? financeTaxCodeRules[selectedCode] : null;
     const formattedTaxRate = Number((selectedRule && selectedRule.zero_tax ? 0 : defaultVatTaxRate) || 0).toFixed(2);
 
+    if (taxTypeInput) {
+        taxTypeInput.value = selectedCode;
+    }
+
     if (ppnCodeInput) {
         ppnCodeInput.value = selectedCode;
+    }
+
+    if (taxCodeDisplay) {
+        taxCodeDisplay.value = selectedRule
+            ? `${selectedCode} - ${selectedRule.customer_status || ''}`.trim()
+            : selectedCode;
     }
 
     if (taxRateInput) {

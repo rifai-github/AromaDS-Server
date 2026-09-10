@@ -340,27 +340,36 @@
                         <table class="table table-bordered table-sm">
                             <thead>
                                 <tr class="bg-light">
-                                    <th>Tax Type</th>
+                                    <th>Kode Transaksi PPN</th>
                                     <th>Tax Name</th>
                                     <th>Tax Number</th>
                                     <th>NITKU</th>
-                                    <th>PPN Code</th>
                                     <th>Address</th>
                                 </tr>
                             </thead>
                             <tbody>
+                                {{-- tax_type dan ppn_code menyimpan nilai yang sama (kode transaksi), jadi cukup satu kolom. --}}
                                 @forelse($customer->customerTaxSettings as $tax)
+                                @php
+                                    $taxCodeValue = $tax->ppn_code ?: $tax->tax_type;
+                                    $taxCodeRow = $financeTaxCodeLabels[$taxCodeValue] ?? null;
+                                @endphp
                                 <tr>
-                                    <td>{{ $tax->tax_type }}</td>
+                                    <td @if($taxCodeRow) title="{{ $taxCodeRow->fullLabel() }}" @endif>
+                                        @if($taxCodeRow)
+                                            {{ $taxCodeRow->code }} - {{ $taxCodeRow->customer_status }}
+                                        @else
+                                            {{ $taxCodeValue ?: '-' }}
+                                        @endif
+                                    </td>
                                     <td>{{ $tax->tax_name }}</td>
                                     <td>{{ $tax->tax_number }}</td>
                                     <td>{{ $tax->nitku }}</td>
-                                    <td>{{ $tax->ppn_code }}</td>
                                     <td><small>{{ $tax->tax_address }}</small></td>
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="4" class="text-center py-2 text-muted">No tax records found.</td>
+                                    <td colspan="5" class="text-center py-2 text-muted">No tax records found.</td>
                                 </tr>
                                 @endforelse
                             </tbody>
