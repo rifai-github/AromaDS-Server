@@ -12,6 +12,7 @@ use App\Models\ContractRenewal;
 use App\Models\ContractRevision;
 use App\Models\ContractSwitching;
 use App\Models\Customer;
+use App\Models\FinanceTaxCode;
 use App\Models\Finance\BillingGroup;
 use App\Models\Finance\BillingGroupBuilding;
 use App\Models\MasterOption;
@@ -27,6 +28,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 class ContractController extends Controller
 {
@@ -608,8 +610,22 @@ class ContractController extends Controller
 
         $fileTypes = $fileTypes ? $fileTypes->optionDetails : collect();
 
+        // Pilihan Kode PPN diambil dari master Kode Pajak. Kode yang sudah dipakai
+        // kontrak ini tetap ikut walau sudah dinonaktifkan, supaya nilainya tidak hilang saat edit.
+        $financeTaxCodes = FinanceTaxCode::query()
+            ->where(function ($query) use ($contract) {
+                $query->where('is_active', true);
+
+                if ($contract->ppn_code) {
+                    $query->orWhere('code', $contract->ppn_code);
+                }
+            })
+            ->orderBy('sort_order')
+            ->orderBy('code')
+            ->get();
+
         // Return view for regular requests
-        return view('marketing.contracts.show', compact('contract', 'fileTypes'));
+        return view('marketing.contracts.show', compact('contract', 'fileTypes', 'financeTaxCodes'));
     }
 
     public function edit(Contract $contract)
@@ -633,7 +649,7 @@ class ContractController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'ppn_code' => 'nullable|string|in:01,02,03,04,05,06,07,08,09',
+            'ppn_code' => ['nullable', 'string', Rule::exists('finance_tax_codes', 'code')],
             'customer_signing_1_id' => 'required|exists:customer_contacts,id',
             'customer_signing_2_id' => 'nullable|exists:customer_contacts,id',
             'customer_signing_3_id' => 'nullable|exists:customer_contacts,id',

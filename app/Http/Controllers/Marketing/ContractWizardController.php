@@ -22,6 +22,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 class ContractWizardController extends Controller
 {
@@ -282,7 +283,7 @@ class ContractWizardController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'quotation_id' => 'required|exists:quotations,id',
-            'ppn_code' => 'nullable|string|in:01,02,03,04,05,06,07,08,09',
+            'ppn_code' => ['nullable', 'string', Rule::exists('finance_tax_codes', 'code')],
             'contract_date' => 'required|date',
             'install_date' => 'required|date',
             'first_service' => 'required|date',

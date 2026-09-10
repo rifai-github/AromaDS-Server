@@ -1022,15 +1022,9 @@
                                              <label class="form-label">Kode PPN <span class="text-danger">*</span></label>
                                              <select name="ppn_code" id="editPpnCode" class="form-control" required>
                                                  <option value="">Pilih Kode Transaksi PPN...</option>
-                                                 <option value="01" {{ $contract->ppn_code == '01' ? 'selected' : '' }}>01 - Penyerahan BKP/JKP yang PPN dipungut oleh PKP penyerah</option>
-                                                 <option value="02" {{ $contract->ppn_code == '02' ? 'selected' : '' }}>02 - Penyerahan kepada pemungut PPN instansi pemerintah</option>
-                                                 <option value="03" {{ $contract->ppn_code == '03' ? 'selected' : '' }}>03 - Penyerahan kepada pemungut PPN lainnya</option>
-                                                 <option value="04" {{ $contract->ppn_code == '04' ? 'selected' : '' }}>04 - Penyerahan dengan dasar pengenaan nilai lain</option>
-                                                 <option value="05" {{ $contract->ppn_code == '05' ? 'selected' : '' }}>05 - Penyerahan dengan PPN dipungut besaran tertentu</option>
-                                                 <option value="06" {{ $contract->ppn_code == '06' ? 'selected' : '' }}>06 - Penyerahan lainnya yang PPN dipungut PKP penyerah</option>
-                                                 <option value="07" {{ $contract->ppn_code == '07' ? 'selected' : '' }}>07 - Penyerahan yang mendapat fasilitas tidak dipungut</option>
-                                                 <option value="08" {{ $contract->ppn_code == '08' ? 'selected' : '' }}>08 - Penyerahan yang mendapat fasilitas dibebaskan</option>
-                                                 <option value="09" {{ $contract->ppn_code == '09' ? 'selected' : '' }}>09 - Penyerahan aktiva yang tidak untuk diperjualbelikan</option>
+                                                 @foreach(($financeTaxCodes ?? collect()) as $taxCode)
+                                                     <option value="{{ $taxCode->code }}" title="{{ $taxCode->fullLabel() }}" {{ $contract->ppn_code == $taxCode->code ? 'selected' : '' }}>{{ $taxCode->optionLabel() }}</option>
+                                                 @endforeach
                                              </select>
                                          </div>
                                         <div class="col-md-6 mb-3">

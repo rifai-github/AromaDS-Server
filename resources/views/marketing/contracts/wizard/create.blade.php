@@ -546,18 +546,13 @@
                     
                     <div class="form-group">
                         <label class="form-label">Kode PPN <span class="text-red-500">*</span></label>
-                        <select name="ppn_code" id="ppnCode" class="form-control" required onchange="syncMandatoryTaxForAllAddresses()">
+                        <select name="ppn_code" id="ppnCode" class="form-control" required onchange="handlePpnCodeChange()">
                             <option value="">Pilih Kode Transaksi PPN...</option>
-                            <option value="01">01 - Penyerahan BKP/JKP yang PPN dipungut oleh PKP penyerah</option>
-                            <option value="02">02 - Penyerahan kepada pemungut PPN instansi pemerintah</option>
-                            <option value="03">03 - Penyerahan kepada pemungut PPN lainnya</option>
-                            <option value="04">04 - Penyerahan dengan dasar pengenaan nilai lain</option>
-                            <option value="05">05 - Penyerahan dengan PPN dipungut besaran tertentu</option>
-                            <option value="06">06 - Penyerahan lainnya yang PPN dipungut PKP penyerah</option>
-                            <option value="07">07 - Penyerahan yang mendapat fasilitas tidak dipungut</option>
-                            <option value="08">08 - Penyerahan yang mendapat fasilitas dibebaskan</option>
-                            <option value="09">09 - Penyerahan aktiva yang tidak untuk diperjualbelikan</option>
+                            @foreach(($financeTaxCodes ?? collect()) as $taxCode)
+                                <option value="{{ $taxCode->code }}" title="{{ $taxCode->fullLabel() }}">{{ $taxCode->optionLabel() }}</option>
+                            @endforeach
                         </select>
+                        <div id="ppnCodeDescription" class="text-gray-600 mt-2" style="font-size: 12px; line-height: 1.45; white-space: normal; overflow-wrap: anywhere;"></div>
                     </div>
                     
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1329,13 +1324,7 @@ function populateContractData(quotation) {
     // Populate PPN Code from customer tax settings
     const ppnCodeField = document.getElementById('ppnCode');
     if (ppnCodeField && quotation.customer) {
-        if (quotation.customer.ppn_code) {
-            ppnCodeField.value = quotation.customer.ppn_code;
-        } else if (quotation.customer.tax_code) {
-            ppnCodeField.value = quotation.customer.tax_code;
-        }
-        // Trigger change event just in case
-        ppnCodeField.dispatchEvent(new Event('change'));
+        applyPpnCodeFromCustomer(quotation.customer.ppn_code || quotation.customer.tax_code || '');
     }
     
     // Populate rental period from quotation
@@ -4288,6 +4277,59 @@ function syncMandatoryTaxForAllAddresses() {
         const addressIndex = hidden.id.replace('mandatoryTaxHidden_', '');
         syncMandatoryTaxForAddress(addressIndex);
     });
+}
+
+function handlePpnCodeChange() {
+    syncMandatoryTaxForAllAddresses();
+    renderPpnCodeDescription();
+}
+
+// Keterangan kode transaksi diambil dari master Kode Pajak (finance_tax_codes),
+// sumber yang sama dengan dropdown-nya.
+function renderPpnCodeDescription(warningMessage = '') {
+    const container = document.getElementById('ppnCodeDescription');
+    if (!container) return;
+
+    if (warningMessage) {
+        container.textContent = warningMessage;
+        container.style.color = '#b91c1c';
+        return;
+    }
+
+    const select = document.getElementById('ppnCode');
+    const rule = select && select.value ? financeTaxCodeRules[select.value] : null;
+
+    container.style.color = '';
+    container.textContent = rule
+        ? [rule.description, rule.ppn_status, rule.customer_status].filter(Boolean).join(' — ')
+        : '';
+}
+
+// Data lama (mis. hasil import) menyimpan kode seperti "040" atau "4" yang tidak
+// pernah cocok dengan value option 2 digit, sehingga dropdown diam-diam kosong.
+function normalizePpnCode(value) {
+    const digits = String(value ?? '').replace(/\D/g, '');
+    if (digits === '') {
+        return '';
+    }
+
+    return digits.length === 1 ? digits.padStart(2, '0') : digits.substring(0, 2);
+}
+
+function applyPpnCodeFromCustomer(rawCode) {
+    const select = document.getElementById('ppnCode');
+    if (!select) return;
+
+    const normalized = normalizePpnCode(rawCode);
+    const isKnown = normalized !== ''
+        && Array.from(select.options).some(option => option.value === normalized);
+
+    select.value = isKnown ? normalized : '';
+    select.dispatchEvent(new Event('change'));
+
+    if (!isKnown && String(rawCode ?? '').trim() !== '') {
+        renderPpnCodeDescription(`Kode PPN customer ("${rawCode}") tidak ada di master Kode Pajak. Silakan pilih kode transaksi secara manual.`);
+    }
 }
 
 function syncModalTaxRateFromCode() {

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class FinanceTaxCode extends Model
 {
@@ -64,5 +65,33 @@ class FinanceTaxCode extends Model
     public function printModeLabel(): string
     {
         return $this->hasZeroTaxPrint() ? 'zero' : 'normal';
+    }
+
+    /**
+     * Keterangan lengkap kode transaksi untuk tooltip / teks bantuan.
+     */
+    public function fullLabel(): string
+    {
+        $description = trim((string) ($this->description ?: $this->customer_status));
+
+        return $description !== '' ? $description : (string) $this->code;
+    }
+
+    /**
+     * Label pendek untuk dropdown, mis. "04 - Penyerahan BKP dan/atau JKP yang DPP-nya...".
+     *
+     * Semua description di master diawali "Digunakan untuk ", jadi prefix itu dibuang
+     * supaya bagian yang membedakan antar kode muncul lebih awal dan tidak kepotong.
+     */
+    public function optionLabel(int $limit = 85): string
+    {
+        $text = preg_replace('/^Digunakan untuk\s+/iu', '', $this->fullLabel());
+        $text = trim((string) preg_replace('/\s+/u', ' ', (string) $text));
+
+        if ($text === '' || $text === (string) $this->code) {
+            return (string) $this->code;
+        }
+
+        return $this->code.' - '.Str::limit(Str::ucfirst($text), $limit);
     }
 }
