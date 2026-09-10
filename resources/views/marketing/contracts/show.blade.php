@@ -363,8 +363,8 @@
                             </button>
                         </li>
                         <li class="nav-item" role="presentation" style="flex: 1;">
-                            <button class="nav-link" id="contract-detail-tab" data-bs-toggle="tab" data-bs-target="#contract-detail" type="button" role="tab" aria-controls="contract-detail" aria-selected="false" style="color: #6c757d; padding: 12px 20px; width: 100%; text-align: center;">
-                                <i class="fas fa-list-alt me-2"></i>CONTRACT DETAIL
+                            <button class="nav-link" id="room-rental-tab" data-bs-toggle="tab" data-bs-target="#room-rental" type="button" role="tab" aria-controls="room-rental" aria-selected="false" style="color: #6c757d; padding: 12px 20px; width: 100%; text-align: center;">
+                                <i class="fas fa-list-alt me-2"></i>ROOM &amp; RENTAL
                             </button>
                         </li>
                         <li class="nav-item" role="presentation" style="flex: 1;">
@@ -1109,14 +1109,14 @@
                     </div>
                 </div>
 
-                <!-- Contract Detail Tab (Rooms + Rentals merged) -->
-                <div class="tab-pane fade" id="contract-detail" role="tabpanel" aria-labelledby="contract-detail-tab">
+                <!-- Room & Rental Tab (Rooms + Rentals merged) -->
+                <div class="tab-pane fade" id="room-rental" role="tabpanel" aria-labelledby="room-rental-tab">
                     <div class="card" style="width: 100%; min-height: 500px;">
                         <div class="card-header" style="background-color: #f8f9fa; border-bottom: 2px solid #1e3a8a;">
                             <div class="d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0" style="color: #1e3a8a;">
                                     <i class="fas fa-list-alt me-2"></i>
-                                    Contract Detail
+                                    Room &amp; Rental
                                 </h5>
                             </div>
                         </div>
@@ -1148,29 +1148,29 @@
                                     $looseRentals = collect();
                                 }
 
-                                $contractDetailRows = collect();
+                                $roomRentalRows = collect();
 
-                                foreach ($contractRoomsList as $contractDetailRoom) {
-                                    $roomRentals = collect($rentalsByRoom->get((int) $contractDetailRoom->room_id, collect()));
+                                foreach ($contractRoomsList as $roomRentalRoom) {
+                                    $roomRentals = collect($rentalsByRoom->get((int) $roomRentalRoom->room_id, collect()));
 
                                     if ($roomRentals->isEmpty()) {
-                                        $contractDetailRows->push(['room' => $contractDetailRoom, 'rental' => null]);
+                                        $roomRentalRows->push(['room' => $roomRentalRoom, 'rental' => null]);
                                         continue;
                                     }
 
                                     foreach ($roomRentals as $roomRental) {
-                                        $contractDetailRows->push(['room' => $contractDetailRoom, 'rental' => $roomRental]);
+                                        $roomRentalRows->push(['room' => $roomRentalRoom, 'rental' => $roomRental]);
                                     }
                                 }
 
                                 foreach ($looseRentals as $looseRental) {
-                                    $contractDetailRows->push(['room' => null, 'rental' => $looseRental]);
+                                    $roomRentalRows->push(['room' => null, 'rental' => $looseRental]);
                                 }
 
-                                $contractDetailTotal = $contractDetailRows->sum(fn ($row) => (float) ($row['rental']->total_price ?? 0));
+                                $roomRentalTotal = $roomRentalRows->sum(fn ($row) => (float) ($row['rental']->total_price ?? 0));
                             @endphp
                             <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
-                                <table class="table table-bordered table-striped" id="contractDetailTable" style="min-width: 1200px; white-space: nowrap;">
+                                <table class="table table-bordered table-striped" id="roomRentalTable" style="min-width: 1200px; white-space: nowrap;">
                                     <thead>
                                         <tr>
                                             <th data-no-filter>No</th>
@@ -1187,7 +1187,7 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @forelse($contractDetailRows as $index => $row)
+                                        @forelse($roomRentalRows as $index => $row)
                                         @php
                                             $rowRoom = $row['room'];
                                             $rowRental = $row['rental'];
@@ -1226,11 +1226,11 @@
                                         </tr>
                                         @endforelse
                                     </tbody>
-                                    @if($contractDetailRows->isNotEmpty())
+                                    @if($roomRentalRows->isNotEmpty())
                                     <tfoot>
                                         <tr>
                                             <td colspan="9"><strong>Total</strong></td>
-                                            <td><strong>Rp {{ number_format($contractDetailTotal, 0, ',', '.') }}</strong></td>
+                                            <td><strong>Rp {{ number_format($roomRentalTotal, 0, ',', '.') }}</strong></td>
                                             <td></td>
                                         </tr>
                                     </tfoot>
