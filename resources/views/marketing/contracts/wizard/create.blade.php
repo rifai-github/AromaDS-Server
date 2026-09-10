@@ -601,8 +601,15 @@
                     </div>
                     
                     <div class="form-group">
-                        <label class="form-label">PIC Service (Email)</label>
-                        <input type="email" name="pic_service_email" id="picServiceEmail" class="form-control" placeholder="Enter PIC Service email">
+                        <label class="form-label">PIC Service</label>
+                        <div class="flex">
+                            <select name="pic_service_email" id="picServiceEmail" class="form-control">
+                                <option value="">Pilih atau ketik disini...</option>
+                            </select>
+                            <button type="button" class="btn btn-add ml-2" onclick="openClientContactModal()">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
                     </div>
                     
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1425,6 +1432,50 @@ function loadCustomerContacts(contacts) {
             select.appendChild(option);
         }
     });
+
+    loadPicServiceContacts(contacts);
+}
+
+// PIC Service dipilih dari contact customer (sama seperti Company Contact Signing),
+// tapi yang disimpan tetap email-nya karena kolomnya `pic_service_email`.
+function loadPicServiceContacts(contacts) {
+    const select = document.getElementById('picServiceEmail');
+    if (!select) return;
+
+    const previousValue = select.value;
+    select.innerHTML = '<option value="">Pilih atau ketik disini...</option>';
+
+    const activeContacts = (contacts || []).filter(contact => contact && contact.is_active !== false);
+
+    if (activeContacts.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'Tidak ada contact untuk customer ini';
+        option.disabled = true;
+        select.appendChild(option);
+        return;
+    }
+
+    activeContacts.forEach(contact => {
+        const option = document.createElement('option');
+        const email = (contact.email || '').trim();
+        const label = contact.name + (contact.position ? ` - ${contact.position}` : '');
+
+        option.value = email;
+        option.textContent = email ? `${label} (${email})` : `${label} (tanpa email)`;
+        option.disabled = email === '';
+        option.setAttribute('data-contact-id', contact.id ?? '');
+        select.appendChild(option);
+    });
+
+    if (previousValue && Array.from(select.options).some(option => option.value === previousValue && !option.disabled)) {
+        select.value = previousValue;
+    }
+
+    // Kalau select2 sudah ter-attach, dia perlu diberitahu isi option-nya berubah.
+    if (typeof $ !== 'undefined' && $(select).hasClass('select2-hidden-accessible')) {
+        $(select).trigger('change.select2');
+    }
 }
 
 const customerLookupCache = {
@@ -3884,6 +3935,17 @@ function addContactToDropdowns(contact) {
     document.querySelectorAll('select[name*="company_signing"], select[name*="pic_finance"]').forEach(select => {
         select.insertAdjacentHTML('beforeend', option);
     });
+
+    // PIC Service menyimpan email, bukan id contact.
+    const picServiceSelect = document.getElementById('picServiceEmail');
+    const picServiceEmail = (contact.email || '').trim();
+    if (picServiceSelect && picServiceEmail) {
+        const picOption = document.createElement('option');
+        picOption.value = picServiceEmail;
+        picOption.textContent = `${contact.name} (${picServiceEmail})`;
+        picOption.setAttribute('data-contact-id', contact.id ?? '');
+        picServiceSelect.appendChild(picOption);
+    }
 }
 
 // Save functions
