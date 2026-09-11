@@ -320,35 +320,11 @@ class InventoryIssuingController extends Controller
             'items.product.productCategory',
         ]);
 
-        $itemProductIds = $issuing->items
-            ->pluck('product_id')
-            ->filter()
-            ->unique()
-            ->values();
+        $scanSerialProductIds = $this->resolveScanSerialProductIds($issuing);
 
-        $productsWithAvailableSerials = \App\Models\SerialNumber::whereIn('master_product_id', $itemProductIds)
-            ->whereIn('status', ['ready', 'available'])
-            ->where(function ($query) {
-                $query->whereNull('location_type')
-                    ->orWhere('location_type', 'warehouse');
-            })
-            ->when($issuing->warehouse_id, fn ($query) => $query->where('warehouse_id', $issuing->warehouse_id))
-            ->pluck('master_product_id')
-            ->map(fn ($productId) => (int) $productId)
-            ->unique()
-            ->values()
-            ->all();
-
-        $scanSerialProductIds = $issuing->items
-            ->filter(function ($item) use ($productsWithAvailableSerials) {
-                return ($item->product?->requiresSerialNumber() ?? false)
-                    || in_array((int) $item->product_id, $productsWithAvailableSerials, true);
-            })
-            ->pluck('product_id')
-            ->map(fn ($productId) => (int) $productId)
-            ->unique()
-            ->values()
-            ->all();
+        // Checklist rendered inside the scan modal: which rows still owe an SN, and
+        // which slot of a qty>1 row is still empty. Kept in sync by scanSerialNumber().
+        $serialChecklist = $this->buildSerialChecklist($issuing);
 
         // Check if can unpost (MOM16 logic)
         // Can unpost if status is 'sent' (Finish) AND work has not started/completed
@@ -382,7 +358,7 @@ class InventoryIssuingController extends Controller
             }
         }
 
-        return view('warehouse.inventory-issuings.show', compact('issuing', 'canUnpost', 'scanSerialProductIds'));
+        return view('warehouse.inventory-issuings.show', compact('issuing', 'canUnpost', 'scanSerialProductIds', 'serialChecklist'));
     }
 
     public function edit($id)
@@ -1022,7 +998,8 @@ class InventoryIssuingController extends Controller
     public function scanSerialNumber(Request $request, $id)
     {
         $request->validate([
-            'issuing_item_id' => 'required|exists:inventory_issuing_items,id',
+            'issuing_item_id' => 'nullable|exists:inventory_issuing_items,id',
+            'unit_index' => 'nullable|integer|min:1',
             'serial_number' => 'required|string|max:100',
         ]);
 
@@ -1030,7 +1007,7 @@ class InventoryIssuingController extends Controller
             DB::beginTransaction();
 
             $issuing = InventoryIssuing::findOrFail($id);
-            
+
             if ($issuing->status !== 'pending') {
                 DB::rollBack();
                 return response()->json([
@@ -1039,39 +1016,64 @@ class InventoryIssuingController extends Controller
                 ], 422);
             }
 
-            $issuingItem = \App\Models\InventoryIssuingItem::with(['product.productCategory', 'product.productType', 'serialLinks'])
-                ->findOrFail($request->issuing_item_id);
+            $serialNumber = trim($request->serial_number);
+            $targetUnitIndex = $request->filled('unit_index') ? (int) $request->unit_index : null;
 
-            if ($issuingItem->inventory_issuing_id != $issuing->id) {
-                DB::rollBack();
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Item tidak sesuai dengan issuing ini.'
-                ], 422);
+            if ($request->filled('issuing_item_id')) {
+                // Explicit target ("Ubah SN"): one named row, optionally one named slot.
+                $issuingItem = \App\Models\InventoryIssuingItem::with(['product.productCategory', 'product.productType', 'serialLinks'])
+                    ->findOrFail($request->issuing_item_id);
+
+                if ($issuingItem->inventory_issuing_id != $issuing->id) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Item tidak sesuai dengan issuing ini.'
+                    ], 422);
+                }
+            } else {
+                // Continuous scanning: the SN finds its own row in this issuing so the
+                // operator never picks a product first. Ambiguity is asked, never guessed.
+                $resolution = $this->resolveIssuingItemForScannedSerial($issuing, $serialNumber);
+
+                if ($resolution['status'] !== 'ok') {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'status'    => $resolution['status'],
+                        'message'   => $resolution['message'],
+                        'data'      => ['candidate_item_ids' => $resolution['candidates'] ?? []],
+                        'checklist' => $this->buildSerialChecklist($issuing),
+                    ], $resolution['status'] === 'ambiguous' ? 200 : 422);
+                }
+
+                $issuingItem = $resolution['item'];
+                $targetUnitIndex = null;
             }
 
-            // QA "1 Rental banyak Qty": unit products with quantity_requested > 1 need
-            // one distinct SN per unit. Refuse another scan once the row already has
-            // enough serials linked (aroma/refill batch products only ever need 1).
+            // QA "1 Rental banyak Qty": unit products with quantity_requested > 1 need one
+            // distinct SN per unit. A full row can still be corrected, but only by naming
+            // the slot to overwrite - a stray scan must never silently replace one.
             $requiredSerialCount = $issuingItem->requiredSerialCount();
             $linkedSerialCount = $issuingItem->linkedSerialCount();
-            $isReplacingSingleSlot = false;
-            if ($requiredSerialCount > 0 && $linkedSerialCount >= $requiredSerialCount) {
+            $replaceUnitIndex = null;
+
+            if ($targetUnitIndex !== null) {
+                $replaceUnitIndex = $targetUnitIndex;
+            } elseif ($requiredSerialCount > 0 && $linkedSerialCount >= $requiredSerialCount) {
                 if ($requiredSerialCount <= 1) {
                     // Pre-existing "Ubah SN" flow: a row that only ever needs 1 SN (qty 1
                     // unit, or any aroma/refill batch row) can have its single serial
                     // replaced by scanning again, same as before this pivot table existed.
-                    $isReplacingSingleSlot = true;
+                    $replaceUnitIndex = (int) ($issuingItem->serialLinks->min('unit_index') ?? 1);
                 } else {
                     DB::rollBack();
                     return response()->json([
                         'status' => 'error',
-                        'message' => "Serial Number untuk item ini sudah lengkap ({$linkedSerialCount}/{$requiredSerialCount})."
+                        'message' => "Serial Number untuk item ini sudah lengkap ({$linkedSerialCount}/{$requiredSerialCount}). Pilih slot yang ingin diganti."
                     ], 422);
                 }
             }
-
-            $serialNumber = trim($request->serial_number);
 
             // Validasi 1: SN harus ada di serial_numbers table. Batch/refill SN may have
             // duplicate rows, so choose an available row for this item before falling back.
@@ -1175,19 +1177,26 @@ class InventoryIssuingController extends Controller
                 }
             }
 
-            // "Ubah SN" on a single-slot row (qty 1 unit, or any aroma/refill batch row):
-            // clear the old link first so the new scan replaces it, exactly like the old
-            // unconditional-overwrite behavior before this pivot table existed.
-            if ($isReplacingSingleSlot) {
-                $issuingItem->serialLinks()->delete();
+            // Guard the (item, serial) unique index: one SN cannot hold two slots of the
+            // same row. Re-scanning into the slot it already occupies stays a no-op.
+            $existingLink = $issuingItem->serialLinks->firstWhere('serial_number_id', $sn->id);
+            if ($existingLink && (int) $existingLink->unit_index !== (int) $replaceUnitIndex) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Serial Number {$serialNumber} sudah terpasang di slot {$existingLink->unit_index} pada item ini."
+                ], 422);
             }
 
-            // QA "1 Rental banyak Qty": link SN as the next slot for this item. The pivot
-            // table holds every SN for a qty>1 unit row; serial_number_id is kept in sync
-            // with the first slot for backward compatibility with code reading it directly.
-            $nextUnitIndex = $isReplacingSingleSlot
-                ? 1
-                : (($issuingItem->serialLinks->max('unit_index') ?? 0) + 1);
+            // Replace one named slot, or append the next one. The pivot table holds every
+            // SN for a qty>1 unit row; serial_number_id is kept in sync with the lowest
+            // slot for backward compatibility with code reading it directly.
+            if ($replaceUnitIndex !== null) {
+                $issuingItem->serialLinks()->where('unit_index', $replaceUnitIndex)->delete();
+                $nextUnitIndex = $replaceUnitIndex;
+            } else {
+                $nextUnitIndex = ((int) ($issuingItem->serialLinks->max('unit_index') ?? 0)) + 1;
+            }
 
             \App\Models\InventoryIssuingItemSerial::create([
                 'inventory_issuing_item_id' => $issuingItem->id,
@@ -1196,13 +1205,16 @@ class InventoryIssuingController extends Controller
                 'created_by' => Auth::id(),
             ]);
 
+            $issuingItem->load('serialLinks');
+            $primarySerialId = $issuingItem->serialLinks->sortBy('unit_index')->first()?->serial_number_id;
+
             $issuingItem->update([
-                'serial_number_id' => $isReplacingSingleSlot ? $sn->id : ($issuingItem->serial_number_id ?? $sn->id),
+                'serial_number_id' => $primarySerialId ?? $sn->id,
                 'room_name'        => $roomName ?: $issuingItem->room_name,
                 'updated_by'       => Auth::id()
             ]);
 
-            $linkedSerialCount = $nextUnitIndex;
+            $linkedSerialCount = $issuingItem->serialLinks->count();
 
             // Update SN status to in_use (optional, bisa juga tetap available sampai benar-benar terpasang)
             // $sn->update(['status' => 'in_use']);
@@ -1220,7 +1232,13 @@ class InventoryIssuingController extends Controller
                     'status' => $sn->status,
                     'linked_count' => $linkedSerialCount,
                     'required_count' => $requiredSerialCount,
-                ]
+                    // Auto-resolved target, so the UI can point at the row it just filled.
+                    'issuing_item_id' => (int) $issuingItem->id,
+                    'unit_index' => (int) $nextUnitIndex,
+                    'room_name' => $issuingItem->room_name,
+                    'replaced' => $replaceUnitIndex !== null,
+                ],
+                'checklist' => $this->buildSerialChecklist($issuing),
             ]);
 
         } catch (\Exception $e) {
@@ -1571,6 +1589,222 @@ public function getUserTeams($userId)
         return $baseQuery
             ->orderBy('id')
             ->first();
+    }
+
+    /**
+     * Product ids in this issuing whose rows can carry an SN: either the product demands
+     * one, or the warehouse happens to hold ready serials for it (optional SN rows).
+     */
+    private function resolveScanSerialProductIds(InventoryIssuing $issuing): array
+    {
+        $issuing->loadMissing(['items.product.productCategory', 'items.product.productType']);
+
+        $itemProductIds = $issuing->items
+            ->pluck('product_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $productsWithAvailableSerials = \App\Models\SerialNumber::whereIn('master_product_id', $itemProductIds)
+            ->whereIn('status', ['ready', 'available'])
+            ->where(function ($query) {
+                $query->whereNull('location_type')
+                    ->orWhere('location_type', 'warehouse');
+            })
+            ->when($issuing->warehouse_id, fn ($query) => $query->where('warehouse_id', $issuing->warehouse_id))
+            ->pluck('master_product_id')
+            ->map(fn ($productId) => (int) $productId)
+            ->unique()
+            ->values()
+            ->all();
+
+        return $issuing->items
+            ->filter(function ($item) use ($productsWithAvailableSerials) {
+                return ($item->product?->requiresSerialNumber() ?? false)
+                    || in_array((int) $item->product_id, $productsWithAvailableSerials, true);
+            })
+            ->pluck('product_id')
+            ->map(fn ($productId) => (int) $productId)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function itemCanScanSerialNumber($item, array $scanSerialProductIds): bool
+    {
+        return ($item->product?->requiresSerialNumber() ?? false)
+            || in_array((int) $item->product_id, $scanSerialProductIds, true);
+    }
+
+    /**
+     * Find which row of this issuing a freely-scanned SN belongs to, so the operator can
+     * scan continuously without picking an item first.
+     *
+     * Returns ['status' => 'ok', 'item' => ...] on a single match. When the same product
+     * sits on several rows (one per room) it returns 'ambiguous' with the candidates
+     * instead of guessing: an SN landing on the wrong room would follow the unit all the
+     * way to Unit On Wall and the IR document.
+     */
+    private function resolveIssuingItemForScannedSerial(InventoryIssuing $issuing, string $serialNumber): array
+    {
+        $productIds = \App\Models\SerialNumber::where('serial_number', $serialNumber)
+            ->pluck('master_product_id')
+            ->filter()
+            ->map(fn ($productId) => (int) $productId)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($productIds)) {
+            return [
+                'status' => 'error',
+                'message' => "Serial Number {$serialNumber} tidak ditemukan. Pastikan SN sudah diinput di Inventory Receiving.",
+            ];
+        }
+
+        $issuing->loadMissing(['items.product.productCategory', 'items.product.productType', 'items.serialLinks']);
+        $scanSerialProductIds = $this->resolveScanSerialProductIds($issuing);
+
+        $candidates = $issuing->items
+            ->filter(function ($item) use ($productIds, $scanSerialProductIds) {
+                return in_array((int) $item->product_id, $productIds, true)
+                    && $this->itemCanScanSerialNumber($item, $scanSerialProductIds);
+            })
+            ->values();
+
+        if ($candidates->isEmpty()) {
+            return [
+                'status' => 'error',
+                'message' => "Serial Number {$serialNumber} bukan bagian dari Inventory Issuing ini. Produknya tidak ada di daftar item.",
+            ];
+        }
+
+        // Rows that still owe a mandatory SN win; optional-SN rows only take the scan
+        // when nothing mandatory is waiting for it.
+        $pool = $candidates
+            ->filter(fn ($item) => $item->requiredSerialCount() > 0 && $item->linkedSerialCount() < $item->requiredSerialCount())
+            ->values();
+
+        if ($pool->isEmpty()) {
+            $pool = $candidates->filter(fn ($item) => $item->requiredSerialCount() === 0)->values();
+        }
+
+        if ($pool->isEmpty()) {
+            $productName = $candidates->first()->product->name ?? 'produk ini';
+
+            return [
+                'status' => 'error',
+                'message' => "Semua slot Serial Number untuk {$productName} sudah terisi. Pakai tombol Ubah SN pada baris yang ingin diganti.",
+            ];
+        }
+
+        if ($pool->count() > 1) {
+            return [
+                'status' => 'ambiguous',
+                'message' => "Serial Number {$serialNumber} cocok untuk beberapa baris. Pilih baris tujuannya.",
+                'candidates' => $pool->pluck('id')->map(fn ($itemId) => (int) $itemId)->all(),
+            ];
+        }
+
+        return ['status' => 'ok', 'item' => $pool->first()];
+    }
+
+    /**
+     * Per-slot SN progress of the whole issuing, rendered by the scan modal and refreshed
+     * from every scan response so continuous scanning never needs a page reload.
+     */
+    private function buildSerialChecklist(InventoryIssuing $issuing): array
+    {
+        $issuing->load([
+            'items.product.productCategory',
+            'items.product.productType',
+            'items.serialNumber',
+            'items.serialLinks.serialNumber',
+        ]);
+
+        $scanSerialProductIds = $this->resolveScanSerialProductIds($issuing);
+
+        $rows = [];
+        $totalRequired = 0;
+        $totalFilled = 0;
+        $allComplete = true;
+
+        foreach ($issuing->items as $item) {
+            if (! $this->itemCanScanSerialNumber($item, $scanSerialProductIds)) {
+                continue;
+            }
+
+            $required = $item->requiredSerialCount();
+            $links = $item->serialLinks->sortBy('unit_index')->values();
+
+            if ($links->isEmpty() && $item->serial_number_id && $item->serialNumber) {
+                // Legacy row written before the pivot table existed.
+                $slots = [[
+                    'unit_index' => 1,
+                    'filled' => true,
+                    'serial_number' => $item->serialNumber->serial_number,
+                    'sn_status' => $item->serialNumber->status,
+                ]];
+            } else {
+                $slots = $links->map(fn ($link) => [
+                    'unit_index' => (int) $link->unit_index,
+                    'filled' => true,
+                    'serial_number' => $link->serialNumber?->serial_number,
+                    'sn_status' => $link->serialNumber?->status,
+                ])->all();
+            }
+
+            $filled = count($slots);
+
+            // Pad out the slots this row still owes, so empty ones are clickable targets.
+            $nextIndex = $filled > 0 ? (max(array_column($slots, 'unit_index')) + 1) : 1;
+            for ($i = $filled; $i < $required; $i++) {
+                $slots[] = [
+                    'unit_index' => $nextIndex++,
+                    'filled' => false,
+                    'serial_number' => null,
+                    'sn_status' => null,
+                ];
+            }
+
+            $complete = $required === 0 || $filled >= $required;
+            if (! $complete) {
+                $allComplete = false;
+            }
+
+            $totalRequired += $required;
+            $totalFilled += min($filled, $required);
+
+            $rows[] = [
+                'item_id' => (int) $item->id,
+                'product_id' => (int) $item->product_id,
+                'product_name' => $item->product->name ?? 'Unknown Product',
+                'category_name' => $item->product?->productCategory?->name,
+                'room_name' => $item->room_name,
+                'quantity' => (float) ($item->quantity_requested ?? 1),
+                'required' => $required,
+                'filled' => $filled,
+                'optional' => $required === 0,
+                'complete' => $complete,
+                'slots' => $slots,
+            ];
+        }
+
+        // Rows still waiting float to the top: the operator always sees what is left.
+        usort($rows, function ($a, $b) {
+            if ($a['complete'] !== $b['complete']) {
+                return $a['complete'] ? 1 : -1;
+            }
+
+            return strcmp($a['product_name'], $b['product_name']);
+        });
+
+        return [
+            'rows' => $rows,
+            'total_required' => $totalRequired,
+            'total_filled' => $totalFilled,
+            'all_complete' => $allComplete,
+        ];
     }
 
     private function normalizeProductBrandLine(?string $brandLine): ?string

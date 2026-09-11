@@ -591,18 +591,13 @@
                                                 @endif
                                             </td>
                                             <td style="padding: 12px; vertical-align: middle; text-align: center;">
-                                                @if($issuing->status === 'pending')
-                                                @if(!$canScanSerialNumber)
-                                                <span class="text-muted">-</span>
-                                                @elseif(!$serialsComplete)
-                                                <button class="btn btn-sm btn-primary" onclick="openScanSNModalForItem({{ $item->id }})" title="Scan QR / Input SN ({{ $linkedCount }}/{{ $requiredSerialCount }})">
-                                                    <i class="fas fa-qrcode"></i> {{ $linkedCount }}/{{ $requiredSerialCount }}
-                                                </button>
-                                                @else
+                                                {{-- Baris yang belum terisi tidak lagi punya tombol sendiri: diisi lewat
+                                                     scan beruntun di modal. Pensil tetap ada sebagai jalan koreksi
+                                                     langsung dari tempat SN-nya dibaca. --}}
+                                                @if($issuing->status === 'pending' && $canScanSerialNumber && $linkedCount > 0)
                                                 <button class="btn btn-sm btn-warning" onclick="openScanSNModalForItem({{ $item->id }})" title="Ubah SN">
                                                     <i class="fas fa-edit"></i>
                                                 </button>
-                                                @endif
                                                 @else
                                                 <span class="text-muted">-</span>
                                                 @endif
@@ -1190,7 +1185,19 @@ function saveRemarks(btn) {
 let qrCodeScanner = null;
 let isScanning = false;
 
-function openScanSNModal(preSelectedItemId = null) {
+// Scan session state. `checklist` mirrors the server's per-slot progress and is refreshed
+// from every scan response; `targetItemId`/`targetUnitIndex` aim the next scan at one
+// exact slot and are only ever set by a deliberate click.
+let scanSNState = {
+    checklist: @json($serialChecklist ?? null),
+    targetItemId: null,
+    targetUnitIndex: null,
+    candidateItemIds: [],
+    pendingSerial: null,
+    dirty: false,
+};
+
+function openScanSNModal(preSelectedItemId = null, preSelectedUnitIndex = null) {
     const modal = document.createElement('div');
     modal.id = 'scanSNModal';
     modal.style.cssText = `
@@ -1209,46 +1216,27 @@ function openScanSNModal(preSelectedItemId = null) {
         overflow-y: auto;
     `;
     
-    const items = @json($issuing->items);
-    const scanSerialProductIds = new Set((@json($scanSerialProductIds ?? [])).map(productId => Number(productId)));
-    const itemRequiresSerialNumber = (item) => {
-        const product = item.product || {};
-        return Boolean(
-            product.requires_serial_number ||
-            product.product_category?.has_serial_number ||
-            product.product_type?.has_serial_number
-        );
-    };
-    const itemCanScanSerialNumber = (item) => {
-        return itemRequiresSerialNumber(item) || scanSerialProductIds.has(Number(item.product_id));
-    };
-    const serialItems = items.filter(itemCanScanSerialNumber);
-    const itemsOptions = serialItems.map(item => 
-        `<option value="${item.id}" data-product-id="${item.product_id}" ${preSelectedItemId == item.id ? 'selected' : ''}>${item.product?.name || 'Unknown'} (Qty: ${item.quantity_requested})</option>`
-    ).join('');
-    
+    scanSNState.targetItemId = preSelectedItemId ? Number(preSelectedItemId) : null;
+    scanSNState.targetUnitIndex = preSelectedUnitIndex ? Number(preSelectedUnitIndex) : null;
+    scanSNState.candidateItemIds = [];
+    scanSNState.pendingSerial = null;
+
     modal.innerHTML = `
         <div class="modal-dialog modal-dialog-centered" style="margin: 20px auto; max-width: 700px; width: 90%;">
             <div class="modal-content" style="background-color: white; border-radius: 12px; box-shadow: 0 15px 40px rgba(0,0,0,0.3); border: none;">
                 <div class="modal-header" style="background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%); color: white; border-radius: 12px 12px 0 0; padding: 20px 24px; border-bottom: none;">
-                    <h5 class="modal-title" style="font-weight: 600; font-size: 1.25rem;">
-                        <i class="fas fa-qrcode me-2"></i>Scan QR / Validasi Serial Number
-                    </h5>
+                    <div>
+                        <h5 class="modal-title" style="font-weight: 600; font-size: 1.25rem;">
+                            <i class="fas fa-qrcode me-2"></i>Scan QR / Validasi Serial Number
+                        </h5>
+                        <div id="scanSNCounter" style="font-size: 0.85rem; opacity: 0.85; margin-top: 4px;"></div>
+                    </div>
                     <button type="button" class="btn-close btn-close-white" onclick="closeScanSNModal()"></button>
                 </div>
                 <form id="scanSNForm" onsubmit="return false;">
                     @csrf
                     <div class="modal-body" style="background-color: white; padding: 24px;">
-                        <div class="mb-4">
-                            <label class="form-label" style="font-weight: 600; color: #374151; margin-bottom: 8px; display: block;">
-                                <i class="fas fa-box me-2"></i>Item <span class="text-danger">*</span>
-                            </label>
-                            <select name="issuing_item_id" id="scanSNItem" class="form-control" required style="padding: 10px 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
-                                <option value="">Pilih Item</option>
-                                ${itemsOptions}
-                            </select>
-                        </div>
-                        <div class="mb-4">
+                        <div class="mb-3">
                             <label class="form-label" style="font-weight: 600; color: #374151; margin-bottom: 8px; display: block;">
                                 <i class="fas fa-barcode me-2"></i>Serial Number <span class="text-danger">*</span>
                             </label>
@@ -1271,20 +1259,21 @@ function openScanSNModal(preSelectedItemId = null) {
                                 </div>
                             </div>
                             <small class="text-muted mt-1 d-block">
-                                <i class="fas fa-info-circle me-1"></i>System akan mengecek:
-                                <ul class="mt-2 mb-0" style="padding-left: 20px;">
-                                    <li>SN harus sudah ada di database (sudah diinput di Receiving)</li>
-                                    <li>SN harus sesuai dengan produk yang di-issue</li>
-                                    <li>SN tidak boleh sudah terpakai di Unit On Wall</li>
-                                    <li>SN status harus ready</li>
-                                </ul>
+                                <i class="fas fa-info-circle me-1"></i>Scan langsung tanpa memilih item &mdash; sistem mencari sendiri barisnya, lalu mengecek SN terdaftar, cocok produknya, belum terpakai di Unit On Wall, dan statusnya ready.
                             </small>
                         </div>
                         <div id="scanSNError" class="alert alert-danger d-none" role="alert"></div>
                         <div id="scanSNSuccess" class="alert alert-success d-none" role="alert"></div>
+                        <div id="scanSNTargetBanner" class="d-none" style="margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; background-color: #fef3c7; border: 1px solid #fcd34d; color: #92400e; font-size: 0.875rem;"></div>
+                        <div style="border-top: 1px solid #e5e7eb; padding-top: 16px;">
+                            <div style="font-weight: 600; color: #374151; margin-bottom: 10px; font-size: 0.9rem;">
+                                <i class="fas fa-list-check me-2"></i>Daftar Item
+                            </div>
+                            <div id="scanSNChecklist" style="max-height: 320px; overflow-y: auto; padding-right: 4px;"></div>
+                        </div>
                     </div>
                     <div class="modal-footer" style="background-color: #f9fafb; border-radius: 0 0 12px 12px; padding: 16px 24px; border-top: 1px solid #e5e7eb; gap: 10px;">
-                        <button type="button" class="btn btn-secondary" onclick="closeScanSNModal()" style="padding: 10px 20px; border-radius: 8px; font-weight: 500;">Cancel</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeScanSNModal()" style="padding: 10px 20px; border-radius: 8px; font-weight: 500;">Tutup</button>
                         <button type="button" class="btn btn-primary" onclick="submitScanSN()" id="scanSNSubmitBtn" style="padding: 10px 20px; border-radius: 8px; font-weight: 500; background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%); border: none;">
                             <i class="fas fa-check me-2"></i>Validasi & Simpan
                         </button>
@@ -1294,11 +1283,179 @@ function openScanSNModal(preSelectedItemId = null) {
         </div>
     `;
     document.body.appendChild(modal);
-    
+
+    renderScanSNChecklist();
+    updateScanSNTargetBanner();
+
     // Auto focus on serial number input
     setTimeout(() => {
         document.getElementById('scanSNSerial').focus();
     }, 100);
+}
+
+// Live per-slot progress of the whole issuing. Re-rendered from every scan response so
+// continuous scanning never needs a page reload.
+function renderScanSNChecklist() {
+    const container = document.getElementById('scanSNChecklist');
+    const counter = document.getElementById('scanSNCounter');
+    if (!container) return;
+
+    const checklist = scanSNState.checklist || { rows: [], total_filled: 0, total_required: 0, all_complete: false };
+
+    if (counter) {
+        const left = Math.max(0, (checklist.total_required || 0) - (checklist.total_filled || 0));
+        counter.innerHTML = checklist.total_required === 0
+            ? 'Tidak ada item yang wajib SN'
+            : `<i class="fas fa-barcode me-1"></i>${checklist.total_filled}/${checklist.total_required} SN terisi`
+                + (left > 0 ? ` &middot; sisa ${left}` : ' &middot; lengkap');
+    }
+
+    if (!checklist.rows.length) {
+        container.innerHTML = '<div class="text-muted" style="font-style: italic; font-size: 0.875rem;">Tidak ada item yang membutuhkan Serial Number.</div>';
+        return;
+    }
+
+    container.innerHTML = checklist.rows.map(row => {
+        const isCandidate = scanSNState.candidateItemIds.includes(row.item_id);
+        const isTarget = scanSNState.targetItemId === row.item_id;
+
+        let border = '#e5e7eb';
+        let background = '#ffffff';
+        if (isCandidate) { border = '#f59e0b'; background = '#fffbeb'; }
+        else if (isTarget) { border = '#1e3a8a'; background = '#eff6ff'; }
+        else if (row.complete) { background = '#f9fafb'; }
+
+        const roomBadge = row.room_name
+            ? `<span class="badge" style="background-color: #0ea5e9; color: white; font-size: 0.7rem; padding: 3px 8px; margin-left: 6px;"><i class="fas fa-door-open me-1"></i>${escapeScanSNText(row.room_name)}</span>`
+            : '';
+
+        const progress = row.optional
+            ? '<span class="badge bg-info" style="font-size: 0.7rem;">Opsional</span>'
+            : `<span class="badge bg-${row.complete ? 'success' : 'warning'}" style="font-size: 0.7rem;">${row.filled}/${row.required}</span>`;
+
+        const slots = row.slots.map(slot => {
+            const targeted = isTarget && scanSNState.targetUnitIndex === slot.unit_index;
+            const label = slot.filled
+                ? `<span style="font-family: monospace; color: #1e3a8a;">${escapeScanSNText(slot.serial_number || '-')}</span>`
+                : '<span class="text-muted" style="font-style: italic;">menunggu scan</span>';
+            const action = slot.filled ? 'Ganti' : 'Pilih';
+
+            return `
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0 5px 14px; font-size: 0.85rem; ${targeted ? 'background-color: #dbeafe; border-radius: 6px; padding-left: 8px;' : ''}">
+                    <div style="flex: 1; min-width: 0;">
+                        <span class="text-muted" style="font-size: 0.75rem; margin-right: 8px;">slot ${slot.unit_index}</span>
+                        ${label}
+                    </div>
+                    <button type="button" class="btn btn-sm ${targeted ? 'btn-primary' : 'btn-outline-secondary'}" style="padding: 1px 10px; font-size: 0.75rem;"
+                        onclick="setScanSNTarget(${row.item_id}, ${slot.unit_index})">${targeted ? 'Dipilih' : action}</button>
+                </div>
+            `;
+        }).join('');
+
+        const optionalHint = row.optional && !row.slots.length
+            ? '<div style="padding: 5px 0 0 14px; font-size: 0.8rem;" class="text-muted"><em>belum ada SN (tidak wajib)</em></div>'
+            : '';
+
+        return `
+            <div style="border: 1px solid ${border}; background-color: ${background}; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <div style="flex: 1; min-width: 0; font-weight: 600; color: #374151; font-size: 0.9rem;">
+                        ${escapeScanSNText(row.product_name)}${roomBadge}
+                        ${row.category_name ? `<div class="text-muted" style="font-weight: 400; font-size: 0.75rem;">${escapeScanSNText(row.category_name)}</div>` : ''}
+                    </div>
+                    ${progress}
+                </div>
+                ${slots}
+                ${optionalHint}
+            </div>
+        `;
+    }).join('');
+}
+
+function escapeScanSNText(value) {
+    const div = document.createElement('div');
+    div.textContent = value == null ? '' : String(value);
+    return div.innerHTML;
+}
+
+// Aim the next scan at one exact slot. Overwriting a filled slot never happens without
+// this deliberate click - a stray scan must not replace an SN that is already in place.
+function setScanSNTarget(itemId, unitIndex) {
+    const alreadyTargeted = scanSNState.targetItemId === itemId && scanSNState.targetUnitIndex === unitIndex;
+
+    scanSNState.targetItemId = alreadyTargeted ? null : itemId;
+    scanSNState.targetUnitIndex = alreadyTargeted ? null : unitIndex;
+    scanSNState.candidateItemIds = [];
+
+    renderScanSNChecklist();
+    updateScanSNTargetBanner();
+
+    // An ambiguous scan is waiting for exactly this answer: submit it right away.
+    if (!alreadyTargeted && scanSNState.pendingSerial) {
+        const serialInput = document.getElementById('scanSNSerial');
+        if (serialInput) serialInput.value = scanSNState.pendingSerial;
+        scanSNState.pendingSerial = null;
+        submitScanSN();
+        return;
+    }
+
+    const serialInput = document.getElementById('scanSNSerial');
+    if (serialInput) serialInput.focus();
+}
+
+function updateScanSNTargetBanner() {
+    const banner = document.getElementById('scanSNTargetBanner');
+    if (!banner) return;
+
+    if (!scanSNState.targetItemId) {
+        banner.classList.add('d-none');
+        banner.innerHTML = '';
+        return;
+    }
+
+    const row = (scanSNState.checklist?.rows || []).find(r => r.item_id === scanSNState.targetItemId);
+    const slot = scanSNState.targetUnitIndex ? ` slot ${scanSNState.targetUnitIndex}` : '';
+    const name = row ? row.product_name : 'item terpilih';
+    const room = row?.room_name ? ` (${row.room_name})` : '';
+
+    banner.innerHTML = `<i class="fas fa-crosshairs me-2"></i>Scan berikutnya diarahkan ke <strong>${escapeScanSNText(name)}${escapeScanSNText(room)}</strong>${slot}. `
+        + '<a href="javascript:void(0)" onclick="clearScanSNTarget()" style="color: #92400e; text-decoration: underline;">Batalkan</a>';
+    banner.classList.remove('d-none');
+}
+
+function clearScanSNTarget() {
+    scanSNState.targetItemId = null;
+    scanSNState.targetUnitIndex = null;
+    scanSNState.candidateItemIds = [];
+    scanSNState.pendingSerial = null;
+    renderScanSNChecklist();
+    updateScanSNTargetBanner();
+
+    const serialInput = document.getElementById('scanSNSerial');
+    if (serialInput) serialInput.focus();
+}
+
+function showScanSNToast(message, type = 'success') {
+    const colors = { success: '#10b981', error: '#ef4444', info: '#f59e0b' };
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        max-width: 380px;
+        padding: 14px 18px;
+        background-color: ${colors[type] || colors.success};
+        color: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        z-index: 10050;
+        font-size: 14px;
+        font-weight: 500;
+    `;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    setTimeout(() => toast.remove(), type === 'error' ? 4500 : 2500);
 }
 
 function openScanSNModalForItem(itemId) {
@@ -1386,21 +1543,11 @@ async function startQRScanner() {
 
                 stopQRScanner();
                 
-                // Show success message
-                const successDiv = document.getElementById('scanSNSuccess');
-                if (successDiv) {
-                    successDiv.textContent = 'QR Code berhasil di-scan: ' + cleanedSN;
-                    successDiv.classList.remove('d-none');
-                    setTimeout(() => {
-                        successDiv.classList.add('d-none');
-                    }, 3000);
-                }
+                // No "berhasil di-scan" banner here: reading the QR is not the same as the
+                // SN passing validation, and the result toast says which one happened.
                 
-                // Auto focus on submit button
-                const submitBtn = document.getElementById('scanSNSubmitBtn');
-                if (submitBtn) {
-                    submitBtn.focus();
-                }
+                // Validate immediately so a camera run needs no clicking between units.
+                submitScanSN();
             },
             (errorMessage) => {
                 // Error callback - ignore, scanner will keep trying
@@ -1455,10 +1602,17 @@ async function stopQRScanner() {
 async function closeScanSNModal() {
     // Stop scanner if running
     await stopQRScanner();
-    
+
     const modal = document.getElementById('scanSNModal');
     if (modal) {
         modal.remove();
+    }
+
+    // Reload once on the way out instead of after every scan, so a scanning run is never
+    // interrupted. Nothing changed means nothing to refresh.
+    if (scanSNState.dirty) {
+        scanSNState.dirty = false;
+        location.reload();
     }
 }
 
@@ -1478,12 +1632,10 @@ function submitScanSN() {
     successDiv.classList.add('d-none');
     
     // Validate form
-    const itemId = document.getElementById('scanSNItem').value;
     const serialNumber = document.getElementById('scanSNSerial').value.trim().toUpperCase();
     
-    if (!itemId || !serialNumber) {
-        errorDiv.textContent = 'Item dan Serial Number harus diisi!';
-        errorDiv.classList.remove('d-none');
+    if (!serialNumber) {
+        showScanSNToast('Serial Number harus diisi!', 'error');
         return;
     }
     
@@ -1493,7 +1645,15 @@ function submitScanSN() {
     
     const formData = new FormData(form);
     formData.append('serial_number', serialNumber);
-    
+
+    // Only a deliberate slot pick sends a target; a plain scan lets the server resolve it.
+    if (scanSNState.targetItemId) {
+        formData.append('issuing_item_id', scanSNState.targetItemId);
+        if (scanSNState.targetUnitIndex) {
+            formData.append('unit_index', scanSNState.targetUnitIndex);
+        }
+    }
+
     fetch('{{ route("warehouse.inventory-issuings.scan-serial-number", $issuing->id) }}', {
         method: 'POST',
         headers: {
@@ -1506,34 +1666,80 @@ function submitScanSN() {
     .then(response => response.json())
     .then(result => {
         if (result.status === 'success') {
-            successDiv.textContent = result.message || 'Serial Number berhasil divalidasi dan disimpan!';
-            successDiv.classList.remove('d-none');
+            scanSNState.checklist = result.checklist || scanSNState.checklist;
+            scanSNState.dirty = true;
+            scanSNState.candidateItemIds = [];
+            scanSNState.pendingSerial = null;
+            scanSNState.targetItemId = null;
+            scanSNState.targetUnitIndex = null;
+
+            const info = result.data || {};
+            const room = info.room_name ? ` (${info.room_name})` : '';
+            const counts = info.required_count ? ` ${info.linked_count}/${info.required_count}` : '';
+            showScanSNToast(`${info.serial_number || serialNumber} → ${info.product_name || 'item'}${room} ✓${counts}`, 'success');
+
+            renderScanSNChecklist();
+            updateScanSNTargetBanner();
+
+            if (scanSNState.checklist && scanSNState.checklist.all_complete) {
+                showScanSNToast('Semua SN sudah lengkap. Tutup untuk lanjut Ready to Issue.', 'info');
+            }
             
-            // Clear form
-            form.reset();
+            // Clear only the SN field: the modal stays open, ready for the next scan.
+            const serialInput = document.getElementById('scanSNSerial');
+            if (serialInput) {
+                serialInput.value = '';
+                serialInput.focus();
+            }
             
-            // Reload page after 1 second to show updated SN
-            setTimeout(() => {
-                location.reload();
-            }, 1000);
+        } else if (result.status === 'ambiguous') {
+            // Same product sits on several rows (one per room). Never guessed: the operator
+            // points at the slot, and the held SN is submitted the moment they do.
+            scanSNState.checklist = result.checklist || scanSNState.checklist;
+            scanSNState.candidateItemIds = ((result.data || {}).candidate_item_ids || []).map(Number);
+            scanSNState.pendingSerial = serialNumber;
+
+            renderScanSNChecklist();
+            showScanSNToast(result.message || 'Pilih baris tujuan untuk SN ini.', 'info');
+
+            const banner = document.getElementById('scanSNTargetBanner');
+            if (banner) {
+                banner.innerHTML = `<i class="fas fa-question-circle me-2"></i><strong>${escapeScanSNText(serialNumber)}</strong> cocok untuk beberapa baris di bawah. Klik slot tujuannya.`;
+                banner.classList.remove('d-none');
+            }
         } else {
-            errorDiv.textContent = result.message || 'Gagal memvalidasi Serial Number';
-            errorDiv.classList.remove('d-none');
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fas fa-check me-2"></i>Validasi & Simpan';
+            if (result.checklist) {
+                scanSNState.checklist = result.checklist;
+                renderScanSNChecklist();
+            }
+
+            showScanSNToast(result.message || 'Gagal memvalidasi Serial Number', 'error');
+
+            const serialInput = document.getElementById('scanSNSerial');
+            if (serialInput) serialInput.select();
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        errorDiv.textContent = 'Terjadi kesalahan saat memvalidasi Serial Number';
-        errorDiv.classList.remove('d-none');
+        showScanSNToast('Terjadi kesalahan saat memvalidasi Serial Number', 'error');
+    })
+    .finally(() => {
+        // The global double-click guard snapshots the button in the bubble phase, i.e.
+        // after this handler already swapped in the spinner - so its "original text" is
+        // the spinner. Release its bookkeeping first, then restore the real label.
+        if (window.enableSubmitButton) {
+            window.enableSubmitButton(submitBtn);
+        }
+
         submitBtn.disabled = false;
         submitBtn.innerHTML = '<i class="fas fa-check me-2"></i>Validasi & Simpan';
     });
 }
 
-// Allow Enter key to submit
-document.addEventListener('keypress', function(e) {
+// Allow Enter key to submit. Barcode scanners type the SN and send Enter, so this is the
+// main path during a scanning run - keydown, not the deprecated keypress, so it fires
+// consistently across browsers and hardware scanners.
+document.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && document.getElementById('scanSNModal')) {
         const serialInput = document.getElementById('scanSNSerial');
         if (document.activeElement === serialInput) {
