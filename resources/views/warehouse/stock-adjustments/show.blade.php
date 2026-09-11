@@ -354,22 +354,49 @@
                 <div id="item_serial_wrapper" class="mb-4" style="margin-bottom: 1rem; display:none;">
                     <label id="item_serial_label" class="block text-sm font-medium text-gray-700 mb-1" style="display: block; margin-bottom: 0.5rem;">Serial Numbers</label>
                     <div id="item_serial_increase_group" style="display:none;">
-                        <div style="display:flex; gap: 0.5rem; align-items: flex-start;">
-                            <textarea id="item_serial_numbers" class="form-control" rows="4" style="flex: 1; padding: 0.5rem;" placeholder="Masukkan SN baru, 1 SN per baris"></textarea>
-                            <button type="button" class="btn btn-primary" onclick="toggleStockAdjustmentQRScanner()" id="stockAdjustmentScanBtn" style="border-radius: 8px; white-space: nowrap; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); border: none; padding: 0.5rem 0.75rem;">
-                                <i class="fas fa-camera me-1"></i>Scan
+                        <textarea id="item_serial_numbers" class="form-control" rows="4" style="width: 100%; padding: 0.5rem;" placeholder="Masukkan SN baru, 1 SN per baris"></textarea>
+                    </div>
+
+                    {{-- Decrease: SN yang dikeluarkan dipilih dengan scan, bukan dicari
+                         satu-satu di listbox. Daftar tersedia tetap ada sebagai jalan
+                         manual kalau label SN-nya sudah tidak terbaca. --}}
+                    <div id="item_serial_decrease_group" style="display:none;">
+                        <div class="input-group" style="margin-bottom: 0.5rem;">
+                            <input type="text" id="item_decrease_scan_input" class="form-control" autocomplete="off"
+                                placeholder="Scan QR atau ketik SN yang dikeluarkan"
+                                style="padding: 0.5rem;">
+                            <button type="button" class="btn btn-success" onclick="addDecreaseSerialFromInput()" style="white-space: nowrap;">
+                                <i class="fas fa-plus me-1"></i>Add
                             </button>
                         </div>
-                        <div id="stockAdjustmentQRReaderContainer" style="display:none; margin-top: 0.5rem;">
-                            <div id="stockAdjustmentQRReader" style="width: 100%; max-width: 400px; margin: 0 auto;"></div>
-                            <div class="text-center mt-2">
-                                <button type="button" class="btn btn-sm btn-secondary" onclick="stopStockAdjustmentQRScanner()">
-                                    <i class="fas fa-stop me-1"></i>Stop Camera
-                                </button>
+                        <div id="item_decrease_feedback" class="d-none" style="margin-bottom: 0.5rem; font-size: 0.85rem;"></div>
+                        <div id="item_decrease_chips" style="margin-bottom: 0.5rem;"></div>
+                        <div style="border-top: 1px solid #e5e7eb; padding-top: 0.5rem;">
+                            <div class="d-flex justify-content-between align-items-center" style="gap: 0.5rem; margin-bottom: 0.5rem;">
+                                <span style="font-size: 0.8rem; font-weight: 600; color: #374151;">SN tersedia di warehouse</span>
+                                <input type="text" id="item_decrease_filter" class="form-control form-control-sm" autocomplete="off"
+                                    placeholder="Cari SN..." style="max-width: 180px;"
+                                    oninput="decreaseSerialFilter = this.value; renderDecreaseSerialSelection();">
                             </div>
+                            <div id="item_decrease_available" style="max-height: 180px; overflow-y: auto; padding-right: 4px;"></div>
                         </div>
                     </div>
-                    <select id="item_decrease_serial_numbers" class="form-control" multiple size="7" style="width: 100%; padding: 0.5rem; display:none;"></select>
+
+                    {{-- Kamera dipakai kedua mode, jadi tombol dan viewport-nya dipindah
+                         keluar dari grup increase (dulu decrease tidak bisa scan sama sekali). --}}
+                    <div id="item_serial_scan_row" style="display:none; margin-top: 0.5rem;">
+                        <button type="button" class="btn btn-primary" onclick="toggleStockAdjustmentQRScanner()" id="stockAdjustmentScanBtn" style="border-radius: 8px; white-space: nowrap; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); border: none; padding: 0.5rem 0.75rem;">
+                            <i class="fas fa-camera me-1"></i>Scan
+                        </button>
+                    </div>
+                    <div id="stockAdjustmentQRReaderContainer" style="display:none; margin-top: 0.5rem;">
+                        <div id="stockAdjustmentQRReader" style="width: 100%; max-width: 400px; margin: 0 auto;"></div>
+                        <div class="text-center mt-2">
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="stopStockAdjustmentQRScanner()">
+                                <i class="fas fa-stop me-1"></i>Stop Camera
+                            </button>
+                        </div>
+                    </div>
                     <small id="item_serial_help" class="text-muted d-block mt-1"></small>
                 </div>
                 <div class="flex justify-end gap-3 mt-6 text-end">
@@ -492,11 +519,13 @@
         modal.style.height = '100%';
         modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
         modal.style.zIndex = '1050';
+        resetDecreaseSerialSelection();
         loadProducts();
     }
 
     function closeAddItemModal() {
         stopStockAdjustmentQRScanner();
+        resetDecreaseSerialSelection();
         document.getElementById('addItemModal').style.display = 'none';
     }
 
@@ -620,7 +649,17 @@
                     }
                 },
                 (decodedText) => {
-                    const cleanedSN = decodedText.trim().toUpperCase();
+                    const scanned = decodedText.trim();
+                    if (!scanned) return;
+
+                    // Decrease picks an SN that already exists, so it goes through the same
+                    // validation as a typed one; increase is still free text for brand-new SNs.
+                    if (document.getElementById('item_type').value === 'decrease') {
+                        addDecreaseSerial(scanned);
+                        return;
+                    }
+
+                    const cleanedSN = scanned.toUpperCase();
                     const existingLines = parseSerialNumbers(textarea.value);
                     if (!existingLines.includes(cleanedSN)) {
                         existingLines.push(cleanedSN);
@@ -657,9 +696,197 @@
         if (scanBtn) scanBtn.innerHTML = '<i class="fas fa-camera me-1"></i>Scan';
     }
 
+    // ==================== DECREASE: PILIH SN DENGAN SCAN ====================
+    let decreaseSerialSelection = [];
+    let decreaseSerialFilter = '';
+
     function getSelectedDecreaseSerialNumbers() {
-        return Array.from(document.getElementById('item_decrease_serial_numbers').selectedOptions)
-            .map(option => option.value);
+        return [...decreaseSerialSelection];
+    }
+
+    function currentAdjustmentProduct() {
+        return stockAdjustmentProducts[document.getElementById('item_product_id').value];
+    }
+
+    function currentAdjustmentQty() {
+        return parseInt(document.getElementById('item_qty').value || '0', 10);
+    }
+
+    /**
+     * How many of each code are ready in this warehouse. A batch/refill code has one row
+     * per physical item, so the same code can legitimately be taken more than once.
+     */
+    function availableSerialCounts(product) {
+        const counts = new Map();
+
+        (product?.available_serial_numbers || []).forEach(sn => {
+            const code = String(typeof sn === 'string' ? sn : (sn.serial_number || '')).trim();
+            if (!code) return;
+            counts.set(code, (counts.get(code) || 0) + 1);
+        });
+
+        return counts;
+    }
+
+    /**
+     * Match the typed/scanned code against what the warehouse actually holds, adopting the
+     * stored spelling. Serial numbers are case-sensitive in the database, so blindly
+     * upper-casing the input would make a lowercase SN impossible to find.
+     */
+    function resolveAvailableSerial(product, typed) {
+        const counts = availableSerialCounts(product);
+        const raw = String(typed || '').trim();
+        if (!raw) return null;
+        if (counts.has(raw)) return raw;
+
+        const lowered = raw.toLowerCase();
+        for (const code of counts.keys()) {
+            if (code.toLowerCase() === lowered) return code;
+        }
+
+        return null;
+    }
+
+    function setDecreaseFeedback(message, type) {
+        const box = document.getElementById('item_decrease_feedback');
+        if (!box) return;
+
+        if (!message) {
+            box.classList.add('d-none');
+            box.textContent = '';
+            return;
+        }
+
+        box.textContent = message;
+        box.style.color = type === 'error' ? '#b91c1c' : '#047857';
+        box.classList.remove('d-none');
+    }
+
+    function addDecreaseSerialFromInput() {
+        const input = document.getElementById('item_decrease_scan_input');
+        if (!input) return;
+
+        if (addDecreaseSerial(input.value)) {
+            input.value = '';
+        }
+
+        input.focus();
+    }
+
+    function addDecreaseSerial(typedSerial) {
+        const product = currentAdjustmentProduct();
+        if (!product?.requires_serial_number) return false;
+
+        const qty = currentAdjustmentQty();
+        if (qty > 0 && decreaseSerialSelection.length >= qty) {
+            setDecreaseFeedback(`Sudah ${qty} SN sesuai quantity. Hapus salah satu dulu kalau mau ganti.`, 'error');
+            return false;
+        }
+
+        const raw = String(typedSerial || '').trim();
+        if (!raw) return false;
+
+        const serial = resolveAvailableSerial(product, raw);
+        if (!serial) {
+            setDecreaseFeedback(`SN ${raw} tidak ada di daftar ready warehouse ini untuk produk yang dipilih.`, 'error');
+            return false;
+        }
+
+        const availableCount = availableSerialCounts(product).get(serial) || 0;
+        const alreadyChosen = decreaseSerialSelection.filter(chosen => chosen === serial).length;
+
+        if (alreadyChosen >= availableCount) {
+            setDecreaseFeedback(availableCount === 1
+                ? `SN ${serial} sudah dipilih.`
+                : `SN ${serial} cuma tersedia ${availableCount} di warehouse ini, sudah terpilih semua.`, 'error');
+            return false;
+        }
+
+        decreaseSerialSelection.push(serial);
+        setDecreaseFeedback(`${serial} dipilih (${decreaseSerialSelection.length}/${qty || '?'})`, 'success');
+        renderDecreaseSerialSelection();
+
+        return true;
+    }
+
+    function removeDecreaseSerialAt(index) {
+        decreaseSerialSelection.splice(index, 1);
+        setDecreaseFeedback('');
+        renderDecreaseSerialSelection();
+    }
+
+    function escapeAdjustmentText(value) {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+    }
+
+    function renderDecreaseSerialSelection() {
+        const chipsBox = document.getElementById('item_decrease_chips');
+        const availableBox = document.getElementById('item_decrease_available');
+        if (!chipsBox || !availableBox) return;
+
+        const product = currentAdjustmentProduct();
+        const qty = currentAdjustmentQty();
+
+        chipsBox.innerHTML = decreaseSerialSelection.length
+            ? decreaseSerialSelection.map((serial, index) => `
+                <span style="display: inline-flex; align-items: center; gap: 6px; font-family: monospace; font-size: 0.8rem; background: #e0e7ff; color: #1e3a8a; border-radius: 999px; padding: 2px 4px 2px 10px; margin: 2px 4px 2px 0;">
+                    ${escapeAdjustmentText(serial)}
+                    <button type="button" title="Hapus SN ini"
+                        style="border: none; background: #c7d2fe; color: #1e3a8a; border-radius: 999px; width: 18px; height: 18px; line-height: 1; font-size: 0.75rem; cursor: pointer;"
+                        onclick="removeDecreaseSerialAt(${index})">&times;</button>
+                </span>
+            `).join('')
+            : '<span class="text-muted" style="font-style: italic; font-size: 0.8rem;">belum ada SN dipilih</span>';
+
+        const counts = availableSerialCounts(product);
+        const filter = decreaseSerialFilter.trim().toLowerCase();
+        const codes = [...counts.keys()]
+            .filter(code => !filter || code.toLowerCase().includes(filter))
+            .sort();
+
+        if (!codes.length) {
+            availableBox.innerHTML = `<div class="text-muted" style="font-style: italic; font-size: 0.8rem;">${
+                filter ? 'Tidak ada SN yang cocok dengan pencarian.' : 'Tidak ada SN ready untuk produk ini di warehouse.'
+            }</div>`;
+        } else {
+            availableBox.innerHTML = codes.map(code => {
+                const total = counts.get(code) || 0;
+                const chosen = decreaseSerialSelection.filter(serial => serial === code).length;
+                const left = total - chosen;
+
+                return `
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; font-size: 0.82rem; ${left <= 0 ? 'opacity: 0.45;' : ''}">
+                        <span style="font-family: monospace; color: #1e3a8a;">${escapeAdjustmentText(code)}</span>
+                        <span style="display: flex; align-items: center; gap: 8px; white-space: nowrap;">
+                            ${total > 1 ? `<span class="text-muted" style="font-size: 0.75rem;">sisa ${left}/${total}</span>` : ''}
+                            <button type="button" class="btn btn-sm btn-outline-secondary" style="padding: 0 8px; font-size: 0.75rem;"
+                                ${left <= 0 ? 'disabled' : ''}
+                                onclick="addDecreaseSerial('${escapeAdjustmentText(code).replace(/'/g, "\\'")}')">+</button>
+                        </span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        const help = document.getElementById('item_serial_help');
+        if (help && document.getElementById('item_type').value === 'decrease') {
+            help.textContent = `Scan atau ketik SN yang dikeluarkan. Terpilih ${decreaseSerialSelection.length} dari ${qty || 0} SN.`;
+        }
+    }
+
+    function resetDecreaseSerialSelection() {
+        decreaseSerialSelection = [];
+        decreaseSerialFilter = '';
+
+        const filterInput = document.getElementById('item_decrease_filter');
+        if (filterInput) filterInput.value = '';
+
+        const scanInput = document.getElementById('item_decrease_scan_input');
+        if (scanInput) scanInput.value = '';
+
+        setDecreaseFeedback('');
     }
 
     function updateSerialNumberInput() {
@@ -668,12 +895,14 @@
         const qty = parseInt(document.getElementById('item_qty').value || '0', 10);
         const wrapper = document.getElementById('item_serial_wrapper');
         const increaseGroup = document.getElementById('item_serial_increase_group');
-        const select = document.getElementById('item_decrease_serial_numbers');
+        const decreaseGroup = document.getElementById('item_serial_decrease_group');
+        const scanRow = document.getElementById('item_serial_scan_row');
         const label = document.getElementById('item_serial_label');
         const help = document.getElementById('item_serial_help');
 
         increaseGroup.style.display = 'none';
-        select.style.display = 'none';
+        decreaseGroup.style.display = 'none';
+        scanRow.style.display = 'none';
         wrapper.style.display = 'none';
         help.textContent = '';
         stopStockAdjustmentQRScanner();
@@ -683,6 +912,7 @@
         }
 
         wrapper.style.display = 'block';
+        scanRow.style.display = 'block';
         label.textContent = type === 'increase'
             ? `Serial Numbers Baru (${qty || 0} SN wajib)`
             : `Serial Numbers yang Dikeluarkan (${qty || 0} SN wajib)`;
@@ -693,17 +923,8 @@
             return;
         }
 
-        select.style.display = 'block';
-        select.innerHTML = '';
-        (product.available_serial_numbers || []).forEach(sn => {
-            const serialNumber = typeof sn === 'string' ? sn : sn.serial_number;
-            const serialId = typeof sn === 'string' ? null : sn.id;
-            const option = document.createElement('option');
-            option.value = serialNumber;
-            option.textContent = serialId ? `${serialNumber} (#${serialId})` : serialNumber;
-            select.appendChild(option);
-        });
-        help.textContent = 'Untuk decrease, pilih SN/batch ready di warehouse yang akan dikeluarkan dari stok.';
+        decreaseGroup.style.display = 'block';
+        renderDecreaseSerialSelection();
     }
 
     function submitAddItem(e) {
@@ -762,9 +983,25 @@
         });
     }
 
-    document.getElementById('item_product_id')?.addEventListener('change', updateSerialNumberInput);
-    document.getElementById('item_type')?.addEventListener('change', updateSerialNumberInput);
+    // Changing product or type invalidates whatever was picked; changing qty must not,
+    // or the selection would be wiped while the operator types the number.
+    document.getElementById('item_product_id')?.addEventListener('change', () => {
+        resetDecreaseSerialSelection();
+        updateSerialNumberInput();
+    });
+    document.getElementById('item_type')?.addEventListener('change', () => {
+        resetDecreaseSerialSelection();
+        updateSerialNumberInput();
+    });
     document.getElementById('item_qty')?.addEventListener('input', updateSerialNumberInput);
+
+    // Enter in the scan box adds the SN instead of submitting the whole item form.
+    document.getElementById('item_decrease_scan_input')?.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addDecreaseSerialFromInput();
+        }
+    });
 
     function deleteItem(itemId) {
         showConfirmDialog(
