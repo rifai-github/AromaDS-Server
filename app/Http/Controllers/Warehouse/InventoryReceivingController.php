@@ -79,6 +79,150 @@ class InventoryReceivingController extends Controller
         }
     }
 
+    /**
+     * SN rows, remaining quantities and the scan-modal checklist for one receiving, built
+     * from a single pass so show() and scanSerialNumber() can never disagree.
+     */
+    private function buildReceivingSerialData(InventoryReceiving $inventoryReceiving): array
+    {
+        $inventoryReceiving->loadMissing(['items.product.productCategory', 'items.product.productType']);
+
+        $serialNumbers = [];
+        $remainingQuantities = [];
+        $rows = [];
+
+        foreach ($inventoryReceiving->items->groupBy('master_product_id') as $productId => $items) {
+            if (! $productId) {
+                continue;
+            }
+
+            $sns = \App\Models\SerialNumber::where('master_product_id', $productId)
+                ->where('inventory_receiving_id', $inventoryReceiving->id)
+                ->with('warehouse')
+                ->orderBy('created_at', 'desc')
+                ->get();
+            $serialNumbers[$productId] = $sns;
+
+            // Calculate remaining quantity across all rows for this product.
+            $requestedQty = (float) $items->sum('quantity');
+            $registeredSNCount = $sns->count();
+            $product = $items->first()?->product;
+            $requiresSerial = $this->productRequiresSerialNumber($product);
+            $receivedQty = (float) $items->sum('quantity_received');
+            $fulfilledQty = $requiresSerial ? $registeredSNCount : $receivedQty;
+            $remaining = max(0, $requestedQty - $fulfilledQty);
+
+            $remainingQuantities[$productId] = $remaining;
+
+            $rows[] = [
+                'product_id' => (int) $productId,
+                'product_name' => $product->name ?? 'Unknown Product',
+                'sku' => $product->sku ?? null,
+                'requested' => $requestedQty,
+                'registered' => $registeredSNCount,
+                'remaining' => $remaining,
+                'requires_serial' => $requiresSerial,
+                'is_unit' => $this->productIsUnit($product),
+                'serials' => $sns->pluck('serial_number')->filter()->values()->all(),
+            ];
+        }
+
+        // Products still owing serials float to the top: what is left stays visible.
+        usort($rows, function ($a, $b) {
+            $aDone = $a['remaining'] <= 0;
+            $bDone = $b['remaining'] <= 0;
+
+            if ($aDone !== $bDone) {
+                return $aDone ? 1 : -1;
+            }
+
+            return strcmp($a['product_name'], $b['product_name']);
+        });
+
+        $serialRows = array_values(array_filter($rows, fn ($row) => $row['requires_serial']));
+
+        return [
+            'serialNumbers' => $serialNumbers,
+            'remainingQuantities' => $remainingQuantities,
+            'checklist' => [
+                'rows' => $rows,
+                'total_products' => count($serialRows),
+                'completed_products' => count(array_filter($serialRows, fn ($row) => $row['remaining'] <= 0)),
+                'total_registered' => array_sum(array_column($serialRows, 'registered')),
+                'total_requested' => array_sum(array_column($serialRows, 'requested')),
+                'all_complete' => ! empty($serialRows)
+                    && count(array_filter($serialRows, fn ($row) => $row['remaining'] <= 0)) === count($serialRows),
+            ],
+        ];
+    }
+
+    private function buildReceivingSerialChecklist(InventoryReceiving $inventoryReceiving): array
+    {
+        return $this->buildReceivingSerialData($inventoryReceiving)['checklist'];
+    }
+
+    /**
+     * Find which product of this receiving a freely-scanned SN belongs to.
+     *
+     * Only works for codes the system already knows - a return from a technician, or a
+     * batch code already registered here. Goods arriving new from a supplier carry a code
+     * that exists nowhere yet, so there the product genuinely cannot be derived and the
+     * operator is asked ('unknown') instead of guessed at.
+     */
+    private function resolveReceivingProductForScannedSerial(InventoryReceiving $inventoryReceiving, string $serialNumber): array
+    {
+        $productIds = \App\Models\SerialNumber::withTrashed()
+            ->where('serial_number', $serialNumber)
+            ->pluck('master_product_id')
+            ->filter()
+            ->map(fn ($productId) => (int) $productId)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($productIds)) {
+            return [
+                'status' => 'unknown',
+                'message' => "Serial Number {$serialNumber} belum terdaftar. Pilih produknya - SN baru akan dibuat untuk produk itu.",
+            ];
+        }
+
+        $inventoryReceiving->loadMissing(['items.product.productCategory', 'items.product.productType']);
+
+        $candidates = $inventoryReceiving->items
+            ->filter(fn ($item) => in_array((int) $item->master_product_id, $productIds, true))
+            ->groupBy('master_product_id');
+
+        if ($candidates->isEmpty()) {
+            $productName = \App\Models\MasterProduct::whereIn('id', $productIds)->value('name') ?? 'produk lain';
+
+            return [
+                'status' => 'error',
+                'message' => "Serial Number {$serialNumber} terdaftar sebagai {$productName}, dan produk itu tidak ada di receiving ini.",
+            ];
+        }
+
+        if ($candidates->count() > 1) {
+            // A batch code shared by several products in the same receiving: the remaining
+            // quantity narrows it down when only one still owes serials.
+            $remaining = $this->buildReceivingSerialData($inventoryReceiving)['remainingQuantities'];
+
+            $open = $candidates->filter(fn ($items, $productId) => ($remaining[$productId] ?? 0) > 0);
+
+            if ($open->count() === 1) {
+                return ['status' => 'ok', 'product_id' => (int) $open->keys()->first()];
+            }
+
+            return [
+                'status' => 'ambiguous',
+                'message' => "Serial Number {$serialNumber} cocok untuk beberapa produk di receiving ini. Pilih produknya.",
+                'candidates' => $candidates->keys()->map(fn ($productId) => (int) $productId)->all(),
+            ];
+        }
+
+        return ['status' => 'ok', 'product_id' => (int) $candidates->keys()->first()];
+    }
+
     private function resolveReceivingTargetWarehouse(InventoryReceiving $inventoryReceiving): ?Warehouse
     {
         $placementService = app(WarehousePlacementService::class);
@@ -498,33 +642,15 @@ class InventoryReceivingController extends Controller
         }
 
         // Load serial numbers for products in this receiving (only SNs linked to this receiving)
-        $serialNumbers = [];
-        $remainingQuantities = []; // Store remaining quantity for each product
-
-        foreach ($inventoryReceiving->items->groupBy('master_product_id') as $productId => $items) {
-            if ($productId) {
-                $sns = \App\Models\SerialNumber::where('master_product_id', $productId)
-                    ->where('inventory_receiving_id', $inventoryReceiving->id)
-                    ->with('warehouse')
-                    ->orderBy('created_at', 'desc')
-                    ->get();
-                $serialNumbers[$productId] = $sns;
-
-                // Calculate remaining quantity across all rows for this product.
-                $requestedQty = (float) $items->sum('quantity');
-                $registeredSNCount = $sns->count();
-                $requiresSerial = $this->productRequiresSerialNumber($items->first()?->product);
-                $receivedQty = (float) $items->sum('quantity_received');
-                $fulfilledQty = $requiresSerial ? $registeredSNCount : $receivedQty;
-
-                $remainingQuantities[$productId] = max(0, $requestedQty - $fulfilledQty);
-            }
-        }
+        $serialData = $this->buildReceivingSerialData($inventoryReceiving);
 
         return view('warehouse.inventory-receivings.show', [
             'receiving' => $inventoryReceiving,
-            'serialNumbers' => $serialNumbers,
-            'remainingQuantities' => $remainingQuantities,
+            'serialNumbers' => $serialData['serialNumbers'],
+            'remainingQuantities' => $serialData['remainingQuantities'],
+            // Per-product progress rendered inside the scan modal, kept in sync by
+            // scanSerialNumber() so continuous scanning needs no page reload.
+            'serialChecklist' => $serialData['checklist'],
         ]);
     }
 
@@ -1157,7 +1283,7 @@ class InventoryReceivingController extends Controller
     public function scanSerialNumber(Request $request, InventoryReceiving $inventoryReceiving)
     {
         $request->validate([
-            'master_product_id' => 'required|exists:master_products,id',
+            'master_product_id' => 'nullable|exists:master_products,id',
             'serial_number' => 'required|string|max:100',
             'notes' => 'nullable|string|max:500',
         ]);
@@ -1173,6 +1299,29 @@ class InventoryReceivingController extends Controller
             DB::beginTransaction();
 
             $serialNumber = trim($request->serial_number);
+
+            // Without an explicit product the scanned code resolves its own, so a return
+            // from a technician needs no picking at all. New goods from a supplier cannot
+            // be resolved (the code exists nowhere yet) and come back as 'unknown'.
+            $productId = $request->filled('master_product_id') ? (int) $request->master_product_id : null;
+
+            if (! $productId) {
+                $resolution = $this->resolveReceivingProductForScannedSerial($inventoryReceiving, $serialNumber);
+
+                if ($resolution['status'] !== 'ok') {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'status' => $resolution['status'],
+                        'message' => $resolution['message'],
+                        'data' => ['candidate_product_ids' => $resolution['candidates'] ?? []],
+                        'checklist' => $this->buildReceivingSerialChecklist($inventoryReceiving),
+                    ], in_array($resolution['status'], ['unknown', 'ambiguous'], true) ? 200 : 422);
+                }
+
+                $productId = $resolution['product_id'];
+                $request->merge(['master_product_id' => $productId]);
+            }
 
             $inventoryReceiving->loadMissing(['issuing']);
             $warehouse = $this->resolveReceivingTargetWarehouse($inventoryReceiving);
@@ -1236,6 +1385,22 @@ class InventoryReceivingController extends Controller
             if ($existingSerialNumbers->isNotEmpty()) {
                 if ($selectedProductIsUnit) {
                     $existingSN = $existingSerialNumbers->first();
+
+                    // A unit SN belongs to exactly one product. The non-unit path already
+                    // refused a mismatch; units never did, so a scan aimed at the wrong
+                    // product used to be filed against it silently.
+                    if ((int) $existingSN->master_product_id !== (int) $request->master_product_id) {
+                        DB::rollBack();
+
+                        $registeredProductName = $existingSN->masterProduct->name ?? 'produk lain';
+                        $selectedProductName = $selectedProduct->name ?? 'produk yang dipilih';
+
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => "Serial Number <strong>{$serialNumber}</strong> terdaftar sebagai SN Unit untuk produk <strong>{$registeredProductName}</strong>, bukan <strong>{$selectedProductName}</strong>.",
+                            'checklist' => $this->buildReceivingSerialChecklist($inventoryReceiving),
+                        ], 422);
+                    }
                 } else {
                     if ($existingUnitSN) {
                         DB::rollBack();
@@ -1359,6 +1524,10 @@ class InventoryReceivingController extends Controller
                 'message' => "Serial Number {$serialNumber} berhasil disimpan!",
                 'remaining_quantity' => max(0, $requestedQty - $currentSNCount),
                 'data' => $newSerialNumber->load(['warehouse', 'masterProduct']),
+                // Auto-resolved target + live progress, so the UI can update without a reload.
+                'master_product_id' => (int) $request->master_product_id,
+                'product_name' => $selectedProduct->name ?? null,
+                'checklist' => $this->buildReceivingSerialChecklist($inventoryReceiving),
             ]);
 
         } catch (\Exception $e) {
