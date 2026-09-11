@@ -322,7 +322,11 @@ class StockOpnameController extends Controller
             'stockOpnameDetails.masterProduct' // Fix: Eager load product for details
         ]);
 
-        return view('warehouse.stock-opnames.show', compact('stockOpname'));
+        // Per-product scan progress rendered inside the scan modal, kept in sync by
+        // scanSerialNumber()/removeSerialNumber() without reloading the page.
+        $serialChecklist = $this->buildOpnameScanChecklist($stockOpname);
+
+        return view('warehouse.stock-opnames.show', compact('stockOpname', 'serialChecklist'));
     }
 
     public function edit(StockOpname $stockOpname)
@@ -691,11 +695,7 @@ class StockOpnameController extends Controller
             DB::commit();
 
             $detail->load(['masterProduct', 'stockOpname']);
-            $user = Auth::user();
-            $canViewSystemStock = $user?->hasPermission('warehouse.stock-opnames.view-system-stock')
-                || $user?->hasRole('Admin')
-                || $user?->hasRole('super_admin')
-                || $user?->hasRoleStartingWith('Management');
+            $canViewSystemStock = $this->userCanViewSystemStock();
 
             $detailData = $detail->toArray();
             if (!$canViewSystemStock) {
@@ -715,6 +715,416 @@ class StockOpnameController extends Controller
                 'message' => 'Failed to update detail: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Scan one SN into this opname without picking a product row first.
+     *
+     * The scanned code resolves its own row via the product it is registered to, so
+     * counting a rack is a continuous scan instead of open-modal-per-product. Two cases
+     * cannot be resolved and are asked rather than guessed:
+     *  - the code is not registered at all (barang temuan), and
+     *  - the code maps to more than one product (batch SN reused across products).
+     * Pass detail_id to answer either, or to correct a row on purpose.
+     */
+    public function scanSerialNumber(Request $request, StockOpname $stockOpname)
+    {
+        $validator = Validator::make($request->all(), [
+            'serial_number' => 'required|string|max:100',
+            'detail_id' => 'nullable|exists:stock_opname_details,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        if ($stockOpname->status !== 'in-progress') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Scan Serial Number hanya bisa saat opname berstatus In Progress.',
+            ], 422);
+        }
+
+        $serialNumber = trim($request->serial_number);
+
+        try {
+            DB::beginTransaction();
+
+            if ($request->filled('detail_id')) {
+                $detail = \App\Models\StockOpnameDetail::with('masterProduct')->findOrFail($request->detail_id);
+
+                if ((int) $detail->stock_opname_id !== (int) $stockOpname->id) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Produk tidak sesuai dengan stock opname ini.',
+                    ], 422);
+                }
+            } else {
+                $resolution = $this->resolveOpnameDetailForScannedSerial($stockOpname, $serialNumber);
+
+                if ($resolution['status'] !== 'ok') {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'status' => $resolution['status'],
+                        'message' => $resolution['message'],
+                        'data' => ['candidate_detail_ids' => $resolution['candidates'] ?? []],
+                        'checklist' => $this->buildOpnameScanChecklist($stockOpname),
+                    ], in_array($resolution['status'], ['unknown', 'ambiguous'], true) ? 200 : 422);
+                }
+
+                $detail = $resolution['detail'];
+            }
+
+            // One unit carries one unique SN, so scanning it twice is the same unit counted
+            // twice - the old modal pushed every scan in unchecked and silently overstated
+            // physical stock. A batch/refill code repeats per bottle, so there it is a
+            // genuine second item and must still be appended.
+            $requiresUniqueSerial = $detail->masterProduct?->requiresUniqueSerialNumber() ?? true;
+            $current = $this->normalizeOpnameScanList($detail->scanned_serial_numbers ?? []);
+
+            if ($requiresUniqueSerial && in_array($serialNumber, $current, true)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'duplicate',
+                    'message' => "Serial Number {$serialNumber} sudah tercatat di {$detail->masterProduct?->name}. Tidak dihitung dua kali.",
+                    'data' => ['detail_id' => (int) $detail->id],
+                    'checklist' => $this->buildOpnameScanChecklist($stockOpname),
+                ], 200);
+            }
+
+            $owner = $requiresUniqueSerial
+                ? $this->findOpnameDetailHoldingSerial($stockOpname, $serialNumber, (int) $detail->id)
+                : null;
+
+            if ($owner) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Serial Number {$serialNumber} sudah tercatat di produk {$owner->masterProduct?->name}. Hapus dari sana dulu kalau memang salah produk.",
+                    'checklist' => $this->buildOpnameScanChecklist($stockOpname),
+                ], 422);
+            }
+
+            $current[] = $serialNumber;
+            $this->syncOpnameDetailSerials($detail, $current);
+
+            DB::commit();
+
+            $detail->refresh()->load('masterProduct');
+
+            return response()->json([
+                'status' => 'success',
+                'message' => "Serial Number {$serialNumber} tercatat di {$detail->masterProduct?->name}.",
+                'data' => [
+                    'detail_id' => (int) $detail->id,
+                    'serial_number' => $serialNumber,
+                    'product_name' => $detail->masterProduct?->name,
+                    'scanned_count' => (int) $detail->physical_stock,
+                    // A unit found here while the system has it elsewhere is a real opname
+                    // finding, so it is recorded and flagged - not refused.
+                    'warehouse_note' => $this->resolveSerialWarehouseNote($stockOpname, $serialNumber),
+                ],
+                'checklist' => $this->buildOpnameScanChecklist($stockOpname),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollback();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal mencatat Serial Number: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function removeSerialNumber(Request $request, StockOpname $stockOpname)
+    {
+        $validator = Validator::make($request->all(), [
+            'serial_number' => 'required|string|max:100',
+            'detail_id' => 'required|exists:stock_opname_details,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        if ($stockOpname->status !== 'in-progress') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Serial Number hanya bisa diubah saat opname berstatus In Progress.',
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $detail = \App\Models\StockOpnameDetail::with('masterProduct')->findOrFail($request->detail_id);
+
+            if ((int) $detail->stock_opname_id !== (int) $stockOpname->id) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Produk tidak sesuai dengan stock opname ini.',
+                ], 422);
+            }
+
+            $serialNumber = trim($request->serial_number);
+            $remaining = $this->normalizeOpnameScanList($detail->scanned_serial_numbers ?? []);
+
+            // Drop one occurrence, not every match: a batch code scanned three times means
+            // three bottles, and removing one chip must leave the other two counted.
+            $position = array_search($serialNumber, $remaining, true);
+            if ($position !== false) {
+                array_splice($remaining, $position, 1);
+            }
+
+            $this->syncOpnameDetailSerials($detail, $remaining);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => "Serial Number {$serialNumber} dihapus dari {$detail->masterProduct?->name}.",
+                'data' => ['detail_id' => (int) $detail->id],
+                'checklist' => $this->buildOpnameScanChecklist($stockOpname),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollback();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal menghapus Serial Number: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Trim and drop empties while KEEPING duplicates: a batch/refill code is printed on
+     * every bottle, so scanning it twice legitimately counts two items (locked by
+     * StockOpnameBlindCountVisibilityTest). Unit products are guarded at scan time
+     * instead, where a repeated scan really is the same physical unit counted twice.
+     */
+    private function normalizeOpnameScanList($serialNumbers): array
+    {
+        if (is_string($serialNumbers)) {
+            $serialNumbers = preg_split('/[\s,;]+/', $serialNumbers) ?: [];
+        }
+
+        if (! is_array($serialNumbers)) {
+            return [];
+        }
+
+        return collect($serialNumbers)
+            ->map(fn ($serialNumber) => trim((string) $serialNumber))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Physical stock of an SN-counted row is the number of serials scanned into it, so
+     * writing the list and writing the count must never drift apart.
+     */
+    private function syncOpnameDetailSerials(\App\Models\StockOpnameDetail $detail, array $serialNumbers): void
+    {
+        $serialNumbers = $this->normalizeOpnameScanList($serialNumbers);
+        $physicalStock = count($serialNumbers);
+
+        $detail->update([
+            'scanned_serial_numbers' => $serialNumbers,
+            'physical_stock' => $physicalStock,
+            'variance' => $physicalStock - (int) $detail->system_stock,
+        ]);
+    }
+
+    private function findOpnameDetailHoldingSerial(StockOpname $stockOpname, string $serialNumber, ?int $exceptDetailId = null)
+    {
+        $stockOpname->loadMissing('stockOpnameDetails.masterProduct');
+
+        return $stockOpname->stockOpnameDetails
+            ->first(function ($detail) use ($serialNumber, $exceptDetailId) {
+                if ($exceptDetailId && (int) $detail->id === $exceptDetailId) {
+                    return false;
+                }
+
+                return in_array($serialNumber, $this->normalizeOpnameScanList($detail->scanned_serial_numbers ?? []), true);
+            });
+    }
+
+    private function resolveOpnameDetailForScannedSerial(StockOpname $stockOpname, string $serialNumber): array
+    {
+        $productIds = \App\Models\SerialNumber::where('serial_number', $serialNumber)
+            ->pluck('master_product_id')
+            ->filter()
+            ->map(fn ($productId) => (int) $productId)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($productIds)) {
+            // Not an error: an uncatalogued unit found on the shelf is exactly what an
+            // opname is for. The operator says which product it is.
+            return [
+                'status' => 'unknown',
+                'message' => "Serial Number {$serialNumber} belum terdaftar di sistem. Pilih produknya kalau ini barang temuan.",
+            ];
+        }
+
+        $stockOpname->loadMissing('stockOpnameDetails.masterProduct');
+
+        $candidates = $stockOpname->stockOpnameDetails
+            ->filter(fn ($detail) => in_array((int) $detail->master_product_id, $productIds, true))
+            ->values();
+
+        if ($candidates->isEmpty()) {
+            $productName = \App\Models\MasterProduct::whereIn('id', $productIds)->value('name') ?? 'produk lain';
+
+            return [
+                'status' => 'error',
+                'message' => "Serial Number {$serialNumber} terdaftar sebagai {$productName}, dan produk itu tidak ada di daftar opname ini.",
+            ];
+        }
+
+        if ($candidates->count() > 1) {
+            return [
+                'status' => 'ambiguous',
+                'message' => "Serial Number {$serialNumber} terdaftar di lebih dari satu produk. Pilih produk yang benar.",
+                'candidates' => $candidates->pluck('id')->map(fn ($detailId) => (int) $detailId)->all(),
+            ];
+        }
+
+        return ['status' => 'ok', 'detail' => $candidates->first()];
+    }
+
+    private function resolveSerialWarehouseNote(StockOpname $stockOpname, string $serialNumber): ?string
+    {
+        $records = \App\Models\SerialNumber::with('warehouse')
+            ->where('serial_number', $serialNumber)
+            ->get();
+
+        if ($records->isEmpty()) {
+            return 'SN belum terdaftar - akan dibuat saat adjustment.';
+        }
+
+        if ($records->contains(fn ($record) => (int) $record->warehouse_id === (int) $stockOpname->warehouse_id)) {
+            return null;
+        }
+
+        $warehouseName = $records->first()->warehouse?->name ?? 'gudang lain';
+
+        return "Sistem mencatat SN ini di {$warehouseName}.";
+    }
+
+    private function userCanViewSystemStock(): bool
+    {
+        $user = Auth::user();
+
+        return (bool) ($user?->hasPermission('warehouse.stock-opnames.view-system-stock')
+            || $user?->hasRole('Admin')
+            || $user?->hasRole('super_admin')
+            || $user?->hasRoleStartingWith('Management'));
+    }
+
+    /**
+     * Per-product scan progress of the whole opname, rendered inside the scan modal and
+     * refreshed from every scan response so counting never needs a page reload.
+     *
+     * Only SN-bearing rows are listed: products counted by hand keep the plain number
+     * input in the table behind the modal.
+     */
+    private function buildOpnameScanChecklist(StockOpname $stockOpname): array
+    {
+        $stockOpname->load([
+            'stockOpnameDetails.masterProduct.productCategory',
+            'stockOpnameDetails.masterProduct.productType',
+        ]);
+
+        $canViewSystemStock = $this->userCanViewSystemStock();
+
+        // MasterProduct::requiresSerialNumber() falls back to an existence query per
+        // product, which on an opname covering a whole warehouse is one query per row.
+        // Resolve that fallback once for every product here instead.
+        $productIds = $stockOpname->stockOpnameDetails
+            ->pluck('master_product_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $productIdsHoldingSerials = \App\Models\SerialNumber::whereIn('master_product_id', $productIds)
+            ->distinct()
+            ->pluck('master_product_id')
+            ->map(fn ($productId) => (int) $productId)
+            ->all();
+
+        $rows = [];
+        $totalScanned = 0;
+
+        foreach ($stockOpname->stockOpnameDetails as $detail) {
+            $serials = $this->normalizeOpnameScanList($detail->scanned_serial_numbers ?? []);
+            $product = $detail->masterProduct;
+
+            $requiresSerial = (bool) (
+                optional($product?->productCategory)->requiresSerialNumber()
+                || optional($product?->productType)->has_serial_number
+                || in_array((int) $detail->master_product_id, $productIdsHoldingSerials, true)
+            );
+
+            if (! $requiresSerial && empty($serials)) {
+                continue;
+            }
+
+            $totalScanned += count($serials);
+
+            $rows[] = [
+                'detail_id' => (int) $detail->id,
+                'product_id' => (int) $detail->master_product_id,
+                'product_name' => $detail->masterProduct->name ?? 'Product Not Found',
+                'sku' => $detail->masterProduct->sku ?? null,
+                'category_name' => $detail->masterProduct?->productCategory?->name,
+                'scanned' => $serials,
+                'scanned_count' => count($serials),
+                'system_stock' => $canViewSystemStock ? (int) $detail->system_stock : null,
+                'variance' => $canViewSystemStock ? (count($serials) - (int) $detail->system_stock) : null,
+                'requires_serial' => $requiresSerial,
+                // Mirrors MasterProduct::requiresUniqueSerialNumber() without the per-row
+                // existence query. Non-unique rows are batch/refill: one code per bottle.
+                'requires_unique' => $requiresSerial && (bool) (
+                    optional($product?->productCategory)->is_unit
+                    || optional($product?->productType)->is_unit
+                ),
+            ];
+        }
+
+        // Rows nobody has counted yet float to the top, so what is left is always visible.
+        usort($rows, function ($a, $b) {
+            $aTouched = $a['scanned_count'] > 0;
+            $bTouched = $b['scanned_count'] > 0;
+
+            if ($aTouched !== $bTouched) {
+                return $aTouched ? 1 : -1;
+            }
+
+            return strcmp($a['product_name'], $b['product_name']);
+        });
+
+        return [
+            'rows' => $rows,
+            'total_rows' => count($rows),
+            'counted_rows' => count(array_filter($rows, fn ($row) => $row['scanned_count'] > 0)),
+            'total_scanned' => $totalScanned,
+            'can_view_system_stock' => $canViewSystemStock,
+        ];
     }
 
     public function dashboard()

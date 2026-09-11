@@ -123,6 +123,19 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
             $table->timestamps();
         });
 
+        // show() builds the scan-modal checklist, which resolves in one query which
+        // products carry serial numbers.
+        Schema::create('serial_numbers', function (Blueprint $table) {
+            $table->id();
+            $table->string('serial_number')->nullable();
+            $table->foreignId('master_product_id')->nullable();
+            $table->foreignId('warehouse_id')->nullable();
+            $table->string('status')->nullable();
+            $table->string('location_type')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         DB::table('users')->insert([
             [
                 'id' => 10,
@@ -245,6 +258,7 @@ class StockOpnameBlindCountVisibilityTest extends TestCase
     protected function tearDown(): void
     {
         foreach ([
+            'serial_numbers',
             'stock_opname_details',
             'stock_opnames',
             'master_products',

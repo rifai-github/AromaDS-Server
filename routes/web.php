@@ -1262,6 +1262,8 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('stock-opnames/{stockOpname}/export-stock', [StockOpnameController::class, 'exportStock'])->name('stock-opnames.export-stock')->middleware('permission:warehouse.stock-opnames.view');
         Route::post('stock-opnames/{stockOpname}/create-adjustment', [StockOpnameController::class, 'createAdjustment'])->name('stock-opnames.create-adjustment')->middleware('permission:warehouse.stock-opnames.update');
         Route::post('stock-opnames/details/{detail}/update', [StockOpnameController::class, 'updateDetail'])->name('stock-opnames.details.update')->middleware('permission:warehouse.stock-opnames.update');
+        Route::post('stock-opnames/{stockOpname}/scan-serial-number', [StockOpnameController::class, 'scanSerialNumber'])->name('stock-opnames.scan-serial-number')->middleware('permission:warehouse.stock-opnames.update');
+        Route::post('stock-opnames/{stockOpname}/remove-serial-number', [StockOpnameController::class, 'removeSerialNumber'])->name('stock-opnames.remove-serial-number')->middleware('permission:warehouse.stock-opnames.update');
         Route::get('stock-opnames/dashboard', [StockOpnameController::class, 'dashboard'])->name('stock-opnames.dashboard')->middleware('permission:warehouse.stock-opnames.view');
         Route::resource('stock-opnames', StockOpnameController::class)
             ->except(['create', 'edit'])

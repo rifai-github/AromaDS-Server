@@ -222,7 +222,14 @@
                         <h5 class="card-title mb-0" style="color: #1e3a8a;">
                             <i class="fas fa-list-alt me-2"></i>Opname Details
                         </h5>
-                        <span class="badge bg-secondary">{{ $stockOpname->stockOpnameDetails->count() }} Products</span>
+                        <div class="d-flex align-items-center gap-2">
+                            @if($stockOpname->status === 'in-progress' && $canUpdate)
+                            <button class="btn btn-primary btn-sm" onclick="openOpnameScanModal()">
+                                <i class="fas fa-qrcode me-2"></i>Scan QR / Input SN
+                            </button>
+                            @endif
+                            <span class="badge bg-secondary">{{ $stockOpname->stockOpnameDetails->count() }} Products</span>
+                        </div>
                     </div>
                 </div>
                 <div class="card-body p-0">
@@ -271,7 +278,7 @@
                                                        id="physical-{{ $detail->id }}"
                                                        style="font-size: 1.1rem;">
                                                 <div class="input-group-append">
-                                                    <button class="btn btn-outline-primary" type="button" onclick="openQRModal({{ $detail->id }}, '{{ $detail->masterProduct->name }}')" title="Scan QR SN">
+                                                    <button class="btn btn-outline-primary" type="button" onclick="openQRModal({{ $detail->id }})" title="Scan QR SN">
                                                         <i class="fas fa-qrcode"></i>
                                                     </button>
                                                 </div>
@@ -336,21 +343,30 @@
 
 <script>
     let html5QrcodeScanner = null;
-    let currentDetailId = null;
-    let scannedSNs = [];
-    
-    // Existing Scanned Data (loaded from backend)
-    const existingScannedData = {
-        @foreach($stockOpname->stockOpnameDetails as $detail)
-            {{ $detail->id }}: @json($detail->scanned_serial_numbers ?? []),
-        @endforeach
+
+    // Scan session state. `checklist` mirrors the server's per-product progress and is
+    // refreshed from every scan/remove response; `targetDetailId` aims the next scan at
+    // one product on purpose, and is only ever set by a click.
+    let opnameScanState = {
+        checklist: @json($serialChecklist ?? null),
+        targetDetailId: null,
+        candidateDetailIds: [],
+        pendingSerial: null,
+        filter: '',
     };
 
     // ==================== QR SCANNER MODAL ====================
-    function openQRModal(detailId, productName) {
-        currentDetailId = detailId;
-        scannedSNs = [...(existingScannedData[detailId] || [])];
-        
+    // Kept for the per-row QR button: same modal, already aimed at that product.
+    function openQRModal(detailId) {
+        openOpnameScanModal(detailId);
+    }
+
+    function openOpnameScanModal(preSelectedDetailId = null) {
+        opnameScanState.targetDetailId = preSelectedDetailId ? Number(preSelectedDetailId) : null;
+        opnameScanState.candidateDetailIds = [];
+        opnameScanState.pendingSerial = null;
+        opnameScanState.filter = '';
+
         const modal = document.createElement('div');
         modal.id = 'customQRModal';
         modal.style.cssText = `
@@ -371,34 +387,37 @@
             <div class="modal-dialog" style="margin: auto; width: 100%; max-width: 600px;">
                 <div class="modal-content" style="background-color: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); border: none;">
                     <div class="modal-header" style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: white; border-radius: 12px 12px 0 0; padding: 16px 20px; border-bottom: none;">
-                        <h5 class="modal-title" style="font-weight: 600; font-size: 1.15rem;">
-                            <i class="fas fa-qrcode me-2"></i>Scan Serial Numbers: ${productName}
-                        </h5>
+                        <div>
+                            <h5 class="modal-title" style="font-weight: 600; font-size: 1.15rem;">
+                                <i class="fas fa-qrcode me-2"></i>Scan Serial Number
+                            </h5>
+                            <div id="opnameScanCounter" style="font-size: 0.85rem; opacity: 0.85; margin-top: 4px;"></div>
+                        </div>
                         <button type="button" class="btn-close btn-close-white" onclick="closeQRModal()"></button>
                     </div>
                     <div class="modal-body" style="background-color: white; padding: 24px;">
                         <!-- Input SN Section -->
-                        <div class="mb-4">
+                        <div class="mb-3">
                             <label class="form-label" style="font-weight: 600; color: #374151; margin-bottom: 8px; display: block;">
                                 <i class="fas fa-barcode me-2"></i>Serial Number
                             </label>
                             <div class="input-group" style="margin-bottom: 10px;">
-                                <input type="text" id="manualInput" class="form-control" 
-                                    placeholder="Scan QR Code atau ketik manual" 
+                                <input type="text" id="manualInput" class="form-control"
+                                    placeholder="Scan QR Code atau ketik manual"
                                     autocomplete="off"
                                     style="padding: 10px 12px; border: 2px solid #e5e7eb; border-radius: 8px 0 0 8px; font-size: 14px; text-transform: uppercase;"
                                     onkeyup="this.value = this.value.toUpperCase()"
-                                    onkeypress="if(event.key === 'Enter') { event.preventDefault(); addManualSN(); }">
-                                <button type="button" class="btn btn-success" onclick="addManualSN()" style="border-radius: 0; border: 2px solid #059669; background: #10b981;">
+                                    onkeydown="if(event.key === 'Enter') { event.preventDefault(); submitOpnameScan(); }">
+                                <button type="button" class="btn btn-success" onclick="submitOpnameScan()" style="border-radius: 0; border: 2px solid #059669; background: #10b981;">
                                     <i class="fas fa-plus me-1"></i>Add
                                 </button>
                                 <button type="button" class="btn btn-primary" onclick="toggleQRScanner()" id="scanQRBtn" style="border-radius: 0 8px 8px 0; border: 2px solid #1e3a8a; border-left: none; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);">
                                     <i class="fas fa-camera me-1"></i>Scan
                                 </button>
                             </div>
-                            <small class="text-muted"><i class="fas fa-info-circle me-1"></i>Ketik SN dan tekan Enter atau klik Add. Klik Scan untuk buka kamera.</small>
+                            <small class="text-muted"><i class="fas fa-info-circle me-1"></i>Scan langsung tanpa memilih produk &mdash; sistem mencari sendiri barisnya dari SN. Tiap scan langsung tersimpan.</small>
                         </div>
-                        
+
                         <!-- QR Camera Container (Hidden by default) -->
                         <div id="qrReaderContainer" style="display: none; margin-bottom: 20px; border: 2px solid #e5e7eb; border-radius: 8px; padding: 15px; background-color: #f9fafb;">
                             <div id="reader" style="width: 100%; max-width: 500px; margin: 0 auto;"></div>
@@ -410,27 +429,33 @@
                             </div>
                         </div>
                         
-                        <!-- Scanned List -->
-                        <div class="mb-3">
-                            <h6 style="font-weight: 600; color: #374151;">
-                                <i class="fas fa-list me-2"></i>Scanned Serial Numbers (<span id="scanCount">0</span>)
-                            </h6>
-                            <div class="border rounded p-2" style="max-height: 200px; overflow-y: auto; background-color: #f9fafb;">
-                                <ul id="scannedList" class="list-group list-group-flush small"></ul>
+                        <div id="opnameScanBanner" class="d-none" style="margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; background-color: #fef3c7; border: 1px solid #fcd34d; color: #92400e; font-size: 0.875rem;"></div>
+
+                        <!-- Per-product progress -->
+                        <div style="border-top: 1px solid #e5e7eb; padding-top: 16px;">
+                            <div class="d-flex justify-content-between align-items-center" style="gap: 10px; margin-bottom: 10px;">
+                                <div style="font-weight: 600; color: #374151; font-size: 0.9rem;">
+                                    <i class="fas fa-list me-2"></i>Daftar Produk
+                                </div>
+                                <input type="text" id="opnameScanFilter" class="form-control form-control-sm"
+                                    placeholder="Cari produk / SKU..." autocomplete="off"
+                                    style="max-width: 220px; border: 2px solid #e5e7eb; border-radius: 8px;"
+                                    oninput="opnameScanState.filter = this.value; renderOpnameChecklist();">
                             </div>
+                            <div id="opnameScanChecklist" style="max-height: 320px; overflow-y: auto; padding-right: 4px;"></div>
                         </div>
                     </div>
                     <div class="modal-footer" style="background-color: #f9fafb; border-radius: 0 0 12px 12px; padding: 16px 20px; border-top: 1px solid #e5e7eb; gap: 10px;">
-                        <button type="button" class="btn btn-secondary" onclick="closeQRModal()">Close</button>
-                        <button type="button" id="saveScannedSNsBtn" class="btn btn-success no-double-click-prevention" onclick="saveScannedSNs(this)"><i class="fas fa-save me-1"></i>Save & Update Stock</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeQRModal()">Tutup</button>
                     </div>
                 </div>
             </div>
         `;
         document.body.appendChild(modal);
-        
-        updateScannedListUI();
-        
+
+        renderOpnameChecklist();
+        updateOpnameScanBanner();
+
         // Auto focus on input
         setTimeout(() => {
             document.getElementById('manualInput').focus();
@@ -505,23 +530,152 @@
 
         const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
         audio.play().catch(e => {});
-        scannedSNs.push(sn);
-        updateScannedListUI();
-    }
 
-    function addManualSN() {
         const input = document.getElementById('manualInput');
-        const sn = input.value.trim();
-        if (sn) {
-            scannedSNs.push(sn);
-            updateScannedListUI();
-            input.value = '';
-        }
+        if (input) input.value = sn.toUpperCase();
+
+        // Record it right away so a camera run needs no clicking between units.
+        submitOpnameScan();
     }
 
-    function removeSNAt(index) {
-        scannedSNs.splice(index, 1);
-        updateScannedListUI();
+    // Aim the next scan at one product on purpose: answers an unknown/ambiguous SN, and
+    // is how the per-row QR button targets its own product.
+    function setOpnameScanTarget(detailId) {
+        const alreadyTargeted = opnameScanState.targetDetailId === detailId;
+
+        opnameScanState.targetDetailId = alreadyTargeted ? null : detailId;
+        opnameScanState.candidateDetailIds = [];
+
+        renderOpnameChecklist();
+        updateOpnameScanBanner();
+
+        if (!alreadyTargeted && opnameScanState.pendingSerial) {
+            const input = document.getElementById('manualInput');
+            if (input) input.value = opnameScanState.pendingSerial;
+            opnameScanState.pendingSerial = null;
+            submitOpnameScan();
+            return;
+        }
+
+        const input = document.getElementById('manualInput');
+        if (input) input.focus();
+    }
+
+    function clearOpnameScanTarget() {
+        opnameScanState.targetDetailId = null;
+        opnameScanState.candidateDetailIds = [];
+        opnameScanState.pendingSerial = null;
+        renderOpnameChecklist();
+        updateOpnameScanBanner();
+
+        const input = document.getElementById('manualInput');
+        if (input) input.focus();
+    }
+
+    function updateOpnameScanBanner() {
+        const banner = document.getElementById('opnameScanBanner');
+        if (!banner) return;
+
+        if (!opnameScanState.targetDetailId) {
+            banner.classList.add('d-none');
+            banner.innerHTML = '';
+            return;
+        }
+
+        const row = (opnameScanState.checklist?.rows || [])
+            .find(r => r.detail_id === opnameScanState.targetDetailId);
+
+        banner.innerHTML = `<i class="fas fa-crosshairs me-2"></i>Scan berikutnya dicatat ke <strong>${escapeHtml(row ? row.product_name : 'produk terpilih')}</strong>. `
+            + '<a href="javascript:void(0)" onclick="clearOpnameScanTarget()" style="color: #92400e; text-decoration: underline;">Batalkan</a>';
+        banner.classList.remove('d-none');
+    }
+
+    function renderOpnameChecklist() {
+        const container = document.getElementById('opnameScanChecklist');
+        const counter = document.getElementById('opnameScanCounter');
+        if (!container) return;
+
+        const checklist = opnameScanState.checklist || { rows: [], total_rows: 0, counted_rows: 0, total_scanned: 0 };
+
+        if (counter) {
+            const left = Math.max(0, (checklist.total_rows || 0) - (checklist.counted_rows || 0));
+            counter.innerHTML = checklist.total_rows === 0
+                ? 'Tidak ada produk ber-Serial Number di opname ini'
+                : `<i class="fas fa-barcode me-1"></i>${checklist.counted_rows}/${checklist.total_rows} produk terhitung`
+                    + ` &middot; ${checklist.total_scanned} SN`
+                    + (left > 0 ? ` &middot; sisa ${left} produk` : ' &middot; lengkap');
+        }
+
+        const filter = (opnameScanState.filter || '').trim().toLowerCase();
+        const rows = filter
+            ? checklist.rows.filter(row => `${row.product_name} ${row.sku || ''}`.toLowerCase().includes(filter))
+            : checklist.rows;
+
+        if (!rows.length) {
+            container.innerHTML = `<div class="text-muted" style="font-style: italic; font-size: 0.875rem;">${
+                filter ? 'Tidak ada produk yang cocok dengan pencarian.' : 'Tidak ada produk ber-Serial Number di opname ini.'
+            }</div>`;
+            return;
+        }
+
+        container.innerHTML = rows.map(row => {
+            const isCandidate = opnameScanState.candidateDetailIds.includes(row.detail_id);
+            const isTarget = opnameScanState.targetDetailId === row.detail_id;
+
+            let border = '#e5e7eb';
+            let background = '#ffffff';
+            if (isCandidate) { border = '#f59e0b'; background = '#fffbeb'; }
+            else if (isTarget) { border = '#1e3a8a'; background = '#eff6ff'; }
+            else if (row.scanned_count > 0) { background = '#f9fafb'; }
+
+            const chips = row.scanned.length
+                ? row.scanned.map(sn => `
+                    <span style="display: inline-flex; align-items: center; gap: 6px; font-family: monospace; font-size: 0.78rem; background: #e0e7ff; color: #1e3a8a; border-radius: 999px; padding: 2px 4px 2px 10px; margin: 2px 4px 2px 0;">
+                        ${escapeHtml(sn)}
+                        <button type="button" title="Hapus SN ini"
+                            style="border: none; background: #c7d2fe; color: #1e3a8a; border-radius: 999px; width: 18px; height: 18px; line-height: 1; font-size: 0.75rem; cursor: pointer;"
+                            onclick="removeOpnameSerial(${row.detail_id}, '${escapeHtml(sn).replace(/'/g, "\\'")}')">&times;</button>
+                    </span>
+                `).join('')
+                : '<span class="text-muted" style="font-style: italic; font-size: 0.8rem;">belum ada SN</span>';
+
+            let variance = '';
+            if (row.variance !== null && row.variance !== undefined) {
+                const color = row.variance < 0 ? '#ef4444' : (row.variance > 0 ? '#10b981' : '#6b7280');
+                const prefix = row.variance > 0 ? '+' : '';
+                variance = `<span class="badge" style="background-color: ${color}; color: white; font-size: 0.7rem;">${prefix}${row.variance}</span>`;
+            }
+
+            const systemStock = (row.system_stock !== null && row.system_stock !== undefined)
+                ? `<span class="text-muted" style="font-size: 0.75rem;">sistem ${row.system_stock}</span>`
+                : '';
+
+            // Batch/refill: one code per bottle, so the same SN legitimately repeats here.
+            // Without this label a duplicate chip reads like a bug.
+            const batchHint = row.requires_unique === false
+                ? '<span class="text-muted" style="font-size: 0.7rem; font-style: italic;" title="Kode batch tercetak di tiap botol, jadi SN yang sama boleh berulang">batch</span>'
+                : '';
+
+            return `
+                <div style="border: 1px solid ${border}; background-color: ${background}; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <div style="flex: 1; min-width: 0; font-weight: 600; color: #374151; font-size: 0.9rem;">
+                            ${escapeHtml(row.product_name)}
+                            ${row.sku ? `<div class="text-muted" style="font-weight: 400; font-size: 0.75rem;">SKU: ${escapeHtml(row.sku)}</div>` : ''}
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 6px; white-space: nowrap;">
+                            ${batchHint}
+                            ${systemStock}
+                            <span class="badge bg-${row.scanned_count > 0 ? 'success' : 'secondary'}" style="font-size: 0.7rem;">${row.scanned_count} SN</span>
+                            ${variance}
+                            <button type="button" class="btn btn-sm ${isTarget ? 'btn-primary' : 'btn-outline-secondary'}" style="padding: 1px 10px; font-size: 0.75rem;"
+                                onclick="setOpnameScanTarget(${row.detail_id})">${isTarget ? 'Dipilih' : 'Pilih'}</button>
+                        </div>
+                    </div>
+                    <div style="margin-top: 8px;">${chips}</div>
+                </div>
+            `;
+        }).join('');
     }
 
     function escapeHtml(value) {
@@ -533,19 +687,28 @@
             .replace(/'/g, '&#039;');
     }
 
-    function updateScannedListUI() {
-        const list = document.getElementById('scannedList');
-        const countSpan = document.getElementById('scanCount');
-        if (!list || !countSpan) return;
-        
-        list.innerHTML = '';
-        scannedSNs.forEach((sn, index) => {
-            const li = document.createElement('li');
-            li.className = 'list-group-item d-flex justify-content-between align-items-center py-2 px-3';
-            li.innerHTML = `${escapeHtml(sn)} <button class="btn btn-danger btn-sm py-0 px-2" onclick="removeSNAt(${index})">&times;</button>`;
-            list.appendChild(li);
+    // Keep the table behind the modal honest without reloading: physical stock of an
+    // SN-counted row is the number of serials scanned into it.
+    function syncOpnameTableFromChecklist(changedDetailId = null) {
+        (opnameScanState.checklist?.rows || []).forEach(row => {
+            if (row.detail_id === changedDetailId) {
+                updateDetailRowAfterSN(row.detail_id, { variance: row.variance }, row.scanned_count);
+                return;
+            }
+
+            const physicalInput = document.getElementById(`physical-${row.detail_id}`);
+            if (physicalInput) {
+                physicalInput.value = row.scanned_count;
+                physicalInput.dataset.lastValue = String(row.scanned_count);
+            }
+
+            const countLabel = document.getElementById(`sn-count-${row.detail_id}`);
+            if (countLabel) {
+                countLabel.innerHTML = row.scanned_count > 0
+                    ? `<i class="fas fa-check-circle text-success"></i> ${row.scanned_count} SN Scanned`
+                    : '';
+            }
         });
-        countSpan.textContent = scannedSNs.length;
     }
 
     function updateDetailRowAfterSN(detailId, detailData, snCount) {
@@ -575,57 +738,127 @@
         }
     }
 
-    function saveScannedSNs(button = null) {
-        if (!currentDetailId) return;
-        const detailId = currentDetailId;
-        const snCount = scannedSNs.length;
-        const originalButtonHtml = button ? button.innerHTML : null;
+    function submitOpnameScan() {
+        const input = document.getElementById('manualInput');
+        if (!input) return;
 
-        if (button) {
-            button.disabled = true;
-            button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Saving...';
+        const serialNumber = input.value.trim().toUpperCase();
+        if (!serialNumber) {
+            showToast('Serial Number harus diisi', 'error');
+            return;
         }
 
-        existingScannedData[currentDetailId] = [...scannedSNs];
-        
-        // Save SN list and keep the visible physical stock in sync with the count.
-        fetch(`/warehouse/stock-opnames/details/${currentDetailId}/update`, {
+        const payload = { serial_number: serialNumber };
+        // Only a deliberate pick sends a target; a plain scan lets the server resolve it.
+        if (opnameScanState.targetDetailId) {
+            payload.detail_id = opnameScanState.targetDetailId;
+        }
+
+        fetch(`{{ route('warehouse.stock-opnames.scan-serial-number', $stockOpname->id) }}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json'
             },
-            body: JSON.stringify({
-                scanned_serial_numbers: scannedSNs,
-                physical_stock: snCount
-            })
+            body: JSON.stringify(payload)
         })
         .then(async response => {
             const data = await response.json().catch(() => null);
-            if (!response.ok || !data) {
-                throw new Error(data?.message || 'Response tidak valid.');
-            }
-
+            if (!data) throw new Error('Response tidak valid.');
             return data;
         })
         .then(data => {
-            if(data.status === 'success') {
-                updateDetailRowAfterSN(detailId, data.data || {}, snCount);
-                closeQRModal();
-                showToast('SN dan physical stock tersimpan', 'success');
+            if (data.checklist) {
+                opnameScanState.checklist = data.checklist;
+            }
+
+            if (data.status === 'success') {
+                opnameScanState.candidateDetailIds = [];
+                opnameScanState.pendingSerial = null;
+                opnameScanState.targetDetailId = null;
+
+                const info = data.data || {};
+                renderOpnameChecklist();
+                updateOpnameScanBanner();
+                syncOpnameTableFromChecklist(info.detail_id);
+
+                input.value = '';
+                input.focus();
+
+                const note = info.warehouse_note ? ` (${info.warehouse_note})` : '';
+                showToast(`${info.serial_number} → ${info.product_name} · ${info.scanned_count} SN${note}`, 'success');
+                return;
+            }
+
+            if (data.status === 'unknown' || data.status === 'ambiguous') {
+                // SN tak dikenal (barang temuan) atau kode yang dipakai beberapa produk:
+                // ditanya, bukan ditebak. Begitu produk dipilih, SN ini langsung dikirim.
+                opnameScanState.candidateDetailIds = ((data.data || {}).candidate_detail_ids || []).map(Number);
+                opnameScanState.pendingSerial = serialNumber;
+
+                renderOpnameChecklist();
+
+                const banner = document.getElementById('opnameScanBanner');
+                if (banner) {
+                    banner.innerHTML = `<i class="fas fa-question-circle me-2"></i><strong>${escapeHtml(serialNumber)}</strong> &mdash; ${escapeHtml(data.message || '')} Klik "Pilih" pada produknya.`;
+                    banner.classList.remove('d-none');
+                }
+
+                showToast(data.message || 'Pilih produk tujuan untuk SN ini', 'info');
+                return;
+            }
+
+            if (data.status === 'duplicate') {
+                renderOpnameChecklist();
+                input.value = '';
+                input.focus();
+                showToast(data.message || 'SN sudah tercatat', 'info');
+                return;
+            }
+
+            renderOpnameChecklist();
+            input.select();
+            showToast(data.message || 'Serial Number tidak bisa dicatat', 'error');
+        })
+        .catch(err => {
+            console.error('Error:', err);
+            showToast(err.message || 'Terjadi kesalahan saat mencatat SN', 'error');
+        });
+    }
+
+    function removeOpnameSerial(detailId, serialNumber) {
+        fetch(`{{ route('warehouse.stock-opnames.remove-serial-number', $stockOpname->id) }}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({ detail_id: detailId, serial_number: serialNumber })
+        })
+        .then(async response => {
+            const data = await response.json().catch(() => null);
+            if (!data) throw new Error('Response tidak valid.');
+            return data;
+        })
+        .then(data => {
+            if (data.checklist) {
+                opnameScanState.checklist = data.checklist;
+            }
+
+            renderOpnameChecklist();
+
+            if (data.status === 'success') {
+                syncOpnameTableFromChecklist((data.data || {}).detail_id);
+                showToast(data.message || 'SN dihapus', 'success');
             } else {
-                throw new Error(data.message || 'Daftar SN tidak berhasil disimpan.');
+                showToast(data.message || 'SN tidak berhasil dihapus', 'error');
             }
         })
         .catch(err => {
             console.error('Error:', err);
-            showErrorDialog(err.message || 'Terjadi kesalahan saat menyimpan.', 'Gagal');
-        })
-        .finally(() => {
-            if (button) {
-                button.disabled = false;
-                button.innerHTML = originalButtonHtml;
-            }
+            showToast(err.message || 'Terjadi kesalahan saat menghapus SN', 'error');
         });
     }
 
@@ -922,10 +1155,9 @@
         showSavingIndicator();
         input.classList.add('bg-warning', 'bg-opacity-25');
         
-        let payload = { physical_stock: value };
-        if (existingScannedData[id]) {
-            payload.scanned_serial_numbers = existingScannedData[id];
-        }
+        // Only the count is sent: updateDetail leaves scanned_serial_numbers alone when
+        // the key is absent, so a manual override never wipes the scanned list.
+        const payload = { physical_stock: value };
 
         fetch(`/warehouse/stock-opnames/details/${id}/update`, {
             method: 'POST',
