@@ -2460,6 +2460,137 @@ class CatalystMasterDataImporter
         return 'cash';
     }
 
+    /**
+     * Mapping kode TermOfPayment Catalyst -> Term of Payment ADS.
+     *
+     * Sumber: master `TermOfPayment` Catalyst (kolom TermOfPaymentCode /
+     * TermOfPaymentName / XPeriod / DP) + kolom mapping yang dikonfirmasi klien.
+     * Tanpa mapping ini quotation hasil import menyimpan kode mentah ("00",
+     * "3xM", "QUA") di `terms_of_payment`, yang tidak cocok dengan dropdown
+     * Term of Payment ADS dan tidak bisa dibaca Contract::getTopIntervalMonths().
+     *
+     * - `top`     -> nilai `option_name` di master option "Term of Payment"
+     *                (lihat database/seeders/TermOfPaymentOptionsSeeder.php)
+     * - `timing`  -> kolom DP Catalyst; dipakai untuk quotations.payment_method
+     *                (dibaca InvoiceGenerationService::getInvoiceTiming())
+     * - `mode`/`months`/`payment_count` -> untuk menurunkan quotations.top_months
+     */
+    public const CATALYST_TERM_OF_PAYMENT_MAP = [
+        // DP = N -> After Service, XPeriod = interval bulan
+        '00'  => ['top' => '1 bulan 1x', 'timing' => 'After Service',  'mode' => 'fixed_interval', 'months' => 1],
+        'COD' => ['top' => '1 bulan 1x', 'timing' => 'After Service',  'mode' => 'fixed_interval', 'months' => 1],
+        '3XM' => ['top' => '3 bulan 1x', 'timing' => 'After Service',  'mode' => 'fixed_interval', 'months' => 3],
+        'QUA' => ['top' => '3 bulan 1x', 'timing' => 'After Service',  'mode' => 'fixed_interval', 'months' => 3],
+        'Q2Y' => ['top' => '3 bulan 1x', 'timing' => 'After Service',  'mode' => 'fixed_interval', 'months' => 3],
+        'Q3Y' => ['top' => '3 bulan 1x', 'timing' => 'After Service',  'mode' => 'fixed_interval', 'months' => 3],
+
+        // DP = Y -> Before Service, "N x In Advance" = N pembayaran per periode kontrak
+        '1X'  => ['top' => 'Tahunan',                  'timing' => 'Before Service', 'mode' => 'advance'],
+        '2X'  => ['top' => '2x per periode contract',  'timing' => 'Before Service', 'mode' => 'per_contract_period', 'payment_count' => 2],
+        '3X'  => ['top' => '3x per periode contract',  'timing' => 'Before Service', 'mode' => 'per_contract_period', 'payment_count' => 3],
+        '4X'  => ['top' => '4x per periode contract',  'timing' => 'Before Service', 'mode' => 'per_contract_period', 'payment_count' => 4],
+        '5XA' => ['top' => '5x per periode contract',  'timing' => 'Before Service', 'mode' => 'per_contract_period', 'payment_count' => 5],
+        '6X'  => ['top' => '6x per periode contract',  'timing' => 'Before Service', 'mode' => 'per_contract_period', 'payment_count' => 6],
+        '8X'  => ['top' => '8x per periode contract',  'timing' => 'Before Service', 'mode' => 'per_contract_period', 'payment_count' => 8],
+    ];
+
+    /**
+     * Terjemahkan kode TermOfPayment Catalyst ke bentuk ADS.
+     *
+     * Kode yang tidak ada di tabel mapping di-parse secara generik
+     * ("5x" -> 5x per periode contract, "6M"/"6 bulan" -> 6 bulan 1x) supaya
+     * kode baru di Catalyst tidak diam-diam masuk sebagai teks mentah.
+     * Kalau tetap tidak terbaca, kembalikan null -> pemanggil menyimpan apa
+     * adanya dan barisnya bisa ditelusuri lewat audit import.
+     */
+    public function mapCatalystTermOfPayment($value): ?array
+    {
+        $code = Str::upper($this->cleanString($value) ?? '');
+
+        if ($code === '') {
+            return null;
+        }
+
+        if (isset(static::CATALYST_TERM_OF_PAYMENT_MAP[$code])) {
+            return static::CATALYST_TERM_OF_PAYMENT_MAP[$code] + [
+                'months' => null,
+                'payment_count' => null,
+                'source_code' => $code,
+            ];
+        }
+
+        // "12M", "6 BULAN", "3 MONTH" -> fixed interval N bulan.
+        if (preg_match('/^(\d+)\s*(M|MO|MONTHS?|BLN|BULAN)$/', $code, $m)) {
+            $months = max(1, (int) $m[1]);
+
+            return [
+                'top' => "{$months} bulan 1x",
+                'timing' => 'After Service',
+                'mode' => 'fixed_interval',
+                'months' => $months,
+                'payment_count' => null,
+                'source_code' => $code,
+            ];
+        }
+
+        // "2X", "5XA", "8XB" -> N pembayaran per periode kontrak (dibayar di muka).
+        if (preg_match('/^(\d+)\s*X[A-Z]*$/', $code, $m)) {
+            $count = max(1, (int) $m[1]);
+
+            if ($count === 1) {
+                return [
+                    'top' => 'Tahunan',
+                    'timing' => 'Before Service',
+                    'mode' => 'advance',
+                    'months' => null,
+                    'payment_count' => null,
+                    'source_code' => $code,
+                ];
+            }
+
+            return [
+                'top' => "{$count}x per periode contract",
+                'timing' => 'Before Service',
+                'mode' => 'per_contract_period',
+                'months' => null,
+                'payment_count' => $count,
+                'source_code' => $code,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Turunkan quotations.top_months dari hasil mapping + panjang kontrak.
+     *
+     * Mengikuti QuotationWizardController::resolveTopMonthsFromRequest():
+     * advance -> null, fixed interval -> jumlah bulannya, per periode kontrak ->
+     * durasi / jumlah pembayaran (null kalau tidak habis dibagi).
+     */
+    public function catalystTopMonths(?array $term, int $periodMonths): ?int
+    {
+        if (!$term) {
+            return null;
+        }
+
+        if (($term['mode'] ?? null) === 'fixed_interval') {
+            $months = (int) ($term['months'] ?? 0);
+
+            return $months > 0 ? $months : null;
+        }
+
+        if (($term['mode'] ?? null) === 'per_contract_period') {
+            $count = (int) ($term['payment_count'] ?? 0);
+
+            if ($count > 0 && $periodMonths > 0 && $periodMonths % $count === 0) {
+                return (int) ($periodMonths / $count);
+            }
+        }
+
+        return null;
+    }
+
     protected function ensureMasterRoomId(
         ?int $buildingId,
         ?int $customerId,
@@ -3151,6 +3282,9 @@ class CatalystMasterDataImporter
             $transDate = $this->toDate($row['TransDate'] ?? null);
             $validUntil = $transDate ? date('Y-m-d', strtotime($transDate . ' +30 days')) : null;
 
+            $periodMonths = max(1, (int) ($row['ContractPeriod'] ?? 12));
+            $term = $this->mapCatalystTermOfPayment($row['Term'] ?? null);
+
             return $this->syncRecord('quotations', 'MKTQuotationHd', $this->makeKey($sqNo), 'quotations', [
                 'quotation_number' => $sqNo,
             ], [
@@ -3163,13 +3297,19 @@ class CatalystMasterDataImporter
                 'pic_name' => $this->cleanString($row['ContactName'] ?? null),
                 'branch_id' => $branchId,
                 'marketing_id' => $marketingId,
-                'rental_period' => trim(($row['ContractPeriod'] ?? '12') . ' bulan'),
+                // Kolom rental_period hanya menyimpan angkanya; satuannya ada di
+                // rental_unit dan ditempel saat render ("6" + "Bulan"). Menaruh
+                // "6 bulan" di sini bikin list SQ menampilkan "6 bulan Bulan".
+                'rental_period' => (string) $periodMonths,
                 'rental_unit' => 'bulan',
                 'total_amount' => (float)($row['BaseForex'] ?? 0),
                 'discount_amount' => (float)($row['DiscForex'] ?? 0),
                 'tax_amount' => (float)($row['PpnForex'] ?? 0),
                 'grand_total' => (float)($row['TotalForex'] ?? 0),
-                'terms_of_payment' => $this->cleanString($row['Term'] ?? null),
+                'terms_of_payment' => $term['top'] ?? $this->cleanString($row['Term'] ?? null),
+                'top_months' => $this->catalystTopMonths($term, $periodMonths),
+                'payment_method' => $term['timing'] ?? null,
+                'billing_methods' => $term['timing'] ?? null,
                 'additional_notes' => $this->cleanString($row['Remark'] ?? null),
                 'internal_notes' => $this->cleanString($row['RemarkInternal'] ?? null),
                 'quotation_type' => $this->normalizeQuotationType($row['SalesType'] ?? null),
@@ -3493,7 +3633,11 @@ class CatalystMasterDataImporter
                 'end_date' => $endDate,
                 'contract_value' => (float) ($row['BaseForex'] ?? 0),
                 'net_value' => (float) ($row['BaseForex'] ?? 0),
-                'term_of_payment' => $this->cleanString($row['Terms'] ?? null),
+                // Pakai nilai TOP ADS, bukan kode mentah Catalyst - accessor
+                // Contract::getTopIntervalMonthsAttribute() mem-parse string ini
+                // untuk menentukan interval invoice.
+                'term_of_payment' => $this->mapCatalystTermOfPayment($row['Terms'] ?? null)['top']
+                    ?? $this->cleanString($row['Terms'] ?? null),
                 'payment_terms' => $this->normalizeContractPaymentTerms($row['Terms'] ?? null),
                 'npwp_number' => $this->cleanString($row['NPWP'] ?? null),
                 'status' => $fgTerminate ? 'terminated' : ($statusRaw === 'X' ? 'inactive' : 'active'),

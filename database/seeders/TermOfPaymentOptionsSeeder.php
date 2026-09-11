@@ -66,6 +66,10 @@ class TermOfPaymentOptionsSeeder extends Seeder
             $this->perContractPeriodTerm(2),
             $this->perContractPeriodTerm(3),
             $this->perContractPeriodTerm(4),
+            // 5x/6x/8x dipakai data legacy Catalyst ("5 x In Advance", dst).
+            $this->perContractPeriodTerm(5),
+            $this->perContractPeriodTerm(6),
+            $this->perContractPeriodTerm(8),
             $this->fixedIntervalTerm('7 bulan 1x', 7),
             $this->fixedIntervalTerm('8 bulan 1x', 8),
             $this->fixedIntervalTerm('9 bulan 1x', 9),
