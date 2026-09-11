@@ -11112,8 +11112,48 @@ class JobScheduleController extends Controller
      * This intentionally checks the rental detail metadata first, because the
      * material structure must come from Master Rental Details, not quotation.
      */
+    /**
+     * A rental slot that holds a physical unit (diffuser/dispenser) is never an aroma slot.
+     *
+     * Deliberately checks is_unit on the category AND the type, of BOTH the slot and the
+     * resolved product, and treats the slot as a unit if ANY of them says so.
+     * isUnitProductByCategory() cannot be reused for this: it returns as soon as the
+     * category's is_unit is non-null, so a product whose category is_unit = 0 but whose
+     * product_type is_unit = 1 — every "Rental w/QR" service product — reads as non-unit
+     * there. Do not "simplify" this back to that helper or to a ?? chain.
+     */
+    protected function rentalSlotHoldsUnit($detail, $product = null): bool
+    {
+        $flags = [
+            $product?->productCategory?->is_unit,
+            $product?->productType?->is_unit,
+            $detail?->productCategory?->is_unit,
+            $detail?->productType?->is_unit,
+        ];
+
+        foreach ($flags as $flag) {
+            if ($flag !== null && (bool) $flag) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     protected function isAromaRentalDetail($detail, $product = null): bool
     {
+        // QA 10 Sep 2026: BOM "Diffuser + Refill" rendered as TWO refill rows in Material
+        // Assign. The haystack below includes the product's CATEGORY NAME, and the
+        // Rental-w/QR service products live in categories literally named "Aroma Delivery
+        // Sys Svc" / "Aroma Delivery System Paket Jasa Scenting ... Pure Scenting" — the
+        // word "Aroma" there is the product line, not a refill. That name alone matched,
+        // so the caller substituted the diffuser away into the quotation's aroma.
+        // Guard on is_unit BEFORE the keyword scan; do not try to blacklist the category
+        // names, they vary per scenting package and more keep being added.
+        if ($this->rentalSlotHoldsUnit($detail, $product)) {
+            return false;
+        }
+
         $haystack = $this->buildMaterialClassificationText([
             $detail->productCategory->name ?? null,
             $detail->productType->name ?? null,

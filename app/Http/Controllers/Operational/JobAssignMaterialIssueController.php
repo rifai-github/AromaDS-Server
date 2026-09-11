@@ -444,8 +444,42 @@ class JobAssignMaterialIssueController extends Controller
             && $this->containsAromaMaterialKeywords($haystack);
     }
 
+    /**
+     * Mirror of JobScheduleController::rentalSlotHoldsUnit(). A slot holding a physical
+     * unit is never an aroma slot. Checks is_unit on the category AND the type of BOTH
+     * the slot and the product, true if ANY says unit — a ?? chain is wrong here because
+     * a category with is_unit = 0 would stop it before the product_type is ever read.
+     * has_serial_number is deliberately NOT used as a unit signal: batch-serialised
+     * refills carry serial numbers too.
+     */
+    private function slotHoldsUnitProduct($detail, ?MasterProduct $product = null): bool
+    {
+        $flags = [
+            $product?->productCategory?->is_unit,
+            $product?->productType?->is_unit,
+            $detail?->productCategory?->is_unit,
+            $detail?->productType?->is_unit,
+        ];
+
+        foreach ($flags as $flag) {
+            if ($flag !== null && (bool) $flag) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function isQuotationAromaMaterialSlot($detail, ?MasterProduct $product = null, ?string $extraName = null): bool
     {
+        // See the note in JobScheduleController::isAromaRentalDetail(): the haystack below
+        // includes category names, and the "Aroma Delivery Sys Svc" family of categories
+        // holds UNITS, not refills. Without this guard a diffuser slot is substituted into
+        // the quotation's aroma and the unit disappears from the material list.
+        if ($this->slotHoldsUnitProduct($detail, $product)) {
+            return false;
+        }
+
         $haystack = $this->buildMaterialClassificationText([
             $extraName,
             $detail->productCategory->name ?? null,
