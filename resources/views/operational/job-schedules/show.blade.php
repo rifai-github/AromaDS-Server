@@ -1740,7 +1740,24 @@
                                                 {{ $photoRoomName }}
                                             </td>
                                             <td>{{ $photoRentalName }}</td>
-                                            <td>{{ $photo->photo_type ?? '-' }}</td>
+                                            <td>
+                                                @php
+                                                    // sn_scan = frame kamera saat QR Serial Number terbaca, dikirim
+                                                    // otomatis oleh APK. Tipe lain ditampilkan apa adanya.
+                                                    $photoTypeLabels = [
+                                                        'sn_scan' => 'Scan SN',
+                                                        'before' => 'Before',
+                                                        'after' => 'After',
+                                                        'progress' => 'Progress',
+                                                    ];
+                                                    $photoTypeKey = $photo->photo_type;
+                                                @endphp
+                                                @if($photoTypeKey === 'sn_scan')
+                                                    <span class="badge bg-info"><i class="fas fa-qrcode me-1"></i>{{ $photoTypeLabels[$photoTypeKey] }}</span>
+                                                @else
+                                                    {{ $photoTypeLabels[$photoTypeKey] ?? ($photoTypeKey ?? '-') }}
+                                                @endif
+                                            </td>
                                             <td>
                                                 @if($photo->photo_path)
                                                     @php

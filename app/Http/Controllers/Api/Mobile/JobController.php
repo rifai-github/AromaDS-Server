@@ -4722,7 +4722,9 @@ class JobController extends Controller
     {
         $request->validate([
             'photo' => 'required|image|max:5120', // Max 5MB
-            'type' => 'required|in:before,after,progress',
+            // sn_scan = frame kamera saat QR Serial Number terbaca, dikirim otomatis oleh
+            // APK sebagai bukti scan. Tampil di tab Photo seperti tipe lain.
+            'type' => 'required|in:before,after,progress,sn_scan',
         ]);
 
         $job = JobSchedule::find($jobScheduleId);
