@@ -6655,6 +6655,10 @@ class JobController extends Controller
         $request->validate([
             'serial_number' => 'required|string',
             'room_name' => 'nullable|string', // Optional: room yang dipilih saat mulai pekerjaan
+            // APK memakai endpoint ini juga untuk sekadar mencari SN ini ada di ruangan
+            // mana, sebelum teknisi memilih apa pun. Panggilan seperti itu harus murni
+            // baca - lihat penjagaan di blok SN bypass di bawah.
+            'resolve_only' => 'sometimes|boolean',
         ]);
         
         $job = JobSchedule::with(['building', 'jobAdvice.customer'])->findOrFail($id);
@@ -6904,7 +6908,12 @@ class JobController extends Controller
             // TRIAL MODE (SN_BYPASS_ENABLED): allow scanning a SN the warehouse never
             // pre-linked. We still register + link it for real so job completion /
             // Unit On Wall behave exactly as if it had gone through the normal flow.
-            if (\App\Services\SerialNumberBypassService::isEnabled()) {
+            //
+            // This is the only write in this method, so a resolve_only lookup must never
+            // reach it: the app calls that before the technician has picked a room, and
+            // without a room name resolveBypassIssuingItemForInstall() would attach the
+            // new serial to whichever item it could find on its own.
+            if (! $request->boolean('resolve_only') && \App\Services\SerialNumberBypassService::isEnabled()) {
                 $bypassItem = $this->resolveBypassIssuingItemForInstall($inventoryIssuingIds, $selectedRoomName);
                 if ($bypassItem) {
                     $serialNumber = \App\Services\SerialNumberBypassService::registerAndLinkSerial(
