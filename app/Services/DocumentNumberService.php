@@ -519,15 +519,23 @@ class DocumentNumberService
         
         // Get the last number for this prefix (including soft deleted)
         // Use lockForUpdate to prevent race conditions
+        //
+        // Baca ekor nomor SETELAH prefix, bukan 4 karakter terakhir. Begitu satu prefix
+        // tembus 9999, nomornya jadi 5 digit dan "4 karakter terakhir" membaca
+        // ".../10100" sebagai 100 - urutan balik ke bawah dan setiap nomor berikutnya
+        // bertabrakan. Itu yang meruntuhkan prefix JKT-SR/26-09 pada import Catalyst:
+        // 273 survei tertimpa jadi satu baris.
+        $suffixStart = strlen($prefix) + 1;
+
         $lastNumber = DB::table($table)
             ->where($numberField, 'like', $prefix . '%')
             ->whereNotNull($numberField)
-            ->orderByRaw("CAST(SUBSTRING({$numberField}, -4) AS UNSIGNED) DESC")
+            ->orderByRaw("CAST(SUBSTRING({$numberField}, {$suffixStart}) AS UNSIGNED) DESC")
             ->orderBy('id', 'desc')
             ->lockForUpdate()
             ->value($numberField);
-        
-        if ($lastNumber && preg_match('/(\d{4})$/', $lastNumber, $matches)) {
+
+        if ($lastNumber && preg_match('/(\d+)$/', $lastNumber, $matches)) {
             $lastSeq = (int) $matches[1];
             $nextSeq = $lastSeq + 1;
         } else {
@@ -553,10 +561,18 @@ class DocumentNumberService
             $retryCount++;
         }
         
-        if ($retryCount >= $maxRetries) {
+        // JANGAN pernah mengembalikan nomor yang sudah dipakai. Importer Catalyst
+        // mencocokkan baris lewat nomor dokumen, jadi nomor tabrakan tidak membuat
+        // baris baru - dia MENIMPA baris milik orang lain. Gagal terang-terangan jauh
+        // lebih murah daripada dua dokumen yang diam-diam menyatu.
+        if ($exists) {
             Log::error("DocumentNumberService: Max retries ({$maxRetries}) reached for prefix {$prefix}");
+
+            throw new \RuntimeException(
+                "Gagal membuat nomor {$documentType} yang unik untuk prefix {$prefix} setelah {$maxRetries} percobaan."
+            );
         }
-        
+
         return $nextSeq;
     }
 

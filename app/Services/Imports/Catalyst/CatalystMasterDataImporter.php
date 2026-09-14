@@ -1215,6 +1215,30 @@ class CatalystMasterDataImporter
         return $this->masterRentalIdByCodeCache[$key] = $id ? (int) $id : null;
     }
 
+    /**
+     * Kode branch ADS dari kolom Branch milik dokumen Catalyst (mis. MKTQuotationHd.Branch).
+     *
+     * Dipakai untuk menomori dokumen turunan yang tidak punya nomor sendiri di Catalyst.
+     * Lebih tepercaya daripada menebak lewat lokasi gedung, karena branches.city_id di sini
+     * sebagian besar menunjuk "Jakarta Barat" mengikuti data MsBranch.City milik klien.
+     */
+    protected function resolveSourceBranchCode($branchKey): ?string
+    {
+        $key = $this->makeKey($branchKey);
+
+        if (!$key) {
+            return null;
+        }
+
+        $branchId = $this->findMappedTargetId('MsBranch', $key, 'branches');
+
+        if (!$branchId) {
+            return null;
+        }
+
+        return $this->cleanString($this->cachedTargetRecord('branches', $branchId)->code ?? null);
+    }
+
     protected function ensureImportMapIndexes(): void
     {
         if (!Schema::hasTable('source_import_maps')) {
@@ -3170,7 +3194,13 @@ class CatalystMasterDataImporter
             if ($existingId) {
                 $surveyNumber = \Illuminate\Support\Facades\DB::table('surveys')->where('id', $existingId)->value('survey_number');
             } else {
-                $surveyNumber = app(\App\Services\DocumentNumberService::class)->generate('survey', null, $buildingId);
+                // Warisi branch dari SQ-nya, jangan tebak dari lokasi gedung. 14 dari 20
+                // branches.city_id menunjuk "Jakarta Barat" karena MsBranch.City di Catalyst
+                // memang diisi begitu (data klien, bukan bug import) - akibatnya hampir semua
+                // survei jatuh ke default JKT, menumpuk di satu prefix sampai tembus 9999.
+                // Kolom Branch di header SQ justru benar: BAL-SQ/... -> BAL.
+                $surveyNumber = app(\App\Services\DocumentNumberService::class)
+                    ->generate('survey', $this->resolveSourceBranchCode($hd->Branch ?? null), $buildingId);
             }
 
             $payload = [
@@ -3199,9 +3229,14 @@ class CatalystMasterDataImporter
                 'updated_by' => $this->actorId(),
             ];
 
+            // allowFallbackMatch = false: identitas survei adalah source key (SQ||gedung),
+            // BUKAN nomornya. Dengan fallback aktif, satu nomor tabrakan tidak membuat baris
+            // baru melainkan menimpa survei milik pasangan SQ/gedung lain - itu yang membuat
+            // 273 pasangan menyatu ke satu baris. Pengaman ini menutup jalur tersebut untuk
+            // selamanya, terlepas dari apakah penomorannya sedang sehat atau tidak.
             return $this->syncRecord('surveys', 'MKTQuotationRental_survey', $key, 'surveys', [
                 'survey_number' => $surveyNumber,
-            ], $payload, $row);
+            ], $payload, $row, false);
         });
     }
 
