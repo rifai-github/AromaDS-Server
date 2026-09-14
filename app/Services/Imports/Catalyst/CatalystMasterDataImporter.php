@@ -35,6 +35,7 @@ class CatalystMasterDataImporter
         'quotation_rentals' => ['quotations', 'quotation_rooms', 'master_rentals'],
         'quotation_details' => ['quotations', 'survey_details', 'master_rentals'],
         'contracts' => ['customers', 'quotations', 'users'],
+        'quotation_existing_contracts' => ['quotations', 'contracts'],
         'contract_surveys' => ['contracts', 'quotation_surveys'],
         'billing_groups' => ['contracts', 'customers'],
         'contract_buildings' => ['billing_groups', 'buildings'],
@@ -99,6 +100,9 @@ class CatalystMasterDataImporter
         'quotation_rentals',   // depends on: quotations, quotation_rooms, master_rentals
         'quotation_details',   // depends on: quotations, surveys, survey_details, master_rentals
         'contracts',           // depends on: customers, quotations, users
+        // Wajib SETELAH contracts: quotations jalan lebih dulu, jadi saat itu peta
+        // MKTContractHd->contracts masih kosong dan existing_contract_id tidak bisa diisi.
+        'quotation_existing_contracts', // depends on: quotations, contracts
         'contract_surveys',    // depends on: contracts, surveys
         'billing_groups',      // depends on: contracts, customers, buildings
         'contract_buildings',  // depends on: billing_groups, buildings
@@ -126,6 +130,8 @@ class CatalystMasterDataImporter
     private ?array $sourceQuotationOldContractByNumber = null;
     private ?array $sourceBillingGroupsByCode = null;
     private array $targetCityLookup = [];
+    /** @var array<string, int|null> cache resolveMasterRentalId(): rental_code -> master_rentals.id */
+    private array $masterRentalIdByCodeCache = [];
     private array $targetRentalServiceFrequencyLookup = [];
     private array $targetProductCategoryLookup = [];
     private array $targetProductTypeLookup = [];
@@ -1172,6 +1178,41 @@ class CatalystMasterDataImporter
             ->where('source_key', $sourceKey)
             ->where('target_table', $targetTable)
             ->value('target_id');
+    }
+
+    /**
+     * Resolve ProductCode Catalyst -> master_rentals.id.
+     *
+     * Peta MsProduct->master_rentals hanya ditulis step `master_rentals`, dan step itu ada di
+     * DISABLED_STEPS sejak rental berasal dari Master Product.xlsx (24 Agu 2026). Tanpa fallback,
+     * SETIAP baris quotation_rentals / quotation_details / contract_rentals gagal dengan
+     * "Master rental missing" - SQ dan kontrak hasil import jadi tidak punya rental sama sekali.
+     *
+     * Fallback ke master_rentals.rental_code setara persis dengan peta yang hilang: step
+     * master_rentals dulu memakai makeKey(ProductCode) sebagai kunci peta SEKALIGUS sebagai
+     * rental_code (lihat master_rentals()). Peta tetap dicoba lebih dulu supaya perilaku tidak
+     * berubah kalau suatu saat step itu dihidupkan lagi.
+     */
+    protected function resolveMasterRentalId($productCode): ?int
+    {
+        $key = $this->makeKey($productCode);
+
+        if (!$key) {
+            return null;
+        }
+
+        $mapped = $this->findMappedTargetId('MsProduct', $key, 'master_rentals');
+        if ($mapped) {
+            return (int) $mapped;
+        }
+
+        if (array_key_exists($key, $this->masterRentalIdByCodeCache)) {
+            return $this->masterRentalIdByCodeCache[$key];
+        }
+
+        $id = DB::table('master_rentals')->where('rental_code', $key)->value('id');
+
+        return $this->masterRentalIdByCodeCache[$key] = $id ? (int) $id : null;
     }
 
     protected function ensureImportMapIndexes(): void
@@ -3474,7 +3515,7 @@ class CatalystMasterDataImporter
                 return $this->failedRow('Quotation room missing');
             }
 
-            $rentalId = $this->findMappedTargetId('MsProduct', $this->makeKey($product), 'master_rentals');
+            $rentalId = $this->resolveMasterRentalId($product);
             if (!$rentalId) {
                 return $this->failedRow('Master rental missing for ' . ($product ?? 'empty'));
             }
@@ -3559,7 +3600,7 @@ class CatalystMasterDataImporter
                 return $this->failedRow('Survey detail missing');
             }
 
-            $rentalId = $this->findMappedTargetId('MsProduct', $this->makeKey($row['Product'] ?? null), 'master_rentals');
+            $rentalId = $this->resolveMasterRentalId($row['Product'] ?? null);
             if (!$rentalId) {
                 return $this->failedRow('Master rental missing');
             }
@@ -3649,6 +3690,52 @@ class CatalystMasterDataImporter
                 'created_by' => $this->actorId(),
                 'updated_by' => $this->actorId(),
             ], $row);
+        });
+    }
+
+    /**
+     * Isi quotations.existing_contract_id setelah peta kontrak tersedia.
+     *
+     * Step `quotations` berjalan SEBELUM `contracts`, jadi saat baris quotation ditulis,
+     * resolveQuotationExistingContractId() selalu mengembalikan NULL pada import dari nol -
+     * peta MKTContractHd->contracts belum terisi. Akibatnya di halaman SQ renewal, baris
+     * "Nomor Contract" hilang dan rental warisan dari kontrak lama tidak bisa ditarik.
+     *
+     * Pass ini mengerjakan resolusi yang sama sekali lagi, kali ini setelah `contracts` jalan.
+     */
+    protected function quotation_existing_contracts(): array
+    {
+        $rows = [];
+        foreach ($this->sourceQuotationOldContractByNumber() as $sqNo => $legacyContract) {
+            $rows[] = ['TransNmbr' => $sqNo, 'OldContractNo' => $legacyContract];
+        }
+
+        return $this->runRows('quotation_existing_contracts', 'MKTQuotationHd', $rows, function (array $row) {
+            $sqNo = $this->makeKey($row['TransNmbr'] ?? null);
+
+            $quotationId = $this->findMappedTargetId('MKTQuotationHd', $sqNo, 'quotations');
+            if (!$quotationId) {
+                return $this->skippedRow('Q missing', $sqNo);
+            }
+
+            $contractId = $this->findMappedTargetId('MKTContractHd', $this->makeKey($row['OldContractNo'] ?? null), 'contracts');
+            if (!$contractId) {
+                return $this->failedRow('Old contract missing for ' . ($row['OldContractNo'] ?? 'empty'), $sqNo);
+            }
+
+            $current = DB::table('quotations')->where('id', $quotationId)->value('existing_contract_id');
+            if ((int) $current === (int) $contractId) {
+                return ['action' => 'skipped'];
+            }
+
+            if ($this->apply) {
+                DB::table('quotations')->where('id', $quotationId)->update([
+                    'existing_contract_id' => $contractId,
+                    'updated_at' => now(),
+                ]);
+            }
+
+            return ['action' => 'updated'];
         });
     }
 
@@ -3884,7 +3971,7 @@ class CatalystMasterDataImporter
                 return $this->failedRow('C Missing');
             }
 
-            $rentalId = $this->findMappedTargetId('MsProduct', $this->makeKey($product), 'master_rentals');
+            $rentalId = $this->resolveMasterRentalId($product);
             if (!$rentalId) {
                 return $this->failedRow('Master rental missing');
             }
