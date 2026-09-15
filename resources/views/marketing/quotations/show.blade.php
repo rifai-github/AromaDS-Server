@@ -705,7 +705,10 @@
                                                         <i class="fas fa-leaf me-1"></i>
                                                         <strong>Aroma:</strong>
                                                         @if($quotationRoom->aromaProduct)
-                                                            {{ $quotationRoom->aromaProduct->name }}
+                                                            {{-- Cukup variant (brand line) + aroma. Nama produk memuat ukuran
+                                                                 kemasan ("Fragrance Alluring Floral 100 ml"), sedangkan yang
+                                                                 dipesan di SQ adalah aromanya, bukan kemasannya. --}}
+                                                            {{ $quotationRoom->aromaProduct->brand_line ?: $quotationRoom->aromaProduct->name }}
                                                             @if($quotationRoom->aroma_variant)
                                                                 - {{ $quotationRoom->aroma_variant }}
                                                             @endif
