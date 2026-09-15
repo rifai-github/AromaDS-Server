@@ -497,8 +497,11 @@
                                     </td>
                                     <td>
                                         @php
-                                            $isReturnedFromReceiving = isset($item->received_qty) && $item->received_qty > 0;
-                                            $canEditReturnedNow = $canEditReturned && !$isReturnedFromReceiving;
+                                            // Dulu isian ini terbuka justru saat received_qty = 0, padahal max-nya
+                                            // ikut received_qty — jadi satu-satunya nilai yang bisa diisi adalah 0,
+                                            // sementara baris yang menerima barang terkunci. Barisnya jadi terlihat
+                                            // tidak konsisten tanpa ada yang bisa dikerjakan di situ.
+                                            $canEditReturnedNow = $canEditReturned && $item->received_qty > 0;
                                         @endphp
 
                                         @if($canEditReturnedNow)
@@ -1302,7 +1305,11 @@ function saveHeader(data) {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(res => res.success ? location.reload() : showErrorDialog('Gagal', res.message));
+    // Controller mengembalikan {status: 'success', ...}, bukan {success: true}. Mengecek
+    // res.success bikin update yang BERHASIL tampil sebagai dialog "Gagal" berisi pesan sukses.
+    .then(res => (res.status === 'success' || res.success)
+        ? location.reload()
+        : showErrorDialog('Gagal', res.message));
 }
 
 function submitBackToPending(event, form) {
