@@ -1966,6 +1966,13 @@ class JobScheduleController extends Controller
 
             $successCount = 0;
             $skippedCount = 0;
+            // Alasan skip dikumpulkan per job. Sebelumnya semua skip dilaporkan sebagai
+            // "status bukan Material Assign/Material Prepare", padahal job yang materialnya
+            // sudah di-issue juga ikut dilewati — pemakai melihat barisnya tetap MATERIAL
+            // ASSIGN tanpa tahu sebabnya dan mengira aksinya gagal diam-diam.
+            $skippedRemove = collect();
+            $skippedStatus = collect();
+            $skippedIssued = collect();
 
             // Determine target Job IDs. Unassign Material must stay checkbox-based;
             // one checked row must not expand to every sibling job in the same JA.
@@ -2000,12 +2007,14 @@ class JobScheduleController extends Controller
 
                 if ($this->isRemoveJobType($job->type)) {
                     $skippedCount++;
+                    $skippedRemove->push($this->materialUnassignJobLabel($job));
                     continue;
                 }
 
                 // Only revert if material is still in assign/prepare stage.
                 if (!in_array($job->status, ['assign_material', 'barang_dipersiapkan'], true)) {
                     $skippedCount++;
+                    $skippedStatus->push($this->materialUnassignJobLabel($job));
                     continue;
                 }
 
@@ -2030,6 +2039,8 @@ class JobScheduleController extends Controller
 
                 if ($blockedIssuing) {
                     $skippedCount++;
+                    $skippedIssued->push($this->materialUnassignJobLabel($job)
+                        . ' (' . $blockedIssuing->issuing_number . ' berstatus ' . $blockedIssuing->status . ')');
                     continue;
                 }
 
@@ -2119,17 +2130,32 @@ class JobScheduleController extends Controller
 
             DB::commit();
 
+            $skipReasons = [];
+
+            if ($skippedRemove->isNotEmpty()) {
+                $skipReasons[] = 'Job Remove/RF tidak memakai alur material: ' . $skippedRemove->implode(', ');
+            }
+
+            if ($skippedStatus->isNotEmpty()) {
+                $skipReasons[] = 'Status bukan Material Assign/Material Prepare: ' . $skippedStatus->implode(', ');
+            }
+
+            if ($skippedIssued->isNotEmpty()) {
+                $skipReasons[] = 'Materialnya sudah di-issue sehingga tidak bisa dibatalkan: ' . $skippedIssued->implode(', ');
+            }
+
             if ($successCount === 0 && $skippedCount > 0) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Job Remove/RF tidak menggunakan alur material, sehingga UnAssign Material tidak dapat dilakukan.',
+                    'message' => 'Tidak ada job yang bisa di-unassign. ' . implode(' ', $skipReasons),
                     'success' => false
                 ], 422);
             }
 
             return response()->json([
                 'status' => 'success',
-                'message' => "Berhasil membatalkan material assign untuk {$successCount} job. " . ($skippedCount > 0 ? "({$skippedCount} job dilewati karena status bukan Material Assign/Material Prepare)" : ""),
+                'message' => "Berhasil membatalkan material assign untuk {$successCount} job. "
+                    . ($skippedCount > 0 ? "({$skippedCount} job dilewati — " . implode(' ', $skipReasons) . ')' : ''),
                 'success' => true
             ]);
 
@@ -2141,6 +2167,11 @@ class JobScheduleController extends Controller
                 'message' => 'Gagal membatalkan material assign: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function materialUnassignJobLabel(JobSchedule $job): string
+    {
+        return $job->job_number ?: ('Job #' . $job->id);
     }
 
     private function materialUnassignDeletableIssuingStatuses(): array
