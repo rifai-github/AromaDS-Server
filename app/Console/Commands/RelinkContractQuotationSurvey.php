@@ -6,13 +6,23 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Import Catalyst mengisi contracts.quotation_id lewat kolom sumber `SqNo`.
- * Ketika kolom itu kosong, resolveContractQuotationId() menyerah dan kontrak
- * tersimpan tanpa tautan ke SQ — dan karena step contract_surveys menurunkan
- * datanya dari contracts.quotation_id, tautan ke survey ikut hilang.
+ * Import Catalyst mengisi contracts.quotation_id lewat kolom sumber `SQNo`.
+ * Ketika nilainya tidak terbaca, resolveContractQuotationId() menyerah dan
+ * kontrak tersimpan tanpa tautan ke SQ — dan karena step contract_surveys
+ * menurunkan datanya dari contracts.quotation_id, tautan ke survey ikut hilang.
  *
- * Command ini menyambung ulang tautannya dari data yang sudah ada di sistem
- * baru, dan hanya kalau hasilnya tidak ambigu.
+ * ⚠️ Koreksi 15 Sep 2026: docblock ini semula menyatakan kolom sumbernya kosong.
+ * Itu KELIRU. Diperiksa di produksi: 10.903 baris MKTContractHd dan SEMUANYA
+ * punya SQNo terisi. Yang salah adalah pembacanya — importer membaca
+ * `$row['SqNo']` sementara kolomnya bernama `SQNo`, dan kunci array PHP
+ * case-sensitive (SQL Server tidak, jadi pengecekan lewat ->select('SqNo')
+ * selalu terlihat normal). Akibatnya hanya 42 dari 10.873 kontrak tertaut.
+ *
+ * Pembacanya sudah diperbaiki di CatalystMasterDataImporter::contracts() lewat
+ * helper sourceValue(), jadi import BERIKUTNYA tidak lagi menghasilkan kontrak
+ * tanpa tautan. Command ini tetap berguna untuk baris yang telanjur masuk:
+ * menyambung ulang tautannya dari data yang sudah ada di sistem baru, dan
+ * hanya kalau hasilnya tidak ambigu.
  */
 class RelinkContractQuotationSurvey extends Command
 {
@@ -22,7 +32,7 @@ class RelinkContractQuotationSurvey extends Command
                             {--surveys-only : Lewati penautan SQ, hanya bangun ulang contract_surveys}
                             {--apply : Tulis perubahan (default dry-run)}';
 
-    protected $description = 'Sambung ulang contracts.quotation_id dan contract_surveys yang kosong akibat SqNo hilang saat import Catalyst';
+    protected $description = 'Sambung ulang contracts.quotation_id dan contract_surveys yang kosong akibat SQNo tidak terbaca saat import Catalyst';
 
     private ?int $actorUserId = null;
 
