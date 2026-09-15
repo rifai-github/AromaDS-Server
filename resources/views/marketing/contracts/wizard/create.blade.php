@@ -4119,15 +4119,6 @@ async function finalizeContract() {
 
     if (!confirmFinalize) return;
 
-    Swal.fire({
-        title: 'Memproses...',
-        text: 'Menyimpan contract...',
-        allowOutsideClick: false,
-        didOpen: () => {
-            Swal.showLoading();
-        }
-    });
-
     const formData = new FormData(document.getElementById('contractWizardForm'));
     formData.append('status', 'final');
     
@@ -4152,7 +4143,20 @@ async function finalizeContract() {
         });
         if (!confirmMerge) return;
     }
-    
+
+    // Dialog loading dibuka SETELAH semua konfirmasi. Kalau dibuka lebih dulu,
+    // Swal.showLoading() masih aktif saat dialog "Konfirmasi Merger" terbuka,
+    // sehingga tombol "Ya, Gabungkan" tergantikan spinner — dialognya terlihat
+    // loading terus dan hanya tombol Batal yang bisa ditekan.
+    Swal.fire({
+        title: 'Memproses...',
+        text: 'Menyimpan contract...',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
     // Ensure buildings are sent as arrays
     billingAddresses.forEach((address, index) => {
         if (address.buildings && Array.isArray(address.buildings)) {
