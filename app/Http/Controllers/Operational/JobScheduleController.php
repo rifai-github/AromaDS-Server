@@ -9019,7 +9019,28 @@ class JobScheduleController extends Controller
             $totalServices = $this->calculateTotalServicePeriodsForRental($jobAdvice, $serviceRental);
 
             if (!$totalServices || $totalServices <= 1) {
-                \Log::info("Total services is {$totalServices}. No remaining services to generate.");
+                // Penyebab paling sering bukan "kontraknya memang cuma 1 periode",
+                // melainkan rental tanpa service frequency — dan itu menghasilkan 0
+                // tanpa keterangan apa pun. Sebutkan penyebabnya supaya tidak terbaca
+                // sebagai "tidak ada yang perlu dibuat".
+                $reason = match (true) {
+                    ! $serviceRental => 'rental tidak terbaca dari ruangan yang selesai',
+                    ! $serviceRental->serviceFrequency => "master rental '{$serviceRental->rental_name}' (id {$serviceRental->id}) belum punya service frequency",
+                    ! $jobAdvice->contract?->start_date || ! $jobAdvice->contract?->end_date => 'kontraknya belum punya tanggal mulai/selesai',
+                    default => 'periode kontrak hanya cukup untuk satu kali service',
+                };
+
+                \Log::warning(
+                    "Tidak ada service lanjutan yang dibuat untuk {$completedFirstService->job_number}: {$reason}.",
+                    [
+                        'job_schedule_id' => $completedFirstService->id,
+                        'job_advice_id' => $jobAdvice->id,
+                        'master_rental_id' => $serviceRental?->id,
+                        'service_frequency_id' => $serviceRental?->service_frequency_id,
+                        'total_services' => $totalServices,
+                    ]
+                );
+
                 return;
             }
 
