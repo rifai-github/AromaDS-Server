@@ -578,9 +578,19 @@ $qrFooterSrc = $qrPng($companyWebsite !== '' ? $companyWebsite : 'https://www.ad
                         /* ITEM column shows the rental's PRODUCT CATEGORY (master_rentals.category,
                          * sourced from product_categories.name), not the rental name — matches the
                          * client's reference quotation layout. An explicit per-line rental_alias
-                         * still wins; rental_name only remains as a last-resort fallback. */
+                         * still wins; rental_name only remains as a last-resort fallback.
+                         *
+                         * Kecuali: import Catalyst mengisi rental_alias dengan KODE rental
+                         * (quotation_details.rental_alias == master_rentals.rental_code), bukan
+                         * alias pilihan pengguna. Alias semacam itu tidak membawa informasi apa pun
+                         * dan bikin PDF mencetak "A10812100" di kolom ITEM, jadi dilewati. */
+                        $rawAlias = trim((string) ($detail->rental_alias ?? ''));
+                        $rentalCode = trim((string) ($detail->masterRental->rental_code ?? ''));
+                        $aliasIsRentalCode = $rawAlias !== '' && $rentalCode !== ''
+                            && strcasecmp($rawAlias, $rentalCode) === 0;
+
                         $itemLabel =
-                            $detail->rental_alias
+                            ($aliasIsRentalCode ? '' : $rawAlias)
                             ?: (trim((string) ($detail->masterRental->category ?? '')) ?:
                                 ($detail->masterRental->rental_name ?? '-'));
                     @endphp
