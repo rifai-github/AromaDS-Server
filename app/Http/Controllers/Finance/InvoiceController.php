@@ -2089,12 +2089,22 @@ class InvoiceController extends Controller
                 $invoice->invoice_date
             );
 
+            // Identitas pajak diambil dari billing group invoice ini, bukan dari
+            // customer-nya. Satu customer bisa punya beberapa billing group dengan
+            // NPWP sama tetapi NITKU berbeda; memakai identitas customer membuat
+            // invoice Billing Group 1 tercetak dengan NITKU dan alamat pajak milik
+            // Billing Group 2. Nilai customer tetap dipakai sebagai cadangan untuk
+            // billing group lama yang kolom pajaknya masih kosong.
+            $billingGroup = $invoice->billingGroup;
+            $groupTaxNumber = $billingGroup?->tax_identity_number;
+            $groupTaxAddress = $billingGroup?->tax_identity_address;
+
             $invoice->update([
                 'tax_setting_id' => $taxPayload['tax_setting_id'],
                 'tax_code' => $taxPayload['tax_code'],
-                'tax_number' => $taxPayload['tax_number'],
-                'npwp_number' => $taxPayload['npwp_number'],
-                'tax_address' => $taxPayload['tax_address'],
+                'tax_number' => $groupTaxNumber ?: $taxPayload['tax_number'],
+                'npwp_number' => $groupTaxNumber ?: $taxPayload['npwp_number'],
+                'tax_address' => $groupTaxAddress ?: $taxPayload['tax_address'],
                 'subtotal_after_discount' => $taxPayload['subtotal_after_discount'],
                 'tax_amount' => $taxPayload['tax_amount'],
                 'grand_total' => $taxPayload['grand_total'],

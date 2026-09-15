@@ -1274,7 +1274,10 @@
                                             <th>NPWP</th>
                                             <th>NITKU</th>
                                              <th>NIK</th>
-                                             <th>Alamat Penagihan</th>
+                                             {{-- Kolom ini diisi dari billing_groups.npwp_address, yaitu alamat
+                                                  yang terdaftar di kantor pajak — bukan alamat penagihan. Label
+                                                  lamanya bikin salah paham. --}}
+                                             <th>Alamat Kantor Pajak</th>
                                             <th>PIC Finance</th>
                                             <th>E-Mail</th>
                                             <th>Phone 1</th>
@@ -1371,7 +1374,7 @@
                                                     $nitku = $billingGroup->npwp_number;
                                                 }
                                                 
-                                                // Alamat Penagihan
+                                                // Alamat kantor pajak (npwp_address), bukan alamat penagihan.
                                                 $alamatPenagihan = '-';
                                                 
                                                 if ($billingGroup->npwp_address) {

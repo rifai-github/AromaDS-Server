@@ -690,9 +690,12 @@ class InvoiceGenerationService
             // from the customer's tax code via InvoiceTaxResolver.
             'tax_obligation' => false,
             'tax_code' => $contract->ppn_code,
-            'npwp_number' => $billingGroup->npwp_number ?? null,
+            // `npwp_number` kolom warisan dan tidak lagi diisi form Billing Group —
+            // yang diisi sekarang `npwp` + `nitku`. Membacanya langsung membuat
+            // npwp_number invoice selalu kosong.
+            'npwp_number' => $billingGroup->tax_identity_number,
             'tax_number' => $billingGroup->tax_number ?? null,
-            'tax_address' => $billingGroup->npwp_address ?? null,
+            'tax_address' => $billingGroup->tax_identity_address,
             'kirim' => $billingGroup->invoice_type ?? 'manual',
             'gedung' => $this->getBuildingInfo($contract),
             'alamat_1' => $contract->customer->address ?? '',
