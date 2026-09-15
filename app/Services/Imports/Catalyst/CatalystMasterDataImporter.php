@@ -2325,6 +2325,40 @@ class CatalystMasterDataImporter
         return null;
     }
 
+    /**
+     * Ambil nilai kolom sumber tanpa peduli besar-kecil hurufnya.
+     *
+     * Baris sumber diambil dengan SELECT * lalu di-cast jadi array, sehingga kuncinya
+     * memakai ejaan kolom PERSIS seperti di SQL Server — dan kunci array PHP itu
+     * case-sensitive. SQL Server sendiri case-insensitive, jadi `->select('SqNo')`
+     * tetap mengembalikan data dan salah ejaan seperti ini tidak pernah kelihatan
+     * saat dicek manual; yang terjadi hanyalah nilainya diam-diam jadi null.
+     *
+     * Nyata terjadi: kolomnya bernama `SQNo`, dibaca sebagai `SqNo`, dan akibatnya
+     * 10.831 dari 10.873 kontrak hasil import tidak punya tautan ke SQ-nya.
+     */
+    protected function sourceValue(array $row, string ...$keys)
+    {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $row)) {
+                return $row[$key];
+            }
+        }
+
+        $lowerKeys = null;
+
+        foreach ($keys as $key) {
+            $lowerKeys ??= array_change_key_case($row, CASE_LOWER);
+            $lower = strtolower($key);
+
+            if (array_key_exists($lower, $lowerKeys)) {
+                return $lowerKeys[$lower];
+            }
+        }
+
+        return null;
+    }
+
     protected function makeKey($value): ?string
     {
         if (is_array($value)) {
@@ -3713,7 +3747,9 @@ class CatalystMasterDataImporter
             $customerId = $this->findMappedTargetId('MsCustomer', $this->makeKey($custCode), 'customers');
             if (!$customerId) return $this->failedRow('Customer missing');
 
-            $sqNo = $this->cleanString($row['SqNo'] ?? null);
+            // Kolom sumbernya bernama `SQNo`; membacanya sebagai `SqNo` selalu
+            // menghasilkan null dan memutus tautan kontrak -> SQ (lihat sourceValue()).
+            $sqNo = $this->cleanString($this->sourceValue($row, 'SQNo', 'SqNo'));
             $contractDate = $this->toDate($row['TransDate'] ?? null);
             $quotationId = $this->resolveContractQuotationId($sqNo, $no, $customerId, $contractDate);
             $salesCode = $this->cleanString($row['Sales'] ?? null);
