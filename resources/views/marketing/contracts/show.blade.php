@@ -1556,12 +1556,23 @@
                                             <th>Postal Code</th>
                                             <th>Address</th>
                                             <th>City</th>
+                                            <th>Billing Group</th>
                                             <th>Status</th>
                                             <!-- <th>Actions</th> -->
                                         </tr>
                                     </thead>
                                     <tbody>
                                         @php
+                                            // Gedung mana masuk billing group mana — sebelumnya harus dicocokkan
+                                            // manual dengan tab Billing Group.
+                                            $billingGroupByBuildingId = [];
+                                            foreach($contract->billingGroups as $bg) {
+                                                foreach($bg->buildings as $bgBuilding) {
+                                                    $billingGroupByBuildingId[$bgBuilding->id] =
+                                                        $bg->billing_group_name ?: ('Billing Group #' . $bg->id);
+                                                }
+                                            }
+
                                             // Aggregate buildings from multiple sources
                                             $uniqueBuildings = collect();
                                             
@@ -1599,6 +1610,13 @@
                                             <td>{{ $building->kode_pos ?? $building->postal_code ?? '-' }}</td>
                                             <td>{{ $building->alamat_1 ?? $building->address ?? '-' }}</td>
                                             <td>{{ $building->city->name ?? '-' }}</td>
+                                            <td>
+                                                @if(isset($billingGroupByBuildingId[$building->id]))
+                                                    <span class="badge bg-info text-dark">{{ $billingGroupByBuildingId[$building->id] }}</span>
+                                                @else
+                                                    <span class="text-muted">Belum masuk billing group</span>
+                                                @endif
+                                            </td>
                                             <td>
                                                 <span class="badge badge-{{ $building->is_active ? 'success' : 'secondary' }}">
                                                     {{ $building->is_active ? 'Active' : 'Inactive' }}
