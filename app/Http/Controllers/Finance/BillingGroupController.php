@@ -1112,16 +1112,17 @@ class BillingGroupController extends Controller
         // Get customer contacts for PIC selection (Multi PIC support)
         // We load them through the customer relationships later
             
-        // Get all active buildings linked to the contract through rooms or surveys.
-        $assignedBuildingIds = $this->getAssignedBuildingIdsForContract($contract);
-        $buildings = $this->getContractBuildings($contract)->filter(function($b) use ($assignedBuildingIds) {
-            return !in_array($b->id, $assignedBuildingIds);
-        });
+        // Semua gedung kontrak ditampilkan, termasuk yang sudah punya billing group.
+        // Menyaringnya habis bikin daftar kosong ("No unassigned buildings available")
+        // padahal kontraknya jelas punya gedung, dan menutup satu-satunya jalan untuk
+        // memindahkan gedung antar billing group.
+        $buildings = $this->getContractBuildings($contract);
+        $buildingOwners = $this->getBuildingOwnerMapForContract($contract);
 
         // Load tax settings, default bank payment, and all contacts
         $contract->customer->load(['customerTaxSettings', 'defaultBankPayment', 'customerContacts', 'contacts']);
-        
-        return view('finance.billing-groups.addbg', compact('contract', 'existingBillingGroups', 'bankPayments', 'buildings'));
+
+        return view('finance.billing-groups.addbg', compact('contract', 'existingBillingGroups', 'bankPayments', 'buildings', 'buildingOwners'));
     }
     
     /**
@@ -1344,10 +1345,11 @@ class BillingGroupController extends Controller
         // Get active bank payments
         $bankPayments = BankPayment::with('bank')->active()->get();
 
-        // Get buildings already assigned to OTHER active billing groups for this contract.
-        $otherAssignedBuildingIds = $this->getAssignedBuildingIdsForContract($contract, $billingGroup->id);
+        // Gedung milik billing group LAIN pada kontrak ini tetap ditampilkan dan bisa
+        // dipilih — memilihnya berarti memindahkan gedung itu ke grup ini.
+        $buildingOwners = $this->getBuildingOwnerMapForContract($contract, $billingGroup->id);
 
-        return view('finance.billing-groups.editbg', compact('contract', 'billingGroup', 'bankPayments', 'otherAssignedBuildingIds'));
+        return view('finance.billing-groups.editbg', compact('contract', 'billingGroup', 'bankPayments', 'buildingOwners'));
     }
 
     /**
@@ -1576,6 +1578,63 @@ class BillingGroupController extends Controller
             ->toArray();
     }
 
+    /**
+     * Peta building_id => billing group yang sedang memegangnya, untuk kontrak ini.
+     *
+     * Dipakai form Add/Edit supaya gedung yang sudah punya grup tetap ditampilkan
+     * (sebelumnya disaring habis, sehingga daftarnya kosong) dan bisa dipindahkan
+     * ke grup lain — sebelumnya tidak ada jalan sama sekali untuk memindahkannya.
+     */
+    private function releaseBuildingsFromSiblingGroups(BillingGroup $billingGroup, array $buildingIds): void
+    {
+        if (empty($buildingIds) || !$billingGroup->contract_id) {
+            return;
+        }
+
+        $siblingGroupIds = BillingGroup::where('contract_id', $billingGroup->contract_id)
+            ->where('id', '!=', $billingGroup->id)
+            ->pluck('id');
+
+        if ($siblingGroupIds->isEmpty()) {
+            return;
+        }
+
+        BillingGroupBuilding::whereIn('billing_group_id', $siblingGroupIds)
+            ->whereIn('building_id', $buildingIds)
+            ->delete();
+    }
+
+    private function getBuildingOwnerMapForContract(Contract $contract, ?int $exceptBillingGroupId = null): array
+    {
+        $billingGroups = BillingGroup::where('contract_id', $contract->id)
+            ->when($exceptBillingGroupId, function ($query) use ($exceptBillingGroupId) {
+                $query->where('id', '!=', $exceptBillingGroupId);
+            })
+            ->get(['id', 'billing_group_name'])
+            ->keyBy('id');
+
+        if ($billingGroups->isEmpty()) {
+            return [];
+        }
+
+        $owners = [];
+
+        foreach (BillingGroupBuilding::whereIn('billing_group_id', $billingGroups->keys())->get() as $assignment) {
+            $group = $billingGroups->get($assignment->billing_group_id);
+
+            if (!$group) {
+                continue;
+            }
+
+            $owners[(int) $assignment->building_id] = [
+                'id' => $group->id,
+                'name' => $group->billing_group_name ?: ('Billing Group #' . $group->id),
+            ];
+        }
+
+        return $owners;
+    }
+
     private function syncBuildingAssignments(BillingGroup $billingGroup, array $buildingIds): void
     {
         $buildingIds = collect($buildingIds)
@@ -1583,6 +1642,11 @@ class BillingGroupController extends Controller
             ->map(fn ($id) => (int) $id)
             ->unique()
             ->values();
+
+        // Gedung yang diklaim grup ini dilepas dulu dari grup lain pada kontrak yang sama.
+        // Satu gedung hanya boleh dipegang satu billing group, dan inilah yang membuat
+        // "pindah dari Billing Group 2 ke Billing Group 1" bisa dilakukan lewat form.
+        $this->releaseBuildingsFromSiblingGroups($billingGroup, $buildingIds->all());
 
         $existingAssignments = BillingGroupBuilding::withTrashed()
             ->where('billing_group_id', $billingGroup->id)

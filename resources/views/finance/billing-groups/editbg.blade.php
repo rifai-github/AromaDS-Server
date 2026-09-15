@@ -193,20 +193,21 @@
 
                                     @forelse($availableBuildings as $building)
                                         @php
-                                            $isAssignedToOther = in_array($building->id, $otherAssignedBuildingIds ?? []);
+                                            $owner = ($buildingOwners ?? [])[$building->id] ?? null;
+                                            $isAssignedToOther = $owner !== null;
                                             $isAssignedToThis = in_array($building->id, $currentAssignedIds);
                                         @endphp
-                                        <tr class="{{ $isAssignedToOther ? 'table-secondary opacity-50' : '' }}">
+                                        <tr>
                                             <td class="text-center">
-                                                <input type="checkbox" name="building_ids[]" value="{{ $building->id }}" 
+                                                <input type="checkbox" name="building_ids[]" value="{{ $building->id }}"
                                                        class="form-check-input building-checkbox"
-                                                       {{ $isAssignedToThis ? 'checked' : '' }}
-                                                       {{ $isAssignedToOther ? 'disabled' : '' }}>
+                                                       {{ $isAssignedToThis ? 'checked' : '' }}>
                                             </td>
                                             <td>
                                                 <strong>{{ $building->name }}</strong>
                                                 @if($isAssignedToOther)
-                                                    <span class="badge bg-warning text-dark ms-2"><i class="fas fa-exclamation-triangle me-1"></i>Assigned to other group</span>
+                                                    <span class="badge bg-warning text-dark ms-2"><i class="fas fa-exchange-alt me-1"></i>Saat ini di: {{ $owner['name'] }}</span>
+                                                    <div class="small text-muted mt-1">Centang untuk memindahkan gedung ini ke billing group yang sedang diedit.</div>
                                                 @endif
                                             </td>
                                             <td>{{ $building->address }}</td>

@@ -131,9 +131,9 @@
                     </div>
                     <div class="card-body" style="padding: 1.5rem;">
                         <div class="alert alert-info">
-                            <i class="fas fa-info-circle me-2"></i> Select the buildings covered by this billing group. Only buildings <strong>not yet assigned</strong> to other billing groups are shown.
+                            <i class="fas fa-info-circle me-2"></i> Select the buildings covered by this billing group. Gedung yang sudah dipegang billing group lain tetap ditampilkan — mencentangnya berarti <strong>memindahkan</strong> gedung itu ke grup ini.
                         </div>
-                        
+
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead class="table-light">
@@ -147,13 +147,22 @@
                                 </thead>
                                 <tbody>
                                     @forelse($buildings as $building)
+                                        @php
+                                            $owner = ($buildingOwners ?? [])[$building->id] ?? null;
+                                        @endphp
                                         <tr>
                                             <td class="text-center">
-                                                <input type="checkbox" name="building_ids[]" value="{{ $building->id }}" 
+                                                <input type="checkbox" name="building_ids[]" value="{{ $building->id }}"
                                                        class="form-check-input building-checkbox"
                                                        {{ collect(old('building_ids'))->contains($building->id) ? 'checked' : '' }}>
                                             </td>
-                                            <td><strong>{{ $building->name }}</strong></td>
+                                            <td>
+                                                <strong>{{ $building->name }}</strong>
+                                                @if($owner)
+                                                    <span class="badge bg-warning text-dark ms-2"><i class="fas fa-exchange-alt me-1"></i>Saat ini di: {{ $owner['name'] }}</span>
+                                                    <div class="small text-muted mt-1">Centang untuk memindahkan gedung ini ke billing group baru.</div>
+                                                @endif
+                                            </td>
                                             <td>{{ $building->address }}</td>
                                             <td>{{ $building->city->name ?? '-' }}</td>
                                             <td>{{ $building->postal_code ?? '-' }}</td>
@@ -161,7 +170,7 @@
                                     @empty
                                         <tr>
                                             <td colspan="5" class="text-center text-muted py-4">
-                                                <i class="fas fa-info-circle me-1"></i> No unassigned buildings available for this customer.
+                                                <i class="fas fa-info-circle me-1"></i> Tidak ada gedung yang terhubung ke kontrak ini.
                                             </td>
                                         </tr>
                                     @endforelse
