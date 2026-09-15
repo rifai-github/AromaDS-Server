@@ -75,4 +75,34 @@ class CatalystContractSqNoColumnCaseTest extends TestCase
         $this->assertStringNotContainsString("\$row['SqNo']", $source);
         $this->assertStringContainsString("\$this->sourceValue(\$row, 'SQNo', 'SqNo')", $source);
     }
+
+    /**
+     * Audit seluruh 139 kunci `$row['...']` terhadap nama kolom asli di sumber
+     * (INFORMATION_SCHEMA dengan COLLATE biner — tanpa itu DISTINCT di SQL Server
+     * menggabungkan varian huruf besar/kecil dan hasilnya menyesatkan) menemukan
+     * dua salah ejaan lagi di step quotations:
+     *
+     *  - `PpnForex`    -> kolom aslinya `PPnForex`. Akibatnya SELURUH quotation
+     *    hasil import bernilai tax_amount 0: 0 dari 15.009 baris punya nilai
+     *    bukan nol, padahal baris sumbernya berisi 580800.0000.
+     *  - `SoContractNo` -> kolom aslinya `SOContractNo`, dipakai menentukan
+     *    status 'contract'.
+     */
+    public function test_importer_reads_the_real_quotation_column_spellings(): void
+    {
+        $source = file_get_contents(app_path('Services/Imports/Catalyst/CatalystMasterDataImporter.php'));
+
+        $this->assertStringNotContainsString("\$row['PpnForex']", $source);
+        $this->assertStringNotContainsString("\$row['SoContractNo']", $source);
+        $this->assertStringContainsString("'PPnForex'", $source);
+        $this->assertStringContainsString("'SOContractNo'", $source);
+    }
+
+    public function test_source_value_picks_the_real_quotation_columns(): void
+    {
+        $row = ['PPnForex' => '580800.0000', 'SOContractNo' => 'ADS-AG/26-09/0074'];
+
+        $this->assertSame('580800.0000', $this->sourceValue($row, 'PPnForex', 'PPNForex', 'PpnForex'));
+        $this->assertSame('ADS-AG/26-09/0074', $this->sourceValue($row, 'SOContractNo', 'SoContractNo'));
+    }
 }

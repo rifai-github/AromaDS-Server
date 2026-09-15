@@ -3413,7 +3413,9 @@ class CatalystMasterDataImporter
             $statusRaw = trim($row['Status'] ?? 'O');
             $fgActive = $this->yesNoToBool($row['FgActive'] ?? 'Y', true);
             $doneContract = $this->yesNoToBool($row['DoneContractPrice'] ?? 'N', false);
-            $soContractNo = trim($row['SoContractNo'] ?? '');
+            // Kolom sumbernya `SOContractNo` (lihat sourceValue()). Salah ejaan di sini
+            // membuat nilainya selalu kosong, sehingga status 'contract' tak pernah tercapai.
+            $soContractNo = trim((string) $this->sourceValue($row, 'SOContractNo', 'SoContractNo'));
 
             $status = 'draft';
             if ($statusRaw === 'P' && $doneContract && $soContractNo) $status = 'contract';
@@ -3445,7 +3447,9 @@ class CatalystMasterDataImporter
                 'rental_unit' => 'bulan',
                 'total_amount' => (float)($row['BaseForex'] ?? 0),
                 'discount_amount' => (float)($row['DiscForex'] ?? 0),
-                'tax_amount' => (float)($row['PpnForex'] ?? 0),
+                // Kolom sumbernya `PPnForex` (lihat sourceValue()). Salah ejaan di sini
+                // membuat SELURUH quotation hasil import bernilai pajak 0.
+                'tax_amount' => (float) ($this->sourceValue($row, 'PPnForex', 'PPNForex', 'PpnForex') ?? 0),
                 'grand_total' => (float)($row['TotalForex'] ?? 0),
                 'terms_of_payment' => $term['top'] ?? $this->cleanString($row['Term'] ?? null),
                 'top_months' => $this->catalystTopMonths($term, $periodMonths),
