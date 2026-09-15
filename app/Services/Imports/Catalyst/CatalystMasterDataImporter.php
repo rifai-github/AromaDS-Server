@@ -113,6 +113,7 @@ class CatalystMasterDataImporter
     ];
 
     private bool $apply = false;
+    private array $bankPaymentIdByBankId = [];
     private array $activeSteps = [];
     private int $batchId;
     private int $chunkSize;
@@ -944,12 +945,21 @@ class CatalystMasterDataImporter
                 return $this->skippedRow('Virtual account could not resolve account number, bank, or company.', $sourceKey);
             }
 
+            // Catalyst hanya mengenal bank (MsBank), sedangkan kolomnya adalah FK ke
+            // bank_payments (rekening). Menulis banks.id ke sini bikin baris warisan
+            // menunjuk rekening milik bank lain begitu id-nya kebetulan ada.
+            $bankPaymentId = $this->resolveBankPaymentIdForBank($bankId);
+
+            if (!$bankPaymentId) {
+                return $this->skippedRow("Virtual account bank has no bank_payments account (bank_id {$bankId}).", $sourceKey);
+            }
+
             return $this->syncRecord('company_virtual_accounts', 'MsVirtualAccount', $sourceKey, 'company_virtual_accounts', [
                 'account_number' => $accountNumber,
             ], [
                 'company_id' => $companyId,
                 'customer_id' => $customerId,
-                'bank_payment_id' => $bankId,
+                'bank_payment_id' => $bankPaymentId,
                 'account_name' => $customerId ? DB::table('customers')->where('id', $customerId)->value('name') : null,
                 'description' => $this->buildSourceDescription([
                     'BankCode' => $this->cleanString($row['Bank'] ?? null),
@@ -2162,6 +2172,27 @@ class CatalystMasterDataImporter
     protected function skippedRow(string $message, ?string $sourceKey = null): array
     {
         return ['action' => 'skipped', 'message' => $message, 'source_key' => $sourceKey];
+    }
+
+    /**
+     * Rekening (bank_payments) yang mewakili sebuah bank. Satu bank bisa punya beberapa
+     * rekening, jadi yang ditandai default VA dipakai lebih dulu, lalu yang aktif.
+     */
+    protected function resolveBankPaymentIdForBank(int $bankId): ?int
+    {
+        if (array_key_exists($bankId, $this->bankPaymentIdByBankId)) {
+            return $this->bankPaymentIdByBankId[$bankId];
+        }
+
+        $bankPaymentId = DB::table('bank_payments')
+            ->where('bank_id', $bankId)
+            ->whereNull('deleted_at')
+            ->orderByDesc('is_default_va')
+            ->orderByDesc('is_active')
+            ->orderBy('id')
+            ->value('id');
+
+        return $this->bankPaymentIdByBankId[$bankId] = $bankPaymentId ? (int) $bankPaymentId : null;
     }
 
     protected function cleanString($value): ?string
