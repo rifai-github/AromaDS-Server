@@ -1027,8 +1027,35 @@ class JobScheduleController extends Controller
                 ])->save();
             }
 
+            // Rental yang SUDAH punya baris job_schedule_rooms sendiri di job ini tidak
+            // ikut ditautkan ke baris ruangan lain. Tanpa penjagaan ini rentalnya muncul
+            // dua kali: sekali menempel di baris rental tetangga (kolom Rental jadi
+            // "VirusGuard 880-1 ..., ADS 250 ...") dan sekali lagi sebagai barisnya
+            // sendiri — di web maupun di daftar produk kartu APK.
+            $ownedByOtherRoomIds = \App\Models\JobScheduleRoom::query()
+                ->where('job_schedule_id', $jobSchedule->id)
+                ->where('id', '!=', $jobScheduleRoom->id)
+                ->whereIn('job_advice_room_id', $roomGroup->pluck('id'))
+                ->pluck('job_advice_room_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            // Sync ini dijalankan berulang, jadi tautan duplikat yang sudah telanjur
+            // tersimpan ikut dilepas di sini — bukan cuma dicegah untuk yang baru.
+            if (! empty($ownedByOtherRoomIds)) {
+                \App\Models\JobScheduleRoomRental::query()
+                    ->where('job_schedule_room_id', $jobScheduleRoom->id)
+                    ->where('job_advice_room_id', '!=', $primaryJaRoom->id)
+                    ->whereIn('job_advice_room_id', $ownedByOtherRoomIds)
+                    ->delete();
+            }
+
             $isFirst = true;
             foreach ($roomGroup as $jaRoom) {
+                if ($jaRoom->id !== $primaryJaRoom->id && in_array((int) $jaRoom->id, $ownedByOtherRoomIds, true)) {
+                    continue;
+                }
+
                 $rentalLink = \App\Models\JobScheduleRoomRental::withTrashed()->firstOrNew([
                     'job_schedule_room_id' => $jobScheduleRoom->id,
                     'job_advice_room_id' => $jaRoom->id,

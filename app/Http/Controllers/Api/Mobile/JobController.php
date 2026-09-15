@@ -2338,6 +2338,12 @@ class JobController extends Controller
             $rentalName = $rentalName !== '' ? $rentalName : '-';
             $displayName = $rentalName !== '-' ? "{$roomName} - {$rentalName}" : $roomName;
 
+            // Satu ruangan fisik bisa memegang beberapa rental, dan kartunya sudah
+            // dipecah per rental. Daftar materialnya tidak ikut terpecah karena
+            // material_issue_items/inventory_issuing_items hanya membawa room_name,
+            // sehingga kartu VirusGuard ikut menampilkan diffuser milik rental ADS 250.
+            $products = $this->narrowProductsToCardRental($products, $roomGroup, $displayRoom);
+
             return [
                 'id' => $displayRoom->id,
                 'name' => $roomName,
@@ -4402,6 +4408,111 @@ class JobController extends Controller
     /**
      * Room payload shape for the units a service job must work.
      */
+    /**
+     * Sempitkan daftar produk kartu ke rental kartu itu sendiri.
+     *
+     * Kartu ruangan sudah dipecah per rental, tapi materialnya dicocokkan lewat
+     * room_name saja — material_issue_items dan inventory_issuing_items tidak
+     * membawa kunci rental — sehingga tiap kartu menampilkan material seluruh
+     * ruangan. Di ruangan dengan 2 rental, kartu VirusGuard ikut menampilkan
+     * diffuser milik rental ADS 250 (dilaporkan QA 15 Sep 2026).
+     *
+     * Penyaringnya memakai KATEGORI produk pada BOM rental, bukan id produknya:
+     * Material Assign boleh menukar produk ke sekeluarga (mis. VG 1600 -> VG 800,
+     * SA250 Black -> White), jadi mencocokkan id produk akan menyembunyikan barang
+     * yang benar-benar dikeluarkan. Kategori tetap sama saat ditukar.
+     *
+     * Sengaja konservatif: produk hanya dibuang kalau kategorinya TERBUKTI milik
+     * rental tetangga dan bukan milik rental kartu ini. Produk yang kategorinya
+     * tidak dikenali di BOM mana pun tetap ditampilkan, dan kalau penyaringan
+     * menghasilkan daftar kosong, daftar aslinya dikembalikan utuh — menyembunyikan
+     * material yang harus dipasang jauh lebih berbahaya daripada menampilkan lebih.
+     */
+    private function narrowProductsToCardRental(array $products, $roomGroup, $displayRoom): array
+    {
+        if (empty($products) || !$roomGroup || $roomGroup->count() < 2 || !$displayRoom) {
+            return $products;
+        }
+
+        $ownRentalId = (int) ($displayRoom->rental_product_id ?? 0);
+        if (!$ownRentalId) {
+            return $products;
+        }
+
+        $siblingRentalIds = $roomGroup
+            ->pluck('rental_product_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->reject(fn ($id) => $id === $ownRentalId)
+            ->values();
+
+        if ($siblingRentalIds->isEmpty()) {
+            return $products;
+        }
+
+        $ownCategoryIds = $this->rentalBomCategoryIds([$ownRentalId]);
+        $siblingCategoryIds = $this->rentalBomCategoryIds($siblingRentalIds->all());
+
+        // Kategori yang dipakai kedua rental tidak bisa dipakai membedakan.
+        $siblingOnlyCategoryIds = array_values(array_diff($siblingCategoryIds, $ownCategoryIds));
+
+        if (empty($siblingOnlyCategoryIds)) {
+            return $products;
+        }
+
+        $productIds = collect($products)->pluck('product_id')->filter()->unique()->values()->all();
+        if (empty($productIds)) {
+            return $products;
+        }
+
+        $categoryByProductId = \App\Models\MasterProduct::whereIn('id', $productIds)
+            ->pluck('product_category_id', 'id')
+            ->map(fn ($id) => $id === null ? null : (int) $id)
+            ->all();
+
+        $filtered = array_values(array_filter($products, function ($product) use ($categoryByProductId, $siblingOnlyCategoryIds) {
+            $categoryId = $categoryByProductId[$product['product_id'] ?? null] ?? null;
+
+            if ($categoryId === null) {
+                return true;
+            }
+
+            return !in_array($categoryId, $siblingOnlyCategoryIds, true);
+        }));
+
+        return empty($filtered) ? $products : $filtered;
+    }
+
+    /**
+     * Kumpulan product_category_id yang menyusun BOM rental-rental tersebut,
+     * termasuk kategori milik baris BOM yang menunjuk produk tertentu.
+     */
+    private function rentalBomCategoryIds(array $masterRentalIds): array
+    {
+        $masterRentalIds = array_values(array_unique(array_filter(array_map('intval', $masterRentalIds))));
+        if (empty($masterRentalIds)) {
+            return [];
+        }
+
+        $details = \App\Models\RentalDetail::whereIn('master_rental_id', $masterRentalIds)
+            ->get(['product_category_id', 'master_product_id']);
+
+        $categoryIds = $details->pluck('product_category_id')->filter()->map(fn ($id) => (int) $id);
+
+        $productIds = $details->pluck('master_product_id')->filter()->unique()->values()->all();
+        if (!empty($productIds)) {
+            $categoryIds = $categoryIds->merge(
+                \App\Models\MasterProduct::whereIn('id', $productIds)
+                    ->pluck('product_category_id')
+                    ->filter()
+                    ->map(fn ($id) => (int) $id)
+            );
+        }
+
+        return $categoryIds->unique()->values()->all();
+    }
+
     private function serviceUnitsForRoom(
         JobSchedule $job,
         ?\App\Models\JobAdviceRoom $room,
