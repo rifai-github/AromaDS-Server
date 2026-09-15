@@ -84,8 +84,11 @@ class BillingGroupTaxIdentityTest extends TestCase
 
         // Kolom warisan npwp_number tidak lagi dibaca langsung dari billing group.
         $this->assertStringNotContainsString('$billingGroup->npwp_number ?? null', $generation);
-        $this->assertStringContainsString('$billingGroup->tax_identity_number', $generation);
-        $this->assertStringContainsString('$billingGroup->tax_identity_address', $generation);
+
+        // Null-safe: kontrak tanpa billing group tetap boleh menghasilkan invoice.
+        $this->assertStringContainsString('$billingGroup?->tax_identity_number', $generation);
+        $this->assertStringContainsString('$billingGroup?->tax_identity_address', $generation);
+        $this->assertStringNotContainsString('$billingGroup->tax_identity_number', $generation);
 
         // Reload Tax tidak boleh menimpa identitas grup dengan identitas customer.
         $this->assertStringContainsString('$billingGroup?->tax_identity_number', $controller);

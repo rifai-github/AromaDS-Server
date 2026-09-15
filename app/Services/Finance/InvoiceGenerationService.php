@@ -693,9 +693,9 @@ class InvoiceGenerationService
             // `npwp_number` kolom warisan dan tidak lagi diisi form Billing Group —
             // yang diisi sekarang `npwp` + `nitku`. Membacanya langsung membuat
             // npwp_number invoice selalu kosong.
-            'npwp_number' => $billingGroup->tax_identity_number,
+            'npwp_number' => $billingGroup?->tax_identity_number,
             'tax_number' => $billingGroup->tax_number ?? null,
-            'tax_address' => $billingGroup->tax_identity_address,
+            'tax_address' => $billingGroup?->tax_identity_address,
             'kirim' => $billingGroup->invoice_type ?? 'manual',
             'gedung' => $this->getBuildingInfo($contract),
             'alamat_1' => $contract->customer->address ?? '',
