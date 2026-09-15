@@ -4427,6 +4427,11 @@ class JobController extends Controller
      * tidak dikenali di BOM mana pun tetap ditampilkan, dan kalau penyaringan
      * menghasilkan daftar kosong, daftar aslinya dikembalikan utuh — menyembunyikan
      * material yang harus dipasang jauh lebih berbahaya daripada menampilkan lebih.
+     *
+     * Entri ber-source `unit_on_wall` TIDAK PERNAH disaring: daftar itu sengaja
+     * memuat seluruh unit yang terpasang di ruangan, lintas kontrak, supaya Ganti
+     * Unit bisa memvalidasi serial mana pun di situ (lihat catatan pada
+     * RoomModel.serviceUnits di aplikasi Flutter).
      */
     private function narrowProductsToCardRental(array $products, $roomGroup, $displayRoom): array
     {
@@ -4472,6 +4477,14 @@ class JobController extends Controller
             ->all();
 
         $filtered = array_values(array_filter($products, function ($product) use ($categoryByProductId, $siblingOnlyCategoryIds) {
+            // Entri Unit On Wall sengaja dibiarkan lebar — seluruh unit yang ada di
+            // ruangan, lintas kontrak — supaya Ganti Unit bisa memvalidasi serial mana
+            // pun yang benar-benar terpasang di situ. Menyaringnya di sini akan membuat
+            // unit yang sah ditolak saat scan.
+            if (($product['source'] ?? null) === 'unit_on_wall') {
+                return true;
+            }
+
             $categoryId = $categoryByProductId[$product['product_id'] ?? null] ?? null;
 
             if ($categoryId === null) {

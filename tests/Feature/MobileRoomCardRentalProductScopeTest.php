@@ -185,6 +185,29 @@ class MobileRoomCardRentalProductScopeTest extends TestCase
         $this->assertNotContains('PURE Phyto Green (Enzym) 200 ml', $names);
     }
 
+    public function test_unit_on_wall_entries_are_never_filtered_out(): void
+    {
+        // Daftar Unit On Wall sengaja memuat seluruh unit yang terpasang di ruangan,
+        // lintas kontrak, supaya Ganti Unit bisa memvalidasi serial mana pun di situ.
+        // Menyaringnya akan membuat unit yang sah ditolak saat scan.
+        $vguard = $this->adviceRoom(self::RENTAL_VGUARD);
+        $group = collect([$vguard, $this->adviceRoom(self::RENTAL_ADS250)]);
+
+        $products = [
+            ['product_id' => 1, 'product_name' => 'Air Purification VG 800'],
+            // Diffuser milik rental tetangga, tetapi terpasang di dinding ruangan ini.
+            ['product_id' => 4, 'product_name' => 'SA250 terpasang', 'source' => 'unit_on_wall', 'serial_number' => 'SN-001'],
+            ['product_id' => 5, 'product_name' => 'PURE Phyto Green (Enzym) 200 ml'],
+        ];
+
+        $names = collect($this->narrow($products, $group, $vguard))->pluck('product_name')->all();
+
+        $this->assertSame([
+            'Air Purification VG 800',
+            'SA250 terpasang',
+        ], $names);
+    }
+
     public function test_room_without_a_resolved_rental_is_left_untouched(): void
     {
         $unknown = (object) ['rental_product_id' => null];
