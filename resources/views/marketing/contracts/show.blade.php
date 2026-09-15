@@ -936,11 +936,16 @@
                     <div class="card mb-3">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <h5 class="mb-0">Additional Information</h5>
-                            @if($contract->contract_status !== 'active')
-                                <button type="button" class="btn btn-primary btn-sm no-double-click-prevention" id="editAdditionalInfoBtn" onclick="editAdditionalInfo()">
-                                    <i class="fas fa-edit me-1"></i>Edit
-                                </button>
-                            @endif
+                            @php
+                                // Kontrak yang sudah di-post tetap bisa dikoreksi di tab ini, tapi
+                                // hanya PIC service, TTD internal/ADS + customer, dan kedua catatan.
+                                // Kode PPN dan kedua tanggal terkunci karena sudah dipakai
+                                // perhitungan pajak, komisi, dan penjadwalan service.
+                                $additionalInfoPosted = $contract->contract_status === 'active';
+                            @endphp
+                            <button type="button" class="btn btn-primary btn-sm no-double-click-prevention" id="editAdditionalInfoBtn" onclick="editAdditionalInfo()">
+                                <i class="fas fa-edit me-1"></i>Edit
+                            </button>
                         </div>
                         <div class="card-body">
                             <div id="additionalInfoView">
@@ -1019,13 +1024,16 @@
                                     @csrf
                                     <div class="row">
                                          <div class="col-md-6 mb-3">
-                                             <label class="form-label">Kode PPN <span class="text-danger">*</span></label>
-                                             <select name="ppn_code" id="editPpnCode" class="form-control" required>
+                                             <label class="form-label">Kode PPN @if(!$additionalInfoPosted)<span class="text-danger">*</span>@endif</label>
+                                             <select name="ppn_code" id="editPpnCode" class="form-control" {{ $additionalInfoPosted ? 'disabled' : 'required' }}>
                                                  <option value="">Pilih Kode Transaksi PPN...</option>
                                                  @foreach(($financeTaxCodes ?? collect()) as $taxCode)
                                                      <option value="{{ $taxCode->code }}" title="{{ $taxCode->fullLabel() }}" {{ $contract->ppn_code == $taxCode->code ? 'selected' : '' }}>{{ $taxCode->optionLabel() }}</option>
                                                  @endforeach
                                              </select>
+                                             @if($additionalInfoPosted)
+                                                 <small class="text-muted">Terkunci setelah kontrak di-post.</small>
+                                             @endif
                                          </div>
                                         <div class="col-md-6 mb-3">
                                             <label class="form-label">TTD Customer 1 <span class="text-danger">*</span></label>
@@ -1073,12 +1081,18 @@
                                             </select>
                                         </div>
                                         <div class="col-md-6 mb-3">
-                                            <label class="form-label">Tanggal Install <span class="text-danger">*</span></label>
-                                            <input type="date" name="install_date" id="editInstallDate" class="form-control" value="{{ $contract->install_date ? $contract->install_date->format('Y-m-d') : '' }}" required>
+                                            <label class="form-label">Tanggal Install @if(!$additionalInfoPosted)<span class="text-danger">*</span>@endif</label>
+                                            <input type="date" name="install_date" id="editInstallDate" class="form-control" value="{{ $contract->install_date ? $contract->install_date->format('Y-m-d') : '' }}" {{ $additionalInfoPosted ? 'disabled' : 'required' }}>
+                                            @if($additionalInfoPosted)
+                                                <small class="text-muted">Terkunci setelah kontrak di-post.</small>
+                                            @endif
                                         </div>
                                         <div class="col-md-6 mb-3">
-                                            <label class="form-label">Tanggal Service Pertama <span class="text-danger">*</span></label>
-                                            <input type="date" name="first_service_date" id="editFirstServiceDate" class="form-control" value="{{ $contract->first_service_date ? $contract->first_service_date->format('Y-m-d') : '' }}" required>
+                                            <label class="form-label">Tanggal Service Pertama @if(!$additionalInfoPosted)<span class="text-danger">*</span>@endif</label>
+                                            <input type="date" name="first_service_date" id="editFirstServiceDate" class="form-control" value="{{ $contract->first_service_date ? $contract->first_service_date->format('Y-m-d') : '' }}" {{ $additionalInfoPosted ? 'disabled' : 'required' }}>
+                                            @if($additionalInfoPosted)
+                                                <small class="text-muted">Terkunci setelah kontrak di-post.</small>
+                                            @endif
                                         </div>
                                         <div class="col-md-6 mb-3">
                                             <label class="form-label">PIC Service (Email)</label>

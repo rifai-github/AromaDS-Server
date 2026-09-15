@@ -640,27 +640,30 @@ class ContractController extends Controller
      */
     public function updateAdditionalInfo(Request $request, Contract $contract)
     {
-        // Check if contract is active - if active, cannot edit
-        if ($contract->contract_status === 'active') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cannot edit additional info for active contracts',
-            ], 403);
-        }
+        // Kontrak yang sudah di-post masih boleh dikoreksi, tetapi terbatas pada data
+        // administratif: PIC service, TTD internal/ADS + customer, dan kedua catatan.
+        // Kode PPN, Tanggal Install, dan Tanggal Service Pertama tetap terkunci karena
+        // sudah dipakai perhitungan pajak, komisi, dan penjadwalan service.
+        $isPosted = $contract->contract_status === 'active';
 
-        $validator = Validator::make($request->all(), [
-            'ppn_code' => ['nullable', 'string', Rule::exists('finance_tax_codes', 'code')],
+        $rules = [
             'customer_signing_1_id' => 'required|exists:customer_contacts,id',
             'customer_signing_2_id' => 'nullable|exists:customer_contacts,id',
             'customer_signing_3_id' => 'nullable|exists:customer_contacts,id',
             'customer_signing_4_id' => 'nullable|exists:customer_contacts,id',
             'internal_signing_id' => 'required|exists:users,id',
-            'install_date' => 'required|date',
-            'first_service_date' => 'required|date',
             'pic_service_email' => 'nullable|email|max:255',
             'external_remark' => 'nullable|string',
             'internal_remark' => 'nullable|string',
-        ]);
+        ];
+
+        if (! $isPosted) {
+            $rules['ppn_code'] = ['nullable', 'string', Rule::exists('finance_tax_codes', 'code')];
+            $rules['install_date'] = 'required|date';
+            $rules['first_service_date'] = 'required|date';
+        }
+
+        $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             return response()->json([
@@ -675,20 +678,25 @@ class ContractController extends Controller
             $wasInstalled = $contract->is_installed;
             $installDateChanged = $contract->install_date != $request->install_date;
 
-            $contract->update([
-                'ppn_code' => $request->ppn_code,
+            $payload = [
                 'customer_signing_1_id' => $request->customer_signing_1_id,
                 'customer_signing_2_id' => $request->customer_signing_2_id,
                 'customer_signing_3_id' => $request->customer_signing_3_id,
                 'customer_signing_4_id' => $request->customer_signing_4_id,
                 'internal_signing_id' => $request->internal_signing_id,
-                'install_date' => $request->install_date,
-                'first_service_date' => $request->first_service_date,
                 'pic_service_email' => $request->pic_service_email,
                 'external_remark' => $request->external_remark,
                 'internal_remark' => $request->internal_remark,
                 'updated_by' => Auth::id(),
-            ]);
+            ];
+
+            if (! $isPosted) {
+                $payload['ppn_code'] = $request->ppn_code;
+                $payload['install_date'] = $request->install_date;
+                $payload['first_service_date'] = $request->first_service_date;
+            }
+
+            $contract->update($payload);
 
             // If install_date is set and contract is not yet marked as installed, mark as installed and trigger commission calculation
             if ($request->install_date && (! $wasInstalled || $installDateChanged)) {
