@@ -1331,15 +1331,25 @@
                                             : null;
                                         $hasBrandFamilyScope = $isAromaType && !empty($normalizedCurrentBrandLine);
 
+                                        // Refill non-parfum (Enzyme, All Purpose, ...) tidak punya brand_line.
+                                        // Tanpa ini mereka jatuh ke pencocokan nama-dasar, yang memecah satu
+                                        // kategori jadi beberapa kelompok: baris "PURE Phyto Green (Enzym)"
+                                        // cuma menawarkan 2 ukurannya sendiri, padahal daftar material rental
+                                        // berisi 7 produk Enzyme. Kategori adalah satu-satunya pengelompokan
+                                        // yang tersisa untuk produk tanpa brand line.
+                                        $hasCategoryFamilyScope = $isAromaType
+                                            && empty($normalizedCurrentBrandLine)
+                                            && $currentCategoryId;
+
                                         // An aroma row with a brand_line but no variant_name must still take
                                         // the family-expansion branches below, not the narrow allowed-ids path.
-                                        $hasSpecificVariant = $hasSpecificVariant || $hasBrandFamilyScope;
+                                        $hasSpecificVariant = $hasSpecificVariant || $hasBrandFamilyScope || $hasCategoryFamilyScope;
 
                                         // Filter products list to the checked Material List for this rental detail.
                                         // Aroma/refill rows are expanded to the whole BRAND LINE within the
                                         // same product category (all aromas, all packaging sizes). Rows with
                                         // no brand_line fall back to the per-aroma base-name grouping.
-                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBaseName, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $hasBrandFamilyScope, $currentCategoryId, $item, $allowedProductIds, $rentalDetailId) {
+                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBaseName, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $hasBrandFamilyScope, $hasCategoryFamilyScope, $currentCategoryId, $item, $allowedProductIds, $rentalDetailId) {
                                             $productBrandLine = $p->brand_line
                                                 ? strtolower(trim(preg_replace('/\s+/', ' ', $p->brand_line)))
                                                 : null;
@@ -1362,6 +1372,10 @@
                                                 // Same brand line + same product category = same family.
                                                 $sameVariant = $productBrandLine === $normalizedCurrentBrandLine
                                                     && (!$currentCategoryId || (int) $p->product_category_id === $currentCategoryId);
+                                            } elseif ($hasCategoryFamilyScope) {
+                                                // Tanpa brand line, kategori produk yang jadi keluarganya.
+                                                $sameVariant = !$productBrandLine
+                                                    && (int) $p->product_category_id === $currentCategoryId;
                                             } else {
                                                 $sameVariant = $normalizedCurrentBaseName
                                                     ? $normalizedProductBaseName === $normalizedCurrentBaseName
@@ -1935,8 +1949,11 @@ function normalizeProductCategoryId(product) {
  * packaging size — not to a single aroma. The product chosen up front stays
  * selected; the operator may switch to any other aroma of that same brand.
  *
- * Rows without a brand_line fall back to filterSamePackageMaterialFamily so
- * they keep the old per-aroma behaviour instead of opening up to everything.
+ * Refill non-parfum (Enzyme, All Purpose, ...) tidak punya brand_line. Untuk
+ * mereka kategori produk yang jadi keluarganya — pencocokan nama-dasar memecah
+ * satu kategori jadi beberapa kelompok dan menyembunyikan material yang justru
+ * ada di daftar material rental-nya. Kalau kategorinya pun tidak diketahui,
+ * barulah jatuh ke filterSamePackageMaterialFamily.
  */
 function filterSameBrandFamily(currentProduct, productList) {
     if (!isPackageConversionMaterialProduct(currentProduct)) {
@@ -1944,11 +1961,22 @@ function filterSameBrandFamily(currentProduct, productList) {
     }
 
     const currentBrandLine = normalizeProductBrandLine(currentProduct);
-    if (!currentBrandLine) {
-        return filterSamePackageMaterialFamily(currentProduct, productList);
-    }
-
     const currentCategoryId = normalizeProductCategoryId(currentProduct);
+
+    if (!currentBrandLine) {
+        if (!currentCategoryId) {
+            return filterSamePackageMaterialFamily(currentProduct, productList);
+        }
+
+        return productList.filter(product => {
+            if (String(product.id) === String(currentProduct.id)) {
+                return true;
+            }
+
+            return !normalizeProductBrandLine(product)
+                && normalizeProductCategoryId(product) === currentCategoryId;
+        });
+    }
 
     return productList.filter(product => {
         if (String(product.id) === String(currentProduct.id)) {

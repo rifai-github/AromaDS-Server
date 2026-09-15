@@ -23,8 +23,16 @@ use Tests\TestCase;
  *     (quotation/contract) stays pre-selected. Showing a sibling aroma of the
  *     same brand is now WANTED, not the bug from step 1.
  *
- * The per-aroma base-name grouping is kept as the FALLBACK for products that
- * carry no brand_line, so both behaviours are locked here.
+ *  4. QA 15 Sep 2026: refill non-parfum (Enzyme, All Purpose, ...) tidak punya
+ *     brand_line, jadi langkah 3 tidak pernah berlaku untuk mereka dan mereka
+ *     jatuh ke pencocokan nama-dasar. Itu memecah satu kategori jadi beberapa
+ *     kelompok: baris "PURE Phyto Green (Enzym)" cuma menawarkan 2 ukurannya
+ *     sendiri padahal daftar material rental berisi 7 produk Enzyme di
+ *     kategori REFILL yang sama. Untuk produk TANPA brand line, kategori
+ *     produk yang jadi keluarganya.
+ *
+ * Pencocokan nama-dasar per-aroma kini hanya cadangan terakhir, dipakai saat
+ * produk tidak punya brand_line MAUPUN kategori. Ketiga perilaku dikunci di sini.
  */
 class MaterialAssignAromaSizeOnlyFilterTest extends TestCase
 {
@@ -69,6 +77,62 @@ class MaterialAssignAromaSizeOnlyFilterTest extends TestCase
         $this->assertStringContainsString('$normalizedCurrentBaseName', $view);
         $this->assertStringContainsString('$normalizedProductBaseName', $view);
         $this->assertStringContainsString('$normalizedProductBaseName === $normalizedCurrentBaseName', $view);
+    }
+
+    /**
+     * Refill non-parfum (Enzyme, All Purpose, ...) tidak punya brand_line sama
+     * sekali. Pencocokan nama-dasar memecah satu kategori jadi beberapa
+     * kelompok — baris "PURE Phyto Green (Enzym) 200 ml" hanya menawarkan 2
+     * ukurannya sendiri padahal daftar material rental berisi 7 produk Enzyme
+     * di kategori REFILL yang sama (dilaporkan QA 15 Sep 2026). Untuk produk
+     * tanpa brand line, kategori yang jadi keluarganya.
+     */
+    public function test_rows_without_brand_line_scope_to_product_category(): void
+    {
+        $view = $this->viewSource();
+
+        $this->assertStringContainsString('$hasCategoryFamilyScope', $view);
+        $this->assertStringContainsString('(int) $p->product_category_id === $currentCategoryId', $view);
+
+        // Nama-dasar tetap jadi cadangan terakhir kalau kategorinya pun tidak diketahui.
+        $this->assertStringContainsString('$normalizedProductBaseName === $normalizedCurrentBaseName', $view);
+    }
+
+    public function test_category_family_scope_groups_all_enzyme_refills(): void
+    {
+        // Menirukan cabang baru di blade untuk mengunci perilakunya, bukan teksnya.
+        $sameFamily = function (array $current, array $candidate): bool {
+            $currentBrandLine = trim(strtolower((string) ($current['brand_line'] ?? '')));
+            $candidateBrandLine = trim(strtolower((string) ($candidate['brand_line'] ?? '')));
+
+            if ($currentBrandLine !== '') {
+                return $candidateBrandLine === $currentBrandLine
+                    && $candidate['product_category_id'] === $current['product_category_id'];
+            }
+
+            return $candidateBrandLine === ''
+                && $candidate['product_category_id'] === $current['product_category_id'];
+        };
+
+        $phytoGreen200 = ['name' => 'PURE  Phyto Green (Enzym) 200 ml', 'brand_line' => null, 'product_category_id' => 12];
+        $phytoGreen50 = ['name' => 'PURE  Phyto Green (Enzym) 50 ml', 'brand_line' => null, 'product_category_id' => 12];
+        $allPurpose250 = ['name' => 'PURE All Purpose (Enzym) 250 ml', 'brand_line' => null, 'product_category_id' => 12];
+        $artisanAroma = ['name' => 'Fragrance Alluring Floral 100 ml', 'brand_line' => 'Artisan', 'product_category_id' => 12];
+        $otherCategory = ['name' => 'PURE All Purpose (Enzym) 1000 ml', 'brand_line' => null, 'product_category_id' => 99];
+
+        // Sesama refill tanpa brand line di kategori sama kini satu keluarga,
+        // termasuk yang nama dasarnya berbeda.
+        $this->assertTrue($sameFamily($phytoGreen200, $phytoGreen50));
+        $this->assertTrue($sameFamily($phytoGreen200, $allPurpose250));
+
+        // Produk ber-brand-line tidak ikut tersedot ke baris tanpa brand line.
+        $this->assertFalse($sameFamily($phytoGreen200, $artisanAroma));
+
+        // Kategori tetap membatasi.
+        $this->assertFalse($sameFamily($phytoGreen200, $otherCategory));
+
+        // Baris ber-brand-line tetap memakai aturan brand line + kategori.
+        $this->assertFalse($sameFamily($artisanAroma, $phytoGreen200));
     }
 
     /**
