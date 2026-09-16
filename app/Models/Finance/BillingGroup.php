@@ -5,6 +5,7 @@ namespace App\Models\Finance;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Http\Traits\HasBillingTaxIdentity;
 use App\Models\User;
 use App\Models\Contract;
 use App\Models\Customer;
@@ -14,7 +15,7 @@ use Carbon\Carbon;
 
 class BillingGroup extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasBillingTaxIdentity, HasFactory, SoftDeletes;
 
     protected $fillable = [
         'billing_group_name',
