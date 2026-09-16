@@ -327,6 +327,36 @@ class InventoryIssuingScanSerialAutoResolveTest extends TestCase
         $this->assertDatabaseCount('inventory_issuing_item_serials', 3);
     }
 
+    public function test_checklist_groups_rows_per_product_without_room_names(): void
+    {
+        // Rooms are not shown any more, so three rows of the same aroma must read as one
+        // line carrying the total quantity - not three lines nobody can tell apart.
+        $this->seedRefillProduct(11, 110, 'Fragrance Airy Ginger 100 ml');
+        $this->seedItem(210, 110, quantity: 1, roomName: 'Coridor Lt 3');
+        $this->seedItem(211, 110, quantity: 1, roomName: 'Coridor Lt 4');
+        $this->seedItem(212, 110, quantity: 1, roomName: 'Coridor Lt 5');
+        $this->seedSerial(510, 'RAG10026090001', 110);
+
+        $payload = $this->scan(['serial_number' => 'RAG10026090001']);
+        $rows = $payload['checklist']['rows'];
+
+        $this->assertCount(1, $rows);
+        $this->assertSame(110, $rows[0]['product_id']);
+        $this->assertEquals(3, $rows[0]['quantity']);
+        $this->assertSame(3, $rows[0]['required']);
+        $this->assertSame(1, $rows[0]['filled']);
+        $this->assertArrayNotHasKey('room_name', $rows[0]);
+
+        // Every slot still names one exact issuing row, so "Ganti" has a target.
+        $this->assertCount(3, $rows[0]['slots']);
+        $this->assertEqualsCanonicalizing(
+            [210, 211, 212],
+            array_column($rows[0]['slots'], 'item_id')
+        );
+        $this->assertTrue($rows[0]['slots'][0]['filled']);
+        $this->assertSame(210, $rows[0]['slots'][0]['item_id']);
+    }
+
     public function test_a_full_room_is_skipped_for_the_next_waiting_one(): void
     {
         $this->seedUnitProduct(10, 100, 'ADS Dispenser ADS A1');

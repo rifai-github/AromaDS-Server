@@ -1743,6 +1743,11 @@ public function getUserTeams($userId)
     /**
      * Per-slot SN progress of the whole issuing, rendered by the scan modal and refreshed
      * from every scan response so continuous scanning never needs a page reload.
+     *
+     * Rows are grouped per product, not per issuing row: rooms are no longer shown, so 16
+     * rows of the same aroma would otherwise be 16 lines nobody can tell apart. One line
+     * carries the total quantity and n/total, and each slot keeps its own item_id so the
+     * per-slot "Ganti" click still names exactly one row.
      */
     private function buildSerialChecklist(InventoryIssuing $issuing): array
     {
@@ -1755,7 +1760,7 @@ public function getUserTeams($userId)
 
         $scanSerialProductIds = $this->resolveScanSerialProductIds($issuing);
 
-        $rows = [];
+        $groups = [];
         $totalRequired = 0;
         $totalFilled = 0;
         $allComplete = true;
@@ -1798,28 +1803,53 @@ public function getUserTeams($userId)
                 ];
             }
 
-            $complete = $required === 0 || $filled >= $required;
-            if (! $complete) {
+            if ($required > 0 && $filled < $required) {
                 $allComplete = false;
             }
 
             $totalRequired += $required;
             $totalFilled += min($filled, $required);
 
-            $rows[] = [
-                'item_id' => (int) $item->id,
-                'product_id' => (int) $item->product_id,
-                'product_name' => $item->product->name ?? 'Unknown Product',
-                'category_name' => $item->product?->productCategory?->name,
-                'room_name' => $item->room_name,
-                'quantity' => (float) ($item->quantity_requested ?? 1),
-                'required' => $required,
-                'filled' => $filled,
-                'optional' => $required === 0,
-                'complete' => $complete,
-                'slots' => $slots,
-            ];
+            $productId = (int) $item->product_id;
+
+            if (! isset($groups[$productId])) {
+                $groups[$productId] = [
+                    'product_id' => $productId,
+                    'product_name' => $item->product->name ?? 'Unknown Product',
+                    'category_name' => $item->product?->productCategory?->name,
+                    'quantity' => 0.0,
+                    'required' => 0,
+                    'filled' => 0,
+                    'slots' => [],
+                ];
+            }
+
+            $groups[$productId]['quantity'] += (float) ($item->quantity_requested ?? 1);
+            $groups[$productId]['required'] += $required;
+            $groups[$productId]['filled'] += $filled;
+
+            foreach ($slots as $slot) {
+                // The slot carries its own row: "Ganti"/"Pilih" still targets one exact
+                // issuing item even though the line above it covers several.
+                $groups[$productId]['slots'][] = array_merge($slot, ['item_id' => (int) $item->id]);
+            }
         }
+
+        $rows = array_values(array_map(function ($group) {
+            $group['optional'] = $group['required'] === 0;
+            $group['complete'] = $group['required'] === 0 || $group['filled'] >= $group['required'];
+
+            // Waiting slots last, so the filled ones read as a list of what is done.
+            usort($group['slots'], function ($a, $b) {
+                if ($a['filled'] !== $b['filled']) {
+                    return $a['filled'] ? -1 : 1;
+                }
+
+                return [$a['item_id'], $a['unit_index']] <=> [$b['item_id'], $b['unit_index']];
+            });
+
+            return $group;
+        }, $groups));
 
         // Rows still waiting float to the top: the operator always sees what is left.
         usort($rows, function ($a, $b) {

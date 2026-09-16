@@ -489,61 +489,85 @@
                                 <table class="table table-bordered table-striped table-hover" style="width: 100%;">
                                     <thead class="table-light" style="background-color: #f8f9fa;">
                                         <tr>
-                                            <th style="width: 22%; padding: 12px; font-weight: 600; color: #495057;">Product Name</th>
+                                            <th style="width: 30%; padding: 12px; font-weight: 600; color: #495057;">Product Name</th>
                                             <th style="width: 10%; padding: 12px; font-weight: 600; color: #495057;">Quantity</th>
-                                            <th style="width: 15%; padding: 12px; font-weight: 600; color: #495057; background-color: #e8f4f8;"><i class="fas fa-door-open me-1"></i>Room</th>
-                                            <th style="width: 18%; padding: 12px; font-weight: 600; color: #495057;">Serial Number</th>
-                                            <th style="width: 12%; padding: 12px; font-weight: 600; color: #495057;">Status</th>
-                                            <th style="width: 13%; padding: 12px; font-weight: 600; color: #495057;">Warehouse</th>
-                                            <th style="width: 10%; padding: 12px; font-weight: 600; color: #495057;">Action</th>
+                                            <th style="width: 30%; padding: 12px; font-weight: 600; color: #495057;">Serial Number</th>
+                                            <th style="width: 15%; padding: 12px; font-weight: 600; color: #495057;">Status</th>
+                                            <th style="width: 15%; padding: 12px; font-weight: 600; color: #495057;">Warehouse</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @foreach($issuing->items as $item)
+                                        {{-- Satu baris per produk, bukan per ruangan: nama ruangan tidak lagi
+                                             ditampilkan, jadi baris kembar hanya akan membingungkan. Qty adalah
+                                             total seluruh ruangan, dan tiap SN tetap punya tombol koreksinya
+                                             sendiri karena slot membawa id baris aslinya. --}}
+                                        @foreach($issuing->items->groupBy('product_id') as $productId => $productItems)
                                         @php
-                                            $requiresSerialNumber = $item->product?->requiresSerialNumber() ?? false;
-                                            $canScanSerialNumber = $requiresSerialNumber || in_array((int) $item->product_id, $scanSerialProductIds ?? [], true);
+                                            $firstItem = $productItems->first();
+                                            $product = $firstItem->product;
+                                            $requiresSerialNumber = $product?->requiresSerialNumber() ?? false;
+                                            $canScanSerialNumber = $requiresSerialNumber || in_array((int) $productId, $scanSerialProductIds ?? [], true);
                                             $isOptionalSerialNumber = !$requiresSerialNumber && $canScanSerialNumber;
-                                            // QA "1 Rental banyak Qty": a unit row with quantity_requested > 1 needs
-                                            // that many distinct SNs. $linkedSerials lists every SN linked via the
-                                            // pivot; fall back to the single serialNumber for legacy/aroma rows.
-                                            $linkedSerials = $item->serialLinks->pluck('serialNumber')->filter()->values();
-                                            if ($linkedSerials->isEmpty() && $item->serialNumber) {
-                                                $linkedSerials = collect([$item->serialNumber]);
-                                            }
-                                            $requiredSerialCount = $item->requiredSerialCount();
-                                            $linkedCount = $linkedSerials->count();
+
+                                            $totalQuantity = $productItems->sum(fn ($item) => (float) ($item->quantity_requested ?? 0));
+                                            $requiredSerialCount = $productItems->sum(fn ($item) => $item->requiredSerialCount());
+
+                                            // Tiap slot menyimpan id baris asalnya supaya tombol "Ubah SN" tetap
+                                            // menunjuk satu baris walau tampilannya sudah digabung.
+                                            $serialSlots = $productItems->flatMap(function ($item) {
+                                                $linked = $item->serialLinks->sortBy('unit_index')->values();
+
+                                                if ($linked->isEmpty() && $item->serialNumber) {
+                                                    return collect([[
+                                                        'item_id' => $item->id,
+                                                        'unit_index' => 1,
+                                                        'serial' => $item->serialNumber,
+                                                    ]]);
+                                                }
+
+                                                return $linked->map(fn ($link) => [
+                                                    'item_id' => $item->id,
+                                                    'unit_index' => (int) $link->unit_index,
+                                                    'serial' => $link->serialNumber,
+                                                ])->filter(fn ($slot) => $slot['serial'] !== null);
+                                            })->values();
+
+                                            $linkedCount = $serialSlots->count();
                                             $serialsComplete = $requiredSerialCount === 0 || $linkedCount >= $requiredSerialCount;
                                         @endphp
                                         <tr>
                                             <td style="padding: 12px; vertical-align: middle;">
-                                                <strong>{{ $item->product->name ?? 'Unknown Product' }}</strong>
-                                                @if($item->product?->productCategory)
-                                                <br><small class="text-muted">{{ $item->product->productCategory->name }}</small>
+                                                <strong>{{ $product->name ?? 'Unknown Product' }}</strong>
+                                                @if($product?->productCategory)
+                                                <br><small class="text-muted">{{ $product->productCategory->name }}</small>
                                                 @endif
                                             </td>
                                             <td style="padding: 12px; vertical-align: middle; text-align: center;">
-                                                <span class="badge bg-info" style="font-size: 0.9rem; padding: 6px 12px;">{{ $item->quantity_requested }}</span>
-                                            </td>
-                                            <td style="padding: 12px; vertical-align: middle; background-color: #f0f9ff;">
-                                                @if($item->room_name)
-                                                <span class="badge" style="background-color: #0ea5e9; color: white; font-size: 0.8rem; padding: 5px 10px;">
-                                                    <i class="fas fa-door-open me-1"></i>{{ $item->room_name }}
-                                                </span>
-                                                @else
-                                                <span class="text-muted" style="font-style: italic; font-size: 0.85rem;">-</span>
+                                                <span class="badge bg-info" style="font-size: 0.9rem; padding: 6px 12px;">{{ rtrim(rtrim(number_format($totalQuantity, 2, '.', ''), '0'), '.') }}</span>
+                                                @if($canScanSerialNumber && $requiredSerialCount > 0)
+                                                <div style="margin-top: 6px;">
+                                                    <span class="badge bg-{{ $serialsComplete ? 'success' : 'warning' }}" style="font-size: 0.75rem; padding: 4px 8px;">{{ $linkedCount }}/{{ $requiredSerialCount }} SN</span>
+                                                </div>
                                                 @endif
                                             </td>
                                             <td style="padding: 12px; vertical-align: middle;">
                                                 @if(!$canScanSerialNumber)
                                                 <span class="text-muted" style="font-style: italic;">Tidak wajib SN</span>
-                                                @elseif($linkedSerials->isNotEmpty())
-                                                    @foreach($linkedSerials as $sn)
-                                                    <div style="font-family: monospace; font-size: 0.95rem; color: #1e3a8a;">
-                                                        {{ $sn->serial_number }}
-                                                        @if($requiredSerialCount > 1)<small class="text-muted">({{ $loop->iteration }}/{{ $requiredSerialCount }})</small>@endif
+                                                @elseif($serialSlots->isNotEmpty())
+                                                    @foreach($serialSlots as $slot)
+                                                    <div style="display: flex; align-items: center; gap: 8px; padding: 2px 0;">
+                                                        <span class="text-muted" style="font-size: 0.75rem; min-width: 22px;">{{ $loop->iteration }}.</span>
+                                                        <span style="font-family: monospace; font-size: 0.95rem; color: #1e3a8a;">{{ $slot['serial']->serial_number }}</span>
+                                                        @if($issuing->status === 'pending')
+                                                        <button class="btn btn-sm btn-warning" style="padding: 0 6px; font-size: 0.75rem;" onclick="openScanSNModalForItem({{ $slot['item_id'] }}, {{ $slot['unit_index'] }})" title="Ubah SN">
+                                                            <i class="fas fa-edit"></i>
+                                                        </button>
+                                                        @endif
                                                     </div>
                                                     @endforeach
+                                                    @if(!$serialsComplete)
+                                                    <div class="text-muted" style="font-style: italic; font-size: 0.85rem; padding-top: 4px;">sisa {{ $requiredSerialCount - $linkedCount }} menunggu scan</div>
+                                                    @endif
                                                 @elseif($isOptionalSerialNumber)
                                                 <span class="text-muted" style="font-style: italic;">Opsional - belum ada SN</span>
                                                 @else
@@ -553,9 +577,10 @@
                                             <td style="padding: 12px; vertical-align: middle;">
                                                 @if(!$canScanSerialNumber)
                                                 <span class="badge bg-secondary" style="font-size: 0.85rem; padding: 6px 10px;">Tidak Wajib</span>
-                                                @elseif($linkedSerials->isNotEmpty())
-                                                    @foreach($linkedSerials as $sn)
+                                                @elseif($serialSlots->isNotEmpty())
+                                                    @foreach($serialSlots as $slot)
                                                     @php
+                                                        $sn = $slot['serial'];
                                                         $statusClass = 'secondary';
                                                         $statusText = ucfirst(str_replace('_', ' ', $sn->status));
                                                         if (in_array($sn->status, ['ready', 'available'])) {
@@ -572,11 +597,8 @@
                                                             $statusText = 'In Use';
                                                         }
                                                     @endphp
-                                                    <div><span class="badge bg-{{ $statusClass }}" style="font-size: 0.8rem; padding: 5px 8px;">{{ $statusText }}</span></div>
+                                                    <div style="padding: 2px 0;"><span class="badge bg-{{ $statusClass }}" style="font-size: 0.8rem; padding: 5px 8px;">{{ $statusText }}</span></div>
                                                     @endforeach
-                                                    @if(!$serialsComplete)
-                                                    <span class="badge bg-warning" style="font-size: 0.75rem; padding: 4px 6px;">{{ $linkedCount }}/{{ $requiredSerialCount }}</span>
-                                                    @endif
                                                 @elseif($isOptionalSerialNumber)
                                                 <span class="badge bg-info" style="font-size: 0.85rem; padding: 6px 10px;">Opsional</span>
                                                 @else
@@ -584,22 +606,10 @@
                                                 @endif
                                             </td>
                                             <td style="padding: 12px; vertical-align: middle;">
-                                                @if($linkedSerials->isNotEmpty() && $linkedSerials->first()->warehouse)
-                                                <small>{{ $linkedSerials->first()->warehouse->name }}</small>
+                                                @if($serialSlots->isNotEmpty() && $serialSlots->first()['serial']->warehouse)
+                                                <small>{{ $serialSlots->first()['serial']->warehouse->name }}</small>
                                                 @else
                                                 <small>{{ $issuing->warehouse->name ?? '-' }}</small>
-                                                @endif
-                                            </td>
-                                            <td style="padding: 12px; vertical-align: middle; text-align: center;">
-                                                {{-- Baris yang belum terisi tidak lagi punya tombol sendiri: diisi lewat
-                                                     scan beruntun di modal. Pensil tetap ada sebagai jalan koreksi
-                                                     langsung dari tempat SN-nya dibaca. --}}
-                                                @if($issuing->status === 'pending' && $canScanSerialNumber && $linkedCount > 0)
-                                                <button class="btn btn-sm btn-warning" onclick="openScanSNModalForItem({{ $item->id }})" title="Ubah SN">
-                                                    <i class="fas fa-edit"></i>
-                                                </button>
-                                                @else
-                                                <span class="text-muted">-</span>
                                                 @endif
                                             </td>
                                         </tr>
@@ -1311,24 +1321,29 @@ function renderScanSNChecklist() {
         return;
     }
 
+    // One card per product: rooms are not shown, so the quantity and the n/total are
+    // what the operator reads. Each slot line still belongs to one exact issuing row.
     container.innerHTML = checklist.rows.map(row => {
-        const isTarget = scanSNState.targetItemId === row.item_id;
+        const rowIsTargeted = row.slots.some(slot => slot.item_id === scanSNState.targetItemId
+            && slot.unit_index === scanSNState.targetUnitIndex);
 
         let border = '#e5e7eb';
         let background = '#ffffff';
-        if (isTarget) { border = '#1e3a8a'; background = '#eff6ff'; }
+        if (rowIsTargeted) { border = '#1e3a8a'; background = '#eff6ff'; }
         else if (row.complete) { background = '#f9fafb'; }
 
-        const roomBadge = row.room_name
-            ? `<span class="badge" style="background-color: #0ea5e9; color: white; font-size: 0.7rem; padding: 3px 8px; margin-left: 6px;"><i class="fas fa-door-open me-1"></i>${escapeScanSNText(row.room_name)}</span>`
+        const qty = Number(row.quantity || 0);
+        const qtyBadge = qty
+            ? `<span class="badge bg-secondary" style="font-size: 0.7rem; margin-right: 6px;">Qty ${qty % 1 === 0 ? qty : qty.toFixed(2)}</span>`
             : '';
 
         const progress = row.optional
             ? '<span class="badge bg-info" style="font-size: 0.7rem;">Opsional</span>'
             : `<span class="badge bg-${row.complete ? 'success' : 'warning'}" style="font-size: 0.7rem;">${row.filled}/${row.required}</span>`;
 
-        const slots = row.slots.map(slot => {
-            const targeted = isTarget && scanSNState.targetUnitIndex === slot.unit_index;
+        const slots = row.slots.map((slot, index) => {
+            const targeted = scanSNState.targetItemId === slot.item_id
+                && scanSNState.targetUnitIndex === slot.unit_index;
             const label = slot.filled
                 ? `<span style="font-family: monospace; color: #1e3a8a;">${escapeScanSNText(slot.serial_number || '-')}</span>`
                 : '<span class="text-muted" style="font-style: italic;">menunggu scan</span>';
@@ -1337,11 +1352,11 @@ function renderScanSNChecklist() {
             return `
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0 5px 14px; font-size: 0.85rem; ${targeted ? 'background-color: #dbeafe; border-radius: 6px; padding-left: 8px;' : ''}">
                     <div style="flex: 1; min-width: 0;">
-                        <span class="text-muted" style="font-size: 0.75rem; margin-right: 8px;">slot ${slot.unit_index}</span>
+                        <span class="text-muted" style="font-size: 0.75rem; margin-right: 8px;">${index + 1}.</span>
                         ${label}
                     </div>
                     <button type="button" class="btn btn-sm ${targeted ? 'btn-primary' : 'btn-outline-secondary'}" style="padding: 1px 10px; font-size: 0.75rem;"
-                        onclick="setScanSNTarget(${row.item_id}, ${slot.unit_index})">${targeted ? 'Dipilih' : action}</button>
+                        onclick="setScanSNTarget(${slot.item_id}, ${slot.unit_index})">${targeted ? 'Dipilih' : action}</button>
                 </div>
             `;
         }).join('');
@@ -1354,10 +1369,10 @@ function renderScanSNChecklist() {
             <div style="border: 1px solid ${border}; background-color: ${background}; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                     <div style="flex: 1; min-width: 0; font-weight: 600; color: #374151; font-size: 0.9rem;">
-                        ${escapeScanSNText(row.product_name)}${roomBadge}
+                        ${escapeScanSNText(row.product_name)}
                         ${row.category_name ? `<div class="text-muted" style="font-weight: 400; font-size: 0.75rem;">${escapeScanSNText(row.category_name)}</div>` : ''}
                     </div>
-                    ${progress}
+                    <div style="white-space: nowrap;">${qtyBadge}${progress}</div>
                 </div>
                 ${slots}
                 ${optionalHint}
@@ -1397,12 +1412,11 @@ function updateScanSNTargetBanner() {
         return;
     }
 
-    const row = (scanSNState.checklist?.rows || []).find(r => r.item_id === scanSNState.targetItemId);
-    const slot = scanSNState.targetUnitIndex ? ` slot ${scanSNState.targetUnitIndex}` : '';
+    const row = (scanSNState.checklist?.rows || []).find(r => (r.slots || [])
+        .some(s => s.item_id === scanSNState.targetItemId && s.unit_index === scanSNState.targetUnitIndex));
     const name = row ? row.product_name : 'item terpilih';
-    const room = row?.room_name ? ` (${row.room_name})` : '';
 
-    banner.innerHTML = `<i class="fas fa-crosshairs me-2"></i>Scan berikutnya diarahkan ke <strong>${escapeScanSNText(name)}${escapeScanSNText(room)}</strong>${slot}. `
+    banner.innerHTML = `<i class="fas fa-crosshairs me-2"></i>Scan berikutnya diarahkan ke <strong>${escapeScanSNText(name)}</strong> (1 slot terpilih). `
         + '<a href="javascript:void(0)" onclick="clearScanSNTarget()" style="color: #92400e; text-decoration: underline;">Batalkan</a>';
     banner.classList.remove('d-none');
 }
@@ -1440,8 +1454,10 @@ function showScanSNToast(message, type = 'success') {
     setTimeout(() => toast.remove(), type === 'error' ? 4500 : 2500);
 }
 
-function openScanSNModalForItem(itemId) {
-    openScanSNModal(itemId);
+function openScanSNModalForItem(itemId, unitIndex = null) {
+    // The Serial Number tab groups rows per product, so the pencil hands over both the
+    // row and the exact slot it sits on - otherwise a qty>1 row has nothing to aim at.
+    openScanSNModal(itemId, unitIndex);
 }
 
 async function startQRScanner() {
@@ -1661,9 +1677,7 @@ function submitScanSN() {
             const progress = totals.total_required
                 ? ` · ${totals.total_filled}/${totals.total_required} SN terisi`
                 : '';
-            const room = info.room_name ? ` (${info.room_name})` : '';
-
-            showScanSNToast(`${info.serial_number || serialNumber} → ${info.product_name || 'item'}${room} ✓${progress}`, 'success');
+            showScanSNToast(`${info.serial_number || serialNumber} → ${info.product_name || 'item'} ✓${progress}`, 'success');
 
             renderScanSNChecklist();
             updateScanSNTargetBanner();
