@@ -2105,6 +2105,12 @@ class InvoiceController extends Controller
                 'tax_number' => $groupTaxNumber ?: $taxPayload['tax_number'],
                 'npwp_number' => $groupTaxNumber ?: $taxPayload['npwp_number'],
                 'tax_address' => $groupTaxAddress ?: $taxPayload['tax_address'],
+                // Alamat penagihan ikut disegarkan. Tanpa ini tombol ini memperbaiki
+                // identitas pajaknya saja sementara Billing Address tetap memakai
+                // nilai yang ter-stempel saat invoice dibuat -- untuk billing group
+                // yang pic_address-nya baru diisi, itu masih alamat customer.
+                'billing_address' => $billingGroup?->pic_address
+                    ?: ($invoice->contract?->customer?->address ?? $invoice->billing_address),
                 'subtotal_after_discount' => $taxPayload['subtotal_after_discount'],
                 'tax_amount' => $taxPayload['tax_amount'],
                 'grand_total' => $taxPayload['grand_total'],
@@ -2121,6 +2127,7 @@ class InvoiceController extends Controller
                     'tax_number' => $invoice->tax_number,
                     'npwp_number' => $invoice->npwp_number,
                     'tax_address' => $invoice->tax_address,
+                    'billing_address' => $invoice->billing_address,
                     'tax_amount' => $invoice->tax_amount,
                     'grand_total' => $invoice->grand_total,
                 ],

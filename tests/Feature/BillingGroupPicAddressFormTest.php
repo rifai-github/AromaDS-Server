@@ -65,4 +65,16 @@ class BillingGroupPicAddressFormTest extends TestCase
         $this->assertStringContainsString("'pic_address' => 'nullable|string'", $update);
         $this->assertStringContainsString("'pic_address' => \$request->pic_address", $update);
     }
+
+    public function test_reload_tax_also_refreshes_the_billing_address(): void
+    {
+        // Tanpa ini tombol Reload Tax memperbaiki identitas pajaknya saja,
+        // sementara Billing Address tetap memakai nilai yang ter-stempel saat
+        // invoice dibuat -- yaitu alamat customer, bukan alamat billing group.
+        $source = file_get_contents(app_path('Http/Controllers/Finance/InvoiceController.php'));
+        $reload = substr($source, strpos($source, 'public function reloadTaxData(Invoice $invoice)'));
+        $reload = substr($reload, 0, strpos($reload, 'public function ', 10));
+
+        $this->assertStringContainsString("'billing_address' => \$billingGroup?->pic_address", $reload);
+    }
 }
