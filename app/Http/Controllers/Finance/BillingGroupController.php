@@ -279,6 +279,7 @@ class BillingGroupController extends Controller
             'pic_name' => 'nullable|string|max:255',
             'pic_phone' => 'nullable|string|max:20',
             'pic_email' => 'nullable|email|max:255',
+            'pic_address' => 'nullable|string',
             // Tax Information (NEW: individual fields)
             'npwp' => 'nullable|string|max:30',
             'nitku' => 'nullable|string|max:30',
@@ -332,6 +333,7 @@ class BillingGroupController extends Controller
                 'pic_name' => $request->pic_name,
                 'pic_phone' => $request->pic_phone,
                 'pic_email' => $request->pic_email,
+                'pic_address' => $request->pic_address,
                 // Tax Information (built from individual fields)
                 'tax_type' => $taxType,
                 'tax_number' => $taxNumber,

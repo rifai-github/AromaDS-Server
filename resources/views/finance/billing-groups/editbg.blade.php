@@ -144,6 +144,19 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="mb-3">
+                                    <label for="pic_address" class="form-label">Alamat Penagihan</label>
+                                    <textarea class="form-control @error('pic_address') is-invalid @enderror"
+                                              id="pic_address" name="pic_address" rows="2">{{ old('pic_address', $billingGroup->pic_address) }}</textarea>
+                                    <small class="text-muted">Alamat tujuan penagihan billing group ini, dipakai sebagai Billing Address di invoice. Dikosongkan berarti memakai alamat customer. Berbeda dari Tax Address (alamat kantor pajak) di bagian Tax Configuration.</small>
+                                    @error('pic_address')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

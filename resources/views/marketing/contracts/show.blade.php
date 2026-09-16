@@ -1277,6 +1277,9 @@
                                              {{-- Kolom ini diisi dari billing_groups.npwp_address, yaitu alamat
                                                   yang terdaftar di kantor pajak — bukan alamat penagihan. Label
                                                   lamanya bikin salah paham. --}}
+                                             {{-- Alamat tujuan penagihan (billing_groups.pic_address); inilah
+                                                  yang dipakai jadi Billing Address di invoice. --}}
+                                             <th>Alamat Penagihan</th>
                                              <th>Alamat Kantor Pajak</th>
                                             <th>PIC Finance</th>
                                             <th>E-Mail</th>
@@ -1299,6 +1302,7 @@
                                         </tr>
                                         <tr class="filter-row">
                                             <th></th>
+                                            <th><input type="text" class="form-control form-control-sm" placeholder="Filter"></th>
                                             <th><input type="text" class="form-control form-control-sm" placeholder="Filter"></th>
                                             <th><input type="text" class="form-control form-control-sm" placeholder="Filter"></th>
                                             <th><input type="text" class="form-control form-control-sm" placeholder="Filter"></th>
@@ -1374,6 +1378,11 @@
                                                     $nitku = $billingGroup->npwp_number;
                                                 }
                                                 
+                                                // Alamat tujuan penagihan: sumber yang sama dengan
+                                                // invoices.billing_address, jadi apa yang terlihat di sini
+                                                // persis yang akan tercetak di invoice.
+                                                $alamatTagihan = $billingGroup->pic_address ?: ($customer->address ?? '-');
+
                                                 // Alamat kantor pajak (npwp_address), bukan alamat penagihan.
                                                 $alamatPenagihan = '-';
                                                 
@@ -1496,6 +1505,7 @@
                                                 <td>{{ $npwp }}</td>
                                                 <td>{{ $nitku }}</td>
                                                  <td>{{ $nik }}</td>
+                                                 <td>{{ $alamatTagihan }}</td>
                                                  <td>{{ $alamatPenagihan }}</td>
                                                 <td>{{ $picFinance }}</td>
                                                 <td>{{ $email }}</td>
@@ -1533,7 +1543,7 @@
                                             </tr>
                                         @empty
                                             <tr>
-                                                 <td colspan="25" class="text-center text-muted">
+                                                 <td colspan="26" class="text-center text-muted">
                                                     <i class="fas fa-info-circle fa-2x mb-2"></i>
                                                     <p>No billing groups found. <a href="{{ route('finance.billing-groups.add', $contract->id) }}">Add new billing group</a></p>
                                                 </td>
