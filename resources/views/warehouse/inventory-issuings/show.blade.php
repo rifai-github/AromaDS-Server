@@ -1192,8 +1192,6 @@ let scanSNState = {
     checklist: @json($serialChecklist ?? null),
     targetItemId: null,
     targetUnitIndex: null,
-    candidateItemIds: [],
-    pendingSerial: null,
     dirty: false,
 };
 
@@ -1218,8 +1216,6 @@ function openScanSNModal(preSelectedItemId = null, preSelectedUnitIndex = null) 
     
     scanSNState.targetItemId = preSelectedItemId ? Number(preSelectedItemId) : null;
     scanSNState.targetUnitIndex = preSelectedUnitIndex ? Number(preSelectedUnitIndex) : null;
-    scanSNState.candidateItemIds = [];
-    scanSNState.pendingSerial = null;
 
     modal.innerHTML = `
         <div class="modal-dialog modal-dialog-centered" style="margin: 20px auto; max-width: 700px; width: 90%;">
@@ -1316,13 +1312,11 @@ function renderScanSNChecklist() {
     }
 
     container.innerHTML = checklist.rows.map(row => {
-        const isCandidate = scanSNState.candidateItemIds.includes(row.item_id);
         const isTarget = scanSNState.targetItemId === row.item_id;
 
         let border = '#e5e7eb';
         let background = '#ffffff';
-        if (isCandidate) { border = '#f59e0b'; background = '#fffbeb'; }
-        else if (isTarget) { border = '#1e3a8a'; background = '#eff6ff'; }
+        if (isTarget) { border = '#1e3a8a'; background = '#eff6ff'; }
         else if (row.complete) { background = '#f9fafb'; }
 
         const roomBadge = row.room_name
@@ -1385,19 +1379,9 @@ function setScanSNTarget(itemId, unitIndex) {
 
     scanSNState.targetItemId = alreadyTargeted ? null : itemId;
     scanSNState.targetUnitIndex = alreadyTargeted ? null : unitIndex;
-    scanSNState.candidateItemIds = [];
 
     renderScanSNChecklist();
     updateScanSNTargetBanner();
-
-    // An ambiguous scan is waiting for exactly this answer: submit it right away.
-    if (!alreadyTargeted && scanSNState.pendingSerial) {
-        const serialInput = document.getElementById('scanSNSerial');
-        if (serialInput) serialInput.value = scanSNState.pendingSerial;
-        scanSNState.pendingSerial = null;
-        submitScanSN();
-        return;
-    }
 
     const serialInput = document.getElementById('scanSNSerial');
     if (serialInput) serialInput.focus();
@@ -1426,8 +1410,6 @@ function updateScanSNTargetBanner() {
 function clearScanSNTarget() {
     scanSNState.targetItemId = null;
     scanSNState.targetUnitIndex = null;
-    scanSNState.candidateItemIds = [];
-    scanSNState.pendingSerial = null;
     renderScanSNChecklist();
     updateScanSNTargetBanner();
 
@@ -1668,15 +1650,20 @@ function submitScanSN() {
         if (result.status === 'success') {
             scanSNState.checklist = result.checklist || scanSNState.checklist;
             scanSNState.dirty = true;
-            scanSNState.candidateItemIds = [];
-            scanSNState.pendingSerial = null;
             scanSNState.targetItemId = null;
             scanSNState.targetUnitIndex = null;
 
             const info = result.data || {};
+
+            // Overall progress of the whole issuing: the scanning run is read off this
+            // counter (1/7, 2/7, ...), not off the per-row one.
+            const totals = scanSNState.checklist || {};
+            const progress = totals.total_required
+                ? ` · ${totals.total_filled}/${totals.total_required} SN terisi`
+                : '';
             const room = info.room_name ? ` (${info.room_name})` : '';
-            const counts = info.required_count ? ` ${info.linked_count}/${info.required_count}` : '';
-            showScanSNToast(`${info.serial_number || serialNumber} → ${info.product_name || 'item'}${room} ✓${counts}`, 'success');
+
+            showScanSNToast(`${info.serial_number || serialNumber} → ${info.product_name || 'item'}${room} ✓${progress}`, 'success');
 
             renderScanSNChecklist();
             updateScanSNTargetBanner();
@@ -1692,21 +1679,6 @@ function submitScanSN() {
                 serialInput.focus();
             }
             
-        } else if (result.status === 'ambiguous') {
-            // Same product sits on several rows (one per room). Never guessed: the operator
-            // points at the slot, and the held SN is submitted the moment they do.
-            scanSNState.checklist = result.checklist || scanSNState.checklist;
-            scanSNState.candidateItemIds = ((result.data || {}).candidate_item_ids || []).map(Number);
-            scanSNState.pendingSerial = serialNumber;
-
-            renderScanSNChecklist();
-            showScanSNToast(result.message || 'Pilih baris tujuan untuk SN ini.', 'info');
-
-            const banner = document.getElementById('scanSNTargetBanner');
-            if (banner) {
-                banner.innerHTML = `<i class="fas fa-question-circle me-2"></i><strong>${escapeScanSNText(serialNumber)}</strong> cocok untuk beberapa baris di bawah. Klik slot tujuannya.`;
-                banner.classList.remove('d-none');
-            }
         } else {
             if (result.checklist) {
                 scanSNState.checklist = result.checklist;

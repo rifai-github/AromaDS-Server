@@ -1032,8 +1032,9 @@ class InventoryIssuingController extends Controller
                     ], 422);
                 }
             } else {
-                // Continuous scanning: the SN finds its own row in this issuing so the
-                // operator never picks a product first. Ambiguity is asked, never guessed.
+                // Continuous scanning: the SN finds its own row in this issuing, so the
+                // operator picks neither a product nor a room - the scan simply lands on
+                // the next slot still waiting for that product.
                 $resolution = $this->resolveIssuingItemForScannedSerial($issuing, $serialNumber);
 
                 if ($resolution['status'] !== 'ok') {
@@ -1042,202 +1043,36 @@ class InventoryIssuingController extends Controller
                     return response()->json([
                         'status'    => $resolution['status'],
                         'message'   => $resolution['message'],
-                        'data'      => ['candidate_item_ids' => $resolution['candidates'] ?? []],
                         'checklist' => $this->buildSerialChecklist($issuing),
-                    ], $resolution['status'] === 'ambiguous' ? 200 : 422);
+                    ], 422);
                 }
 
                 $issuingItem = $resolution['item'];
                 $targetUnitIndex = null;
             }
 
-            // QA "1 Rental banyak Qty": unit products with quantity_requested > 1 need one
-            // distinct SN per unit. A full row can still be corrected, but only by naming
-            // the slot to overwrite - a stray scan must never silently replace one.
-            $requiredSerialCount = $issuingItem->requiredSerialCount();
-            $linkedSerialCount = $issuingItem->linkedSerialCount();
-            $replaceUnitIndex = null;
+            $outcome = $this->linkScannedSerialToIssuingItem($issuing, $issuingItem, $serialNumber, $targetUnitIndex);
 
-            if ($targetUnitIndex !== null) {
-                $replaceUnitIndex = $targetUnitIndex;
-            } elseif ($requiredSerialCount > 0 && $linkedSerialCount >= $requiredSerialCount) {
-                if ($requiredSerialCount <= 1) {
-                    // Pre-existing "Ubah SN" flow: a row that only ever needs 1 SN (qty 1
-                    // unit, or any aroma/refill batch row) can have its single serial
-                    // replaced by scanning again, same as before this pivot table existed.
-                    $replaceUnitIndex = (int) ($issuingItem->serialLinks->min('unit_index') ?? 1);
-                } else {
-                    DB::rollBack();
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => "Serial Number untuk item ini sudah lengkap ({$linkedSerialCount}/{$requiredSerialCount}). Pilih slot yang ingin diganti."
-                    ], 422);
-                }
-            }
-
-            // Validasi 1: SN harus ada di serial_numbers table. Batch/refill SN may have
-            // duplicate rows, so choose an available row for this item before falling back.
-            $sn = $this->findSerialNumberForIssuingScan($serialNumber, $issuing, $issuingItem);
-            
-            if (!$sn) {
+            if ($outcome['status'] !== 'success') {
                 DB::rollBack();
+
                 return response()->json([
-                    'status' => 'error',
-                    'message' => "Serial Number {$serialNumber} tidak ditemukan. Pastikan SN sudah diinput di Inventory Receiving."
-                ], 422);
+                    'status'    => 'error',
+                    'message'   => $outcome['message'],
+                    'checklist' => $this->buildSerialChecklist($issuing),
+                ], $outcome['code'] ?? 422);
             }
-
-            // Validasi 2: SN harus sesuai dengan produk yang di-issue
-            if ($sn->master_product_id !== $issuingItem->product_id) {
-                DB::rollBack();
-                $productName = $issuingItem->product->name ?? 'Unknown';
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "Serial Number {$serialNumber} tidak sesuai dengan produk yang di-issue ({$productName})."
-                ], 422);
-            }
-
-            $serialLinkService = app(SerialNumberIssuingLinkService::class);
-            $requiresExclusiveSerial = $serialLinkService->requiresExclusiveLink($sn);
-
-            if ($requiresExclusiveSerial) {
-                // Validasi 3: SN Unit tidak boleh sudah terpakai di Unit On Wall
-                $unitOnWall = \App\Models\UnitOnWall::where('serial_number_id', $sn->id)
-                    ->where('status', 'active')
-                    ->first();
-
-                if ($unitOnWall) {
-                    DB::rollBack();
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => "Serial Number {$serialNumber} sudah terpasang di Unit On Wall. Tidak bisa digunakan lagi."
-                    ], 422);
-                }
-            }
-
-            // Validasi 4: SN status harus ready (standardized)
-            if (!in_array($sn->status, ['ready', 'available'])) { // Legacy support for 'available'
-                DB::rollBack();
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "Serial Number {$serialNumber} status tidak ready (Status: {$sn->status_text})."
-                ], 422);
-            }
-
-            if (! $sn->can_install) {
-                DB::rollBack();
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "Serial Number {$serialNumber} dalam kondisi {$sn->condition_label}. Tidak boleh dipakai untuk pemasangan."
-                ], 422);
-            }
-
-            if ((int) $sn->warehouse_id !== (int) $issuing->warehouse_id) {
-                DB::rollBack();
-                $correctWarehouse = $issuing->warehouse?->name ?? 'warehouse issue';
-                $sourceWarehouse = $sn->warehouse?->name ?? 'warehouse lain';
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "Serial Number {$serialNumber} berasal dari {$sourceWarehouse}. SN ini harus dari warehouse {$correctWarehouse}."
-                ], 422);
-            }
-
-            if ($requiresExclusiveSerial) {
-                $serialLinkService->releaseStaleLinks($sn, $issuingItem->id, Auth::id());
-
-                $reservedItem = $this->findActiveIssuingItemUsingSerial($sn->id, $issuingItem->id);
-                if ($reservedItem) {
-                    DB::rollBack();
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => "Serial Number {$serialNumber} masih dipakai di Inventory Issuing {$reservedItem->inventoryIssuing?->issuing_number}. Tidak bisa dipakai di dua WI yang masih disiapkan."
-                    ], 422);
-                }
-            }
-
-            // Pertahankan room yang sudah ada / tersimpan di notes agar tidak ketimpa
-            // oleh item MI pertama ketika ada beberapa room dengan produk yang sama.
-            $roomName = $issuingItem->room_name ?: $this->extractRoomNameFromItemNotes($issuingItem->notes);
-            if ($issuing->reference_no) {
-                $materialIssue = \App\Models\MaterialIssue::where('issue_number', $issuing->reference_no)->first();
-                if ($materialIssue && !$roomName) {
-                    $miQuery = \App\Models\MaterialIssueItem::where('material_issue_id', $materialIssue->id)
-                        ->where('product_id', $issuingItem->product_id)
-                        ->whereNotNull('room_name');
-
-                    $noteRoomName = $this->extractRoomNameFromItemNotes($issuingItem->notes);
-                    if ($noteRoomName) {
-                        $miQuery->where('room_name', $noteRoomName);
-                    }
-
-                    $miItem = $miQuery->first();
-                    if ($miItem) {
-                        $roomName = $miItem->room_name;
-                    }
-                }
-            }
-
-            // Guard the (item, serial) unique index: one SN cannot hold two slots of the
-            // same row. Re-scanning into the slot it already occupies stays a no-op.
-            $existingLink = $issuingItem->serialLinks->firstWhere('serial_number_id', $sn->id);
-            if ($existingLink && (int) $existingLink->unit_index !== (int) $replaceUnitIndex) {
-                DB::rollBack();
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "Serial Number {$serialNumber} sudah terpasang di slot {$existingLink->unit_index} pada item ini."
-                ], 422);
-            }
-
-            // Replace one named slot, or append the next one. The pivot table holds every
-            // SN for a qty>1 unit row; serial_number_id is kept in sync with the lowest
-            // slot for backward compatibility with code reading it directly.
-            if ($replaceUnitIndex !== null) {
-                $issuingItem->serialLinks()->where('unit_index', $replaceUnitIndex)->delete();
-                $nextUnitIndex = $replaceUnitIndex;
-            } else {
-                $nextUnitIndex = ((int) ($issuingItem->serialLinks->max('unit_index') ?? 0)) + 1;
-            }
-
-            \App\Models\InventoryIssuingItemSerial::create([
-                'inventory_issuing_item_id' => $issuingItem->id,
-                'serial_number_id' => $sn->id,
-                'unit_index' => $nextUnitIndex,
-                'created_by' => Auth::id(),
-            ]);
-
-            $issuingItem->load('serialLinks');
-            $primarySerialId = $issuingItem->serialLinks->sortBy('unit_index')->first()?->serial_number_id;
-
-            $issuingItem->update([
-                'serial_number_id' => $primarySerialId ?? $sn->id,
-                'room_name'        => $roomName ?: $issuingItem->room_name,
-                'updated_by'       => Auth::id()
-            ]);
-
-            $linkedSerialCount = $issuingItem->serialLinks->count();
-
-            // Update SN status to in_use (optional, bisa juga tetap available sampai benar-benar terpasang)
-            // $sn->update(['status' => 'in_use']);
 
             DB::commit();
 
-            \Log::info("Serial Number {$serialNumber} linked to Inventory Issuing Item {$issuingItem->id} ({$linkedSerialCount}/{$requiredSerialCount}) for Issuing {$issuing->issuing_number}");
+            $data = $outcome['data'];
+
+            \Log::info("Serial Number {$serialNumber} linked to Inventory Issuing Item {$data['issuing_item_id']} ({$data['linked_count']}/{$data['required_count']}) for Issuing {$issuing->issuing_number}");
 
             return response()->json([
-                'status' => 'success',
-                'message' => "Serial Number {$serialNumber} berhasil divalidasi dan di-link ke item! ({$linkedSerialCount}/{$requiredSerialCount})",
-                'data' => [
-                    'serial_number' => $sn->serial_number,
-                    'product_name' => $issuingItem->product->name ?? 'Unknown',
-                    'status' => $sn->status,
-                    'linked_count' => $linkedSerialCount,
-                    'required_count' => $requiredSerialCount,
-                    // Auto-resolved target, so the UI can point at the row it just filled.
-                    'issuing_item_id' => (int) $issuingItem->id,
-                    'unit_index' => (int) $nextUnitIndex,
-                    'room_name' => $issuingItem->room_name,
-                    'replaced' => $replaceUnitIndex !== null,
-                ],
+                'status'  => 'success',
+                'message' => "Serial Number {$serialNumber} berhasil divalidasi dan di-link ke item! ({$data['linked_count']}/{$data['required_count']})",
+                'data'    => $data,
                 'checklist' => $this->buildSerialChecklist($issuing),
             ]);
 
@@ -1245,12 +1080,210 @@ class InventoryIssuingController extends Controller
             DB::rollBack();
             \Log::error('Failed to scan serial number: ' . $e->getMessage());
             \Log::error('Stack trace: ' . $e->getTraceAsString());
-            
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Gagal memvalidasi Serial Number: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Validate one scanned SN and link it to one issuing row/slot.
+     *
+     * Runs inside the caller's transaction and reports failure by returning it, so the
+     * caller owns the rollback and the HTTP shape.
+     */
+    private function linkScannedSerialToIssuingItem(InventoryIssuing $issuing, \App\Models\InventoryIssuingItem $issuingItem, string $serialNumber, ?int $targetUnitIndex): array
+    {
+        $issuingItem->loadMissing(['product.productCategory', 'product.productType']);
+        $issuingItem->load('serialLinks');
+
+        // QA "1 Rental banyak Qty": unit products with quantity_requested > 1 need one
+        // distinct SN per unit. A full row can still be corrected, but only by naming
+        // the slot to overwrite - a stray scan must never silently replace one.
+        $requiredSerialCount = $issuingItem->requiredSerialCount();
+        $linkedSerialCount = $issuingItem->linkedSerialCount();
+        $replaceUnitIndex = null;
+
+        if ($targetUnitIndex !== null) {
+            $replaceUnitIndex = $targetUnitIndex;
+        } elseif ($requiredSerialCount > 0 && $linkedSerialCount >= $requiredSerialCount) {
+            if ($requiredSerialCount <= 1) {
+                // Pre-existing "Ubah SN" flow: a row that only ever needs 1 SN (qty 1
+                // unit, or any aroma/refill batch row) can have its single serial
+                // replaced by scanning again, same as before this pivot table existed.
+                $replaceUnitIndex = (int) ($issuingItem->serialLinks->min('unit_index') ?? 1);
+            } else {
+                return [
+                    'status'  => 'error',
+                    'code'    => 422,
+                    'message' => "Serial Number untuk item ini sudah lengkap ({$linkedSerialCount}/{$requiredSerialCount}). Pilih slot yang ingin diganti.",
+                ];
+            }
+        }
+
+        // Validasi 1: SN harus ada di serial_numbers table. Batch/refill SN may have
+        // duplicate rows, so choose an available row for this item before falling back.
+        $sn = $this->findSerialNumberForIssuingScan($serialNumber, $issuing, $issuingItem);
+
+        if (!$sn) {
+            return [
+                'status'  => 'error',
+                'code'    => 422,
+                'message' => "Serial Number {$serialNumber} tidak ditemukan. Pastikan SN sudah diinput di Inventory Receiving.",
+            ];
+        }
+
+        // Validasi 2: SN harus sesuai dengan produk yang di-issue
+        if ($sn->master_product_id !== $issuingItem->product_id) {
+            $productName = $issuingItem->product->name ?? 'Unknown';
+
+            return [
+                'status'  => 'error',
+                'code'    => 422,
+                'message' => "Serial Number {$serialNumber} tidak sesuai dengan produk yang di-issue ({$productName}).",
+            ];
+        }
+
+        $serialLinkService = app(SerialNumberIssuingLinkService::class);
+        $requiresExclusiveSerial = $serialLinkService->requiresExclusiveLink($sn);
+
+        if ($requiresExclusiveSerial) {
+            // Validasi 3: SN Unit tidak boleh sudah terpakai di Unit On Wall
+            $unitOnWall = \App\Models\UnitOnWall::where('serial_number_id', $sn->id)
+                ->where('status', 'active')
+                ->first();
+
+            if ($unitOnWall) {
+                return [
+                    'status'  => 'error',
+                    'code'    => 422,
+                    'message' => "Serial Number {$serialNumber} sudah terpasang di Unit On Wall. Tidak bisa digunakan lagi.",
+                ];
+            }
+        }
+
+        // Validasi 4: SN status harus ready (standardized)
+        if (!in_array($sn->status, ['ready', 'available'])) { // Legacy support for 'available'
+            return [
+                'status'  => 'error',
+                'code'    => 422,
+                'message' => "Serial Number {$serialNumber} status tidak ready (Status: {$sn->status_text}).",
+            ];
+        }
+
+        if (! $sn->can_install) {
+            return [
+                'status'  => 'error',
+                'code'    => 422,
+                'message' => "Serial Number {$serialNumber} dalam kondisi {$sn->condition_label}. Tidak boleh dipakai untuk pemasangan.",
+            ];
+        }
+
+        if ((int) $sn->warehouse_id !== (int) $issuing->warehouse_id) {
+            $correctWarehouse = $issuing->warehouse?->name ?? 'warehouse issue';
+            $sourceWarehouse = $sn->warehouse?->name ?? 'warehouse lain';
+
+            return [
+                'status'  => 'error',
+                'code'    => 422,
+                'message' => "Serial Number {$serialNumber} berasal dari {$sourceWarehouse}. SN ini harus dari warehouse {$correctWarehouse}.",
+            ];
+        }
+
+        if ($requiresExclusiveSerial) {
+            $serialLinkService->releaseStaleLinks($sn, $issuingItem->id, Auth::id());
+
+            $reservedItem = $this->findActiveIssuingItemUsingSerial($sn->id, $issuingItem->id);
+            if ($reservedItem) {
+                return [
+                    'status'  => 'error',
+                    'code'    => 422,
+                    'message' => "Serial Number {$serialNumber} masih dipakai di Inventory Issuing {$reservedItem->inventoryIssuing?->issuing_number}. Tidak bisa dipakai di dua WI yang masih disiapkan.",
+                ];
+            }
+        }
+
+        // Pertahankan room yang sudah ada / tersimpan di notes agar tidak ketimpa
+        // oleh item MI pertama ketika ada beberapa room dengan produk yang sama.
+        $roomName = $issuingItem->room_name ?: $this->extractRoomNameFromItemNotes($issuingItem->notes);
+        if ($issuing->reference_no) {
+            $materialIssue = \App\Models\MaterialIssue::where('issue_number', $issuing->reference_no)->first();
+            if ($materialIssue && !$roomName) {
+                $miQuery = \App\Models\MaterialIssueItem::where('material_issue_id', $materialIssue->id)
+                    ->where('product_id', $issuingItem->product_id)
+                    ->whereNotNull('room_name');
+
+                $noteRoomName = $this->extractRoomNameFromItemNotes($issuingItem->notes);
+                if ($noteRoomName) {
+                    $miQuery->where('room_name', $noteRoomName);
+                }
+
+                $miItem = $miQuery->first();
+                if ($miItem) {
+                    $roomName = $miItem->room_name;
+                }
+            }
+        }
+
+        // Guard the (item, serial) unique index: one SN cannot hold two slots of the
+        // same row. Re-scanning into the slot it already occupies stays a no-op.
+        $existingLink = $issuingItem->serialLinks->firstWhere('serial_number_id', $sn->id);
+        if ($existingLink && (int) $existingLink->unit_index !== (int) $replaceUnitIndex) {
+            return [
+                'status'  => 'error',
+                'code'    => 422,
+                'message' => "Serial Number {$serialNumber} sudah terpasang di slot {$existingLink->unit_index} pada item ini.",
+            ];
+        }
+
+        // Replace one named slot, or append the next one. The pivot table holds every
+        // SN for a qty>1 unit row; serial_number_id is kept in sync with the lowest
+        // slot for backward compatibility with code reading it directly.
+        if ($replaceUnitIndex !== null) {
+            $issuingItem->serialLinks()->where('unit_index', $replaceUnitIndex)->delete();
+            $nextUnitIndex = $replaceUnitIndex;
+        } else {
+            $nextUnitIndex = ((int) ($issuingItem->serialLinks->max('unit_index') ?? 0)) + 1;
+        }
+
+        \App\Models\InventoryIssuingItemSerial::create([
+            'inventory_issuing_item_id' => $issuingItem->id,
+            'serial_number_id' => $sn->id,
+            'unit_index' => $nextUnitIndex,
+            'created_by' => Auth::id(),
+        ]);
+
+        $issuingItem->load('serialLinks');
+        $primarySerialId = $issuingItem->serialLinks->sortBy('unit_index')->first()?->serial_number_id;
+
+        $issuingItem->update([
+            'serial_number_id' => $primarySerialId ?? $sn->id,
+            'room_name'        => $roomName ?: $issuingItem->room_name,
+            'updated_by'       => Auth::id()
+        ]);
+
+        $linkedSerialCount = $issuingItem->serialLinks->count();
+
+        // Update SN status to in_use (optional, bisa juga tetap available sampai benar-benar terpasang)
+        // $sn->update(['status' => 'in_use']);
+
+        return [
+            'status' => 'success',
+            'data'   => [
+                'serial_number' => $sn->serial_number,
+                'product_name' => $issuingItem->product->name ?? 'Unknown',
+                'status' => $sn->status,
+                'linked_count' => $linkedSerialCount,
+                'required_count' => $requiredSerialCount,
+                // Auto-resolved target, so the UI can point at the row it just filled.
+                'issuing_item_id' => (int) $issuingItem->id,
+                'unit_index' => (int) $nextUnitIndex,
+                'room_name' => $issuingItem->room_name,
+                'replaced' => $replaceUnitIndex !== null,
+            ],
+        ];
     }
     
     /**
@@ -1640,10 +1673,10 @@ public function getUserTeams($userId)
      * Find which row of this issuing a freely-scanned SN belongs to, so the operator can
      * scan continuously without picking an item first.
      *
-     * Returns ['status' => 'ok', 'item' => ...] on a single match. When the same product
-     * sits on several rows (one per room) it returns 'ambiguous' with the candidates
-     * instead of guessing: an SN landing on the wrong room would follow the unit all the
-     * way to Unit On Wall and the IR document.
+     * Returns ['status' => 'ok', 'item' => ...]: the next row still waiting for this
+     * product, in list order. The operator is never asked to pick a room, and one scan
+     * never fills more than one slot. Corrections go through the per-slot "Ubah SN"
+     * click, which sends an explicit issuing_item_id + unit_index.
      */
     private function resolveIssuingItemForScannedSerial(InventoryIssuing $issuing, string $serialNumber): array
     {
@@ -1698,15 +1731,13 @@ public function getUserTeams($userId)
             ];
         }
 
-        if ($pool->count() > 1) {
-            return [
-                'status' => 'ambiguous',
-                'message' => "Serial Number {$serialNumber} cocok untuk beberapa baris. Pilih baris tujuannya.",
-                'candidates' => $pool->pluck('id')->map(fn ($itemId) => (int) $itemId)->all(),
-            ];
-        }
-
-        return ['status' => 'ok', 'item' => $pool->first()];
+        // One scan fills exactly one slot - the next row still waiting, in list order -
+        // for an aroma refill just as much as for a unit. Which room a given bottle or
+        // machine ends up in is settled at install, not at the warehouse counter, so
+        // there is nothing for the operator to decide here: the counter just advances
+        // (1/7, 2/7, ...). A batch code needed by 15 rooms is therefore 15 scans, one
+        // per physical item, which is also what the operator is holding.
+        return ['status' => 'ok', 'item' => $pool->sortBy('id')->first()];
     }
 
     /**

@@ -12,8 +12,9 @@ use Tests\TestCase;
 
 /**
  * Locks the continuous-scan behaviour of the Inventory Issuing SN modal: a scan with no
- * issuing_item_id finds its own row, ambiguity is asked instead of guessed, and one slot
- * of a qty>1 row can be replaced without disturbing its siblings.
+ * issuing_item_id finds its own row without ever asking for a room, one scan fills one
+ * slot for aroma and unit alike, and one slot of a qty>1 row can be replaced without
+ * disturbing its siblings.
  */
 class InventoryIssuingScanSerialAutoResolveTest extends TestCase
 {
@@ -235,23 +236,98 @@ class InventoryIssuingScanSerialAutoResolveTest extends TestCase
         $this->assertDatabaseCount('inventory_issuing_item_serials', 0);
     }
 
-    public function test_same_product_in_two_rooms_is_asked_not_guessed(): void
+    public function test_unit_serial_takes_the_next_waiting_row_without_asking(): void
     {
+        // Every unit carries its own SN, and which machine lands in which room is settled
+        // at install. So a scan fills the next waiting row in list order and the counter
+        // advances; the operator is never stopped to pick a room.
+        $this->seedUnitProduct(10, 100, 'ADS Dispenser ADS A1');
+        $this->seedItem(200, 100, quantity: 1, roomName: 'Lobby');
+        $this->seedItem(201, 100, quantity: 1, roomName: 'Meeting Room');
+        $this->seedSerial(500, 'ADS0012', 100);
+        $this->seedSerial(501, 'ADS0013', 100);
+
+        $first = $this->scan(['serial_number' => 'ADS0012']);
+
+        $this->assertSame('success', $first['status']);
+        $this->assertSame(200, $first['data']['issuing_item_id']);
+        $this->assertSame(1, $first['checklist']['total_filled']);
+        $this->assertSame(2, $first['checklist']['total_required']);
+
+        $second = $this->scan(['serial_number' => 'ADS0013']);
+
+        // The second scan moves on instead of touching the row already filled.
+        $this->assertSame('success', $second['status']);
+        $this->assertSame(201, $second['data']['issuing_item_id']);
+        $this->assertSame(2, $second['checklist']['total_filled']);
+        $this->assertTrue($second['checklist']['all_complete']);
+
+        $this->assertDatabaseHas('inventory_issuing_item_serials', [
+            'inventory_issuing_item_id' => 200,
+            'serial_number_id' => 500,
+        ]);
+        $this->assertDatabaseHas('inventory_issuing_item_serials', [
+            'inventory_issuing_item_id' => 201,
+            'serial_number_id' => 501,
+        ]);
+    }
+
+    public function test_a_named_slot_still_overrides_the_auto_picked_row(): void
+    {
+        // The correction path is unchanged: clicking a slot sends an explicit target, and
+        // that always wins over the next-waiting-row rule.
         $this->seedUnitProduct(10, 100, 'ADS Dispenser ADS A1');
         $this->seedItem(200, 100, quantity: 1, roomName: 'Lobby');
         $this->seedItem(201, 100, quantity: 1, roomName: 'Meeting Room');
         $this->seedSerial(500, 'ADS0012', 100);
 
-        $payload = $this->scan(['serial_number' => 'ADS0012']);
+        $payload = $this->scan([
+            'serial_number' => 'ADS0012',
+            'issuing_item_id' => 201,
+            'unit_index' => 1,
+        ]);
 
-        $this->assertSame('ambiguous', $payload['status']);
-        $this->assertEqualsCanonicalizing([200, 201], $payload['data']['candidate_item_ids']);
-
-        // Nothing may be written while the question is still open.
-        $this->assertDatabaseCount('inventory_issuing_item_serials', 0);
+        $this->assertSame('success', $payload['status']);
+        $this->assertSame(201, $payload['data']['issuing_item_id']);
+        $this->assertDatabaseCount('inventory_issuing_item_serials', 1);
     }
 
-    public function test_ambiguity_disappears_once_the_other_room_is_full(): void
+    public function test_batch_serial_fills_one_room_per_scan_like_a_unit(): void
+    {
+        // Aroma refill shares one code across the batch, but a scan still stands for one
+        // bottle: it fills one room and moves on, exactly like a unit. Never all rooms at
+        // once - see the "aroma like a unit" decision of 16 Sep 2026.
+        $this->seedRefillProduct(11, 110, 'Fragrance Airy Ginger 100 ml');
+        $this->seedItem(210, 110, quantity: 1, roomName: 'Coridor Lt 3');
+        $this->seedItem(211, 110, quantity: 1, roomName: 'Coridor Lt 4');
+        $this->seedItem(212, 110, quantity: 1, roomName: 'Coridor Lt 5');
+        $this->seedSerial(510, 'RAG10026090001', 110);
+
+        $first = $this->scan(['serial_number' => 'RAG10026090001']);
+
+        $this->assertSame('success', $first['status']);
+        $this->assertSame(210, $first['data']['issuing_item_id']);
+        $this->assertSame('Coridor Lt 3', $first['data']['room_name']);
+        $this->assertSame(1, $first['checklist']['total_filled']);
+        $this->assertSame(3, $first['checklist']['total_required']);
+        $this->assertDatabaseCount('inventory_issuing_item_serials', 1);
+
+        // The same batch code scanned again moves on to the next waiting room.
+        $second = $this->scan(['serial_number' => 'RAG10026090001']);
+
+        $this->assertSame('success', $second['status']);
+        $this->assertSame(211, $second['data']['issuing_item_id']);
+        $this->assertSame(2, $second['checklist']['total_filled']);
+
+        $third = $this->scan(['serial_number' => 'RAG10026090001']);
+
+        $this->assertSame('success', $third['status']);
+        $this->assertSame(212, $third['data']['issuing_item_id']);
+        $this->assertTrue($third['checklist']['all_complete']);
+        $this->assertDatabaseCount('inventory_issuing_item_serials', 3);
+    }
+
+    public function test_a_full_room_is_skipped_for_the_next_waiting_one(): void
     {
         $this->seedUnitProduct(10, 100, 'ADS Dispenser ADS A1');
         $this->seedItem(200, 100, quantity: 1, roomName: 'Lobby');
@@ -385,6 +461,27 @@ class InventoryIssuingScanSerialAutoResolveTest extends TestCase
             'name' => 'Diffuser',
             'has_serial_number' => true,
             'is_unit' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('master_products')->insert([
+            'id' => $productId,
+            'product_category_id' => $categoryId,
+            'name' => $productName,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function seedRefillProduct(int $categoryId, int $productId, string $productName): void
+    {
+        // Serial-bearing but not a unit: the SN names a batch, not one physical machine.
+        DB::table('product_categories')->insert([
+            'id' => $categoryId,
+            'name' => 'Fragrance',
+            'has_serial_number' => true,
+            'is_unit' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
