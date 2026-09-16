@@ -920,6 +920,115 @@ class SubmitIssueGroupedSelectionTest extends TestCase
         $this->assertSame([], $errors);
     }
 
+    public function test_bulk_submit_stock_validation_counts_a_shared_material_issue_only_once(): void
+    {
+        $now = now();
+
+        DB::table('warehouses')->insert([
+            'id' => 1,
+            'name' => 'Gudang SEMARANG',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('master_products')->insert([
+            [
+                'id' => 60,
+                'name' => 'Aroma Diffuser Model C100 Pro (White)',
+                'bom_quantity' => 1,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'id' => 61,
+                'name' => 'ADS Difusser W600',
+                'bom_quantity' => 1,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+        ]);
+
+        DB::table('warehouse_products')->insert([
+            [
+                'warehouse_id' => 1,
+                'master_product_id' => 60,
+                'quantity' => 10,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'warehouse_id' => 1,
+                'master_product_id' => 61,
+                'quantity' => 10,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+        ]);
+
+        DB::table('material_issues')->insert([
+            'id' => 30,
+            'issue_number' => 'SMG-MI/26-09/0007',
+            'warehouse_id' => 1,
+            'product_id' => 60,
+            'status' => 'approved',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        // One material issue holds every room of the job, and every room has its own
+        // job_assign_material_issues link pointing back at that same material issue.
+        $rooms = ['Musholla', 'Coridor Lt 3', 'Coridor Lt 4', 'Coridor Lt 5', 'Coridor Lt 6', 'Coridor Lt 7', 'Landing Lift Basement', 'Lobby'];
+
+        foreach ($rooms as $index => $roomName) {
+            $jobAssignScheduleId = 20 + $index;
+
+            DB::table('job_assign_schedules')->insert([
+                'id' => $jobAssignScheduleId,
+                'job_schedule_id' => null,
+                'status' => 'assigned',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            DB::table('material_issue_items')->insert([
+                'id' => 80 + $index,
+                'material_issue_id' => 30,
+                'job_assign_schedule_id' => $jobAssignScheduleId,
+                'product_id' => $roomName === 'Lobby' ? 61 : 60,
+                'room_name' => $roomName,
+                'quantity' => 1,
+                'bom_quantity' => 1,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            DB::table('job_assign_material_issues')->insert([
+                'id' => 40 + $index,
+                'job_assign_schedule_id' => $jobAssignScheduleId,
+                'material_issue_id' => 30,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        $result = $this->validateBulkStock([40, 41, 42, 43, 44, 45, 46, 47]);
+
+        // Real requirement is 7 diffusers against stock 10. Counting the shared material
+        // issue once per link would report 8 x 7 = 56 and wrongly block the submit.
+        $this->assertSame([], $result['errors']);
+        $this->assertSame([], $result['affected_material_issue_ids']);
+    }
+
+    private function validateBulkStock(array $ids): array
+    {
+        $selected = JobAssignMaterialIssue::whereIn('id', $ids)->get();
+
+        $method = new ReflectionMethod(JobAssignMaterialIssueController::class, 'validateSelectedIssueStockAvailability');
+        $method->setAccessible(true);
+
+        return $method->invoke(app(JobAssignMaterialIssueController::class), $selected);
+    }
+
     private function validateSelectedIssues(array $ids): array
     {
         $selected = JobAssignMaterialIssue::with([

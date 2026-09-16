@@ -3696,12 +3696,21 @@ class JobAssignMaterialIssueController extends Controller
         $requiredByWarehouseProduct = [];
         $warehouseIds = collect();
         $productIds = collect();
+        $countedMaterialIssueIds = [];
 
         foreach ($selectedJobAssignMaterialIssues as $jobAssignMaterialIssue) {
             $materialIssue = $jobAssignMaterialIssue->materialIssue;
             if (!$materialIssue || !$materialIssue->warehouse_id) {
                 continue;
             }
+
+            // A single material issue can be linked from several job_assign_material_issues
+            // rows (one link per room / job assign schedule). Its items already cover every
+            // room, and issue() consumes it only once, so it must be counted once here too.
+            if (isset($countedMaterialIssueIds[$materialIssue->id])) {
+                continue;
+            }
+            $countedMaterialIssueIds[$materialIssue->id] = true;
 
             foreach ($materialIssue->items as $item) {
                 $quantity = (float) ($item->quantity ?? 0);
