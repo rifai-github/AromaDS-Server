@@ -9489,7 +9489,15 @@ class JobScheduleController extends Controller
 
         if ($serviceFrequency?->frequency_times_per_month && $serviceFrequency->frequency_times_per_month > 0) {
             $frequencyTimes = (int) $serviceFrequency->frequency_times_per_month;
-            $monthsToAdd = intdiv($period - 1, $frequencyTimes);
+            // The interval matters here too. frequency_times_per_month is NOT NULL
+            // DEFAULT 1, so this branch is always taken and the frequency_months
+            // fallback below is unreachable -- without multiplying by the interval,
+            // "1x per 2 months" (2M1X) got scheduled one month apart, packing a
+            // year's six services into the first six months. The count was already
+            // correct (see calculateTotalServicePeriodsForRental); only the spacing
+            // was wrong.
+            $frequencyMonths = max(1, (int) ($serviceFrequency->frequency_months ?? 1));
+            $monthsToAdd = intdiv($period - 1, $frequencyTimes) * $frequencyMonths;
             $serviceIndexInMonth = ($period - 1) % $frequencyTimes;
             $targetMonth = $baseDate->copy()->addMonths($monthsToAdd);
 
