@@ -68,9 +68,24 @@ class RepairWrongFrequencyServicePeriods extends Command
             ->orderBy('period')
             ->get();
 
-        $firstService = $services->firstWhere('period', 1) ?? $services->first();
+        // Satu Job Advice bisa punya BEBERAPA baris service pertama -- satu per
+        // ruangan yang dipasang. generateAllRemainingServices() hanya memakai
+        // ruangan milik baris yang diberikan (getFinalizedRoomIdsForSchedule),
+        // jadi mengambil satu baris saja hanya menghasilkan periode lanjutan
+        // untuk ruangan itu dan diam-diam melewatkan ruangan saudaranya.
+        // Terbukti di produksi 16 Sep 2026: ADS-JA/26-09/0003 punya 3 ruangan,
+        // tapi repair ini cuma membuatkan lanjutan untuk Ruang Office Hall.
+        // Pengecekan "periode sudah ada" di generator sendiri di-scope per
+        // ruangan, jadi memanggilnya sekali untuk tiap baris aman: yang sudah
+        // ada dilewati, yang belum ditambahkan.
+        $firstServices = $services->filter(fn ($job) => (int) $job->period === 1)->values();
 
-        if (! $firstService) {
+        if ($firstServices->isEmpty() && $services->isNotEmpty()) {
+            // Service JA berdiri sendiri boleh meninggalkan period kosong.
+            $firstServices = $services->take(1)->values();
+        }
+
+        if ($firstServices->isEmpty()) {
             $this->warn('No service jobs found. Skipping.');
 
             return;
@@ -94,11 +109,16 @@ class RepairWrongFrequencyServicePeriods extends Command
             $this->line("  id={$job->id} period={$job->period} date={$job->schedule_date->toDateString()} status={$job->status}");
         }
 
+        $this->line('Regenerating from ' . $firstServices->count() . ' first-service row(s):');
+        foreach ($firstServices as $job) {
+            $this->line("  id={$job->id} room=" . ($job->room_name ?: '-') . " status={$job->status}");
+        }
+
         if (! $apply) {
             return;
         }
 
-        DB::transaction(function () use ($toDelete, $firstService, $jobAdvice) {
+        DB::transaction(function () use ($toDelete, $firstServices, $jobAdvice) {
             foreach ($toDelete as $job) {
                 $job->jobScheduleRooms()->delete();
                 $job->delete();
@@ -107,9 +127,16 @@ class RepairWrongFrequencyServicePeriods extends Command
             $controller = new JobScheduleController();
             $method = new \ReflectionMethod($controller, 'generateAllRemainingServices');
             $method->setAccessible(true);
-            $created = $method->invoke($controller, $firstService->fresh(), $jobAdvice);
 
-            $this->info('Regenerated: ' . (is_array($created) ? count($created) : 0) . ' service job(s).');
+            $total = 0;
+            foreach ($firstServices as $firstService) {
+                $created = $method->invoke($controller, $firstService->fresh(), $jobAdvice);
+                $count = is_array($created) ? count($created) : 0;
+                $total += $count;
+                $this->line('  dari id=' . $firstService->id . ' (' . ($firstService->room_name ?: 'tanpa ruangan') . '): ' . $count . ' job');
+            }
+
+            $this->info('Regenerated: ' . $total . ' service job(s).');
         });
 
         $final = JobSchedule::where('job_advice_id', $jobAdvice->id)
