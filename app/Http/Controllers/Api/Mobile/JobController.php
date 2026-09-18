@@ -7180,6 +7180,10 @@ class JobController extends Controller
                         'warehouse' => '-', // Unit on wall doesn't have warehouse
                         'status' => $unitOnWall->status,
                         'unit_on_wall_id' => $unitOnWall->id,
+                        // Same key the material path uses, so a caller reading
+                        // data.room_name gets an answer whichever step matched. The APK
+                        // room picker resolves a scanned unit to its room through it.
+                        'room_name' => $unitRoomName,
                         'location' => [
                             'building' => $unitOnWall->building->nama_gedung ?? $unitOnWall->building_name ?? '-',
                             'room' => $unitOnWall->room->room_name ?? $unitOnWall->room_name ?? '-',
@@ -7259,11 +7263,21 @@ class JobController extends Controller
                 $unitOnWallQuery->where('building_id', $job->building_id);
             }
             
-            // SECURITY CHECK 3: Must match room if available (most specific)
-            if ($job->room_id) {
-                $unitOnWallQuery->where('room_id', $job->room_id);
-            }
-            
+            // SECURITY CHECK 3 (removed 18 Sep 2026): this used to pin the lookup to
+            // $job->room_id, which contradicted the room list the technician is shown.
+            // A multi-room service is split into one JobSchedule per room, each pinning
+            // its own room_id, while getJobRooms() deliberately serves every room the
+            // technician's team is assigned to across the sibling schedules. So a unit
+            // standing in one of those other, listed rooms matched nothing here and the
+            // scan died on the final 404 "Serial number tidak terdaftar untuk job ini"
+            // - on QA 23 service jobs were affected, 3 of them with no scannable SN at
+            // all. The remove branch above never had this filter.
+            //
+            // Nothing is loosened: $roomIds still bounds the lookup to this job advice's
+            // own rooms, customer and building are still checked, and when the caller
+            // names a room the $selectedRoomName comparison below still rejects a unit
+            // standing anywhere else. The room-picker scan is exactly the case that must
+            // pass no room name - it is asking which room the unit is in.
             $unitOnWall = $unitOnWallQuery->first();
             
             // Additional security validation after query
@@ -7304,6 +7318,10 @@ class JobController extends Controller
                         'warehouse' => '-', // Unit on wall doesn't have warehouse
                         'status' => $unitOnWall->status,
                         'unit_on_wall_id' => $unitOnWall->id,
+                        // Same key the material path uses, so a caller reading
+                        // data.room_name gets an answer whichever step matched. The APK
+                        // room picker resolves a scanned unit to its room through it.
+                        'room_name' => $unitRoomName,
                         'location' => [
                             'building' => $unitOnWall->building->nama_gedung ?? $unitOnWall->building_name ?? '-',
                             'room' => $unitOnWall->room->room_name ?? $unitOnWall->room_name ?? '-',

@@ -40,9 +40,13 @@ class ComplainSerialNumberUnitOnWallTest extends TestCase
 
     private const ROOM_ID = 13266;
 
+    private const SIBLING_ROOM_ID = 13267;
+
     private const PRODUCT_ID = 31;
 
     private const SERIAL = 'DW300W2606017';
+
+    private const SIBLING_SERIAL = 'DW300W2606099';
 
     protected function setUp(): void
     {
@@ -516,6 +520,117 @@ class ComplainSerialNumberUnitOnWallTest extends TestCase
         UnitOnWall::query()->update(['status' => 'removed']);
 
         [$status, $payload] = $this->validate($job, self::SERIAL);
+
+        $this->assertSame(404, $status);
+        $this->assertSame('error', $payload['status']);
+    }
+
+    /**
+     * A second room on the same job advice, with its own unit on the wall.
+     *
+     * This is what a multi-room service really looks like: the advice carries both rooms,
+     * but it is split into one JobSchedule per room, each pinning its own room_id - while
+     * getJobRooms() hands the technician every room their team is assigned to across the
+     * sibling schedules. So the picker lists this room even though $job->room_id points at
+     * the other one.
+     */
+    private function seedSiblingRoomWithUnit(JobSchedule $job): void
+    {
+        DB::table('master_rooms')->insert([
+            'id' => self::SIBLING_ROOM_ID,
+            'building_id' => self::BUILDING_ID,
+            'room_name' => 'Ruang Lobby',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('job_advice_rooms')->insert([
+            'job_advice_id' => $job->job_advice_id,
+            'room_id' => self::SIBLING_ROOM_ID,
+            'room_name' => 'Ruang Lobby',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $serial = SerialNumber::create([
+            'serial_number' => self::SIBLING_SERIAL,
+            'status' => 'in_use',
+            'condition_status' => 'new',
+            'location_type' => 'customer',
+            'master_product_id' => self::PRODUCT_ID,
+        ]);
+
+        UnitOnWall::create([
+            'customer_id' => self::CUSTOMER_ID,
+            'building_id' => self::BUILDING_ID,
+            'room_id' => self::SIBLING_ROOM_ID,
+            'room_name' => 'Ruang Lobby',
+            'product_id' => self::PRODUCT_ID,
+            'serial_number_id' => $serial->id,
+            'serial_number' => self::SIBLING_SERIAL,
+            'status' => 'active',
+        ]);
+    }
+
+    public function test_service_job_resolves_a_unit_standing_in_a_listed_sibling_room(): void
+    {
+        $job = $this->seedNoMaterialFixture('service');
+        $this->seedSiblingRoomWithUnit($job);
+
+        // No room name: this is the room picker asking which room the unit is in.
+        [$status, $payload] = $this->validate($job, self::SIBLING_SERIAL, null);
+
+        $this->assertSame(200, $status, 'A unit in a room the picker lists must resolve: '.json_encode($payload));
+        $this->assertSame('unit_on_wall', $payload['source']);
+        $this->assertSame('Ruang Lobby', $payload['data']['room_name']);
+    }
+
+    public function test_service_job_reports_the_room_name_of_the_scanned_unit(): void
+    {
+        $job = $this->seedNoMaterialFixture('service');
+
+        [$status, $payload] = $this->validate($job, self::SERIAL, null);
+
+        $this->assertSame(200, $status);
+        // The APK room picker reads data.room_name; the unit on wall branch used to send
+        // the room only under data.location.room, so every scan fell back to the list.
+        $this->assertSame('Ruang Extra', $payload['data']['room_name']);
+    }
+
+    public function test_service_job_still_rejects_a_unit_standing_in_a_room_the_caller_did_not_name(): void
+    {
+        $job = $this->seedNoMaterialFixture('service');
+        $this->seedSiblingRoomWithUnit($job);
+
+        [$status, $payload] = $this->validate($job, self::SIBLING_SERIAL, 'Ruang Extra');
+
+        $this->assertSame(400, $status);
+        $this->assertTrue($payload['room_mismatch'] ?? false);
+        $this->assertSame('Ruang Lobby', $payload['expected_room']);
+    }
+
+    public function test_service_job_still_rejects_a_unit_belonging_to_another_customer(): void
+    {
+        $job = $this->seedNoMaterialFixture('service');
+        $this->seedSiblingRoomWithUnit($job);
+
+        UnitOnWall::query()->update(['customer_id' => self::CUSTOMER_ID + 1]);
+
+        [$status, $payload] = $this->validate($job, self::SIBLING_SERIAL, null);
+
+        $this->assertSame(404, $status);
+        $this->assertSame('error', $payload['status']);
+    }
+
+    public function test_service_job_still_rejects_a_unit_from_a_room_outside_this_job_advice(): void
+    {
+        $job = $this->seedNoMaterialFixture('service');
+        $this->seedSiblingRoomWithUnit($job);
+
+        // The room exists in the building but was never put on this job advice.
+        DB::table('job_advice_rooms')->where('room_id', self::SIBLING_ROOM_ID)->delete();
+
+        [$status, $payload] = $this->validate($job, self::SIBLING_SERIAL, null);
 
         $this->assertSame(404, $status);
         $this->assertSame('error', $payload['status']);
