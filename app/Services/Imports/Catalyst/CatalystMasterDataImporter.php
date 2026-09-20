@@ -2565,6 +2565,27 @@ class CatalystMasterDataImporter
         return $this->sourceQuotationHeadersByNumber = $lookup;
     }
 
+    /**
+     * Free-of-charge quantity on a Catalyst rental row (MKTContractDt.QtyFree and
+     * its quotation counterpart). Such a row can carry Qty = 0 with QtyFree = 1 -
+     * a unit that is installed but not billed - so dropping this column made the
+     * room look like it had no unit at all.
+     *
+     * Read case-insensitively: Catalyst spells its column names inconsistently
+     * (the SqNo/SQNo case mismatch already cost every contract its quotation
+     * link), and a wrong spelling here fails silently as a 0.
+     */
+    protected function sourceQtyFree(array $row): int
+    {
+        foreach ($row as $column => $value) {
+            if (is_string($column) && preg_match('/^qty[ _]?free$/i', $column)) {
+                return (int) max(0, round((float) $value));
+            }
+        }
+
+        return 0;
+    }
+
     protected function sourceQuotationRentalRows(): array
     {
         if ($this->sourceQuotationRentalRowsCache !== null) {
@@ -3729,6 +3750,7 @@ class CatalystMasterDataImporter
             }
 
             $qty = (float) ($row['QtyTotal'] ?? $row['QtyContract'] ?? 1);
+            $qtyFree = $this->sourceQtyFree($row);
             $price = (float) ($row['PriceForex'] ?? 0);
 
             $index = $row['__index'];
@@ -3739,6 +3761,7 @@ class CatalystMasterDataImporter
                 'master_rental_id' => $rentalId,
             ], [
                 'quantity' => $qty,
+                'qty_free' => $qtyFree,
                 'unit_price' => $price,
                 'total_price' => $qty * $price,
                 'aroma_name' => $product ?? '',
@@ -3814,6 +3837,7 @@ class CatalystMasterDataImporter
             }
 
             $qty = (float) ($row['QtyTotal'] ?? $row['QtyContract'] ?? 1);
+            $qtyFree = $this->sourceQtyFree($row);
             $price = (float) ($row['PriceForex'] ?? 0);
 
             return $this->syncRecord('quotation_details', 'MKTQuotationRental_detail', $this->makeKey([
@@ -3833,6 +3857,7 @@ class CatalystMasterDataImporter
                 'rental_alias' => $this->cleanString($row['Product'] ?? null),
                 'room_name' => $this->cleanString($row['Room'] ?? null) ?: 'General',
                 'quantity' => $qty,
+                'qty_free' => $qtyFree,
                 'unit_price' => $price,
                 'total_price' => $qty * $price,
                 'specifications' => json_encode([
@@ -4187,6 +4212,7 @@ class CatalystMasterDataImporter
             }
 
             $qty = (float) ($row['Qty'] ?? 0);
+            $qtyFree = $this->sourceQtyFree($row);
             $price = (float) ($row['PriceForex'] ?? 0);
             $index = $row['__index'];
             $roomId = $this->findMappedTargetId('CATALYST_ROOM', $this->makeKey([
@@ -4203,6 +4229,7 @@ class CatalystMasterDataImporter
             ], [
                 'rental_alias' => $product,
                 'quantity' => $qty,
+                'qty_free' => $qtyFree,
                 'unit_price' => $price,
                 'total_price' => $qty * $price,
                 'created_by' => $this->actorId(),
