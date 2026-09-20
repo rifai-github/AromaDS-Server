@@ -568,6 +568,14 @@
                                         </div>
                                     @endif
                                     <div class="contract-field">
+                                        <div class="contract-field-label">Periode Sewa</div>
+                                        <div class="contract-field-value">{{ $contract->display_rental_period }}</div>
+                                    </div>
+                                    <div class="contract-field">
+                                        <div class="contract-field-label">Payment Method</div>
+                                        <div class="contract-field-value">{{ $contract->display_payment_method }}</div>
+                                    </div>
+                                    <div class="contract-field">
                                         <div class="contract-field-label">Term of Payment</div>
                                         <div class="contract-field-value">{{ $contract->display_term_of_payment }}</div>
                                     </div>
@@ -660,7 +668,21 @@
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Virtual Account</div>
-                                        <div class="contract-field-value">{{ $contract->display_virtual_accounts }}</div>
+                                        <div class="contract-field-value">
+                                            @forelse($contract->virtual_account_entries as $va)
+                                                <div class="{{ !$loop->first ? 'mt-1' : '' }}">
+                                                    <strong>{{ $va['number'] }}</strong>
+                                                    @if($va['bank'])
+                                                        <span class="text-muted">&mdash; {{ $va['bank'] }}</span>
+                                                    @endif
+                                                    @if($va['source'])
+                                                        <small class="text-muted d-block">{{ $va['source'] }}</small>
+                                                    @endif
+                                                </div>
+                                            @empty
+                                                -
+                                            @endforelse
+                                        </div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Email</div>

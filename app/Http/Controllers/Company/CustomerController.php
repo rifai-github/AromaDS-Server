@@ -707,6 +707,12 @@ class CustomerController extends Controller
             'buildingCustomers.subdistrict', // Load building with subdistrict
             'customerTaxSettings', // Load tax settings
             'classification', // Added classification
+            // Virtual Account: hasil import Catalyst (MsVirtualAccount) maupun yang
+            // digenerate saat kontrak aktif. Yang aktif ditaruh di atas.
+            'companyVirtualAccounts' => fn ($query) => $query
+                ->with('bankPayment.bank')
+                ->orderByDesc('is_active')
+                ->orderByDesc('id'),
         ]);
 
         // Get city from district relationship (customers table doesn't have city_id)

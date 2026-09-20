@@ -25,7 +25,7 @@ class CatalystMasterDataImporter
         'rental_details' => ['master_rentals'],
         'customer_contacts' => ['customers'],
         'customer_tax_settings' => ['customers'],
-        'company_virtual_accounts' => ['customers'],
+        'company_virtual_accounts' => ['customers', 'contracts'],
         'building_customers' => ['customers', 'buildings'],
         'surveys' => ['customers', 'users', 'buildings'],
         'survey_details' => ['surveys'],
@@ -88,7 +88,6 @@ class CatalystMasterDataImporter
         'customers',
         'customer_contacts',
         'customer_tax_settings',
-        'company_virtual_accounts',
         'buildings',
         'building_customers',
         // ── Transactional data ────────────────────────────────────────────
@@ -104,6 +103,10 @@ class CatalystMasterDataImporter
         // MKTContractHd->contracts masih kosong dan existing_contract_id tidak bisa diisi.
         'quotation_existing_contracts', // depends on: quotations, contracts
         'contract_surveys',    // depends on: contracts, surveys
+        // Wajib SETELAH contracts dan SEBELUM billing_groups: MsVirtualAccount.ContractNo
+        // baru bisa dipetakan kalau contracts sudah ada, dan billing_groups menyalin
+        // contracts.virtual_account saat dibuat.
+        'company_virtual_accounts', // depends on: customers, contracts
         'billing_groups',      // depends on: contracts, customers, buildings
         'contract_buildings',  // depends on: billing_groups, buildings
         'contract_rooms',      // depends on: contracts, buildings
@@ -114,6 +117,7 @@ class CatalystMasterDataImporter
 
     private bool $apply = false;
     private array $bankPaymentIdByBankId = [];
+    private array $loggedOnceKeys = [];
     private array $activeSteps = [];
     private int $batchId;
     private int $chunkSize;
@@ -937,24 +941,56 @@ class CatalystMasterDataImporter
             $accountNumber = $this->cleanString($row['VirtualAccount'] ?? null);
             $customerKey = $this->makeKey($row['Customer'] ?? null);
             $customerId = $customerKey ? $this->findMappedTargetId('MsCustomer', $customerKey, 'customers') : null;
-            $bankId = $this->findMappedTargetId('MsBank', $this->makeKey($row['Bank'] ?? null), 'banks');
+            $bankCode = $this->cleanString($row['Bank'] ?? null);
+            $bankId = $this->findMappedTargetId('MsBank', $this->makeKey($bankCode), 'banks');
             $companyId = $this->resolveDefaultImportCompanyId();
             $sourceKey = $this->makeKey($accountNumber);
 
-            if (!$accountNumber || !$bankId || !$companyId) {
-                return $this->skippedRow('Virtual account could not resolve account number, bank, or company.', $sourceKey);
+            if (!$accountNumber || !$companyId) {
+                return $this->skippedRow('Virtual account could not resolve account number or company.', $sourceKey);
             }
 
             // Catalyst hanya mengenal bank (MsBank), sedangkan kolomnya adalah FK ke
             // bank_payments (rekening). Menulis banks.id ke sini bikin baris warisan
             // menunjuk rekening milik bank lain begitu id-nya kebetulan ada.
-            $bankPaymentId = $this->resolveBankPaymentIdForBank($bankId);
+            //
+            // Kalau banknya belum punya rekening, kolomnya ditinggal NULL - bukan
+            // barisnya yang dibuang. Nomor VA itu milik customer, rekening penampung
+            // cuma pelengkap, dan justru karena itu migrasi 2026_09_15 bikin kolom ini
+            // nullable ("baris warisan yang tidak bisa dipetakan tetap tersimpan").
+            // Membuang barisnya bikin SELURUH VA Catalyst hilang begitu bank BC001
+            // belum didaftarkan di bank_payments - persis yang terjadi di DB hasil
+            // bootstrap baru.
+            $bankPaymentId = $bankId ? $this->resolveBankPaymentIdForBank($bankId) : null;
 
             if (!$bankPaymentId) {
-                return $this->skippedRow("Virtual account bank has no bank_payments account (bank_id {$bankId}).", $sourceKey);
+                $this->logOnce('company_virtual_accounts', 'warning', 'va-no-bank-payment:'.($bankCode ?: '?'), sprintf(
+                    'Bank "%s" belum punya rekening di bank_payments%s. Nomor VA tetap diimport, kolom bank_payment_id dibiarkan kosong - daftarkan rekeningnya lalu jalankan ulang step ini untuk melengkapi.',
+                    $bankCode ?: '(kosong)',
+                    $bankId ? " (banks.id {$bankId})" : ' (bank tidak ada di peta MsBank)'
+                ), [
+                    'source_table' => 'MsVirtualAccount',
+                    'source_key' => $sourceKey,
+                    'target_table' => 'company_virtual_accounts',
+                    'bank_code' => $bankCode,
+                    'bank_id' => $bankId,
+                ]);
             }
 
-            return $this->syncRecord('company_virtual_accounts', 'MsVirtualAccount', $sourceKey, 'company_virtual_accounts', [
+            if (!$customerId) {
+                $this->log('company_virtual_accounts', 'warning', sprintf(
+                    'Virtual account "%s" tidak menemukan customer "%s" di peta MsCustomer - baris tetap diimport tanpa tautan customer.',
+                    $accountNumber,
+                    $customerKey ?: '(kosong)'
+                ), [
+                    'source_table' => 'MsVirtualAccount',
+                    'source_key' => $sourceKey,
+                    'target_table' => 'company_virtual_accounts',
+                    'customer_code' => $customerKey,
+                ]);
+            }
+
+            $result = $this->syncRecord('company_virtual_accounts', 'MsVirtualAccount', $sourceKey, 'company_virtual_accounts', [
                 'account_number' => $accountNumber,
             ], [
                 'company_id' => $companyId,
@@ -962,7 +998,7 @@ class CatalystMasterDataImporter
                 'bank_payment_id' => $bankPaymentId,
                 'account_name' => $customerId ? DB::table('customers')->where('id', $customerId)->value('name') : null,
                 'description' => $this->buildSourceDescription([
-                    'BankCode' => $this->cleanString($row['Bank'] ?? null),
+                    'BankCode' => $bankCode,
                     'BranchCode' => $this->cleanString($row['BranchCode'] ?? null),
                     'ContractNo' => $this->cleanString($row['ContractNo'] ?? null),
                 ]),
@@ -972,7 +1008,61 @@ class CatalystMasterDataImporter
                     'FgGetVA' => $this->cleanString($row['FgGetVA'] ?? null),
                 ]),
             ], $row);
+
+            $this->stampVirtualAccountOnContract($row, $accountNumber, $customerId, $sourceKey);
+
+            return $result;
         });
+    }
+
+    /**
+     * Turunkan nomor VA ke kontrak yang menunjuknya.
+     *
+     * MsVirtualAccount.ContractNo memang sering NULL (VA dipegang per customer, bukan
+     * per kontrak), jadi ini hanya berjalan untuk baris yang benar-benar mengisinya.
+     * Kolom contracts.virtual_account cuma diisi kalau masih kosong: nilai yang sudah
+     * ada bisa berasal dari VA yang digenerate sistem, dan import tidak boleh menimpanya.
+     */
+    protected function stampVirtualAccountOnContract(array $row, string $accountNumber, ?int $customerId, ?string $sourceKey): void
+    {
+        $contractNo = $this->cleanString($row['ContractNo'] ?? null);
+
+        if (!$contractNo || !$this->apply) {
+            return;
+        }
+
+        $contractId = $this->findMappedTargetId('MKTContractHd', $this->makeKey($contractNo), 'contracts');
+
+        if (!$contractId) {
+            return;
+        }
+
+        $contract = DB::table('contracts')->where('id', $contractId)->first();
+
+        if (!$contract || filled($contract->virtual_account ?? null)) {
+            return;
+        }
+
+        // Kontrak milik customer lain berarti ContractNo-nya nyasar; jangan ditempel.
+        if ($customerId && ($contract->customer_id ?? null) && (int) $contract->customer_id !== (int) $customerId) {
+            $this->log('company_virtual_accounts', 'warning', sprintf(
+                'Virtual account "%s" menunjuk kontrak %s milik customer lain - tautan kontrak dilewati.',
+                $accountNumber,
+                $contractNo
+            ), [
+                'source_table' => 'MsVirtualAccount',
+                'source_key' => $sourceKey,
+                'target_table' => 'contracts',
+                'target_id' => $contractId,
+            ]);
+
+            return;
+        }
+
+        DB::table('contracts')->where('id', $contractId)->update([
+            'virtual_account' => $accountNumber,
+            'updated_at' => now(),
+        ]);
     }
 
     protected function buildings(): array
@@ -2115,6 +2205,20 @@ class CatalystMasterDataImporter
         if (!in_array($step, $resolved, true)) {
             $resolved[] = $step;
         }
+    }
+
+    /**
+     * Log yang cuma ditulis sekali per kunci, untuk peringatan yang berlaku
+     * bagi ribuan baris sekaligus (mis. satu bank yang belum punya rekening).
+     */
+    protected function logOnce(string $step, string $level, string $key, string $message, array $context = []): void
+    {
+        if (isset($this->loggedOnceKeys[$key])) {
+            return;
+        }
+
+        $this->loggedOnceKeys[$key] = true;
+        $this->log($step, $level, $message, $context);
     }
 
     protected function blankStats(): array

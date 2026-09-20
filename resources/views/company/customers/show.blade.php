@@ -315,6 +315,54 @@
                         </div>
                     </div>
                     
+                    <div class="info-label mt-4 mb-2">Virtual Account</div>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-sm">
+                            <thead>
+                                <tr class="bg-light">
+                                    <th style="width: 22%;">Nomor VA</th>
+                                    <th>Bank</th>
+                                    <th>Atas Nama</th>
+                                    <th style="width: 12%;">Status</th>
+                                    <th style="width: 26%;">Keterangan</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse($customer->companyVirtualAccounts as $va)
+                                @php
+                                    $vaBank = $va->bankPayment?->bank;
+                                @endphp
+                                <tr>
+                                    <td><strong>{{ $va->account_number }}</strong></td>
+                                    <td>
+                                        @if($vaBank)
+                                            {{ $vaBank->bank_name ?: $vaBank->name }}
+                                            @if($va->bankPayment->account_number)
+                                                <br><small class="text-muted">{{ $va->bankPayment->account_number }}</small>
+                                            @endif
+                                        @else
+                                            <span class="text-muted">-</span>
+                                        @endif
+                                    </td>
+                                    <td>{{ $va->account_name ?: '-' }}</td>
+                                    <td>
+                                        @if($va->is_active)
+                                            <span class="badge bg-success">Aktif</span>
+                                        @else
+                                            <span class="badge bg-secondary">Nonaktif</span>
+                                        @endif
+                                    </td>
+                                    <td><small>{{ $va->description ?: '-' }}</small></td>
+                                </tr>
+                                @empty
+                                <tr>
+                                    <td colspan="5" class="text-center py-2 text-muted">Belum ada Virtual Account untuk customer ini.</td>
+                                </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+
                     <div class="info-grid mt-4">
                         <div style="grid-column: span 2;">
                             <div class="info-label">NIB (Nomor Induk Berusaha)</div>

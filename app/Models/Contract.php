@@ -391,9 +391,16 @@ class Contract extends Model
             ->values();
     }
 
-    public function getDisplayVirtualAccountsAttribute(): string
+    /**
+     * VA yang berlaku untuk kontrak ini, sudah dibersihkan dan unik per nomor.
+     *
+     * Bentuknya list ['number' => ..., 'bank' => ..., 'source' => ...] supaya
+     * tampilan bisa menyebut asal nomornya (kolom kontrak, billing group, atau
+     * VA milik customer - termasuk hasil import Catalyst/MsVirtualAccount).
+     */
+    public function getVirtualAccountEntriesAttribute()
     {
-        $entries = collect([['number' => $this->virtual_account, 'bank' => null]])
+        $entries = collect([['number' => $this->virtual_account, 'bank' => null, 'source' => 'Kontrak']])
             ->merge($this->collectBillingGroupVirtualAccounts($this))
             ->merge($this->collectCustomerVirtualAccounts());
 
@@ -401,17 +408,21 @@ class Contract extends Model
             $entries = $entries->merge(
                 $this->mergeDisplaySources()
                     ->flatMap(function ($sourceContract) {
-                        return collect([['number' => $sourceContract->virtual_account, 'bank' => null]])
-                            ->merge($this->collectBillingGroupVirtualAccounts($sourceContract));
+                        return collect([[
+                            'number' => $sourceContract->virtual_account,
+                            'bank' => null,
+                            'source' => 'Kontrak '.($sourceContract->contract_number ?? 'gabungan'),
+                        ]])->merge($this->collectBillingGroupVirtualAccounts($sourceContract));
                     })
             );
         }
 
-        $entries = $entries
+        return $entries
             ->filter(fn ($entry) => filled($entry['number']))
             ->map(fn ($entry) => [
                 'number' => trim((string) $entry['number']),
-                'bank' => filled($entry['bank']) ? trim((string) $entry['bank']) : null,
+                'bank' => filled($entry['bank'] ?? null) ? trim((string) $entry['bank']) : null,
+                'source' => $entry['source'] ?? null,
             ])
             // A real VA is always digits-only (see VirtualAccountRuleService /
             // CompanyVirtualAccount::generateAccountNumber). Legacy Catalyst
@@ -422,8 +433,13 @@ class Contract extends Model
             // real, usable VA number.
             ->filter(fn ($entry) => ctype_digit($entry['number']))
             ->unique('number')
-            ->map(fn ($entry) => $entry['bank'] ? "{$entry['bank']} - {$entry['number']}" : $entry['number'])
             ->values();
+    }
+
+    public function getDisplayVirtualAccountsAttribute(): string
+    {
+        $entries = $this->virtual_account_entries
+            ->map(fn ($entry) => $entry['bank'] ? "{$entry['bank']} - {$entry['number']}" : $entry['number']);
 
         return $entries->isNotEmpty() ? $entries->implode(', ') : '-';
     }
@@ -538,6 +554,69 @@ class Contract extends Model
             : '-';
     }
 
+    public function getDisplayRentalPeriodAttribute(): string
+    {
+        // Rental period lives on the quotation only — the contracts table never
+        // stores it (the wizard just uses it to derive end_date).
+        if ($this->quotation?->rental_period) {
+            return $this->formatRentalPeriod(
+                $this->quotation->rental_period,
+                $this->quotation->rental_unit
+            );
+        }
+
+        $periods = $this->mergeDisplaySources()
+            ->map(fn ($contract) => $contract->quotation?->rental_period
+                ? $this->formatRentalPeriod($contract->quotation->rental_period, $contract->quotation->rental_unit)
+                : null)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($periods->isNotEmpty()) {
+            return $periods->implode(', ');
+        }
+
+        // Fallback for contracts without a quotation (e.g. imported ones):
+        // derive the span from the contract's own dates.
+        if ($this->start_date && $this->end_date) {
+            $months = (int) round(
+                \Carbon\Carbon::parse($this->start_date)->diffInMonths(\Carbon\Carbon::parse($this->end_date))
+            );
+
+            if ($months > 0) {
+                return $months . ' Bulan';
+            }
+        }
+
+        return '-';
+    }
+
+    protected function formatRentalPeriod($period, $unit): string
+    {
+        return trim($period . ' ' . ($unit ? ucfirst($unit) : ''));
+    }
+
+    public function getDisplayPaymentMethodAttribute(): string
+    {
+        // Quotation stores the same value in both columns; billing_methods is the
+        // older one, so keep it as a fallback for pre-wizard quotations.
+        $method = $this->quotation?->payment_method ?: $this->quotation?->billing_methods;
+
+        if ($method) {
+            return ucwords(str_replace('_', ' ', $method));
+        }
+
+        $methods = $this->mergeDisplaySources()
+            ->map(fn ($contract) => $contract->quotation?->payment_method ?: $contract->quotation?->billing_methods)
+            ->filter()
+            ->map(fn ($value) => ucwords(str_replace('_', ' ', $value)))
+            ->unique()
+            ->values();
+
+        return $methods->isNotEmpty() ? $methods->implode(', ') : '-';
+    }
+
     public function getDisplayTermOfPaymentAttribute(): string
     {
         // Contract's own term_of_payment is authoritative (e.g. reset by Contract Switching
@@ -586,7 +665,11 @@ class Contract extends Model
         $contract->loadMissing('billingGroups');
 
         return $contract->billingGroups
-            ->map(fn ($group) => ['number' => $group->virtual_account_number, 'bank' => $group->bank_name]);
+            ->map(fn ($group) => [
+                'number' => $group->virtual_account_number,
+                'bank' => $group->bank_name,
+                'source' => 'Billing Group '.($group->billing_group_name ?? ''),
+            ]);
     }
 
     private function collectCustomerVirtualAccounts()
@@ -606,6 +689,7 @@ class Contract extends Model
                     ->map(fn ($account) => [
                         'number' => $account->full_va_number ?? $account->va_number,
                         'bank' => $account->bankPayment?->bank?->bank_name,
+                        'source' => 'VA Customer',
                     ])
                     ?? collect()
             );
@@ -621,6 +705,7 @@ class Contract extends Model
                     ->map(fn ($account) => [
                         'number' => $account->account_number,
                         'bank' => $account->bankPayment?->bank?->bank_name,
+                        'source' => 'VA Customer',
                     ])
             );
         }

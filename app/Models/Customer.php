@@ -190,6 +190,20 @@ class Customer extends Model
         return $this->hasMany(VirtualAccount::class);
     }
 
+    /**
+     * VA customer yang sebenarnya dipakai sistem.
+     *
+     * Tabel `virtual_accounts` (relasi virtualAccounts di atas) kosong; nomor VA
+     * customer - baik hasil import Catalyst (MsVirtualAccount) maupun yang
+     * digenerate saat kontrak aktif - semuanya tersimpan di
+     * `company_virtual_accounts`. Itu juga master yang dipakai webhook bank
+     * (CompanyVirtualAccount::resolveByAccountNumber).
+     */
+    public function companyVirtualAccounts()
+    {
+        return $this->hasMany(CompanyVirtualAccount::class);
+    }
+
     public function contracts()
     {
         return $this->hasMany(Contract::class);
