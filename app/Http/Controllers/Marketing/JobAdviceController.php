@@ -462,6 +462,17 @@ class JobAdviceController extends Controller
             return $dateValidationResponse;
         }
 
+        if ($request->filled('first_service_date') && $dateValidationResponse = $this->validateJobAdviceSourceDate(
+            $request,
+            $request->contract_id ? (int) $request->contract_id : null,
+            $request->quotation_id ? (int) $request->quotation_id : null,
+            $request->first_service_date,
+            'first_service_date',
+            'Service Pertama'
+        )) {
+            return $dateValidationResponse;
+        }
+
         $lock = Cache::lock('job-advice:create:' . $this->buildJobAdviceCreateLockKey($request), 30);
         if (! $lock->get()) {
             return $this->jobAdviceCreateInProgressResponse($request);
@@ -4506,8 +4517,14 @@ class JobAdviceController extends Controller
             ->exists();
     }
 
-    private function validateJobAdviceSourceDate(Request $request, ?int $contractId, ?int $quotationId, $expectedDate)
-    {
+    private function validateJobAdviceSourceDate(
+        Request $request,
+        ?int $contractId,
+        ?int $quotationId,
+        $expectedDate,
+        string $attribute = 'expected_date',
+        string $fieldLabel = 'Job Advice'
+    ) {
         $sourceDate = null;
         $sourceLabel = null;
 
@@ -4533,7 +4550,8 @@ class JobAdviceController extends Controller
         }
 
         $message = sprintf(
-            'Tanggal Job Advice tidak boleh lebih kecil dari tanggal %s (%s).',
+            'Tanggal %s tidak boleh lebih kecil dari tanggal %s (%s).',
+            $fieldLabel,
             $sourceLabel,
             $minimum->format('d/m/Y')
         );
@@ -4543,14 +4561,14 @@ class JobAdviceController extends Controller
                 'status' => 'error',
                 'message' => $message,
                 'errors' => [
-                    'expected_date' => [$message],
+                    $attribute => [$message],
                 ],
             ], 422);
         }
 
         return back()
             ->withInput()
-            ->withErrors(['expected_date' => $message])
+            ->withErrors([$attribute => $message])
             ->with('error', $message);
     }
 }

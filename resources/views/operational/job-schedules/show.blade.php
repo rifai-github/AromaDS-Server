@@ -2693,6 +2693,8 @@ document.addEventListener('DOMContentLoaded', function() {
         altInput: true,
         altFormat: "d/M/Y",
         allowInput: true,
+        // Tanggal Job tidak boleh mundur dari tanggal kontrak (hari yang sama boleh).
+        minDate: @json(optional($jobSchedule->jobAdvice?->sourceDateFloor()['date'] ?? null)->format('Y-m-d')),
         onReady: function(selectedDates, dateStr, instance) {
             // Hide the altInput initially since we use the display span
             if (instance.altInput) {
@@ -2766,7 +2768,9 @@ function saveScheduleDateInline(dateStr) {
             }
         },
         error: function(xhr) {
-            Swal.fire('Error', 'Terjadi kesalahan sistem', 'error');
+            // 422 dari penjagaan tanggal kontrak membawa pesan spesifik, jangan ditelan.
+            const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Terjadi kesalahan sistem';
+            Swal.fire('Error', msg, 'error');
         }
     });
 }
@@ -3027,6 +3031,10 @@ document.addEventListener('DOMContentLoaded', function() {
             altInput: true,
             altFormat: "d/M/Y",
             allowInput: true,
+            // BA Date tidak boleh mundur dari tanggal assign tim (hari yang sama boleh),
+            // dan tidak boleh bertanggal di masa depan.
+            minDate: @json(optional($jobSchedule->resolveAssignDate())->format('Y-m-d')),
+            maxDate: @json(\Carbon\Carbon::today()->format('Y-m-d')),
             onReady: function(selectedDates, dateStr, instance) {
                 // Hide the altInput initially since we use the display span
                 if (instance.altInput) {

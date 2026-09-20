@@ -2291,6 +2291,14 @@ class JobScheduleController extends Controller
                 ], 404);
             }
 
+            if ($dateMessage = $this->jobScheduleDateBeforeContractMessage($jobAdvice, $request->schedule_date)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $dateMessage,
+                    'errors' => ['schedule_date' => [$dateMessage]],
+                ], 422);
+            }
+
             // MOM13: Create ONE job schedule per contract/quotation (NOT per room)
             // All rooms are accessed via job_advice_id -> jobAdvice->rooms
             // This change allows:
@@ -3367,6 +3375,18 @@ class JobScheduleController extends Controller
                 }
             }
 
+            // Tanggal Job tidak boleh mundur dari tanggal kontrak.
+            if ($request->has('schedule_date')) {
+                $dateMessage = $this->jobScheduleDateBeforeContractMessage($jobSchedule->jobAdvice, $request->schedule_date);
+                if ($dateMessage) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $dateMessage,
+                        'errors' => ['schedule_date' => [$dateMessage]],
+                    ], 422);
+                }
+            }
+
             // Perform partial update
             $updateData = [];
             if ($request->has('schedule_date')) {
@@ -3382,7 +3402,7 @@ class JobScheduleController extends Controller
             // MOM: Handle Team Assignment (Create JobAssignSchedule)
             if ($request->has('team_id') && $request->team_id) {
                 // NEW VALIDATION: Check if we can assign team
-                $validation = $this->validateMakeAssignTeam($jobSchedule);
+                $validation = $this->validateMakeAssignTeam($jobSchedule, $updateData['schedule_date'] ?? null);
                 if ($validation !== true) {
                     return response()->json($validation, 422);
                 }
@@ -3714,6 +3734,18 @@ class JobScheduleController extends Controller
             // Get job advice details (Use existing ID if not in request)
             $jobAdviceId = $request->input('job_advice_id', $jobSchedule->job_advice_id);
             $jobAdvice = \App\Models\JobAdvice::with(['customer', 'contract'])->find($jobAdviceId);
+
+            // Tanggal Job tidak boleh mundur dari tanggal kontrak.
+            if ($request->has('schedule_date')) {
+                $dateMessage = $this->jobScheduleDateBeforeContractMessage($jobAdvice, $request->input('schedule_date'));
+                if ($dateMessage) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $dateMessage,
+                        'errors' => ['schedule_date' => [$dateMessage]],
+                    ], 422);
+                }
+            }
             
             $oldStatus = $jobSchedule->status;
             $newStatus = $request->input('status', $jobSchedule->status);
@@ -4328,6 +4360,36 @@ class JobScheduleController extends Controller
             
             $oldBaDate = $jobSchedule->ba_date;
             $newBaDate = $request->ba_date;
+            $baDate = \Carbon\Carbon::parse($newBaDate)->startOfDay();
+
+            // BA adalah bukti pekerjaan yang sudah selesai, jadi tidak boleh bertanggal
+            // di masa depan. Ini menutup typo maju (mis. salah tahun), yang dampaknya
+            // sama besar dengan typo mundur: ba_date menentukan actual_start_date
+            // kontrak, yang dipakai untuk menentukan periode invoice.
+            if ($baDate->greaterThan(\Carbon\Carbon::today())) {
+                $msg = sprintf(
+                    'BA Date tidak boleh melebihi hari ini (%s).',
+                    \Carbon\Carbon::today()->format('d/m/Y')
+                );
+                if ($request->wantsJson()) {
+                    return response()->json(['status' => 'error', 'message' => $msg], 422);
+                }
+                return redirect()->back()->with('error', $msg);
+            }
+
+            // Tanggal BA tidak boleh mundur dari tanggal assign tim.
+            // Sama hari tetap sah (assign pagi, BA sore hari yang sama).
+            $assignDate = $jobSchedule->resolveAssignDate();
+            if ($assignDate && $baDate->lessThan($assignDate)) {
+                $msg = sprintf(
+                    'BA Date tidak boleh lebih kecil dari tanggal Assign (%s).',
+                    $assignDate->format('d/m/Y')
+                );
+                if ($request->wantsJson()) {
+                    return response()->json(['status' => 'error', 'message' => $msg], 422);
+                }
+                return redirect()->back()->with('error', $msg);
+            }
             
             DB::beginTransaction();
             
@@ -12276,6 +12338,46 @@ class JobScheduleController extends Controller
     }
 
     /**
+     * Batas bawah Tanggal Job: tanggal kontrak (atau tanggal SQ bila Job Advice-nya
+     * bersumber dari quotation). Sengaja dibuat mirror dari
+     * JobAdviceController::validateJobAdviceSourceDate() supaya aturannya satu bunyi.
+     *
+     * @return array{date: \Carbon\Carbon, label: string}|null
+     */
+    private function resolveJobScheduleDateFloor(?\App\Models\JobAdvice $jobAdvice): ?array
+    {
+        return $jobAdvice?->sourceDateFloor();
+    }
+
+    /**
+     * Tanggal Job tidak boleh lebih kecil dari tanggal kontrak.
+     * Tanggal yang sama dengan tanggal kontrak tetap diperbolehkan.
+     *
+     * @return string|null pesan error, atau null bila lolos
+     */
+    private function jobScheduleDateBeforeContractMessage(?\App\Models\JobAdvice $jobAdvice, $scheduleDate): ?string
+    {
+        if (empty($scheduleDate)) {
+            return null;
+        }
+
+        $floor = $this->resolveJobScheduleDateFloor($jobAdvice);
+        if (!$floor) {
+            return null;
+        }
+
+        if (\Carbon\Carbon::parse($scheduleDate)->startOfDay()->greaterThanOrEqualTo($floor['date'])) {
+            return null;
+        }
+
+        return sprintf(
+            'Tanggal Job tidak boleh lebih kecil dari tanggal %s (%s).',
+            $floor['label'],
+            $floor['date']->format('d/m/Y')
+        );
+    }
+
+    /**
      * Validate if a job schedule is ready for team assignment.
      * Requirements:
      * 1. Job must have a job_number (generated during Material Assign)
@@ -12284,8 +12386,24 @@ class JobScheduleController extends Controller
      * @param JobSchedule $jobSchedule
      * @return bool|array Returns true if valid, or array with error details
      */
-    private function validateMakeAssignTeam(JobSchedule $jobSchedule)
+    private function validateMakeAssignTeam(JobSchedule $jobSchedule, $scheduleDateOverride = null)
     {
+        // Tanggal Job tidak boleh mundur dari tanggal kontrak. Dicek paling awal supaya
+        // berlaku untuk semua jalur assign, termasuk job tanpa alur material dan re-assign.
+        $dateMessage = $this->jobScheduleDateBeforeContractMessage(
+            $jobSchedule->jobAdvice,
+            $scheduleDateOverride ?: $jobSchedule->schedule_date
+        );
+
+        if ($dateMessage) {
+            return [
+                'status' => 'error',
+                'message' => $dateMessage . ' Perbaiki Tanggal Job terlebih dahulu sebelum menugaskan tim.',
+                'job_number' => $jobSchedule->job_number ?? 'No Job Number',
+                'job_id' => $jobSchedule->id,
+            ];
+        }
+
         // Jobs without material flow can be assigned directly.
         if ($this->jobScheduleSkipsMaterialAssignment($jobSchedule)) {
             return true;

@@ -89,6 +89,35 @@ class JobAdvice extends Model
         return $this->belongsTo(Quotation::class);
     }
 
+    /**
+     * Batas bawah tanggal untuk semua tanggal turunan Job Advice (tanggal JA dan
+     * Tanggal Job pada Job Schedule): tanggal kontrak, atau tanggal SQ bila JA ini
+     * bersumber dari quotation. Null berarti tidak ada batas yang bisa ditegakkan.
+     *
+     * @return array{date: \Carbon\Carbon, label: string}|null
+     */
+    public function sourceDateFloor(): ?array
+    {
+        if ($this->contract_id) {
+            $sourceDate = $this->contract?->contract_date;
+            $sourceLabel = 'Contract';
+        } elseif ($this->quotation_id) {
+            $sourceDate = $this->quotation?->quotation_date;
+            $sourceLabel = 'SQ';
+        } else {
+            return null;
+        }
+
+        if (!$sourceDate) {
+            return null;
+        }
+
+        return [
+            'date' => \Carbon\Carbon::parse($sourceDate)->startOfDay(),
+            'label' => $sourceLabel,
+        ];
+    }
+
     public function submittedBy()
     {
         return $this->belongsTo(User::class, 'submitted_by', 'id');

@@ -140,6 +140,24 @@ class JobSchedule extends Model
         return $this->hasMany(JobAssignSchedule::class);
     }
 
+    /**
+     * Tanggal job ini di-assign ke tim. Pakai kolom assign_date lebih dulu, lalu
+     * jatuh ke assigned_date paling awal di job_assign_schedules bila kolomnya kosong.
+     * Dipakai sebagai batas bawah BA Date.
+     */
+    public function resolveAssignDate(): ?\Carbon\Carbon
+    {
+        $assignDate = $this->assign_date;
+
+        if (!$assignDate) {
+            $assignDate = $this->jobAssignSchedules()
+                ->whereNotNull('assigned_date')
+                ->min('assigned_date');
+        }
+
+        return $assignDate ? \Carbon\Carbon::parse($assignDate)->startOfDay() : null;
+    }
+
     public function jobAssignments()
     {
         return $this->hasMany(JobAssignment::class, 'job_number', 'job_number');
