@@ -1788,17 +1788,39 @@ function submitForm(event, id = null) {
         method: method,
         headers: {
             'Content-Type': 'application/json',
+            // Without these two headers Laravel does not see the request as AJAX:
+            // a failed validate() answers with a 302 redirect to an HTML page
+            // instead of a 422 JSON body, and response.json() then dies with
+            // "Unexpected token '<'". Keep them on every write request here.
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
         },
         body: JSON.stringify(data)
     })
     .then(response => {
-        if (!response.ok) {
-            return response.json().then(err => {
-                throw new Error(err.message || 'Something went wrong');
-            });
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            if (response.status === 419) {
+                throw new Error('Sesi Anda sudah berakhir. Muat ulang halaman ini lalu simpan kembali.');
+            }
+            throw new Error(`Server membalas bukan JSON (HTTP ${response.status}). Muat ulang halaman lalu coba lagi.`);
         }
-        return response.json();
+        return response.json().then(payload => {
+            if (!response.ok) {
+                let message = payload.message || 'Something went wrong';
+                if (payload.errors) {
+                    // Laravel repeats the first field error in `message`, so show
+                    // the per-field list instead of both.
+                    const fieldErrors = Object.values(payload.errors).flat();
+                    if (fieldErrors.length) {
+                        message = fieldErrors.join('\n');
+                    }
+                }
+                throw new Error(message);
+            }
+            return payload;
+        });
     })
     .then(data => {
         if (data.status === 'success') {
@@ -2046,6 +2068,8 @@ function confirmDelete() {
         fetch(`/company/branches/${window.currentDeleteId}`, {
             method: 'DELETE',
             headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             }
         })
@@ -2067,6 +2091,8 @@ function confirmDelete() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             },
             body: JSON.stringify({ ids: window.selectedIdsForRetry })
