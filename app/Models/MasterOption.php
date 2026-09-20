@@ -34,11 +34,15 @@ class MasterOption extends Model
      * option_name/label/code and has no fields for the structured data
      * (e.g. Term of Payment's billing_mode/months/payment_count JSON) the
      * dedicated screen manages, so a generic edit can desync label vs behavior.
+     * The same applies to names that are a leftover duplicate of a dedicated
+     * master table (e.g. 'Bank' vs the banks table behind Master Bank): keeping
+     * them visible here invites editing the copy nothing reads.
      * Hide them from the generic list/edit/update routes and point users to
      * the dedicated route name instead.
      */
     public const MANAGED_ELSEWHERE = [
         'Term of Payment' => 'system.master-term-of-payments.index',
+        'Bank' => 'company.master-banks.index',
     ];
 
     /**

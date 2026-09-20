@@ -179,13 +179,13 @@ class BankController extends Controller
         }
     }
 
-    public function destroy(Bank $bank)
+    public function destroy(Bank $master_bank)
     {
         try {
             DB::beginTransaction();
 
             // Check if bank is being used in bank payments
-            $bankPaymentsCount = $bank->bankPayments()->count();
+            $bankPaymentsCount = $master_bank->bankPayments()->count();
             if ($bankPaymentsCount > 0) {
                 return response()->json([
                     'status' => 'error',
@@ -193,7 +193,7 @@ class BankController extends Controller
                 ], 422);
             }
 
-            $bank->delete();
+            $master_bank->delete();
 
             DB::commit();
 
