@@ -121,11 +121,16 @@ return new class extends Migration
             $byCadence[((int) $row->frequency_months).'x'.((int) $row->frequency_times_per_month)] = (int) $row->id;
         }
 
+        // chunkById, BUKAN chunk(): filternya `service_frequency_id IS NULL` adalah kolom
+        // yang justru diubah di dalam loop. chunk() memakai OFFSET, jadi setiap baris yang
+        // sudah diisi keluar dari hasil query dan OFFSET halaman berikutnya melompati baris
+        // sebanyak itu. Pada 337 rental dengan chunk 200, 52 rental mulai id 201 terlewat -
+        // terjadi sungguhan di produksi 22 Sep 2026. chunkById memakai `id > terakhir`
+        // sehingga tidak bisa bergeser.
         DB::table('master_rentals')
             ->whereNull('service_frequency_id')
             ->select('id', 'rental_name')
-            ->orderBy('id')
-            ->chunk(200, function ($rentals) use ($parser, $byCadence) {
+            ->chunkById(200, function ($rentals) use ($parser, $byCadence) {
                 foreach ($rentals as $rental) {
                     $cadence = $parser->parse($rental->rental_name ?? '');
 

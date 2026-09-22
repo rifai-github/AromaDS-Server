@@ -96,6 +96,35 @@ class SeedRentalServiceFrequenciesMigrationTest extends TestCase
         $this->assertNull(DB::table('master_rentals')->where('id', 5)->value('service_frequency_id'));
     }
 
+    /**
+     * Regresi: versi pertama migrasi ini memakai chunk() atas query yang difilter
+     * `service_frequency_id IS NULL` — kolom yang justru diisi di dalam loop. Karena
+     * chunk() memakai OFFSET, setiap baris yang sudah diisi keluar dari hasil query dan
+     * halaman berikutnya melompati baris sebanyak itu. Di produksi 22 Sep 2026: dari 337
+     * rental, 52 rental mulai id 201 (tepat di batas chunk 200) tidak pernah tersentuh.
+     */
+    public function test_it_maps_every_rental_across_the_chunk_boundary(): void
+    {
+        $rows = [];
+        for ($id = 1; $id <= 450; $id++) {
+            $rows[] = [
+                'id' => $id,
+                'rental_code' => 'R'.$id,
+                'rental_name' => 'ADS C100 50ml 1 bln 1x',
+                'service_frequency_id' => null,
+            ];
+        }
+        DB::table('master_rentals')->insert($rows);
+
+        $this->runMigration();
+
+        $this->assertSame(
+            0,
+            DB::table('master_rentals')->whereNull('service_frequency_id')->count(),
+            'Ada rental yang terlewat — batas chunk menggeser hasil query lagi.'
+        );
+    }
+
     public function test_running_it_twice_changes_nothing_more(): void
     {
         $this->seedRentals();
