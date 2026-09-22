@@ -1282,8 +1282,22 @@
                                         }
                                         
                                         // Detect if current item is an Aroma/Fragrance type
+                                        //
+                                        // Baris yang memegang UNIT fisik tidak pernah baris aroma,
+                                        // berapa pun kata "aroma" di namanya. Tanpa penjaga ini
+                                        // "Aroma Diffuser Model C100 Black" lolos deteksi lewat
+                                        // namanya sendiri, lalu ikut pelebaran brand-line/kategori
+                                        // di bawah - dropdown-nya menampilkan SELURUH diffuser &
+                                        // dispenser sekategori dan daftar Product(s) yang dicentang
+                                        // di Rental Detail jadi tidak berlaku. Mengikuti
+                                        // slotHoldsUnitProduct(): is_unit pada kategori ATAU tipe.
+                                        $currentProductIsUnit = $currentProduct && (
+                                            (bool) ($currentProduct->productCategory->is_unit ?? false)
+                                            || (bool) ($currentProduct->productType->is_unit ?? false)
+                                        );
+
                                         $isAromaType = false;
-                                        if ($currentProduct) {
+                                        if ($currentProduct && !$currentProductIsUnit) {
                                             $productDetectionHaystack = strtolower(implode(' ', array_filter([
                                                 $currentProductTypeName,
                                                 $currentProductCategoryName,
@@ -1349,7 +1363,7 @@
                                         // Aroma/refill rows are expanded to the whole BRAND LINE within the
                                         // same product category (all aromas, all packaging sizes). Rows with
                                         // no brand_line fall back to the per-aroma base-name grouping.
-                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBaseName, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $hasBrandFamilyScope, $hasCategoryFamilyScope, $currentCategoryId, $item, $allowedProductIds, $rentalDetailId) {
+                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBaseName, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $hasBrandFamilyScope, $hasCategoryFamilyScope, $currentCategoryId, $currentProductIsUnit, $item, $allowedProductIds, $rentalDetailId) {
                                             $productBrandLine = $p->brand_line
                                                 ? strtolower(trim(preg_replace('/\s+/', ' ', $p->brand_line)))
                                                 : null;
@@ -1411,6 +1425,16 @@
 
                                             // Keep current saved product only when no exact rental material list exists.
                                             if ($p->id == $item->product_id) return true;
+
+                                            // Baris unit tanpa daftar material rental tetap boleh ditukar ke
+                                            // varian unit LAIN di kategori yang sama (aturan klien 22 Jun 2026,
+                                            // lihat modal rental products di bawah) - bukan dikunci ke satu
+                                            // produk, dan bukan pula dilebarkan lintas kategori.
+                                            if ($currentProductIsUnit) {
+                                                return $currentCategoryId
+                                                    && (int) $p->product_category_id === $currentCategoryId;
+                                            }
+
                                             $hasGenericVariant = empty($productVariant);
                                             $isTestProduct = str_contains($productName, 'test');
 

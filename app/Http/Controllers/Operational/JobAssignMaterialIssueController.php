@@ -811,8 +811,10 @@ class JobAssignMaterialIssueController extends Controller
             'materialIssue.warehouse:id,name,branch_id,is_active',
             'materialIssue.items:id,material_issue_id,job_assign_schedule_id,product_id,room_name,quantity,convert,bom_quantity,notes,is_copied',
             'materialIssue.items.product:id,name,sku,product_type_id,product_category_id,packaging_size_id,bom_quantity,variant_name,brand_line',
-            'materialIssue.items.product.productType:id,name',
-            'materialIssue.items.product.productCategory:id,name',
+            // is_unit ikut dimuat: dropdown Material memakainya untuk menolak
+            // melebarkan baris UNIT jadi keluarga aroma (lihat index.blade.php).
+            'materialIssue.items.product.productType:id,name,is_unit',
+            'materialIssue.items.product.productCategory:id,name,is_unit',
             'materialIssue.items.product.packagingSize:id,name',
             'createdBy:id,name',
             'updatedBy:id,name'
@@ -992,8 +994,8 @@ class JobAssignMaterialIssueController extends Controller
         $products = MasterProduct::query()
             ->select('id', 'name', 'sku', 'product_type_id', 'product_category_id', 'packaging_size_id', 'bom_quantity', 'variant_name', 'brand_line', 'last_unit_price')
             ->with([
-                'productType:id,name',
-                'productCategory:id,name',
+                'productType:id,name,is_unit',
+                'productCategory:id,name,is_unit',
                 'packagingSize:id,name',
             ])
             ->orderBy('name')

@@ -68,6 +68,53 @@ class MaterialAssignAromaSizeOnlyFilterTest extends TestCase
     }
 
     /**
+     * QA 21 Sep 2026: baris UNIT tidak boleh ikut pelebaran keluarga aroma.
+     *
+     * Deteksi aroma membaca nama produk, dan "Aroma Diffuser Model C100 Black"
+     * mengandung kata "aroma" — barisnya lolos jadi "aroma", lalu dilebarkan ke
+     * SELURUH diffuser/dispenser sekategori sehingga daftar Product(s) yang
+     * dicentang di Rental Detail tidak lagi berlaku. Penjaga is_unit-nya harus
+     * tetap ada, begitu juga is_unit pada eager load produknya — tanpa kolom itu
+     * penjaganya diam-diam selalu false.
+     */
+    public function test_unit_rows_are_never_treated_as_aroma_rows(): void
+    {
+        $view = $this->viewSource();
+
+        $this->assertStringContainsString('$currentProductIsUnit', $view);
+        $this->assertStringContainsString('$currentProduct && !$currentProductIsUnit', $view);
+        $this->assertStringContainsString("productCategory->is_unit", $view);
+        $this->assertStringContainsString("productType->is_unit", $view);
+
+        $controller = file_get_contents(
+            app_path('Http/Controllers/Operational/JobAssignMaterialIssueController.php')
+        );
+
+        $this->assertStringContainsString(
+            "'materialIssue.items.product.productCategory:id,name,is_unit'",
+            $controller
+        );
+        $this->assertStringContainsString("'productCategory:id,name,is_unit'", $controller);
+    }
+
+    /**
+     * Baris unit tanpa daftar material rental tetap boleh ditukar ke varian unit
+     * lain di kategori yang sama (aturan klien 22 Jun 2026) — penjaga di atas
+     * tidak boleh mengunci baris unit ke satu produk saja.
+     */
+    public function test_unit_rows_without_a_material_list_stay_swappable_within_their_category(): void
+    {
+        $view = $this->viewSource();
+
+        $collapsed = preg_replace('/\s+/', ' ', $view);
+
+        $this->assertStringContainsString(
+            'if ($currentProductIsUnit) { return $currentCategoryId && (int) $p->product_category_id === $currentCategoryId;',
+            $collapsed
+        );
+    }
+
+    /**
      * The per-aroma grouping must survive as the no-brand_line fallback.
      */
     public function test_blade_view_keeps_base_name_grouping_as_fallback(): void
