@@ -4875,12 +4875,14 @@ class JobController extends Controller
         // Save to database (assuming JobPhoto model exists)
         \App\Models\JobPhoto::create([
             'job_schedule_id' => $jobScheduleId,
-            'job_schedule_room_id' => $request->job_schedule_room_id ?? $request->room_id,
+            'job_schedule_room_id' => $this->resolveJobPhotoRoomId(
+                (int) $jobScheduleId,
+                $request->job_schedule_room_id ?? $request->room_id
+            ),
             'photo_path' => $path,
             'photo_type' => $request->type,
             'description' => $request->description,
             'uploaded_by' => $request->user()->id,
-            'uploaded_at' => now(),
         ]);
 
         $this->recordMobileSync($request, 'upload_photo', (int) $jobScheduleId, $request->job_schedule_room_id ?? $request->room_id);
@@ -4890,7 +4892,63 @@ class JobController extends Controller
             'message' => 'Photo uploaded successfully',
         ]);
     }
-    
+
+    /**
+     * Terjemahkan id ruangan yang dikirim APK jadi job_schedule_rooms.id yang sah.
+     *
+     * Field-nya bernama `job_schedule_room_id`, tapi yang dikirim APK adalah `RoomModel.id`
+     * — dan itu id **JobAdviceRoom**. Nilainya langsung ditulis ke kolom ber-FK, jadi setiap
+     * unggahan berujung "1452 Cannot add or update a child row" dan fotonya hilang. Karena
+     * upload foto bukti scan sengaja fire-and-forget, kegagalannya senyap: di produksi ada
+     * 3.217 percobaan gagal (15-22 Sep 2026) tanpa satu pun baris `sn_scan` tersimpan, dan
+     * antrean sync mengulanginya terus.
+     *
+     * Diperbaiki di server, bukan cuma di APK: tablet yang sudah terpasang akan terus
+     * mengirim id lama, dan begitu ini jalan, antrean yang menumpuk itu ikut sembuh sendiri.
+     *
+     * Id yang tidak bisa dipetakan dikembalikan NULL — fotonya tetap tersimpan menempel pada
+     * job-nya, jauh lebih baik daripada hilang sama sekali.
+     */
+    private function resolveJobPhotoRoomId(int $jobScheduleId, $rawRoomId): ?int
+    {
+        $roomId = is_numeric($rawRoomId) ? (int) $rawRoomId : 0;
+
+        if ($roomId <= 0) {
+            return null;
+        }
+
+        // 1. Memang sudah id JobScheduleRoom.
+        if (\App\Models\JobScheduleRoom::where('id', $roomId)->exists()) {
+            return $roomId;
+        }
+
+        // 2. Id JobAdviceRoom lewat kolom langsungnya, diutamakan yang memang milik job ini.
+        $byAdviceRoom = \App\Models\JobScheduleRoom::where('job_advice_room_id', $roomId)
+            ->orderByRaw('CASE WHEN job_schedule_id = ? THEN 0 ELSE 1 END', [$jobScheduleId])
+            ->orderBy('id')
+            ->value('id');
+
+        if ($byAdviceRoom) {
+            return (int) $byAdviceRoom;
+        }
+
+        // 3. Ruangan multi-rental menaruh tautannya di pivot, bukan di kolom langsung.
+        $byPivot = \App\Models\JobScheduleRoomRental::where('job_advice_room_id', $roomId)
+            ->whereHas('jobScheduleRoom', fn ($query) => $query->where('job_schedule_id', $jobScheduleId))
+            ->value('job_schedule_room_id');
+
+        if ($byPivot) {
+            return (int) $byPivot;
+        }
+
+        \Log::warning('Upload foto: id ruangan dari APK tidak bisa dipetakan ke job_schedule_rooms.', [
+            'job_schedule_id' => $jobScheduleId,
+            'room_id_dari_apk' => $roomId,
+        ]);
+
+        return null;
+    }
+
     /**
      * Submit signature
      */
