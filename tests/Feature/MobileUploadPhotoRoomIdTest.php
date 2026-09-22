@@ -121,6 +121,43 @@ class MobileUploadPhotoRoomIdTest extends TestCase
         $this->assertSame(301, $this->resolve(108, 75839));
     }
 
+    /**
+     * Id yang sudah diterjemahkan harus dipakai di SELURUH tulisan request itu.
+     *
+     * Perbaikan pertama hanya menerjemahkan id untuk job_photos dan meninggalkan id
+     * mentah di recordMobileSync(). mobile_sync_logs punya FK yang sama, jadi request-nya
+     * tetap berakhir 1452 -> 500: fotonya tersimpan, tapi klien menganggap gagal dan
+     * antrean sync mengulang unggahan yang sama tiap menit. Satu scan jadi 5 baris foto
+     * kembar berjarak 60 detik (22 Sep 2026, job 143).
+     */
+    public function test_the_resolved_room_id_is_used_for_the_sync_log_too(): void
+    {
+        $controller = file_get_contents(
+            app_path('Http/Controllers/Api/Mobile/JobController.php')
+        );
+
+        $start = strpos($controller, 'public function uploadPhoto(');
+        $this->assertNotFalse($start, 'uploadPhoto() tidak ditemukan.');
+
+        $end = strpos($controller, 'private function resolveJobPhotoRoomId', $start);
+        $this->assertNotFalse($end, 'Batas akhir uploadPhoto() tidak ditemukan.');
+
+        $body = substr($controller, $start, $end - $start);
+
+        $this->assertStringContainsString(
+            "\$this->recordMobileSync(\$request, 'upload_photo', (int) \$jobScheduleId, \$jobScheduleRoomId)",
+            $body,
+            'recordMobileSync harus memakai id yang sudah diterjemahkan.'
+        );
+
+        // Id mentah dari request hanya boleh muncul sekali: sebagai masukan penerjemah.
+        $this->assertSame(
+            1,
+            substr_count($body, '$request->job_schedule_room_id ?? $request->room_id'),
+            'Id mentah dari request tidak boleh dipakai lagi setelah diterjemahkan.'
+        );
+    }
+
     public function test_an_unmappable_id_becomes_null_instead_of_losing_the_photo(): void
     {
         $this->assertNull($this->resolve(108, 75839));

@@ -4872,20 +4872,28 @@ class JobController extends Controller
         $filename = time() . '_' . $photo->getClientOriginalName();
         $path = $photo->storeAs('job_photos', $filename, 'public');
         
+        // Diterjemahkan SEKALI lalu dipakai di kedua tempat. mobile_sync_logs punya FK ke
+        // job_schedule_rooms persis seperti job_photos, jadi mengirim id mentah ke sana
+        // tetap melempar 1452 - fotonya sudah tersimpan, tapi request-nya berakhir 500,
+        // klien menganggapnya gagal, dan antrean sync mengulang unggahan yang sama tiap
+        // menit sehingga satu scan jadi berbaris-baris foto kembar (22 Sep 2026: satu
+        // frame yang sama tersimpan 5 kali dengan jarak 60 detik).
+        $jobScheduleRoomId = $this->resolveJobPhotoRoomId(
+            (int) $jobScheduleId,
+            $request->job_schedule_room_id ?? $request->room_id
+        );
+
         // Save to database (assuming JobPhoto model exists)
         \App\Models\JobPhoto::create([
             'job_schedule_id' => $jobScheduleId,
-            'job_schedule_room_id' => $this->resolveJobPhotoRoomId(
-                (int) $jobScheduleId,
-                $request->job_schedule_room_id ?? $request->room_id
-            ),
+            'job_schedule_room_id' => $jobScheduleRoomId,
             'photo_path' => $path,
             'photo_type' => $request->type,
             'description' => $request->description,
             'uploaded_by' => $request->user()->id,
         ]);
 
-        $this->recordMobileSync($request, 'upload_photo', (int) $jobScheduleId, $request->job_schedule_room_id ?? $request->room_id);
+        $this->recordMobileSync($request, 'upload_photo', (int) $jobScheduleId, $jobScheduleRoomId);
         
         return response()->json([
             'status' => 'success',
