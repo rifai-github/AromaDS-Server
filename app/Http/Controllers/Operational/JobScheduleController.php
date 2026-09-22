@@ -2001,6 +2001,11 @@ class JobScheduleController extends Controller
             $skippedStatus = collect();
             $skippedIssued = collect();
 
+            // Job yang materialnya dilepas sebagian: ruangan yang dipilih sudah bersih,
+            // tapi ruangan lain masih memakai job_number-nya.
+            $partialCount = 0;
+            $partialJobs = collect();
+
             // Determine target Job IDs. Unassign Material must stay checkbox-based;
             // one checked row must not expand to every sibling job in the same JA.
             $targetIds = collect();
@@ -2087,47 +2092,68 @@ class JobScheduleController extends Controller
                         // Find linked InventoryIssuing
                         $invIssuing = \App\Models\InventoryIssuing::where('reference_no', $mi->issue_number)->first();
 
-                        if ($selectedRoomNames->isNotEmpty()) {
-                            $materialRoomNames = $mi->items()
-                                ->pluck('room_name')
-                                ->filter()
-                                ->unique()
-                                ->values();
-                            $isFullMaterialSelection = $materialRoomNames->isEmpty()
-                                || $materialRoomNames->every(fn ($roomName) => $selectedRoomNames->contains($roomName));
+                        // Satu MaterialIssue dipakai BERSAMA oleh semua job saudara yang
+                        // ber-job_number sama (lihat blok "MOM CONSOLIDATION" di
+                        // autoCreateMaterialIssue()). Karena itu tiap keputusan di bawah
+                        // dibatasi pada baris milik assign schedule ini saja.
+                        //
+                        // Versi lama membandingkan pilihan ruangan dengan SELURUH isi MI
+                        // bersama itu, lalu hanya menghapus tautan JAMI kalau header MI-nya
+                        // ikut habis. Pada satu JA berisi 4 ruangan (4 job saudara), tiga job
+                        // pertama cuma kehilangan itemnya sementara tautannya tetap hidup -
+                        // job_number dan status MATERIAL ASSIGN-nya tidak pernah direset, dan
+                        // hanya job terakhir dalam loop yang benar-benar lepas.
+                        $ownsStampedItems = $mi->items()
+                            ->where('job_assign_schedule_id', $assign->id)
+                            ->exists();
 
-                            if ($isFullMaterialSelection) {
-                                $this->deleteInventoryIssuingForMaterialUnassign($invIssuing);
-                                $mi->items()->delete();
-                                $mi->delete();
-                                $jam->delete();
-                            } else {
-                                // Delete specific items matching room names in MaterialIssue
-                                $mi->items()->whereIn('room_name', $selectedRoomNames->all())->delete();
+                        // Baris warisan bisa belum distempel job_assign_schedule_id; untuk
+                        // mereka cakupannya terpaksa seluruh MI seperti perilaku lama.
+                        $itemsInScope = fn () => $ownsStampedItems
+                            ? $mi->items()->where('job_assign_schedule_id', $assign->id)
+                            : $mi->items();
 
-                                // Sync change to InventoryIssuing if exists and still in prepare stage
+                        $roomNamesInScope = $itemsInScope()
+                            ->pluck('room_name')
+                            ->filter()
+                            ->unique()
+                            ->values();
+
+                        $keptRoomNames = $selectedRoomNames->isEmpty()
+                            ? collect()
+                            : $roomNamesInScope->reject(fn ($roomName) => $selectedRoomNames->contains($roomName))->values();
+
+                        if ($keptRoomNames->isEmpty()) {
+                            // Seluruh bagian job ini dilepas.
+                            $itemsInScope()->delete();
+
+                            if ($roomNamesInScope->isNotEmpty() && $this->canDeleteInventoryIssuingForMaterialUnassign($invIssuing)) {
+                                $invIssuing->items()->whereIn('room_name', $roomNamesInScope->all())->delete();
+                            }
+
+                            $jam->delete();
+                        } else {
+                            // Sebagian ruangan job ini masih dipakai - tautannya dipertahankan.
+                            $droppedRoomNames = $roomNamesInScope->intersect($selectedRoomNames)->values();
+
+                            if ($droppedRoomNames->isNotEmpty()) {
+                                $itemsInScope()->whereIn('room_name', $droppedRoomNames->all())->delete();
+
                                 if ($this->canDeleteInventoryIssuingForMaterialUnassign($invIssuing)) {
-                                    $invIssuing->items()->whereIn('room_name', $selectedRoomNames->all())->delete();
-
-                                    // Cleanup InventoryIssuing if no items left
-                                    if ($invIssuing->items()->count() === 0) {
-                                        $this->deleteInventoryIssuingForMaterialUnassign($invIssuing);
-                                    }
-                                }
-
-                                // Cleanup MaterialIssue header if no items left
-                                if ($mi->items()->count() === 0) {
-                                    $mi->delete(); // header
-                                    $jam->delete(); // link
+                                    $invIssuing->items()->whereIn('room_name', $droppedRoomNames->all())->delete();
                                 }
                             }
-                        } else {
-                            // Full delete if no specific rooms
+                        }
+
+                        // Header MI dan dokumen issuing-nya baru dibuang kalau sudah tidak
+                        // ada job lain yang memakainya.
+                        $mi->refresh();
+
+                        if ($mi->items()->count() === 0) {
                             $this->deleteInventoryIssuingForMaterialUnassign($invIssuing);
-                            
-                            $mi->items()->delete();
                             $mi->delete();
-                            $jam->delete();
+                        } elseif ($this->canDeleteInventoryIssuingForMaterialUnassign($invIssuing) && $invIssuing->items()->count() === 0) {
+                            $this->deleteInventoryIssuingForMaterialUnassign($invIssuing);
                         }
                     }
 
@@ -2150,9 +2176,16 @@ class JobScheduleController extends Controller
                         'status' => 'new_job',
                         'updated_by' => Auth::id()
                     ]);
-                }
 
-                $successCount++;
+                    $successCount++;
+                } else {
+                    // Materialnya masih tersisa untuk ruangan yang tidak dipilih, jadi job
+                    // ini memang belum boleh kembali ke New Job. Dulu tetap dihitung sukses,
+                    // sehingga pesan "Berhasil ... 4 job" muncul walau nomor IR-nya tidak
+                    // hilang di 3 di antaranya.
+                    $partialCount++;
+                    $partialJobs->push($this->materialUnassignJobLabel($job));
+                }
             }
 
             DB::commit();
@@ -2171,7 +2204,7 @@ class JobScheduleController extends Controller
                 $skipReasons[] = 'Materialnya sudah di-issue sehingga tidak bisa dibatalkan: ' . $skippedIssued->implode(', ');
             }
 
-            if ($successCount === 0 && $skippedCount > 0) {
+            if ($successCount === 0 && $partialCount === 0 && $skippedCount > 0) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Tidak ada job yang bisa di-unassign. ' . implode(' ', $skipReasons),
@@ -2182,6 +2215,10 @@ class JobScheduleController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => "Berhasil membatalkan material assign untuk {$successCount} job. "
+                    . ($partialCount > 0
+                        ? "({$partialCount} job dilepas sebagian — ruangan lain masih memakai nomor jobnya: "
+                            . $partialJobs->implode(', ') . ') '
+                        : '')
                     . ($skippedCount > 0 ? "({$skippedCount} job dilewati — " . implode(' ', $skipReasons) . ')' : ''),
                 'success' => true
             ]);
