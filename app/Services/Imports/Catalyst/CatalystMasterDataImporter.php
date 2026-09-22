@@ -3916,6 +3916,27 @@ class CatalystMasterDataImporter
                     ?? $this->cleanString($row['Terms'] ?? null),
                 'payment_terms' => $this->normalizeContractPaymentTerms($row['Terms'] ?? null),
                 'npwp_number' => $this->cleanString($row['NPWP'] ?? null),
+                // --- tab Additional Info ---
+                //
+                // Diperiksa langsung di sumber (MKTContractHd, 71 kolom, 10.984 baris,
+                // 22 Sep 2026) sesudah QA melapor "additional info kok gak ada? di
+                // catalys ada". Yang benar-benar ADA cuma tiga ini:
+                //   EmpSign      -> 10.984 baris terisi (kode pegawai, dipetakan ke users)
+                //   ContractNote ->    758 baris terisi -> Catatan Tambahan
+                //   InternalMemo ->  2.467 baris terisi -> Catatan Internal
+                //
+                // Sisanya JANGAN dicari lagi di tabel ini:
+                //   - TTD Customer 1-3: kolomnya ada (ContactName1/2/3) tapi NOL baris
+                //     terisi, jadi tidak ada yang bisa diimport.
+                //   - TTD Customer 4, Tanggal Install, Tanggal Service Pertama, dan
+                //     PIC Service (Email): tidak punya kolom sama sekali di MKTContractHd.
+                //   - Kode PPN: bukan milik kontrak di Catalyst, adanya di MsCustomer
+                //     (KodePPn) dan sudah masuk ke customers.ppn_code lewat step customers.
+                //     Menurunkannya ke kontrak mengubah perhitungan pajak invoice, jadi
+                //     ditinggalkan sampai klien memutuskan.
+                'internal_signing_id' => $this->findMappedTargetId('MsEmployee', $this->makeKey($row['EmpSign'] ?? null), 'users'),
+                'external_remark' => $this->cleanString($row['ContractNote'] ?? null),
+                'internal_remark' => $this->cleanString($row['InternalMemo'] ?? null),
                 'status' => $fgTerminate ? 'terminated' : ($statusRaw === 'X' ? 'inactive' : 'active'),
                 'contract_status' => $fgTerminate ? 'terminated' : ($statusRaw === 'X' ? 'inactive' : 'active'),
                 'contract_type' => $this->normalizeContractType($row['ContractType'] ?? null),
