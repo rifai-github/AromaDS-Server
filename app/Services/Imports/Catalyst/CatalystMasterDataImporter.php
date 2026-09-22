@@ -85,6 +85,10 @@ class CatalystMasterDataImporter
         'master_rentals',
         'rental_components',
         'rental_details',
+        // Bukan bagian dari blok rental yang dimatikan: step ini HANYA mengisi kolom
+        // kadens service yang tidak punya sumber di Master Product.xlsx. Lihat
+        // rental_service_frequency_links().
+        'rental_service_frequency_links',
         'customers',
         'customer_contacts',
         'customer_tax_settings',
@@ -3959,6 +3963,135 @@ class CatalystMasterDataImporter
      *
      * Pass ini mengerjakan resolusi yang sama sekali lagi, kali ini setelah `contracts` jalan.
      */
+    /**
+     * Isi master_rentals.service_frequency_id dari MsProduct.FrequencyService.
+     *
+     * Ini SATU-SATUNYA pengecualian sempit atas DISABLED_STEPS, dan sengaja dibuat
+     * sebagai step tersendiri supaya step `master_rentals` tetap mati. Alasannya:
+     * "Master Product.xlsx" — sumber resmi rental sejak 24 Agu 2026 — hanya memuat
+     * kolom A-F, dan kadens service TIDAK ada di antaranya. Jadi kolom ini bukan data
+     * Excel yang bisa tertimpa; dia memang tidak punya sumber selain Catalyst.
+     *
+     * Tanpa isi kolom ini, calculateTotalServicePeriodsForRental() selalu 0 dan tidak
+     * ada kontrak mana pun yang bisa menghasilkan job service/check lanjutan (dilaporkan
+     * QA 15/16 Sep dan 21 Sep 2026).
+     *
+     * Migrasi 2026_09_22_000001 sudah menebak kadens dari NAMA rental, tapi hanya 230
+     * dari 337 nama menyebutkannya. Catalyst punya jawabannya untuk semuanya: per 22 Sep
+     * 2026 kolom FrequencyService terisi di SELURUH 357 baris RNT (1XM 345, 2B1x 7,
+     * 2XM 4, 3XM 1), dan 325 dari 337 rental_code lokal cocok dengan ProductCode-nya —
+     * menutup 97 rental yang namanya tidak menyebut kadens.
+     *
+     * Pembatasan yang dijaga ketat:
+     *  - hanya menyentuh baris yang service_frequency_id-nya masih NULL, jadi pilihan
+     *    manusia lewat UI Master Rental maupun hasil migrasi tidak pernah ditimpa;
+     *  - hanya dua kolom kadens itu, tidak satu pun kolom rental lainnya;
+     *  - rental_code yang tidak ada di Catalyst dilewati, bukan dikarang.
+     *
+     * ⚠️ JANGAN dibalik jadi "Catalyst menang". Kedua sumber dibandingkan untuk 325
+     * rental yang kodenya cocok (22 Sep 2026): 226 sepakat, 97 hanya diketahui Catalyst,
+     * dan cuma 2 yang berbeda — pada dua-duanya NAMA-nya yang benar:
+     *   ADS5000S-6-10  nama "6 SVC / YR" (tiap 2 bulan) vs Catalyst 2XM (2x sebulan)
+     *   VG880-2        nama "Ganti Prefilter 2Bln 1x"   vs Catalyst 1XM (bulanan)
+     * `1XM` mengisi 345 dari 357 baris sumber, jadi itu jelas nilai default Catalyst dan
+     * bukan kadens yang benar-benar dicatat. Karena itu nama rental yang menyebut kadens
+     * secara eksplisit dibiarkan menang, dan Catalyst dipakai untuk menutup kekosongan.
+     * Cakupan akhirnya: 230 dari nama + 97 dari Catalyst = 327 dari 337.
+     */
+    protected function rental_service_frequency_links(): array
+    {
+        if (! Schema::hasTable('master_rentals') || ! Schema::hasTable('rental_service_frequencies')) {
+            return ['stats' => $this->blankStats()];
+        }
+
+        // Kolomnya diperiksa dulu: kalau source Catalyst tidak punya FrequencyService,
+        // query-nya akan melempar dan menggagalkan SELURUH import, bukan cuma step ini.
+        $hasSourceColumn = $this->source()->selectOne(
+            'SELECT 1 AS ok FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ? AND COLUMN_NAME = ?',
+            ['MsProduct', 'FrequencyService']
+        );
+
+        if (! $hasSourceColumn) {
+            $this->logOnce('rental_service_frequency_links', 'warning', 'no-frequency-column',
+                'MsProduct tidak punya kolom FrequencyService - step dilewati, kadens tetap mengandalkan tebakan dari nama rental.', [
+                    'source_table' => 'MsProduct',
+                ]);
+
+            return ['stats' => $this->blankStats()];
+        }
+
+        // Katalog kosong = migrasi 2026_09_22_000001 belum jalan. Tanpa penjaga ini
+        // setiap baris gagal dengan pesan yang sama dan penyebab sebenarnya tenggelam
+        // di antara ratusan baris error.
+        if (DB::table('rental_service_frequencies')->whereNull('deleted_at')->count() === 0) {
+            $this->logOnce('rental_service_frequency_links', 'warning', 'empty-frequency-catalog',
+                'Katalog rental_service_frequencies masih kosong, jadi tidak ada tujuan pemetaan. '
+                . 'Jalankan `php artisan migrate` (migrasi 2026_09_22_000001 mengisi katalognya) lalu ulangi step ini.', [
+                    'target_table' => 'rental_service_frequencies',
+                ]);
+
+            return ['stats' => $this->blankStats()];
+        }
+
+        $rows = $this->source()->table('MsProduct')
+            ->where('ProductType', 'RNT')
+            ->whereNotNull('ProductCode')
+            ->orderBy('ProductCode')
+            ->get(['ProductCode', 'FrequencyService'])
+            ->map(fn ($row) => (array) $row)
+            ->all();
+
+        return $this->runRows('rental_service_frequency_links', 'MsProduct', $rows, function (array $row) {
+            $code = $this->makeKey($row['ProductCode'] ?? null);
+            $frequency = $this->cleanString($row['FrequencyService'] ?? null);
+
+            if (! $code) {
+                return $this->skippedRow('Baris rental tanpa ProductCode.');
+            }
+
+            if (! $frequency) {
+                return $this->skippedRow('FrequencyService kosong di sumber.', $code);
+            }
+
+            // rental_code hasil seed Excel bisa menyisakan spasi, jadi dibandingkan
+            // setelah di-TRIM di kedua sisi.
+            $rental = DB::table('master_rentals')
+                ->whereRaw('TRIM(rental_code) = ?', [$code])
+                ->whereNull('deleted_at')
+                ->select('id', 'service_frequency_id')
+                ->first();
+
+            if (! $rental) {
+                return $this->skippedRow('rental_code tidak ada di master_rentals (rental bersumber Excel).', $code);
+            }
+
+            if ($rental->service_frequency_id) {
+                return ['action' => 'skipped'];
+            }
+
+            $frequencyId = $this->resolveRentalServiceFrequencyId($frequency);
+
+            if (! $frequencyId) {
+                return $this->failedRow(
+                    'Kadens "' . $frequency . '" belum ada padanannya di katalog rental_service_frequencies.',
+                    $code
+                );
+            }
+
+            if ($this->apply) {
+                DB::table('master_rentals')->where('id', $rental->id)->update($this->filterPayload('master_rentals', [
+                    'service_frequency_id' => $frequencyId,
+                    // Kolom teksnya ikut diisi kode aslinya supaya asal-usulnya terlihat,
+                    // sama seperti yang ditulis step master_rentals sebelum dimatikan.
+                    'service_frequency' => $frequency,
+                    'updated_at' => now(),
+                ]));
+            }
+
+            return ['action' => 'updated'];
+        });
+    }
+
     protected function quotation_existing_contracts(): array
     {
         $rows = [];
