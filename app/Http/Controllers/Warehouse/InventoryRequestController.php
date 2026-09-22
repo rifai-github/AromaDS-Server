@@ -615,7 +615,10 @@ class InventoryRequestController extends Controller
                 'approved' => ['issued_qty'],
                 'issued' => [], // Locked: auto-filled from inventory receiving
                 'shipped' => [], // Locked as per user request
-                'completed' => ['returned_qty'],
+                // returned_qty juga terkunci: angkanya turunan (issued_qty - received_qty)
+                // yang ditulis InventoryReceivingController saat penerimaan difinalisasi.
+                // Isian manualnya hanya bisa menimpa angka itu tanpa menyentuh stok.
+                'completed' => [],
             ];
             
             $allowedFields = $allowedFieldsByStatus[$requestStatus] ?? [];

@@ -434,7 +434,11 @@
                                     $canEditApproved = ($status === 'pending');
                                     $canEditIssued = ($status === 'approved');
                                     $canEditReceived = false; // Always read-only, auto-filled from receiving
-                                    $canEditReturned = ($status === 'completed');
+                                    // Returned juga turunan, bukan isian: InventoryReceivingController
+                                    // menulis returned_qty = issued_qty - received_qty saat penerimaan
+                                    // difinalisasi. Isian manualnya cuma bisa menimpa angka itu tanpa
+                                    // menyentuh stok mana pun, jadi ditutup (QA "Revisi 1", 21 Sep 2026).
+                                    $canEditReturned = false;
                                 @endphp
                                 @forelse($requestData->items as $item)
                                 @php
@@ -496,26 +500,7 @@
                                         <span class="badge badge-secondary">{{ number_format($item->received_qty ?? 0, 0) }}</span>
                                     </td>
                                     <td>
-                                        @php
-                                            // Dulu isian ini terbuka justru saat received_qty = 0, padahal max-nya
-                                            // ikut received_qty — jadi satu-satunya nilai yang bisa diisi adalah 0,
-                                            // sementara baris yang menerima barang terkunci. Barisnya jadi terlihat
-                                            // tidak konsisten tanpa ada yang bisa dikerjakan di situ.
-                                            $canEditReturnedNow = $canEditReturned && $item->received_qty > 0;
-                                        @endphp
-
-                                        @if($canEditReturnedNow)
-                                        <input type="number" 
-                                            class="qty-input form-control" 
-                                            data-item-id="{{ $item->id }}" 
-                                            data-field="returned_qty" 
-                                            data-previous-value="{{ isset($item->returned_qty) ? (int)$item->returned_qty : '' }}"
-                                            value="{{ isset($item->returned_qty) ? (int)$item->returned_qty : 0 }}" 
-                                            min="0"
-                                            max="{{ isset($item->received_qty) ? (int)$item->received_qty : '' }}"
-                                            onchange="updateItemQty({{ $item->id }}, 'returned_qty', this.value)"
-                                            onfocus="this.setAttribute('data-previous-value', this.value)">
-                                        @else
+                                        {{-- Angka turunan, tidak pernah diketik: lihat $canEditReturned di atas. --}}
                                         <div class="d-flex flex-column align-items-center gap-1">
                                             <span class="badge badge-secondary" style="font-size: 0.9rem;">{{ isset($item->returned_qty) ? number_format($item->returned_qty, 0) : '-' }}</span>
                                             @if(isset($item->returned_qty))
@@ -526,7 +511,6 @@
                                                 @endif
                                             @endif
                                         </div>
-                                        @endif
                                     </td>
                                     <td>{{ $item->updated_at ? $item->updated_at->format('d/M/Y H:i') : '-' }}</td>
                                     <td>
