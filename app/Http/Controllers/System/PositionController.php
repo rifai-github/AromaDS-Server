@@ -82,7 +82,11 @@ class PositionController extends Controller
         $request->validate([
             'option_name' => 'required|string|max:255',
             'option_description' => 'nullable|string|max:500',
-            'is_active' => 'boolean',
+            // is_active sengaja tidak divalidasi: nilainya tidak pernah dibaca, yang
+            // dipakai hanya ADA/TIDAKNYA field itu (lihat $request->has() di bawah).
+            // Rule `boolean` di sini justru membuat Update Position selalu gagal, karena
+            // checkbox tanpa atribut value mengirim "on" - dan checkbox yang tidak
+            // dicentang tidak mengirim apa pun, yang juga ditolak rule itu.
         ]);
 
         $position->update([

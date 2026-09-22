@@ -37,7 +37,11 @@
                         
                         <div class="form-group">
                             <div class="form-check">
-                                <input type="checkbox" class="form-check-input" id="is_active" name="is_active" 
+                                {{-- Tanpa atribut value, browser mengirim "on" untuk checkbox yang
+                                     dicentang - dan itulah yang dulu ditolak rule `boolean` di
+                                     update(), sehingga Update Position selalu gagal justru saat
+                                     Active dicentang. --}}
+                                <input type="checkbox" class="form-check-input" id="is_active" name="is_active" value="1"
                                        {{ old('is_active', $position->is_active) ? 'checked' : '' }}>
                                 <label class="form-check-label" for="is_active">
                                     Active
