@@ -42,10 +42,29 @@ class CommissionCalculationService
 
             // Check if contract is installed
             if (!$contract->is_installed) {
+                DB::rollBack();
+
                 return [
                     'success' => false,
                     'message' => 'Contract is not installed yet. Commission can only be calculated for installed contracts.',
                     'commission' => null
+                ];
+            }
+
+            // Satu kontrak hanya boleh punya satu komisi otomatis. Tanpa guard ini, mengganti
+            // install_date (ContractController::updateAdditionalInfo) membuat record kedua dan
+            // menambahkan nilai kontrak ke target marketing sekali lagi. Kunci baris kontrak
+            // supaya webhook pembayaran dan update install tidak lolos bersamaan.
+            Contract::whereKey($contract->id)->lockForUpdate()->first();
+            $existingCalculation = $this->automaticCalculationsFor($contract)->first();
+            if ($existingCalculation) {
+                DB::rollBack();
+
+                return [
+                    'success' => false,
+                    'message' => "Commission already calculated for contract {$contract->contract_number} (status: {$existingCalculation->status}).",
+                    'commission' => $existingCalculation,
+                    'already_calculated' => true
                 ];
             }
 
@@ -64,9 +83,12 @@ class CommissionCalculationService
                 ->where('achievement_period_id', $achievementPeriod->id)
                 ->where('target_type', $targetType)
                 ->where('is_locked', false)
+                ->lockForUpdate()
                 ->first();
 
             if (!$marketingTarget) {
+                DB::rollBack();
+
                 return [
                     'success' => false,
                     'message' => "No active marketing target found for user {$marketingUser->name} for {$targetType} contracts",
@@ -87,6 +109,8 @@ class CommissionCalculationService
             // Get commission level based on achievement percentage
             $commissionLevel = CommissionLevel::getLevelByPercentage($achievementPercentage, $targetType);
             if (!$commissionLevel) {
+                DB::rollBack();
+
                 return [
                     'success' => false,
                     'message' => "No commission level found for achievement percentage: {$achievementPercentage}%",
@@ -112,6 +136,8 @@ class CommissionCalculationService
 
             // If CR expired, commission is void
             if ($isCrExpired) {
+                DB::rollBack();
+
                 return [
                     'success' => false,
                     'message' => "Cash Receipt period expired. Commission void due to payment received after {$crDays} days.",
@@ -263,13 +289,113 @@ class CommissionCalculationService
      */
     public function recalculateCommissionForContract(Contract $contract): array
     {
-        // Delete existing calculation
-        CommissionCalculation::where('contract_id', $contract->id)
-            ->where('status', 'pending')
-            ->delete();
+        $calculation = $this->automaticCalculationsFor($contract)->first();
+        if (!$calculation) {
+            return $this->calculateCommissionForContract($contract);
+        }
 
-        // Recalculate
-        return $this->calculateCommissionForContract($contract);
+        // Komisi yang sudah approved/paid/void tidak dihitung ulang diam-diam.
+        if ($calculation->status !== 'pending') {
+            return [
+                'success' => false,
+                'message' => "Commission for contract {$contract->contract_number} is already {$calculation->status}; net value change was not applied.",
+                'commission' => $calculation
+            ];
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Hitung ulang di record yang sama: periode, target, dan penerima tetap milik
+            // perhitungan awal. Target hanya digeser sebesar selisih nilai — dulu record lama
+            // dihapus lalu nilai baru ditambahkan tanpa mengurangi nilai lama, sehingga
+            // achieved_amount terhitung dobel.
+            $calculation = CommissionCalculation::whereKey($calculation->id)->lockForUpdate()->first();
+            $oldValue = (float) ($calculation->net_value ?? $calculation->base_amount);
+            $newValue = (float) ($contract->net_value ?? $contract->contract_value);
+            $delta = $newValue - $oldValue;
+
+            $marketingTarget = $calculation->marketing_target_id
+                ? MarketingTarget::whereKey($calculation->marketing_target_id)->lockForUpdate()->first()
+                : null;
+            if ($marketingTarget) {
+                $marketingTarget->achieved_amount += $delta;
+                $marketingTarget->save();
+            }
+
+            $achievement = Achievement::where('contract_id', $contract->id)
+                ->where('achievement_period_id', $calculation->achievement_period_id)
+                ->where('achievement_type', $calculation->calculation_type)
+                ->latest('id')
+                ->first();
+
+            // Tier dievaluasi ulang pada posisi pencapaian saat kontrak ini dihitung
+            // (snapshot Achievement), bukan pencapaian hari ini yang sudah memuat kontrak lain.
+            $commissionRate = (float) $calculation->commission_rate;
+            $commissionLevelId = $calculation->commission_level_id;
+            $snapshotAchieved = null;
+            if ($achievement && (float) $achievement->target_amount > 0) {
+                $snapshotAchieved = (float) $achievement->achieved_amount + $delta;
+                $percentage = ($snapshotAchieved / (float) $achievement->target_amount) * 100;
+                $commissionLevel = CommissionLevel::getLevelByPercentage($percentage, $calculation->calculation_type);
+                if ($commissionLevel) {
+                    $commissionRate = (float) $commissionLevel->commission_rate;
+                    $commissionLevelId = $commissionLevel->id;
+                }
+            }
+
+            $commissionAmount = $newValue * ($commissionRate / 100);
+
+            $calculation->update([
+                'base_amount' => $contract->contract_value,
+                'net_value' => $newValue,
+                'commission_rate' => $commissionRate,
+                'commission_level_id' => $commissionLevelId,
+                'commission_amount' => $commissionAmount,
+                'final_amount' => $commissionAmount + (float) $calculation->bonus_amount - (float) $calculation->penalty_amount,
+                'calculation_notes' => trim(($calculation->calculation_notes ?? '')."\nRecalculated ".now()->toDateString().": net value {$oldValue} -> {$newValue}"),
+                'updated_by' => auth()->id() ?? $calculation->updated_by
+            ]);
+
+            if ($achievement) {
+                $achievement->update([
+                    'achieved_amount' => $snapshotAchieved ?? $achievement->achieved_amount,
+                    'commission_rate' => $commissionRate,
+                    'commission_level_id' => $commissionLevelId,
+                    'commission_amount' => $commissionAmount,
+                    'updated_by' => auth()->id() ?? $achievement->updated_by
+                ]);
+            }
+
+            DB::commit();
+
+            return [
+                'success' => true,
+                'message' => 'Commission recalculated successfully',
+                'commission' => $calculation->fresh(),
+                'amount' => $commissionAmount
+            ];
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error("Commission recalculation failed for contract {$contract->contract_number}: " . $e->getMessage());
+
+            return [
+                'success' => false,
+                'message' => 'Failed to recalculate commission: ' . $e->getMessage(),
+                'commission' => null
+            ];
+        }
+    }
+
+    /**
+     * Komisi otomatis milik kontrak (tipe new/renewal). Komisi manual/adjustment dari
+     * CommissionController tidak dihitung, jadi tetap boleh berdampingan.
+     */
+    private function automaticCalculationsFor(Contract $contract)
+    {
+        return CommissionCalculation::where('contract_id', $contract->id)
+            ->whereIn('calculation_type', ['new', 'renewal'])
+            ->orderBy('id');
     }
 
     /**
