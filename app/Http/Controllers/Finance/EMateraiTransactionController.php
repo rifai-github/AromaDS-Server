@@ -98,7 +98,7 @@ class EMateraiTransactionController extends Controller
 
             DB::commit();
 
-            return redirect()->route('e-materai-transactions.index')
+            return redirect()->route('finance.e-materai-transactions.index')
                 ->with('success', 'e-Materai transaction created successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -159,7 +159,7 @@ class EMateraiTransactionController extends Controller
 
             DB::commit();
 
-            return redirect()->route('e-materai-transactions.index')
+            return redirect()->route('finance.e-materai-transactions.index')
                 ->with('success', 'e-Materai transaction updated successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -176,7 +176,7 @@ class EMateraiTransactionController extends Controller
     {
         try {
             $eMateraiTransaction->delete();
-            return redirect()->route('e-materai-transactions.index')
+            return redirect()->route('finance.e-materai-transactions.index')
                 ->with('success', 'e-Materai transaction deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->back()
@@ -237,7 +237,7 @@ class EMateraiTransactionController extends Controller
 
             DB::commit();
 
-            return redirect()->route('e-materai-transactions.show', $eMateraiTransaction)
+            return redirect()->route('finance.e-materai-transactions.show', $eMateraiTransaction)
                 ->with('success', 'e-Materai transaction retried successfully.');
         } catch (\Exception $e) {
             DB::rollBack();

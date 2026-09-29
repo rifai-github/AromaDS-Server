@@ -504,9 +504,9 @@
                 <p class="page-subtitle">Manage achievement periods for tracking</p>
             </div>
             <div>
-                <button onclick="openCreateModal()" class="btn btn-primary">
+                <a href="{{ route('finance.achievement-periods.create') }}" class="btn btn-primary">
                     <i class="fas fa-plus"></i> New Period
-                </button>
+                </a>
             </div>
         </div>
     </div>
@@ -700,9 +700,9 @@
                                 <button onclick="openViewModal({{ $period->id }})" class="btn btn-sm btn-info" title="View">
                                     <i class="fas fa-eye"></i>
                                 </button>
-                                <button onclick="openEditModal({{ $period->id }})" class="btn btn-sm btn-warning" title="Edit">
+                                <a href="{{ route('finance.achievement-periods.edit', $period) }}" onclick="event.stopPropagation();" class="btn btn-sm btn-warning" title="Edit">
                                     <i class="fas fa-edit"></i>
-                                </button>
+                                </a>
                                 <form method="POST" action="{{ route('finance.achievement-periods.destroy', $period) }}" class="d-inline" onsubmit="return confirmDeletePeriod(event);">
                                     @csrf
                                     @method('DELETE')

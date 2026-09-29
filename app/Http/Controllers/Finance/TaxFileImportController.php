@@ -193,7 +193,7 @@ class TaxFileImportController extends Controller
             ]);
         }
 
-        return redirect()->route('tax-file-imports.index')->with('success', $message);
+        return redirect()->route('finance.tax-file-imports.index')->with('success', $message);
     }
 
     /**
@@ -261,7 +261,7 @@ class TaxFileImportController extends Controller
                 ]);
             }
 
-            return redirect()->route('tax-file-imports.index')
+            return redirect()->route('finance.tax-file-imports.index')
                 ->with('success', 'Tax file import deleted successfully.');
         } catch (\Exception $e) {
             if (request()->ajax()) {

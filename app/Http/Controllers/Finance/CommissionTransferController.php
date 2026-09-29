@@ -36,9 +36,7 @@ class CommissionTransferController extends Controller
      */
     public function create()
     {
-        $users = User::whereHas('roles', function($q) {
-            $q->where('name', 'like', 'Marketing%');
-        })->get();
+        $users = User::commissionEligible()->get();
         
         $contracts = collect(); // Start with empty collection, will be populated via AJAX based on from_user_id
 
@@ -88,7 +86,7 @@ class CommissionTransferController extends Controller
                 ], 201);
             }
 
-            return redirect()->route('commission-transfers.index')
+            return redirect()->route('finance.commission-transfers.index')
                 ->with('success', 'Commission transfer request created successfully.');
         } catch (\Exception $e) {
             if (request()->expectsJson() || request()->is('api/*')) {

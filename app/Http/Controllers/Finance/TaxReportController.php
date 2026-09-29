@@ -105,7 +105,7 @@ class TaxReportController extends Controller
 
             DB::commit();
 
-            return redirect()->route('tax-reports.index')
+            return redirect()->route('finance.tax-reports.index')
                 ->with('success', 'Tax report created successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -168,7 +168,7 @@ class TaxReportController extends Controller
 
             DB::commit();
 
-            return redirect()->route('tax-reports.index')
+            return redirect()->route('finance.tax-reports.index')
                 ->with('success', 'Tax report updated successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -185,7 +185,7 @@ class TaxReportController extends Controller
     {
         try {
             $taxReport->delete();
-            return redirect()->route('tax-reports.index')
+            return redirect()->route('finance.tax-reports.index')
                 ->with('success', 'Tax report deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->back()
@@ -239,7 +239,7 @@ class TaxReportController extends Controller
 
             DB::commit();
 
-            return redirect()->route('tax-reports.show', $taxReport)
+            return redirect()->route('finance.tax-reports.show', $taxReport)
                 ->with('success', 'Tax report generated successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -266,7 +266,7 @@ class TaxReportController extends Controller
                 'updated_by' => Auth::id()
             ]);
 
-            return redirect()->route('tax-reports.show', $taxReport)
+            return redirect()->route('finance.tax-reports.show', $taxReport)
                 ->with('success', 'e-SPT export generated successfully.');
         } catch (\Exception $e) {
             return redirect()->back()

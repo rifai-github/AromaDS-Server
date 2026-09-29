@@ -428,6 +428,40 @@ class User extends Authenticatable
         return $query->where('department_id', $departmentId);
     }
 
+    /**
+     * Active users who can earn commission: marketing/sales staff by department,
+     * position or role (same test as Contract Assigned), flagged commission
+     * achievers, and anyone already named as marketing or achiever on a contract.
+     * Imported staff often carry only a position ("Sales") or nothing at all.
+     */
+    public function scopeCommissionEligible($query, $alwaysIncludeId = null)
+    {
+        return $query->where(function ($query) use ($alwaysIncludeId) {
+            $query->where('is_active', true)
+                ->where(function ($query) {
+                    $query->whereHas('department', function ($q) {
+                        $q->where('name', 'LIKE', '%marketing%')
+                            ->orWhere('name', 'LIKE', '%sales%');
+                    })
+                        ->orWhere('department_name', 'LIKE', '%marketing%')
+                        ->orWhere('department_name', 'LIKE', '%sales%')
+                        ->orWhere('position_name', 'LIKE', '%marketing%')
+                        ->orWhere('position_name', 'LIKE', '%sales%')
+                        ->orWhereHas('roles', function ($q) {
+                            $q->where('name', 'LIKE', '%marketing%')
+                                ->orWhere('name', 'LIKE', '%sales%');
+                        })
+                        ->orWhere('is_commission_achiever', true)
+                        ->orWhereIn('id', Contract::query()->whereNotNull('marketing_id')->select('marketing_id'))
+                        ->orWhereIn('id', Contract::query()->whereNotNull('commission_recipient_id')->select('commission_recipient_id'));
+                });
+
+            if ($alwaysIncludeId) {
+                $query->orWhere('id', $alwaysIncludeId);
+            }
+        })->orderBy('name');
+    }
+
     // Accessors
     public function getFullNameAttribute()
     {

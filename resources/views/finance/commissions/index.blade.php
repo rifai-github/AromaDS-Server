@@ -675,9 +675,9 @@
                 </div>
             </div>
             <div>
-                <button onclick="openCreateModal()" class="btn btn-primary">
+                <a href="{{ route('finance.commissions.create') }}" class="btn btn-primary">
                     <i class="fas fa-plus"></i> New Commission
-                </button>
+                </a>
             </div>
         </div>
     </div>

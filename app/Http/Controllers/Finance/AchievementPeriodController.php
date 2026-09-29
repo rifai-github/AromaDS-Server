@@ -45,6 +45,7 @@ class AchievementPeriodController extends Controller
             'period_name' => 'required|string|max:255',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after:start_date',
+            'status' => 'nullable|in:active,inactive',
             'description' => 'nullable|string|max:1000'
         ]);
 
@@ -53,12 +54,12 @@ class AchievementPeriodController extends Controller
                 'period_name' => $request->period_name,
                 'start_date' => $request->start_date,
                 'end_date' => $request->end_date,
-                'status' => 'active',
+                'status' => $request->status ?: 'active',
                 'description' => $request->description,
                 'created_by' => Auth::id()
             ]);
 
-            return redirect()->route('achievement-periods.index')
+            return redirect()->route('finance.achievement-periods.index')
                 ->with('success', 'Achievement period created successfully.');
         } catch (\Exception $e) {
             return redirect()->back()
@@ -124,7 +125,7 @@ class AchievementPeriodController extends Controller
                 'updated_by' => Auth::id()
             ]);
 
-            return redirect()->route('achievement-periods.index')
+            return redirect()->route('finance.achievement-periods.index')
                 ->with('success', 'Achievement period updated successfully.');
         } catch (\Exception $e) {
             return redirect()->back()
@@ -140,7 +141,7 @@ class AchievementPeriodController extends Controller
     {
         try {
             $achievementPeriod->delete();
-            return redirect()->route('achievement-periods.index')
+            return redirect()->route('finance.achievement-periods.index')
                 ->with('success', 'Achievement period deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->back()

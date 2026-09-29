@@ -346,9 +346,9 @@
                 <p class="page-subtitle">Manage commission payments and processing</p>
             </div>
             <div>
-                <button onclick="openCreateModal()" class="btn btn-primary">
+                <a href="{{ route('finance.commission-payments.create') }}" class="btn btn-primary">
                     <i class="fas fa-plus"></i> New Payment
-                </button>
+                </a>
             </div>
         </div>
     </div>
@@ -488,7 +488,7 @@
                         <td>
                             <div class="btn-group" onclick="event.stopPropagation();">
                                 <button onclick="openViewModal({{ $payment->id }})" class="btn btn-sm btn-info"><i class="fas fa-eye"></i></button>
-                                <button onclick="openEditModal({{ $payment->id }})" class="btn btn-sm btn-warning"><i class="fas fa-edit"></i></button>
+                                <a href="{{ route('finance.commission-payments.edit', $payment) }}" class="btn btn-sm btn-warning" title="Edit"><i class="fas fa-edit"></i></a>
                             </div>
                         </td>
                     </tr>

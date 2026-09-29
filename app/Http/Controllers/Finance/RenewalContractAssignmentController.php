@@ -43,9 +43,7 @@ class RenewalContractAssignmentController extends Controller
      */
     public function create()
     {
-        $users = User::whereHas('roles', function($q) {
-            $q->where('name', 'like', 'Marketing%');
-        })->get();
+        $users = User::commissionEligible()->get();
         
         $periods = AchievementPeriod::active()->orderBy('start_date', 'desc')->get();
 
@@ -81,7 +79,7 @@ class RenewalContractAssignmentController extends Controller
         }
 
         if ($result['success']) {
-            return redirect()->route('renewal-contract-assignments.index')
+            return redirect()->route('finance.renewal-contract-assignments.index')
                 ->with('success', 'Renewal contract assignment created successfully.');
         }
 
@@ -120,9 +118,7 @@ class RenewalContractAssignmentController extends Controller
 
         $renewalContractAssignment->load(['user', 'achievementPeriod']);
         
-        $users = User::whereHas('roles', function($q) {
-            $q->where('name', 'like', 'Marketing%');
-        })->get();
+        $users = User::commissionEligible($renewalContractAssignment->user_id)->get();
         
         $periods = AchievementPeriod::active()->orderBy('start_date', 'desc')->get();
 
@@ -181,7 +177,7 @@ class RenewalContractAssignmentController extends Controller
                 ]);
             }
 
-            return redirect()->route('renewal-contract-assignments.index')
+            return redirect()->route('finance.renewal-contract-assignments.index')
                 ->with('success', 'Renewal contract assignment updated successfully.');
         } catch (\Exception $e) {
             if (request()->expectsJson() || request()->is('api/*')) {
@@ -217,7 +213,7 @@ class RenewalContractAssignmentController extends Controller
                 ]);
             }
 
-            return redirect()->route('renewal-contract-assignments.index')
+            return redirect()->route('finance.renewal-contract-assignments.index')
                 ->with('success', 'Renewal contract assignment deleted successfully.');
         } catch (\Exception $e) {
             if (request()->expectsJson() || request()->is('api/*')) {

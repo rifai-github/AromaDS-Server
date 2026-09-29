@@ -13,7 +13,7 @@
                     <p class="text-muted">Add new commission calculation</p>
                 </div>
                 <div>
-                    <a href="{{ route('commissions.index') }}" class="btn btn-secondary">
+                    <a href="{{ route('finance.commissions.index') }}" class="btn btn-secondary">
                         <i class="fas fa-arrow-left"></i> Back to List
                     </a>
                 </div>
@@ -29,7 +29,7 @@
                     <h6 class="m-0 font-weight-bold text-primary">Commission Details</h6>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ route('commissions.store') }}">
+                    <form method="POST" action="{{ route('finance.commissions.store') }}">
                         @csrf
                         
                         <div class="row">
@@ -192,7 +192,7 @@
                             <button type="submit" class="btn btn-primary">
                                 <i class="fas fa-save"></i> Create Commission
                             </button>
-                            <a href="{{ route('commissions.index') }}" class="btn btn-secondary">
+                            <a href="{{ route('finance.commissions.index') }}" class="btn btn-secondary">
                                 <i class="fas fa-times"></i> Cancel
                             </a>
                         </div>

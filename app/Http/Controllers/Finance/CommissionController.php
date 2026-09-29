@@ -173,7 +173,7 @@ class CommissionController extends Controller
 
             DB::commit();
 
-            return redirect()->route('commissions.index')
+            return redirect()->route('finance.commissions.index')
                 ->with('success', 'Commission calculation created successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -291,7 +291,7 @@ class CommissionController extends Controller
 
             DB::commit();
 
-            return redirect()->route('commissions.index')
+            return redirect()->route('finance.commissions.index')
                 ->with('success', 'Commission calculation updated successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -309,7 +309,7 @@ class CommissionController extends Controller
         try {
             $commission = $this->accessibleCommissionQuery()->whereKey($commission->id)->firstOrFail();
             $commission->delete();
-            return redirect()->route('commissions.index')
+            return redirect()->route('finance.commissions.index')
                 ->with('success', 'Commission calculation deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->back()

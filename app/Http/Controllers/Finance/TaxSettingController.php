@@ -155,7 +155,7 @@ class TaxSettingController extends Controller
                 ]);
             }
 
-            return redirect()->route('tax-settings.index')
+            return redirect()->route('finance.tax-settings.index')
                 ->with('success', 'Tax setting created successfully.');
         } catch (\Exception $e) {
             DB::rollback();
@@ -318,7 +318,7 @@ class TaxSettingController extends Controller
                 ]);
             }
 
-            return redirect()->route('tax-settings.index')
+            return redirect()->route('finance.tax-settings.index')
                 ->with('success', 'Tax setting updated successfully.');
         } catch (\Exception $e) {
             DB::rollback();
@@ -360,7 +360,7 @@ class TaxSettingController extends Controller
                 ]);
             }
 
-            return redirect()->route('tax-settings.index')
+            return redirect()->route('finance.tax-settings.index')
                 ->with('success', 'Tax setting deleted successfully.');
         } catch (\Exception $e) {
             if (request()->ajax()) {

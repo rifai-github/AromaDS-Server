@@ -185,7 +185,7 @@ class TaxInvoiceController extends Controller
 
             DB::commit();
 
-            return redirect()->route('tax-invoices.index')
+            return redirect()->route('finance.tax-invoices.index')
                 ->with('success', 'Tax invoice created successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -313,7 +313,7 @@ class TaxInvoiceController extends Controller
 
             DB::commit();
 
-            return redirect()->route('tax-invoices.index')
+            return redirect()->route('finance.tax-invoices.index')
                 ->with('success', 'Tax invoice updated successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -330,7 +330,7 @@ class TaxInvoiceController extends Controller
     {
         try {
             $taxInvoice->delete();
-            return redirect()->route('tax-invoices.index')
+            return redirect()->route('finance.tax-invoices.index')
                 ->with('success', 'Tax invoice deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->back()
@@ -400,7 +400,7 @@ class TaxInvoiceController extends Controller
 
             DB::commit();
 
-            return redirect()->route('tax-invoices.show', $taxInvoice)
+            return redirect()->route('finance.tax-invoices.show', $taxInvoice)
                 ->with('success', 'e-Materai applied successfully.');
         } catch (\Exception $e) {
             DB::rollBack();

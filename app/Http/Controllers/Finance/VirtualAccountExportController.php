@@ -125,7 +125,7 @@ class VirtualAccountExportController extends Controller
                 ]);
             }
 
-            return redirect()->route('virtual-account-exports.index')
+            return redirect()->route('finance.virtual-account-exports.index')
                 ->with('success', 'Virtual account export created successfully.');
         } catch (\Exception $e) {
             DB::rollback();
@@ -171,7 +171,7 @@ class VirtualAccountExportController extends Controller
                 ], 422);
             }
             return redirect()
-                ->route('virtual-account-exports.show', $virtualAccountExport)
+                ->route('finance.virtual-account-exports.show', $virtualAccountExport)
                 ->with('error', 'This export cannot be edited in its current status.');
         }
 
@@ -201,7 +201,7 @@ class VirtualAccountExportController extends Controller
                 ], 422);
             }
             return redirect()
-                ->route('virtual-account-exports.show', $virtualAccountExport)
+                ->route('finance.virtual-account-exports.show', $virtualAccountExport)
                 ->with('error', 'This export cannot be edited in its current status.');
         }
 
@@ -263,7 +263,7 @@ class VirtualAccountExportController extends Controller
                 ]);
             }
 
-            return redirect()->route('virtual-account-exports.index')
+            return redirect()->route('finance.virtual-account-exports.index')
                 ->with('success', 'Virtual account export updated successfully.');
         } catch (\Exception $e) {
             DB::rollback();
@@ -292,7 +292,7 @@ class VirtualAccountExportController extends Controller
                 ], 422);
             }
             return redirect()
-                ->route('virtual-account-exports.show', $virtualAccountExport)
+                ->route('finance.virtual-account-exports.show', $virtualAccountExport)
                 ->with('error', 'This export cannot be deleted in its current status.');
         }
 
@@ -315,7 +315,7 @@ class VirtualAccountExportController extends Controller
                 ]);
             }
 
-            return redirect()->route('virtual-account-exports.index')
+            return redirect()->route('finance.virtual-account-exports.index')
                 ->with('success', 'Virtual account export deleted successfully.');
         } catch (\Exception $e) {
             DB::rollback();
@@ -344,7 +344,7 @@ class VirtualAccountExportController extends Controller
                 ], 422);
             }
             return redirect()
-                ->route('virtual-account-exports.show', $virtualAccountExport)
+                ->route('finance.virtual-account-exports.show', $virtualAccountExport)
                 ->with('error', 'This export cannot be processed in its current status.');
         }
 
@@ -374,7 +374,7 @@ class VirtualAccountExportController extends Controller
             }
 
             return redirect()
-                ->route('virtual-account-exports.show', $virtualAccountExport)
+                ->route('finance.virtual-account-exports.show', $virtualAccountExport)
                 ->with('success', 'Virtual account export processing started.');
         } catch (\Exception $e) {
             DB::rollback();
@@ -403,7 +403,7 @@ class VirtualAccountExportController extends Controller
                 ], 422);
             }
             return redirect()
-                ->route('virtual-account-exports.show', $virtualAccountExport)
+                ->route('finance.virtual-account-exports.show', $virtualAccountExport)
                 ->with('error', 'This export cannot be retried in its current status.');
         }
 
@@ -426,7 +426,7 @@ class VirtualAccountExportController extends Controller
             }
 
             return redirect()
-                ->route('virtual-account-exports.show', $virtualAccountExport)
+                ->route('finance.virtual-account-exports.show', $virtualAccountExport)
                 ->with('success', 'Virtual account export retry started.');
         } catch (\Exception $e) {
             DB::rollback();
@@ -480,7 +480,7 @@ class VirtualAccountExportController extends Controller
             }
 
             return redirect()
-                ->route('virtual-account-exports.index')
+                ->route('finance.virtual-account-exports.index')
                 ->with('success', "Successfully processed {$processedCount} exports.");
         } catch (\Exception $e) {
             DB::rollback();
@@ -535,7 +535,7 @@ class VirtualAccountExportController extends Controller
             }
 
             return redirect()
-                ->route('virtual-account-exports.index')
+                ->route('finance.virtual-account-exports.index')
                 ->with('success', "Successfully deleted {$deletedCount} exports.");
         } catch (\Exception $e) {
             DB::rollback();

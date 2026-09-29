@@ -456,9 +456,9 @@
                             </span>
                         </td>
                         <td class="text-sm text-gray-500">{{ $receipt->creator->name ?? '-' }}</td>
-                        <td class="text-sm text-gray-500">{!! $receipt->created_at ? $receipt->created_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                        <td class="text-sm text-gray-500">{!! $receipt->created_at ? $receipt->created_at->format('d/M/Y') . '<br>at ' . $receipt->created_at->format('H.i') . ' WIB' : '-' !!}</td>
                         <td class="text-sm text-gray-500">{{ $receipt->updater->name ?? '-' }}</td>
-                        <td class="text-sm text-gray-500">{!! $receipt->updated_at ? $receipt->updated_at->format('d/M/Y<br>at H.i') . ' WIB' : '-' !!}</td>
+                        <td class="text-sm text-gray-500">{!! $receipt->updated_at ? $receipt->updated_at->format('d/M/Y') . '<br>at ' . $receipt->updated_at->format('H.i') . ' WIB' : '-' !!}</td>
                     </tr>
                     @empty
                     <tr>

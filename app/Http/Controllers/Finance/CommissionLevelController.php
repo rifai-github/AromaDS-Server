@@ -79,7 +79,7 @@ class CommissionLevelController extends Controller
                 ], 201);
             }
 
-            return redirect()->route('commission-levels.index')
+            return redirect()->route('finance.commission-levels.index')
                 ->with('success', 'Commission level created successfully.');
         } catch (\Exception $e) {
             if (request()->expectsJson() || request()->is('api/*')) {
@@ -164,7 +164,7 @@ class CommissionLevelController extends Controller
                 ]);
             }
 
-            return redirect()->route('commission-levels.index')
+            return redirect()->route('finance.commission-levels.index')
                 ->with('success', 'Commission level updated successfully.');
         } catch (\Exception $e) {
             if (request()->expectsJson() || request()->is('api/*')) {
@@ -200,7 +200,7 @@ class CommissionLevelController extends Controller
                 ]);
             }
 
-            return redirect()->route('commission-levels.index')
+            return redirect()->route('finance.commission-levels.index')
                 ->with('success', 'Commission level deleted successfully.');
         } catch (\Exception $e) {
             if (request()->expectsJson() || request()->is('api/*')) {

@@ -115,7 +115,7 @@ class AchievementController extends Controller
 
             DB::commit();
 
-            return redirect()->route('achievements.index')
+            return redirect()->route('finance.achievements.index')
                 ->with('success', 'Achievement created successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -204,7 +204,7 @@ class AchievementController extends Controller
 
             DB::commit();
 
-            return redirect()->route('achievements.index')
+            return redirect()->route('finance.achievements.index')
                 ->with('success', 'Achievement updated successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -221,7 +221,7 @@ class AchievementController extends Controller
     {
         try {
             $achievement->delete();
-            return redirect()->route('achievements.index')
+            return redirect()->route('finance.achievements.index')
                 ->with('success', 'Achievement deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->back()

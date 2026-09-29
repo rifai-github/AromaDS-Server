@@ -32,7 +32,7 @@ class CommissionPaymentController extends Controller
     public function create()
     {
         $users = User::all();
-        $calculations = CommissionCalculation::where('status', 'approved')->get();
+        $calculations = CommissionCalculation::with(['user', 'achievementPeriod'])->where('status', 'approved')->get();
         
         if (request()->expectsJson() || request()->is('api/*')) {
             return response()->json([
@@ -77,7 +77,7 @@ class CommissionPaymentController extends Controller
                 'created_by' => Auth::id()
             ]);
 
-            return redirect()->route('commission-payments.index')
+            return redirect()->route('finance.commission-payments.index')
                 ->with('success', 'Commission payment created successfully.');
         } catch (\Exception $e) {
             return redirect()->back()
@@ -109,7 +109,13 @@ class CommissionPaymentController extends Controller
     public function edit(CommissionPayment $commissionPayment)
     {
         $users = User::all();
-        $calculations = CommissionCalculation::where('status', 'approved')->get();
+        // Keep the payment's own calculation selectable even after it has moved past "approved".
+        $calculations = CommissionCalculation::with(['user', 'achievementPeriod'])
+            ->where(function ($query) use ($commissionPayment) {
+                $query->where('status', 'approved')
+                    ->orWhere('id', $commissionPayment->commission_calculation_id);
+            })
+            ->get();
         
         if (request()->expectsJson() || request()->is('api/*')) {
             return response()->json([
@@ -154,7 +160,7 @@ class CommissionPaymentController extends Controller
                 'updated_by' => Auth::id()
             ]);
 
-            return redirect()->route('commission-payments.index')
+            return redirect()->route('finance.commission-payments.index')
                 ->with('success', 'Commission payment updated successfully.');
         } catch (\Exception $e) {
             return redirect()->back()
@@ -170,7 +176,7 @@ class CommissionPaymentController extends Controller
     {
         try {
             $commissionPayment->delete();
-            return redirect()->route('commission-payments.index')
+            return redirect()->route('finance.commission-payments.index')
                 ->with('success', 'Commission payment deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->back()

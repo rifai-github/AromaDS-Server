@@ -73,7 +73,7 @@ class MarketingLevelController extends Controller
                 ], 201);
             }
 
-            return redirect()->route('marketing-levels.index')
+            return redirect()->route('finance.marketing-levels.index')
                 ->with('success', 'Marketing level created successfully.');
         } catch (\Exception $e) {
             if (request()->expectsJson() || request()->is('api/*')) {
@@ -152,7 +152,7 @@ class MarketingLevelController extends Controller
                 ]);
             }
 
-            return redirect()->route('marketing-levels.index')
+            return redirect()->route('finance.marketing-levels.index')
                 ->with('success', 'Marketing level updated successfully.');
         } catch (\Exception $e) {
             if (request()->expectsJson() || request()->is('api/*')) {
@@ -188,7 +188,7 @@ class MarketingLevelController extends Controller
                 ]);
             }
 
-            return redirect()->route('marketing-levels.index')
+            return redirect()->route('finance.marketing-levels.index')
                 ->with('success', 'Marketing level deleted successfully.');
         } catch (\Exception $e) {
             if (request()->expectsJson() || request()->is('api/*')) {

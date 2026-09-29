@@ -43,9 +43,7 @@ class MarketingTargetController extends Controller
      */
     public function create()
     {
-        $users = User::whereHas('roles', function($q) {
-            $q->where('name', 'like', 'Marketing%');
-        })->get();
+        $users = User::commissionEligible()->get();
         
         $periods = AchievementPeriod::active()->orderBy('start_date', 'desc')->get();
 
@@ -80,7 +78,7 @@ class MarketingTargetController extends Controller
         }
 
         if ($result['success']) {
-            return redirect()->route('marketing-targets.index')
+            return redirect()->route('finance.marketing-targets.index')
                 ->with('success', 'Marketing target created successfully.');
         }
 
@@ -113,9 +111,7 @@ class MarketingTargetController extends Controller
     {
         $marketingTarget->load(['user', 'achievementPeriod']);
         
-        $users = User::whereHas('roles', function($q) {
-            $q->where('name', 'like', 'Marketing%');
-        })->get();
+        $users = User::commissionEligible($marketingTarget->user_id)->get();
         
         $periods = AchievementPeriod::active()->orderBy('start_date', 'desc')->get();
 
@@ -170,7 +166,7 @@ class MarketingTargetController extends Controller
                 ]);
             }
 
-            return redirect()->route('marketing-targets.index')
+            return redirect()->route('finance.marketing-targets.index')
                 ->with('success', 'Marketing target updated successfully.');
         } catch (\Exception $e) {
             if (request()->expectsJson() || request()->is('api/*')) {
@@ -206,7 +202,7 @@ class MarketingTargetController extends Controller
                 ]);
             }
 
-            return redirect()->route('marketing-targets.index')
+            return redirect()->route('finance.marketing-targets.index')
                 ->with('success', 'Marketing target deleted successfully.');
         } catch (\Exception $e) {
             if (request()->expectsJson() || request()->is('api/*')) {
