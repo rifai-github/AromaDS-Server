@@ -168,7 +168,9 @@ class CommissionCalculationService
                 'bonus_amount' => 0,
                 'penalty_amount' => 0,
                 'final_amount' => $commissionAmount,
-                'status' => 'pending',
+                // enum DB: calculated|approved|paid|cancelled. Dihitung karena uang sudah masuk
+                // (jalur pembayaran) langsung approved, sama seperti cabang update di bawah.
+                'status' => $cashReceiptDate ? 'approved' : 'calculated',
                 'calculation_date' => now(),
                 'calculation_notes' => "Auto-calculated for contract {$contract->contract_number}. Achievement: {$achievementPercentage}%",
                 'is_installed' => true,
@@ -242,7 +244,7 @@ class CommissionCalculationService
 
             // Check if commission already calculated
             $existingCalculation = CommissionCalculation::where('contract_id', $contract->id)
-                ->where('status', '!=', 'void')
+                ->where('status', '!=', 'cancelled')
                 ->first();
 
             if ($existingCalculation) {
@@ -257,7 +259,7 @@ class CommissionCalculationService
                     'cr_due_date' => $crDueDate,
                     'is_cr_expired' => $isCrExpired,
                     'is_commission_void' => $isCrExpired,
-                    'status' => $isCrExpired ? 'void' : 'approved',
+                    'status' => $isCrExpired ? 'cancelled' : 'approved',
                     'updated_by' => auth()->id()
                 ]);
 
@@ -295,7 +297,7 @@ class CommissionCalculationService
         }
 
         // Komisi yang sudah approved/paid/void tidak dihitung ulang diam-diam.
-        if ($calculation->status !== 'pending') {
+        if ($calculation->status !== 'calculated') {
             return [
                 'success' => false,
                 'message' => "Commission for contract {$contract->contract_number} is already {$calculation->status}; net value change was not applied.",

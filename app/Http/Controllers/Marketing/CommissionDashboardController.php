@@ -75,8 +75,8 @@ class CommissionDashboardController extends Controller
 
         // Calculate summary statistics
         $totalCommission = $commissions->where('status', 'approved')->sum('final_amount');
-        $pendingCommission = $commissions->where('status', 'pending')->sum('final_amount');
-        $voidCommission = $commissions->where('status', 'void')->sum('final_amount');
+        $pendingCommission = $commissions->where('status', 'calculated')->sum('final_amount');
+        $voidCommission = $commissions->where('status', 'cancelled')->sum('final_amount');
 
         $summary = [
             'total_commission' => $totalCommission,

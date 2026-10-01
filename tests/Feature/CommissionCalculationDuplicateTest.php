@@ -124,7 +124,8 @@ class CommissionCalculationDuplicateTest extends TestCase
             $t->decimal('bonus_amount', 15, 2)->default(0);
             $t->decimal('penalty_amount', 15, 2)->default(0);
             $t->decimal('final_amount', 15, 2)->default(0);
-            $t->string('status')->default('pending');
+            // Sama dengan MySQL produksi: nilai di luar enum (mis. 'pending'/'void') ditolak.
+            $t->enum('status', ['calculated', 'approved', 'paid', 'cancelled'])->default('calculated');
             $t->date('calculation_date')->nullable();
             $t->date('payment_date')->nullable();
             $t->text('calculation_notes')->nullable();
@@ -271,6 +272,51 @@ class CommissionCalculationDuplicateTest extends TestCase
         $this->assertEquals(750_000, $c['amount']);
         $this->assertEquals(115_000_000, $this->achieved());
         $this->assertSame(0, DB::transactionLevel());
+    }
+
+    public function test_new_commission_is_stored_with_a_status_the_production_enum_accepts(): void
+    {
+        // QA 1 Okt: komisi otomatis tak pernah tersimpan di MySQL karena kode menulis
+        // status 'pending' padahal enum-nya calculated|approved|paid|cancelled. Tabel test
+        // memakai enum yang sama, jadi nilai di luar itu kini ditolak di sini juga.
+        $result = $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000));
+
+        $this->assertTrue($result['success'], $result['message']);
+        $this->assertSame('calculated', $result['commission']->status);
+    }
+
+    public function test_paid_invoice_approves_or_cancels_the_commission_with_valid_statuses(): void
+    {
+        $contract = $this->contract(1, 101, 40_000_000);
+        $this->service->calculateCommissionForContract($contract);
+
+        $invoice = new \App\Models\Invoice();
+        $invoice->contract_id = $contract->id;
+        $invoice->setRelation('contract', $contract);
+
+        $onTime = $this->service->calculateCommissionOnCashReceipt($invoice, now()->toDateString());
+        $this->assertTrue($onTime['success']);
+        $this->assertSame('approved', $onTime['commission']->fresh()->status);
+
+        $late = $this->service->calculateCommissionOnCashReceipt($invoice, now()->subDays(400)->toDateString());
+        $this->assertFalse($late['success']);
+        $this->assertSame('cancelled', $late['commission']->fresh()->status);
+        $this->assertTrue((bool) $late['commission']->fresh()->is_commission_void);
+    }
+
+    public function test_commission_created_by_payment_is_approved_right_away(): void
+    {
+        // Kontrak sudah terinstall tapi belum punya komisi (mis. Tanggal Install diisi sebelum
+        // perbaikan): pembayaran invoice yang membuat komisinya, langsung approved.
+        $contract = $this->contract(1, 101, 40_000_000);
+        $invoice = new \App\Models\Invoice();
+        $invoice->contract_id = $contract->id;
+        $invoice->setRelation('contract', $contract);
+
+        $result = $this->service->calculateCommissionOnCashReceipt($invoice, now()->toDateString());
+
+        $this->assertTrue($result['success'], $result['message']);
+        $this->assertSame('approved', $result['commission']->status);
     }
 
     public function test_calculating_same_contract_twice_keeps_one_record_and_one_target_increment(): void

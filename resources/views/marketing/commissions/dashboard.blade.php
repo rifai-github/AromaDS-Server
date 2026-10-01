@@ -144,7 +144,7 @@
                                 <td>
                                     @if($commission->status == 'approved')
                                         <span class="badge badge-success">Approved</span>
-                                    @elseif($commission->status == 'pending')
+                                    @elseif($commission->status == 'calculated')
                                         <span class="badge badge-warning">Pending</span>
                                     @else
                                         <span class="badge badge-danger">Void</span>
