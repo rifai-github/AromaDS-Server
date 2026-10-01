@@ -964,6 +964,8 @@
                                 // Kode PPN dan kedua tanggal terkunci karena sudah dipakai
                                 // perhitungan pajak, komisi, dan penjadwalan service.
                                 $additionalInfoPosted = $contract->contract_status === 'active';
+                                // Tanggal Install yang masih kosong di kontrak Aktif boleh diisi sekali (memicu komisi).
+                                $installDateOpen = $additionalInfoPosted && ! $contract->install_date;
                             @endphp
                             <button type="button" class="btn btn-primary btn-sm no-double-click-prevention" id="editAdditionalInfoBtn" onclick="editAdditionalInfo()">
                                 <i class="fas fa-edit me-1"></i>Edit
@@ -1104,8 +1106,10 @@
                                         </div>
                                         <div class="col-md-6 mb-3">
                                             <label class="form-label">Tanggal Install @if(!$additionalInfoPosted)<span class="text-danger">*</span>@endif</label>
-                                            <input type="date" name="install_date" id="editInstallDate" class="form-control" value="{{ $contract->install_date ? $contract->install_date->format('Y-m-d') : '' }}" {{ $additionalInfoPosted ? 'disabled' : 'required' }}>
-                                            @if($additionalInfoPosted)
+                                            <input type="date" name="install_date" id="editInstallDate" class="form-control" value="{{ $contract->install_date ? $contract->install_date->format('Y-m-d') : '' }}" {{ $additionalInfoPosted ? ($installDateOpen ? '' : 'disabled') : 'required' }}>
+                                            @if($installDateOpen)
+                                                <small class="text-muted">Belum terisi: isi sekali di sini, komisi dihitung otomatis. Setelah tersimpan terkunci.</small>
+                                            @elseif($additionalInfoPosted)
                                                 <small class="text-muted">Terkunci setelah kontrak di-post.</small>
                                             @endif
                                         </div>

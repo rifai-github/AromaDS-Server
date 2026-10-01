@@ -646,6 +646,11 @@ class ContractController extends Controller
         // sudah dipakai perhitungan pajak, komisi, dan penjadwalan service.
         $isPosted = $contract->contract_status === 'active';
 
+        // Kontrak yang di-approve tanpa Tanggal Install belum dipakai pajak/komisi, jadi
+        // kolom itu boleh diisi sekali; begitu terisi ikut terkunci seperti biasa. Mengisinya
+        // memicu perhitungan komisi otomatis (is_installed).
+        $installDateOpen = $isPosted && ! $contract->install_date;
+
         $rules = [
             'customer_signing_1_id' => 'required|exists:customer_contacts,id',
             'customer_signing_2_id' => 'nullable|exists:customer_contacts,id',
@@ -661,6 +666,8 @@ class ContractController extends Controller
             $rules['ppn_code'] = ['nullable', 'string', Rule::exists('finance_tax_codes', 'code')];
             $rules['install_date'] = 'required|date';
             $rules['first_service_date'] = 'required|date';
+        } elseif ($installDateOpen) {
+            $rules['install_date'] = 'nullable|date';
         }
 
         $validator = Validator::make($request->all(), $rules);
@@ -694,6 +701,8 @@ class ContractController extends Controller
                 $payload['ppn_code'] = $request->ppn_code;
                 $payload['install_date'] = $request->install_date;
                 $payload['first_service_date'] = $request->first_service_date;
+            } elseif ($installDateOpen) {
+                $payload['install_date'] = $request->install_date;
             }
 
             $contract->update($payload);

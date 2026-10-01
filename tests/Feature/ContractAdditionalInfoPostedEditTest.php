@@ -198,4 +198,46 @@ class ContractAdditionalInfoPostedEditTest extends TestCase
         $this->assertSame(422, $response->getStatusCode());
         $this->assertArrayHasKey('install_date', $response->getData(true)['errors']);
     }
+
+    public function test_posted_contract_without_install_date_can_fill_it_once(): void
+    {
+        // QA 30 Sep: kontrak di-approve tanpa Tanggal Install -> terkunci selamanya, komisi tak pernah terbentuk.
+        $contract = $this->seedContract('active');
+        DB::table('contracts')->where('id', 1)->update(['install_date' => null, 'is_installed' => false]);
+        $contract = Contract::find(1);
+
+        $response = app(ContractController::class)->updateAdditionalInfo($this->editRequest([
+            'install_date' => '2026-09-25',
+            'first_service_date' => '2026-01-01', // tetap terkunci
+            'ppn_code' => '01',                   // tetap terkunci
+        ]), $contract);
+
+        $this->assertSame(200, $response->getStatusCode());
+
+        $fresh = DB::table('contracts')->find(1);
+        $this->assertStringStartsWith('2026-09-25', (string) $fresh->install_date);
+        $this->assertTrue((bool) $fresh->is_installed); // pemicu komisi otomatis
+        $this->assertSame('04', $fresh->ppn_code);
+        $this->assertStringStartsWith('2026-06-18', (string) $fresh->first_service_date);
+
+        // Sekali terisi, terkunci lagi.
+        $again = app(ContractController::class)->updateAdditionalInfo(
+            $this->editRequest(['install_date' => '2026-10-10']),
+            Contract::find(1)
+        );
+        $this->assertSame(200, $again->getStatusCode());
+        $this->assertStringStartsWith('2026-09-25', (string) DB::table('contracts')->find(1)->install_date);
+    }
+
+    public function test_posted_contract_without_install_date_can_still_edit_remarks_alone(): void
+    {
+        $this->seedContract('active');
+        DB::table('contracts')->where('id', 1)->update(['install_date' => null]);
+
+        $response = app(ContractController::class)->updateAdditionalInfo($this->editRequest(), Contract::find(1));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertNull(DB::table('contracts')->find(1)->install_date);
+        $this->assertDatabaseHas('contracts', ['id' => 1, 'external_remark' => 'catatan baru']);
+    }
 }
