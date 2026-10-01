@@ -84,9 +84,9 @@ class AchievementController extends Controller
             'contract_id' => 'nullable|exists:contracts,id',
             'achievement_type' => 'required|in:sales,service,installation',
             'target_amount' => 'required|numeric|min:0',
-            'achieved_amount' => 'required|numeric|min:0',
-            'commission_rate' => 'required|numeric|min:0|max:100',
-            'achievement_date' => 'required|date',
+            'achieved_amount' => 'nullable|numeric|min:0',
+            'commission_rate' => 'nullable|numeric|min:0|max:100',
+            'achievement_date' => 'nullable|date',
             'notes' => 'nullable|string|max:1000'
         ]);
 
@@ -99,11 +99,11 @@ class AchievementController extends Controller
                 'contract_id' => $request->contract_id,
                 'achievement_type' => $request->achievement_type,
                 'target_amount' => $request->target_amount,
-                'achieved_amount' => $request->achieved_amount,
-                'commission_rate' => $request->commission_rate,
+                'achieved_amount' => $request->achieved_amount ?? 0,
+                'commission_rate' => $request->commission_rate ?? 0,
                 'commission_amount' => 0, // Will be calculated
                 'status' => 'pending',
-                'achievement_date' => $request->achievement_date,
+                'achievement_date' => $request->achievement_date ?: now()->toDateString(),
                 'notes' => $request->notes,
                 'created_by' => Auth::id()
             ]);
@@ -175,9 +175,9 @@ class AchievementController extends Controller
             'contract_id' => 'nullable|exists:contracts,id',
             'achievement_type' => 'required|in:sales,service,installation',
             'target_amount' => 'required|numeric|min:0',
-            'achieved_amount' => 'required|numeric|min:0',
-            'commission_rate' => 'required|numeric|min:0|max:100',
-            'achievement_date' => 'required|date',
+            'achieved_amount' => 'nullable|numeric|min:0',
+            'commission_rate' => 'nullable|numeric|min:0|max:100',
+            'achievement_date' => 'nullable|date',
             'notes' => 'nullable|string|max:1000'
         ]);
 
@@ -190,9 +190,9 @@ class AchievementController extends Controller
                 'contract_id' => $request->contract_id,
                 'achievement_type' => $request->achievement_type,
                 'target_amount' => $request->target_amount,
-                'achieved_amount' => $request->achieved_amount,
-                'commission_rate' => $request->commission_rate,
-                'achievement_date' => $request->achievement_date,
+                'achieved_amount' => $request->achieved_amount ?? 0,
+                'commission_rate' => $request->commission_rate ?? 0,
+                'achievement_date' => $request->achievement_date ?: now()->toDateString(),
                 'notes' => $request->notes,
                 'updated_by' => Auth::id()
             ]);

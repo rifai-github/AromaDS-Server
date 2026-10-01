@@ -29,7 +29,7 @@ class FinanceCommissionPagesTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['contracts', 'user_roles', 'roles', 'departments', 'users'] as $table) {
+        foreach (['marketing_targets', 'contracts', 'user_roles', 'roles', 'departments', 'users'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -140,6 +140,56 @@ class FinanceCommissionPagesTest extends TestCase
 
         // Editing a target keeps its current user selectable even when no longer eligible.
         $this->assertContains(7, User::commissionEligible(7)->pluck('id')->all());
+    }
+
+    public function test_marketing_target_can_be_created_without_is_locked_in_the_request(): void
+    {
+        // QA 30 Sep: create form has no lock checkbox -> 'Undefined array key "is_locked"'.
+        Schema::create('marketing_targets', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id');
+            $table->foreignId('achievement_period_id');
+            $table->string('target_type');
+            $table->decimal('target_amount', 15, 2);
+            $table->decimal('achieved_amount', 15, 2)->default(0);
+            $table->boolean('is_locked')->default(false);
+            $table->date('lock_date')->nullable();
+            $table->foreignId('locked_by')->nullable();
+            $table->text('notes')->nullable();
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        $result = app(\App\Services\Finance\MarketingTargetService::class)->createOrUpdateTarget([
+            'user_id' => 1,
+            'achievement_period_id' => 1,
+            'target_type' => 'new',
+            'target_amount' => 3000000,
+        ]);
+
+        $this->assertTrue($result['success'], $result['message'] ?? '');
+        $this->assertDatabaseHas('marketing_targets', ['user_id' => 1, 'target_type' => 'new', 'is_locked' => false]);
+
+        $locked = app(\App\Services\Finance\MarketingTargetService::class)->createOrUpdateTarget([
+            'user_id' => 2, 'achievement_period_id' => 1, 'target_type' => 'new',
+            'target_amount' => 1, 'is_locked' => true, 'locked_by' => 9,
+        ]);
+        $this->assertTrue($locked['success']);
+        $this->assertDatabaseHas('marketing_targets', ['user_id' => 2, 'is_locked' => true, 'locked_by' => 9]);
+    }
+
+    public function test_achievement_optional_fields_are_not_required_and_new_button_opens_create_page(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/Finance/AchievementController.php'));
+        foreach (['achieved_amount', 'commission_rate', 'achievement_date'] as $field) {
+            $this->assertStringNotContainsString("'{$field}' => 'required", $controller);
+        }
+
+        $index = file_get_contents(View::getFinder()->find('finance.achievements.index'));
+        $this->assertStringContainsString("route('finance.achievements.create')", $index);
+        $this->assertStringNotContainsString('openCreateModal();', $index); // no script re-hijacking the link
     }
 
     private function undefinedRouteNames(string $file): array

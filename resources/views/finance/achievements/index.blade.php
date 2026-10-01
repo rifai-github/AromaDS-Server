@@ -711,9 +711,9 @@
                 </div>
             </div>
             <div>
-                <button onclick="openCreateModal()" class="btn btn-primary">
+                <a href="{{ route('finance.achievements.create') }}" class="btn btn-primary">
                     <i class="fas fa-plus"></i> New Achievement
-                </button>
+                </a>
             </div>
         </div>
     </div>
@@ -1347,15 +1347,5 @@ document.getElementById('modalOverlay').addEventListener('click', function(e) {
     }
 });
 
-// Update the create button to use modal
-document.addEventListener('DOMContentLoaded', function() {
-    const createButton = document.querySelector('a[href*="achievements/create"]');
-    if (createButton) {
-        createButton.onclick = function(e) {
-            e.preventDefault();
-            openCreateModal();
-        };
-    }
-});
 </script>
 @endpush

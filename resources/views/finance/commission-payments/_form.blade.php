@@ -18,7 +18,10 @@
                 @endforeach
             </select>
             @if($calculations->isEmpty())
-                <small class="text-muted">No approved commission calculations yet.</small>
+                <small class="text-danger d-block mt-1">
+                    No approved commission calculation yet. Only calculations with status <strong>Approved</strong> can be paid —
+                    approve one in <a href="{{ route('finance.commissions.index') }}">Commission Management</a> first.
+                </small>
             @endif
             @error('commission_calculation_id')
                 <div class="invalid-feedback">{{ $message }}</div>

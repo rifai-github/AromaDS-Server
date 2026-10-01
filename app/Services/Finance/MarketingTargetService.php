@@ -19,6 +19,9 @@ class MarketingTargetService
         try {
             DB::beginTransaction();
 
+            // The create form has no lock checkbox, so the key is usually absent.
+            $isLocked = (bool) ($data['is_locked'] ?? false);
+
             $target = MarketingTarget::updateOrCreate(
                 [
                     'user_id' => $data['user_id'],
@@ -28,9 +31,9 @@ class MarketingTargetService
                 [
                     'target_amount' => $data['target_amount'],
                     'achieved_amount' => $data['achieved_amount'] ?? 0,
-                    'is_locked' => $data['is_locked'] ?? false,
-                    'lock_date' => $data['is_locked'] ? now() : null,
-                    'locked_by' => $data['is_locked'] ? (auth()->id() ?? $data['locked_by'] ?? null) : null,
+                    'is_locked' => $isLocked,
+                    'lock_date' => $isLocked ? now() : null,
+                    'locked_by' => $isLocked ? (auth()->id() ?? $data['locked_by'] ?? null) : null,
                     'notes' => $data['notes'] ?? null,
                     'created_by' => auth()->id() ?? 1,
                     'updated_by' => auth()->id() ?? 1
