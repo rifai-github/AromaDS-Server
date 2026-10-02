@@ -245,6 +245,18 @@ class CommissionCalculation extends Model
         return $this->final_amount;
     }
 
+    /**
+     * Komisi otomatis (kontrak new/renewal) hanya boleh Approved lewat pembayaran invoice
+     * (cash receipt). Komisi manual/adjustment tidak punya invoice, jadi tetap boleh disetujui
+     * langsung.
+     */
+    public function isAwaitingCashReceipt(): bool
+    {
+        return in_array($this->calculation_type, ['new', 'renewal'], true)
+            && $this->status === 'calculated'
+            && ! $this->cash_receipt_date;
+    }
+
     public function approve($approvedBy)
     {
         $this->update([

@@ -437,6 +437,49 @@ class CommissionCalculationDuplicateTest extends TestCase
         $this->assertDatabaseHas('commission_calculations', ['contract_id' => 1, 'status' => 'approved']);
     }
 
+    public function test_automatic_commission_cannot_be_approved_manually_before_the_invoice_is_paid(): void
+    {
+        // QA 1 Okt: komisi otomatis ternyata bisa di-approve manual tanpa invoice dibayar.
+        $contract = $this->contract(1, 101, 40_000_000);
+        $auto = $this->service->calculateCommissionForContract($contract)['commission'];
+        $this->assertTrue($auto->isAwaitingCashReceipt());
+
+        $this->actingAs(\App\Models\User::find(1));
+        $request = \Illuminate\Http\Request::create('/finance/commissions/'.$auto->id.'/approve', 'POST');
+        $request->setLaravelSession(app('session.store'));
+        app()->instance('request', $request);
+
+        app(\App\Http\Controllers\Finance\CommissionController::class)->approve($auto);
+
+        $this->assertSame('calculated', $auto->fresh()->status);
+        $this->assertStringContainsString('tidak bisa di-approve manual', (string) session('error'));
+
+        // Setelah invoice dibayar, status sudah approved lewat pembayaran (bukan tombol).
+        $invoice = new \App\Models\Finance\Invoice();
+        $invoice->contract_number = $contract->contract_number;
+        $this->service->calculateCommissionOnCashReceipt($invoice, now()->toDateString());
+        $this->assertSame('approved', $auto->fresh()->status);
+        $this->assertFalse($auto->fresh()->isAwaitingCashReceipt());
+    }
+
+    public function test_manual_commission_can_still_be_approved_by_hand(): void
+    {
+        $manual = \App\Models\Finance\CommissionCalculation::create([
+            'user_id' => 1, 'achievement_period_id' => 1, 'calculation_type' => 'manual',
+            'base_amount' => 3_000_000, 'commission_rate' => 1, 'commission_amount' => 30_000,
+            'final_amount' => 30_000, 'status' => 'calculated', 'calculation_date' => now(),
+        ]);
+        $this->assertFalse($manual->isAwaitingCashReceipt());
+
+        $this->actingAs(\App\Models\User::find(1));
+        $request = \Illuminate\Http\Request::create('/finance/commissions/'.$manual->id.'/approve', 'POST');
+        $request->setLaravelSession(app('session.store'));
+        app()->instance('request', $request);
+
+        app(\App\Http\Controllers\Finance\CommissionController::class)->approve($manual);
+
+        $this->assertSame('approved', $manual->fresh()->status);
+    }
     public function test_calculating_same_contract_twice_keeps_one_record_and_one_target_increment(): void
     {
         $contract = $this->contract(1, 101, 40_000_000);

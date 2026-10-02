@@ -881,7 +881,9 @@
                             </td>
                             <td>
                                 <div class="btn-group" role="group" onclick="event.stopPropagation();">
-                                    @if($commission->status === 'calculated')
+                                    @if($commission->isAwaitingCashReceipt())
+                                        <span class="badge badge-warning" title="Otomatis Approved setelah invoice kontrak dibayar">Menunggu pembayaran invoice</span>
+                                    @elseif($commission->status === 'calculated')
                                         <form method="POST" action="{{ route('finance.commissions.approve', $commission) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-sm btn-success" title="Approve">

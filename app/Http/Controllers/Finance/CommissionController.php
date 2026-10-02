@@ -324,6 +324,12 @@ class CommissionController extends Controller
     {
         try {
             $commission = $this->accessibleCommissionQuery()->whereKey($commission->id)->firstOrFail();
+
+            if ($commission->isAwaitingCashReceipt()) {
+                return redirect()->back()
+                    ->with('error', 'Komisi otomatis tidak bisa di-approve manual. Komisi ini otomatis Approved setelah invoice kontraknya dibayar (Bank Payment atau Invoice berstatus Paid).');
+            }
+
             $commission->approve(Auth::id());
             return redirect()->back()
                 ->with('success', 'Commission calculation approved successfully.');
