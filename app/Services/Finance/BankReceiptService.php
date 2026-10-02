@@ -362,7 +362,7 @@ class BankReceiptService
                 $result = $commissionService->calculateCommissionOnCashReceipt($invoice, $cashReceiptDate);
                 
                 if ($result['success']) {
-                    Log::info("Commission calculated for invoice {$invoice->invoice_number} via bank receipt: {$result['commission']->final_amount ?? 'N/A'}");
+                    Log::info("Commission calculated for invoice {$invoice->invoice_number} via bank receipt: ".($result['commission']->final_amount ?? 'N/A'));
                 } else {
                     Log::warning("Commission calculation skipped for invoice {$invoice->invoice_number}: {$result['message']}");
                 }

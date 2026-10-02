@@ -51,6 +51,33 @@ class CommissionCalculationDuplicateTest extends TestCase
             $t->string('invoice_number');
             $t->string('contract_number')->nullable();
             $t->decimal('total_amount', 15, 2)->default(0);
+            $t->string('invoice_status')->default('draft');
+            $t->string('status')->nullable(); // kolom legacy yang disinkronkan hook saving() Invoice
+            $t->date('invoice_date')->nullable();
+            $t->foreignId('updated_by')->nullable();
+            $t->decimal('grand_total', 15, 2)->default(0);
+            $t->decimal('total_paid', 15, 2)->default(0);
+            $t->decimal('outstanding', 15, 2)->default(0);
+            $t->timestamps();
+            $t->softDeletes();
+        });
+        Schema::create('invoice_activities', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('invoice_id');
+            $t->string('activity_type')->nullable();
+            $t->text('notes')->nullable();
+            $t->foreignId('created_by')->nullable();
+            $t->timestamps();
+            $t->softDeletes();
+        });
+        Schema::create('bank_receipts', function (Blueprint $t) {
+            $t->id();
+            $t->string('receipt_number')->nullable();
+            $t->string('invoice_reference')->nullable();
+            $t->decimal('amount', 15, 2)->default(0);
+            $t->date('payment_date')->nullable();
+            $t->string('status')->default('pending');
+            $t->foreignId('updated_by')->nullable();
             $t->timestamps();
             $t->softDeletes();
         });
@@ -237,7 +264,7 @@ class CommissionCalculationDuplicateTest extends TestCase
         Carbon::setTestNow();
         foreach (['user_marketing_levels', 'marketing_levels', 'commission_transfers', 'achievements',
             'commission_calculations', 'cr_variables', 'commission_levels', 'marketing_targets',
-            'achievement_periods', 'invoices', 'contracts', 'users'] as $table) {
+            'achievement_periods', 'bank_receipts', 'invoice_activities', 'invoices', 'contracts', 'users'] as $table) {
             Schema::dropIfExists($table);
         }
         parent::tearDown();
@@ -317,6 +344,97 @@ class CommissionCalculationDuplicateTest extends TestCase
 
         $this->assertTrue($result['success'], $result['message']);
         $this->assertSame('approved', $result['commission']->status);
+    }
+
+    public function test_commission_service_accepts_the_finance_invoice_model_used_by_bank_payment_and_invoice_screens(): void
+    {
+        // BankReceiptService/InvoiceController memakai App\Models\Finance\Invoice; tipe parameter
+        // lama (App\Models\Invoice) membuat langkah komisi melempar TypeError.
+        $contract = $this->contract(1, 101, 40_000_000);
+        $this->service->calculateCommissionForContract($contract);
+
+        $invoice = new \App\Models\Finance\Invoice();
+        $invoice->contract_number = $contract->contract_number;
+
+        $result = $this->service->calculateCommissionOnCashReceipt($invoice, now()->toDateString());
+
+        $this->assertTrue($result['success'], $result['message']);
+        $this->assertSame('approved', $result['commission']->fresh()->status);
+    }
+
+    public function test_processing_a_bank_receipt_that_references_an_invoice_pays_it_and_creates_the_commission(): void
+    {
+        $contract = $this->contract(1, 101, 40_000_000);
+        DB::table('invoices')->insert([
+            'id' => 1, 'invoice_number' => 'INV-1', 'contract_number' => $contract->contract_number,
+            'invoice_status' => 'sent', 'grand_total' => 44_400_000, 'outstanding' => 44_400_000,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('bank_receipts')->insert([
+            'id' => 1, 'receipt_number' => 'BR-1', 'invoice_reference' => 'INV-1',
+            'amount' => 44_400_000, 'payment_date' => now()->toDateString(), 'status' => 'verified',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->actingAs(\App\Models\User::find(1));
+        $request = \Illuminate\Http\Request::create('/finance/bank-receipts/1/process', 'POST');
+        $request->setLaravelSession(app('session.store'));
+        app()->instance('request', $request);
+
+        app(\App\Http\Controllers\Finance\BankReceiptController::class)
+            ->process(\App\Models\Finance\BankReceipt::findOrFail(1));
+
+        $this->assertDatabaseHas('invoices', ['id' => 1, 'invoice_status' => 'paid', 'outstanding' => 0]);
+        $this->assertDatabaseHas('bank_receipts', ['id' => 1, 'status' => 'processed']);
+        $this->assertDatabaseHas('commission_calculations', ['contract_id' => 1, 'status' => 'approved']);
+        $this->assertSame(0, DB::transactionLevel());
+    }
+
+    public function test_processing_a_bank_receipt_with_a_different_amount_keeps_the_invoice_unpaid(): void
+    {
+        $contract = $this->contract(1, 101, 40_000_000);
+        DB::table('invoices')->insert([
+            'id' => 1, 'invoice_number' => 'INV-1', 'contract_number' => $contract->contract_number,
+            'invoice_status' => 'sent', 'grand_total' => 44_400_000, 'outstanding' => 44_400_000,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('bank_receipts')->insert([
+            'id' => 1, 'invoice_reference' => 'INV-1', 'amount' => 1_000_000,
+            'payment_date' => now()->toDateString(), 'status' => 'verified',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->actingAs(\App\Models\User::find(1));
+        $request = \Illuminate\Http\Request::create('/finance/bank-receipts/1/process', 'POST');
+        $request->setLaravelSession(app('session.store'));
+        app()->instance('request', $request);
+
+        app(\App\Http\Controllers\Finance\BankReceiptController::class)
+            ->process(\App\Models\Finance\BankReceipt::findOrFail(1));
+
+        $this->assertDatabaseHas('invoices', ['id' => 1, 'invoice_status' => 'sent']);
+        $this->assertDatabaseHas('bank_receipts', ['id' => 1, 'status' => 'processed']);
+        $this->assertDatabaseCount('commission_calculations', 0);
+    }
+
+    public function test_mark_paid_on_an_invoice_creates_the_approved_commission(): void
+    {
+        // Jalur Invoice -> Paid (endpoint mark-paid dan form edit memakai triggerAutoCommissionCalculation).
+        $contract = $this->contract(1, 101, 40_000_000);
+        DB::table('invoices')->insert([
+            'id' => 1, 'invoice_number' => 'INV-1', 'contract_number' => $contract->contract_number,
+            'invoice_status' => 'sent', 'invoice_date' => now()->subDays(5)->toDateString(),
+            'grand_total' => 44_400_000, 'outstanding' => 44_400_000,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->actingAs(\App\Models\User::find(1));
+        $response = app(\App\Http\Controllers\Finance\InvoiceController::class)
+            ->markPaid(\App\Models\Finance\Invoice::findOrFail(1));
+
+        $this->assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $this->assertDatabaseHas('invoices', ['id' => 1, 'invoice_status' => 'paid', 'outstanding' => 0]);
+        $this->assertDatabaseHas('commission_calculations', ['contract_id' => 1, 'status' => 'approved']);
     }
 
     public function test_calculating_same_contract_twice_keeps_one_record_and_one_target_increment(): void

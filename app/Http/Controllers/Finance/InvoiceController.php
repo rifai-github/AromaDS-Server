@@ -1116,6 +1116,9 @@ class InvoiceController extends Controller
                 $request->invoice_date
             );
 
+            $becomesPaid = $request->invoice_status === 'paid' && $invoice->invoice_status !== 'paid';
+            $totalPaid = $becomesPaid ? $taxPayload['grand_total'] : ($request->total_paid ?? 0);
+
             $invoice->update([
                 'contract_number' => $request->contract_number,
                 'invoice_number' => $request->invoice_number,
@@ -1143,8 +1146,8 @@ class InvoiceController extends Controller
                 'tax_amount' => $taxPayload['tax_amount'],
                 'grand_total' => $taxPayload['grand_total'],
                 'total_amount' => $taxPayload['grand_total'],
-                'total_paid' => $request->total_paid ?? 0,
-                'outstanding' => max($taxPayload['grand_total'] - ($request->total_paid ?? 0), 0),
+                'total_paid' => $totalPaid,
+                'outstanding' => max($taxPayload['grand_total'] - $totalPaid, 0),
                 'internal_notes' => $request->internal_notes,
                 'additional_notes' => $request->additional_notes,
                 'terms_conditions' => $request->terms_conditions,
@@ -1160,6 +1163,12 @@ class InvoiceController extends Controller
                 'notes' => 'Invoice updated',
                 'created_by' => Auth::id(),
             ]);
+
+            // Mengubah status ke Paid lewat form edit sama dengan Mark as Paid: komisi otomatis
+            // dihitung (dulu hanya endpoint mark-paid yang tak punya tombol di layar).
+            if ($becomesPaid) {
+                $this->triggerAutoCommissionCalculation($invoice->refresh());
+            }
 
             DB::commit();
 

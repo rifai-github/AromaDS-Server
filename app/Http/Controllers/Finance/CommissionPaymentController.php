@@ -18,6 +18,13 @@ class CommissionPaymentController extends Controller
     {
         $payments = CommissionPayment::with(['user', 'commissionCalculation', 'processedBy', 'createdBy', 'updatedBy'])
             ->filter($request->all())
+            // Form filter mengirim parameter datar (user_id, status, ...), bukan filter[kolom] yang
+            // dibaca trait filter, jadi kondisi ini harus diterapkan sendiri.
+            ->when($request->filled('user_id'), fn ($q) => $q->where('user_id', $request->user_id))
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
+            ->when($request->filled('payment_method'), fn ($q) => $q->where('payment_method', $request->payment_method))
+            ->when($request->filled('start_date'), fn ($q) => $q->whereDate('payment_date', '>=', $request->start_date))
+            ->when($request->filled('end_date'), fn ($q) => $q->whereDate('payment_date', '<=', $request->end_date))
             ->orderBy('payment_date', 'desc')
             ->paginateStd(25);
 

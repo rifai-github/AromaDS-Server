@@ -234,7 +234,11 @@ class CommissionCalculationService
     /**
      * Calculate commission when cash receipt is received
      */
-    public function calculateCommissionOnCashReceipt(Invoice $invoice, $cashReceiptDate): array
+    // Ada dua model Invoice (App\Models\Invoice dan App\Models\Finance\Invoice) untuk tabel yang sama;
+    // BankReceiptService dan InvoiceController memakai yang kedua. Tipe tunggal membuat pembayaran
+    // invoice dari layar melempar TypeError (bukan Exception, jadi lolos dari semua catch) tepat
+    // di langkah komisi.
+    public function calculateCommissionOnCashReceipt(Invoice|\App\Models\Finance\Invoice $invoice, $cashReceiptDate): array
     {
         try {
             $contract = $invoice->contract;

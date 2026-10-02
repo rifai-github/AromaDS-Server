@@ -29,7 +29,7 @@ class FinanceCommissionPagesTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['marketing_targets', 'contracts', 'user_roles', 'roles', 'departments', 'users'] as $table) {
+        foreach (['commission_payments', 'commission_calculations', 'marketing_targets', 'contracts', 'user_roles', 'roles', 'departments', 'users'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -192,6 +192,63 @@ class FinanceCommissionPagesTest extends TestCase
         $this->assertStringNotContainsString('openCreateModal();', $index); // no script re-hijacking the link
     }
 
+    public function test_commission_payment_list_filters_by_user_status_method_and_date_range(): void
+    {
+        // QA 1 Okt: filter user dan Start/End Date di Commission Payment tak berpengaruh -
+        // form mengirim parameter datar, trait filter hanya membaca filter[kolom].
+        $this->createUserSchema();
+        Schema::create('commission_calculations', function (Blueprint $table) {
+            $table->id();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+        Schema::create('commission_payments', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('commission_calculation_id')->nullable();
+            $table->foreignId('user_id');
+            $table->decimal('amount', 15, 2)->default(0);
+            $table->string('payment_method')->default('bank_transfer');
+            $table->string('payment_reference')->nullable();
+            $table->date('payment_date');
+            $table->string('status')->default('pending');
+            $table->foreignId('processed_by')->nullable();
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        $this->insertUser(1, 'Wahyu');
+        $this->insertUser(2, 'Yan');
+        foreach ([
+            [1, 1, 'bank_transfer', '2026-10-01', 'pending'],
+            [2, 1, 'cash', '2026-10-01', 'pending'],
+            [3, 2, 'bank_transfer', '2026-09-29', 'completed'],
+        ] as [$id, $user, $method, $date, $status]) {
+            DB::table('commission_payments')->insert([
+                'id' => $id, 'user_id' => $user, 'amount' => 1000, 'payment_method' => $method,
+                'payment_date' => $date, 'status' => $status, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+
+        $ids = function (array $query): array {
+            $request = \Illuminate\Http\Request::create('/finance/commission-payments', 'GET', $query);
+            app()->instance('request', $request);
+            $view = app(\App\Http\Controllers\Finance\CommissionPaymentController::class)->index($request);
+
+            return $view->getData()['payments']->pluck('id')->sort()->values()->all();
+        };
+
+        $this->assertSame([1, 2, 3], $ids([]));
+        $this->assertSame([3], $ids(['user_id' => 2]));
+        $this->assertSame([1, 2], $ids(['user_id' => 1]));
+        $this->assertSame([3], $ids(['status' => 'completed']));
+        $this->assertSame([2], $ids(['payment_method' => 'cash']));
+        // Rentang 28-30 Sep hanya memuat pembayaran 29 Sep; yang 1 Okt harus keluar.
+        $this->assertSame([3], $ids(['start_date' => '2026-09-28', 'end_date' => '2026-09-30']));
+        $this->assertSame([1, 2], $ids(['start_date' => '2026-10-01']));
+        $this->assertSame([], $ids(['user_id' => 2, 'start_date' => '2026-10-01']));
+    }
     private function undefinedRouteNames(string $file): array
     {
         $source = file_get_contents($file);

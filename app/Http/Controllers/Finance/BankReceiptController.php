@@ -355,6 +355,31 @@ class BankReceiptController extends Controller
                 return back()->with('error', 'Only verified receipts can be processed.');
             }
 
+            // Receipt yang menunjuk invoice (invoice_reference) melunasi invoice itu dan memicu
+            // komisi otomatis. Dulu Process hanya mengganti status receipt, jadi invoice tetap
+            // belum dibayar dan komisi tak pernah terbentuk dari alur Bank Payment di layar.
+            $invoiceToPay = $bankReceipt->invoice_reference
+                ? \App\Models\Invoice::where('invoice_number', $bankReceipt->invoice_reference)->first()
+                : null;
+
+            if ($invoiceToPay && $invoiceToPay->invoice_status !== 'paid') {
+                $result = (new BankReceiptService())->autoMatchBankReceiptWithInvoice($bankReceipt->id);
+
+                if (($result['status'] ?? null) === 'success') {
+                    $bankReceipt->update(['updated_by' => Auth::id()]);
+
+                    return back()->with('success', "Bank receipt processed. Invoice {$invoiceToPay->invoice_number} ditandai Paid.");
+                }
+
+                // Nominal tidak sama dsb: receipt tetap diproses, invoice dibiarkan, alasannya ditampilkan.
+                $bankReceipt->update([
+                    'status' => 'processed',
+                    'updated_by' => Auth::id(),
+                ]);
+
+                return back()->with('error', "Receipt diproses, tetapi invoice {$invoiceToPay->invoice_number} TIDAK ditandai Paid: ".($result['message'] ?? 'unknown error'));
+            }
+
             $bankReceipt->update([
                 'status' => 'processed',
                 'updated_by' => Auth::id(),
