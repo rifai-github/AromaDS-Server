@@ -249,6 +249,18 @@ class FinanceCommissionPagesTest extends TestCase
         $this->assertSame([1, 2], $ids(['start_date' => '2026-10-01']));
         $this->assertSame([], $ids(['user_id' => 2, 'start_date' => '2026-10-01']));
     }
+    public function test_invoice_detail_has_a_mark_as_paid_button_wired_to_the_existing_endpoint(): void
+    {
+        // QA 5 Okt: tak ada tombol di layar untuk menandai invoice dibayar (modal Edit di daftar
+        // invoice adalah kode mati karena openViewModal ditimpa dan membuka halaman detail).
+        $source = file_get_contents(View::getFinder()->find('finance.invoices.show'));
+
+        $this->assertStringContainsString('id="btnMarkPaid"', $source);
+        $this->assertStringContainsString("route('finance.invoices.mark-paid'", $source);
+        $this->assertTrue(Route::has('finance.invoices.mark-paid'));
+        // Tidak muncul untuk draft/paid/cancelled.
+        $this->assertStringContainsString("['draft', 'paid', 'cancelled']", $source);
+    }
     private function undefinedRouteNames(string $file): array
     {
         $source = file_get_contents($file);

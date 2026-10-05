@@ -231,6 +231,9 @@
                                 @if($invoice->invoice_status === 'draft')
                                     <button type="button" id="btnApprove" class="btn btn-success btn-sm"><i class="fas fa-check-circle me-1"></i> APPROVE</button>
                                 @endif
+                                @if(! in_array($invoice->invoice_status, ['draft', 'paid', 'cancelled'], true))
+                                    <button type="button" id="btnMarkPaid" class="btn btn-success btn-sm" title="Tandai invoice sudah dibayar (memicu komisi otomatis)"><i class="fas fa-money-check-alt me-1"></i> MARK AS PAID</button>
+                                @endif
                             </div>
                         </div>
                     </div>
@@ -1347,6 +1350,39 @@ $(document).ready(function() {
                     }
                 });
             }
+        });
+    });
+
+    // Mark as Paid: memakai endpoint mark-paid yang sama dengan jalur pembayaran lain, sehingga
+    // total_paid/outstanding terisi dan komisi otomatis dihitung (kontrak harus sudah Tanggal Install).
+    $('#btnMarkPaid').on('click', function() {
+        Swal.fire({
+            title: 'Tandai invoice sudah dibayar?',
+            text: 'Invoice {{ $invoice->invoice_number }} akan berstatus Paid dan komisi otomatis dihitung.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Ya, sudah dibayar',
+            cancelButtonText: 'Batal'
+        }).then((result) => {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            $.ajax({
+                url: "{{ route('finance.invoices.mark-paid', $invoice->id) }}",
+                type: "POST",
+                data: { _token: "{{ csrf_token() }}" },
+                success: function() {
+                    Swal.fire('Berhasil', 'Invoice ditandai Paid.', 'success').then(() => location.reload());
+                },
+                error: function(xhr) {
+                    let msg = 'Invoice gagal ditandai Paid.';
+                    if (xhr.responseJSON && xhr.responseJSON.message) {
+                        msg = xhr.responseJSON.message;
+                    }
+                    Swal.fire('Gagal', msg, 'error');
+                }
+            });
         });
     });
 
