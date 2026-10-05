@@ -92,7 +92,7 @@ class CommissionController extends Controller
         $users = $this->applyAccessibleUserFilter(User::where('is_active', true), Auth::user())->get();
         $periods = AchievementPeriod::active()->get();
         $contracts = $this->applyContractAccessControlFilter(
-            \App\Models\Contract::where('status', 'active'),
+            \App\Models\Contract::where('contract_status', 'active')->with('customer:id,name'),
             Auth::user()
         )->get();
 
@@ -210,7 +210,7 @@ class CommissionController extends Controller
         $users = $this->applyAccessibleUserFilter(User::where('is_active', true), Auth::user())->get();
         $periods = AchievementPeriod::active()->get();
         $contracts = $this->applyContractAccessControlFilter(
-            \App\Models\Contract::where('status', 'active'),
+            \App\Models\Contract::where('contract_status', 'active')->with('customer:id,name'),
             Auth::user()
         )->get();
 

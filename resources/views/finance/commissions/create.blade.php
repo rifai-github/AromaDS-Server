@@ -76,7 +76,7 @@
                                         <option value="">Select Contract (Optional)</option>
                                         @foreach($contracts as $contract)
                                             <option value="{{ $contract->id }}" {{ old('contract_id') == $contract->id ? 'selected' : '' }}>
-                                                {{ $contract->contract_number }} - {{ $contract->customer->company_name }}
+                                                {{ $contract->contract_number }} - {{ $contract->customer->name ?? '-' }}
                                             </option>
                                         @endforeach
                                     </select>

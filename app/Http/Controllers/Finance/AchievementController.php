@@ -59,7 +59,7 @@ class AchievementController extends Controller
     {
         $users = User::where('is_active', true)->get();
         $periods = AchievementPeriod::active()->get();
-        $contracts = \App\Models\Contract::where('status', 'active')->get();
+        $contracts = \App\Models\Contract::where('contract_status', 'active')->with('customer:id,name')->get();
 
         if (request()->expectsJson() || request()->is('api/*')) {
             return response()->json([
@@ -149,7 +149,7 @@ class AchievementController extends Controller
     {
         $users = User::where('is_active', true)->get();
         $periods = AchievementPeriod::active()->get();
-        $contracts = \App\Models\Contract::where('status', 'active')->get();
+        $contracts = \App\Models\Contract::where('contract_status', 'active')->with('customer:id,name')->get();
 
         if (request()->expectsJson() || request()->is('api/*')) {
             return response()->json([

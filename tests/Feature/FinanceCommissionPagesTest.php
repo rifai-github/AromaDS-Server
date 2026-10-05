@@ -261,6 +261,21 @@ class FinanceCommissionPagesTest extends TestCase
         // Tidak muncul untuk draft/paid/cancelled.
         $this->assertStringContainsString("['draft', 'paid', 'cancelled']", $source);
     }
+    public function test_commission_and_achievement_contract_dropdowns_use_contract_status_and_the_customer_name(): void
+    {
+        // QA 5 Okt: dropdown Contract di Create Commission menampilkan "BDG-AG/24-11/0004 -" (nama
+        // kosong: kolom company_name tak ada) dan hanya kontrak lama; kontrak baru berstatus 'draft'
+        // di kolom status walau contract_status-nya active.
+        $view = file_get_contents(View::getFinder()->find('finance.commissions.create'));
+        $this->assertStringNotContainsString('company_name', $view);
+        $this->assertStringContainsString('$contract->customer->name', $view);
+
+        foreach (['CommissionController', 'AchievementController'] as $controller) {
+            $source = file_get_contents(app_path("Http/Controllers/Finance/{$controller}.php"));
+            $this->assertStringNotContainsString("Contract::where('status', 'active')", $source, $controller);
+            $this->assertStringContainsString("Contract::where('contract_status', 'active')", $source, $controller);
+        }
+    }
     private function undefinedRouteNames(string $file): array
     {
         $source = file_get_contents($file);
