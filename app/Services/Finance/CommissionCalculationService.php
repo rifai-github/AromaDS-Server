@@ -247,7 +247,10 @@ class CommissionCalculationService
             }
 
             // Check if commission already calculated
-            $existingCalculation = CommissionCalculation::where('contract_id', $contract->id)
+            // Hanya komisi otomatis (new/renewal). Komisi manual/adjustment yang kebetulan
+            // menunjuk kontrak yang sama dulu ikut tertangkap di sini: pembayaran invoice
+            // meng-approve komisi manual itu dan komisi otomatisnya tak pernah dibuat.
+            $existingCalculation = $this->automaticCalculationsFor($contract)
                 ->where('status', '!=', 'cancelled')
                 ->first();
 

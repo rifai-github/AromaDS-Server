@@ -441,7 +441,7 @@
                                     </div>
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Paid Amount</div>
-                                        <div class="invoice-field-value text-success">Rp {{ number_format($invoice->paid_amount, 0, ',', '.') }}</div>
+                                        <div class="invoice-field-value text-success">Rp {{ number_format((float) $invoice->total_paid, 0, ',', '.') }}</div>
                                     </div>
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Outstanding</div>

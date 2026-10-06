@@ -480,6 +480,29 @@ class CommissionCalculationDuplicateTest extends TestCase
 
         $this->assertSame('approved', $manual->fresh()->status);
     }
+    public function test_paying_the_invoice_does_not_approve_a_manual_commission_on_the_same_contract(): void
+    {
+        // QA 5 Okt (SMG-AG/26-09/0011): QA membuat komisi Manual yang menunjuk kontrak ini.
+        // Mark as Paid lalu meng-approve komisi manual itu dan komisi otomatisnya tak dibuat.
+        $contract = $this->contract(1, 101, 40_000_000);
+        $manual = \App\Models\Finance\CommissionCalculation::create([
+            'user_id' => 1, 'achievement_period_id' => 1, 'contract_id' => 1, 'calculation_type' => 'manual',
+            'base_amount' => 3_000_000, 'commission_rate' => 1, 'commission_amount' => 30_000,
+            'final_amount' => 30_000, 'status' => 'calculated', 'calculation_date' => now(),
+        ]);
+
+        $invoice = new \App\Models\Finance\Invoice();
+        $invoice->contract_number = $contract->contract_number;
+        $result = $this->service->calculateCommissionOnCashReceipt($invoice, now()->toDateString());
+
+        $this->assertTrue($result['success'], $result['message']);
+        $this->assertSame('new', $result['commission']->calculation_type);
+        $this->assertSame('approved', $result['commission']->fresh()->status);
+
+        $manual->refresh();
+        $this->assertSame('calculated', $manual->status);
+        $this->assertNull($manual->cash_receipt_date);
+    }
     public function test_calculating_same_contract_twice_keeps_one_record_and_one_target_increment(): void
     {
         $contract = $this->contract(1, 101, 40_000_000);

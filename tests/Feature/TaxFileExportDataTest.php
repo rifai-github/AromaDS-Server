@@ -34,6 +34,7 @@ class TaxFileExportDataTest extends TestCase
             $table->string('contract_number')->nullable();
             $table->date('invoice_date')->nullable();
             $table->string('invoice_status');
+            $table->boolean('is_tax_exported')->default(false);
             $table->string('tax_code')->nullable();
             $table->string('tax_number')->nullable();
             $table->string('npwp_number')->nullable();
@@ -347,6 +348,8 @@ class TaxFileExportDataTest extends TestCase
 
         try {
             $this->assertSame(1, $result['total_records']);
+            // QA 5 Okt: invoice yang masuk file harus tertandai "Tax Exported? YES".
+            $this->assertSame(1, (int) DB::table('invoices')->where('is_tax_exported', true)->count());
 
             $book = (new XlsxReader)->load($fullPath);
             $this->assertSame(

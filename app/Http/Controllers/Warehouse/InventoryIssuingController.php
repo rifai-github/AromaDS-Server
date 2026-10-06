@@ -1585,6 +1585,36 @@ public function getUserTeams($userId)
             ->first();
     }
 
+    /**
+     * Baris serial_numbers ber-nomor $serialNumber yang sedang dipegang item WI lain yang
+     * masih disiapkan (status WI pending/processed), lewat kolom serial_number_id maupun
+     * pivot inventory_issuing_item_serials. Baris milik item ini sendiri tidak dihitung,
+     * supaya scan ulang (Ubah SN) tetap bisa memilih barisnya sendiri.
+     */
+    private function reservedBatchSerialIds(string $serialNumber, int $exceptItemId): array
+    {
+        $activeItemIds = \App\Models\InventoryIssuingItem::query()
+            ->where('id', '!=', $exceptItemId)
+            ->whereHas('inventoryIssuing', fn ($query) => $query->whereIn('status', ['pending', 'processed']))
+            ->select('id');
+
+        $serialIds = \App\Models\SerialNumber::where('serial_number', $serialNumber)->pluck('id');
+
+        if ($serialIds->isEmpty()) {
+            return [];
+        }
+
+        $viaColumn = \App\Models\InventoryIssuingItem::whereIn('id', $activeItemIds)
+            ->whereIn('serial_number_id', $serialIds)
+            ->pluck('serial_number_id');
+
+        $viaPivot = \App\Models\InventoryIssuingItemSerial::whereIn('inventory_issuing_item_id', $activeItemIds)
+            ->whereIn('serial_number_id', $serialIds)
+            ->pluck('serial_number_id');
+
+        return $viaColumn->merge($viaPivot)->map(fn ($id) => (int) $id)->unique()->values()->all();
+    }
+
     private function findSerialNumberForIssuingScan(string $serialNumber, InventoryIssuing $issuing, \App\Models\InventoryIssuingItem $issuingItem): ?\App\Models\SerialNumber
     {
         $baseQuery = \App\Models\SerialNumber::with(['masterProduct.productCategory', 'masterProduct.productType', 'warehouse'])
@@ -1594,8 +1624,17 @@ public function getUserTeams($userId)
         $requiresUniqueSerial = $issuingItem->product?->requiresUniqueSerialNumber() ?? true;
 
         if (! $requiresUniqueSerial) {
+            // Satu nomor SN batch = banyak baris (satu per pcs). Baris yang sudah ditautkan ke
+            // item WI lain yang masih disiapkan (pending/processed) tetap berstatus ready
+            // sampai job selesai, jadi harus dilewati di sini. Dulu baris id terkecil selalu
+            // dipilih: dua WI (bahkan dua ruangan dalam satu WI) memegang baris yang sama,
+            // dan begitu job pertama selesai, baris itu In Use sementara WI kedua masih
+            // menunjuknya - verifikasi material APK lalu menolak SN-nya.
+            $reservedSerialIds = $this->reservedBatchSerialIds($serialNumber, $issuingItem->id);
+
             $availableBatchSerial = (clone $baseQuery)
                 ->where('master_product_id', $issuingItem->product_id)
+                ->when($reservedSerialIds !== [], fn ($query) => $query->whereNotIn('id', $reservedSerialIds))
                 ->whereIn('status', ['ready', 'available'])
                 ->where(function ($query) {
                     $query->whereNull('location_type')

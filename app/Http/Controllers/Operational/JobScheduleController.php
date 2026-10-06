@@ -749,7 +749,7 @@ class JobScheduleController extends Controller
             ->all();
     }
 
-    private function ensureMaterialAssignForSelectedRooms(array $roomIds, array &$batchJobNumbers = []): void
+    private function ensureMaterialAssignForSelectedRooms(array $roomIds, array &$batchJobNumbers = [], ?\Illuminate\Support\Collection $noMaterialJobs = null): void
     {
         $roomIds = $this->normalizeSelectedJobScheduleRoomIds($roomIds);
         if (empty($roomIds)) {
@@ -809,6 +809,8 @@ class JobScheduleController extends Controller
                     continue;
                 }
 
+                $stateBeforeAssign = $job->only(['job_number', 'status', 'assign_date']);
+
                 $job->update([
                     'job_number' => $sharedJobNumber,
                     'status' => 'assign_material',
@@ -847,8 +849,58 @@ class JobScheduleController extends Controller
                     ->all();
 
                 $this->autoCreateMaterialIssue($jobAssignSchedule, $roomIdsForJob);
+
+                if (! $this->revertMaterialAssignWithoutMaterial($job, $jobAssignSchedule, $stateBeforeAssign, $jobAssignSchedule->wasRecentlyCreated)) {
+                    $noMaterialJobs?->put($job->id, $this->materialAssignNoMaterialLabel($job));
+                }
             }
         }
+    }
+
+    /**
+     * Material Assign memberi nomor JS dan status Material Assign SEBELUM material dibuat.
+     * Kalau autoCreateMaterialIssue() pulang tanpa material sama sekali (paling sering:
+     * rental ruangan belum punya produk di Master Rental), job dikembalikan ke keadaan
+     * semula. Dulu job dibiarkan bernomor + berstatus Material Assign tanpa material, dan
+     * ruangannya tampil "NEW JOB" di daftar (JobScheduleRoom::resolveStatusLogicKey).
+     *
+     * Returns true bila job ini punya material (proses boleh lanjut).
+     */
+    private function revertMaterialAssignWithoutMaterial(JobSchedule $job, $jobAssignSchedule, array $stateBeforeAssign, bool $createdAssignSchedule): bool
+    {
+        $hasMaterial = \App\Models\JobAssignMaterialIssue::whereHas('jobAssignSchedule', fn ($q) => $q->where('job_schedule_id', $job->id))
+            ->exists();
+
+        if ($hasMaterial) {
+            return true;
+        }
+
+        $job->update($stateBeforeAssign + ['updated_by' => Auth::id()]);
+
+        if ($createdAssignSchedule && $jobAssignSchedule) {
+            $jobAssignSchedule->delete();
+        }
+
+        return false;
+    }
+
+    private function materialAssignNoMaterialLabel(JobSchedule $job): string
+    {
+        $job->loadMissing('jobScheduleRooms.jobAdviceRooms.rentalProduct', 'jobScheduleRooms.jobAdviceRoom.rentalProduct');
+
+        $rooms = $job->jobScheduleRooms->pluck('room_name')->filter()->unique()->implode(', ');
+        $rentals = $job->jobScheduleRooms
+            ->flatMap(function ($room) {
+                $links = $room->jobAdviceRooms->isNotEmpty() ? $room->jobAdviceRooms : collect([$room->jobAdviceRoom]);
+
+                return $links->filter()->map(fn ($jar) => $jar->rentalProduct?->rental_name);
+            })
+            ->filter()
+            ->unique()
+            ->implode(', ');
+
+        return trim(($job->display_type ?? $job->type) . ' ruangan ' . ($rooms ?: '-')
+            . ($rentals !== '' ? " (rental: {$rentals})" : ''));
     }
 
     private function getIndexFilterOptions(): array
@@ -1799,6 +1851,10 @@ class JobScheduleController extends Controller
             $successCount = 0;
             $skippedCount = 0;
             $skippedNoMaterialFlowCount = 0;
+            // Job yang materialnya tidak terbentuk (mis. rental belum punya produk di Master
+            // Rental). Job ini dikembalikan ke keadaan semula, bukan dibiarkan bernomor JS +
+            // berstatus Material Assign tanpa material (ruangannya tampil NEW JOB).
+            $noMaterialJobs = collect();
             $documentNumberService = app(\App\Services\DocumentNumberService::class);
             
             // Determine target Job IDs.
@@ -1872,6 +1928,9 @@ class JobScheduleController extends Controller
                 // If already assign_material, we might be adding more rooms OR it's a retry
                 // But generally document number is generated once.
                 
+                $stateBeforeAssign = $job->only(['job_number', 'status', 'assign_date']);
+                $createdAssignSchedule = false;
+
                 if (!in_array($job->status, ['assign_material', 'barang_dipersiapkan'], true)) {
                     // Determine document type for Job Number generation
                     $docType = $this->documentTypeForJobSchedule($job);
@@ -1916,6 +1975,7 @@ class JobScheduleController extends Controller
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id(),
                     ]);
+                    $createdAssignSchedule = true;
                 } else {
                     // If already exists, find the existing assign schedule
                     $jobAssignSchedule = \App\Models\JobAssignSchedule::where('job_schedule_id', $job->id)
@@ -1941,20 +2001,39 @@ class JobScheduleController extends Controller
                 // Pass specificRoomIds for filtering
                 $this->autoCreateMaterialIssue($jobAssignSchedule, $specificRoomIds);
 
+                if (! $this->revertMaterialAssignWithoutMaterial($job, $jobAssignSchedule, $stateBeforeAssign, $createdAssignSchedule)) {
+                    $noMaterialJobs->put($job->id, $this->materialAssignNoMaterialLabel($job));
+                    continue;
+                }
+
                 $successCount++;
             }
 
             if (!empty($specificRoomIds)) {
-                $this->ensureMaterialAssignForSelectedRooms($specificRoomIds, $batchJobNumbers);
+                $this->ensureMaterialAssignForSelectedRooms($specificRoomIds, $batchJobNumbers, $noMaterialJobs);
             }
 
+            $noMaterialMessage = $noMaterialJobs->isNotEmpty()
+                ? 'Tidak ada material yang terbentuk untuk: ' . $noMaterialJobs->unique()->implode('; ')
+                    . '. Lengkapi produk rental tersebut di Master Rental, lalu ulangi Material Assign.'
+                : '';
+
             DB::commit();
+
+            if ($successCount === 0 && $noMaterialJobs->isNotEmpty()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $noMaterialMessage,
+                    'success' => false,
+                ], 422);
+            }
 
             return response()->json([
                 'status' => 'success',
                 'message' => "Berhasil memproses {$successCount} job. "
                     . ($skippedNoMaterialFlowCount > 0 ? "({$skippedNoMaterialFlowCount} job tanpa alur material dilewati karena tidak perlu material assign) " : "")
-                    . (($skippedCount - $skippedNoMaterialFlowCount) > 0 ? "(" . ($skippedCount - $skippedNoMaterialFlowCount) . " job dilewati karena status tidak sesuai)" : ""),
+                    . (($skippedCount - $skippedNoMaterialFlowCount) > 0 ? "(" . ($skippedCount - $skippedNoMaterialFlowCount) . " job dilewati karena status tidak sesuai) " : "")
+                    . $noMaterialMessage,
                 'success' => true
             ]);
 

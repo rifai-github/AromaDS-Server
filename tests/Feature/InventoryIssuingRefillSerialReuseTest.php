@@ -322,6 +322,51 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
         $this->assertSame('ready', $payload['data']['status']);
     }
 
+    public function test_batch_scan_skips_rows_already_held_by_another_prepared_issuing(): void
+    {
+        // QA 5 Okt (SMG-WI/26-10/0004): satu SN batch = banyak baris. WI lain yang belum
+        // selesai sudah memegang baris id terkecil; scan berikutnya memilih baris itu lagi
+        // (bahkan untuk dua ruangan di satu WI). Begitu job WI pertama selesai, baris itu
+        // In Use dan verifikasi material APK untuk WI kedua menolak SN-nya.
+        $this->seedProduct(13, 103, 'Liquid ADS Cleaner (Alkohol) - 100 ml', hasSerialNumber: false, isUnit: false);
+        $this->actingAs(User::findOrFail(1));
+
+        foreach ([601, 602, 603] as $id) {
+            DB::table('serial_numbers')->insert([
+                'id' => $id, 'serial_number' => 'RC1002609001', 'master_product_id' => 103,
+                'warehouse_id' => 1, 'status' => 'ready', 'location_type' => 'warehouse',
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+
+        DB::table('inventory_issuings')->insert([
+            ['id' => 3, 'issuing_number' => 'SMG-WI/26-10/0003', 'warehouse_id' => 1, 'status' => 'processed', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 4, 'issuing_number' => 'SMG-WI/26-10/0004', 'warehouse_id' => 1, 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('inventory_issuing_items')->insert([
+            // WI lain (job lain) sudah memegang baris 601.
+            ['id' => 300, 'inventory_issuing_id' => 3, 'product_id' => 103, 'serial_number_id' => 601, 'quantity_requested' => 1, 'quantity_issued' => 1, 'quantity_received' => 0, 'created_at' => now(), 'updated_at' => now()],
+            // Dua ruangan di WI yang sedang disiapkan.
+            ['id' => 400, 'inventory_issuing_id' => 4, 'product_id' => 103, 'serial_number_id' => null, 'quantity_requested' => 1, 'quantity_issued' => 1, 'quantity_received' => 0, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 401, 'inventory_issuing_id' => 4, 'product_id' => 103, 'serial_number_id' => null, 'quantity_requested' => 1, 'quantity_issued' => 1, 'quantity_received' => 0, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('inventory_issuing_item_serials')->insert([
+            'inventory_issuing_item_id' => 300, 'serial_number_id' => 601, 'unit_index' => 1,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        foreach ([400, 401] as $itemId) {
+            $response = app(InventoryIssuingController::class)->scanSerialNumber(Request::create(
+                '/warehouse/inventory-issuings/4/scan-serial-number',
+                'POST',
+                ['issuing_item_id' => $itemId, 'serial_number' => 'RC1002609001']
+            ), 4);
+            $this->assertSame(200, $response->getStatusCode(), json_encode($response->getData(true)));
+        }
+
+        $this->assertDatabaseHas('inventory_issuing_items', ['id' => 400, 'serial_number_id' => 602]);
+        $this->assertDatabaseHas('inventory_issuing_items', ['id' => 401, 'serial_number_id' => 603]);
+    }
     public function test_unit_serial_still_cannot_be_reused_in_another_prepared_inventory_issuing(): void
     {
         $this->seedProduct(11, 101, 'Premium Diffuser Unit', hasSerialNumber: true, isUnit: true);

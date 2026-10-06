@@ -106,6 +106,10 @@ class CoreTaxExportService
         (new XlsxWriter($spreadsheet))->save($fullPath);
         $spreadsheet->disconnectWorksheets();
 
+        // Tandai invoice yang masuk file ini supaya "Tax Exported?" di Invoice Detail/daftar
+        // ikut YES. Dulu tidak ada satu pun kode yang mengisi kolom ini.
+        Invoice::whereIn('id', $invoices->pluck('id'))->update(['is_tax_exported' => true]);
+
         return [
             'file_path' => $relativePath,
             'total_records' => $rows->count(),
