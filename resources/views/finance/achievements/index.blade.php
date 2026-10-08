@@ -287,6 +287,19 @@
         overflow-x: auto;
     }
 
+    /* Scrollbar horizontal kedua di atas tabel. Tabel ini lebih lebar dari layar dan
+       barisnya tinggi (nama marketing terlipat), jadi scrollbar bawahnya baru terlihat
+       setelah menggulir ke dasar tabel - QA mengira halaman tidak bisa digeser. */
+    .table-scroll-top {
+        overflow-x: auto;
+        overflow-y: hidden;
+        height: 16px;
+    }
+
+    .table-scroll-top > div {
+        height: 1px;
+    }
+
     .data-table {
         width: 100%;
         border-collapse: collapse;
@@ -848,7 +861,8 @@
             </div>
         </div>
 
-        <div class="table-wrapper">
+        <div class="table-scroll-top" id="achievementTableScrollTop" hidden><div></div></div>
+        <div class="table-wrapper" id="achievementTableWrapper">
             @if($achievements->count() > 0)
                 <table class="data-table">
                     <thead>
@@ -977,6 +991,35 @@
 @endsection
 
 @push('scripts')
+<script>
+// Scrollbar atas disinkronkan dengan scrollbar tabel; tampil hanya kalau tabel memang lebih lebar.
+(function () {
+    const top = document.getElementById('achievementTableScrollTop');
+    const wrapper = document.getElementById('achievementTableWrapper');
+    if (!top || !wrapper) return;
+
+    const spacer = top.firstElementChild;
+    let syncing = false;
+
+    const refresh = () => {
+        spacer.style.width = wrapper.scrollWidth + 'px';
+        top.hidden = wrapper.scrollWidth <= wrapper.clientWidth;
+    };
+    const sync = (from, to) => () => {
+        if (syncing) return;
+        syncing = true;
+        to.scrollLeft = from.scrollLeft;
+        syncing = false;
+    };
+
+    top.addEventListener('scroll', sync(top, wrapper));
+    wrapper.addEventListener('scroll', sync(wrapper, top));
+    window.addEventListener('resize', refresh);
+    document.addEventListener('DOMContentLoaded', refresh);
+    window.addEventListener('load', refresh);
+    refresh();
+})();
+</script>
 <script>
 $(document).ready(function() {
     // Load statistics immediately
