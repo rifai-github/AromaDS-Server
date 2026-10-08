@@ -195,7 +195,7 @@ class CommissionCalculationService
                 'commission_rate' => $commissionRate,
                 'commission_level_id' => $commissionLevel->id,
                 'commission_amount' => $commissionAmount,
-                'status' => 'pending',
+                'status' => self::achievementStatus((float) $marketingTarget->achieved_amount, (float) $marketingTarget->target_amount),
                 'achievement_date' => now(),
                 'cut_off_start_date' => $achievementPeriod->start_date->day,
                 'cut_off_end_date' => $achievementPeriod->end_date->day,
@@ -250,9 +250,23 @@ class CommissionCalculationService
             // Hanya komisi otomatis (new/renewal). Komisi manual/adjustment yang kebetulan
             // menunjuk kontrak yang sama dulu ikut tertangkap di sini: pembayaran invoice
             // meng-approve komisi manual itu dan komisi otomatisnya tak pernah dibuat.
-            $existingCalculation = $this->automaticCalculationsFor($contract)
-                ->where('status', '!=', 'cancelled')
-                ->first();
+            // Semua komisi otomatis kontrak ini: Commission Transfer sebagian memecah satu
+            // komisi menjadi dua baris (marketing asal + penerima) yang harus ikut approved
+            // bersama. Komisi yang sudah Paid tidak disentuh - dulu pembayaran invoice periode
+            // berikutnya mengembalikannya ke Approved sehingga bisa dibayar dua kali.
+            $openCalculations = $this->automaticCalculationsFor($contract)
+                ->whereNotIn('status', ['cancelled', 'paid'])
+                ->get();
+            $existingCalculation = $openCalculations->first()
+                ?? $this->automaticCalculationsFor($contract)->where('status', 'paid')->first();
+
+            if ($existingCalculation && $openCalculations->isEmpty()) {
+                return [
+                    'success' => true,
+                    'message' => "Commission for contract {$contract->contract_number} is already paid.",
+                    'commission' => $existingCalculation,
+                ];
+            }
 
             if ($existingCalculation) {
                 // Update existing calculation with cash receipt date
@@ -261,14 +275,16 @@ class CommissionCalculationService
                 $crDueDate = Carbon::parse($cashReceiptDate)->addDays($crDays);
                 $isCrExpired = Carbon::now()->gt($crDueDate);
 
-                $existingCalculation->update([
-                    'cash_receipt_date' => Carbon::parse($cashReceiptDate),
-                    'cr_due_date' => $crDueDate,
-                    'is_cr_expired' => $isCrExpired,
-                    'is_commission_void' => $isCrExpired,
-                    'status' => $isCrExpired ? 'cancelled' : 'approved',
-                    'updated_by' => auth()->id()
-                ]);
+                foreach ($openCalculations as $openCalculation) {
+                    $openCalculation->update([
+                        'cash_receipt_date' => Carbon::parse($cashReceiptDate),
+                        'cr_due_date' => $crDueDate,
+                        'is_cr_expired' => $isCrExpired,
+                        'is_commission_void' => $isCrExpired,
+                        'status' => $isCrExpired ? 'cancelled' : 'approved',
+                        'updated_by' => auth()->id()
+                    ]);
+                }
 
                 return [
                     'success' => !$isCrExpired,
@@ -368,6 +384,7 @@ class CommissionCalculationService
 
             if ($achievement) {
                 $achievement->update([
+                    'status' => self::achievementStatus((float) ($snapshotAchieved ?? $achievement->achieved_amount), (float) $achievement->target_amount),
                     'achieved_amount' => $snapshotAchieved ?? $achievement->achieved_amount,
                     'commission_rate' => $commissionRate,
                     'commission_level_id' => $commissionLevelId,
@@ -400,6 +417,20 @@ class CommissionCalculationService
      * Komisi otomatis milik kontrak (tipe new/renewal). Komisi manual/adjustment dari
      * CommissionController tidak dihitung, jadi tetap boleh berdampingan.
      */
+    /**
+     * Status baris Achievement otomatis dari posisi pencapaian saat kontrak dihitung.
+     * Di bawah target tetap "pending" (periode masih berjalan), bukan "failed".
+     * Dulu selalu "pending" walau pencapaian sudah melewati target (QA 8 Okt).
+     */
+    public static function achievementStatus(float $achieved, float $target): string
+    {
+        if ($target <= 0 || $achieved < $target) {
+            return 'pending';
+        }
+
+        return $achieved > $target ? 'exceeded' : 'achieved';
+    }
+
     private function automaticCalculationsFor(Contract $contract)
     {
         return CommissionCalculation::where('contract_id', $contract->id)

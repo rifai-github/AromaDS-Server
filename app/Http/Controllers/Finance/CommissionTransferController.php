@@ -9,6 +9,7 @@ use App\Models\Contract;
 use App\Models\User;
 use App\Models\Finance\CommissionCalculation;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class CommissionTransferController extends Controller
 {
@@ -136,8 +137,20 @@ class CommissionTransferController extends Controller
             'approval_notes' => 'nullable|string|max:1000'
         ]);
 
+        $blockReason = $this->transferBlockReason($commissionTransfer);
+        if ($blockReason) {
+            if (request()->expectsJson() || request()->is('api/*')) {
+                return response()->json(['status' => 'error', 'message' => $blockReason], 422);
+            }
+
+            return redirect()->back()->with('error', $blockReason);
+        }
+
         try {
-            $commissionTransfer->approve(Auth::id(), $request->approval_notes);
+            DB::transaction(function () use ($commissionTransfer, $request) {
+                $commissionTransfer->approve(Auth::id(), $request->approval_notes);
+                $this->applyTransferToCalculation($commissionTransfer);
+            });
 
             if (request()->expectsJson() || request()->is('api/*')) {
                 return response()->json([
@@ -159,6 +172,91 @@ class CommissionTransferController extends Controller
             return redirect()->back()
                 ->with('error', 'Failed to approve commission transfer: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Approve dulu hanya mengganti status transfer; komisi yang sudah terhitung tetap atas
+     * nama marketing asal (QA 8 Okt, SMG-AG/26-01/0028). Transfer baru berlaku hanya untuk
+     * komisi kontrak yang belum dihitung. Sekarang approve ikut memindahkan komisinya.
+     */
+    private function transferBlockReason(CommissionTransfer $transfer): ?string
+    {
+        if ($transfer->status !== 'pending') {
+            return "Transfer ini sudah berstatus {$transfer->status}.";
+        }
+
+        $calculation = $transfer->commissionCalculation;
+        if (! $calculation) {
+            return 'Komisi yang akan ditransfer tidak ditemukan.';
+        }
+
+        if (! in_array($calculation->status, ['calculated', 'approved'], true)) {
+            return "Komisi #{$calculation->id} berstatus {$calculation->status}; hanya komisi Calculated/Approved yang bisa ditransfer.";
+        }
+
+        if ((int) $calculation->user_id !== (int) $transfer->from_user_id) {
+            return "Komisi #{$calculation->id} bukan milik {$transfer->fromUser?->name}.";
+        }
+
+        $activePayment = \App\Models\Finance\CommissionPayment::where('commission_calculation_id', $calculation->id)
+            ->whereIn('status', ['pending', 'processing', 'completed'])
+            ->first();
+        if ($activePayment) {
+            return "Komisi #{$calculation->id} sudah punya pembayaran #{$activePayment->id} ({$activePayment->status}). Batalkan pembayarannya dulu.";
+        }
+
+        $amount = round((float) $transfer->commission_amount, 2);
+        $available = round((float) $calculation->final_amount, 2);
+        if ($amount <= 0 || $amount > $available) {
+            return 'Nominal transfer Rp '.number_format($amount, 0, ',', '.')
+                .' harus lebih dari 0 dan tidak melebihi komisi Rp '.number_format($available, 0, ',', '.').'.';
+        }
+
+        return null;
+    }
+
+    /**
+     * Nominal penuh: komisi dipindah ke penerima. Sebagian: komisi asal dikurangi dan
+     * dibuat komisi baru untuk penerima dengan status, periode, dan tanggal cash receipt
+     * yang sama. Target/achievement tetap milik marketing asal (dia yang menjual).
+     */
+    private function applyTransferToCalculation(CommissionTransfer $transfer): void
+    {
+        $calculation = CommissionCalculation::whereKey($transfer->commission_calculation_id)->lockForUpdate()->firstOrFail();
+        $amount = round((float) $transfer->commission_amount, 2);
+        $note = "Transfer #{$transfer->id} dari {$transfer->fromUser?->name} ke {$transfer->toUser?->name}";
+
+        if ($amount >= round((float) $calculation->final_amount, 2)) {
+            $calculation->update([
+                'user_id' => $transfer->to_user_id,
+                'commission_transfer_id' => $transfer->id,
+                'calculation_notes' => trim(($calculation->calculation_notes ?? '')."\n{$note} (penuh)"),
+                'updated_by' => Auth::id(),
+            ]);
+
+            return;
+        }
+
+        $split = $calculation->replicate();
+        $split->fill([
+            'user_id' => $transfer->to_user_id,
+            'commission_transfer_id' => $transfer->id,
+            'commission_amount' => $amount,
+            'bonus_amount' => 0,
+            'penalty_amount' => 0,
+            'final_amount' => $amount,
+            'calculation_notes' => "{$note} (sebagian dari komisi #{$calculation->id})",
+            'created_by' => Auth::id(),
+            'updated_by' => Auth::id(),
+        ]);
+        $split->save();
+
+        $calculation->update([
+            'commission_amount' => round((float) $calculation->commission_amount - $amount, 2),
+            'final_amount' => round((float) $calculation->final_amount - $amount, 2),
+            'calculation_notes' => trim(($calculation->calculation_notes ?? '')."\n{$note}: dikurangi Rp ".number_format($amount, 0, ',', '.')),
+            'updated_by' => Auth::id(),
+        ]);
     }
 
     /**

@@ -201,6 +201,21 @@ class CommissionCalculationDuplicateTest extends TestCase
             $t->foreignId('commission_calculation_id')->nullable();
             $t->decimal('commission_amount', 15, 2)->nullable();
             $t->string('status');
+            $t->text('reason')->nullable();
+            $t->foreignId('approved_by')->nullable();
+            $t->timestamp('approved_at')->nullable();
+            $t->text('approval_notes')->nullable();
+            $t->foreignId('created_by')->nullable();
+            $t->foreignId('updated_by')->nullable();
+            $t->timestamps();
+            $t->softDeletes();
+        });
+        Schema::create('commission_payments', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('commission_calculation_id');
+            $t->foreignId('user_id');
+            $t->decimal('amount', 15, 2)->default(0);
+            $t->string('status')->default('pending');
             $t->timestamps();
             $t->softDeletes();
         });
@@ -262,7 +277,7 @@ class CommissionCalculationDuplicateTest extends TestCase
     protected function tearDown(): void
     {
         Carbon::setTestNow();
-        foreach (['user_marketing_levels', 'marketing_levels', 'commission_transfers', 'achievements',
+        foreach (['user_marketing_levels', 'marketing_levels', 'commission_payments', 'commission_transfers', 'achievements',
             'commission_calculations', 'cr_variables', 'commission_levels', 'marketing_targets',
             'achievement_periods', 'bank_receipts', 'invoice_activities', 'invoices', 'contracts', 'users'] as $table) {
             Schema::dropIfExists($table);
@@ -503,6 +518,93 @@ class CommissionCalculationDuplicateTest extends TestCase
         $this->assertSame('calculated', $manual->status);
         $this->assertNull($manual->cash_receipt_date);
     }
+    private function approveTransfer(int $calculationId, float $amount): void
+    {
+        DB::table('commission_transfers')->insert([
+            'id' => 1, 'contract_id' => 1, 'from_user_id' => 1, 'to_user_id' => 2,
+            'commission_calculation_id' => $calculationId, 'commission_amount' => $amount,
+            'status' => 'pending', 'reason' => 'berbagi', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->actingAs(\App\Models\User::find(1));
+        $request = \Illuminate\Http\Request::create('/finance/commission-transfers/1/approve', 'POST');
+        $request->setLaravelSession(app('session.store'));
+        app()->instance('request', $request);
+
+        app(\App\Http\Controllers\Finance\CommissionTransferController::class)
+            ->approve($request, \App\Models\Finance\CommissionTransfer::findOrFail(1));
+    }
+
+    public function test_full_commission_transfer_moves_the_commission_to_the_recipient(): void
+    {
+        // QA 8 Okt (SMG-AG/26-01/0028): transfer approved tapi komisi tetap atas nama Wahyu.
+        $calc = $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000))['commission'];
+
+        $this->approveTransfer($calc->id, (float) $calc->final_amount);
+
+        $calc->refresh();
+        $this->assertSame(2, (int) $calc->user_id);
+        $this->assertSame(1, (int) $calc->commission_transfer_id);
+        $this->assertSame('approved', DB::table('commission_transfers')->find(1)->status);
+        $this->assertSame(1, \App\Models\Finance\CommissionCalculation::count());
+        // Target tetap milik marketing asal.
+        $this->assertEquals(40_000_000, $this->achieved());
+    }
+
+    public function test_partial_transfer_splits_and_both_parts_are_approved_when_the_invoice_is_paid(): void
+    {
+        $contract = $this->contract(1, 101, 40_000_000);
+        $calc = $this->service->calculateCommissionForContract($contract)['commission']; // 200.000 @0.5%
+
+        $this->approveTransfer($calc->id, 50_000);
+
+        $parts = \App\Models\Finance\CommissionCalculation::orderBy('id')->get();
+        $this->assertCount(2, $parts);
+        $this->assertEquals([1 => 150_000, 2 => 50_000], $parts->mapWithKeys(fn ($c) => [$c->user_id => (float) $c->final_amount])->all());
+
+        $invoice = new \App\Models\Finance\Invoice();
+        $invoice->contract_number = $contract->contract_number;
+        $this->service->calculateCommissionOnCashReceipt($invoice, now()->toDateString());
+
+        $this->assertSame(['approved', 'approved'], \App\Models\Finance\CommissionCalculation::orderBy('id')->pluck('status')->all());
+    }
+
+    public function test_transfer_is_refused_when_the_commission_already_has_a_payment(): void
+    {
+        $calc = $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000))['commission'];
+        DB::table('commission_payments')->insert(['commission_calculation_id' => $calc->id, 'user_id' => 1, 'amount' => 200_000, 'status' => 'pending']);
+
+        $this->approveTransfer($calc->id, (float) $calc->final_amount);
+
+        $this->assertSame(1, (int) $calc->fresh()->user_id);
+        $this->assertSame('pending', DB::table('commission_transfers')->find(1)->status);
+        $this->assertStringContainsString('sudah punya pembayaran', (string) session('error'));
+    }
+
+    public function test_paying_a_later_invoice_does_not_reopen_a_paid_commission(): void
+    {
+        $contract = $this->contract(1, 101, 40_000_000);
+        $calc = $this->service->calculateCommissionForContract($contract)['commission'];
+        $calc->update(['status' => 'paid']);
+
+        $invoice = new \App\Models\Finance\Invoice();
+        $invoice->contract_number = $contract->contract_number;
+        $result = $this->service->calculateCommissionOnCashReceipt($invoice, now()->toDateString());
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('paid', $calc->fresh()->status);
+    }
+
+    public function test_automatic_achievement_status_follows_target_progress(): void
+    {
+        // Target 100 jt: 40 jt -> pending, +60 jt = 100 jt -> achieved, +50 jt -> exceeded.
+        $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000));
+        $this->service->calculateCommissionForContract($this->contract(2, 102, 60_000_000));
+        $this->service->calculateCommissionForContract($this->contract(3, 103, 50_000_000));
+
+        $this->assertSame(['pending', 'achieved', 'exceeded'], DB::table('achievements')->orderBy('id')->pluck('status')->all());
+    }
+
     public function test_calculating_same_contract_twice_keeps_one_record_and_one_target_increment(): void
     {
         $contract = $this->contract(1, 101, 40_000_000);
