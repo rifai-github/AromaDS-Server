@@ -308,6 +308,19 @@ class CommissionController extends Controller
     {
         try {
             $commission = $this->accessibleCommissionQuery()->whereKey($commission->id)->firstOrFail();
+
+            // Komisi yang masih dipegang pembayaran tidak boleh hilang dari daftar: payment-nya
+            // jadi menunjuk komisi yang tak terlihat dan transfer atas komisi itu tak bisa
+            // diproses lagi (QA 8 Okt, komisi #3 + payment #1).
+            $activePayment = $commission->commissionPayments()
+                ->whereIn('status', ['pending', 'processing', 'completed'])
+                ->first();
+            if ($activePayment) {
+                return redirect()->back()->with('error',
+                    "Komisi ini masih punya pembayaran ID {$activePayment->id} berstatus {$activePayment->status} di Commission Payment."
+                    .($activePayment->status === 'completed' ? '' : ' Batalkan pembayarannya dulu (tombol ✕).'));
+            }
+
             $commission->delete();
             return redirect()->route('finance.commissions.index')
                 ->with('success', 'Commission calculation deleted successfully.');

@@ -138,6 +138,38 @@ class CommissionPaymentSingleUseTest extends TestCase
         $this->assertStringStartsWith('2026-10-08', (string) $calculation->payment_date);
     }
 
+    public function test_cancelling_a_pending_payment_frees_the_commission_for_a_new_payment(): void
+    {
+        $request = Request::create('/finance/commission-payments/10/cancel', 'POST', ['reason' => 'salah input']);
+        $request->setLaravelSession(app('session.store'));
+        app(CommissionPaymentController::class)->cancel($request, CommissionPayment::findOrFail(10));
+
+        $this->assertSame('cancelled', DB::table('commission_payments')->find(10)->status);
+
+        $view = app(CommissionPaymentController::class)->create();
+        $this->assertContains(1, $view->getData()['calculations']->pluck('id')->all());
+    }
+
+    public function test_a_completed_payment_cannot_be_cancelled(): void
+    {
+        DB::table('commission_payments')->where('id', 10)->update(['status' => 'completed']);
+
+        $request = Request::create('/finance/commission-payments/10/cancel', 'POST', ['reason' => 'x']);
+        $request->setLaravelSession(app('session.store'));
+        app(CommissionPaymentController::class)->cancel($request, CommissionPayment::findOrFail(10));
+
+        $this->assertSame('completed', DB::table('commission_payments')->find(10)->status);
+    }
+
+    public function test_payment_list_has_a_cancel_button(): void
+    {
+        // QA 8 Okt: tidak ada tombol batal; ▶ ternyata "Mark as Processing".
+        $source = file_get_contents(View::getFinder()->find('finance.commission-payments.index'));
+
+        $this->assertStringContainsString("route('finance.commission-payments.cancel'", $source);
+        $this->assertStringContainsString('function askCancelReason', $source);
+    }
+
     public function test_payment_list_has_processing_and_completed_buttons(): void
     {
         $source = file_get_contents(View::getFinder()->find('finance.commission-payments.index'));

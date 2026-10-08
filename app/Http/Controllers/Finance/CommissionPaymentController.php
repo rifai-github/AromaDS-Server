@@ -316,10 +316,17 @@ class CommissionPaymentController extends Controller
             'reason' => 'required|string|max:500'
         ]);
 
+        // Payment yang sudah Completed berarti uangnya sudah keluar dan komisinya sudah Paid;
+        // membatalkannya di sini akan membuat data keduanya tidak sejalan.
+        if (! in_array($commissionPayment->status, ['pending', 'processing'], true)) {
+            return redirect()->back()
+                ->with('error', "Pembayaran berstatus {$commissionPayment->status} tidak bisa dibatalkan.");
+        }
+
         try {
             $commissionPayment->cancel($request->reason);
             return redirect()->back()
-                ->with('success', 'Payment cancelled successfully.');
+                ->with('success', 'Pembayaran dibatalkan. Komisinya bisa dibayar ulang atau ditransfer.');
         } catch (\Exception $e) {
             return redirect()->back()
                 ->with('error', 'Failed to cancel payment: ' . $e->getMessage());

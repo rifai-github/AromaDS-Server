@@ -187,7 +187,7 @@ class CommissionTransferController extends Controller
 
         $calculation = $transfer->commissionCalculation;
         if (! $calculation) {
-            return 'Komisi yang akan ditransfer tidak ditemukan.';
+            return "Komisi #{$transfer->commission_calculation_id} sudah dihapus dari Commission System, jadi transfer ini tidak bisa di-approve. Silakan Reject transfer ini.";
         }
 
         if (! in_array($calculation->status, ['calculated', 'approved'], true)) {
@@ -202,7 +202,11 @@ class CommissionTransferController extends Controller
             ->whereIn('status', ['pending', 'processing', 'completed'])
             ->first();
         if ($activePayment) {
-            return "Komisi #{$calculation->id} sudah punya pembayaran #{$activePayment->id} ({$activePayment->status}). Batalkan pembayarannya dulu.";
+            $hint = $activePayment->status === 'completed'
+                ? 'Komisi yang sudah dibayar tidak bisa ditransfer.'
+                : "Batalkan dulu di menu Commission Payment (ID {$activePayment->id}, tombol ✕).";
+
+            return "Komisi #{$calculation->id} sudah punya pembayaran ID {$activePayment->id} berstatus {$activePayment->status}. {$hint}";
         }
 
         $amount = round((float) $transfer->commission_amount, 2);
@@ -300,8 +304,11 @@ class CommissionTransferController extends Controller
     {
         try {
             $userId = $request->get('user_id');
+            // Komisi yang sudah punya pembayaran aktif tidak bisa ditransfer (approve akan
+            // menolaknya), jadi tidak ditawarkan sejak awal.
             $query = CommissionCalculation::where('contract_id', $contractId)
-                ->whereIn('status', ['calculated', 'approved']);
+                ->whereIn('status', ['calculated', 'approved'])
+                ->whereDoesntHave('commissionPayments', fn ($payments) => $payments->whereIn('status', ['pending', 'processing', 'completed']));
             
             if ($userId) {
                 $query->where('user_id', $userId);

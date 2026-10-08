@@ -501,6 +501,12 @@
                                         @csrf
                                         <button type="submit" class="btn btn-sm btn-success" title="Mark as Completed"><i class="fas fa-check"></i></button>
                                     </form>
+                                    <form method="POST" action="{{ route('finance.commission-payments.cancel', $payment) }}" class="d-inline"
+                                          onsubmit="return askCancelReason(this);">
+                                        @csrf
+                                        <input type="hidden" name="reason" value="">
+                                        <button type="submit" class="btn btn-sm btn-danger" title="Batalkan Pembayaran"><i class="fas fa-times"></i></button>
+                                    </form>
                                 @endif
                             </div>
                         </td>
@@ -569,5 +575,17 @@ function openViewModal(id) {
 }
 
 function closeModal() { document.getElementById('modalOverlay').classList.remove('show'); }
+
+// Pembatalan wajib beralasan (validasi server); minta alasannya sebelum form dikirim.
+function askCancelReason(form) {
+    const reason = prompt('Batalkan pembayaran ini? Komisinya bisa dibayar ulang atau ditransfer.\n\nAlasan pembatalan:');
+    if (reason === null) return false;
+    if (reason.trim() === '') {
+        alert('Alasan pembatalan wajib diisi.');
+        return false;
+    }
+    form.querySelector('input[name="reason"]').value = reason.trim();
+    return true;
+}
 </script>
 @endpush

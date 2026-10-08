@@ -581,6 +581,40 @@ class CommissionCalculationDuplicateTest extends TestCase
         $this->assertStringContainsString('sudah punya pembayaran', (string) session('error'));
     }
 
+    public function test_transfer_form_only_offers_commissions_without_an_active_payment(): void
+    {
+        $calc = $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000))['commission'];
+
+        $list = fn () => app(\App\Http\Controllers\Finance\CommissionTransferController::class)
+            ->getCalculationsByContract(\Illuminate\Http\Request::create('/x', 'GET', ['user_id' => 1]), 1)
+            ->getData(true)['data'];
+
+        $this->assertCount(1, $list());
+
+        DB::table('commission_payments')->insert(['commission_calculation_id' => $calc->id, 'user_id' => 1, 'amount' => 200_000, 'status' => 'processing']);
+        $this->assertCount(0, $list());
+
+        DB::table('commission_payments')->update(['status' => 'cancelled']);
+        $this->assertCount(1, $list());
+    }
+
+    public function test_a_commission_held_by_a_payment_cannot_be_hidden(): void
+    {
+        // QA 8 Okt: komisi #3 disembunyikan padahal payment #1 masih menunjuknya.
+        $calc = $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000))['commission'];
+        DB::table('commission_payments')->insert(['commission_calculation_id' => $calc->id, 'user_id' => 1, 'amount' => 200_000, 'status' => 'processing']);
+
+        $this->actingAs(\App\Models\User::find(1));
+        $request = \Illuminate\Http\Request::create('/finance/commissions/'.$calc->id, 'DELETE');
+        $request->setLaravelSession(app('session.store'));
+        app()->instance('request', $request);
+
+        app(\App\Http\Controllers\Finance\CommissionController::class)->destroy($calc);
+
+        $this->assertNotNull(\App\Models\Finance\CommissionCalculation::find($calc->id));
+        $this->assertStringContainsString('masih punya pembayaran', (string) session('error'));
+    }
+
     public function test_paying_a_later_invoice_does_not_reopen_a_paid_commission(): void
     {
         $contract = $this->contract(1, 101, 40_000_000);
