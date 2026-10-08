@@ -707,6 +707,10 @@ class ContractController extends Controller
 
             $contract->update($payload);
 
+            // Alasan komisi otomatis tidak terbentuk ditampilkan ke user. Dulu hanya masuk log,
+            // dan karena Tanggal Install langsung terkunci, user tidak tahu apa yang kurang.
+            $commissionWarning = null;
+
             // If install_date is set and contract is not yet marked as installed, mark as installed and trigger commission calculation
             if ($request->install_date && (! $wasInstalled || $installDateChanged)) {
                 $contract->refresh();
@@ -724,6 +728,9 @@ class ContractController extends Controller
                         Log::info("Commission calculated for contract {$contract->contract_number} after installation: {$result['amount']}");
                     } else {
                         Log::warning("Commission calculation skipped for contract {$contract->contract_number}: {$result['message']}");
+                        if (empty($result['already_calculated'])) {
+                            $commissionWarning = $result['message'];
+                        }
                     }
                 } catch (\Exception $e) {
                     Log::error("Failed to calculate commission for contract {$contract->contract_number}: ".$e->getMessage());
@@ -734,6 +741,7 @@ class ContractController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Additional Info updated successfully',
+                'commission_warning' => $commissionWarning,
             ]);
         } catch (\Exception $e) {
             Log::error('Error updating additional info: '.$e->getMessage());

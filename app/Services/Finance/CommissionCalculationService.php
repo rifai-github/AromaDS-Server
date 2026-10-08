@@ -9,6 +9,7 @@ use App\Models\Finance\CrVariable;
 use App\Models\Finance\AchievementPeriod;
 use App\Models\Finance\CommissionCalculation;
 use App\Models\Finance\Achievement;
+use App\Models\Finance\RenewalContractAssignment;
 use App\Models\Contract;
 use App\Models\User;
 use App\Models\Invoice;
@@ -79,19 +80,18 @@ class CommissionCalculationService
             }
 
             // Get marketing target for this user and period
-            $marketingTarget = MarketingTarget::where('user_id', $marketingUser->id)
-                ->where('achievement_period_id', $achievementPeriod->id)
-                ->where('target_type', $targetType)
-                ->where('is_locked', false)
-                ->lockForUpdate()
-                ->first();
+            $marketingTarget = $this->findMarketingTarget($marketingUser->id, $achievementPeriod->id, $targetType, $contract);
 
             if (!$marketingTarget) {
                 DB::rollBack();
 
+                $hint = $targetType === 'renewal'
+                    ? ' Buat Marketing Target tipe Renewal atau Renewal Contract Assignment untuk periode ini.'
+                    : ' Buat Marketing Target tipe New untuk periode ini.';
+
                 return [
                     'success' => false,
-                    'message' => "No active marketing target found for user {$marketingUser->name} for {$targetType} contracts",
+                    'message' => "No active marketing target found for user {$marketingUser->name} for {$targetType} contracts ({$achievementPeriod->period_name}).{$hint}",
                     'commission' => null
                 ];
             }
@@ -113,7 +113,7 @@ class CommissionCalculationService
 
                 return [
                     'success' => false,
-                    'message' => "No commission level found for achievement percentage: {$achievementPercentage}%",
+                    'message' => "No commission level found for achievement percentage: {$achievementPercentage}% ({$targetType}). Buat Commission Level tipe ".ucfirst($targetType).' atau Both yang mencakup persentase ini.',
                     'commission' => null
                 ];
             }
@@ -443,9 +443,17 @@ class CommissionCalculationService
      */
     private function isRenewalContract(Contract $contract): bool
     {
-        // Check if contract has existing_contract_id or quotation_type is renewal
-        if ($contract->quotation && $contract->quotation->quotation_type === 'renewal') {
+        $quotationType = $contract->quotation?->quotation_type;
+
+        if ($quotationType === 'renewal' || $contract->contract_type === 'renewal') {
             return true;
+        }
+
+        // Jenis eksplisit dari SQ/kontrak menang. Dulu kontrak "new" ikut dianggap renewal
+        // hanya karena customer-nya punya kontrak aktif lain (QA 8 Okt: MDO-AG/26-03/0006),
+        // sehingga dicari target Renewal dan komisinya tidak terbentuk.
+        if ($quotationType === 'new' || $contract->contract_type === 'new') {
+            return false;
         }
 
         // Check if there's a previous contract for same customer
@@ -455,6 +463,63 @@ class CommissionCalculationService
             ->exists();
 
         return $previousContract;
+    }
+
+    /**
+     * Target marketing aktif (belum dikunci) untuk user, periode, dan tipe kontrak.
+     *
+     * Target renewal juga bisa datang dari Renewal Contract Assignment (user + periode +
+     * target, opsional rentang nomor kontrak). Dulu assignment itu tidak dibaca sama sekali,
+     * jadi QA yang menyiapkan target renewal lewat menu tersebut tidak pernah mendapat komisi.
+     * Bila belum ada Marketing Target Renewal, target dibuat dari assignment supaya
+     * pencapaiannya tetap terlihat di Marketing Targets. Target yang sudah ada selalu menang,
+     * dan target yang dikunci tidak diganti.
+     */
+    private function findMarketingTarget(int $userId, int $periodId, string $targetType, Contract $contract): ?MarketingTarget
+    {
+        $targets = fn () => MarketingTarget::withTrashed()
+            ->where('user_id', $userId)
+            ->where('achievement_period_id', $periodId)
+            ->where('target_type', $targetType);
+
+        $target = $targets()->whereNull('deleted_at')->where('is_locked', false)->lockForUpdate()->first();
+        if ($target || $targetType !== 'renewal' || $targets()->whereNull('deleted_at')->exists()) {
+            return $target;
+        }
+
+        $assignment = RenewalContractAssignment::where('user_id', $userId)
+            ->where('achievement_period_id', $periodId)
+            ->orderByDesc('id')
+            ->get()
+            ->first(fn (RenewalContractAssignment $a) => $a->isContractInRange($contract->contract_number));
+
+        if (!$assignment || (float) $assignment->target_amount <= 0) {
+            return null;
+        }
+
+        $attributes = [
+            'target_amount' => $assignment->target_amount,
+            'is_locked' => false,
+            'notes' => RenewalAssignmentService::generatedTargetNote($assignment),
+            'updated_by' => auth()->id() ?? 1,
+        ];
+
+        // unique_user_period_type ikut menghitung baris yang di-soft-delete.
+        $trashed = $targets()->onlyTrashed()->first();
+        if ($trashed) {
+            $trashed->restore();
+            $trashed->update($attributes);
+
+            return $trashed;
+        }
+
+        return MarketingTarget::create($attributes + [
+            'user_id' => $userId,
+            'achievement_period_id' => $periodId,
+            'target_type' => 'renewal',
+            'achieved_amount' => 0,
+            'created_by' => auth()->id() ?? 1,
+        ]);
     }
 
     /**

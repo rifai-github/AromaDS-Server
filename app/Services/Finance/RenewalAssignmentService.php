@@ -4,6 +4,7 @@ namespace App\Services\Finance;
 
 use App\Models\Finance\RenewalContractAssignment;
 use App\Models\Finance\AchievementPeriod;
+use App\Models\Finance\MarketingTarget;
 use App\Models\Contract;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -89,6 +90,36 @@ class RenewalAssignmentService
         }
 
         return $assignment->isContractInRange($contractNumber);
+    }
+
+    /**
+     * Penanda Marketing Target Renewal yang dibuat otomatis dari assignment ini oleh
+     * CommissionCalculationService (lihat findMarketingTarget()).
+     */
+    public static function generatedTargetNote(RenewalContractAssignment $assignment): string
+    {
+        return "Dibuat otomatis dari Renewal Contract Assignment #{$assignment->id}";
+    }
+
+    /**
+     * Target assignment diubah: ikutkan ke Marketing Target yang dibuat darinya. Target yang
+     * dibuat manual atau sudah dikunci tidak disentuh.
+     */
+    public function syncGeneratedMarketingTarget(RenewalContractAssignment $assignment): void
+    {
+        if ((float) $assignment->target_amount <= 0) {
+            return;
+        }
+
+        MarketingTarget::where('user_id', $assignment->user_id)
+            ->where('achievement_period_id', $assignment->achievement_period_id)
+            ->where('target_type', 'renewal')
+            ->where('is_locked', false)
+            ->where('notes', self::generatedTargetNote($assignment))
+            ->update([
+                'target_amount' => $assignment->target_amount,
+                'updated_by' => auth()->id() ?? 1,
+            ]);
     }
 
     /**

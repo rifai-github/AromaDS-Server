@@ -168,6 +168,7 @@ class RenewalContractAssignmentController extends Controller
                 'notes' => $request->notes,
                 'updated_by' => Auth::id()
             ]);
+            $this->renewalAssignmentService->syncGeneratedMarketingTarget($renewalContractAssignment);
 
             if (request()->expectsJson() || request()->is('api/*')) {
                 return response()->json([

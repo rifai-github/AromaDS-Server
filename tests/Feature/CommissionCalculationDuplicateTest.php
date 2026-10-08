@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\Contract;
 use App\Models\Finance\CommissionCalculation;
 use App\Models\Finance\MarketingTarget;
+use App\Models\Finance\RenewalContractAssignment;
 use App\Services\Finance\CommissionCalculationService;
+use App\Services\Finance\RenewalAssignmentService;
 use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +40,7 @@ class CommissionCalculationDuplicateTest extends TestCase
             $t->foreignId('marketing_id')->nullable();
             $t->foreignId('quotation_id')->nullable();
             $t->foreignId('commission_recipient_id')->nullable();
+            $t->string('contract_type')->nullable();
             $t->decimal('contract_value', 15, 2)->default(0);
             $t->decimal('net_value', 15, 2)->nullable();
             $t->boolean('is_installed')->default(false);
@@ -219,6 +222,22 @@ class CommissionCalculationDuplicateTest extends TestCase
             $t->timestamps();
             $t->softDeletes();
         });
+        Schema::create('renewal_contract_assignments', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('achievement_period_id');
+            $t->foreignId('user_id');
+            $t->string('contract_number_from')->nullable();
+            $t->string('contract_number_to')->nullable();
+            $t->decimal('target_amount', 15, 2)->default(0);
+            $t->boolean('is_locked')->default(false);
+            $t->date('lock_date')->nullable();
+            $t->foreignId('locked_by')->nullable();
+            $t->text('notes')->nullable();
+            $t->foreignId('created_by')->nullable();
+            $t->foreignId('updated_by')->nullable();
+            $t->timestamps();
+            $t->softDeletes();
+        });
         Schema::create('marketing_levels', function (Blueprint $t) {
             $t->id();
             $t->string('level_code')->nullable();
@@ -277,7 +296,7 @@ class CommissionCalculationDuplicateTest extends TestCase
     protected function tearDown(): void
     {
         Carbon::setTestNow();
-        foreach (['user_marketing_levels', 'marketing_levels', 'commission_payments', 'commission_transfers', 'achievements',
+        foreach (['renewal_contract_assignments', 'user_marketing_levels', 'marketing_levels', 'commission_payments', 'commission_transfers', 'achievements',
             'commission_calculations', 'cr_variables', 'commission_levels', 'marketing_targets',
             'achievement_periods', 'bank_receipts', 'invoice_activities', 'invoices', 'contracts', 'users'] as $table) {
             Schema::dropIfExists($table);
@@ -285,14 +304,16 @@ class CommissionCalculationDuplicateTest extends TestCase
         parent::tearDown();
     }
 
-    private function contract(int $id, int $customerId, float $value, ?float $net = null, bool $installed = true): Contract
+    private function contract(int $id, int $customerId, float $value, ?float $net = null, bool $installed = true,
+        ?string $type = null, string $status = 'draft'): Contract
     {
         DB::table('contracts')->insert([
             'id' => $id, 'contract_number' => "CT-{$id}", 'customer_id' => $customerId,
             'marketing_id' => 1, 'contract_value' => $value, 'net_value' => $net,
             'is_installed' => $installed, 'installed_date' => $installed ? '2026-09-10' : null,
+            'contract_type' => $type,
             // status 'draft' supaya kontrak lain customer ini tidak dianggap "kontrak aktif sebelumnya"
-            'status' => 'draft', 'created_at' => now(), 'updated_at' => now(),
+            'status' => $status, 'created_at' => now(), 'updated_at' => now(),
         ]);
 
         return Contract::findOrFail($id);
@@ -722,5 +743,82 @@ class CommissionCalculationDuplicateTest extends TestCase
         $this->assertFalse($noLevel['success']);
         $this->assertSame(0, DB::transactionLevel());
         $this->assertEquals(0, $this->achieved()); // penambahan target ikut dibatalkan
+    }
+
+    public function test_new_contract_type_is_not_treated_as_renewal_for_an_existing_customer(): void
+    {
+        // QA 8 Okt (MDO-AG/26-03/0006): SQ/kontrak bertipe new, tetapi customer-nya punya
+        // kontrak aktif lain -> dulu dianggap renewal, dicari target Renewal, komisi tak terbentuk.
+        $this->contract(1, 101, 10_000_000, null, false, 'new', 'active');
+        $result = $this->service->calculateCommissionForContract($this->contract(2, 101, 40_000_000, null, true, 'new', 'active'));
+
+        $this->assertTrue($result['success'], $result['message']);
+        $this->assertSame('new', $result['commission']->calculation_type);
+        $this->assertEquals(40_000_000, $this->achieved());
+    }
+
+    public function test_contract_without_explicit_type_keeps_the_previous_contract_fallback(): void
+    {
+        $this->contract(1, 101, 10_000_000, null, false, null, 'active');
+        $result = $this->service->calculateCommissionForContract($this->contract(2, 101, 10_000_000, null, true, null, 'active'));
+
+        $this->assertTrue($result['success'], $result['message']);
+        $this->assertSame('renewal', $result['commission']->calculation_type);
+    }
+
+    public function test_renewal_commission_uses_renewal_contract_assignment_as_target(): void
+    {
+        // QA 8 Okt (MDO-AG/26-03/0004): target renewal disiapkan lewat Renewal Contract
+        // Assignment, tidak lewat Marketing Target. Dulu assignment tidak dibaca sama sekali.
+        MarketingTarget::whereKey(2)->forceDelete();
+        $assignment = RenewalContractAssignment::create([
+            'achievement_period_id' => 1, 'user_id' => 1, 'target_amount' => 20_000_000,
+        ]);
+
+        $result = $this->service->calculateCommissionForContract($this->contract(5, 105, 12_000_000, null, true, 'renewal'));
+
+        $this->assertTrue($result['success'], $result['message']);
+        $this->assertSame('renewal', $result['commission']->calculation_type);
+        $target = MarketingTarget::where('user_id', 1)->where('target_type', 'renewal')->firstOrFail();
+        $this->assertEquals(20_000_000, (float) $target->target_amount);
+        $this->assertEquals(12_000_000, (float) $target->achieved_amount);
+        $this->assertSame($target->id, (int) $result['commission']->marketing_target_id);
+        // 60% -> L2 1%
+        $this->assertEquals(120_000, $result['amount']);
+
+        // Target assignment diubah -> target hasil assignment ikut, pencapaian tetap.
+        $assignment->update(['target_amount' => 30_000_000]);
+        (new RenewalAssignmentService)->syncGeneratedMarketingTarget($assignment);
+        $this->assertEquals(30_000_000, (float) $target->fresh()->target_amount);
+        $this->assertEquals(12_000_000, (float) $target->fresh()->achieved_amount);
+    }
+
+    public function test_existing_renewal_marketing_target_wins_over_assignment(): void
+    {
+        RenewalContractAssignment::create([
+            'achievement_period_id' => 1, 'user_id' => 1, 'target_amount' => 20_000_000,
+        ]);
+
+        $result = $this->service->calculateCommissionForContract($this->contract(5, 105, 12_000_000, null, true, 'renewal'));
+
+        $this->assertTrue($result['success'], $result['message']);
+        $this->assertSame(2, (int) $result['commission']->marketing_target_id);
+        $this->assertSame(1, MarketingTarget::where('target_type', 'renewal')->count());
+    }
+
+    public function test_assignment_range_that_excludes_the_contract_is_not_used(): void
+    {
+        MarketingTarget::whereKey(2)->forceDelete();
+        RenewalContractAssignment::create([
+            'achievement_period_id' => 1, 'user_id' => 1, 'target_amount' => 20_000_000,
+            'contract_number_from' => 'CT-100', 'contract_number_to' => 'CT-199',
+        ]);
+
+        $result = $this->service->calculateCommissionForContract($this->contract(5, 105, 12_000_000, null, true, 'renewal'));
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('Renewal Contract Assignment', $result['message']);
+        $this->assertSame(0, MarketingTarget::where('target_type', 'renewal')->count());
+        $this->assertSame(0, DB::transactionLevel());
     }
 }

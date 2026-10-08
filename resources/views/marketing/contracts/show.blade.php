@@ -3942,7 +3942,9 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .then(response => response.json())
             .then(data => {
-                if (data.success) {
+                if (data.success && data.commission_warning) {
+                    showWarningDialog('Informasi tambahan tersimpan, tetapi komisi otomatis belum terbentuk: ' + data.commission_warning).then(() => window.location.reload());
+                } else if (data.success) {
                     showSuccessDialog('Informasi tambahan berhasil diperbarui.').then(() => window.location.reload());
                 } else {
                     throw new Error(data.message || 'Failed to update additional info');
