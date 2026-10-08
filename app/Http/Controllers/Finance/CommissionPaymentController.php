@@ -8,9 +8,28 @@ use App\Models\Finance\CommissionPayment;
 use App\Models\Finance\CommissionCalculation;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class CommissionPaymentController extends Controller
 {
+    /**
+     * Payment yang masih "memegang" kalkulasinya. Failed/cancelled melepasnya lagi supaya
+     * komisi yang gagal ditransfer bisa dibayar ulang.
+     */
+    private const ACTIVE_PAYMENT_STATUSES = ['pending', 'processing', 'completed'];
+
+    /**
+     * Satu kalkulasi komisi hanya boleh punya satu payment aktif. Dulu kalkulasi yang sudah
+     * dibayar tetap "approved" dan tetap muncul di dropdown, jadi bisa dibayar berkali-kali.
+     */
+    private function calculationAlreadyPaidBy(int $calculationId, ?int $exceptPaymentId = null): ?CommissionPayment
+    {
+        return CommissionPayment::where('commission_calculation_id', $calculationId)
+            ->whereIn('status', self::ACTIVE_PAYMENT_STATUSES)
+            ->when($exceptPaymentId, fn ($query) => $query->where('id', '!=', $exceptPaymentId))
+            ->first();
+    }
+
     /**
      * Display a listing of commission payments
      */
@@ -39,7 +58,10 @@ class CommissionPaymentController extends Controller
     public function create()
     {
         $users = User::all();
-        $calculations = CommissionCalculation::with(['user', 'achievementPeriod'])->where('status', 'approved')->get();
+        $calculations = CommissionCalculation::with(['user', 'achievementPeriod'])
+            ->where('status', 'approved')
+            ->whereDoesntHave('commissionPayments', fn ($query) => $query->whereIn('status', self::ACTIVE_PAYMENT_STATUSES))
+            ->get();
         
         if (request()->expectsJson() || request()->is('api/*')) {
             return response()->json([
@@ -68,6 +90,17 @@ class CommissionPaymentController extends Controller
             'bank_account' => 'nullable|string|max:255',
             'bank_name' => 'nullable|string|max:255'
         ]);
+
+        $calculation = CommissionCalculation::findOrFail($request->commission_calculation_id);
+        $blockReason = $calculation->status !== 'approved'
+            ? "Komisi #{$calculation->id} berstatus {$calculation->status}, hanya komisi Approved yang bisa dibayar."
+            : (($existing = $this->calculationAlreadyPaidBy($calculation->id))
+                ? "Komisi #{$calculation->id} sudah punya pembayaran #{$existing->id} ({$existing->status})."
+                : null);
+
+        if ($blockReason) {
+            return redirect()->back()->with('error', $blockReason)->withInput();
+        }
 
         try {
             CommissionPayment::create([
@@ -119,7 +152,12 @@ class CommissionPaymentController extends Controller
         // Keep the payment's own calculation selectable even after it has moved past "approved".
         $calculations = CommissionCalculation::with(['user', 'achievementPeriod'])
             ->where(function ($query) use ($commissionPayment) {
-                $query->where('status', 'approved')
+                $query->where(function ($approved) use ($commissionPayment) {
+                    $approved->where('status', 'approved')
+                        ->whereDoesntHave('commissionPayments', fn ($payments) => $payments
+                            ->whereIn('status', self::ACTIVE_PAYMENT_STATUSES)
+                            ->where('id', '!=', $commissionPayment->id));
+                })
                     ->orWhere('id', $commissionPayment->commission_calculation_id);
             })
             ->get();
@@ -152,6 +190,20 @@ class CommissionPaymentController extends Controller
             'bank_account' => 'nullable|string|max:255',
             'bank_name' => 'nullable|string|max:255'
         ]);
+
+        if ((int) $request->commission_calculation_id !== (int) $commissionPayment->commission_calculation_id) {
+            $calculation = CommissionCalculation::findOrFail($request->commission_calculation_id);
+            $existing = $this->calculationAlreadyPaidBy($calculation->id, $commissionPayment->id);
+            $blockReason = $commissionPayment->status === 'completed'
+                ? 'Pembayaran yang sudah Completed tidak bisa dipindah ke komisi lain.'
+                : ($calculation->status !== 'approved'
+                    ? "Komisi #{$calculation->id} berstatus {$calculation->status}, hanya komisi Approved yang bisa dibayar."
+                    : ($existing ? "Komisi #{$calculation->id} sudah punya pembayaran #{$existing->id} ({$existing->status})." : null));
+
+            if ($blockReason) {
+                return redirect()->back()->with('error', $blockReason)->withInput();
+            }
+        }
 
         try {
             $commissionPayment->update([
@@ -211,10 +263,25 @@ class CommissionPaymentController extends Controller
      */
     public function markAsCompleted(CommissionPayment $commissionPayment)
     {
-        try {
-            $commissionPayment->markAsCompleted(Auth::id());
+        if (! in_array($commissionPayment->status, ['pending', 'processing'], true)) {
             return redirect()->back()
-                ->with('success', 'Payment marked as completed successfully.');
+                ->with('error', "Pembayaran berstatus {$commissionPayment->status} tidak bisa ditandai Completed.");
+        }
+
+        try {
+            DB::transaction(function () use ($commissionPayment) {
+                $commissionPayment->markAsCompleted(Auth::id());
+
+                // Komisinya sudah benar-benar dibayarkan ke marketing: tandai Paid supaya tidak
+                // muncul lagi sebagai komisi yang menunggu pembayaran.
+                $calculation = $commissionPayment->commissionCalculation;
+                if ($calculation && $calculation->status === 'approved') {
+                    $calculation->markAsPaid($commissionPayment->payment_date ?? now());
+                }
+            });
+
+            return redirect()->back()
+                ->with('success', 'Payment marked as completed successfully. Komisi ditandai Paid.');
         } catch (\Exception $e) {
             return redirect()->back()
                 ->with('error', 'Failed to mark payment as completed: ' . $e->getMessage());

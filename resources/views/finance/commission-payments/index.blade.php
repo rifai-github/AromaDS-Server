@@ -489,6 +489,19 @@
                             <div class="btn-group" onclick="event.stopPropagation();">
                                 <button onclick="openViewModal({{ $payment->id }})" class="btn btn-sm btn-info"><i class="fas fa-eye"></i></button>
                                 <a href="{{ route('finance.commission-payments.edit', $payment) }}" class="btn btn-sm btn-warning" title="Edit"><i class="fas fa-edit"></i></a>
+                                @if($payment->status === 'pending')
+                                    <form method="POST" action="{{ route('finance.commission-payments.mark-processing', $payment) }}" class="d-inline">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-primary" title="Mark as Processing"><i class="fas fa-play"></i></button>
+                                    </form>
+                                @endif
+                                @if(in_array($payment->status, ['pending', 'processing'], true))
+                                    <form method="POST" action="{{ route('finance.commission-payments.mark-completed', $payment) }}" class="d-inline"
+                                          onsubmit="return confirm('Tandai pembayaran ini Completed? Komisinya akan berstatus Paid.');">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-success" title="Mark as Completed"><i class="fas fa-check"></i></button>
+                                    </form>
+                                @endif
                             </div>
                         </td>
                     </tr>
