@@ -826,7 +826,7 @@
                         <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[user__name]" placeholder="Search..." value="{{ request('filter.user__name') }}"></th>
                         <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[achievementPeriod__period_name]" placeholder="Search..." value="{{ request('filter.achievementPeriod__period_name') }}"></th>
                         <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[calculation_type]" placeholder="Search..." value="{{ request('filter.calculation_type') }}"></th>
-                        <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[base_amount]" placeholder="Filter..." value="{{ request('filter.base_amount') }}"></th>
+                        <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[net_value]" placeholder="Filter..." value="{{ request('filter.net_value') }}"></th>
                         <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[commission_rate]" placeholder="Filter..." value="{{ request('filter.commission_rate') }}"></th>
                         <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[final_amount]" placeholder="Filter..." value="{{ request('filter.final_amount') }}"></th>
                         <th class="p-2">
@@ -853,7 +853,13 @@
                             <td>
                                 <span class="badge badge-info">{{ ucfirst($commission->calculation_type) }}</span>
                             </td>
-                            <td>Rp {{ number_format($commission->base_amount, 0, ',', '.') }}</td>
+                            {{-- Komisi dihitung dari Contract Net (net_value); base_amount = Contract Value, dulu kolom ini menampilkannya sehingga QA mengira Net diabaikan. --}}
+                            <td>
+                                Rp {{ number_format($commission->net_value ?? $commission->base_amount, 0, ',', '.') }}
+                                @if($commission->net_value !== null && (float) $commission->net_value !== (float) $commission->base_amount)
+                                    <br><small class="text-muted">Contract Value: Rp {{ number_format($commission->base_amount, 0, ',', '.') }}</small>
+                                @endif
+                            </td>
                             <td>{{ $commission->commission_rate }}%</td>
                             <td class="font-weight-bold">Rp {{ number_format($commission->final_amount, 0, ',', '.') }}</td>
                             <td>

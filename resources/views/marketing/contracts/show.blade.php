@@ -5037,7 +5037,8 @@ function updateContractNet(input) {
             });
             Toast.fire({
                 icon: 'success',
-                title: 'Contract Net berhasil diperbarui'
+                title: 'Contract Net berhasil diperbarui',
+                text: data.commission_message || ''
             });
         } else {
             throw new Error(data.message || 'Gagal memperbarui Contract Net');

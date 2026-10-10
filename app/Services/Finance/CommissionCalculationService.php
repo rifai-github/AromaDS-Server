@@ -310,6 +310,22 @@ class CommissionCalculationService
     }
 
     /**
+     * Apply a Contract Net edit to the contract's automatic commission, if one exists.
+     *
+     * Returns null when the contract has no automatic commission yet: the net value is
+     * then simply picked up when Tanggal Install triggers the first calculation, so an
+     * edit before install must not create a commission on its own.
+     */
+    public function applyNetValueChange(Contract $contract): ?array
+    {
+        if (! $this->automaticCalculationsFor($contract)->exists()) {
+            return null;
+        }
+
+        return $this->recalculateCommissionForContract($contract);
+    }
+
+    /**
      * Recalculate commission when net value is updated
      */
     public function recalculateCommissionForContract(Contract $contract): array

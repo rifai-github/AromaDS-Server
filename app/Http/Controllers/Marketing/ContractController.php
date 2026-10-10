@@ -3738,6 +3738,8 @@ class ContractController extends Controller
         try {
             DB::beginTransaction();
 
+            $netValueChanged = (float) $contract->net_value !== (float) $request->net_value || $contract->net_value === null;
+
             $contract->update([
                 'net_value' => $request->net_value,
                 'updated_by' => Auth::id(),
@@ -3745,10 +3747,28 @@ class ContractController extends Controller
 
             DB::commit();
 
+            // Field Contract Net di Detail Kontrak memakai endpoint ini, bukan update() — dulu
+            // komisi yang sudah terbentuk (status calculated) tidak pernah dihitung ulang dari sini.
+            $commissionMessage = null;
+            if ($netValueChanged) {
+                try {
+                    $result = (new \App\Services\Finance\CommissionCalculationService)->applyNetValueChange($contract->fresh());
+                    if ($result !== null) {
+                        $commissionMessage = $result['success']
+                            ? 'Komisi dihitung ulang: Rp '.number_format((float) $result['amount'], 0, ',', '.')
+                            : 'Komisi tidak dihitung ulang: '.$result['message'];
+                    }
+                } catch (\Exception $e) {
+                    Log::error("Failed to recalculate commission for contract {$contract->contract_number}: ".$e->getMessage());
+                    $commissionMessage = 'Komisi gagal dihitung ulang: '.$e->getMessage();
+                }
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Contract Net berhasil diperbarui',
                 'formatted_value' => 'Rp '.number_format($request->net_value, 0, ',', '.'),
+                'commission_message' => $commissionMessage,
             ]);
 
         } catch (\Exception $e) {

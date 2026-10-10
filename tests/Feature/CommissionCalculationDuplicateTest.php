@@ -46,8 +46,25 @@ class CommissionCalculationDuplicateTest extends TestCase
             $t->boolean('is_installed')->default(false);
             $t->date('installed_date')->nullable();
             $t->string('status')->default('active');
+            $t->foreignId('updated_by')->nullable();
             $t->timestamps();
             $t->softDeletes();
+        });
+        // Contract::update() menulis audit trail.
+        Schema::create('audit_logs', function (Blueprint $t) {
+            $t->id();
+            $t->string('model_type')->nullable();
+            $t->unsignedBigInteger('model_id')->nullable();
+            $t->string('action')->nullable();
+            $t->text('old_values')->nullable();
+            $t->text('new_values')->nullable();
+            $t->text('changed_fields')->nullable();
+            $t->unsignedBigInteger('user_id')->nullable();
+            $t->string('ip_address')->nullable();
+            $t->text('user_agent')->nullable();
+            $t->string('page_name')->nullable();
+            $t->string('module_name')->nullable();
+            $t->timestamps();
         });
         Schema::create('invoices', function (Blueprint $t) {
             $t->id();
@@ -298,7 +315,7 @@ class CommissionCalculationDuplicateTest extends TestCase
         Carbon::setTestNow();
         foreach (['renewal_contract_assignments', 'user_marketing_levels', 'marketing_levels', 'commission_payments', 'commission_transfers', 'achievements',
             'commission_calculations', 'cr_variables', 'commission_levels', 'marketing_targets',
-            'achievement_periods', 'bank_receipts', 'invoice_activities', 'invoices', 'contracts', 'users'] as $table) {
+            'achievement_periods', 'bank_receipts', 'invoice_activities', 'invoices', 'audit_logs', 'contracts', 'users'] as $table) {
             Schema::dropIfExists($table);
         }
         parent::tearDown();
@@ -709,6 +726,71 @@ class CommissionCalculationDuplicateTest extends TestCase
         $this->assertEquals(280_000, (float) $calc->final_amount);
         $this->assertEquals(68_000_000, (float) DB::table('achievements')->where('contract_id', 2)->value('achieved_amount'));
         $this->assertSame(0, DB::transactionLevel());
+    }
+
+    private function updateContractNet(int $contractId, float $netValue): array
+    {
+        // Endpoint field "Contract Net" di Detail Kontrak (marketing/contracts/{id}/update-net-value).
+        $user = new class extends \App\Models\User
+        {
+            protected $table = 'users';
+
+            public function hasPermission($permission)
+            {
+                return true;
+            }
+        };
+        $this->actingAs($user->newQuery()->findOrFail(1));
+
+        $request = \Illuminate\Http\Request::create("/marketing/contracts/{$contractId}/update-net-value", 'POST', ['net_value' => $netValue]);
+        $response = app(\App\Http\Controllers\Marketing\ContractController::class)->updateNetValue($request, $contractId);
+        $this->assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        return $response->getData(true);
+    }
+
+    public function test_contract_net_field_recalculates_existing_calculated_commission(): void
+    {
+        // QA 11 Okt: Contract Net diubah setelah Tanggal Install, komisi & target tetap.
+        // Field di layar memanggil updateNetValue(), yang dulu tidak menghitung ulang.
+        $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000));
+        $this->assertEquals(40_000_000, $this->achieved());
+
+        $data = $this->updateContractNet(1, 30_000_000);
+
+        $calc = CommissionCalculation::where('contract_id', 1)->sole();
+        $this->assertEquals(30_000_000, (float) $calc->net_value);
+        $this->assertEquals(150_000, (float) $calc->final_amount);
+        $this->assertEquals(30_000_000, $this->achieved());
+        $this->assertStringContainsString('dihitung ulang', (string) $data['commission_message']);
+    }
+
+    public function test_contract_net_field_before_install_does_not_create_commission(): void
+    {
+        $this->contract(1, 101, 6_000_000, null, false);
+
+        $data = $this->updateContractNet(1, 5_000_000);
+
+        $this->assertNull($data['commission_message']);
+        $this->assertSame(0, CommissionCalculation::count());
+        $this->assertEquals(0, $this->achieved());
+
+        // Saat Tanggal Install memicu perhitungan, Net yang dipakai (5 jt), bukan Contract Value.
+        DB::table('contracts')->where('id', 1)->update(['is_installed' => true, 'installed_date' => '2026-09-10']);
+        $result =$this->service->calculateCommissionForContract(Contract::findOrFail(1));
+        $this->assertEquals(5_000_000, (float) $result['commission']->net_value);
+        $this->assertEquals(6_000_000, (float) $result['commission']->base_amount);
+    }
+
+    public function test_contract_net_field_reports_refusal_on_approved_commission(): void
+    {
+        $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000));
+        DB::table('commission_calculations')->update(['status' => 'approved']);
+
+        $data = $this->updateContractNet(1, 20_000_000);
+
+        $this->assertEquals(200_000, (float) CommissionCalculation::first()->final_amount);
+        $this->assertStringContainsString('tidak dihitung ulang', (string) $data['commission_message']);
     }
 
     public function test_net_value_edit_on_approved_commission_is_not_applied(): void
