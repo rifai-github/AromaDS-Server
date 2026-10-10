@@ -133,7 +133,15 @@ class RepairMissingInvoiceRentalDetails extends Command
 
             foreach ($expectedRows as $expected) {
                 $exists = $invoice->invoiceRentalDetails->contains(function ($detail) use ($expected) {
+                    // Building is compared too: room names repeat across buildings ("Lobby"
+                    // in three buildings on one contract). A blank building on either side
+                    // still matches, so older rows without one are not duplicated.
+                    // ("-" is what JobSchedule::building_name returns without a building.)
+                    $detailBuilding = trim($this->normalize($detail->building_name), '-');
+                    $expectedBuilding = trim($this->normalize($expected['building_name'] ?? ''), '-');
+
                     return (int) $detail->master_rental_id === (int) $expected['master_rental_id']
+                        && ($detailBuilding === '' || $expectedBuilding === '' || $detailBuilding === $expectedBuilding)
                         && $this->normalize($detail->room_name) === $this->normalize($expected['room_name']);
                 });
 

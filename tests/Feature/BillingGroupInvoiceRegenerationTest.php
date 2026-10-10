@@ -232,6 +232,7 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->string('type')->nullable();
             $table->string('status')->nullable();
             $table->foreignId('job_advice_id')->nullable();
+            $table->foreignId('building_id')->nullable();
             $table->foreignId('room_id')->nullable();
             $table->integer('period')->nullable();
             $table->integer('service_frequency')->nullable();
@@ -2192,6 +2193,155 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $period2['status'],
             'Period 2 must not be marked completed while its own job (sequence period 4) is still unstarted.'
         );
+    }
+
+    public function test_same_room_name_and_rental_in_different_buildings_are_all_billed(): void
+    {
+        // QA 10 Oct 2026, JKT-INV/26-10/0004: three buildings each with a "Lobby", two of
+        // them on the same rental. The dedup key ignored the building, so the third CSR
+        // was treated as a duplicate of the second and never reached the invoice.
+        [$contract, $jobs] = $this->makeContractWithSameRoomNameInThreeBuildings();
+        $service = $this->makeInvoiceGenerationService('JKT-INV/26-10/0004');
+
+        $pairsMethod = new \ReflectionMethod($service, 'computeBillableRentalPairs');
+        $pairsMethod->setAccessible(true);
+        $pairs = $pairsMethod->invoke(
+            $service,
+            $contract->fresh(['contractRentals.masterRental', 'contractRooms.room']),
+            Carbon::parse('2026-10-01'),
+            Carbon::parse('2026-10-31')
+        );
+
+        $this->assertEqualsCanonicalizing(
+            ['JKT-CSR/26-10/0004', 'JKT-CSR/26-10/0005', 'JKT-CSR/26-10/0006'],
+            collect($pairs)->map(fn ($pair) => $pair['job']->job_number)->all()
+        );
+        $this->assertSame(7560000.0, (float) collect($pairs)->sum(fn ($pair) => $pair['rental']['total_price']));
+    }
+
+    public function test_draft_refresh_backfills_same_room_name_in_another_building(): void
+    {
+        [$contract, $jobs] = $this->makeContractWithSameRoomNameInThreeBuildings();
+        $service = $this->makeInvoiceGenerationService('JKT-INV/26-10/0004');
+
+        $invoice = LegacyInvoice::create([
+            'invoice_number' => 'JKT-INV/26-10/0004',
+            'contract_id' => $contract->id,
+            'contract_number' => $contract->contract_number,
+            'customer_id' => $contract->customer_id,
+            'period_invoice' => 'Period 1',
+            'invoice_date' => '2026-10-10',
+            'due_date' => '2026-11-09',
+            'invoice_status' => LegacyInvoice::STATUS_DRAFT,
+            'status' => LegacyInvoice::STATUS_DRAFT,
+        ]);
+        foreach ([['JKT-CSR/26-10/0004', 'My Sorella Supriyadi', 1125, 3600000], ['JKT-CSR/26-10/0005', 'My Sorella Pleburan', 1128, 1980000]] as [$jobNo, $building, $rentalId, $price]) {
+            $invoice->invoiceRentalDetails()->create([
+                'master_rental_id' => $rentalId,
+                'job_no' => $jobNo,
+                'building_name' => $building,
+                'room_name' => 'Lobby',
+                'rental_name' => 'ADS C100',
+                'quantity' => 1,
+                'unit_price' => $price,
+                'total_price' => $price,
+            ]);
+        }
+
+        $refresh = new \ReflectionMethod($service, 'refreshDraftInvoiceRentalDetails');
+        $refresh->setAccessible(true);
+        $refresh->invoke($service, $invoice, Carbon::parse('2026-10-01'), Carbon::parse('2026-10-31'));
+
+        $this->assertSame(3, $invoice->invoiceRentalDetails()->count());
+        $this->assertDatabaseHas('invoice_rental_details', [
+            'invoice_id' => $invoice->id,
+            'job_no' => 'JKT-CSR/26-10/0006',
+            'building_name' => 'My Sorella Tembalang',
+            'room_name' => 'Lobby',
+            'total_price' => 1980000,
+        ]);
+        $this->assertSame(7560000.0, (float) $invoice->fresh()->subtotal);
+    }
+
+    private function makeInvoiceGenerationService(string $invoiceNumber): InvoiceGenerationService
+    {
+        return new InvoiceGenerationService(new class($invoiceNumber) extends DocumentNumberService
+        {
+            public function __construct(private string $invoiceNumber) {}
+
+            public function generate(
+                string $documentType,
+                ?string $branchCode = null,
+                ?int $buildingId = null,
+                ?int $contractId = null,
+                ?int $quotationId = null,
+                ?int $surveyId = null,
+                ?int $warehouseId = null,
+                ?int $branchId = null,
+                \DateTimeInterface|string|null $documentDate = null
+            ): string {
+                return $this->invoiceNumber;
+            }
+        });
+    }
+
+    private function makeContractWithSameRoomNameInThreeBuildings(): array
+    {
+        DB::table('users')->insert(['name' => 'Admin', 'email' => 'admin@aroma.com', 'created_at' => now(), 'updated_at' => now()]);
+        $customer = Customer::create(['name' => 'CV. DARREN FASHION']);
+        $contract = Contract::create([
+            'contract_number' => 'SMG-AG/26-03/0008',
+            'customer_id' => $customer->id,
+            'payment_terms' => 30,
+        ]);
+        DB::table('master_rentals')->insert([
+            ['id' => 1125, 'rental_name' => 'ADS C100 100ml 1 bln 1x', 'rental_type' => 'unit_refill', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 1128, 'rental_name' => 'ADS C100 50ml 1 bln 1x', 'rental_type' => 'unit_refill', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        $jobAdviceId = DB::table('job_advices')->insertGetId(['contract_id' => $contract->id, 'created_at' => now(), 'updated_at' => now()]);
+
+        $jobs = [];
+        foreach ([
+            [1, 'My Sorella Supriyadi', 1125, 3600000, 'JKT-CSR/26-10/0004'],
+            [2, 'My Sorella Pleburan', 1128, 1980000, 'JKT-CSR/26-10/0005'],
+            [3, 'My Sorella Tembalang', 1128, 1980000, 'JKT-CSR/26-10/0006'],
+        ] as [$n, $buildingName, $rentalId, $price, $jobNo]) {
+            DB::table('buildings')->insert(['id' => 1900 + $n, 'building_name' => $buildingName, 'name' => $buildingName, 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('master_rooms')->insert(['id' => 1910 + $n, 'building_id' => 1900 + $n, 'room_name' => 'Lobby', 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('contract_rooms')->insert(['id' => 1920 + $n, 'contract_id' => $contract->id, 'room_id' => 1910 + $n, 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('contract_rentals')->insert([
+                'contract_id' => $contract->id,
+                'master_rental_id' => $rentalId,
+                'room_id' => 1910 + $n,
+                'quantity' => 1,
+                'unit_price' => $price,
+                'total_price' => $price,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $job = JobSchedule::create([
+                'job_number' => $jobNo,
+                'type' => 'service_first',
+                'status' => 'done_job',
+                'job_advice_id' => $jobAdviceId,
+                'building_id' => 1900 + $n,
+                'room_id' => 1910 + $n,
+                'schedule_date' => '2026-10-10',
+                'ba_date' => '2026-10-10',
+            ]);
+            DB::table('job_advice_rooms')->insert([
+                'job_advice_id' => $jobAdviceId,
+                'contract_room_id' => 1920 + $n,
+                'rental_product_id' => $rentalId,
+                'service_job_schedule_id' => $job->id,
+                'is_trial' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $jobs[] = $job;
+        }
+
+        return [$contract, $jobs];
     }
 
     private function makeContractWithRentalFlow(

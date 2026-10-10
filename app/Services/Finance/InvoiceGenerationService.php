@@ -771,8 +771,8 @@ class InvoiceGenerationService
                     continue;
                 }
 
-                // Create a unique key for this rental: room + rental product
-                $billingKey = $this->invoiceRentalBillingKey($rental);
+                // Create a unique key for this rental: building + room + rental product
+                $billingKey = $this->invoiceRentalBillingKey($rental, $this->invoiceBuildingNameForJob($jobSchedule));
 
                 if (in_array($billingKey, $billedRentals, true)) {
                     Log::debug('Skipping duplicate billing for rental unit', [
@@ -1007,7 +1007,8 @@ class InvoiceGenerationService
                     continue;
                 }
 
-                $billingKey = $this->invoiceRentalBillingKey($rental);
+                $buildingName = $this->invoiceBuildingNameForJob($jobSchedule);
+                $billingKey = $this->invoiceRentalBillingKey($rental, $buildingName);
 
                 if (isset($billedRentals[$billingKey])) {
                     continue;
@@ -1016,7 +1017,7 @@ class InvoiceGenerationService
                 $expected[] = [
                     'master_rental_id' => $rental['master_rental_id'],
                     'job_no' => $jobSchedule->job_number,
-                    'building_name' => $jobSchedule->building?->building_name ?? $jobSchedule->building_name ?? '',
+                    'building_name' => $buildingName,
                     'room_name' => $rental['room_name'] ?: ($jobSchedule->room?->room_name ?? $jobSchedule->room_name ?? ''),
                     'rental_name' => $rental['rental_name'] ?? 'Service',
                     'quantity' => $rental['quantity'],
@@ -1360,13 +1361,23 @@ class InvoiceGenerationService
             ->values();
     }
 
-    private function invoiceRentalBillingKey(array $rental): string
+    private function invoiceRentalBillingKey(array $rental, ?string $buildingName): string
     {
-        // Keyed on room_name + master_rental_id (not contract_rental_id/room_id) because
-        // that is all invoice_rental_details persists — a key built any other way here
+        // Keyed on building_name + room_name + master_rental_id (not contract_rental_id/room_id)
+        // because that is all invoice_rental_details persists — a key built any other way here
         // would not match what refreshDraftInvoiceRentalDetails() derives from saved rows,
         // breaking dedup when backfilling a room into an already-drafted invoice.
-        return 'room-name:'.strtolower(trim((string) ($rental['room_name'] ?? ''))).'|rental:'.($rental['master_rental_id'] ?? '');
+        // The building is part of the key because room names repeat across buildings: a
+        // contract with "Lobby" in three buildings on the same rental billed only one of
+        // them before (QA 10 Oct 2026, JKT-INV/26-10/0004).
+        return 'building:'.strtolower(trim((string) $buildingName))
+            .'|room-name:'.strtolower(trim((string) ($rental['room_name'] ?? '')))
+            .'|rental:'.($rental['master_rental_id'] ?? '');
+    }
+
+    private function invoiceBuildingNameForJob(JobSchedule $jobSchedule): string
+    {
+        return $jobSchedule->building?->building_name ?? $jobSchedule->building_name ?? '';
     }
 
     private function findContractRentalForJobAdviceRoom(Contract $contract, $jobAdviceRoom, int $masterRentalId, ?int $roomId)
@@ -1513,8 +1524,8 @@ class InvoiceGenerationService
         $payload = [
             'master_rental_id' => $rental['master_rental_id'],
             'job_no' => $jobSchedule->job_number,
-            'building_name' => $jobSchedule->building->building_name ?? $jobSchedule->building_name ?? '',
-            'room_name' => $rental['room_name'] ?: ($jobSchedule->room->room_name ?? $jobSchedule->room_name ?? ''),
+            'building_name' => $this->invoiceBuildingNameForJob($jobSchedule),
+            'room_name' => $rental['room_name'] ?:($jobSchedule->room->room_name ?? $jobSchedule->room_name ?? ''),
             'rental_name' => $rentalName,
             'quantity' => $quantity,
             'unit_price' => $unitPrice,
@@ -1901,7 +1912,7 @@ class InvoiceGenerationService
             ->map(fn ($detail) => $this->invoiceRentalBillingKey([
                 'room_name' => $detail->room_name,
                 'master_rental_id' => $detail->master_rental_id,
-            ]))
+            ], $detail->building_name))
             ->all();
 
         DB::transaction(function () use ($invoice, $contract, $periodStart, $periodEnd, $billedRentals, $allowedContractRoomIds, $periodNumber) {
