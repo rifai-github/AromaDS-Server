@@ -116,6 +116,7 @@
         background: white;
         border-radius: 12px;
         overflow: hidden;
+        max-height: none; /* layouts/app memberi .table-container max-height + overflow-y:auto; overflow:hidden di sini mematikan scroll-nya sehingga baris bawah terpotong. */
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         border: 1px solid #e5e7eb;
     }

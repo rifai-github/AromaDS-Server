@@ -88,6 +88,7 @@
         border-radius: 8px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         overflow: hidden;
+        max-height: none; /* layouts/app memberi .table-container max-height + overflow-y:auto; overflow:hidden di sini mematikan scroll-nya sehingga baris bawah terpotong. */
         margin-bottom: 20px;
     }
 

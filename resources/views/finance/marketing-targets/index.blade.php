@@ -17,7 +17,7 @@
     .page-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px 0; margin-bottom: 30px; }
     .page-title { font-size: 28px; font-weight: 700; margin: 0; }
     .page-subtitle { font-size: 16px; opacity: 0.9; margin: 8px 0 0 0; }
-    .table-container { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border: 1px solid #e5e7eb; }
+    .table-container { background: white; border-radius: 12px; overflow: hidden; max-height: none; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border: 1px solid #e5e7eb; }
     .table-header { background: #f8fafc; padding: 20px 24px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; }
     .table-title { font-size: 18px; font-weight: 600; color: #1f2937; margin: 0; }
     .table-wrapper { overflow-x: auto; }
