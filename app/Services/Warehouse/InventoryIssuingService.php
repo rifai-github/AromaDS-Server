@@ -451,9 +451,16 @@ class InventoryIssuingService
             return [];
         }
 
+        // Kode batch yang sama bisa ada di beberapa gudang (QA 12 Okt: RCM502610001 di Manado
+        // dan Semarang). Pool dibatasi ke gudang baris pointer, yang dipilih scan issuing dari
+        // gudang issuing itu sendiri. Tanpa ini baris id terkecil (gudang lain) yang dipindah
+        // ke teknisi/customer, sedangkan stok gudang issuing tetap Ready.
+        $warehouseId = $item->serialNumber?->warehouse_id;
+
         $candidateIds = SerialNumber::query()
             ->where('master_product_id', $item->product_id)
             ->where('serial_number', $serialNumber)
+            ->when($warehouseId, fn ($query) => $query->where('warehouse_id', $warehouseId))
             ->whereIn('status', ['ready', 'available', 'on_hand', 'in_use'])
             ->orderBy('id')
             ->pluck('id')

@@ -193,4 +193,58 @@ class RefillBatchSerialOffsetTest extends TestCase
         $this->assertSame('on_hand', $sn901->status);
         $this->assertSame('on_hand', $sn902->status);
     }
+
+    /**
+     * QA 12 Okt (SMG-WI/26-10/0015): batch code RCM502610001 exists in Gudang MANADO
+     * (older, lower ids) and Gudang SEMARANG. A Semarang issuing for qty 2 must move
+     * Semarang rows, not the lowest-id rows of the same code in Manado.
+     */
+    public function test_batch_rows_are_resolved_within_the_pointer_rows_warehouse(): void
+    {
+        $this->actingAs(User::findOrFail(1));
+
+        DB::table('warehouses')->insert(['id' => 2, 'name' => 'Gudang SEMARANG', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('product_categories')->insert([
+            'id' => 20, 'name' => 'Fragrance', 'has_serial_number' => true, 'is_unit' => false,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('master_products')->insert([
+            'id' => 107, 'product_category_id' => 20, 'name' => 'Fragrance Coffee Mix More 50 ml',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $row = fn (int $id, int $warehouseId) => [
+            'id' => $id, 'serial_number' => 'RCM502610001', 'master_product_id' => 107, 'warehouse_id' => $warehouseId,
+            'status' => 'ready', 'location_type' => 'warehouse', 'created_at' => now(), 'updated_at' => now(),
+        ];
+        DB::table('serial_numbers')->insert([
+            $row(483, 1), $row(484, 1), $row(485, 1),
+            $row(543, 2), $row(544, 2), $row(545, 2),
+        ]);
+
+        DB::table('inventory_issuings')->insert([
+            'id' => 58, 'issuing_number' => 'SMG-WI/26-10/0015', 'reference_no' => 'SMG-MI/26-10/0018',
+            'warehouse_id' => 2, 'received_by' => 1, 'status' => 'sent', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('inventory_issuing_items')->insert([
+            'id' => 139, 'inventory_issuing_id' => 58, 'product_id' => 107, 'serial_number_id' => 543,
+            'quantity_requested' => 2, 'quantity_issued' => 2, 'quantity_received' => 2,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $service = app(InventoryIssuingService::class);
+        $issuing = InventoryIssuing::find(58);
+
+        $resolved = $service->resolveAllocatedSerialNumbersForItems($issuing->items()->get());
+        $this->assertEqualsCanonicalizing([543, 544], $resolved->pluck('id')->all());
+
+        $this->assertSame(2, $service->moveSerialNumbersToTechnician($issuing, 5, 1));
+
+        $statuses = DB::table('serial_numbers')->orderBy('id')->pluck('status', 'id')->all();
+        $this->assertSame('on_hand', $statuses[543]);
+        $this->assertSame('on_hand', $statuses[544]);
+        $this->assertSame('ready', $statuses[545]);
+        $this->assertSame('ready', $statuses[483], 'Manado rows must not be moved by a Semarang issuing');
+        $this->assertSame('ready', $statuses[484]);
+    }
 }

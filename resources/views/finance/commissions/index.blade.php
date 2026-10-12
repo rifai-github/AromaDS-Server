@@ -817,13 +817,27 @@
         <div class="table-wrapper">
             <table class="table table-bordered" id="commissionsTable">
                 <thead>
+                    {{-- Dulu hanya baris filter, tanpa judul kolom, dan tombol reset di kolom pertama menggeser
+                         semua filter satu kolom ke kanan dari isinya. Tombol reset kini di atas kolom Actions. --}}
+                    <tr>
+                        <th>Marketing</th>
+                        <th>No. Kontrak</th>
+                        <th>Period</th>
+                        <th>Type</th>
+                        <th>Contract Net</th>
+                        <th>Rate</th>
+                        <th>Commission</th>
+                        <th>Status</th>
+                        <th>Calculation Date</th>
+                        <th>Created By</th>
+                        <th>Created At</th>
+                        <th>Last Updated By</th>
+                        <th>Last Updated At</th>
+                        <th>Actions</th>
+                    </tr>
                     <tr class="filter-row" style="background-color: #f8fafc;">
-                        <th class="p-2 text-center">
-                            <button onclick="resetFilters()" class="btn btn-sm btn-secondary w-full" style="padding: 2px 5px; font-size: 10px;">
-                                <i class="fas fa-undo"></i>
-                            </button>
-                        </th>
                         <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[user__name]" placeholder="Search..." value="{{ request('filter.user__name') }}"></th>
+                        <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[contract__contract_number]" placeholder="Search..." value="{{ request('filter.contract__contract_number') }}"></th>
                         <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[achievementPeriod__period_name]" placeholder="Search..." value="{{ request('filter.achievementPeriod__period_name') }}"></th>
                         <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[calculation_type]" placeholder="Search..." value="{{ request('filter.calculation_type') }}"></th>
                         <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[net_value]" placeholder="Filter..." value="{{ request('filter.net_value') }}"></th>
@@ -843,12 +857,18 @@
                         <th class="p-2"><input type="date" class="form-control form-control-sm table-filter" name="filter[created_at]" value="{{ request('filter.created_at') }}"></th>
                         <th class="p-2"><input type="text" class="form-control form-control-sm table-filter" name="filter[updatedBy__name]" placeholder="Search..." value="{{ request('filter.updatedBy__name') }}"></th>
                         <th class="p-2"><input type="date" class="form-control form-control-sm table-filter" name="filter[updated_at]" value="{{ request('filter.updated_at') }}"></th>
+                        <th class="p-2 text-center">
+                            <button onclick="resetFilters()" class="btn btn-sm btn-secondary w-full" style="padding: 2px 5px; font-size: 10px;" title="Reset filter">
+                                <i class="fas fa-undo"></i>
+                            </button>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
                     @forelse($commissions as $commission)
                         <tr onclick="openViewModal({{ $commission->id }})" style="cursor: pointer;">
                             <td>{{ $commission->user->name ?? 'N/A' }}</td>
+                            <td style="white-space: nowrap;">{{ $commission->contract->contract_number ?? '-' }}</td>
                             <td>{{ $commission->achievementPeriod->period_name ?? 'N/A' }}</td>
                             <td>
                                 <span class="badge badge-info">{{ ucfirst($commission->calculation_type) }}</span>
@@ -916,7 +936,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="13" class="text-center py-5">
+                            <td colspan="14" class="text-center py-5">
                                 <i class="fas fa-calculator fa-3x text-gray-300 mb-3"></i>
                                 <h4 class="text-gray-500">No commission calculations found</h4>
                             </td>
