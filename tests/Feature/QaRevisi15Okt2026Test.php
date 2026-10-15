@@ -73,6 +73,17 @@ class QaRevisi15Okt2026Test extends TestCase
         $this->assertSame('2027-04-15', $contract->actual_end_date->toDateString());
     }
 
+    public function test_six_month_period_ending_the_day_before_keeps_its_full_length(): void
+    {
+        // Data QA kontrak 21124: 14 Okt 2026 - 13 Apr 2027, BA CSR pertama 15 Okt.
+        // diffInMonths() = 5,97 dan dulu dipotong jadi 5 -> End Date 15 Mar 2027.
+        $contract = $this->renewalContractWithFirstJob('service_first');
+        DB::table('contracts')->where('id', 1)->update(['end_date' => '2027-04-13']);
+        $contract = Contract::findOrFail(1);
+
+        $this->assertSame('2027-04-14', $contract->actual_end_date->toDateString());
+    }
+
     public function test_remove_job_ba_date_still_does_not_start_the_contract(): void
     {
         $contract = $this->renewalContractWithFirstJob('remove');

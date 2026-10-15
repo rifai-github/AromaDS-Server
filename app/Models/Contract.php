@@ -953,17 +953,15 @@ class Contract extends Model
             $start = \Carbon\Carbon::parse($originalStartDate);
             $end = \Carbon\Carbon::parse($originalEndDate);
             
-            $durationMonths = $start->diffInMonths($end);
-            $durationDays = $start->diffInDays($end);
-            
-            $actualStart = \Carbon\Carbon::parse($actualStartDate);
-            
-            // Apply same duration to actual start date
-            if ($durationMonths > 0) {
-                return $actualStart->addMonths($durationMonths);
-            } else {
-                return $actualStart->addDays($durationDays);
-            }
+            // Carbon 3: diffInMonths() mengembalikan float (14 Okt -> 13 Apr = 5,97) dan
+            // addMonths() memotongnya jadi 5, sehingga End Date kontrak 6 bulan maju sebulan.
+            // Pakai bulan penuh + sisa hari supaya bentuk periode asli (mis. +6 bulan -1 hari) terjaga.
+            $durationMonths = (int) floor($start->diffInMonths($end));
+            $leftoverDays = (int) $start->copy()->addMonths($durationMonths)->diffInDays($end);
+
+            return \Carbon\Carbon::parse($actualStartDate)
+                ->addMonths($durationMonths)
+                ->addDays($leftoverDays);
         }
         
         // Fallback: return original end_date if can't calculate
