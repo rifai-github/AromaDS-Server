@@ -84,6 +84,29 @@ class QaRevisi15Okt2026Test extends TestCase
         $this->assertSame('2027-04-14', $contract->actual_end_date->toDateString());
     }
 
+    /**
+     * Sampel kontrak dari box QA (15 Okt 2026): periode inklusif harus tetap N bulan penuh
+     * dari tanggal BA, tidak bergeser 1-3 hari karena panjang bulan berbeda.
+     */
+    public function test_inclusive_periods_from_qa_contracts_keep_whole_months(): void
+    {
+        foreach ([
+            ['2026-06-24', '2026-12-23', '2026-10-14', '2027-04-13'], // MDO-AG/26-06/0003, 6 bulan
+            ['2026-03-02', '2027-03-01', '2026-10-10', '2027-10-09'], // SMG-AG/26-03/0008, 12 bulan
+            ['2025-11-28', '2026-11-27', '2026-10-14', '2027-10-13'], // MDO-AG/25-11/0004, 12 bulan
+            ['2026-06-11', '2027-06-11', '2026-06-11', '2027-06-11'], // akhir = awal + 12 bulan (tanpa -1 hari)
+        ] as [$start, $end, $ba, $expected]) {
+            DB::table('job_schedules')->delete();
+            DB::table('job_advices')->delete();
+            DB::table('contracts')->delete();
+            DB::table('contracts')->insert(['id' => 1, 'start_date' => $start, 'end_date' => $end]);
+            DB::table('job_advices')->insert(['id' => 1, 'contract_id' => 1]);
+            DB::table('job_schedules')->insert(['id' => 1, 'job_advice_id' => 1, 'type' => 'install', 'ba_date' => $ba]);
+
+            $this->assertSame($expected, Contract::findOrFail(1)->actual_end_date->toDateString(), "{$start}..{$end}");
+        }
+    }
+
     public function test_remove_job_ba_date_still_does_not_start_the_contract(): void
     {
         $contract = $this->renewalContractWithFirstJob('remove');
