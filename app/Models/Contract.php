@@ -751,6 +751,33 @@ class Contract extends Model
     }
 
     /**
+     * Kontrak ini beserta seluruh kontrak pendahulunya (rantai renewal lewat
+     * quotations.existing_contract_id, sama dengan field "Old Contract").
+     *
+     * Unit On Wall menyimpan contract_id kontrak yang MEMASANGnya; setelah renewal,
+     * unit itu tetap milik rantai yang sama. Scope unit ke kontrak renewal saja tidak
+     * pernah cocok, lalu scopedToContracts() fail-open dan ikut menarik unit kontrak
+     * lain di ruangan yang sama (QA 15 Okt 2026, MDO-CSR/26-10/0006).
+     *
+     * @return int[] dimulai dari kontrak ini, lalu pendahulunya berurutan
+     */
+    public static function renewalLineageIds($contractId): array
+    {
+        $ids = [];
+        $current = (int) $contractId;
+
+        while ($current > 0 && ! in_array($current, $ids, true) && count($ids) < 50) {
+            $ids[] = $current;
+            $current = (int) \Illuminate\Support\Facades\DB::table('contracts')
+                ->join('quotations', 'quotations.id', '=', 'contracts.quotation_id')
+                ->where('contracts.id', $current)
+                ->value('quotations.existing_contract_id');
+        }
+
+        return $ids;
+    }
+
+    /**
      * Get all job schedules through job advices
      */
     public function jobSchedules()

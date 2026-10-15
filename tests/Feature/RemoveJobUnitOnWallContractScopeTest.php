@@ -6,6 +6,7 @@ use App\Http\Controllers\Operational\JobScheduleController;
 use App\Models\Contract;
 use App\Models\UnitOnWall;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use ReflectionMethod;
 use Tests\TestCase;
@@ -40,10 +41,24 @@ class RemoveJobUnitOnWallContractScopeTest extends TestCase
             $table->timestamps();
             $table->softDeletes();
         });
+
+        // Contract::renewalLineageIds() follows contracts.quotation_id -> quotations.existing_contract_id.
+        Schema::create('contracts', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('quotation_id')->nullable();
+            $table->timestamps();
+        });
+        Schema::create('quotations', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('existing_contract_id')->nullable();
+            $table->timestamps();
+        });
     }
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('quotations');
+        Schema::dropIfExists('contracts');
         Schema::dropIfExists('unit_on_walls');
 
         parent::tearDown();
@@ -189,5 +204,22 @@ class RemoveJobUnitOnWallContractScopeTest extends TestCase
         $this->assertSame([5965, 5948], $this->contractIds($jobAdvice, $renewalSource));
         $this->assertSame([5965], $this->contractIds($jobAdvice));
         $this->assertSame([], $this->contractIds(null));
+    }
+
+    public function test_contract_ids_include_every_renewal_predecessor(): void
+    {
+        // Remove pada kontrak renewal ke-2: unit dipasang kontrak pertama, dua langkah ke belakang.
+        DB::table('quotations')->insert([
+            ['id' => 1, 'existing_contract_id' => null],
+            ['id' => 2, 'existing_contract_id' => 100],
+            ['id' => 3, 'existing_contract_id' => 200],
+        ]);
+        DB::table('contracts')->insert([
+            ['id' => 100, 'quotation_id' => 1],
+            ['id' => 200, 'quotation_id' => 2],
+            ['id' => 300, 'quotation_id' => 3],
+        ]);
+
+        $this->assertSame([300, 200, 100], $this->contractIds((object) ['contract_id' => 300]));
     }
 }

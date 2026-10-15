@@ -4399,7 +4399,9 @@ class JobController extends Controller
         $contractId = $room->contractRoom?->contract_id;
         if ($contractId) {
             // Fail-open on legacy rows that carry no contract_id - see the scope itself.
-            $query->scopedToContracts([$contractId]);
+            // A renewal keeps the units its predecessor installed, so the whole renewal
+            // lineage counts as "this contract".
+            $query->scopedToContracts(\App\Models\Contract::renewalLineageIds($contractId));
         }
 
         return $query->with(['serialNumber', 'product'])->get();

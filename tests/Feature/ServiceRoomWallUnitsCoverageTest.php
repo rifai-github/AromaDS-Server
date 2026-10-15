@@ -64,6 +64,19 @@ class ServiceRoomWallUnitsCoverageTest extends TestCase
             $table->timestamps();
         });
 
+        // Contract::renewalLineageIds() follows contracts.quotation_id -> quotations.existing_contract_id.
+        Schema::create('contracts', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('quotation_id')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('quotations', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('existing_contract_id')->nullable();
+            $table->timestamps();
+        });
+
         Schema::create('unit_on_walls', function (Blueprint $table) {
             $table->id();
             $table->foreignId('customer_id')->nullable();
@@ -101,6 +114,8 @@ class ServiceRoomWallUnitsCoverageTest extends TestCase
         Schema::dropIfExists('job_photos');
         Schema::dropIfExists('job_schedule_units');
         Schema::dropIfExists('unit_on_walls');
+        Schema::dropIfExists('quotations');
+        Schema::dropIfExists('contracts');
         Schema::dropIfExists('contract_rooms');
         Schema::dropIfExists('job_advice_rooms');
         Schema::dropIfExists('job_schedules');
@@ -189,6 +204,81 @@ class ServiceRoomWallUnitsCoverageTest extends TestCase
             ['SN-UNIT-1', 'SN-UNIT-2'],
             $this->missingWallUnits($job, $room)
         );
+    }
+
+    public function test_a_renewal_job_lists_the_unit_installed_by_its_predecessor_but_not_another_contracts_unit(): void
+    {
+        // QA 15 Okt 2026, MDO-CSR/26-10/0006 (TEST Hotel Manado, LOBBY LT 1): renewal kontrak
+        // 21127 (MDO-CA/26-10/0004) dari 21126 (MDO-CA/26-10/0003). Unit yang dipasang 21126
+        // tetap membawa contract_id 21126; unit kontrak lain customer yang sama (21125,
+        // MDO-CA/26-10/0002) di ruangan + rental yang sama ikut muncul karena scope ke 21127
+        // saja tidak cocok dan fail-open.
+        DB::table('quotations')->insert([
+            ['id' => 29169, 'existing_contract_id' => null],
+            ['id' => 29170, 'existing_contract_id' => 21126],
+        ]);
+        DB::table('contracts')->insert([
+            ['id' => 21125, 'quotation_id' => null],
+            ['id' => 21126, 'quotation_id' => 29169],
+            ['id' => 21127, 'quotation_id' => 29170],
+        ]);
+
+        $advice = JobAdvice::create(['customer_id' => 14252, 'type' => 'service']);
+        $job = JobSchedule::create([
+            'job_number' => 'MDO-CSR/26-10/0006',
+            'type' => 'service_first',
+            'status' => 'in_progress',
+            'job_advice_id' => $advice->id,
+            'building_id' => 16010,
+        ]);
+        $contractRoomId = DB::table('contract_rooms')->insertGetId([
+            'contract_id' => 21127, 'room_id' => 34780, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $room = JobAdviceRoom::create([
+            'job_advice_id' => $advice->id,
+            'contract_room_id' => $contractRoomId,
+            'room_name' => 'LOBBY LT 1',
+            'rental_product_id' => 52,
+            'quantity' => 1,
+        ]);
+
+        foreach (['DIS108WG261010004' => 21125, 'DIS108WG261010009' => 21126] as $serial => $contractId) {
+            DB::table('unit_on_walls')->insert([
+                'customer_id' => 14252,
+                'building_id' => 16010,
+                'room_id' => 34780,
+                'room_name' => 'LOBBY LT 1',
+                'serial_number' => $serial,
+                'rental_id' => 52,
+                'contract_id' => $contractId,
+                'status' => 'active',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $method = new ReflectionMethod(JobController::class, 'wallUnitsForServiceRoom');
+        $units = $method->invoke(app(JobController::class), $job, $room);
+
+        $this->assertSame(['DIS108WG261010009'], $units->pluck('serial_number')->all());
+    }
+
+    public function test_renewal_lineage_follows_every_predecessor(): void
+    {
+        DB::table('quotations')->insert([
+            ['id' => 1, 'existing_contract_id' => null],
+            ['id' => 2, 'existing_contract_id' => 10],
+            ['id' => 3, 'existing_contract_id' => 20],
+        ]);
+        DB::table('contracts')->insert([
+            ['id' => 10, 'quotation_id' => 1],
+            ['id' => 20, 'quotation_id' => 2],
+            ['id' => 30, 'quotation_id' => 3],
+        ]);
+
+        $this->assertSame([30, 20, 10], \App\Models\Contract::renewalLineageIds(30));
+        $this->assertSame([10], \App\Models\Contract::renewalLineageIds(10));
+        $this->assertSame([], \App\Models\Contract::renewalLineageIds(null));
     }
 
     /** @return array{0: JobSchedule, 1: JobAdviceRoom} */

@@ -8689,7 +8689,10 @@ class JobScheduleController extends Controller
      */
     private function removeJobContractIds($jobAdvice, ?Contract $renewalSourceContract = null): array
     {
-        return collect([$jobAdvice?->contract_id, $renewalSourceContract?->id])
+        // Seluruh rantai renewal, bukan hanya satu langkah ke belakang: unit tetap membawa
+        // contract_id kontrak yang memasangnya.
+        return collect(Contract::renewalLineageIds($jobAdvice?->contract_id))
+            ->push($renewalSourceContract?->id)
             ->filter()
             ->map(fn ($id) => (int) $id)
             ->unique()

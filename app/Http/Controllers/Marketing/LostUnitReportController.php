@@ -607,7 +607,7 @@ class LostUnitReportController extends Controller
             // (QA room 460: 8 active units across four contracts). Without this, approving a
             // Lost Unit Report retires units belonging to somebody else's contract and marks
             // their serial numbers lost. Same rule as the Remove job fix in 8ce6d11.
-            $unitQuery->scopedToContracts([$lostUnitReport->contract_id]);
+            $unitQuery->scopedToContracts(\App\Models\Contract::renewalLineageIds($lostUnitReport->contract_id));
 
             $units = $unitQuery->with('serialNumber')->get();
 
