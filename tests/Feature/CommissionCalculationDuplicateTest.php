@@ -2,14 +2,18 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Finance\CommissionController;
+use App\Http\Controllers\Marketing\ContractController;
 use App\Models\Contract;
 use App\Models\Finance\CommissionCalculation;
 use App\Models\Finance\MarketingTarget;
 use App\Models\Finance\RenewalContractAssignment;
 use App\Services\Finance\CommissionCalculationService;
+use App\Models\User;
 use App\Services\Finance\RenewalAssignmentService;
 use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -313,7 +317,7 @@ class CommissionCalculationDuplicateTest extends TestCase
     protected function tearDown(): void
     {
         Carbon::setTestNow();
-        foreach (['renewal_contract_assignments', 'user_marketing_levels', 'marketing_levels', 'commission_payments', 'commission_transfers', 'achievements',
+        foreach (['customer_contacts', 'renewal_contract_assignments', 'user_marketing_levels', 'marketing_levels', 'commission_payments', 'commission_transfers', 'achievements',
             'commission_calculations', 'cr_variables', 'commission_levels', 'marketing_targets',
             'achievement_periods', 'bank_receipts', 'invoice_activities', 'invoices', 'audit_logs', 'contracts', 'users'] as $table) {
             Schema::dropIfExists($table);
@@ -902,5 +906,155 @@ class CommissionCalculationDuplicateTest extends TestCase
         $this->assertStringContainsString('Renewal Contract Assignment', $result['message']);
         $this->assertSame(0, MarketingTarget::where('target_type', 'renewal')->count());
         $this->assertSame(0, DB::transactionLevel());
+    }
+
+    /**
+     * Kolom Additional Info + tabel kontak untuk memanggil ContractController::updateAdditionalInfo.
+     * Kontrak "dari wizard": Tanggal Install sudah terisi sejak dibuat, is_installed belum.
+     */
+    private function wizardContract(string $contractStatus): Contract
+    {
+        Schema::table('contracts', function (Blueprint $t) {
+            $t->string('contract_status')->nullable();
+            $t->string('ppn_code')->nullable();
+            $t->foreignId('customer_signing_1_id')->nullable();
+            $t->foreignId('customer_signing_2_id')->nullable();
+            $t->foreignId('customer_signing_3_id')->nullable();
+            $t->foreignId('customer_signing_4_id')->nullable();
+            $t->foreignId('internal_signing_id')->nullable();
+            $t->date('install_date')->nullable();
+            $t->date('first_service_date')->nullable();
+            $t->string('pic_service_email')->nullable();
+            $t->text('external_remark')->nullable();
+            $t->text('internal_remark')->nullable();
+        });
+        Schema::create('customer_contacts', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('customer_id')->nullable();
+            $t->string('name')->nullable();
+            $t->timestamps();
+            $t->softDeletes();
+        });
+        DB::table('customer_contacts')->insert(['id' => 1, 'customer_id' => 101, 'name' => 'PIC']);
+
+        $this->contract(1, 101, 40_000_000, null, false, 'new');
+        DB::table('contracts')->where('id', 1)->update([
+            'contract_status' => $contractStatus,
+            'customer_signing_1_id' => 1,
+            'internal_signing_id' => 1,
+            'install_date' => '2026-09-15',
+            'first_service_date' => '2026-09-15',
+        ]);
+
+        $this->actingAs(User::find(1));
+
+        return Contract::findOrFail(1);
+    }
+
+    private function additionalInfoRequest(array $overrides = []): Request
+    {
+        return Request::create('/marketing/contracts/1/update-additional-info', 'POST', array_merge([
+            'customer_signing_1_id' => 1,
+            'internal_signing_id' => 1,
+        ], $overrides));
+    }
+
+    private function calculateInstallCommission(Contract $contract): ?string
+    {
+        $method = new \ReflectionMethod(ContractController::class, 'calculateInstallCommission');
+
+        return $method->invoke(app(ContractController::class), $contract);
+    }
+
+    public function test_resaving_additional_info_of_an_active_contract_with_a_wizard_install_date_creates_the_commission(): void
+    {
+        // QA 15 Okt (MDO-CA/26-10/0001): Tanggal Install diisi wizard, kontrak di-approve,
+        // simpan ulang Additional Info tetap tidak memunculkan komisi karena tanggalnya terkunci.
+        $contract = $this->wizardContract('active');
+
+        $response = app(ContractController::class)->updateAdditionalInfo($this->additionalInfoRequest(), $contract);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertNull($response->getData(true)['commission_warning']);
+        $calculation = CommissionCalculation::where('contract_id', 1)->sole();
+        $this->assertSame('new', $calculation->calculation_type);
+        $this->assertEquals(40_000_000, $this->achieved());
+        $this->assertTrue((bool) DB::table('contracts')->find(1)->is_installed);
+    }
+
+    public function test_draft_contract_gets_its_commission_when_it_becomes_active_not_when_saved(): void
+    {
+        $contract = $this->wizardContract('draft');
+
+        $response = app(ContractController::class)->updateAdditionalInfo($this->additionalInfoRequest([
+            'install_date' => '2026-09-16',
+            'first_service_date' => '2026-09-16',
+        ]), $contract);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(0, CommissionCalculation::count());
+
+        // approveContract/postContract memanggil helper yang sama setelah status jadi active.
+        DB::table('contracts')->where('id', 1)->update(['contract_status' => 'active']);
+        $this->assertNull($this->calculateInstallCommission(Contract::find(1)));
+        $this->assertSame(1, CommissionCalculation::where('contract_id', 1)->count());
+
+        // Dipanggil ulang (approve lalu simpan Additional Info) tetap satu komisi.
+        $this->assertNull($this->calculateInstallCommission(Contract::find(1)));
+        $this->assertSame(1, CommissionCalculation::count());
+        $this->assertEquals(40_000_000, $this->achieved());
+    }
+
+    public function test_activation_reports_why_the_commission_was_not_created(): void
+    {
+        $contract = $this->wizardContract('active');
+        MarketingTarget::whereKey(1)->forceDelete();
+
+        $warning = $this->calculateInstallCommission($contract);
+
+        $this->assertStringContainsString('No active marketing target', (string) $warning);
+        $this->assertSame(0, CommissionCalculation::count());
+    }
+
+    public function test_manual_commission_can_be_typed_new_or_renewal_but_only_once_per_contract(): void
+    {
+        // QA 15 Okt: Create Commission hanya menawarkan automatic/manual/adjustment.
+        $this->contract(1, 101, 24_000_000, null, true, 'renewal');
+        $this->actingAs(User::find(1));
+
+        $controller = new class extends CommissionController
+        {
+            protected function applyAccessibleUserFilter($query, $user = null, $userIdField = 'id')
+            {
+                return $query;
+            }
+
+            protected function applyContractAccessControlFilter($query, $user = null, $createdByField = 'created_by', $marketingField = 'marketing_id')
+            {
+                return $query;
+            }
+        };
+
+        $store = fn (array $data) => $controller->store(Request::create('/finance/commissions', 'POST', array_merge([
+            'user_id' => 1,
+            'achievement_period_id' => 1,
+            'contract_id' => 1,
+            'base_amount' => 24_000_000,
+            'commission_rate' => 1.5,
+        ], $data)));
+
+        $store(['calculation_type' => 'renewal']);
+        $this->assertSame('renewal', CommissionCalculation::sole()->calculation_type);
+        $this->assertEquals(360_000, CommissionCalculation::sole()->final_amount);
+
+        // Kontrak sama: entri New/Renewal kedua ditolak, Adjustment tetap boleh.
+        $store(['calculation_type' => 'new']);
+        $this->assertSame(1, CommissionCalculation::count());
+        $store(['calculation_type' => 'adjustment']);
+        $this->assertSame(2, CommissionCalculation::count());
+
+        // Komisi otomatis tidak menggandakan entri manual Renewal.
+        $result = $this->service->calculateCommissionForContract(Contract::find(1));
+        $this->assertTrue($result['already_calculated'] ?? false);
     }
 }

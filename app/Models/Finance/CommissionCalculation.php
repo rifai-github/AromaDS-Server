@@ -231,6 +231,8 @@ class CommissionCalculation extends Model
     {
         $labels = [
             'automatic' => 'Automatic',
+            'new' => 'New',
+            'renewal' => 'Renewal',
             'manual' => 'Manual',
             'adjustment' => 'Adjustment'
         ];

@@ -894,6 +894,13 @@ class Contract extends Model
     protected $cachedActualStartDate;
 
     /**
+     * Job types whose BA date can start the contract period. A renewal contract has no
+     * install job - its first visit is the first CSR (service_first) - so without the
+     * service_* types its Start/End Date stayed empty after the first job was done.
+     */
+    public const START_DATE_JOB_TYPES = ['install', 'install_free', 'service', 'service_first', 'service_routine'];
+
+    /**
      * Get actual contract start date from BA date of first completed job schedule
      * Contract period starts after installation/service is completed (done_job with ba_date)
      * Returns null if no BA date exists (contract hasn't started yet)
@@ -904,7 +911,7 @@ class Contract extends Model
             // Get first BA date from completed job schedules (install or service type)
             $this->cachedActualStartDate = $this->jobSchedules()
                 ->whereNotNull('ba_date')
-                ->whereIn('job_schedules.type', ['install', 'install_free', 'service'])
+                ->whereIn('job_schedules.type', self::START_DATE_JOB_TYPES)
                 ->orderBy('ba_date', 'asc')
                 ->value('ba_date');
             $this->actualStartDateCached = true;

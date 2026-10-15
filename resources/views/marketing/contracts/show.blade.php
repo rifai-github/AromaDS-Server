@@ -831,6 +831,16 @@
                                                         }
                                                     }
                                                 }
+                                                // SQ renewal tanpa survey di header: survey-nya menempel per ruangan
+                                                // di quotation detail (sama dengan kolom Survey No di Detail Quotation).
+                                                if ($surveys->isEmpty() && $contract->quotation) {
+                                                    foreach ($contract->quotation->quotationDetails as $quotationDetail) {
+                                                        $detailSurvey = $quotationDetail->survey ?? $quotationDetail->room?->survey;
+                                                        if ($detailSurvey) {
+                                                            $surveys->push($detailSurvey);
+                                                        }
+                                                    }
+                                                }
                                                 $surveys = $surveys->unique('id');
                                             @endphp
                                             
@@ -4104,7 +4114,10 @@ async function approveContract(contractId) {
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
-            showSuccessDialog(data.message).then(() => window.location.reload());
+            const dialog = data.commission_warning
+                ? showWarningDialog('Kontrak sudah aktif, tetapi komisi otomatis belum terbentuk: ' + data.commission_warning)
+                : showSuccessDialog(data.message);
+            dialog.then(() => window.location.reload());
         } else {
             throw new Error(data.message || 'Failed to approve contract');
         }
@@ -4588,9 +4601,11 @@ function approveContract(contractId) {
             .then(data => {
                 if (data.success || data.status === 'success') {
                     Swal.fire({
-                        title: 'Berhasil!',
-                        text: 'Contract berhasil disetujui',
-                        icon: 'success'
+                        title: data.commission_warning ? 'Contract disetujui' : 'Berhasil!',
+                        text: data.commission_warning
+                            ? 'Kontrak sudah aktif, tetapi komisi otomatis belum terbentuk: ' + data.commission_warning
+                            : 'Contract berhasil disetujui',
+                        icon: data.commission_warning ? 'warning' : 'success'
                     }).then(() => location.reload());
                 } else {
                     throw new Error(data.message || 'Failed to approve contract');
@@ -5325,7 +5340,10 @@ function approveContract(contractId) {
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                showSuccessDialog(data.message).then(() => window.location.reload());
+                const dialog = data.commission_warning
+                    ? showWarningDialog('Kontrak sudah aktif, tetapi komisi otomatis belum terbentuk: ' + data.commission_warning)
+                    : showSuccessDialog(data.message);
+                dialog.then(() => window.location.reload());
             } else {
                 throw new Error(data.message || 'Gagal approve kontrak');
             }

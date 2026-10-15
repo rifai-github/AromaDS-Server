@@ -707,6 +707,27 @@ class JobScheduleController extends Controller
         ]);
     }
 
+    /**
+     * Kunci nomor JS bersama saat Material Assign: sama dengan baris NEW JOB di Job View
+     * (buildJobGroupingKey tanpa job_number). Ruangan dalam satu periode service bisa punya
+     * schedule_date berbeda (tanggal service berikutnya dihitung per ruangan), dan dulu kuncinya
+     * schedule_date - satu baris NEW JOB pecah jadi beberapa nomor JS setelah Material Assign.
+     * Job tanpa period tetap dipisah per tanggal seperti sebelumnya.
+     */
+    private function materialAssignBatchKey(JobSchedule $job): string
+    {
+        $visit = filled($job->period)
+            ? 'period:'.$job->period
+            : 'date:'.($job->schedule_date ? $job->schedule_date->format('Y-m-d') : 'nodate');
+
+        return implode('|', [
+            $job->job_advice_id ?? 'manual',
+            $job->building_id ?? '0',
+            $job->type,
+            $visit,
+        ]);
+    }
+
     private function applyDisplayContractNumberFilter($query, string $value, string $viewMode): void
     {
         $applyToJob = function ($jobQuery) use ($value) {
@@ -779,7 +800,7 @@ class JobScheduleController extends Controller
             }
 
             $firstJob = $jobs->first();
-            $batchKey = ($firstJob->job_advice_id ?? 'manual') . '_' . ($firstJob->building_id ?? '0') . '_' . $firstJob->type . '_' . ($firstJob->schedule_date ? $firstJob->schedule_date->format('Y-m-d') : 'nodate');
+            $batchKey = $this->materialAssignBatchKey($firstJob);
             $sharedJobNumber = $jobs->pluck('job_number')->filter()->first() ?? ($batchJobNumbers[$batchKey] ?? null);
 
             if (!$sharedJobNumber) {
@@ -1937,7 +1958,7 @@ class JobScheduleController extends Controller
 
                     // Generate NEW Job Number for this batch (or reuse if generated earlier in this loop for same context)
                     // We'll use a local cache for this request to keep batch jobs together
-                    $batchKey = ($job->job_advice_id ?? 'manual') . '_' . ($job->building_id ?? '0') . '_' . $job->type . '_' . ($job->schedule_date ? $job->schedule_date->format('Y-m-d') : 'nodate');
+                    $batchKey = $this->materialAssignBatchKey($job);
 
                     if (isset($batchJobNumbers[$batchKey])) {
                         $sharedJobNumber = $batchJobNumbers[$batchKey];

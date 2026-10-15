@@ -116,8 +116,8 @@ class CommissionController extends Controller
         $request->validate([
             'user_id' => 'required|exists:users,id',
             'achievement_period_id' => 'required|exists:achievement_periods,id',
-            'contract_id' => 'nullable|exists:contracts,id',
-            'calculation_type' => 'required|in:automatic,manual,adjustment',
+            'contract_id' => 'nullable|required_if:calculation_type,new,renewal|exists:contracts,id',
+            'calculation_type' => 'required|in:new,renewal,manual,adjustment',
             'base_amount' => 'required|numeric|min:0',
             'commission_rate' => 'required|numeric|min:0|max:100',
             'bonus_amount' => 'nullable|numeric|min:0',
@@ -143,6 +143,22 @@ class CommissionController extends Controller
             if (!$canUseContract) {
                 return redirect()->back()
                     ->with('error', 'Contract is outside your accessible data scope.')
+                    ->withInput();
+            }
+        }
+
+        // New/Renewal = komisi kontrak; satu kontrak hanya punya satu (sama dengan guard
+        // komisi otomatis di CommissionCalculationService), jadi entri manual tidak boleh
+        // menggandakan komisi otomatis yang sudah ada.
+        if (in_array($request->calculation_type, ['new', 'renewal'], true)) {
+            $existingContractCommission = CommissionCalculation::where('contract_id', $request->contract_id)
+                ->whereIn('calculation_type', ['new', 'renewal'])
+                ->first();
+
+            if ($existingContractCommission) {
+                return redirect()->back()
+                    ->with('error', 'Kontrak ini sudah punya komisi '.ucfirst($existingContractCommission->calculation_type)
+                        .' (status: '.$existingContractCommission->status.'). Gunakan tipe Adjustment untuk koreksi.')
                     ->withInput();
             }
         }
@@ -238,7 +254,7 @@ class CommissionController extends Controller
             'user_id' => 'required|exists:users,id',
             'achievement_period_id' => 'required|exists:achievement_periods,id',
             'contract_id' => 'nullable|exists:contracts,id',
-            'calculation_type' => 'required|in:automatic,manual,adjustment',
+            'calculation_type' => 'required|in:automatic,new,renewal,manual,adjustment',
             'base_amount' => 'required|numeric|min:0',
             'commission_rate' => 'required|numeric|min:0|max:100',
             'bonus_amount' => 'nullable|numeric|min:0',

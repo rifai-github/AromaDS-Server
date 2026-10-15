@@ -247,7 +247,7 @@ class ContractController extends Controller
                 ->join('job_advices', 'job_advices.id', '=', 'job_schedules.job_advice_id')
                 ->whereIn('job_advices.contract_id', $contractIds)
                 ->whereNotNull('job_schedules.ba_date')
-                ->whereIn('job_schedules.type', ['install', 'install_free', 'service'])
+                ->whereIn('job_schedules.type', Contract::START_DATE_JOB_TYPES)
                 ->whereNull('job_schedules.deleted_at')
                 ->whereNull('job_advices.deleted_at')
                 ->selectRaw('job_advices.contract_id, MIN(job_schedules.ba_date) as first_ba_date')
@@ -520,7 +520,8 @@ class ContractController extends Controller
             'quotation.survey.building.city', // Load survey building with city
             'quotation.marketing',
             'quotation.approver',
-            'quotation.quotationDetails',
+            'quotation.quotationDetails.survey',
+            'quotation.quotationDetails.room.survey',
             'quotation.quotationSurveys.survey', // Load multiple surveys from quotation
             'quotation.existingContract', // Old contract for renewal tracking
             'creator',
@@ -707,36 +708,20 @@ class ContractController extends Controller
 
             $contract->update($payload);
 
-            // Alasan komisi otomatis tidak terbentuk ditampilkan ke user. Dulu hanya masuk log,
-            // dan karena Tanggal Install langsung terkunci, user tidak tahu apa yang kurang.
-            $commissionWarning = null;
-
-            // If install_date is set and contract is not yet marked as installed, mark as installed and trigger commission calculation
+            // If install_date is set and contract is not yet marked as installed, mark as installed
             if ($request->install_date && (! $wasInstalled || $installDateChanged)) {
                 $contract->refresh();
                 $contract->update([
                     'is_installed' => true,
                     'installed_date' => $request->install_date,
                 ]);
-
-                // Trigger commission calculation for installed contract
-                try {
-                    $commissionService = new \App\Services\Finance\CommissionCalculationService;
-                    $result = $commissionService->calculateCommissionForContract($contract);
-
-                    if ($result['success']) {
-                        Log::info("Commission calculated for contract {$contract->contract_number} after installation: {$result['amount']}");
-                    } else {
-                        Log::warning("Commission calculation skipped for contract {$contract->contract_number}: {$result['message']}");
-                        if (empty($result['already_calculated'])) {
-                            $commissionWarning = $result['message'];
-                        }
-                    }
-                } catch (\Exception $e) {
-                    Log::error("Failed to calculate commission for contract {$contract->contract_number}: ".$e->getMessage());
-                    // Don't fail the update if commission calculation fails
-                }
             }
+
+            // Alasan komisi otomatis tidak terbentuk ditampilkan ke user (commission_warning).
+            // Komisi otomatis hanya untuk kontrak yang sudah Active. Kontrak draft baru dihitung
+            // saat di-approve (approveContract). Kontrak Active yang Tanggal Install-nya sudah
+            // terisi sejak wizard tapi belum punya komisi ikut terhitung saat disimpan ulang.
+            $commissionWarning = $this->calculateInstallCommission($contract->refresh());
 
             return response()->json([
                 'success' => true,
@@ -750,6 +735,49 @@ class ContractController extends Controller
                 'success' => false,
                 'message' => 'Failed to update additional info: '.$e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * Hitung komisi otomatis (new/renewal) untuk kontrak Active yang sudah punya Tanggal Install.
+     *
+     * Wizard kontrak mengisi Tanggal Install sejak kontrak dibuat (masih draft), jadi pemicunya
+     * tidak boleh hanya "Tanggal Install baru diisi" - kontrak yang di-approve dengan tanggal yang
+     * sudah ada dulu tidak pernah dihitung. Aman dipanggil berulang: service menolak komisi
+     * otomatis kedua (already_calculated).
+     *
+     * @return string|null alasan komisi tidak terbentuk, untuk ditampilkan ke user
+     */
+    protected function calculateInstallCommission(Contract $contract): ?string
+    {
+        if ($contract->contract_status !== 'active' || ! $contract->install_date) {
+            return null;
+        }
+
+        try {
+            if (! $contract->is_installed) {
+                $contract->update([
+                    'is_installed' => true,
+                    'installed_date' => $contract->installed_date ?? $contract->install_date,
+                ]);
+            }
+
+            $result = (new \App\Services\Finance\CommissionCalculationService)->calculateCommissionForContract($contract);
+
+            if ($result['success']) {
+                Log::info("Commission calculated for contract {$contract->contract_number} after installation: {$result['amount']}");
+
+                return null;
+            }
+
+            Log::warning("Commission calculation skipped for contract {$contract->contract_number}: {$result['message']}");
+
+            return empty($result['already_calculated']) ? $result['message'] : null;
+        } catch (\Throwable $e) {
+            // Gagal hitung komisi tidak boleh menggagalkan simpan/approve kontrak
+            Log::error("Failed to calculate commission for contract {$contract->contract_number}: ".$e->getMessage());
+
+            return $e->getMessage();
         }
     }
 
@@ -2083,6 +2111,9 @@ class ContractController extends Controller
                     ->attemptAutoInvoiceForContract($contract->id);
             }
 
+            // Tanggal Install sudah diisi wizard sejak draft; komisi new/renewal terbit saat aktif.
+            $commissionWarning = $this->calculateInstallCommission($contract->refresh());
+
             // Log the action
             Log::info("Contract {$contract->contract_number} approved by user ".Auth::id(), [
                 'created_on_wall_csr_count' => $createdOnWallCsrCount,
@@ -2101,6 +2132,7 @@ class ContractController extends Controller
                     'date_approved' => $contract->date_approved,
                     'created_on_wall_csr_count' => $createdOnWallCsrCount,
                 ],
+                'commission_warning' => $commissionWarning,
             ]);
         } catch (\Exception $e) {
             Log::error("Error approving contract {$contract->id}: ".$e->getMessage());
@@ -2251,6 +2283,8 @@ class ContractController extends Controller
                 $contract->generateScheduleAutomatically();
             }
 
+            $commissionWarning = $this->calculateInstallCommission($contract->refresh());
+
             return response()->json([
                 'status' => 'success',
                 'message' => $createdOnWallCsrCount > 0
@@ -2262,6 +2296,7 @@ class ContractController extends Controller
                     'schedule_generated' => $contract->schedule_generated,
                     'created_on_wall_csr_count' => $createdOnWallCsrCount,
                 ],
+                'commission_warning' => $commissionWarning,
             ]);
         } catch (\Exception $e) {
             return response()->json([

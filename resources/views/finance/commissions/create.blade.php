@@ -91,10 +91,12 @@
                                     <label for="calculation_type">Calculation Type <span class="text-danger">*</span></label>
                                     <select name="calculation_type" id="calculation_type" class="form-control @error('calculation_type') is-invalid @enderror" required>
                                         <option value="">Select Type</option>
-                                        <option value="automatic" {{ old('calculation_type') == 'automatic' ? 'selected' : '' }}>Automatic</option>
+                                        <option value="new" {{ old('calculation_type') == 'new' ? 'selected' : '' }}>New</option>
+                                        <option value="renewal" {{ old('calculation_type') == 'renewal' ? 'selected' : '' }}>Renewal</option>
                                         <option value="manual" {{ old('calculation_type') == 'manual' ? 'selected' : '' }}>Manual</option>
                                         <option value="adjustment" {{ old('calculation_type') == 'adjustment' ? 'selected' : '' }}>Adjustment</option>
                                     </select>
+                                    <small class="text-muted d-block mt-1">New/Renewal wajib memilih Contract dan menggantikan komisi otomatis kontrak itu (satu kontrak satu komisi New/Renewal).</small>
                                     @error('calculation_type')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
