@@ -5250,6 +5250,53 @@ class JobScheduleController extends Controller
     /**
      * Complete a room manual via web interface
      */
+    /**
+     * Web fallback: the unit serials a room needs before "Upload Foto & Done", as
+     * the APK computes them (see Api\Mobile\JobController::webRoomUnitRequirement).
+     */
+    public function roomUnitContext(JobSchedule $jobSchedule, $roomId)
+    {
+        $jobScheduleRoom = \App\Models\JobScheduleRoom::findOrFail($roomId);
+
+        if ((int) $jobScheduleRoom->job_schedule_id !== (int) $jobSchedule->id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Room ini tidak terhubung dengan job schedule yang sedang dibuka.',
+            ], 422);
+        }
+
+        $requirement = app(\App\Http\Controllers\Api\Mobile\JobController::class)
+            ->webRoomUnitRequirement($jobSchedule, $jobScheduleRoom);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $requirement + [
+                'room_name' => $jobScheduleRoom->room_name,
+                'requires_device_settings' => $this->webJobRequiresDeviceSettings($jobSchedule),
+            ],
+        ]);
+    }
+
+    /**
+     * Whether the technician records refill + aroma schedule data for this job's
+     * units - same rule as the APK unit dialog (_requiresDeviceSettingData):
+     * service/CSR and Install Free yes; IR, Job Check, Remove, Extra, Complain no.
+     */
+    private function webJobRequiresDeviceSettings(JobSchedule $jobSchedule): bool
+    {
+        $type = strtolower(trim(str_replace('-', '_', (string) $jobSchedule->type)));
+
+        if ($jobSchedule->display_type === 'Job Check' || str_contains($type, 'check')) {
+            return false;
+        }
+
+        return in_array($type, [
+            'service', 'servis', 'service_first', 'service_routine', 'service_free', 'csr',
+            'customer_service_report', 'change_rental', 'change_unit', 'change', 'ganti_rental', 'ganti_unit',
+            'install_free', 'installation_free', 'install_gratis', 'if',
+        ], true);
+    }
+
     public function completeRoomManual(Request $request, JobSchedule $jobSchedule, $roomId)
     {
         $request->validate([
@@ -5258,6 +5305,14 @@ class JobScheduleController extends Controller
             'after_photos' => 'nullable|array',
             'after_photos.*' => 'image|max:5120',
             'notes' => 'nullable|string',
+            // Unit serials typed/scanned in the Done dialog (mirror the APK unit scan).
+            'units' => 'nullable|array',
+            'units.*.mac' => 'nullable|string|max:255',
+            'units.*.device_type' => 'nullable|string|max:255',
+            'units.*.device_name' => 'nullable|string|max:255',
+            'units.*.unit_on_wall_id' => 'nullable|integer',
+            // JSON (multipart form): refill + aroma schedule for the room's units.
+            'device_snapshot' => 'nullable|string',
         ]);
 
         try {
@@ -5277,6 +5332,52 @@ class JobScheduleController extends Controller
                     'status' => 'error',
                     'message' => 'Room ini tidak terhubung dengan job schedule yang sedang dibuka.',
                 ], 422);
+            }
+
+            $webCompletion = app(\App\Services\Operational\JobWebCompletionService::class);
+            $deviceSnapshot = json_decode((string) $request->input('device_snapshot', ''), true);
+            $deviceSnapshot = is_array($deviceSnapshot) && $this->webJobRequiresDeviceSettings($jobSchedule)
+                ? $deviceSnapshot
+                : [];
+
+            foreach ((array) $request->input('units', []) as $unit) {
+                $mac = trim((string) ($unit['mac'] ?? ''));
+                if ($mac === '' || !$jobScheduleRoom->job_advice_room_id) {
+                    continue;
+                }
+
+                $saved = $webCompletion->saveScannedUnit(
+                    $jobSchedule,
+                    (int) $jobScheduleRoom->job_advice_room_id,
+                    $mac,
+                    trim((string) ($unit['device_type'] ?? '')) ?: '-',
+                    ($unit['device_name'] ?? null) ?: null,
+                    $deviceSnapshot,
+                    $request->input('notes') ?: null,
+                    Auth::id(),
+                    isset($unit['unit_on_wall_id']) ? (int) $unit['unit_on_wall_id'] : null
+                );
+
+                if (!$saved['ok']) {
+                    DB::rollBack();
+                    return response()->json(['status' => 'error', 'message' => $saved['message']], $saved['code']);
+                }
+            }
+
+            // Same gate as APK completeRoom: every unit of the room needs its SN.
+            if ($jobScheduleRoom->status !== \App\Models\JobScheduleRoom::STATUS_COMPLETED) {
+                $missingUnits = app(\App\Http\Controllers\Api\Mobile\JobController::class)
+                    ->webRoomMissingUnitSerials($jobSchedule, $jobScheduleRoom);
+
+                if (!empty($missingUnits)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'MISSING_UNIT_SERIAL_NUMBER',
+                        'message' => 'SN unit di ruangan ini belum lengkap: ' . implode(', ', $missingUnits)
+                            . '. Isi / scan SN unit sebelum menyelesaikan ruangan.',
+                    ], 422);
+                }
             }
 
             // Persist before/after work photos (mirrors mobile completeRoom)
@@ -5371,6 +5472,21 @@ class JobScheduleController extends Controller
                 'status' => 'error',
                 'message' => 'Semua ruangan harus berstatus selesai (lengkap dengan foto before/after) sebelum BA dapat dibuat. Atau centang "Tidak dapat menyelesaikan semua ruangan" jika sebagian pekerjaan belum selesai.',
             ], 422);
+        }
+
+        // Unit SN readiness, same check as mobile verifyJob before BA.
+        if (!$cannotCompleteAllRooms) {
+            $missingUnitScans = app(\App\Http\Controllers\Api\Mobile\JobController::class)
+                ->webJobMissingUnitScanMessages($jobSchedule);
+
+            if (!empty($missingUnitScans)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Masih ada rental unit yang belum diinput SN-nya: '
+                        . implode('; ', $missingUnitScans)
+                        . '. Isi SN lewat tombol "Set Unit & Jadwal Aroma" di tab Serial Numbers sebelum membuat BA.',
+                ], 422);
+            }
         }
 
         // PIC photo + signature are mandatory (mirrors verifyJob:4046-4053),
@@ -5581,8 +5697,16 @@ class JobScheduleController extends Controller
             'device_type' => 'required|string',
             'device_name' => 'nullable|string',
             'notes' => 'nullable|string',
+            'unit_on_wall_id' => 'nullable|integer',
+            'device_snapshot' => 'nullable|array',
+            // Old modal shape, still accepted: {start, end, intensity}.
             'schedule' => 'nullable|array',
         ]);
+
+        $snapshot = $validated['device_snapshot'] ?? [];
+        if (empty($snapshot['schedule']) && !empty($validated['schedule'])) {
+            $snapshot['schedule'] = $validated['schedule'];
+        }
 
         $res = app(\App\Services\Operational\JobWebCompletionService::class)->saveScannedUnit(
             $jobSchedule,
@@ -5590,9 +5714,10 @@ class JobScheduleController extends Controller
             $validated['mac'],
             $validated['device_type'],
             $validated['device_name'] ?? null,
-            $validated['schedule'] ?? null,
+            $snapshot,
             $validated['notes'] ?? null,
-            Auth::id()
+            Auth::id(),
+            isset($validated['unit_on_wall_id']) ? (int) $validated['unit_on_wall_id'] : null
         );
 
         return response()->json([

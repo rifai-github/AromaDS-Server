@@ -4336,6 +4336,159 @@ class JobController extends Controller
         return array_values($messages);
     }
 
+    // ----- Web parity bridge -------------------------------------------------
+    // The dashboard fallback (Operational\JobScheduleController::completeRoomManual,
+    // completeWithBa, saveScannedUnitWeb) must demand and record the same unit serials
+    // the APK does. These wrappers expose the APK's own rules so the web does not grow
+    // a second, drifting copy of them. They add nothing to the APK request paths.
+
+    /**
+     * The unit work one schedule room needs, as the APK sees it: how many unit slots
+     * must be filled, which serials the room is expected to hold (issued by the
+     * warehouse for an install, already on the wall for a service) and what has been
+     * scanned so far.
+     */
+    public function webRoomUnitRequirement(JobSchedule $job, \App\Models\JobScheduleRoom $scheduleRoom): array
+    {
+        $empty = ['job_advice_room_id' => null, 'required_slots' => 0, 'expected_units' => [], 'scanned_units' => []];
+
+        $adviceRoom = $scheduleRoom->job_advice_room_id
+            ? \App\Models\JobAdviceRoom::find($scheduleRoom->job_advice_room_id)
+            : null;
+        if (!$adviceRoom) {
+            return $empty;
+        }
+
+        $job->loadMissing('jobAdvice.rooms');
+
+        $unitRoomId = $this->canonicalUnitAdviceRoomId($job, (int) $adviceRoom->id);
+        $unitRoom = $unitRoomId === (int) $adviceRoom->id
+            ? $adviceRoom
+            : (\App\Models\JobAdviceRoom::find($unitRoomId) ?? $adviceRoom);
+        $roomName = $unitRoom->room_name ?: $scheduleRoom->room_name;
+
+        if ($this->isServiceLikeJob($job)) {
+            $expected = collect($this->serviceUnitsForRoom($job, $unitRoom, null, $roomName))
+                ->map(fn ($unit) => [
+                    'serial_number' => trim((string) $unit['serial_number']),
+                    'product_name' => $unit['product_name'] ?? '-',
+                    'product_type' => $unit['product_type'] ?? '-',
+                    'unit_on_wall_id' => $unit['unit_on_wall_id'] ?? null,
+                ]);
+        } elseif ($this->jobAdviceRoomRequiresUnit($unitRoom)) {
+            $issued = $this->issuedUnitItemsForRoom($job, $roomName);
+
+            // Issuing rows only carry the room NAME, so two rentals sharing a room both
+            // see each other's units. Narrow to this rental's unit categories (as the
+            // gate does) unless that would leave nothing to suggest.
+            $requiredCategoryIds = array_keys($this->unitQuantitiesRequiredForRentalRoom($unitRoom));
+            if (!empty($requiredCategoryIds)) {
+                $ownIssued = $issued->filter(fn ($item) => in_array(
+                    (int) ($item->serialNumber?->masterProduct?->product_category_id ?? 0),
+                    array_map('intval', $requiredCategoryIds),
+                    true
+                ));
+                $issued = $ownIssued->isNotEmpty() ? $ownIssued : $issued;
+            }
+
+            $expected = $issued->map(fn ($item) => [
+                'serial_number' => trim((string) ($item->serialNumber->serial_number ?? '')),
+                'product_name' => $item->serialNumber?->masterProduct?->name ?? '-',
+                'product_type' => $item->serialNumber?->masterProduct?->productCategory?->name ?? 'Unit',
+                'unit_on_wall_id' => null,
+            ]);
+        } else {
+            $expected = collect();
+        }
+
+        // A serial already recorded for another room of this job is not a candidate here.
+        $usedElsewhere = \DB::table('job_schedule_units')
+            ->where('job_schedule_id', $job->id)
+            ->where('job_advice_room_id', '!=', $unitRoom->id)
+            ->pluck('mac')
+            ->map(fn ($mac) => trim((string) $mac))
+            ->all();
+
+        return [
+            'job_advice_room_id' => (int) $unitRoom->id,
+            'required_slots' => $this->requiredUnitSlotCountForRoom($job, $unitRoom, $roomName),
+            'expected_units' => $expected
+                ->filter(fn ($unit) => $unit['serial_number'] !== '' && !in_array($unit['serial_number'], $usedElsewhere, true))
+                ->unique('serial_number')
+                ->values()
+                ->all(),
+            'scanned_units' => collect($this->scannedUnitsForRoom($job, $unitRoom, $scheduleRoom->id))
+                ->map(fn ($unit) => [
+                    'serial_number' => $unit['serial_number'],
+                    'product_name' => $unit['product_name'],
+                    'product_type' => $unit['product_type'],
+                ])
+                ->all(),
+        ];
+    }
+
+    /**
+     * The advice room a scanned serial is recorded under - same remap the APK's
+     * saveScannedUnit applies (a unit SN moves to the physical room's unit rental).
+     */
+    public function webScanAdviceRoomId(JobSchedule $job, int $adviceRoomId, string $serial): int
+    {
+        $job->loadMissing('jobAdvice.rooms');
+
+        return $this->canonicalUnitAdviceRoomIdForScan($job, $adviceRoomId, $serial);
+    }
+
+    /**
+     * Why a schedule room may not be closed yet for lack of unit serials; empty
+     * when it may. Uses the APK completeRoom gate, plus the per-room slot count the
+     * APK enforces through its unit cards (one scan per unit slot).
+     *
+     * @return string[]
+     */
+    public function webRoomMissingUnitSerials(JobSchedule $job, \App\Models\JobScheduleRoom $scheduleRoom): array
+    {
+        if (!$scheduleRoom->job_advice_room_id) {
+            return [];
+        }
+
+        $job->loadMissing('jobAdvice.rooms');
+
+        $gateRoomId = $this->canonicalUnitAdviceRoomIdForCompletion($job, (int) $scheduleRoom->job_advice_room_id);
+        $gateRoom = \App\Models\JobAdviceRoom::find($gateRoomId);
+        $roomName = $gateRoom?->room_name ?: $scheduleRoom->room_name;
+
+        $messages = [];
+
+        foreach ($this->getMissingUnitSerialNumbersForRoom($job, $gateRoomId, $roomName) as $serial => $name) {
+            // Count-based entries are keyed "Diffuser (x1)" already; exact ones by SN.
+            $messages[] = str_starts_with((string) $serial, (string) $name) ? (string) $serial : "{$name} ({$serial})";
+        }
+
+        $requiredSlots = $this->requiredUnitSlotCountForRoom($job, $gateRoom, $roomName);
+        $scannedCount = \DB::table('job_schedule_units')
+            ->where('job_schedule_id', $job->id)
+            ->where('job_advice_room_id', $gateRoomId)
+            ->whereNotNull('mac')
+            ->whereRaw("TRIM(mac) <> ''")
+            ->count();
+
+        if (empty($messages) && $scannedCount < $requiredSlots) {
+            $messages[] = "baru {$scannedCount} dari {$requiredSlots} unit yang SN-nya diinput";
+        }
+
+        return $messages;
+    }
+
+    /**
+     * Job-level unit-scan readiness the APK checks before BA (verifyJob).
+     *
+     * @return string[]
+     */
+    public function webJobMissingUnitScanMessages(JobSchedule $job): array
+    {
+        return $this->missingUnitScanMessagesForJob($job);
+    }
+
     private function jobScheduleRoomHasPhotoType(?int $jobScheduleRoomId, string $photoType, ?int $jobScheduleUnitId = null): bool
     {
         if (!$jobScheduleRoomId) {

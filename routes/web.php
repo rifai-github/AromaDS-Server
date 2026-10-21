@@ -698,6 +698,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         // STUDY CASE B1: Material return per room routes
         Route::post('job-schedules/{jobSchedule}/rooms/{roomId}/material-return', [JobScheduleController::class, 'createMaterialReturn'])->name('job-schedules.rooms.material-return.create');
         Route::post('job-schedules/{jobSchedule}/rooms/{roomId}/complete-manual', [JobScheduleController::class, 'completeRoomManual'])->name('job-schedules.rooms.complete-manual');
+        Route::get('job-schedules/{jobSchedule}/rooms/{roomId}/unit-context', [JobScheduleController::class, 'roomUnitContext'])->name('job-schedules.rooms.unit-context');
         // Web fallback (APK error): finish a job with Berita Acara (PIC name + signature + photo)
         Route::post('job-schedules/{jobSchedule}/complete-with-ba', [JobScheduleController::class, 'completeWithBa'])
             ->name('job-schedules.complete-with-ba')

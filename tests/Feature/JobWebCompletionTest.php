@@ -134,7 +134,7 @@ class JobWebCompletionTest extends TestCase
 
         $undone = new JobSchedule(['type' => 'service', 'status' => 'undone']);
         $undone->id = 999999;
-        $res = $service->saveScannedUnit($undone, 1, 'AA:BB', 'SmartScent', null, null, null, null);
+        $res = $service->saveScannedUnit($undone, 1, 'AA:BB', 'SmartScent', null, [], null, null);
 
         $this->assertFalse($res['ok']);
         $this->assertSame(423, $res['code']);

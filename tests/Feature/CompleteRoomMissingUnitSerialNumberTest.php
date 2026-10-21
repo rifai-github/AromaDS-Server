@@ -1354,4 +1354,125 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
         $this->assertSame(200, $verifyResponse->getStatusCode(), 'Verification failed: ' . json_encode($verifyResponse->getData(true)));
         $this->assertSame('success', $verifyResponse->getData(true)['status']);
     }
+
+    /**
+     * QA 21 Oct 2026 (MDO-IR/26-10/0005): a room closed from the web "Upload Foto &
+     * Done" dialog never asked for the unit SN, so no job_schedule_units row existed
+     * and Device Details showed "NO MAC". The web now runs the APK's own gate through
+     * webRoomMissingUnitSerials(), and records the SN through the web saveScannedUnit.
+     */
+    public function test_web_room_completion_requires_the_unit_serial_the_apk_requires(): void
+    {
+        [$job, $room] = $this->makeIssuedSingleUnitInstallRoom();
+
+        $scheduleRoom = new \App\Models\JobScheduleRoom([
+            'job_schedule_id' => $job->id,
+            'job_advice_room_id' => $room->id,
+            'room_name' => 'Lobby',
+        ]);
+        $scheduleRoom->id = 9001;
+
+        $bridge = app(JobController::class);
+
+        $requirement = $bridge->webRoomUnitRequirement($job, $scheduleRoom);
+        $this->assertSame(1, $requirement['required_slots']);
+        $this->assertSame('DW300B2606AAA', $requirement['expected_units'][0]['serial_number']);
+        $this->assertSame('Diffuser', $requirement['expected_units'][0]['product_type']);
+        $this->assertSame([], $requirement['scanned_units']);
+
+        $this->assertNotEmpty(
+            $bridge->webRoomMissingUnitSerials($job, $scheduleRoom),
+            'A web room must not close before its unit SN is recorded, same as the APK.'
+        );
+
+        $saved = app(\App\Services\Operational\JobWebCompletionService::class)
+            ->saveScannedUnit($job, $room->id, ' DW300B2606AAA ', 'Diffuser', null, [], null, null);
+        $this->assertTrue($saved['ok'], $saved['message']);
+
+        $this->assertSame([], $bridge->webRoomMissingUnitSerials($job, $scheduleRoom));
+
+        $unit = \DB::table('job_schedule_units')->where('id', $saved['job_schedule_unit_id'])->first();
+        $this->assertSame('DW300B2606AAA', $unit->mac);
+        $this->assertSame($room->id, (int) $unit->job_advice_room_id);
+        $this->assertSame('{}', $unit->device_snapshot, 'IR keeps the APK empty-snapshot shape.');
+    }
+
+    /**
+     * Re-saving a unit without device data (closing the room after "Set Unit &
+     * Jadwal Aroma") must keep the schedule recorded earlier.
+     */
+    public function test_web_unit_resave_without_device_data_keeps_existing_schedule(): void
+    {
+        [$job, $room] = $this->makeIssuedSingleUnitInstallRoom();
+        $service = app(\App\Services\Operational\JobWebCompletionService::class);
+
+        $service->saveScannedUnit($job, $room->id, 'DW300B2606AAA', 'Diffuser', null, [
+            'liquidLevel' => '50',
+            'schedule' => [['days' => [1, 3, 5], 'startTime' => '08:00', 'endTime' => '17:00', 'gear' => 40]],
+        ], null, null);
+        $service->saveScannedUnit($job, $room->id, 'DW300B2606AAA', 'Diffuser', null, [], null, null);
+
+        $this->assertSame(1, \DB::table('job_schedule_units')->where('job_schedule_id', $job->id)->count());
+        $snapshot = json_decode(\DB::table('job_schedule_units')->where('job_schedule_id', $job->id)->value('device_snapshot'), true);
+        $this->assertSame('50', $snapshot['liquidLevel']);
+        $this->assertSame([1, 3, 5], $snapshot['schedule'][0]['days']);
+    }
+
+    private function makeIssuedSingleUnitInstallRoom(): array
+    {
+        $jobAdvice = JobAdvice::create(['customer_id' => 7, 'type' => 'install']);
+
+        $job = JobSchedule::create([
+            'job_number' => 'MDO-IR/26-10/0005',
+            'type' => 'install',
+            'status' => 'in_progress',
+            'job_advice_id' => $jobAdvice->id,
+        ]);
+
+        $unitCategory = ProductCategory::create(['code' => 'UNIT', 'name' => 'Diffuser', 'is_unit' => true]);
+        $unitProduct = MasterProduct::create(['product_category_id' => $unitCategory->id, 'name' => 'ADS Dispenser W300']);
+
+        \DB::table('rental_details')->insert([
+            'master_rental_id' => 332,
+            'item_type' => 'product',
+            'master_product_id' => $unitProduct->id,
+            'product_category_id' => $unitCategory->id,
+            'bom_rental_qty' => 1,
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $room = \App\Models\JobAdviceRoom::create([
+            'job_advice_id' => $jobAdvice->id,
+            'rental_product_id' => 332,
+            'room_name' => 'Lobby',
+            'quantity' => 1,
+        ]);
+
+        $issuedSn = SerialNumber::create(['serial_number' => 'DW300B2606AAA', 'master_product_id' => $unitProduct->id, 'status' => 'on_hand']);
+
+        $materialIssue = MaterialIssue::create(['issue_number' => 'MDO-MI/26-10/0005', 'status' => 'issued']);
+        $jobAssignSchedule = JobAssignSchedule::create(['job_schedule_id' => $job->id, 'status' => 'assigned']);
+        JobAssignMaterialIssue::create([
+            'job_assign_schedule_id' => $jobAssignSchedule->id,
+            'material_issue_id' => $materialIssue->id,
+        ]);
+
+        $inventoryIssuing = InventoryIssuing::create([
+            'issuing_number' => 'MDO-WI/26-10/0005',
+            'reference_no' => $materialIssue->issue_number,
+            'status' => 'sent',
+            'warehouse_id' => 1,
+        ]);
+
+        InventoryIssuingItem::create([
+            'inventory_issuing_id' => $inventoryIssuing->id,
+            'product_id' => $unitProduct->id,
+            'serial_number_id' => $issuedSn->id,
+            'room_name' => 'Lobby',
+        ]);
+
+        return [$job, $room];
+    }
 }

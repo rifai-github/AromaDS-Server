@@ -113,7 +113,7 @@ class JobWebCompletionService
             ->latest('id')
             ->value('photo_path');
 
-        JobReport::updateOrCreate(
+        $jobReport = JobReport::updateOrCreate(
             ['job_schedule_id' => $jobScheduleId],
             [
                 'technician_id' => $userId,
@@ -130,6 +130,8 @@ class JobWebCompletionService
                 'signature_at' => $signaturePath ? $now : $existingJobReport?->signature_at,
             ]
         );
+
+        $this->syncJobReportFromScannedUnit($jobReport);
 
         // Mirror the Photos-tab sync for PIC photo + signature (verifyJob:4248-4268).
         $verificationRoomId = $this->latestCompletedRoomId($jobScheduleId);
@@ -152,6 +154,60 @@ class JobWebCompletionService
             'ba_number' => $jobSchedule->ba_number,
             'completed_at' => $now,
         ];
+    }
+
+    /**
+     * Copy the latest scanned unit's MAC/SN and device snapshot into the JobReport
+     * when the report has none (mirror of mobile verifyJob's "SYNC FIX"). Without it
+     * Device Details lists the BA record as a second row with "NO MAC" instead of
+     * folding it into the scanned unit's row.
+     */
+    public function syncJobReportFromScannedUnit(JobReport $jobReport): void
+    {
+        if (! empty($jobReport->unit_mac_address) && ! empty($jobReport->device_snapshot)) {
+            return;
+        }
+
+        $scannedData = DB::table('job_schedule_units')
+            ->where('job_schedule_id', $jobReport->job_schedule_id)
+            ->orderBy('scanned_at', 'desc')
+            ->first();
+
+        if (! $scannedData) {
+            return;
+        }
+
+        $snapshot = json_decode((string) $scannedData->device_snapshot, true) ?: [];
+
+        $jobReport->update([
+            'unit_mac_address' => $jobReport->unit_mac_address ?: $scannedData->mac,
+            'unit_serial_number' => $jobReport->unit_serial_number ?: $scannedData->mac,
+            // Pass the decoded array: the model casts device_snapshot to array, so the
+            // raw JSON string would be stored double-encoded.
+            'device_snapshot' => $jobReport->device_snapshot ?: ($snapshot ?: null),
+            'device_online_status' => $jobReport->device_online_status ?: ($snapshot['online'] ?? null),
+            'device_liquid_level' => $jobReport->device_liquid_level ?: self::liquidLevelCode($snapshot['liquidLevel'] ?? null),
+            'device_fan_level' => $jobReport->device_fan_level ?: ($snapshot['fanLevel'] ?? null),
+            'qr_scan_at' => $jobReport->qr_scan_at ?: $scannedData->scanned_at,
+        ]);
+    }
+
+    /**
+     * device_liquid_level holds the device-API int code; the refill input stores
+     * bucket strings. Same mapping as mobile JobController::normalizeLiquidLevel().
+     */
+    private static function liquidLevelCode($level): ?int
+    {
+        if ($level === null || $level === '') {
+            return null;
+        }
+
+        $map = ['0' => 0, '<=10' => 3, '>10' => 2, '50' => 1, '100' => 1];
+        if (is_string($level) && array_key_exists($level, $map)) {
+            return $map[$level];
+        }
+
+        return is_numeric($level) ? (int) $level : 0;
     }
 
     // ----- Phase 1b: partial completion ("cannot complete all rooms" / outstanding) -----
@@ -800,13 +856,12 @@ class JobWebCompletionService
     }
 
     /**
-     * Save a scanned/selected unit and (optionally) its aroma schedule from the
-     * web. Mirrors mobile saveScannedUnit() (JobController:3709) DB writes into
-     * job_schedule_units, storing the aroma schedule under
-     * device_snapshot.schedule. DB-record-only: this does NOT push to the
-     * physical SmartScent device (controlDevice() is not wired anywhere).
+     * Save a scanned/typed unit and its device data from the web. Mirrors mobile
+     * saveScannedUnit() (Api\Mobile\JobController) DB writes into
+     * job_schedule_units, including the APK's room remap and its device_snapshot
+     * shape (see normalizeDeviceSnapshot()). DB-record-only: this does NOT push to
+     * the physical SmartScent device.
      *
-     * @param  array{schedule?:array}  $extra
      * @return array{ok:bool, code:int, message:string, job_schedule_unit_id:?int}
      */
     public function saveScannedUnit(
@@ -815,9 +870,10 @@ class JobWebCompletionService
         string $mac,
         string $deviceType,
         ?string $deviceName,
-        ?array $schedule,
+        array $deviceSnapshot,
         ?string $notes,
-        ?int $userId
+        ?int $userId,
+        ?int $unitOnWallId = null
     ): array {
         if ($job->status === 'undone') {
             return ['ok' => false, 'code' => 423, 'message' => 'Job sedang dalam proses koreksi BA Date oleh admin.', 'job_schedule_unit_id' => null];
@@ -828,8 +884,13 @@ class JobWebCompletionService
             return ['ok' => false, 'code' => 422, 'message' => 'Serial Number / MAC unit wajib diisi.', 'job_schedule_unit_id' => null];
         }
 
+        // A unit SN is recorded under the physical room's unit rental, exactly as
+        // the APK does, so the room completion gate finds it.
+        $roomId = app(\App\Http\Controllers\Api\Mobile\JobController::class)
+            ->webScanAdviceRoomId($job, $roomId, $mac);
+
         // Guard: same SN may not be reused for a different room on this job
-        // (mirror saveScannedUnit:3798-3810).
+        // (mirror mobile saveScannedUnit).
         $existingScanForSn = DB::table('job_schedule_units')
             ->where('job_schedule_id', $job->id)
             ->whereRaw('TRIM(mac) = ?', [$mac])
@@ -839,47 +900,33 @@ class JobWebCompletionService
             return ['ok' => false, 'code' => 409, 'message' => "Serial Number {$mac} sudah dipakai untuk room lain pada job ini.", 'job_schedule_unit_id' => null];
         }
 
+        $snapshot = self::normalizeDeviceSnapshot($deviceSnapshot);
+
+        // Re-saving a unit without device data (e.g. closing an IR room) must not
+        // wipe settings recorded earlier for the same unit.
+        if (empty($snapshot) && $existingScanForSn && $existingScanForSn->device_snapshot) {
+            $snapshot = json_decode((string) $existingScanForSn->device_snapshot, true) ?: [];
+        }
+
         DB::beginTransaction();
         try {
-            $snapshot = [];
-            if (! empty($schedule)) {
-                $snapshot['schedule'] = $schedule;
-            }
-
             $jobUnitData = [
                 'job_schedule_id' => $job->id,
                 'job_advice_room_id' => $roomId,
                 'unit_id' => null,
+                'unit_on_wall_id' => $unitOnWallId ?: ($existingScanForSn->unit_on_wall_id ?? null),
                 'mac' => $mac,
                 'device_type' => $deviceType,
                 'device_name' => $deviceName,
-                'device_snapshot' => json_encode($snapshot),
+                'device_snapshot' => json_encode((object) $snapshot),
                 'scanned_at' => now(),
                 'notes' => $notes,
                 'updated_at' => now(),
             ];
 
-            $updated = DB::table('job_schedule_units')
-                ->where('job_schedule_id', $job->id)
-                ->where('mac', $mac)
-                ->update($jobUnitData);
-
-            if ($updated > 0) {
-                $jobScheduleUnitId = DB::table('job_schedule_units')
-                    ->where('job_schedule_id', $job->id)
-                    ->where('mac', $mac)
-                    ->value('id');
-
-                // Merge schedule into existing snapshot instead of clobbering it.
-                if (! empty($schedule)) {
-                    $current = DB::table('job_schedule_units')->where('id', $jobScheduleUnitId)->value('device_snapshot');
-                    $currentSnapshot = $current ? (json_decode($current, true) ?: []) : [];
-                    $currentSnapshot['schedule'] = $schedule;
-                    DB::table('job_schedule_units')->where('id', $jobScheduleUnitId)->update([
-                        'device_snapshot' => json_encode($currentSnapshot),
-                        'updated_at' => now(),
-                    ]);
-                }
+            if ($existingScanForSn) {
+                DB::table('job_schedule_units')->where('id', $existingScanForSn->id)->update($jobUnitData);
+                $jobScheduleUnitId = $existingScanForSn->id;
             } else {
                 $jobUnitData['created_at'] = now();
                 $jobScheduleUnitId = DB::table('job_schedule_units')->insertGetId($jobUnitData);
@@ -894,6 +941,105 @@ class JobWebCompletionService
         }
 
         return ['ok' => true, 'code' => 200, 'message' => 'Data unit & jadwal aroma tersimpan.', 'job_schedule_unit_id' => (int) $jobScheduleUnitId];
+    }
+
+    /**
+     * Coerce web input into the device_snapshot shape the APK writes and the
+     * Device Details tab reads:
+     *
+     *   {liquidLevel, run, suspend, fanLevel, status,
+     *    schedule: [{days:[1..7], startTime, endTime, workTimeMinutes, pauseTimeMinutes, gear}]}
+     *
+     * Only known keys survive. The web modal shape used until Oct 2026,
+     * {schedule:{start,end,intensity}}, is mapped onto startTime/endTime.
+     */
+    public static function normalizeDeviceSnapshot(array $input): array
+    {
+        $snapshot = [];
+
+        $liquid = $input['liquidLevel'] ?? null;
+        if ($liquid !== null && in_array((string) $liquid, ['0', '<=10', '>10', '50', '100'], true)) {
+            $snapshot['liquidLevel'] = (string) $liquid;
+        }
+
+        foreach (['run', 'suspend'] as $key) {
+            if (isset($input[$key]) && is_numeric($input[$key])) {
+                $snapshot[$key] = max(0, (int) $input[$key]);
+            }
+        }
+
+        if (isset($input['fanLevel']) && is_numeric($input['fanLevel'])) {
+            $snapshot['fanLevel'] = min(5, max(0, (int) $input['fanLevel']));
+        }
+
+        if (isset($input['status']) && $input['status'] !== '') {
+            $snapshot['status'] = filter_var($input['status'], FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
+        }
+
+        $sessions = $input['schedule'] ?? null;
+        if (is_array($sessions) && $sessions !== []) {
+            // A single session may arrive as a bare map instead of a list.
+            if (! array_is_list($sessions)) {
+                $sessions = [$sessions];
+            }
+
+            $normalized = [];
+            foreach ($sessions as $session) {
+                if (! is_array($session)) {
+                    continue;
+                }
+
+                $start = self::normalizeClock($session['startTime'] ?? $session['start'] ?? null);
+                $end = self::normalizeClock($session['endTime'] ?? $session['end'] ?? null);
+
+                $days = collect((array) ($session['days'] ?? []))
+                    ->filter(fn ($day) => is_numeric($day) && (int) $day >= 1 && (int) $day <= 7)
+                    ->map(fn ($day) => (int) $day)
+                    ->unique()
+                    ->sort()
+                    ->values()
+                    ->all();
+
+                if ($start === null && $end === null && $days === []) {
+                    continue;
+                }
+
+                $entry = ['days' => $days, 'startTime' => $start, 'endTime' => $end];
+
+                foreach (['workTimeMinutes', 'pauseTimeMinutes'] as $key) {
+                    if (isset($session[$key]) && is_numeric($session[$key])) {
+                        $entry[$key] = max(0, (int) $session[$key]);
+                    }
+                }
+
+                if (isset($session['gear']) && is_numeric($session['gear'])) {
+                    $entry['gear'] = min(100, max(1, (int) $session['gear']));
+                }
+
+                $normalized[] = $entry;
+            }
+
+            if ($normalized !== []) {
+                $snapshot['schedule'] = $normalized;
+            }
+        }
+
+        return $snapshot;
+    }
+
+    private static function normalizeClock($value): ?string
+    {
+        if (! is_string($value) || ! preg_match('/^(\d{1,2}):(\d{2})/', trim($value), $m)) {
+            return null;
+        }
+
+        $hour = (int) $m[1];
+        $minute = (int) $m[2];
+        if ($hour > 23 || $minute > 59) {
+            return null;
+        }
+
+        return sprintf('%02d:%02d', $hour, $minute);
     }
 
     /**

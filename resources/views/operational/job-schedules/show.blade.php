@@ -2156,7 +2156,8 @@
                                                     @php
                                                         $days = $session['days'] ?? [];
                                                         $dayLabels = collect($days)->map(fn($d) => $dayNamesShort[$d] ?? $d)->implode(',');
-                                                        if (count($days) === 7) $dayLabels = 'Everyday';
+                                                        if (count($days) === 0) $dayLabels = 'Hari -';
+                                                        elseif (count($days) === 7) $dayLabels = 'Everyday';
                                                         elseif (count($days) === 5 && !in_array(6, $days) && !in_array(7, $days)) $dayLabels = 'Weekdays';
                                                     @endphp
                                                     <div class="mb-1 d-flex align-items-center">
@@ -2401,7 +2402,7 @@
             </div>
             <div class="modal-body">
                 <p style="font-size:13px;color:#6b7280;">
-                    Catat unit yang dipasang dan jadwal aromanya bila aplikasi teknisi tidak dapat dipakai.
+                    Catat unit yang dipasang beserta data isi ulang dan jadwal aromanya, sama seperti di aplikasi teknisi.
                     Data disimpan ke job (record-only); pengaturan tidak dikirim langsung ke perangkat SmartScent fisik.
                 </p>
                 <div class="mb-3">
@@ -2419,31 +2420,20 @@
                 <div class="row">
                     <div class="col-md-7 mb-3">
                         <label class="form-label fw-bold">Serial Number / MAC Unit <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="aromaMac" placeholder="cth. AA:BB:CC:DD:EE:FF">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="aromaMac" placeholder="Scan QR atau ketik SN unit" autocomplete="off">
+                            <button type="button" class="btn btn-outline-secondary" onclick="toggleSnScanner('aromaScanReader', document.getElementById('aromaMac'))" title="Scan QR dengan kamera">
+                                <i class="fas fa-qrcode"></i>
+                            </button>
+                        </div>
+                        <div id="aromaScanReader" class="mt-2" style="display:none;max-width:320px;"></div>
                     </div>
                     <div class="col-md-5 mb-3">
                         <label class="form-label fw-bold">Tipe Unit</label>
-                        <input type="text" class="form-control" id="aromaDeviceType" value="SmartScent">
+                        <input type="text" class="form-control" id="aromaDeviceType" value="Diffuser">
                     </div>
                 </div>
-                <div class="row">
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label fw-bold">Jam Mulai</label>
-                        <input type="time" class="form-control" id="aromaStart" value="08:00">
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label fw-bold">Jam Selesai</label>
-                        <input type="time" class="form-control" id="aromaEnd" value="17:00">
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label fw-bold">Intensitas</label>
-                        <select class="form-select" id="aromaIntensity">
-                            <option value="low">Rendah</option>
-                            <option value="medium" selected>Sedang</option>
-                            <option value="high">Tinggi</option>
-                        </select>
-                    </div>
-                </div>
+                <div id="aromaDeviceSettings"></div>
                 <div class="mb-2">
                     <label class="form-label fw-bold">Catatan (opsional)</label>
                     <textarea class="form-control" id="aromaNotes" rows="2"></textarea>
@@ -2458,10 +2448,55 @@
         </div>
     </div>
 </div>
+
+{{-- Web fallback: finish one room the way the APK does (unit SN + device data + photos) --}}
+<div class="modal fade" id="roomDoneModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header" style="background:#1e3a8a;color:#fff;">
+                <h5 class="modal-title"><i class="fas fa-check-circle me-2"></i>Selesaikan Ruangan <span id="roomDoneTitle"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="roomDoneLoading" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="mt-2 text-muted small">Memuat data unit ruangan...</div>
+                </div>
+                <div id="roomDoneBody" style="display:none;">
+                    <div id="roomDoneUnits" class="mb-3"></div>
+                    <div id="roomDoneDeviceSettings"></div>
+                    <h6 class="fw-bold mt-2" style="color:#1e3a8a;">Foto Dokumentasi</h6>
+                    <p class="text-muted small mb-2">Di tablet/HP, tombol unggah otomatis menawarkan kamera.</p>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Foto Before Work <span class="text-danger">*</span></label>
+                            <input type="file" id="roomDoneBeforePhotos" class="form-control" accept="image/*" capture="environment" multiple>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Foto After Work <span class="text-danger">*</span></label>
+                            <input type="file" id="roomDoneAfterPhotos" class="form-control" accept="image/*" capture="environment" multiple>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label fw-bold">Catatan (opsional)</label>
+                        <textarea id="roomDoneNotes" class="form-control" rows="2" placeholder="Catatan ruangan"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-success" id="roomDoneSubmitBtn" onclick="submitRoomDone()" disabled>
+                    <i class="fas fa-check"></i> Tandai Selesai
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 @endpush
 
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
     // Permissions for JS
     @php
@@ -2888,89 +2923,408 @@ function confirmUndoneJob(event) {
 }
 
 /**
- * Handle manual room completion via AJAX
+ * Device data fields shared by "Upload Foto & Done" and "Set Unit & Jadwal Aroma".
+ * Same inputs as the APK unit dialog (Input Manual Isi Ulang + Setting Jadwal Aroma),
+ * saved in the APK's device_snapshot shape so Device Details reads both alike.
  */
+const DEVICE_DAY_LABELS = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min']; // 1=Mon .. 7=Sun
+
+function deviceSettingsFieldsHtml(prefix) {
+    const days = DEVICE_DAY_LABELS.map((label, i) => `
+        <div class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox" id="${prefix}Day${i + 1}" value="${i + 1}" ${i < 5 ? 'checked' : ''}>
+            <label class="form-check-label" for="${prefix}Day${i + 1}">${label}</label>
+        </div>`).join('');
+
+    return `
+        <h6 class="fw-bold mt-2" style="color:#1e3a8a;">Isi Ulang</h6>
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <label class="form-label fw-bold">Level Liquid</label>
+                <select class="form-select" id="${prefix}Liquid">
+                    <option value="">— Tidak dicatat —</option>
+                    <option value="0">0%</option>
+                    <option value="<=10">&le;10%</option>
+                    <option value=">10">&gt;10%</option>
+                    <option value="50">50%</option>
+                    <option value="100">100%</option>
+                </select>
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label fw-bold">Run Time (detik)</label>
+                <input type="number" min="0" class="form-control" id="${prefix}Run" value="0">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label fw-bold">Suspend Time (detik)</label>
+                <input type="number" min="0" class="form-control" id="${prefix}Suspend" value="0">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label fw-bold">Fan Level</label>
+                <select class="form-select" id="${prefix}Fan">
+                    ${[0, 1, 2, 3, 4, 5].map(n => `<option value="${n}" ${n === 1 ? 'selected' : ''}>Level ${n}</option>`).join('')}
+                </select>
+            </div>
+            <div class="col-md-4 mb-3 d-flex align-items-end">
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="${prefix}Power">
+                    <label class="form-check-label fw-bold" for="${prefix}Power">Status Power On</label>
+                </div>
+            </div>
+        </div>
+        <h6 class="fw-bold mt-2" style="color:#1e3a8a;">Setting Jadwal Aroma</h6>
+        <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" id="${prefix}ScheduleOn" checked
+                   onchange="document.getElementById('${prefix}ScheduleFields').style.display = this.checked ? '' : 'none'">
+            <label class="form-check-label" for="${prefix}ScheduleOn">Catat jadwal aroma</label>
+        </div>
+        <div id="${prefix}ScheduleFields">
+            <div class="mb-3">
+                <label class="form-label fw-bold d-block">Hari Kerja</label>
+                ${days}
+            </div>
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label class="form-label fw-bold">Jam On</label>
+                    <input type="time" class="form-control" id="${prefix}OnTime" value="08:00">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label fw-bold">Jam Off</label>
+                    <input type="time" class="form-control" id="${prefix}OffTime" value="18:00">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label fw-bold">Gear (1-100)</label>
+                    <input type="number" min="1" max="100" class="form-control" id="${prefix}Gear" value="50">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label fw-bold">Work Time (menit)</label>
+                    <input type="number" min="0" class="form-control" id="${prefix}WorkTime" value="60">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label fw-bold">Pause Time (menit)</label>
+                    <input type="number" min="0" class="form-control" id="${prefix}PauseTime" value="30">
+                </div>
+            </div>
+        </div>`;
+}
+
+/** Returns {snapshot} or {error}. */
+function readDeviceSnapshot(prefix) {
+    const val = (id) => (document.getElementById(prefix + id) || {}).value;
+    const snapshot = {};
+
+    const liquid = val('Liquid');
+    if (liquid !== undefined && liquid !== '') {
+        snapshot.liquidLevel = liquid;
+        snapshot.run = parseInt(val('Run'), 10) || 0;
+        snapshot.suspend = parseInt(val('Suspend'), 10) || 0;
+        snapshot.fanLevel = parseInt(val('Fan'), 10) || 0;
+        snapshot.status = document.getElementById(prefix + 'Power').checked ? 1 : 0;
+    }
+
+    const scheduleOn = document.getElementById(prefix + 'ScheduleOn');
+    if (scheduleOn && scheduleOn.checked) {
+        const days = [];
+        for (let d = 1; d <= 7; d++) {
+            if (document.getElementById(prefix + 'Day' + d).checked) days.push(d);
+        }
+        if (days.length === 0) {
+            return { error: 'Pilih minimal satu hari kerja untuk jadwal aroma, atau matikan "Catat jadwal aroma".' };
+        }
+        const workTime = parseInt(val('WorkTime'), 10);
+        const pauseTime = parseInt(val('PauseTime'), 10);
+        if (isNaN(workTime) || isNaN(pauseTime)) {
+            return { error: 'Work time dan pause time harus berupa angka.' };
+        }
+        snapshot.schedule = [{
+            days: days,
+            startTime: val('OnTime'),
+            endTime: val('OffTime'),
+            workTimeMinutes: workTime,
+            pauseTimeMinutes: pauseTime,
+            gear: Math.min(100, Math.max(1, parseInt(val('Gear'), 10) || 50)),
+        }];
+    }
+
+    return { snapshot };
+}
+
+/**
+ * SN entry is dual-input: typed/scanner-gun into the field, or the camera QR
+ * scanner below it. The value is trimmed but never case-folded (SN is case-sensitive).
+ */
+let snQrScanner = null;
+let snQrReaderId = null;
+
+async function stopSnScanner() {
+    if (snQrScanner) {
+        try { await snQrScanner.stop(); await snQrScanner.clear(); } catch (e) { /* already stopped */ }
+    }
+    if (snQrReaderId) {
+        const reader = document.getElementById(snQrReaderId);
+        if (reader) reader.style.display = 'none';
+    }
+    snQrScanner = null;
+    snQrReaderId = null;
+}
+
+async function toggleSnScanner(readerId, input) {
+    const wasRunning = snQrReaderId === readerId;
+    await stopSnScanner();
+    if (wasRunning) return;
+
+    if (typeof Html5Qrcode === 'undefined') {
+        Swal.fire('Scanner tidak tersedia', 'Library scanner gagal dimuat. Ketik SN secara manual.', 'warning');
+        return;
+    }
+    if (!window.isSecureContext) {
+        Swal.fire('Kamera tidak dapat diakses', 'Akses kamera butuh HTTPS. Ketik SN secara manual atau gunakan scanner barcode (USB/Bluetooth).', 'info');
+        return;
+    }
+
+    const reader = document.getElementById(readerId);
+    reader.style.display = 'block';
+    snQrReaderId = readerId;
+    snQrScanner = new Html5Qrcode(readerId);
+    try {
+        await snQrScanner.start(
+            { facingMode: 'environment' },
+            { fps: 20, qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * 0.7); return { width: s, height: s }; } },
+            (decodedText) => {
+                input.value = decodedText.trim();
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                stopSnScanner();
+            },
+            () => {}
+        );
+    } catch (err) {
+        await stopSnScanner();
+        Swal.fire('Kamera tidak tersedia', (err && err.message) ? err.message : 'Gagal membuka kamera. Ketik SN secara manual.', 'warning');
+    }
+}
+
+/**
+ * Handle manual room completion: unit SN(s) + device data + before/after photos,
+ * mirroring the APK unit dialog -> saveScannedUnit -> completeRoom sequence.
+ */
+let roomDoneState = null;
+
+function escapeHtmlAttr(value) {
+    return String(value ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function completeRoomManual(roomId) {
     const btn = event.currentTarget;
-    const originalContent = btn.innerHTML;
-    Swal.fire({
-        title: 'Selesaikan Ruangan',
-        html: `
-            <p style="font-size:13px;color:#6b7280;margin-bottom:12px;text-align:left;">
-                Unggah foto dokumentasi pekerjaan. Di tablet/HP, tombol unggah otomatis menawarkan kamera.
-            </p>
-            <div style="text-align:left;margin-bottom:10px;">
-                <label style="font-weight:600;font-size:13px;">Foto Before Work</label>
-                <input type="file" id="manualBeforePhotos" class="swal2-file" accept="image/*" capture="environment" multiple>
-            </div>
-            <div style="text-align:left;margin-bottom:10px;">
-                <label style="font-weight:600;font-size:13px;">Foto After Work</label>
-                <input type="file" id="manualAfterPhotos" class="swal2-file" accept="image/*" capture="environment" multiple>
-            </div>
-            <div style="text-align:left;">
-                <label style="font-weight:600;font-size:13px;">Catatan (opsional)</label>
-                <textarea id="manualRoomNotes" class="swal2-textarea" style="margin:0;" placeholder="Catatan ruangan"></textarea>
-            </div>
-        `,
-        showCancelButton: true,
-        confirmButtonText: 'Tandai Selesai',
-        cancelButtonText: 'Batal',
-        focusConfirm: false,
-        preConfirm: () => {
-            const fd = new FormData();
-            const before = document.getElementById('manualBeforePhotos').files;
-            const after = document.getElementById('manualAfterPhotos').files;
-            for (let i = 0; i < before.length; i++) fd.append('before_photos[]', before[i]);
-            for (let i = 0; i < after.length; i++) fd.append('after_photos[]', after[i]);
-            const notes = document.getElementById('manualRoomNotes').value;
-            if (notes) fd.append('notes', notes);
-            return fd;
-        }
-    }).then((result) => {
-        if (!result.isConfirmed) {
-            return;
-        }
+    roomDoneState = { roomId, btn, context: null };
 
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    document.getElementById('roomDoneTitle').textContent = '';
+    document.getElementById('roomDoneLoading').style.display = '';
+    document.getElementById('roomDoneBody').style.display = 'none';
+    document.getElementById('roomDoneSubmitBtn').disabled = true;
+    document.getElementById('roomDoneBeforePhotos').value = '';
+    document.getElementById('roomDoneAfterPhotos').value = '';
+    document.getElementById('roomDoneNotes').value = '';
 
-        $.ajax({
-            url: `{{ route('operational.job-schedules.rooms.complete-manual', [ 'jobSchedule' => $jobSchedule->id, 'roomId' => ':roomId' ]) }}`.replace(':roomId', roomId),
-            method: 'POST',
-            data: result.value,
-            processData: false,
-            contentType: false,
-            headers: {
-                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
-            },
-            success: function(data) {
-                if (data.status === 'success') {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Berhasil',
-                        text: data.message,
-                        timer: 1500,
-                        showConfirmButton: false
-                    }).then(() => {
-                        const cell = $(btn).closest('td');
-                        cell.html('<span class="status-badge status-completed">Completed</span>');
-                        checkHeaderDoneButton();
-                    });
-                } else {
-                    Swal.fire('Gagal', data.message || 'Gagal mengupdate status', 'error');
-                    btn.disabled = false;
-                    btn.innerHTML = originalContent;
-                }
-            },
-            error: function(xhr) {
-                const msg = xhr.responseJSON ? xhr.responseJSON.message : 'Terjadi kesalahan sistem';
-                Swal.fire('Gagal', msg, 'error');
-                btn.disabled = false;
-                btn.innerHTML = originalContent;
-            }
-        });
+    const modalEl = document.getElementById('roomDoneModal');
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+    $.ajax({
+        url: `{{ route('operational.job-schedules.rooms.unit-context', ['jobSchedule' => $jobSchedule->id, 'roomId' => ':roomId']) }}`.replace(':roomId', roomId),
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        success: function(res) {
+            roomDoneState.context = res.data;
+            renderRoomDoneForm(res.data);
+        },
+        error: function(xhr) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+            Swal.fire('Gagal', (xhr.responseJSON && xhr.responseJSON.message) || 'Gagal memuat data unit ruangan', 'error');
+        }
     });
 }
+
+function renderRoomDoneForm(ctx) {
+    document.getElementById('roomDoneTitle').textContent = ctx.room_name ? '— ' + ctx.room_name : '';
+
+    const expected = ctx.expected_units || [];
+    const scanned = ctx.scanned_units || [];
+    const requiredSlots = Math.max(ctx.required_slots || 0, scanned.length);
+    // No unit on record for a service room (e.g. stale Unit On Wall): still offer
+    // one optional SN so the refill/aroma data has a unit to be recorded against.
+    const optionalSlot = requiredSlots === 0 && !!ctx.requires_device_settings;
+    const slotCount = optionalSlot ? 1 : requiredSlots;
+    const unitsEl = document.getElementById('roomDoneUnits');
+
+    if (slotCount === 0) {
+        unitsEl.innerHTML = `<div class="alert alert-light border small mb-0">
+            <i class="fas fa-info-circle me-1"></i>Ruangan ini tidak memerlukan input SN unit.</div>`;
+    } else {
+        // Pre-fill: already scanned first, then the expected serials not yet used.
+        const prefill = scanned.map(u => u.serial_number);
+        expected.forEach(u => { if (!prefill.includes(u.serial_number)) prefill.push(u.serial_number); });
+
+        const options = expected.map(u => `<option value="${escapeHtmlAttr(u.serial_number)}">${escapeHtmlAttr(u.product_name)}</option>`).join('');
+        let rows = '';
+        for (let i = 0; i < slotCount; i++) {
+            rows += `
+                <div class="mb-2">
+                    <label class="form-label fw-bold mb-1">SN Unit ${slotCount > 1 ? (i + 1) + ' dari ' + slotCount : ''} ${optionalSlot ? '<span class="text-muted fw-normal">(opsional)</span>' : '<span class="text-danger">*</span>'}</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control room-done-sn" id="roomDoneSn${i}" list="roomDoneSnOptions" data-required="${optionalSlot ? '0' : '1'}"
+                               value="${escapeHtmlAttr(prefill[i] || '')}" placeholder="Scan QR atau ketik SN unit" autocomplete="off"
+                               oninput="updateRoomDoneSnHint(${i})">
+                        <button type="button" class="btn btn-outline-secondary" title="Scan QR dengan kamera"
+                                onclick="toggleSnScanner('roomDoneScanReader${i}', document.getElementById('roomDoneSn${i}'))">
+                            <i class="fas fa-qrcode"></i>
+                        </button>
+                    </div>
+                    <div class="form-text" id="roomDoneSnHint${i}"></div>
+                    <div id="roomDoneScanReader${i}" class="mt-2" style="display:none;max-width:320px;"></div>
+                </div>`;
+        }
+        unitsEl.innerHTML = `
+            <h6 class="fw-bold" style="color:#1e3a8a;">Unit di Ruangan Ini</h6>
+            <p class="text-muted small mb-2">${optionalSlot
+                ? 'Tidak ada unit terpasang yang tercatat untuk ruangan ini. Isi SN unit bila ada, agar data isi ulang & jadwal aroma tersimpan ke unit tersebut.'
+                : 'Sama seperti aplikasi teknisi: ruangan baru bisa selesai setelah SN setiap unit diisi. SN dari barang yang dikeluarkan gudang / unit terpasang sudah terisi otomatis — cocokkan dengan unit fisiknya.'}</p>
+            <datalist id="roomDoneSnOptions">${options}</datalist>
+            ${rows}`;
+        for (let i = 0; i < slotCount; i++) updateRoomDoneSnHint(i);
+    }
+
+    const settingsEl = document.getElementById('roomDoneDeviceSettings');
+    if (ctx.requires_device_settings) {
+        settingsEl.innerHTML = deviceSettingsFieldsHtml('roomDone')
+            + (slotCount > 1 ? '<p class="text-muted small">Data isi ulang & jadwal ini dicatat untuk semua unit di ruangan ini.</p>' : '');
+    } else {
+        settingsEl.innerHTML = '';
+    }
+
+    document.getElementById('roomDoneLoading').style.display = 'none';
+    document.getElementById('roomDoneBody').style.display = '';
+    document.getElementById('roomDoneSubmitBtn').disabled = false;
+}
+
+function roomDoneExpectedUnit(serial) {
+    const ctx = (roomDoneState && roomDoneState.context) || {};
+    return (ctx.expected_units || []).find(u => u.serial_number === serial)
+        || (ctx.scanned_units || []).find(u => u.serial_number === serial)
+        || null;
+}
+
+function updateRoomDoneSnHint(i) {
+    const input = document.getElementById('roomDoneSn' + i);
+    const hint = document.getElementById('roomDoneSnHint' + i);
+    if (!input || !hint) return;
+    const sn = input.value.trim();
+    const unit = sn ? roomDoneExpectedUnit(sn) : null;
+    if (!sn) {
+        hint.innerHTML = '';
+    } else if (unit) {
+        hint.innerHTML = `<span class="text-success"><i class="fas fa-check-circle"></i> ${escapeHtmlAttr(unit.product_name)}</span>`;
+    } else {
+        hint.innerHTML = '<span class="text-warning"><i class="fas fa-exclamation-triangle"></i> SN tidak ada di daftar unit ruangan ini — pastikan benar.</span>';
+    }
+}
+
+function submitRoomDone() {
+    if (!roomDoneState || !roomDoneState.context) return;
+    const ctx = roomDoneState.context;
+    const fd = new FormData();
+
+    const snInputs = Array.from(document.querySelectorAll('#roomDoneUnits .room-done-sn'));
+    if (snInputs.some(el => el.dataset.required === '1' && el.value.trim() === '')) {
+        Swal.fire('Lengkapi Data', 'SN setiap unit di ruangan ini wajib diisi (scan atau ketik), sama seperti di aplikasi teknisi.', 'warning');
+        return;
+    }
+    const serials = snInputs.map(el => el.value.trim()).filter(sn => sn !== '');
+    if (new Set(serials).size !== serials.length) {
+        Swal.fire('SN Dobel', 'SN yang sama diisi lebih dari sekali.', 'warning');
+        return;
+    }
+    serials.forEach((sn, i) => {
+        const unit = roomDoneExpectedUnit(sn);
+        fd.append(`units[${i}][mac]`, sn);
+        fd.append(`units[${i}][device_type]`, unit ? (unit.product_type || '-') : '-');
+        if (unit && unit.product_name && unit.product_name !== '-') fd.append(`units[${i}][device_name]`, unit.product_name);
+        if (unit && unit.unit_on_wall_id) fd.append(`units[${i}][unit_on_wall_id]`, unit.unit_on_wall_id);
+    });
+
+    if (ctx.requires_device_settings) {
+        const device = readDeviceSnapshot('roomDone');
+        if (device.error) {
+            Swal.fire('Lengkapi Data', device.error, 'warning');
+            return;
+        }
+        if (serials.length === 0 && Object.keys(device.snapshot).length > 0) {
+            Swal.fire('Lengkapi Data', 'Data isi ulang / jadwal aroma disimpan per unit. Isi SN unitnya, atau kosongkan Level Liquid dan matikan "Catat jadwal aroma".', 'warning');
+            return;
+        }
+        fd.append('device_snapshot', JSON.stringify(device.snapshot));
+    }
+
+    const before = document.getElementById('roomDoneBeforePhotos').files;
+    const after = document.getElementById('roomDoneAfterPhotos').files;
+    for (let i = 0; i < before.length; i++) fd.append('before_photos[]', before[i]);
+    for (let i = 0; i < after.length; i++) fd.append('after_photos[]', after[i]);
+    const notes = document.getElementById('roomDoneNotes').value;
+    if (notes) fd.append('notes', notes);
+
+    const submitBtn = document.getElementById('roomDoneSubmitBtn');
+    const originalSubmit = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+    stopSnScanner();
+
+    const btn = roomDoneState.btn;
+    $.ajax({
+        url: `{{ route('operational.job-schedules.rooms.complete-manual', [ 'jobSchedule' => $jobSchedule->id, 'roomId' => ':roomId' ]) }}`.replace(':roomId', roomDoneState.roomId),
+        method: 'POST',
+        data: fd,
+        processData: false,
+        contentType: false,
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content'),
+            'Accept': 'application/json'
+        },
+        success: function(data) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalSubmit;
+            if (data.status === 'success') {
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('roomDoneModal')).hide();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Berhasil',
+                    text: data.message,
+                    timer: 1500,
+                    showConfirmButton: false
+                }).then(() => {
+                    const cell = $(btn).closest('td');
+                    cell.html('<span class="status-badge status-completed">Completed</span>');
+                    checkHeaderDoneButton();
+                });
+            } else {
+                Swal.fire('Gagal', data.message || 'Gagal mengupdate status', 'error');
+            }
+        },
+        error: function(xhr) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalSubmit;
+            let msg = 'Terjadi kesalahan sistem';
+            if (xhr.responseJSON) {
+                msg = xhr.responseJSON.message || msg;
+                if (xhr.responseJSON.errors) msg = Object.values(xhr.responseJSON.errors).flat().join('\n');
+            }
+            Swal.fire('Gagal', msg, 'error');
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    ['roomDoneModal', 'aromaUnitModal'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('hidden.bs.modal', stopSnScanner);
+    });
+});
 
 /**
  * Check room statuses and toggle Done Job button
@@ -3286,7 +3640,12 @@ function webMaterialAction(action, confirmText) {
 
 // Phase 3 web fallback: set unit + aroma schedule
 function openAromaUnitModal() {
-    new bootstrap.Modal(document.getElementById('aromaUnitModal')).show();
+    const settingsEl = document.getElementById('aromaDeviceSettings');
+    if (!settingsEl.dataset.rendered) {
+        settingsEl.innerHTML = deviceSettingsFieldsHtml('aroma');
+        settingsEl.dataset.rendered = '1';
+    }
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('aromaUnitModal')).show();
 }
 
 function submitAromaUnit() {
@@ -3295,28 +3654,29 @@ function submitAromaUnit() {
     if (!roomId) { Swal.fire('Lengkapi Data', 'Ruangan wajib dipilih.', 'warning'); return; }
     if (!mac) { Swal.fire('Lengkapi Data', 'Serial Number / MAC unit wajib diisi.', 'warning'); return; }
 
+    const device = readDeviceSnapshot('aroma');
+    if (device.error) { Swal.fire('Lengkapi Data', device.error, 'warning'); return; }
+
     const payload = {
         room_id: roomId,
         mac: mac,
-        device_type: document.getElementById('aromaDeviceType').value.trim() || 'SmartScent',
+        device_type: document.getElementById('aromaDeviceType').value.trim() || 'Diffuser',
         notes: document.getElementById('aromaNotes').value || null,
-        schedule: {
-            start: document.getElementById('aromaStart').value,
-            end: document.getElementById('aromaEnd').value,
-            intensity: document.getElementById('aromaIntensity').value,
-        },
+        device_snapshot: device.snapshot,
     };
 
     const btn = document.getElementById('aromaSubmitBtn');
     const original = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+    stopSnScanner();
 
     $.ajax({
         url: `{{ route('operational.job-schedules.save-scanned-unit', $jobSchedule->id) }}`,
         method: 'POST',
-        headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
-        data: payload,
+        headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content'), 'Accept': 'application/json' },
+        contentType: 'application/json',
+        data: JSON.stringify(payload),
         success: function(data) {
             Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message, timer: 1600, showConfirmButton: false })
                 .then(() => window.location.reload());
