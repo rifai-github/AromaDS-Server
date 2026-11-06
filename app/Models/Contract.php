@@ -130,6 +130,75 @@ class Contract extends Model
         'merged_from_ids' => 'array',
     ];
 
+    /**
+     * `contract_status` is the lifecycle column the app writes (approve, unpost,
+     * renewal, terminate). The older `status` column — ENUM draft/active/completed/
+     * terminated — is still what ~20 readers filter on (`where('status', 'active')`:
+     * Billing Group dropdown, finance:auto-generate-invoices cron, reports, Job
+     * Advice create, ...). Catalyst-imported contracts get both columns set, but
+     * contracts created in the app only ever had `contract_status` changed, so they
+     * stayed `status = draft` forever and were invisible to all of those readers.
+     *
+     * Mapping to the legacy ENUM. Statuses not listed here (cancelled, expired,
+     * inactive, ...) have no ENUM equivalent and leave `status` untouched.
+     */
+    public const LEGACY_STATUS_BY_CONTRACT_STATUS = [
+        'draft' => 'draft',
+        'waiting_for_approval' => 'draft',
+        'pending_signature' => 'draft',
+        'signed' => 'draft',
+        'rejected' => 'draft',
+        'active' => 'active',
+        'running' => 'active',
+        'completed' => 'completed',
+        'renewed' => 'completed',
+        'terminated' => 'terminated',
+    ];
+
+    public static function legacyStatusFor(?string $contractStatus): ?string
+    {
+        if ($contractStatus === null) {
+            return null;
+        }
+
+        return self::LEGACY_STATUS_BY_CONTRACT_STATUS[strtolower(trim($contractStatus))] ?? null;
+    }
+
+    protected static function booted(): void
+    {
+        // Keep `status` in step with `contract_status` on every Eloquent save, so no
+        // individual approve/unpost/renewal/terminate path can forget it again.
+        // Query-builder updates (Contract::where()->update()) bypass this — none of
+        // the live contract_status writers use one.
+        static::saving(function (Contract $contract): void {
+            if ($contract->exists && ! $contract->isDirty('contract_status')) {
+                return;
+            }
+
+            // The caller set `status` explicitly in this same save (Catalyst importer,
+            // termination unpost, ...): respect it rather than second-guess it.
+            if ($contract->isDirty('status')) {
+                return;
+            }
+
+            $legacyStatus = self::legacyStatusFor($contract->contract_status);
+
+            if ($legacyStatus === null || $contract->getAttribute('status') === $legacyStatus) {
+                return;
+            }
+
+            // A model read from the DB carries `status` whenever the column exists; only
+            // fall back to a schema lookup for new or partially-selected models (some
+            // test schemas build a `contracts` table without the legacy column).
+            if (! array_key_exists('status', $contract->getAttributes())
+                && ! $contract->getConnection()->getSchemaBuilder()->hasColumn($contract->getTable(), 'status')) {
+                return;
+            }
+
+            $contract->status = $legacyStatus;
+        });
+    }
+
     // Relationships
     public function customer()
     {
