@@ -392,12 +392,10 @@ class JobWebCompletionService
             return \App\Models\Warehouse::find($materialIssue->warehouse_id);
         }
 
+        $warehouseResolver = app(\App\Services\Warehouse\BranchWarehouseResolver::class);
+
         if ($team?->branch_office) {
-            $warehouse = \App\Models\Warehouse::where('branch_id', $team->branch_office)
-                ->where('is_active', true)
-                ->orderByDesc('is_center')
-                ->orderBy('id')
-                ->first();
+            $warehouse = $warehouseResolver->findDefaultForBranch($team->branch_office);
 
             if ($warehouse) {
                 return $warehouse;
@@ -405,11 +403,7 @@ class JobWebCompletionService
         }
 
         if ($job->building?->branch_id) {
-            return \App\Models\Warehouse::where('branch_id', $job->building->branch_id)
-                ->where('is_active', true)
-                ->orderByDesc('is_center')
-                ->orderBy('id')
-                ->first();
+            return $warehouseResolver->findDefaultForBranch($job->building->branch_id);
         }
 
         return null;

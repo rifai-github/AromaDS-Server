@@ -1020,14 +1020,14 @@
 
                 <!-- Warehouse Selection -->
                 <div class="form-group">
-                    <label class="form-label" for="warehouseSelect">Gudang Cabang</label>
-                    <select id="warehouseSelect" name="warehouse_id" class="form-input d-none">
+                    <label class="form-label" for="warehouseSelect">Gudang Sumber <span style="color: red;">*</span></label>
+                    <select id="warehouseSelect" name="warehouse_id" class="form-input">
                         <option value="">-- Pilih Warehouse --</option>
-                        @foreach(\App\Models\Warehouse::where('is_active', true)->get() as $warehouse)
-                        <option value="{{ $warehouse->id }}">{{ $warehouse->name }}</option>
+                        @foreach(\App\Models\Warehouse::with('branch:id,name')->where('is_active', true)->orderBy('branch_id')->orderByDesc('is_default')->orderBy('name')->get() as $warehouse)
+                        <option value="{{ $warehouse->id }}">{{ $warehouse->name }}{{ $warehouse->branch ? ' - '.$warehouse->branch->name : '' }}{{ $warehouse->is_default ? ' (Default)' : '' }}</option>
                         @endforeach
                     </select>
-                    <div class="form-input" style="background: #f3f4f6; color: #374151;">Otomatis mengikuti warehouse aktif branch yang dipilih</div>
+                    <small style="color: #6b7280;">Gudang asal barang. Satu cabang bisa punya beberapa gudang; produk dan SN diambil dari gudang ini.</small>
                 </div>
 
                 <!-- Remarks -->

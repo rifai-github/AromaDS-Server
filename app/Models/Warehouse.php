@@ -13,11 +13,18 @@ class Warehouse extends Model
     
     protected $table = 'warehouses';
 
+    /*
+     * A branch may have several equivalent warehouses. `is_default` marks the
+     * single active one the system picks when nobody chose a warehouse
+     * (auto-created material issues etc.); admins can always pick another
+     * warehouse of the same branch. See docs/warehouse-opsi3-implementation-plan.md.
+     */
     protected $fillable = [
         'warehouse_code',
         'name',
         'branch_id',
         'warehouse_type_id',
+        'is_default',
         'address',
         'phone',
         'manager',
@@ -29,7 +36,8 @@ class Warehouse extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
-        'is_center' => 'boolean'
+        'is_center' => 'boolean',
+        'is_default' => 'boolean',
     ];
 
     // Relationships
@@ -119,6 +127,16 @@ class Warehouse extends Model
         return $query->where('is_center', false);
     }
 
+    public function scopeDefaultForBranch($query)
+    {
+        return $query->where('is_default', true);
+    }
+
+    public function isDefault(): bool
+    {
+        return (bool) $this->is_default;
+    }
+
     // Business Logic Methods
     public function isCenter()
     {
@@ -128,6 +146,25 @@ class Warehouse extends Model
     public function isBranch()
     {
         return !$this->is_center;
+    }
+
+    public function isSameBranchAs(?Warehouse $other): bool
+    {
+        return $other
+            && $this->branch_id
+            && (int) $this->branch_id === (int) $other->branch_id;
+    }
+
+    /**
+     * Branch-to-branch transfers go through central approval, except between
+     * two warehouses of the same branch: a branch may run several equivalent
+     * warehouses and moving stock between them is an internal matter.
+     */
+    public function transferNeedsCentralApproval(Warehouse $targetWarehouse): bool
+    {
+        return $this->isBranch()
+            && $targetWarehouse->isBranch()
+            && ! $this->isSameBranchAs($targetWarehouse);
     }
 
     public function canTransferTo($targetWarehouse)

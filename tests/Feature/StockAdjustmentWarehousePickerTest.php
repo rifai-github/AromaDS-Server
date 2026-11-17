@@ -53,6 +53,7 @@ class StockAdjustmentWarehousePickerTest extends TestCase
             $table->string('name')->nullable();
             $table->unsignedBigInteger('branch_id')->nullable();
             $table->boolean('is_active')->default(true);
+            $table->boolean('is_default')->default(false);
             $table->timestamps();
             $table->softDeletes();
         });
@@ -136,14 +137,32 @@ class StockAdjustmentWarehousePickerTest extends TestCase
         $this->assertSame($only->id, StockAdjustment::first()->warehouse_id);
     }
 
+    public function test_branch_fallback_uses_the_default_warehouse_when_the_branch_has_several(): void
+    {
+        $branchId = DB::table('branches')->insertGetId(['name' => 'Cabang Jakarta', 'code' => 'JKT']);
+        Warehouse::create(['warehouse_code' => 'WH30', 'name' => 'Gudang BSD', 'branch_id' => $branchId, 'is_active' => true]);
+        $default = Warehouse::create(['warehouse_code' => 'WH31', 'name' => 'Gudang Jakarta', 'branch_id' => $branchId, 'is_active' => true, 'is_default' => true]);
+
+        $response = app(StockAdjustmentController::class)->store(Request::create('/warehouse/stock-adjustments', 'POST', [
+            'branch_id' => $branchId,
+            'reason' => 'no explicit warehouse_id, branch has a default',
+            'adjustment_date' => now()->toDateString(),
+        ]));
+
+        $payload = json_decode($response->getContent(), true);
+        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? json_encode($payload));
+        $this->assertSame($default->id, StockAdjustment::first()->warehouse_id);
+    }
+
     public function test_branch_fallback_still_rejects_an_ambiguous_branch_when_no_warehouse_was_picked(): void
     {
         $branchId = DB::table('branches')->insertGetId(['name' => 'Cabang Bali', 'code' => 'BAL']);
         Warehouse::create(['warehouse_code' => 'WH20', 'name' => 'Gudang 1 - Bali', 'branch_id' => $branchId, 'is_active' => true]);
         Warehouse::create(['warehouse_code' => 'WH21', 'name' => 'Gudang 2 - Bali', 'branch_id' => $branchId, 'is_active' => true]);
 
+        // Several active warehouses and none flagged default: refuse rather than guess.
         $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('Branch ini memiliki lebih dari 1 warehouse aktif. Rapikan master warehouse terlebih dahulu.');
+        $this->expectExceptionMessage(\App\Services\Warehouse\BranchWarehouseResolver::NO_DEFAULT_MESSAGE);
 
         app(StockAdjustmentController::class)->store(Request::create('/warehouse/stock-adjustments', 'POST', [
             'branch_id' => $branchId,

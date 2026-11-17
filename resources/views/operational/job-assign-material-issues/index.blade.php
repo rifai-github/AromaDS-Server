@@ -1532,6 +1532,13 @@
                             <td>
                                 @if($materialIssue && $materialIssue->warehouse)
                                     {{ $materialIssue->warehouse->name }}
+                                    @if($canPrepareMaterial && in_array($materialIssue->status, ['draft', 'pending', 'approved', 'out_of_stock', 'out of stock'], true))
+                                        <button type="button"
+                                                class="change-warehouse-btn"
+                                                style="display: inline-block; margin-left: 4px; padding: 1px 6px; font-size: 11px; color: #214589; border: 1px solid #214589; border-radius: 4px; background: #fff;"
+                                                title="Ganti gudang sumber (gudang lain di cabang yang sama)"
+                                                onclick="event.stopPropagation(); openChangeWarehouse({{ $issue->id }})">Ganti</button>
+                                    @endif
                                 @elseif($warehouse)
                                     {{ $warehouse->name }}
                                 @else
@@ -4179,6 +4186,127 @@ function deleteCopiedMaterial(itemId) {
  * Update Qty Issue with Autosave
  * Updates quantity and recalculates BOM quantity in real-time
  */
+// Phase 3b: pick another active warehouse of the same branch for a material
+// issue that is not issued yet. Shows stock per warehouse for every product.
+function escapeWarehouseText(value) {
+    const div = document.createElement('div');
+    div.textContent = value == null ? '' : String(value);
+    return div.innerHTML;
+}
+
+function formatWarehouseQty(value) {
+    const number = Number(value || 0);
+    return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function openChangeWarehouse(jobAssignMaterialIssueId) {
+    Swal.fire({ title: 'Memuat gudang...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    fetch(`/operational/job-assign-material-issues/${jobAssignMaterialIssueId}/warehouse-options`, {
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(response => response.json().then(data => ({ ok: response.ok, data })))
+    .then(({ ok, data }) => {
+        if (!ok || data.status !== 'success') {
+            throw new Error(data.message || 'Gagal memuat daftar gudang.');
+        }
+
+        const options = data.data;
+        if (options.lock_reason) {
+            Swal.fire({ icon: 'info', title: 'Gudang terkunci', text: options.lock_reason, confirmButtonColor: '#214589' });
+            return;
+        }
+        if (!options.warehouses.length) {
+            Swal.fire({ icon: 'warning', title: 'Tidak ada gudang', text: 'Cabang job ini tidak punya gudang aktif.', confirmButtonColor: '#214589' });
+            return;
+        }
+
+        const rows = options.warehouses.map(warehouse => {
+            const badges = [
+                warehouse.is_current ? '<span style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:9999px;font-size:11px;">Saat ini</span>' : '',
+                warehouse.is_default ? '<span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:9999px;font-size:11px;">Default</span>' : '',
+                warehouse.sufficient
+                    ? '<span style="color:#059669;font-size:11px;font-weight:600;">Stok cukup</span>'
+                    : '<span style="color:#dc2626;font-size:11px;font-weight:600;">Stok kurang</span>',
+            ].filter(Boolean).join(' ');
+            const items = warehouse.items.map(item => `
+                <tr>
+                    <td style="padding:2px 6px;">${escapeWarehouseText(item.product_name)}</td>
+                    <td style="padding:2px 6px;text-align:right;">${formatWarehouseQty(item.required)}</td>
+                    <td style="padding:2px 6px;text-align:right;color:${item.sufficient ? '#059669' : '#dc2626'};font-weight:600;">${formatWarehouseQty(item.stock)}</td>
+                </tr>`).join('');
+
+            return `
+                <label style="display:block;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;margin-bottom:8px;cursor:pointer;text-align:left;">
+                    <input type="radio" name="change_warehouse_id" value="${warehouse.id}" ${warehouse.is_current ? 'checked' : ''} style="margin-right:6px;">
+                    <strong>${escapeWarehouseText(warehouse.name)}</strong> ${badges}
+                    <table style="width:100%;margin-top:6px;font-size:12px;color:#374151;">
+                        <thead><tr style="color:#6b7280;">
+                            <th style="padding:2px 6px;text-align:left;font-weight:500;">Produk</th>
+                            <th style="padding:2px 6px;text-align:right;font-weight:500;">Butuh</th>
+                            <th style="padding:2px 6px;text-align:right;font-weight:500;">Stok</th>
+                        </tr></thead>
+                        <tbody>${items || '<tr><td colspan="3" style="padding:2px 6px;color:#9ca3af;">Tidak ada item</td></tr>'}</tbody>
+                    </table>
+                </label>`;
+        }).join('');
+
+        Swal.fire({
+            title: 'Ganti Gudang',
+            width: 640,
+            html: `<div style="font-size:13px;color:#4b5563;margin-bottom:10px;text-align:left;">
+                       Material issue <strong>${escapeWarehouseText(options.issue_number)}</strong>. Hanya gudang aktif di cabang yang sama.
+                       Stok dicek ulang saat Submit Issue.
+                   </div>
+                   <div style="max-height:55vh;overflow-y:auto;">${rows}</div>`,
+            showCancelButton: true,
+            confirmButtonText: 'Simpan',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#214589',
+            cancelButtonColor: '#6b7280',
+            focusConfirm: false,
+            preConfirm: () => {
+                const picked = Swal.getPopup().querySelector('input[name="change_warehouse_id"]:checked');
+                if (!picked) {
+                    Swal.showValidationMessage('Pilih gudang terlebih dahulu.');
+                    return false;
+                }
+                if (Number(picked.value) === Number(options.current_warehouse_id)) {
+                    Swal.showValidationMessage('Gudang ini sudah dipakai material issue tersebut.');
+                    return false;
+                }
+
+                return fetch(`/operational/job-assign-material-issues/${jobAssignMaterialIssueId}/change-warehouse`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                    },
+                    body: JSON.stringify({ warehouse_id: Number(picked.value) })
+                })
+                .then(response => response.json().then(result => ({ ok: response.ok, result })))
+                .then(({ ok, result }) => {
+                    if (!ok || result.status !== 'success') {
+                        throw new Error(result.message || 'Gagal mengganti gudang.');
+                    }
+                    return result;
+                })
+                .catch(error => Swal.showValidationMessage(error.message));
+            }
+        }).then(result => {
+            if (result.isConfirmed && result.value) {
+                Swal.fire({ icon: 'success', title: 'Berhasil', text: result.value.message, confirmButtonColor: '#16a34a' })
+                    .then(() => location.reload());
+            }
+        });
+    })
+    .catch(error => {
+        Swal.fire({ icon: 'error', title: 'Gagal', text: error.message, confirmButtonColor: '#214589' });
+    });
+}
+
 function updateQtyIssue(itemId, inputElement) {
     const quantity = parseFloat(inputElement.value) || 0;
     

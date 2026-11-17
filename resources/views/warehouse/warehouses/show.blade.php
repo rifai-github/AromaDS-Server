@@ -406,6 +406,20 @@
                     </h1>
                 </div>
                 <div class="flex gap-2">
+                    @php
+                        $currentUser = auth()->user();
+                        $canUpdateWarehouse = $currentUser && (
+                            $currentUser->hasRole('Admin')
+                            || $currentUser->hasRole('super_admin')
+                            || $currentUser->hasRoleStartingWith('Management')
+                            || $currentUser->hasPermission('warehouse.warehouses.update')
+                        );
+                    @endphp
+                    @if($canUpdateWarehouse && $warehouse->is_active && ! $warehouse->isDefault())
+                        <button type="button" class="btn btn-secondary" id="setDefaultButton" onclick="setDefaultWarehouse()">
+                            <i class="fas fa-star"></i> Jadikan Default
+                        </button>
+                    @endif
                     <a href="{{ route('warehouse.warehouses.export-stock', $warehouse->id) }}" class="btn btn-success" style="background-color: #10b981; color: white;">
                         <i class="fas fa-file-excel"></i> Export Stock
                     </a>
@@ -440,6 +454,16 @@
                             {{ $warehouse->warehouseType->name }}
                         @else
                             -
+                        @endif
+                    </div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Gudang Default</div>
+                    <div class="info-value">
+                        @if($warehouse->is_default)
+                            <span class="badge badge-success">Ya</span>
+                        @else
+                            Tidak
                         @endif
                     </div>
                 </div>
@@ -759,6 +783,44 @@
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
 <script>
+function setDefaultWarehouse() {
+    const message = 'Jadikan "' + @json($warehouse->name) + '" sebagai Gudang Default branch ini?\n\n'
+        + 'Gudang default lama otomatis dilepas. Gudang ini akan dipakai saat sistem memilih gudang secara otomatis.';
+    if (!confirm(message)) {
+        return;
+    }
+
+    const button = document.getElementById('setDefaultButton');
+    if (button) {
+        button.disabled = true;
+    }
+
+    fetch('{{ route('warehouse.warehouses.set-default', $warehouse->id) }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        },
+        body: JSON.stringify({})
+    })
+        .then(response => response.json().then(data => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok || data.status !== 'success') {
+                throw new Error(data.message || 'Gagal menjadikan Gudang Default.');
+            }
+            alert(data.message);
+            window.location.reload();
+        })
+        .catch(error => {
+            alert(error.message);
+            if (button) {
+                button.disabled = false;
+            }
+        });
+}
+
 function switchTab(event, tabName) {
     event.preventDefault();
     

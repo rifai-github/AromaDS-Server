@@ -5,7 +5,7 @@ namespace App\Services;
 use App\Models\OperationalArea;
 use App\Models\Building;
 use App\Models\Branch;
-use App\Models\BranchWarehouse;
+use App\Services\Warehouse\BranchWarehouseResolver;
 use App\Models\Warehouse;
 
 /**
@@ -123,8 +123,10 @@ class OperationalAreaService
     }
 
     /**
-     * Resolve the preferred warehouse for a branch.
-     * Priority: active primary branch-warehouse mapping, active mapped warehouse, then active warehouse owned by branch.
+     * Resolve the warehouse the system uses for a branch: its active Gudang
+     * Default (Master Warehouse). The old `branch_warehouses` primary mapping
+     * is no longer consulted — it was never populated and would compete with
+     * the default flag.
      */
     public static function resolveWarehouseForBranch(?Branch $branch): ?Warehouse
     {
@@ -136,25 +138,7 @@ class OperationalAreaService
             return self::$warehouseByBranch[$branch->id];
         }
 
-        $mappedWarehouses = BranchWarehouse::where('branch_id', $branch->id)
-            ->where('is_active', true)
-            ->with('warehouse')
-            ->orderByDesc('is_primary')
-            ->orderBy('id')
-            ->get();
-
-        $warehouse = $mappedWarehouses
-            ->pluck('warehouse')
-            ->first(function ($warehouse) {
-                return $warehouse && $warehouse->is_active;
-            });
-
-        if (!$warehouse) {
-            $warehouse = Warehouse::where('branch_id', $branch->id)
-                ->where('is_active', true)
-                ->orderBy('id')
-                ->first();
-        }
+        $warehouse = app(BranchWarehouseResolver::class)->findDefaultForBranch($branch->id);
 
         self::$warehouseByBranch[$branch->id] = $warehouse;
 

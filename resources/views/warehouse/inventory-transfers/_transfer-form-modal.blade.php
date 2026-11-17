@@ -1016,6 +1016,14 @@ function updateAvailableStock(selectElement) {
     if (qtyInput) qtyInput.max = stock;
 }
 
+// Destination label hint from /api/transfer-warehouses: warehouses of the same
+// branch move stock without central approval; other branches still need it.
+function transferApprovalSuffix(warehouse) {
+    if (warehouse.same_branch) return ' (satu cabang, tanpa approval pusat)';
+    if (warehouse.needs_central_approval) return ' (lintas cabang, perlu approval pusat)';
+    return '';
+}
+
 function loadTransferWarehouses() {
     const fromWarehouseId = document.getElementById('from_warehouse_id').value;
     const toWarehouseSelect = document.getElementById('to_warehouse_id');
@@ -1040,7 +1048,7 @@ function loadTransferWarehouses() {
             const warehouses = result.data || [];
             let options = '<option value="">Pilih Warehouse Tujuan</option>';
             warehouses.forEach(warehouse => {
-                options += `<option value="${warehouse.id}" data-is-center="${warehouse.is_center ? 1 : 0}">${warehouse.name}</option>`;
+                options += `<option value="${warehouse.id}" data-is-center="${warehouse.is_center ? 1 : 0}">${warehouse.name}${transferApprovalSuffix(warehouse)}</option>`;
             });
             setManagedSelectOptions(toWarehouseSelect, options, true);
             syncReturnAuto('create', true);
@@ -1347,7 +1355,7 @@ function loadEditTransferWarehouses() {
             let options = '<option value="">Pilih Warehouse Tujuan</option>';
             warehouses.forEach(warehouse => {
                 const selected = document.getElementById('edit_to_warehouse_id').dataset.selectedValue == warehouse.id ? 'selected' : '';
-                options += `<option value="${warehouse.id}" data-is-center="${warehouse.is_center ? 1 : 0}" ${selected}>${warehouse.name}</option>`;
+                options += `<option value="${warehouse.id}" data-is-center="${warehouse.is_center ? 1 : 0}" ${selected}>${warehouse.name}${transferApprovalSuffix(warehouse)}</option>`;
             });
             setManagedSelectOptions(toWarehouseSelect, options, true);
             syncReturnAuto('edit', true);

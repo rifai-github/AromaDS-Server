@@ -284,22 +284,10 @@ class InventoryReceivingController extends Controller
             }
         }
 
-        $branchWarehouses = Warehouse::where('branch_id', $inventoryReceiving->branch_id)
-            ->where('is_active', true)
-            ->orderByDesc('is_center')
-            ->orderBy('id')
-            ->get();
-
-        if ($branchWarehouses->count() > 1) {
-            \Log::warning('Inventory receiving finalized with branch warehouse fallback because no explicit target warehouse was found', [
-                'inventory_receiving_id' => $inventoryReceiving->id,
-                'receiving_number' => $inventoryReceiving->receiving_number,
-                'branch_id' => $inventoryReceiving->branch_id,
-                'warehouse_ids' => $branchWarehouses->pluck('id')->all(),
-            ]);
-        }
-
-        $fallbackWarehouse = $branchWarehouses->first();
+        // Nothing on the receiving points at a warehouse: use the branch's
+        // Gudang Default.
+        $fallbackWarehouse = app(BranchWarehouseResolver::class)
+            ->findDefaultForBranch($inventoryReceiving->branch_id);
 
         return $fallbackWarehouse
             ? $placementService->resolveForReceiving($inventoryReceiving, $fallbackWarehouse)

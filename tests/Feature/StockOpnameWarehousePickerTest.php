@@ -52,6 +52,7 @@ class StockOpnameWarehousePickerTest extends TestCase
             $table->string('name')->nullable();
             $table->unsignedBigInteger('branch_id')->nullable();
             $table->boolean('is_active')->default(true);
+            $table->boolean('is_default')->default(false);
             $table->timestamps();
             $table->softDeletes();
         });
@@ -151,6 +152,6 @@ class StockOpnameWarehousePickerTest extends TestCase
 
         $payload = json_decode($response->getContent(), true);
         $this->assertSame(500, $response->getStatusCode());
-        $this->assertStringContainsString('lebih dari 1 warehouse aktif', $payload['message']);
+        $this->assertStringContainsString('belum ada Gudang Default', $payload['message']);
     }
 }

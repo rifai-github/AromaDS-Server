@@ -39,6 +39,7 @@ class BranchWarehouseProvisioner
             'name' => $this->defaultWarehouseName($branch),
             'branch_id' => $branch->id,
             'warehouse_type_id' => $this->resolveWarehouseTypeId($isCenter),
+            'is_default' => true,
             'address' => $branch->address_1,
             'phone' => $branch->phone_1,
             'is_active' => true,

@@ -113,7 +113,8 @@
                                 </option>
                             @endforeach
                         </select>
-                        <div class="form-input bg-gray-100 text-gray-700">Otomatis mengikuti warehouse aktif branch job</div>
+                        <div class="form-input bg-gray-100 text-gray-700">{{ $jobAssignMaterialIssue->materialIssue?->warehouse?->name ?? 'Gudang Default cabang job' }}</div>
+                        <p class="text-gray-500 text-xs mt-1">Ganti gudang lewat tombol "Ganti" di kolom Warehouse daftar Material Assign, selama belum di-issue.</p>
                         @error('warehouse_id')
                             <p class="text-red-500 text-sm mt-1">{{ $message }}</p>
                         @enderror

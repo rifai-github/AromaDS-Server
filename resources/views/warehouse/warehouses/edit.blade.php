@@ -203,6 +203,21 @@
                         @enderror
                     </div>
 
+                    <!-- Default warehouse of the branch -->
+                    <div class="form-group">
+                        <label class="form-label">Gudang Default</label>
+                        <select name="is_default" class="form-select">
+                            <option value="0" {{ ! old('is_default', $warehouse->is_default) ? 'selected' : '' }}>Tidak</option>
+                            <option value="1" {{ old('is_default', $warehouse->is_default) ? 'selected' : '' }}>Ya</option>
+                        </select>
+                        <span style="display:block;font-size:12px;color:#6b7280;margin-top:4px;">
+                            Gudang Default dipakai otomatis saat sistem harus memilih gudang sendiri. Pilih Ya untuk memindahkan default ke gudang ini; default lama otomatis dilepas. Untuk melepas default, jadikan gudang lain sebagai default.
+                        </span>
+                        @error('is_default')
+                            <span class="error-message">{{ $message }}</span>
+                        @enderror
+                    </div>
+
                     <!-- Type (Center/Branch) -->
                     <div class="form-group">
                         <label class="form-label required">Type</label>

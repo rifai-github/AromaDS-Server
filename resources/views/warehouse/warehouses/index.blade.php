@@ -819,6 +819,7 @@ input[type="date"]:focus, input[type="text"]:focus, select:focus {
                         <th data-column="warehouse_code">Warehouse Code</th>
                         <th data-column="name">Warehouse Name</th>
                         <th data-column="branch__name">Branch</th>
+                        <th data-column="is_default">Default</th>
                         <th data-column="warehouseType__name">Location Type</th>
                         <th data-column="address">Address</th>
                         <th data-column="manager">Manager</th>
@@ -841,6 +842,13 @@ input[type="date"]:focus, input[type="text"]:focus, select:focus {
                         <td>{{ $warehouse->warehouse_code ?: '-' }}</td>
                         <td>{{ $warehouse->name ?: '-' }}</td>
                         <td>{{ $warehouse->branch->name ?? '-' }}</td>
+                        <td>
+                            @if($warehouse->is_default)
+                                <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Default</span>
+                            @else
+                                -
+                            @endif
+                        </td>
                         <td>
                             @if($warehouse->warehouseType)
                                 <span class="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
@@ -889,7 +897,7 @@ input[type="date"]:focus, input[type="text"]:focus, select:focus {
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="11" class="p-8 text-center">
+                        <td colspan="14" class="p-8 text-center">
                             <p class="text-lg text-gray-600">No warehouses found</p>
                         </td>
                     </tr>
@@ -1030,6 +1038,10 @@ input[type="date"]:focus, input[type="text"]:focus, select:focus {
 </div>
 
 <script>
+function warehouseDefaultOptions(isDefault) {
+    return `<option value="0" ${!isDefault ? 'selected' : ''}>Tidak</option>`
+        + `<option value="1" ${isDefault ? 'selected' : ''}>Ya</option>`;
+}
 // Global variables
 let selectedIdsForRetry = [];
 let successModalTimer = null;
@@ -1085,6 +1097,13 @@ function openCreateModal() {
                                     <option value="">Select Branch</option>
                                     ${branches.map(branch => `<option value="${branch.id}">${branch.name}</option>`).join('')}
                                 </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Gudang Default</label>
+                                <select name="is_default" class="form-input">
+                                    ${warehouseDefaultOptions(false)}
+                                </select>
+                                <p class="text-xs text-gray-500 mt-1">Gudang Default dipakai otomatis saat sistem harus memilih gudang sendiri (mis. material issue saat job di-assign); admin tetap bisa memilih gudang lain di branch yang sama. Pilih Ya untuk memindahkan default ke gudang ini. Gudang pertama di branch otomatis menjadi default.</p>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Manager</label>
@@ -1255,6 +1274,10 @@ function openViewModal(id) {
                     <div class="modal-section-title">Warehouse Details</div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="detail-item">
+                            <label class="form-label">Gudang Default</label>
+                            <p class="detail-value">${data.is_default ? 'Ya' : 'Tidak'}</p>
+                        </div>
+                        <div class="detail-item">
                             <label class="form-label">Center Warehouse</label>
                             <p class="detail-value">
                                 <span class="px-2 py-1 text-xs rounded-full ${data.is_center ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}">
@@ -1397,6 +1420,13 @@ function openEditModal(id) {
                         <div class="modal-section-title">Warehouse Details</div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="form-group">
+                                <label class="form-label">Gudang Default</label>
+                                <select name="is_default" class="form-input">
+                                    ${warehouseDefaultOptions(!!warehouse.is_default)}
+                                </select>
+                                <p class="text-xs text-gray-500 mt-1">Gudang Default dipakai otomatis saat sistem harus memilih gudang sendiri. Pilih Ya untuk memindahkan default ke gudang ini; default lama otomatis dilepas. Untuk melepas default, jadikan gudang lain sebagai default.</p>
+                            </div>
+                            <div class="form-group">
                                 <label class="form-label">Center Warehouse</label>
                                 <select name="is_center" class="form-input" required>
                                     <option value="0" ${!warehouse.is_center ? 'selected' : ''}>No</option>
@@ -1454,6 +1484,9 @@ function submitForm(event, id = null) {
     if (data.is_center !== undefined) {
         data.is_center = data.is_center === '1' || data.is_center === 'true';
     }
+    if (data.is_default !== undefined) {
+        data.is_default = data.is_default === '1' || data.is_default === 'true';
+    }
     
     const url = id ? `/warehouse/warehouses/${id}` : '/warehouse/warehouses';
     const method = id ? 'PUT' : 'POST';
@@ -1466,6 +1499,8 @@ function submitForm(event, id = null) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
         },
         body: JSON.stringify(data)
@@ -1483,7 +1518,7 @@ function submitForm(event, id = null) {
             closeModal();
             location.reload();
         } else {
-            showErrorDialog('Gagal', result.message || 'Terjadi kesalahan.');
+            showErrorDialog(result.message || 'Terjadi kesalahan.', 'Gagal');
         }
     })
     .catch(error => {
@@ -1492,12 +1527,12 @@ function submitForm(event, id = null) {
             const errorData = JSON.parse(error.message);
             if (errorData.errors) {
                 const errorMessages = Object.values(errorData.errors).flat().join('\n');
-                showErrorDialog('Validasi Gagal', errorMessages);
+                showErrorDialog(errorMessages, 'Validasi Gagal');
             } else {
-                showErrorDialog('Gagal', errorData.message || 'Terjadi kesalahan.');
+                showErrorDialog(errorData.message || 'Terjadi kesalahan.', 'Gagal');
             }
         } catch (e) {
-            showErrorDialog('Gagal', 'Terjadi kesalahan.');
+            showErrorDialog('Terjadi kesalahan.', 'Gagal');
         }
     });
 }

@@ -185,7 +185,7 @@
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Direct Branch Transfer</div>
-                            <div style="font-size: 1rem; color: #212529;">{{ $transfer->is_direct_branch_transfer ? 'Ya — perlu approval pusat' : 'Tidak' }}</div>
+                            <div style="font-size: 1rem; color: #212529;">{{ $transfer->is_direct_branch_transfer ? 'Ya — perlu approval pusat' : ($transfer->fromWarehouse?->isSameBranchAs($transfer->toWarehouse) ? 'Tidak — satu cabang, tanpa approval pusat' : 'Tidak') }}</div>
                         </div>
 
                         <!-- Row 2 -->

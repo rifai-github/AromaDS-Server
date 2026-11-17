@@ -27,12 +27,14 @@ class MaterialAssignServiceWarehouseTest extends TestCase
         $this->assertStringContainsString('\App\Services\OperationalAreaService::resolveServiceBranchForBuilding($building)', $view);
     }
 
-    public function test_service_area_warehouse_resolver_prefers_primary_branch_mapping(): void
+    public function test_service_area_warehouse_resolver_uses_branch_default_warehouse(): void
     {
+        // Behaviour is covered by BranchDefaultWarehouseFallbackTest; the old
+        // branch_warehouses primary mapping is intentionally no longer read.
         $service = file_get_contents(app_path('Services/OperationalAreaService.php'));
 
-        $this->assertStringContainsString('BranchWarehouse::where(\'branch_id\', $branch->id)', $service);
-        $this->assertStringContainsString('->orderByDesc(\'is_primary\')', $service);
+        $this->assertStringContainsString('app(BranchWarehouseResolver::class)->findDefaultForBranch($branch->id)', $service);
+        $this->assertStringNotContainsString('BranchWarehouse::where(', $service);
         $this->assertStringContainsString('resolveServiceWarehouseForBuilding', $service);
     }
 

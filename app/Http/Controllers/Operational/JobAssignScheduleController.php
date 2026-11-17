@@ -985,12 +985,13 @@ class JobAssignScheduleController extends Controller
 
 
             // Resolve warehouse from the job's branch scope only; never use the first
-            // active warehouse because that can mix stock/SN across branches.
+            // active warehouse because that can mix stock/SN across branches. A
+            // branch may run several warehouses: the system pick is its Gudang
+            // Default.
+            $warehouseResolver = app(\App\Services\Warehouse\BranchWarehouseResolver::class);
             $warehouse = null;
             if ($building && $building->branch_id) {
-                $warehouse = Warehouse::where('branch_id', $building->branch_id)
-                    ->where('is_active', true)
-                    ->first();
+                $warehouse = $warehouseResolver->findDefaultForBranch($building->branch_id);
             }
             
             if (!$warehouse && $building && $building->city_id) {
@@ -999,9 +1000,7 @@ class JobAssignScheduleController extends Controller
                     ->first();
 
                 if ($branch) {
-                    $warehouse = Warehouse::where('branch_id', $branch->id)
-                        ->where('is_active', true)
-                        ->first();
+                    $warehouse = $warehouseResolver->findDefaultForBranch($branch->id);
                 }
             }
 
@@ -1014,17 +1013,13 @@ class JobAssignScheduleController extends Controller
                         ->first();
 
                     if ($branch) {
-                        $warehouse = Warehouse::where('branch_id', $branch->id)
-                            ->where('is_active', true)
-                            ->first();
+                        $warehouse = $warehouseResolver->findDefaultForBranch($branch->id);
                     }
                 }
             }
 
             if (!$warehouse && $team?->branch_office) {
-                $warehouse = Warehouse::where('branch_id', $team->branch_office)
-                    ->where('is_active', true)
-                    ->first();
+                $warehouse = $warehouseResolver->findDefaultForBranch($team->branch_office);
             }
 
             if (!$warehouse) {

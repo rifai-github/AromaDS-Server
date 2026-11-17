@@ -30,6 +30,7 @@ class BranchWarehouseResolverTest extends TestCase
             $table->string('name')->nullable();
             $table->boolean('is_active')->default(true);
             $table->boolean('is_center')->default(false);
+            $table->boolean('is_default')->default(false);
             $table->timestamps();
             $table->softDeletes();
         });
@@ -98,15 +99,36 @@ class BranchWarehouseResolverTest extends TestCase
         app(BranchWarehouseResolver::class)->resolveActiveForBranch(99);
     }
 
-    public function test_rejects_branch_with_multiple_active_warehouses(): void
+    public function test_resolves_default_warehouse_when_branch_has_several(): void
+    {
+        Warehouse::create(['branch_id' => 10, 'name' => 'Warehouse A', 'is_active' => true]);
+        $default = Warehouse::create(['branch_id' => 10, 'name' => 'Warehouse B', 'is_active' => true, 'is_default' => true]);
+        Warehouse::create(['branch_id' => 10, 'name' => 'Warehouse C', 'is_active' => true]);
+        Warehouse::create(['branch_id' => 11, 'name' => 'Other branch default', 'is_active' => true, 'is_default' => true]);
+
+        $resolver = app(BranchWarehouseResolver::class);
+
+        $this->assertSame($default->id, $resolver->resolveDefaultForBranch(10)->id);
+        $this->assertSame($default->id, $resolver->resolveActiveForBranch(10)->id);
+    }
+
+    public function test_inactive_default_is_ignored(): void
+    {
+        Warehouse::create(['branch_id' => 10, 'name' => 'Old default', 'is_active' => false, 'is_default' => true]);
+        $active = Warehouse::create(['branch_id' => 10, 'name' => 'Only active', 'is_active' => true]);
+
+        $this->assertSame($active->id, app(BranchWarehouseResolver::class)->resolveDefaultForBranch(10)->id);
+    }
+
+    public function test_rejects_several_active_warehouses_without_a_default(): void
     {
         Warehouse::create(['branch_id' => 10, 'name' => 'Warehouse A', 'is_active' => true]);
         Warehouse::create(['branch_id' => 10, 'name' => 'Warehouse B', 'is_active' => true]);
 
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage(BranchWarehouseResolver::MULTIPLE_ACTIVE_MESSAGE);
+        $this->expectExceptionMessage(BranchWarehouseResolver::NO_DEFAULT_MESSAGE);
 
-        app(BranchWarehouseResolver::class)->resolveActiveForBranch(10);
+        app(BranchWarehouseResolver::class)->resolveDefaultForBranch(10);
     }
 
     public function test_deactivation_guard_checks_receiving_through_issuing_warehouse(): void

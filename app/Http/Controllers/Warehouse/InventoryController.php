@@ -615,6 +615,13 @@ class InventoryController extends Controller
                     return $fromWarehouse->canTransferTo($warehouse)
                         || ($fromWarehouse->isBranch() && $warehouse->isBranch());
                 });
+
+                // Let the form tell the user up front which destinations skip
+                // central approval (same branch) and which need it.
+                $warehouses->each(function ($warehouse) use ($fromWarehouse) {
+                    $warehouse->setAttribute('same_branch', $fromWarehouse->isSameBranchAs($warehouse));
+                    $warehouse->setAttribute('needs_central_approval', $fromWarehouse->transferNeedsCentralApproval($warehouse));
+                });
             }
         }
 
@@ -765,7 +772,9 @@ class InventoryController extends Controller
             $toWarehouse = Warehouse::findOrFail($request->to_warehouse_id);
 
             $isBranchToBranch = $fromWarehouse->isBranch() && $toWarehouse->isBranch();
-            $isDirectBranchTransfer = $isBranchToBranch;
+            // Only cross-branch transfers need central approval; warehouses of
+            // the same branch move stock between themselves directly.
+            $isDirectBranchTransfer = $fromWarehouse->transferNeedsCentralApproval($toWarehouse);
 
             if ($isBranchToBranch && (int) $fromWarehouse->id === (int) $toWarehouse->id) {
                 DB::rollBack();
@@ -943,7 +952,9 @@ class InventoryController extends Controller
             $fromWarehouse = Warehouse::findOrFail($request->from_warehouse_id);
             $toWarehouse = Warehouse::findOrFail($request->to_warehouse_id);
             $isBranchToBranch = $fromWarehouse->isBranch() && $toWarehouse->isBranch();
-            $isDirectBranchTransfer = $isBranchToBranch;
+            // Only cross-branch transfers need central approval; warehouses of
+            // the same branch move stock between themselves directly.
+            $isDirectBranchTransfer = $fromWarehouse->transferNeedsCentralApproval($toWarehouse);
 
             if ($isBranchToBranch && (int) $fromWarehouse->id === (int) $toWarehouse->id) {
                 DB::rollBack();

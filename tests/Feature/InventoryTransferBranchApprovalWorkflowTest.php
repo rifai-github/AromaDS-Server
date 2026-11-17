@@ -216,6 +216,64 @@ class InventoryTransferBranchApprovalWorkflowTest extends TestCase
         $this->assertSame(['submitted', 'approved', 'transferred', 'received'], DB::table('inventory_transfer_approval_histories')->orderBy('id')->pluck('action')->all());
     }
 
+    public function test_same_branch_transfer_skips_central_approval(): void
+    {
+        // Phase 4 of docs/warehouse-opsi3-implementation-plan.md: a branch may run
+        // several warehouses; moving stock between them needs no central approval.
+        $source = Warehouse::create(['name' => 'Gudang Jakarta', 'branch_id' => 10, 'is_center' => false]);
+        $destination = Warehouse::create(['name' => 'Gudang BSD', 'branch_id' => 10, 'is_center' => false]);
+        DB::table('warehouse_products')->insert([
+            'warehouse_id' => $source->id,
+            'master_product_id' => 1,
+            'quantity' => 10,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->assertFalse($source->transferNeedsCentralApproval($destination));
+
+        Auth::login(User::findOrFail(1));
+        $response = app(InventoryController::class)->storeTransfer(Request::create('/transfer', 'POST', [
+            'transfer_date' => now()->toDateString(),
+            'from_warehouse_id' => $source->id,
+            'to_warehouse_id' => $destination->id,
+            'status' => 'transferred',
+            'items' => [['product_id' => 1, 'quantity' => 4]],
+        ]));
+
+        $payload = json_decode($response->getContent(), true);
+        $this->assertSame(200, $response->getStatusCode(), $payload['message'] ?? 'no message');
+        $transfer = InventoryTransfer::firstOrFail();
+        $this->assertFalse($transfer->is_direct_branch_transfer);
+        $this->assertFalse($transfer->requiresCentralApproval());
+        $this->assertSame('not_required', $transfer->approval_status);
+        $this->assertSame('transferred', $transfer->status, 'status is not forced back to draft');
+        $this->assertSame(6.0, $this->stock($source->id));
+
+        $notNeeded = app(InventoryController::class)->submitTransferForApproval($transfer);
+        $this->assertSame(422, $notNeeded->getStatusCode());
+    }
+
+    public function test_cross_branch_and_unknown_branch_transfers_still_need_central_approval(): void
+    {
+        $jakarta = Warehouse::create(['name' => 'Gudang Jakarta', 'branch_id' => 10, 'is_center' => false]);
+        $bsd = Warehouse::create(['name' => 'Gudang BSD', 'branch_id' => 10, 'is_center' => false]);
+        $bandung = Warehouse::create(['name' => 'Gudang Bandung', 'branch_id' => 20, 'is_center' => false]);
+        $noBranchA = Warehouse::create(['name' => 'Tanpa cabang A', 'is_center' => false]);
+        $noBranchB = Warehouse::create(['name' => 'Tanpa cabang B', 'is_center' => false]);
+        $center = Warehouse::create(['name' => 'Gudang Pusat', 'branch_id' => 10, 'is_center' => true]);
+
+        $this->assertTrue($jakarta->transferNeedsCentralApproval($bandung));
+        $this->assertTrue($noBranchA->transferNeedsCentralApproval($noBranchB));
+        $this->assertFalse($jakarta->transferNeedsCentralApproval($center), 'branch -> center is a return, not a direct branch transfer');
+
+        $listed = collect(app(InventoryController::class)->getTransferWarehouses($jakarta->id)->getData(true)['data'])->keyBy('id');
+        $this->assertTrue($listed[$bsd->id]['same_branch']);
+        $this->assertFalse($listed[$bsd->id]['needs_central_approval']);
+        $this->assertTrue($listed[$bandung->id]['needs_central_approval']);
+        $this->assertArrayNotHasKey($jakarta->id, $listed->all());
+    }
+
     public function test_rejection_requires_reason_and_unlocks_transfer_for_revision(): void
     {
         Auth::login(User::findOrFail(1));

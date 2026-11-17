@@ -848,6 +848,8 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/request-variant-change', [JobAssignMaterialIssueController::class, 'requestVariantChange'])->name('job-assign-material-issues.request-variant-change');
         Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/approve-variant-change', [JobAssignMaterialIssueController::class, 'approveVariantChange'])->name('job-assign-material-issues.approve-variant-change');
         Route::get('job-assign-material-issues/{jobAssignMaterialIssue}/pending-variant-changes', [JobAssignMaterialIssueController::class, 'getPendingVariantChanges'])->name('job-assign-material-issues.pending-variant-changes');
+        Route::get('job-assign-material-issues/{jobAssignMaterialIssue}/warehouse-options', [JobAssignMaterialIssueController::class, 'warehouseOptions'])->name('job-assign-material-issues.warehouse-options')->middleware('permission:operational.job-assign-material-issues.view');
+        Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/change-warehouse', [JobAssignMaterialIssueController::class, 'changeWarehouse'])->name('job-assign-material-issues.change-warehouse')->middleware('permission:operational.job-assign-material-issues.update');
 
         // New operational routes
         Route::resource('job-reports', JobReportController::class);
@@ -1299,6 +1301,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('warehouses/{warehouse}', [WarehouseController::class, 'show'])->name('warehouses.show')->middleware('permission:warehouse.warehouses.view');
         Route::get('warehouses/{warehouse}/edit', [WarehouseController::class, 'edit'])->name('warehouses.edit')->middleware('permission:warehouse.warehouses.update');
         Route::match(['put', 'patch'], 'warehouses/{warehouse}', [WarehouseController::class, 'update'])->name('warehouses.update')->middleware('permission:warehouse.warehouses.update');
+        Route::post('warehouses/{warehouse}/set-default', [WarehouseController::class, 'setDefault'])->name('warehouses.set-default')->middleware('permission:warehouse.warehouses.update');
         Route::delete('warehouses/{warehouse}', [WarehouseController::class, 'destroy'])->name('warehouses.destroy')->middleware('permission:warehouse.warehouses.delete');
         Route::get('warehouses/{warehouse}/export-stock', [WarehouseController::class, 'exportStock'])->name('warehouses.export-stock')->middleware('permission:warehouse.warehouses.view');
         Route::get('warehouses/{warehouse}/detail-stock/{product}', [WarehouseController::class, 'detailStock'])->name('warehouses.detail-stock')->middleware('permission:warehouse.warehouses.view');

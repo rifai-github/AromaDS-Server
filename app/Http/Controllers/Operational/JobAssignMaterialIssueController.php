@@ -1078,11 +1078,19 @@ class JobAssignMaterialIssueController extends Controller
             ?? ($jobAssignSchedule?->jobSchedule?->branch_id ?? null)
             ?? ($jobAssignSchedule?->team?->branch_office ?? null);
 
-        if (! $branchId && $request->warehouse_id) {
-            $branchId = Warehouse::find($request->warehouse_id)?->branch_id;
+        $requested = $request->warehouse_id ? Warehouse::find($request->warehouse_id) : null;
+
+        if (! $branchId && $requested) {
+            $branchId = $requested->branch_id;
         }
 
-        return app(BranchWarehouseResolver::class)->resolveActiveForBranch($branchId);
+        // An explicit pick wins when it is an active warehouse of the job's
+        // branch; anything else falls back to the branch's Gudang Default.
+        if ($requested && $requested->is_active && (int) $requested->branch_id === (int) $branchId) {
+            return $requested;
+        }
+
+        return app(BranchWarehouseResolver::class)->resolveDefaultForBranch($branchId);
     }
 
     /**
@@ -5270,8 +5278,64 @@ class JobAssignMaterialIssueController extends Controller
     }
 
     /**
+     * Active warehouses of the job's branch with stock per product of this
+     * material issue, for the "Ganti Gudang" picker (Phase 3b).
+     */
+    public function warehouseOptions(JobAssignMaterialIssue $jobAssignMaterialIssue)
+    {
+        $materialIssue = $jobAssignMaterialIssue->materialIssue;
+        if (! $materialIssue) {
+            return response()->json(['status' => 'error', 'message' => 'Material issue tidak ditemukan.'], 404);
+        }
+
+        $jobSchedule = $jobAssignMaterialIssue->jobAssignSchedule?->jobSchedule;
+
+        return response()->json([
+            'status' => 'success',
+            'data' => app(\App\Services\Operational\MaterialIssueWarehouseService::class)->options($materialIssue, $jobSchedule),
+        ]);
+    }
+
+    /**
+     * Move the material issue to another active warehouse of the same branch
+     * while it is not issued yet (Phase 3b).
+     */
+    public function changeWarehouse(Request $request, JobAssignMaterialIssue $jobAssignMaterialIssue)
+    {
+        $request->validate([
+            'warehouse_id' => 'required|integer',
+        ]);
+
+        $materialIssue = $jobAssignMaterialIssue->materialIssue;
+        if (! $materialIssue) {
+            return response()->json(['status' => 'error', 'message' => 'Material issue tidak ditemukan.'], 404);
+        }
+
+        try {
+            $materialIssue = app(\App\Services\Operational\MaterialIssueWarehouseService::class)->change(
+                $materialIssue,
+                (int) $request->warehouse_id,
+                $jobAssignMaterialIssue->jobAssignSchedule?->jobSchedule,
+                Auth::id()
+            );
+        } catch (\DomainException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "Gudang material issue {$materialIssue->issue_number} sekarang {$materialIssue->warehouse?->name}.",
+            'data' => [
+                'material_issue_id' => $materialIssue->id,
+                'warehouse_id' => $materialIssue->warehouse_id,
+                'warehouse_name' => $materialIssue->warehouse?->name,
+            ],
+        ]);
+    }
+
+    /**
      * Get available brand lines and variants from Master Options
-     * 
+     *
      * @return \Illuminate\Http\JsonResponse
      */
     public function getBrandLinesAndVariants()

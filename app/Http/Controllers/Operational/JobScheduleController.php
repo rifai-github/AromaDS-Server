@@ -4997,11 +4997,19 @@ class JobScheduleController extends Controller
                 ], 422);
             }
 
-            $fallbackWarehouseId = $request->warehouse_id ?: $returnItems->first()['material_issue']->warehouse_id;
-            $fallbackWarehouse = \App\Models\Warehouse::find($fallbackWarehouseId);
-            $branchId = $actualJobSchedule->building?->branch_id ?? $fallbackWarehouse?->branch_id;
-            $warehouseId = app(\App\Services\Warehouse\BranchWarehouseResolver::class)
-                ->resolveActiveForBranch($branchId)
+            // Material goes back to the warehouse it was issued from (a branch can
+            // run several). An explicit warehouse_id is honoured when it is active
+            // and in the job's branch; the Gudang Default is only the last resort.
+            $issueWarehouseId = $returnItems->first()['material_issue']->warehouse_id;
+            $issueWarehouse = $issueWarehouseId ? \App\Models\Warehouse::find($issueWarehouseId) : null;
+            $branchId = $actualJobSchedule->building?->branch_id ?? $issueWarehouse?->branch_id;
+            $warehouseId = collect([$request->warehouse_id, $issueWarehouseId])
+                ->filter()
+                ->map(fn ($id) => \App\Models\Warehouse::where('id', $id)->where('is_active', true)->first())
+                ->first(fn ($warehouse) => $warehouse && (! $branchId || (int) $warehouse->branch_id === (int) $branchId))
+                ?->id;
+            $warehouseId = $warehouseId ?: app(\App\Services\Warehouse\BranchWarehouseResolver::class)
+                ->resolveDefaultForBranch($branchId)
                 ->id;
             if (!$warehouseId) {
                 DB::rollBack();
@@ -8405,13 +8413,11 @@ class JobScheduleController extends Controller
             }
         }
 
+        // No usable SN warehouse: the unit goes to the branch's Gudang Default.
+        $warehouseResolver = app(\App\Services\Warehouse\BranchWarehouseResolver::class);
         $branchId = $removeJob->building?->branch_id ?? $removeJob->branch_id;
         if ($branchId) {
-            $warehouse = \App\Models\Warehouse::where('branch_id', $branchId)
-                ->where('is_active', true)
-                ->orderByDesc('is_center')
-                ->orderBy('id')
-                ->first();
+            $warehouse = $warehouseResolver->findDefaultForBranch($branchId);
 
             if ($warehouse) {
                 return $warehouse;
@@ -8420,11 +8426,7 @@ class JobScheduleController extends Controller
 
         $teamBranchId = $removeJob->jobAssignSchedules()->with('team')->first()?->team?->branch_office;
         if ($teamBranchId) {
-            return \App\Models\Warehouse::where('branch_id', $teamBranchId)
-                ->where('is_active', true)
-                ->orderByDesc('is_center')
-                ->orderBy('id')
-                ->first();
+            return $warehouseResolver->findDefaultForBranch($teamBranchId);
         }
 
         return null;
@@ -11716,18 +11718,19 @@ class JobScheduleController extends Controller
                 return;
             }
 
-            // Determine Warehouse (from Building -> Branch default or first active)
+            // Determine Warehouse: the building branch's Gudang Default. Never fall
+            // back to an arbitrary warehouse of another branch — units would land
+            // in the wrong branch's stock.
             $building = $jobSchedule->building;
-            $warehouse = null;
-            if ($building && $building->branch_id) {
-                $warehouse = Warehouse::where('branch_id', $building->branch_id)->where('is_active', true)->first();
-            }
-            if (!$warehouse) {
-                $warehouse = Warehouse::where('is_active', true)->first();
-            }
+            $warehouse = $building?->branch_id
+                ? app(\App\Services\Warehouse\BranchWarehouseResolver::class)->findDefaultForBranch($building->branch_id)
+                : null;
 
             if (!$warehouse) {
-                \Log::error("❌ No active warehouse found to return units to.");
+                \Log::error("❌ No active warehouse found in the job's branch to return units to.", [
+                    'job_schedule_id' => $jobSchedule->id,
+                    'branch_id' => $building?->branch_id,
+                ]);
                 return;
             }
 

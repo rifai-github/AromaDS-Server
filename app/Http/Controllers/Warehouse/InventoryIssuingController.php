@@ -1469,8 +1469,17 @@ public function getUserTeams($userId)
 
             DB::beginTransaction();
 
-            // Get warehouse and branch
+            // Get warehouse and branch. Any active warehouse may be the source (a
+            // branch can run several); an inactive one cannot hand out stock.
             $warehouse = Warehouse::findOrFail($request->warehouse_id);
+            if (! $warehouse->is_active) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Warehouse {$warehouse->name} tidak aktif.",
+                ], 422);
+            }
             $branchId = $warehouse->branch_id ?? Auth::user()->branch_id ?? 1;
 
             // Generate issuing number

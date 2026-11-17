@@ -54,6 +54,7 @@ class WarehouseController extends Controller
             'address' => ['column' => 'address'],
             'manager' => ['column' => 'manager'], // String column
             'is_center' => ['column' => 'is_center', 'boolean' => true],
+            'is_default' => ['column' => 'is_default', 'boolean' => true],
             'is_active' => ['column' => 'is_active', 'boolean' => true],
             'createdBy__name' => ['relation' => 'createdBy', 'column' => 'name'],
             'created_at' => ['column' => 'created_at', 'type' => 'date'],
@@ -141,10 +142,13 @@ class WarehouseController extends Controller
                 ?: $this->resolveDefaultWarehouseTypeId($request),
         ]);
 
+        $this->normalizeBooleanFlags($request, ['is_active', 'is_center', 'is_default']);
+
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:100',
             'branch_id' => 'required|exists:branches,id',
             'warehouse_type_id' => 'required|exists:warehouse_types,id',
+            'is_default' => 'nullable|boolean',
             'warehouse_code' => 'nullable|string|max:50|unique:warehouses,warehouse_code',
             'address' => 'nullable|string',
             'phone' => 'nullable|string|max:20',
@@ -154,9 +158,11 @@ class WarehouseController extends Controller
         ]);
 
         $isActive = filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN);
-        if ($isActive && app(BranchWarehouseResolver::class)->activeCountForBranch($request->branch_id) > 0) {
+        $isDefault = $this->resolveRequestedDefault($request, $isActive, $request->branch_id);
+
+        if ($isDefault && ! $isActive) {
             $validator->after(function ($validator) {
-                $validator->errors()->add('branch_id', 'Branch ini sudah memiliki warehouse aktif. Nonaktifkan warehouse lama sebelum membuat warehouse aktif baru.');
+                $validator->errors()->add('is_default', 'Warehouse nonaktif tidak bisa menjadi Gudang Default.');
             });
         }
 
@@ -170,19 +176,28 @@ class WarehouseController extends Controller
         // Use provided warehouse code or auto-generate
         $warehouseCode = $request->warehouse_code ?: $this->generateWarehouseCode();
 
-        $warehouse = Warehouse::create([
-            'warehouse_code' => $warehouseCode,
-            'name' => $request->name,
-            'branch_id' => $request->branch_id,
-            'warehouse_type_id' => $request->warehouse_type_id,
-            'address' => $request->address,
-            'phone' => $request->phone,
-            'manager' => $request->manager,
-            'is_active' => $request->is_active,
-            'is_center' => $request->is_center,
-            'created_by' => Auth::id(),
-            'updated_by' => Auth::id(),
-        ]);
+        $warehouse = DB::transaction(function () use ($request, $warehouseCode, $isDefault) {
+            $warehouse = Warehouse::create([
+                'warehouse_code' => $warehouseCode,
+                'name' => $request->name,
+                'branch_id' => $request->branch_id,
+                'warehouse_type_id' => $request->warehouse_type_id,
+                'address' => $request->address,
+                'phone' => $request->phone,
+                'manager' => $request->manager,
+                'is_active' => $request->is_active,
+                'is_center' => $request->is_center,
+                'is_default' => $isDefault,
+                'created_by' => Auth::id(),
+                'updated_by' => Auth::id(),
+            ]);
+
+            if ($isDefault) {
+                $this->clearOtherDefaults($warehouse);
+            }
+
+            return $warehouse;
+        });
 
         // Sync admins if provided
         if ($request->has('admins')) {
@@ -272,16 +287,21 @@ class WarehouseController extends Controller
                 ?: $this->resolveDefaultWarehouseTypeId($request),
         ]);
 
+        // The edit modal posts JSON booleans; the old `in:0,1,true,false` rule
+        // casts false to '' and rejected every non-center/inactive edit.
+        $this->normalizeBooleanFlags($request, ['is_active', 'is_center', 'is_default']);
+
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:100',
             'branch_id' => 'required|exists:branches,id',
             'warehouse_type_id' => 'required|exists:warehouse_types,id',
+            'is_default' => 'nullable|boolean',
             'warehouse_code' => 'nullable|string|max:50|unique:warehouses,warehouse_code,' . $warehouse->id,
             'address' => 'nullable|string',
             'phone' => 'nullable|string|max:20',
             'manager' => 'nullable|string|max:100',
-            'is_active' => 'required|in:0,1,true,false',
-            'is_center' => 'required|in:0,1,true,false',
+            'is_active' => 'required|boolean',
+            'is_center' => 'required|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -301,9 +321,18 @@ class WarehouseController extends Controller
         $isActive = filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN);
         $isCenter = filter_var($request->is_center, FILTER_VALIDATE_BOOLEAN);
 
-        if ($isActive && app(BranchWarehouseResolver::class)->activeCountForBranch($request->branch_id, $warehouse->id) > 0) {
-            $validator->after(function ($validator) {
-                $validator->errors()->add('branch_id', 'Branch ini sudah memiliki warehouse aktif. Nonaktifkan warehouse lama sebelum mengaktifkan warehouse ini.');
+        $isDefault = $this->resolveRequestedDefault($request, $isActive, $request->branch_id, $warehouse);
+
+        $defaultError = $isDefault && ! $isActive
+            ? 'Warehouse nonaktif tidak bisa menjadi Gudang Default.'
+            : $this->defaultLeavingError(
+                $warehouse,
+                $isActive && $isDefault && (int) $request->branch_id === (int) $warehouse->branch_id
+            );
+
+        if ($defaultError) {
+            $validator->after(function ($validator) use ($defaultError) {
+                $validator->errors()->add('is_default', $defaultError);
             });
         }
 
@@ -323,18 +352,25 @@ class WarehouseController extends Controller
             return back()->withErrors($validator)->withInput();
         }
 
-        $warehouse->update([
-            'warehouse_code' => $warehouseCode,
-            'name' => $request->name,
-            'branch_id' => $request->branch_id,
-            'warehouse_type_id' => $request->warehouse_type_id,
-            'address' => $request->address,
-            'phone' => $request->phone,
-            'manager' => $request->manager,
-            'is_active' => $isActive,
-            'is_center' => $isCenter,
-            'updated_by' => Auth::id(),
-        ]);
+        DB::transaction(function () use ($warehouse, $request, $warehouseCode, $isActive, $isCenter, $isDefault) {
+            $warehouse->update([
+                'warehouse_code' => $warehouseCode,
+                'name' => $request->name,
+                'branch_id' => $request->branch_id,
+                'warehouse_type_id' => $request->warehouse_type_id,
+                'address' => $request->address,
+                'phone' => $request->phone,
+                'manager' => $request->manager,
+                'is_active' => $isActive,
+                'is_center' => $isCenter,
+                'is_default' => $isDefault,
+                'updated_by' => Auth::id(),
+            ]);
+
+            if ($isDefault) {
+                $this->clearOtherDefaults($warehouse);
+            }
+        });
 
         // Sync admins if provided
         if ($request->has('admins')) {
@@ -752,6 +788,18 @@ class WarehouseController extends Controller
                 return back()->with('error', $errorMessage);
             }
             
+            $defaultError = $this->defaultLeavingError($warehouse, false);
+            if ($defaultError) {
+                if (request()->ajax() || request()->wantsJson()) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $defaultError,
+                        'errors' => [$defaultError]
+                    ], 422);
+                }
+                return back()->with('error', $defaultError);
+            }
+
             if (! $this->canDeactivateWarehouse($warehouse)) {
                 $errorMessage = 'Cannot deactivate warehouse with remaining stock, active serial numbers, or open inventory documents.';
                 if (request()->ajax() || request()->wantsJson()) {
@@ -810,7 +858,15 @@ class WarehouseController extends Controller
                     $errors[] = "Warehouse '{$warehouse->name}': Cannot deactivate center warehouse.";
                     continue;
                 }
-                
+
+                // The default may only go when every other active warehouse of
+                // its branch is deactivated in the same batch.
+                $defaultError = $this->defaultLeavingError($warehouse, false, array_map('intval', $ids));
+                if ($defaultError) {
+                    $errors[] = "Warehouse '{$warehouse->name}': {$defaultError}";
+                    continue;
+                }
+
                 if (! $this->canDeactivateWarehouse($warehouse)) {
                     $errors[] = "Warehouse '{$warehouse->name}': Cannot deactivate warehouse with remaining stock, active serial numbers, or open inventory documents.";
                     continue;
@@ -860,6 +916,114 @@ class WarehouseController extends Controller
                 'errors' => ['Error: ' . $e->getMessage()]
             ], 500);
         }
+    }
+
+    /**
+     * "Jadikan Default": make an active warehouse its branch's default and
+     * clear the flag on the previous default, in one transaction.
+     */
+    public function setDefault(Warehouse $warehouse)
+    {
+        if (! $warehouse->is_active) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Warehouse nonaktif tidak bisa menjadi Gudang Default. Aktifkan warehouse ini terlebih dahulu.',
+            ], 422);
+        }
+
+        if (! $warehouse->isDefault()) {
+            DB::transaction(function () use ($warehouse) {
+                $warehouse->update([
+                    'is_default' => true,
+                    'updated_by' => Auth::id(),
+                ]);
+
+                $this->clearOtherDefaults($warehouse);
+            });
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "{$warehouse->name} sekarang menjadi Gudang Default branch.",
+            'data' => $warehouse->fresh(['branch', 'warehouseType']),
+        ]);
+    }
+
+    private function normalizeBooleanFlags(Request $request, array $flags): void
+    {
+        foreach ($flags as $flag) {
+            if ($request->has($flag)) {
+                $normalized = filter_var($request->input($flag), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                if ($normalized !== null) {
+                    $request->merge([$flag => $normalized]);
+                }
+            }
+        }
+    }
+
+    /**
+     * Whether the warehouse being saved should be its branch's default.
+     * - An explicit `is_default` wins; callers that omit it keep the current flag.
+     * - An active warehouse in a branch with no other active default always
+     *   becomes the default, so every branch keeps exactly one.
+     */
+    private function resolveRequestedDefault(Request $request, bool $isActive, int|string|null $branchId, ?Warehouse $existing = null): bool
+    {
+        $requested = $request->input('is_default') !== null
+            ? filter_var($request->input('is_default'), FILTER_VALIDATE_BOOLEAN)
+            : (bool) ($existing?->is_default);
+
+        if (! $isActive || $requested || ! $branchId
+            || app(BranchWarehouseResolver::class)->activeDefaultCountForBranch($branchId, $existing?->id) > 0) {
+            return $requested;
+        }
+
+        // Unticking the current default while sibling warehouses stay active is
+        // not silently undone here - defaultLeavingError() reports it instead.
+        $isCurrentDefaultHere = $existing
+            && $existing->is_active
+            && $existing->isDefault()
+            && (int) $existing->branch_id === (int) $branchId;
+
+        if ($isCurrentDefaultHere && Warehouse::where('branch_id', $branchId)
+            ->where('is_active', true)
+            ->where('id', '!=', $existing->id)
+            ->exists()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function clearOtherDefaults(Warehouse $warehouse): void
+    {
+        Warehouse::where('branch_id', $warehouse->branch_id)
+            ->where('id', '!=', $warehouse->id)
+            ->where('is_default', true)
+            ->update(['is_default' => false, 'updated_by' => Auth::id()]);
+    }
+
+    /**
+     * Blocks the current active default from losing that status (deactivate,
+     * unset, branch move) while its branch still has other active warehouses -
+     * they would be left without a default. $ignoredIds are warehouses being
+     * deactivated in the same batch.
+     */
+    private function defaultLeavingError(Warehouse $warehouse, bool $staysActiveDefaultInSameBranch, array $ignoredIds = []): ?string
+    {
+        if (! $warehouse->is_active || ! $warehouse->isDefault() || $staysActiveDefaultInSameBranch) {
+            return null;
+        }
+
+        $othersRemain = Warehouse::where('branch_id', $warehouse->branch_id)
+            ->where('is_active', true)
+            ->where('id', '!=', $warehouse->id)
+            ->when($ignoredIds, fn ($query) => $query->whereNotIn('id', $ignoredIds))
+            ->exists();
+
+        return $othersRemain
+            ? 'Warehouse ini adalah Gudang Default branch. Jadikan warehouse lain sebagai Gudang Default terlebih dahulu.'
+            : null;
     }
 
     private function canDeactivateWarehouse(Warehouse $warehouse): bool

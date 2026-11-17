@@ -37,6 +37,7 @@ class SyncWarehousesFromBranchesTest extends TestCase
             $table->string('name')->nullable();
             $table->foreignId('branch_id')->nullable();
             $table->foreignId('warehouse_type_id')->nullable();
+            $table->boolean('is_default')->default(false);
             $table->string('address')->nullable();
             $table->string('phone')->nullable();
             $table->string('manager')->nullable();
