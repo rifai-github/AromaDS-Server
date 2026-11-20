@@ -175,10 +175,13 @@ class CommissionCalculationDuplicateTest extends TestCase
             $t->decimal('bonus_amount', 15, 2)->default(0);
             $t->decimal('penalty_amount', 15, 2)->default(0);
             $t->decimal('final_amount', 15, 2)->default(0);
+            $t->decimal('original_amount', 15, 2)->nullable();
             // Sama dengan MySQL produksi: nilai di luar enum (mis. 'pending'/'void') ditolak.
-            $t->enum('status', ['calculated', 'approved', 'paid', 'cancelled'])->default('calculated');
+            $t->enum('status', ['calculated', 'approved', 'paid', 'cancelled', 'over_period'])->default('calculated');
             $t->date('calculation_date')->nullable();
             $t->date('payment_date')->nullable();
+            $t->timestamp('payout_requested_at')->nullable();
+            $t->foreignId('payout_requested_by')->nullable();
             $t->text('calculation_notes')->nullable();
             $t->boolean('is_installed')->default(false);
             $t->date('cash_receipt_date')->nullable();
@@ -382,10 +385,135 @@ class CommissionCalculationDuplicateTest extends TestCase
         $this->assertTrue($onTime['success']);
         $this->assertSame('approved', $onTime['commission']->fresh()->status);
 
+        // Meeting 17 Nov 2026: penerimaan melewati masa CR -> Over Period, nominal 0, nominal
+        // asli disimpan (dulu: cancelled dan nominal tetap).
         $late = $this->service->calculateCommissionOnCashReceipt($invoice, now()->subDays(400)->toDateString());
-        $this->assertFalse($late['success']);
-        $this->assertSame('cancelled', $late['commission']->fresh()->status);
-        $this->assertTrue((bool) $late['commission']->fresh()->is_commission_void);
+        $this->assertTrue($late['is_cr_expired']);
+        $fresh = $late['commission']->fresh();
+        $this->assertSame('over_period', $fresh->status);
+        $this->assertTrue((bool) $fresh->is_commission_void);
+        $this->assertEquals(0, $fresh->final_amount);
+        $this->assertEquals(200_000, $fresh->original_amount);
+    }
+
+    private function invoiceFor(Contract $contract): \App\Models\Invoice
+    {
+        $invoice = new \App\Models\Invoice();
+        $invoice->contract_id = $contract->id;
+        $invoice->setRelation('contract', $contract);
+
+        return $invoice;
+    }
+
+    public function test_late_cash_receipt_without_prior_commission_records_an_over_period_commission(): void
+    {
+        $contract = $this->contract(1, 101, 40_000_000);
+
+        $result = $this->service->calculateCommissionOnCashReceipt($this->invoiceFor($contract), now()->subDays(200)->toDateString());
+
+        $this->assertTrue($result['success']);
+        $calc = CommissionCalculation::firstOrFail();
+        $this->assertSame('over_period', $calc->status);
+        $this->assertEquals(0, $calc->final_amount);
+        $this->assertEquals(200_000, $calc->original_amount);
+        // Kontraknya tetap dihitung ke pencapaian target periode.
+        $this->assertEquals(40_000_000, $this->achieved());
+    }
+
+    public function test_later_cash_receipt_does_not_reapprove_an_over_period_commission(): void
+    {
+        $contract = $this->contract(1, 101, 40_000_000);
+        $this->service->calculateCommissionOnCashReceipt($this->invoiceFor($contract), now()->subDays(200)->toDateString());
+
+        $this->service->calculateCommissionOnCashReceipt($this->invoiceFor($contract), now()->toDateString());
+
+        $calc = CommissionCalculation::firstOrFail();
+        $this->assertSame('over_period', $calc->status);
+        $this->assertEquals(0, $calc->final_amount);
+    }
+
+    private function overrideRequest(int $id, float $amount, string $reason = 'kebijakan management'): Request
+    {
+        $this->actingAs(User::find(1));
+        $request = Request::create("/finance/commissions/{$id}/override-amount", 'POST', [
+            'final_amount' => $amount, 'reason' => $reason,
+        ]);
+        $request->setLaravelSession(app('session.store'));
+        app()->instance('request', $request);
+
+        return $request;
+    }
+
+    private function overPeriodCommission(): CommissionCalculation
+    {
+        $contract = $this->contract(1, 101, 40_000_000);
+        $this->service->calculateCommissionOnCashReceipt($this->invoiceFor($contract), now()->subDays(200)->toDateString());
+
+        return CommissionCalculation::firstOrFail();
+    }
+
+    public function test_admin_can_restore_an_over_period_amount_up_to_the_original_and_it_is_audited(): void
+    {
+        $calc = $this->overPeriodCommission();
+
+        $request = $this->overrideRequest($calc->id, 200_000);
+        app(CommissionController::class)->overrideAmount($request, $calc);
+
+        $calc->refresh();
+        $this->assertNull(session('error'));
+        $this->assertSame('over_period', $calc->status);
+        $this->assertEquals(200_000, $calc->final_amount);
+        $this->assertEquals(200_000, $calc->original_amount);
+        $this->assertTrue($calc->isPayable());
+        $this->assertStringContainsString('kebijakan management', $calc->calculation_notes);
+
+        $log = DB::table('audit_logs')->where('action', 'commission_over_period_amount_override')->first();
+        $this->assertNotNull($log);
+        $this->assertSame(1, (int) $log->user_id);
+        $this->assertSame($calc->id, (int) $log->model_id);
+    }
+
+    public function test_over_period_amount_cannot_exceed_the_original_commission(): void
+    {
+        $calc = $this->overPeriodCommission();
+
+        foreach ([200_001, 3_000_000] as $tooMuch) {
+            $request = $this->overrideRequest($calc->id, $tooMuch);
+            app(CommissionController::class)->overrideAmount($request, $calc);
+            $this->assertStringContainsString('komisi aslinya', (string) session('error'));
+        }
+
+        $this->assertEquals(0, $calc->fresh()->final_amount);
+        $this->assertSame(0, DB::table('audit_logs')->count());
+    }
+
+    public function test_amount_override_is_only_for_over_period_commissions(): void
+    {
+        $calc = $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000))['commission'];
+
+        $request = $this->overrideRequest($calc->id, 100_000);
+        app(CommissionController::class)->overrideAmount($request, $calc);
+
+        $this->assertStringContainsString('Over Period', (string) session('error'));
+        $this->assertEquals(200_000, $calc->fresh()->final_amount);
+    }
+
+    public function test_locked_target_blocks_net_value_recalculation_and_transfer(): void
+    {
+        $calc = $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000))['commission'];
+        MarketingTarget::whereKey(1)->update(['is_locked' => true]);
+
+        DB::table('contracts')->where('id', 1)->update(['net_value' => 20_000_000]);
+        $result = $this->service->recalculateCommissionForContract(Contract::findOrFail(1));
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('LOCK', $result['message']);
+        $this->assertEquals(40_000_000, $this->achieved());
+        $this->assertEquals(200_000, $calc->fresh()->final_amount);
+
+        $this->approveTransfer($calc->id, (float) $calc->final_amount);
+        $this->assertSame(1, (int) $calc->fresh()->user_id);
+        $this->assertSame('pending', DB::table('commission_transfers')->find(1)->status);
+        $this->assertStringContainsString('LOCK', (string) session('error'));
     }
 
     public function test_commission_created_by_payment_is_approved_right_away(): void

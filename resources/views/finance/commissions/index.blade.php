@@ -777,6 +777,7 @@
                         <option value="approved" {{ request('status') == 'approved' ? 'selected' : '' }}>Approved</option>
                         <option value="paid" {{ request('status') == 'paid' ? 'selected' : '' }}>Paid</option>
                         <option value="cancelled" {{ request('status') == 'cancelled' ? 'selected' : '' }}>Cancelled</option>
+                        <option value="over_period" {{ request('status') == 'over_period' ? 'selected' : '' }}>Over Period</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -850,6 +851,7 @@
                                 <option value="approved" {{ request('filter.status') == 'approved' ? 'selected' : '' }}>Approved</option>
                                 <option value="paid" {{ request('filter.status') == 'paid' ? 'selected' : '' }}>Paid</option>
                                 <option value="cancelled" {{ request('filter.status') == 'cancelled' ? 'selected' : '' }}>Cancelled</option>
+                                <option value="over_period" {{ request('filter.status') == 'over_period' ? 'selected' : '' }}>Over Period</option>
                             </select>
                         </th>
                         <th class="p-2"><input type="date" class="form-control form-control-sm table-filter" name="filter[calculation_date]" value="{{ request('filter.calculation_date') }}"></th>
@@ -881,11 +883,23 @@
                                 @endif
                             </td>
                             <td>{{ $commission->commission_rate }}%</td>
-                            <td class="font-weight-bold">Rp {{ number_format($commission->final_amount, 0, ',', '.') }}</td>
+                            <td class="font-weight-bold">
+                                Rp {{ number_format($commission->final_amount, 0, ',', '.') }}
+                                @if($commission->status === 'over_period')
+                                    <br><small class="text-muted font-weight-normal">Komisi asli: Rp {{ number_format($commission->overPeriodCap(), 0, ',', '.') }}</small>
+                                @endif
+                            </td>
                             <td>
-                                <span class="badge {{ $commission->status_badge }}">
+                                <span class="badge {{ $commission->status_badge }}"
+                                      @if($commission->status === 'over_period') title="Penerimaan kas melewati masa CR{{ $commission->cash_receipt_date ? ' (diterima '.$commission->cash_receipt_date->format('d/M/Y').')' : '' }}" @endif>
                                     {{ $commission->status_label }}
                                 </span>
+                                @if($commission->isLocked())
+                                    <br><small class="text-muted"><i class="fas fa-lock"></i> Locked</small>
+                                @endif
+                                @if($commission->payout_requested_at && $commission->isPayable())
+                                    <br><span class="badge badge-info" title="Diminta {{ $commission->payout_requested_at->format('d/M/Y H.i') }}">Request Pencairan</span>
+                                @endif
                             </td>
                             <td>{{ $commission->calculation_date ? $commission->calculation_date->format('d/M/Y') : '-' }}</td>
                             <td>{{ $commission->createdBy->name ?? '-' }}</td>
@@ -909,7 +923,7 @@
                             <td>
                                 <div class="btn-group" role="group" onclick="event.stopPropagation();">
                                     @if($commission->isAwaitingCashReceipt())
-                                        <span class="badge badge-warning" title="Otomatis Approved setelah invoice kontrak dibayar">Menunggu pembayaran invoice</span>
+                                        <span class="badge badge-warning" title="Otomatis Approved setelah ada penerimaan kas (cash receipt) atas invoice kontrak">Menunggu penerimaan kas</span>
                                     @elseif($commission->status === 'calculated')
                                         <form method="POST" action="{{ route('finance.commissions.approve', $commission) }}" class="d-inline">
                                             @csrf
@@ -919,6 +933,13 @@
                                         </form>
                                     @endif
                                     
+                                    @if($commission->status === 'over_period')
+                                        <button type="button" class="btn btn-sm btn-warning" title="Edit Nominal (maks komisi asli)"
+                                                onclick="openOverrideModal({{ $commission->id }}, @js($commission->user->name ?? 'N/A'), {{ (float) $commission->final_amount }}, {{ $commission->overPeriodCap() }})">
+                                            <i class="fas fa-pen"></i>
+                                        </button>
+                                    @endif
+
                                     @if($commission->status === 'approved')
                                         <form method="POST" action="{{ route('finance.commissions.mark-paid', $commission) }}" class="d-inline">
                                             @csrf
@@ -987,9 +1008,56 @@
     </div>
 </div>
 
+<!-- Edit Nominal Over Period -->
+<div id="overrideModalOverlay" class="modal-overlay" onclick="closeOverrideModal()">
+    <div class="modal-container" onclick="event.stopPropagation()" style="max-width: 480px;">
+        <form id="overrideForm" method="POST" action="">
+            @csrf
+            <div class="modal-header">
+                <h2 class="modal-title">Edit Nominal Komisi Over Period</h2>
+                <button type="button" class="modal-close" onclick="closeOverrideModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="text-sm text-gray-600" style="margin-bottom: 12px;">
+                    Marketing: <strong id="overrideUser">-</strong><br>
+                    Komisi asli (batas maksimal): <strong id="overrideCapLabel">-</strong>
+                </p>
+                <label for="overrideAmount">Nominal Komisi (Rp)</label>
+                <input type="number" step="1" min="0" name="final_amount" id="overrideAmount" class="form-control" required>
+                <label for="overrideReason" style="margin-top: 12px;">Alasan / dasar kebijakan management</label>
+                <textarea name="reason" id="overrideReason" class="form-control" rows="3" maxlength="500" required></textarea>
+                <small class="text-muted">Perubahan dicatat di audit log beserta nama user yang mengubah.</small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeOverrideModal()">Batal</button>
+                <button type="submit" class="btn btn-primary">Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 @endsection
 
 @push('scripts')
+<script>
+    function openOverrideModal(id, userName, current, cap) {
+        const form = document.getElementById('overrideForm');
+        form.action = @js(route('finance.commissions.override-amount', '__ID__')).replace('__ID__', id);
+        document.getElementById('overrideUser').textContent = userName;
+        document.getElementById('overrideCapLabel').textContent = 'Rp ' + Number(cap).toLocaleString('id-ID');
+        const amount = document.getElementById('overrideAmount');
+        amount.max = cap;
+        amount.value = current;
+        document.getElementById('overrideReason').value = '';
+        document.getElementById('overrideModalOverlay').classList.add('show');
+    }
+
+    function closeOverrideModal() {
+        document.getElementById('overrideModalOverlay').classList.remove('show');
+    }
+</script>
 <script>
 function applyFilters() {
     const inputs = document.querySelectorAll('.table-filter, #user_id, #period_id, #status, #start_date, #end_date');

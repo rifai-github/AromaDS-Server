@@ -456,6 +456,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         // Commission Dashboard Routes
         Route::get('commissions/dashboard', [App\Http\Controllers\Marketing\CommissionDashboardController::class, 'index'])->name('commissions.dashboard');
         Route::get('commissions/period/{periodId}', [App\Http\Controllers\Marketing\CommissionDashboardController::class, 'getPeriodDetails'])->name('commissions.period-details');
+        Route::post('commissions/request-payout', [App\Http\Controllers\Marketing\CommissionDashboardController::class, 'requestPayout'])->name('commissions.request-payout');
         Route::get('commissions/{calculationId}', [App\Http\Controllers\Marketing\CommissionDashboardController::class, 'getCommissionDetails'])->name('commissions.details');
         Route::post('contracts/bulk-delete', [ContractController::class, 'bulkDelete'])->name('contracts.bulk-delete');
         Route::get('contracts/get-latest-sq', [ContractController::class, 'getLatestSQ'])->name('contracts.get-latest-sq');
@@ -1071,6 +1072,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('commissions/{commission}/approve', [App\Http\Controllers\Finance\CommissionController::class, 'approve'])->name('commissions.approve');
         Route::post('commissions/{commission}/mark-paid', [App\Http\Controllers\Finance\CommissionController::class, 'markAsPaid'])->name('commissions.mark-paid');
         Route::post('commissions/{commission}/cancel', [App\Http\Controllers\Finance\CommissionController::class, 'cancel'])->name('commissions.cancel');
+        Route::post('commissions/{commission}/override-amount', [App\Http\Controllers\Finance\CommissionController::class, 'overrideAmount'])->name('commissions.override-amount');
 
         // Achievement System Routes
         Route::get('achievements/statistics', [App\Http\Controllers\Finance\AchievementController::class, 'statistics'])->name('achievements.statistics');

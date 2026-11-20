@@ -198,6 +198,10 @@ class CommissionTransferController extends Controller
             return "Komisi #{$calculation->id} bukan milik {$transfer->fromUser?->name}.";
         }
 
+        if ($calculation->isLocked()) {
+            return "Marketing Target komisi #{$calculation->id} sudah di-LOCK; komisi tidak bisa dipindah lagi. Unlock target dulu bila memang perlu.";
+        }
+
         $activePayment = \App\Models\Finance\CommissionPayment::where('commission_calculation_id', $calculation->id)
             ->whereIn('status', ['pending', 'processing', 'completed'])
             ->first();

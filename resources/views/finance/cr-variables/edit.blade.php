@@ -9,7 +9,7 @@
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     <h1 class="h3 mb-0 text-gray-800">Edit CR Variable</h1>
-                    <p class="text-muted">Update Cash Receipt period variable</p>
+                    <p class="text-muted">Update Cash Receipt (Penerimaan Kas) period variable</p>
                 </div>
                 <div>
                     <a href="{{ route('finance.cr-variables.index') }}" class="btn btn-secondary">

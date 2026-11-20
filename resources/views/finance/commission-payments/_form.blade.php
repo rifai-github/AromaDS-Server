@@ -10,16 +10,19 @@
                     <option value="{{ $calculation->id }}"
                             data-user-id="{{ $calculation->user_id }}"
                             data-amount="{{ $calculation->final_amount }}"
-                            {{ old('commission_calculation_id', $payment->commission_calculation_id ?? null) == $calculation->id ? 'selected' : '' }}>
+                            {{ old('commission_calculation_id', $payment->commission_calculation_id ?? request('calculation_id')) == $calculation->id ? 'selected' : '' }}>
                         #{{ $calculation->id }} - {{ $calculation->user->name ?? '-' }}
                         @if($calculation->achievementPeriod) ({{ $calculation->achievementPeriod->period_name }}) @endif
                         - Rp {{ number_format((float) $calculation->final_amount, 0, ',', '.') }}
+                        @if($calculation->status === 'over_period') [Over Period] @endif
+                        @if($calculation->payout_requested_at) [Request Pencairan {{ $calculation->payout_requested_at->format('d/M/Y') }}] @endif
                     </option>
                 @endforeach
             </select>
+            <small class="text-muted d-block mt-1">Nominal pembayaran tidak boleh melebihi nominal komisi.</small>
             @if($calculations->isEmpty())
                 <small class="text-danger d-block mt-1">
-                    No approved commission calculation yet. Only calculations with status <strong>Approved</strong> can be paid —
+                    No approved commission calculation yet. Only calculations with status <strong>Approved</strong> (or Over Period with a restored amount) can be paid —
                     approve one in <a href="{{ route('finance.commissions.index') }}">Commission Management</a> first.
                 </small>
             @endif
@@ -133,8 +136,12 @@ $(document).ready(function() {
         const selected = $(this).find('option:selected');
         if (!selected.val()) return;
         $('#user_id').val(selected.data('user-id')).trigger('change');
-        $('#amount').val(selected.data('amount'));
+        $('#amount').val(selected.data('amount')).attr('max', selected.data('amount'));
     });
+    // Dibuka dari panel Request Pencairan (?calculation_id=): isi otomatis penerima dan nominal.
+    if ($('#commission_calculation_id').val() && !$('#amount').val()) {
+        $('#commission_calculation_id').trigger('change');
+    }
 });
 </script>
 @endpush

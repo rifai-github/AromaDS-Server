@@ -16,7 +16,30 @@ class CommissionPaymentController extends Controller
      * Payment yang masih "memegang" kalkulasinya. Failed/cancelled melepasnya lagi supaya
      * komisi yang gagal ditransfer bisa dibayar ulang.
      */
-    private const ACTIVE_PAYMENT_STATUSES = ['pending', 'processing', 'completed'];
+    private const ACTIVE_PAYMENT_STATUSES = CommissionPayment::ACTIVE_STATUSES;
+
+    /**
+     * Alasan kalkulasi tidak boleh dibayar dengan nominal ini, atau null bila boleh.
+     * Hanya komisi Approved atau Over Period yang nominalnya sudah dikembalikan admin, dan
+     * nominal pembayaran tidak boleh melebihi nominal komisinya (meeting 17 Nov 2026).
+     */
+    private function paymentBlockReason(CommissionCalculation $calculation, $amount, ?int $exceptPaymentId = null): ?string
+    {
+        if (! $calculation->isPayable()) {
+            return $calculation->status === 'over_period'
+                ? "Komisi #{$calculation->id} Over Period dengan nominal Rp 0. Edit nominalnya dulu di Commission System bila management menyetujui."
+                : "Komisi #{$calculation->id} berstatus {$calculation->status}, hanya komisi Approved yang bisa dibayar.";
+        }
+
+        if ((float) $amount > (float) $calculation->final_amount) {
+            return 'Nominal pembayaran Rp '.number_format((float) $amount, 0, ',', '.')
+                .' melebihi komisi #'.$calculation->id.' (Rp '.number_format((float) $calculation->final_amount, 0, ',', '.').').';
+        }
+
+        $existing = $this->calculationAlreadyPaidBy($calculation->id, $exceptPaymentId);
+
+        return $existing ? "Komisi #{$calculation->id} sudah punya pembayaran #{$existing->id} ({$existing->status})." : null;
+    }
 
     /**
      * Satu kalkulasi komisi hanya boleh punya satu payment aktif. Dulu kalkulasi yang sudah
@@ -49,7 +72,24 @@ class CommissionPaymentController extends Controller
 
         $users = User::all();
 
-        return view('finance.commission-payments.index', compact('payments', 'users'))->with('commissionPayments', $payments);
+        // Permintaan pencairan dari dashboard marketing yang belum dibuatkan pembayaran.
+        $payoutRequests = CommissionCalculation::with('user:id,name')
+            ->whereNotNull('payout_requested_at')
+            ->payable()
+            ->withoutActivePayment()
+            ->get()
+            ->groupBy('user_id')
+            ->map(fn ($rows) => [
+                'user' => $rows->first()->user,
+                'count' => $rows->count(),
+                'amount' => (float) $rows->sum('final_amount'),
+                'requested_at' => $rows->max('payout_requested_at'),
+                'calculation_ids' => $rows->pluck('id')->all(),
+            ])
+            ->sortByDesc('requested_at')
+            ->values();
+
+        return view('finance.commission-payments.index', compact('payments', 'users', 'payoutRequests'))->with('commissionPayments', $payments);
     }
 
     /**
@@ -59,8 +99,10 @@ class CommissionPaymentController extends Controller
     {
         $users = User::all();
         $calculations = CommissionCalculation::with(['user', 'achievementPeriod'])
-            ->where('status', 'approved')
-            ->whereDoesntHave('commissionPayments', fn ($query) => $query->whereIn('status', self::ACTIVE_PAYMENT_STATUSES))
+            ->payable()
+            ->withoutActivePayment()
+            ->orderByRaw('payout_requested_at IS NULL')
+            ->orderBy('payout_requested_at')
             ->get();
         
         if (request()->expectsJson() || request()->is('api/*')) {
@@ -92,11 +134,7 @@ class CommissionPaymentController extends Controller
         ]);
 
         $calculation = CommissionCalculation::findOrFail($request->commission_calculation_id);
-        $blockReason = $calculation->status !== 'approved'
-            ? "Komisi #{$calculation->id} berstatus {$calculation->status}, hanya komisi Approved yang bisa dibayar."
-            : (($existing = $this->calculationAlreadyPaidBy($calculation->id))
-                ? "Komisi #{$calculation->id} sudah punya pembayaran #{$existing->id} ({$existing->status})."
-                : null);
+        $blockReason = $this->paymentBlockReason($calculation, $request->amount);
 
         if ($blockReason) {
             return redirect()->back()->with('error', $blockReason)->withInput();
@@ -153,10 +191,7 @@ class CommissionPaymentController extends Controller
         $calculations = CommissionCalculation::with(['user', 'achievementPeriod'])
             ->where(function ($query) use ($commissionPayment) {
                 $query->where(function ($approved) use ($commissionPayment) {
-                    $approved->where('status', 'approved')
-                        ->whereDoesntHave('commissionPayments', fn ($payments) => $payments
-                            ->whereIn('status', self::ACTIVE_PAYMENT_STATUSES)
-                            ->where('id', '!=', $commissionPayment->id));
+                    $approved->payable()->withoutActivePayment($commissionPayment->id);
                 })
                     ->orWhere('id', $commissionPayment->commission_calculation_id);
             })
@@ -191,18 +226,19 @@ class CommissionPaymentController extends Controller
             'bank_name' => 'nullable|string|max:255'
         ]);
 
+        $calculation = CommissionCalculation::findOrFail($request->commission_calculation_id);
         if ((int) $request->commission_calculation_id !== (int) $commissionPayment->commission_calculation_id) {
-            $calculation = CommissionCalculation::findOrFail($request->commission_calculation_id);
-            $existing = $this->calculationAlreadyPaidBy($calculation->id, $commissionPayment->id);
             $blockReason = $commissionPayment->status === 'completed'
                 ? 'Pembayaran yang sudah Completed tidak bisa dipindah ke komisi lain.'
-                : ($calculation->status !== 'approved'
-                    ? "Komisi #{$calculation->id} berstatus {$calculation->status}, hanya komisi Approved yang bisa dibayar."
-                    : ($existing ? "Komisi #{$calculation->id} sudah punya pembayaran #{$existing->id} ({$existing->status})." : null));
+                : $this->paymentBlockReason($calculation, $request->amount, $commissionPayment->id);
 
             if ($blockReason) {
                 return redirect()->back()->with('error', $blockReason)->withInput();
             }
+        } elseif ((float) $request->amount > (float) $calculation->final_amount) {
+            return redirect()->back()->with('error',
+                'Nominal pembayaran melebihi komisi #'.$calculation->id.' (Rp '.number_format((float) $calculation->final_amount, 0, ',', '.').').')
+                ->withInput();
         }
 
         try {
@@ -275,7 +311,7 @@ class CommissionPaymentController extends Controller
                 // Komisinya sudah benar-benar dibayarkan ke marketing: tandai Paid supaya tidak
                 // muncul lagi sebagai komisi yang menunggu pembayaran.
                 $calculation = $commissionPayment->commissionCalculation;
-                if ($calculation && $calculation->status === 'approved') {
+                if ($calculation && $calculation->isPayable()) {
                     $calculation->markAsPaid($commissionPayment->payment_date ?? now());
                 }
             });

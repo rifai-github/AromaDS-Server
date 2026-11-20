@@ -9,7 +9,7 @@
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     <h1 class="h3 mb-0 text-gray-800">Create CR Variable</h1>
-                    <p class="text-muted">Create a new Cash Receipt period variable</p>
+                    <p class="text-muted">Create a new Cash Receipt (Penerimaan Kas) period variable</p>
                 </div>
                 <div>
                     <a href="{{ route('finance.cr-variables.index') }}" class="btn btn-secondary">
@@ -50,7 +50,7 @@
                                     @error('cr_days')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
-                                    <small class="form-text text-muted">Number of days for cash receipt period (e.g., 90)</small>
+                                    <small class="form-text text-muted">Batas hari penerimaan kas (cash receipt) dari customer (mis. 90). Penerimaan yang melewatinya membuat komisi berstatus Over Period.</small>
                                 </div>
                             </div>
                         </div>

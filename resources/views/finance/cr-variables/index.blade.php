@@ -38,7 +38,7 @@
     <div class="page-header">
         <div class="container-fluid">
             <h1 class="page-title"><i class="fas fa-clock"></i> CR Variables</h1>
-            <p class="page-subtitle">Manage Cash Receipt period configurations</p>
+            <p class="page-subtitle">Manage Cash Receipt (Penerimaan Kas) period configurations</p>
         </div>
     </div>
 

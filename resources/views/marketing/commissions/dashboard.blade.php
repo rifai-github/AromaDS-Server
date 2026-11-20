@@ -38,6 +38,57 @@
     </div>
 
     <div class="container-fluid">
+        <!-- Wallet Komisi (lintas periode) -->
+        <div class="card wallet-card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                <h3 class="card-title"><i class="fas fa-wallet"></i> Wallet Komisi</h3>
+                <form method="POST" action="{{ route('marketing.commissions.request-payout') }}"
+                      onsubmit="return confirm('Request pencairan komisi Rp {{ number_format($wallet['available'] ?? 0, 0, ',', '.') }} ke Finance?');">
+                    @csrf
+                    <button type="submit" class="btn btn-primary" @disabled(($wallet['available'] ?? 0) <= 0)>
+                        <i class="fas fa-hand-holding-usd"></i> Request
+                    </button>
+                </form>
+            </div>
+            <div class="card-body">
+                <div class="stats-grid" style="margin-bottom: 0;">
+                    <div>
+                        <div class="stat-value" style="color: #16a34a;">Rp {{ number_format($wallet['available'] ?? 0, 0, ',', '.') }}</div>
+                        <div class="stat-label">Siap dicairkan ({{ $wallet['available_count'] ?? 0 }} komisi)</div>
+                    </div>
+                    <div>
+                        <div class="stat-value" style="font-size: 24px;">Rp {{ number_format($wallet['requested'] ?? 0, 0, ',', '.') }}</div>
+                        <div class="stat-label">
+                            Sudah di-request, menunggu Finance
+                            @if(!empty($wallet['requested_at']))
+                                <br><small>sejak {{ \Illuminate\Support\Carbon::parse($wallet['requested_at'])->format('d/M/Y H.i') }}</small>
+                            @endif
+                        </div>
+                    </div>
+                    <div>
+                        <div class="stat-value" style="font-size: 24px;">Rp {{ number_format($wallet['in_process'] ?? 0, 0, ',', '.') }}</div>
+                        <div class="stat-label">Sedang diproses Finance</div>
+                    </div>
+                    <div>
+                        <div class="stat-value" style="font-size: 24px;">Rp {{ number_format($wallet['paid'] ?? 0, 0, ',', '.') }}</div>
+                        <div class="stat-label">Sudah dibayarkan</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pilih periode -->
+        <form method="GET" action="{{ route('marketing.commissions.dashboard') }}" style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <label for="period_id" style="margin: 0; font-weight: 600;">Periode</label>
+            <select name="period_id" id="period_id" class="form-control" style="max-width: 320px;" onchange="this.form.submit()">
+                @foreach($periods ?? [] as $period)
+                    <option value="{{ $period->id }}" @selected($currentPeriod && $currentPeriod->id === $period->id)>
+                        {{ $period->period_name }} ({{ $period->start_date?->format('d/M/Y') }} - {{ $period->end_date?->format('d/M/Y') }})
+                    </option>
+                @endforeach
+            </select>
+        </form>
+
         @if(!$currentPeriod)
         <div class="alert alert-warning">
             <i class="fas fa-exclamation-triangle"></i> {{ $message ?? 'No active achievement period found.' }}
@@ -144,10 +195,17 @@
                                 <td>
                                     @if($commission->status == 'approved')
                                         <span class="badge badge-success">Approved</span>
+                                    @elseif($commission->status == 'paid')
+                                        <span class="badge badge-success">Paid</span>
                                     @elseif($commission->status == 'calculated')
                                         <span class="badge badge-warning">Pending</span>
+                                    @elseif($commission->status == 'over_period')
+                                        <span class="badge badge-warning" title="Penerimaan kas melewati masa CR">Over Period</span>
                                     @else
                                         <span class="badge badge-danger">Void</span>
+                                    @endif
+                                    @if($commission->payout_requested_at && $commission->isPayable())
+                                        <br><small class="text-muted">Request pencairan {{ $commission->payout_requested_at->format('d/M/Y') }}</small>
                                     @endif
                                 </td>
                                 <td>{{ $commission->calculation_date ? $commission->calculation_date->format('d/M/Y') : '-' }}</td>
@@ -175,7 +233,7 @@
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="6" style="text-align: center; padding: 40px;">
+                                <td colspan="10" style="text-align: center; padding: 40px;">
                                     <p>No commission calculations found</p>
                                 </td>
                             </tr>

@@ -11,6 +11,12 @@ class CommissionPayment extends Model
 {
     use SoftDeletes, AutoFilterable;
 
+    /**
+     * Payment yang masih "memegang" kalkulasinya. Failed/cancelled melepasnya lagi supaya
+     * komisi yang gagal ditransfer bisa dibayar ulang.
+     */
+    public const ACTIVE_STATUSES = ['pending', 'processing', 'completed'];
+
     protected $fillable = [
         'commission_calculation_id',
         'user_id',

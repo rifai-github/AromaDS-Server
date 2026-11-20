@@ -27,9 +27,12 @@ class CommissionCalculation extends Model
         'bonus_amount',
         'penalty_amount',
         'final_amount',
+        'original_amount',
         'status',
         'calculation_date',
         'payment_date',
+        'payout_requested_at',
+        'payout_requested_by',
         'calculation_notes',
         'is_installed',
         'cash_receipt_date',
@@ -51,8 +54,10 @@ class CommissionCalculation extends Model
         'bonus_amount' => 'decimal:2',
         'penalty_amount' => 'decimal:2',
         'final_amount' => 'decimal:2',
+        'original_amount' => 'decimal:2',
         'calculation_date' => 'date',
         'payment_date' => 'date',
+        'payout_requested_at' => 'datetime',
         'is_installed' => 'boolean',
         'cash_receipt_date' => 'date',
         'cr_due_date' => 'date',
@@ -174,7 +179,31 @@ class CommissionCalculation extends Model
 
     public function scopeReadyForPayment($query)
     {
-        return $query->where('status', 'approved');
+        return $query->payable();
+    }
+
+    /**
+     * Komisi yang boleh dibayar: Approved, atau Over Period yang nominalnya sudah
+     * dikembalikan admin (> 0) atas kebijakan management.
+     */
+    public function scopePayable($query)
+    {
+        return $query->where(function ($q) {
+            $q->where('status', 'approved')
+                ->orWhere(fn ($over) => $over->where('status', 'over_period')->where('final_amount', '>', 0));
+        });
+    }
+
+    public function scopeWithoutActivePayment($query, ?int $exceptPaymentId = null)
+    {
+        return $query->whereDoesntHave('commissionPayments', fn ($payments) => $payments
+            ->whereIn('status', CommissionPayment::ACTIVE_STATUSES)
+            ->when($exceptPaymentId, fn ($p) => $p->where('id', '!=', $exceptPaymentId)));
+    }
+
+    public function payoutRequestedBy()
+    {
+        return $this->belongsTo(User::class, 'payout_requested_by');
     }
 
     // Accessors
@@ -184,7 +213,8 @@ class CommissionCalculation extends Model
             'calculated' => 'badge-warning',
             'approved' => 'badge-success',
             'paid' => 'badge-info',
-            'cancelled' => 'badge-danger'
+            'cancelled' => 'badge-danger',
+            'over_period' => 'badge-secondary'
         ];
 
         return $badges[$this->status] ?? 'badge-secondary';
@@ -196,7 +226,8 @@ class CommissionCalculation extends Model
             'calculated' => 'Calculated',
             'approved' => 'Approved',
             'paid' => 'Paid',
-            'cancelled' => 'Cancelled'
+            'cancelled' => 'Cancelled',
+            'over_period' => 'Over Period'
         ];
 
         return $labels[$this->status] ?? ucfirst($this->status);
@@ -257,6 +288,92 @@ class CommissionCalculation extends Model
         return in_array($this->calculation_type, ['new', 'renewal'], true)
             && $this->status === 'calculated'
             && ! $this->cash_receipt_date;
+    }
+
+    public function isPayable(): bool
+    {
+        return $this->status === 'approved'
+            || ($this->status === 'over_period' && (float) $this->final_amount > 0);
+    }
+
+    /**
+     * Komisi ikut terkunci bila Marketing Target-nya sudah di-LOCK: nilai, penerima, dan
+     * periodenya tidak boleh berubah lagi (meeting 17 Nov 2026).
+     */
+    public function isLocked(): bool
+    {
+        return (bool) $this->marketingTarget?->is_locked;
+    }
+
+    /**
+     * Nominal komisi sebelum dinolkan karena Over Period: batas atas edit manual admin.
+     */
+    public function overPeriodCap(): float
+    {
+        return (float) ($this->original_amount ?? $this->commission_amount);
+    }
+
+    /**
+     * Penerimaan kas melewati masa CR: nominal jadi 0, nominal asli disimpan.
+     */
+    public function overPeriodAttributes(): array
+    {
+        $original = $this->original_amount ?? $this->final_amount ?? $this->commission_amount;
+
+        return [
+            'status' => 'over_period',
+            'original_amount' => $original,
+            'final_amount' => 0,
+            'is_cr_expired' => true,
+            'is_commission_void' => true,
+        ];
+    }
+
+    /**
+     * Admin mengembalikan nominal komisi Over Period (kebijakan management).
+     * Tidak boleh melebihi nominal komisi aslinya; setiap perubahan dicatat di audit log.
+     *
+     * @throws \InvalidArgumentException
+     */
+    public function overrideOverPeriodAmount(float $amount, string $reason, ?int $userId): void
+    {
+        if ($this->status !== 'over_period') {
+            throw new \InvalidArgumentException('Nominal hanya bisa diedit untuk komisi berstatus Over Period.');
+        }
+
+        $cap = $this->overPeriodCap();
+        if ($amount < 0 || $amount > $cap) {
+            throw new \InvalidArgumentException(
+                'Nominal harus antara Rp 0 dan Rp '.number_format($cap, 0, ',', '.').' (komisi aslinya).'
+            );
+        }
+
+        $activePayment = $this->commissionPayments()->whereIn('status', CommissionPayment::ACTIVE_STATUSES)->first();
+        if ($activePayment) {
+            throw new \InvalidArgumentException(
+                "Komisi ini sudah punya pembayaran #{$activePayment->id} ({$activePayment->status}). Batalkan pembayarannya dulu."
+            );
+        }
+
+        $old = (float) $this->final_amount;
+        $actor = $userId ? (User::find($userId)?->name ?? "user #{$userId}") : 'system';
+
+        $this->update([
+            'original_amount' => $cap,
+            'final_amount' => $amount,
+            'calculation_notes' => trim(($this->calculation_notes ?? '')."\n".now()->format('Y-m-d H:i')
+                ." Over Period: nominal diubah {$actor} dari Rp ".number_format($old, 0, ',', '.')
+                .' menjadi Rp '.number_format($amount, 0, ',', '.')." (maks Rp ".number_format($cap, 0, ',', '.')."). Alasan: {$reason}"),
+            'updated_by' => $userId ?? $this->updated_by,
+        ]);
+
+        \App\Models\AuditLog::log(
+            'commission_over_period_amount_override',
+            $this,
+            ['final_amount' => $old],
+            ['final_amount' => $amount, 'original_amount' => $cap, 'reason' => $reason],
+            $userId
+        );
     }
 
     public function approve($approvedBy)

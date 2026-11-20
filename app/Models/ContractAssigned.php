@@ -227,6 +227,16 @@ class ContractAssigned extends Model
             throw new \Exception('Switching must be approved before execution');
         }
 
+        // Kontrak yang komisinya sudah masuk Marketing Target yang di-LOCK tidak boleh
+        // dipindah ke marketing lain lagi (meeting 17 Nov 2026).
+        $lockedCommission = \App\Models\Finance\CommissionCalculation::where('contract_id', $this->old_contract_id)
+            ->whereIn('calculation_type', ['new', 'renewal'])
+            ->whereHas('marketingTarget', fn ($target) => $target->where('is_locked', true))
+            ->first();
+        if ($lockedCommission) {
+            throw new \Exception('Komisi kontrak ini sudah masuk Marketing Target yang di-LOCK; kontrak tidak bisa dipindah ke marketing lain. Unlock target dulu bila memang perlu.');
+        }
+
         try {
             DB::beginTransaction();
 

@@ -41,8 +41,12 @@ class CommissionPaymentSingleUseTest extends TestCase
             $table->foreignId('achievement_period_id')->nullable();
             $table->string('calculation_type')->nullable();
             $table->decimal('final_amount', 15, 2)->default(0);
-            $table->enum('status', ['calculated', 'approved', 'paid', 'cancelled'])->default('calculated');
+            $table->decimal('commission_amount', 15, 2)->default(0);
+            $table->decimal('original_amount', 15, 2)->nullable();
+            $table->enum('status', ['calculated', 'approved', 'paid', 'cancelled', 'over_period'])->default('calculated');
             $table->date('payment_date')->nullable();
+            $table->timestamp('payout_requested_at')->nullable();
+            $table->foreignId('payout_requested_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -91,12 +95,13 @@ class CommissionPaymentSingleUseTest extends TestCase
         parent::tearDown();
     }
 
-    private function storeRequest(int $calculationId): Request
+    private function storeRequest(int $calculationId, ?float $amount = null): Request
     {
         $request = Request::create('/finance/commission-payments', 'POST', [
             'commission_calculation_id' => $calculationId,
             'user_id' => 1,
-            'amount' => 45000,
+            // Nominal pembayaran tak boleh melebihi komisinya (meeting 17 Nov 2026).
+            'amount' => $amount ?? (float) DB::table('commission_calculations')->where('id', $calculationId)->value('final_amount'),
             'payment_method' => 'bank_transfer',
             'payment_date' => '2026-10-08',
         ]);
@@ -159,6 +164,64 @@ class CommissionPaymentSingleUseTest extends TestCase
         app(CommissionPaymentController::class)->cancel($request, CommissionPayment::findOrFail(10));
 
         $this->assertSame('completed', DB::table('commission_payments')->find(10)->status);
+    }
+
+    public function test_payment_cannot_exceed_the_commission_amount(): void
+    {
+        app(CommissionPaymentController::class)->store($this->storeRequest(2, 24_001));
+
+        $this->assertSame(0, CommissionPayment::where('commission_calculation_id', 2)->count());
+        $this->assertStringContainsString('melebihi komisi #2', (string) session('error'));
+    }
+
+    public function test_over_period_commission_is_payable_only_after_its_amount_is_restored(): void
+    {
+        DB::table('commission_calculations')->insert([
+            ['id' => 4, 'user_id' => 1, 'calculation_type' => 'new', 'final_amount' => 0, 'original_amount' => 300000, 'status' => 'over_period'],
+            ['id' => 5, 'user_id' => 1, 'calculation_type' => 'new', 'final_amount' => 300000, 'original_amount' => 300000, 'status' => 'over_period'],
+        ]);
+
+        $offered = app(CommissionPaymentController::class)->create()->getData()['calculations']->pluck('id')->all();
+        $this->assertNotContains(4, $offered);
+        $this->assertContains(5, $offered);
+
+        app(CommissionPaymentController::class)->store($this->storeRequest(4, 0));
+        $this->assertStringContainsString('Over Period dengan nominal Rp 0', (string) session('error'));
+
+        app(CommissionPaymentController::class)->store($this->storeRequest(5));
+        $payment = CommissionPayment::where('commission_calculation_id', 5)->firstOrFail();
+
+        app(CommissionPaymentController::class)->markAsCompleted($payment);
+        $this->assertSame('paid', DB::table('commission_calculations')->find(5)->status);
+    }
+
+    public function test_marketing_request_payout_flags_payable_commissions_for_finance(): void
+    {
+        $dashboard = app(\App\Http\Controllers\Marketing\CommissionDashboardController::class);
+        $dashboard->requestPayout();
+
+        // 1 sudah punya payment pending -> tidak ikut; 2 dan 3 siap cair.
+        $this->assertNull(DB::table('commission_calculations')->find(1)->payout_requested_at);
+        $this->assertNotNull(DB::table('commission_calculations')->find(2)->payout_requested_at);
+        $this->assertNotNull(DB::table('commission_calculations')->find(3)->payout_requested_at);
+        $this->assertSame(1, (int) DB::table('commission_calculations')->find(2)->payout_requested_by);
+
+        $requests = app(CommissionPaymentController::class)->index(Request::create('/finance/commission-payments'))
+            ->getData()['payoutRequests'];
+        $this->assertCount(1, $requests);
+        $this->assertSame(2, $requests[0]['count']);
+        $this->assertEquals(34000, $requests[0]['amount']);
+        $this->assertEqualsCanonicalizing([2, 3], $requests[0]['calculation_ids']);
+
+        // Request ke-2 tanpa komisi baru tidak mengubah apa pun.
+        $dashboard->requestPayout();
+        $this->assertStringContainsString('Tidak ada komisi siap cair', (string) session('error'));
+
+        // Setelah Finance membuat pembayaran, komisi itu keluar dari daftar request.
+        app(CommissionPaymentController::class)->store($this->storeRequest(2));
+        $requests = app(CommissionPaymentController::class)->index(Request::create('/finance/commission-payments'))
+            ->getData()['payoutRequests'];
+        $this->assertSame([3], $requests[0]['calculation_ids']);
     }
 
     public function test_payment_list_has_a_cancel_button(): void

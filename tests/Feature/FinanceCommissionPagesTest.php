@@ -199,6 +199,10 @@ class FinanceCommissionPagesTest extends TestCase
         $this->createUserSchema();
         Schema::create('commission_calculations', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('user_id')->nullable();
+            $table->string('status')->default('calculated');
+            $table->decimal('final_amount', 15, 2)->default(0);
+            $table->timestamp('payout_requested_at')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });

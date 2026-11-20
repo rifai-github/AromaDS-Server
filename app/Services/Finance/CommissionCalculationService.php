@@ -134,17 +134,9 @@ class CommissionCalculationService
                 $isCrExpired = Carbon::now()->gt($crDueDate);
             }
 
-            // If CR expired, commission is void
-            if ($isCrExpired) {
-                DB::rollBack();
-
-                return [
-                    'success' => false,
-                    'message' => "Cash Receipt period expired. Commission void due to payment received after {$crDays} days.",
-                    'commission' => null,
-                    'is_cr_expired' => true
-                ];
-            }
+            // Penerimaan melewati masa CR: komisi tetap tercatat dengan status Over Period dan
+            // nominal 0 (meeting 17 Nov 2026). Dulu tidak ada baris sama sekali, jadi admin tidak
+            // bisa mengembalikan nominalnya atas kebijakan management.
 
             // Check if commission should go to different user (commission transfer)
             $commissionRecipient = $this->getCommissionRecipient($contract);
@@ -167,10 +159,11 @@ class CommissionCalculationService
                 'commission_amount' => $commissionAmount,
                 'bonus_amount' => 0,
                 'penalty_amount' => 0,
-                'final_amount' => $commissionAmount,
-                // enum DB: calculated|approved|paid|cancelled. Dihitung karena uang sudah masuk
-                // (jalur pembayaran) langsung approved, sama seperti cabang update di bawah.
-                'status' => $cashReceiptDate ? 'approved' : 'calculated',
+                'final_amount' => $isCrExpired ? 0 : $commissionAmount,
+                'original_amount' => $isCrExpired ? $commissionAmount : null,
+                // enum DB: calculated|approved|paid|cancelled|over_period. Dihitung karena uang
+                // sudah masuk (jalur penerimaan) langsung approved, sama seperti cabang update di bawah.
+                'status' => $isCrExpired ? 'over_period' : ($cashReceiptDate ? 'approved' : 'calculated'),
                 'calculation_date' => now(),
                 'calculation_notes' => "Auto-calculated for contract {$contract->contract_number}. Achievement: {$achievementPercentage}%",
                 'is_installed' => true,
@@ -212,7 +205,10 @@ class CommissionCalculationService
 
             return [
                 'success' => true,
-                'message' => 'Commission calculated successfully',
+                'message' => $isCrExpired
+                    ? "Komisi Over Period: penerimaan kas melewati masa CR {$crDays} hari, nominal komisi Rp 0."
+                    : 'Commission calculated successfully',
+                'is_cr_expired' => $isCrExpired,
                 'commission' => $commissionCalculation,
                 'amount' => $commissionAmount,
                 'achievement_percentage' => $achievementPercentage,
@@ -268,6 +264,15 @@ class CommissionCalculationService
                 ];
             }
 
+            if ($openCalculations->isNotEmpty() && $openCalculations->every(fn ($c) => $c->status === 'over_period')) {
+                return [
+                    'success' => true,
+                    'message' => "Komisi kontrak {$contract->contract_number} sudah Over Period; nominalnya hanya bisa diubah admin.",
+                    'commission' => $existingCalculation,
+                    'is_cr_expired' => true,
+                ];
+            }
+
             if ($existingCalculation) {
                 // Update existing calculation with cash receipt date
                 $crVariable = CrVariable::getDefault();
@@ -276,21 +281,27 @@ class CommissionCalculationService
                 $isCrExpired = Carbon::now()->gt($crDueDate);
 
                 foreach ($openCalculations as $openCalculation) {
-                    $openCalculation->update([
+                    // Komisi yang sudah Over Period tidak di-approve ulang oleh penerimaan
+                    // berikutnya: nominalnya hanya boleh dikembalikan admin secara manual.
+                    if ($openCalculation->status === 'over_period') {
+                        continue;
+                    }
+
+                    $openCalculation->update(array_merge([
                         'cash_receipt_date' => Carbon::parse($cashReceiptDate),
                         'cr_due_date' => $crDueDate,
                         'is_cr_expired' => $isCrExpired,
                         'is_commission_void' => $isCrExpired,
-                        'status' => $isCrExpired ? 'cancelled' : 'approved',
+                        'status' => 'approved',
                         'updated_by' => auth()->id()
-                    ]);
+                    ], $isCrExpired ? $openCalculation->overPeriodAttributes() : []));
                 }
 
                 return [
-                    'success' => !$isCrExpired,
-                    'message' => $isCrExpired 
-                        ? "Commission void: Cash receipt received after {$crDays} days" 
-                        : "Commission approved: Cash receipt received within {$crDays} days",
+                    'success' => true,
+                    'message' => $isCrExpired
+                        ? "Komisi Over Period: penerimaan kas melewati masa CR {$crDays} hari, nominal komisi Rp 0."
+                        : "Commission approved: cash receipt (penerimaan) within {$crDays} days",
                     'commission' => $existingCalculation,
                     'is_cr_expired' => $isCrExpired
                 ];
@@ -333,6 +344,15 @@ class CommissionCalculationService
         $calculation = $this->automaticCalculationsFor($contract)->first();
         if (!$calculation) {
             return $this->calculateCommissionForContract($contract);
+        }
+
+        // Periode yang sudah di-LOCK membekukan nilai komisi dan pencapaian target.
+        if ($calculation->isLocked()) {
+            return [
+                'success' => false,
+                'message' => "Marketing Target komisi kontrak {$contract->contract_number} sudah di-LOCK; perubahan net value tidak diterapkan ke komisi.",
+                'commission' => $calculation
+            ];
         }
 
         // Komisi yang sudah approved/paid/void tidak dihitung ulang diam-diam.

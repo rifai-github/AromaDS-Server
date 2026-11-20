@@ -284,6 +284,20 @@ class CommissionController extends Controller
             }
         }
 
+        // Setelah Marketing Target di-LOCK komisi tidak boleh berubah lagi (meeting 17 Nov 2026).
+        if ($commission->isLocked()) {
+            return redirect()->back()
+                ->with('error', 'Marketing Target komisi ini sudah di-LOCK. Unlock target dulu untuk mengubah komisi.')
+                ->withInput();
+        }
+
+        // Over Period hanya boleh diubah lewat tombol Edit Nominal (dibatasi nominal asli + audit).
+        if ($commission->status === 'over_period') {
+            return redirect()->back()
+                ->with('error', 'Komisi Over Period hanya bisa diubah lewat tombol Edit Nominal.')
+                ->withInput();
+        }
+
         try {
             DB::beginTransaction();
 
@@ -356,7 +370,7 @@ class CommissionController extends Controller
 
             if ($commission->isAwaitingCashReceipt()) {
                 return redirect()->back()
-                    ->with('error', 'Komisi otomatis tidak bisa di-approve manual. Komisi ini otomatis Approved setelah invoice kontraknya dibayar (Bank Payment atau Invoice berstatus Paid).');
+                    ->with('error', 'Komisi otomatis tidak bisa di-approve manual. Komisi ini otomatis Approved setelah ada penerimaan kas (cash receipt) atas invoice kontraknya (Bank Payment atau Invoice berstatus Paid).');
             }
 
             $commission->approve(Auth::id());
@@ -366,6 +380,36 @@ class CommissionController extends Controller
             return redirect()->back()
                 ->with('error', 'Failed to approve commission calculation: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Edit nominal komisi Over Period (kebijakan management). Maksimal sebesar komisi aslinya,
+     * alasan wajib, dan tercatat di audit log.
+     */
+    public function overrideAmount(Request $request, CommissionCalculation $commission)
+    {
+        $validated = $request->validate([
+            'final_amount' => 'required|numeric|min:0',
+            'reason' => 'required|string|max:500',
+        ]);
+
+        $commission = $this->accessibleCommissionQuery()->whereKey($commission->id)->firstOrFail();
+
+        try {
+            DB::transaction(function () use ($commission, $validated) {
+                CommissionCalculation::whereKey($commission->id)->lockForUpdate()->first();
+                $commission->refresh()->overrideOverPeriodAmount(
+                    (float) $validated['final_amount'],
+                    $validated['reason'],
+                    Auth::id()
+                );
+            });
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->back()->with('error', $e->getMessage())->withInput();
+        }
+
+        return redirect()->back()->with('success',
+            'Nominal komisi Over Period diubah menjadi Rp '.number_format((float) $validated['final_amount'], 0, ',', '.').'.');
     }
 
     /**

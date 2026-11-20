@@ -104,10 +104,27 @@ class ContractAssignedAccessTest extends TestCase
             $table->timestamps();
             $table->softDeletes();
         });
+        // Execute menolak kontrak yang komisinya ada di Marketing Target ber-LOCK.
+        Schema::create('marketing_targets', function (Blueprint $table) {
+            $table->id();
+            $table->boolean('is_locked')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+        Schema::create('commission_calculations', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('contract_id')->nullable();
+            $table->foreignId('marketing_target_id')->nullable();
+            $table->string('calculation_type')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
     }
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('commission_calculations');
+        Schema::dropIfExists('marketing_targets');
         Schema::dropIfExists('contract_assigned');
         Schema::dropIfExists('contracts');
         Schema::dropIfExists('customers');
@@ -302,6 +319,33 @@ class ContractAssignedAccessTest extends TestCase
         $this->assertNotNull($assigned->completed_at);
         $this->assertSame(2, $contract->fresh()->marketing_id);
         $this->assertStringContainsString('Marketing transferred from Old Marketing to New Marketing', $contract->fresh()->notes);
+    }
+
+    public function test_contract_whose_commission_is_in_a_locked_target_cannot_be_switched(): void
+    {
+        DB::table('contracts')->insert([
+            'id' => 1, 'contract_number' => 'JKT-CA/26-05/0001', 'marketing_id' => 1,
+            'contract_status' => 'active', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('marketing_targets')->insert(['id' => 7, 'is_locked' => true]);
+        DB::table('commission_calculations')->insert([
+            'contract_id' => 1, 'marketing_target_id' => 7, 'calculation_type' => 'new',
+        ]);
+        DB::table('contract_assigned')->insert([
+            'id' => 1, 'switching_number' => 'JKT-CAS/26-05/0001', 'old_contract_id' => 1,
+            'old_marketing_id' => 1, 'new_marketing_id' => 2, 'status' => ContractAssigned::STATUS_DRAFT,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        try {
+            ContractAssigned::findOrFail(1)->execute(3, true);
+            $this->fail('Switch should be refused for a locked commission.');
+        } catch (\Exception $e) {
+            $this->assertStringContainsString('LOCK', $e->getMessage());
+        }
+
+        $this->assertSame(1, (int) DB::table('contracts')->find(1)->marketing_id);
+        $this->assertSame(ContractAssigned::STATUS_DRAFT, DB::table('contract_assigned')->find(1)->status);
     }
 
     public function test_draft_contract_assigned_still_requires_explicit_direct_execute_permission(): void

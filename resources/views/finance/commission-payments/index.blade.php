@@ -369,6 +369,35 @@
 </div>
 
 <div class="container-fluid">
+    @if(isset($payoutRequests) && $payoutRequests->isNotEmpty())
+    <!-- Request Pencairan dari dashboard marketing -->
+    <div class="alert alert-info" style="border-radius: 10px; margin-bottom: 20px;">
+        <strong><i class="fas fa-hand-holding-usd"></i> Request Pencairan Komisi ({{ $payoutRequests->count() }} marketing)</strong>
+        <div class="table-responsive" style="margin-top: 10px;">
+            <table class="table table-sm" style="margin: 0; background: transparent;">
+                <thead>
+                    <tr><th>Marketing</th><th>Diminta</th><th>Jumlah Komisi</th><th>Total</th><th>Buat Pembayaran</th></tr>
+                </thead>
+                <tbody>
+                    @foreach($payoutRequests as $payoutRequest)
+                    <tr>
+                        <td>{{ $payoutRequest['user']->name ?? '-' }}</td>
+                        <td>{{ \Illuminate\Support\Carbon::parse($payoutRequest['requested_at'])->format('d/M/Y H.i') }}</td>
+                        <td>{{ $payoutRequest['count'] }}</td>
+                        <td><strong>Rp {{ number_format($payoutRequest['amount'], 0, ',', '.') }}</strong></td>
+                        <td>
+                            @foreach($payoutRequest['calculation_ids'] as $calculationId)
+                                <a href="{{ route('finance.commission-payments.create', ['calculation_id' => $calculationId]) }}" class="badge badge-primary">#{{ $calculationId }}</a>
+                            @endforeach
+                        </td>
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @endif
+
     <!-- Statistics Cards -->
     <div class="stats-grid">
         <div class="stat-card">
