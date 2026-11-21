@@ -362,7 +362,7 @@
         $qrFooterSrc = $qrPng($companyWebsite !== '' ? $companyWebsite : 'https://www.adsscent.com', 56);
 
         /* ===== Survey Untuk block ===== */
-        $surveyForName = trim((string) ($survey->company_name ?? $survey->customer->name ?? '-'));
+        $surveyForName = trim((string) (\App\Models\Survey::decodeStoredHtmlEntities($survey->company_name) ?? $survey->customer->name ?? '-'));
         $address1 = $survey->survey_location ?? $survey->building->building_address ?? '';
         $address2 = $survey->building->alamat_2 ?? '';
         $surveyForAddress = trim($address1);

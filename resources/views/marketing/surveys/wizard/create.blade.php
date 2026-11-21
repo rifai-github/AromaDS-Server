@@ -744,7 +744,8 @@
                                             <select class="form-control select2" id="new_contact_salutation" name="new_contact_salutation">
                                                 <option value="">Pilih Panggilan</option>
                                                 @foreach($salutations as $salutation)
-                                                    <option value="{{ $salutation->label ?? $salutation->option_name }}">{{ $salutation->label ?? $salutation->option_name }}</option>
+                                                    {{-- Nama opsi = nilai yang dipakai Master Contact; kolom label tidak dikelola layar Master Salutation. --}}
+                                                    <option value="{{ $salutation->option_name }}">{{ $salutation->option_name }}</option>
                                                 @endforeach
                                             </select>
                                         </div>
@@ -1594,8 +1595,10 @@ $(document).ready(function() {
                     showFieldError('#new_building_location_detail', 'Lokasi Detail harus diisi');
                     isValid = false;
                 }
-            } else {
-                console.log('Step 4 validation passed - building selected:', buildingId);
+            } else if (!($('#building_location_detail').val() || '').trim()) {
+                // Lokasi Detail wajib juga untuk gedung yang sudah ada (UAT 18 Nov).
+                showFieldError('#building_location_detail', 'Lokasi Detail harus diisi');
+                isValid = false;
             }
         }
         
@@ -2114,7 +2117,28 @@ $(document).ready(function() {
         console.log('Building change handler - buildingId:', buildingId);
         
         if (buildingId) {
-            // Load building details and display them
+            // Data gedung sudah ada di atribut <option>: tampilkan alamat + input Lokasi Detail
+            // langsung. Dulu selalu mengunduh ulang SEMUA gedung (dipicu 2x) sehingga input baru
+            // muncul ~6 detik kemudian (UAT 18 Nov).
+            const $option = $(this).find('option:selected');
+            if ($option.length && $option.is('[data-address1]')) {
+                displaySelectedAddress({
+                    id: buildingId,
+                    name: $option.text(),
+                    alamat_1: $option.attr('data-address1') || '',
+                    alamat_2: $option.attr('data-address2') || '',
+                    kode_pos: $option.attr('data-postal-code') || '',
+                    phone_1: $option.attr('data-phone1') || '',
+                    phone_2: $option.attr('data-phone2') || '',
+                    province_id: $option.attr('data-province-id') || '',
+                    city_id: $option.attr('data-city-id') || '',
+                    district_id: $option.attr('data-district-id') || '',
+                    subdistrict_id: $option.attr('data-subdistrict-id') || ''
+                });
+                return;
+            }
+
+            // Cadangan untuk opsi tanpa atribut data.
             $.get('{{ route("marketing.surveys.wizard.get-buildings") }}', {customer_id: $('#customer_id').val()})
                 .done(function(data) {
                     const selectedBuilding = data.find(function(building) {
@@ -2138,11 +2162,12 @@ $(document).ready(function() {
     $('#building_id').on('select2:select', function(e) {
         // Add null check to prevent error
         if (e.params && e.params.data) {
+            // Select2 sudah memicu 'change' sendiri; memicunya lagi di sini dulu membuat handler
+            // gedung berjalan dua kali.
             const buildingId = e.params.data.id;
-            console.log('Select2 select event - buildingId:', buildingId);
-            console.log('Select2 select event - current val before:', $(this).val());
-            $(this).val(buildingId).trigger('change');
-            console.log('Select2 select event - current val after:', $(this).val());
+            if (String($(this).val()) !== String(buildingId)) {
+                $(this).val(buildingId).trigger('change');
+            }
         } else {
             console.log('Select2 select event - params or data is undefined');
         }

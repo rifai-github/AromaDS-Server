@@ -34,9 +34,9 @@ class QuotationBottomPriceEvaluator
         $lines = [];
 
         foreach ($details as $detail) {
-            // Free giveaway lines carry no price to discount, so they never
-            // trigger bottom-price approval on their own.
-            if ((float) $detail->unit_price <= 0) {
+            // UAT 18 Nov: free qty ikut dihitung ke total bottom price (qty + qty free), jadi
+            // baris free tidak lagi dilewati. Hanya baris tanpa unit sama sekali yang diabaikan.
+            if ($this->bottomPriceUnits($detail) <= 0) {
                 continue;
             }
 
@@ -84,7 +84,7 @@ class QuotationBottomPriceEvaluator
         }
 
         if (empty($lines)) {
-            // Nothing but free lines - nothing to approve.
+            // No line carries any unit - nothing to approve.
             return [
                 'requires_approval' => false,
                 'issues' => [],
@@ -94,15 +94,14 @@ class QuotationBottomPriceEvaluator
         }
 
         // The approval decision is based on the quotation as a whole, not on
-        // any single line: sum the paid lines' actual total against the sum
-        // of their bottom-price floors (each floor times that line's quantity).
+        // any single line: sum the lines' actual total against the sum of their
+        // bottom-price floors (each floor times that line's qty + free qty).
         $totalQuotation = 0.0;
         $totalBottom = 0.0;
 
         foreach ($lines as $line) {
-            $quantity = (float) ($line['detail']->quantity ?: 1);
             $totalQuotation += (float) $line['detail']->total_price;
-            $totalBottom += $line['bottom_price'] * $quantity;
+            $totalBottom += $line['bottom_price'] * $this->bottomPriceUnits($line['detail']);
         }
 
         // Total quotation at or above the total floor: no approval needed.
@@ -136,6 +135,15 @@ class QuotationBottomPriceEvaluator
             'required_level' => $requiredLevel ? $this->levelPayload($requiredLevel) : null,
             'required_permission' => $requiredLevel?->permission_name,
         ];
+    }
+
+    /**
+     * Unit yang menanggung bottom price: qty berbayar + qty free. Dulu hanya quantity (dan
+     * qty 0 dianggap 1), sehingga unit free tidak ikut menaikkan total bottom.
+     */
+    private function bottomPriceUnits($detail): float
+    {
+        return max(0.0, (float) ($detail->quantity ?? 0)) + max(0.0, (float) ($detail->qty_free ?? 0));
     }
 
     private function withRequiredLevel(array $issue, ?QuotationApprovalLevel $level): array

@@ -5698,14 +5698,54 @@ class JobAssignMaterialIssueController extends Controller
                     ->value('quantity') ?? 0;
             }
 
+            $qtyChanged = abs($oldQuantity - (float) $request->quantity) > 0.0001;
+            $metadata = $materialIssue ? ($materialIssue->metadata ?? []) : [];
+
             if ($materialIssue
-                && abs($oldQuantity - (float) $request->quantity) > 0.0001
+                && $qtyChanged
                 && in_array($materialIssue->status, ['approved', 'out_of_stock', 'out of stock'], true)
             ) {
+                // Simpan qty yang sudah di-approve, supaya bila qty dikembalikan ke nilai itu
+                // statusnya bisa kembali Approved (UAT 18 Nov: 1 -> 10 -> 1 macet di Pending).
+                if ($materialIssue->status === 'approved') {
+                    $metadata['qty_edit_approved_snapshot'] = [(string) $item->id => $oldQuantity];
+                } else {
+                    unset($metadata['qty_edit_approved_snapshot']);
+                }
+
                 $materialIssue->update([
                     'status' => 'pending',
+                    'metadata' => $metadata,
                     'updated_by' => auth()->id(),
                 ]);
+                $materialIssue->refresh();
+            } elseif ($materialIssue
+                && $qtyChanged
+                && $materialIssue->status === 'pending'
+                && ! empty($metadata['qty_edit_approved_snapshot'])
+            ) {
+                $snapshot = $metadata['qty_edit_approved_snapshot'];
+                // Item lain yang baru diubah setelah turun ke Pending: qty sebelumnya = qty approved.
+                if (! array_key_exists((string) $item->id, $snapshot)) {
+                    $snapshot[(string) $item->id] = $oldQuantity;
+                }
+
+                $currentQuantities = \App\Models\MaterialIssueItem::whereIn('id', array_keys($snapshot))
+                    ->pluck('quantity', 'id');
+                $backToApproved = collect($snapshot)->every(fn ($approvedQty, $id) =>
+                    abs((float) ($currentQuantities[(int) $id] ?? -1) - (float) $approvedQty) <= 0.0001);
+
+                if ($backToApproved) {
+                    unset($metadata['qty_edit_approved_snapshot']);
+                    $materialIssue->update([
+                        'status' => 'approved',
+                        'metadata' => $metadata,
+                        'updated_by' => auth()->id(),
+                    ]);
+                } else {
+                    $metadata['qty_edit_approved_snapshot'] = $snapshot;
+                    $materialIssue->update(['metadata' => $metadata]);
+                }
                 $materialIssue->refresh();
             }
 

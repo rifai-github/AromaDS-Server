@@ -66,6 +66,8 @@ class SubmitIssueGroupedSelectionTest extends TestCase
             $table->foreignId('warehouse_id')->nullable();
             $table->foreignId('product_id')->nullable();
             $table->string('status')->nullable();
+            // Sama dengan produksi: dipakai snapshot qty approved (UAT 18 Nov).
+            $table->longText('metadata')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('updated_by')->nullable();
             $table->timestamps();
@@ -445,6 +447,42 @@ class SubmitIssueGroupedSelectionTest extends TestCase
         app(JobAssignMaterialIssueController::class)->updateQtyIssue($request, 80);
 
         $this->assertSame('pending', DB::table('material_issues')->where('id', 30)->value('status'));
+    }
+
+    public function test_qty_returned_to_the_approved_value_restores_approved_status(): void
+    {
+        // UAT 18 Nov (Pak Diki): qty kemasan 1 (Approved) -> 10 (Pending) -> 1 tetap Pending.
+        $now = now();
+        DB::table('warehouses')->insert(['id' => 1, 'name' => 'Gudang Surabaya', 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('material_issues')->insert([
+            'id' => 31, 'issue_number' => 'SBY-MI/26-06/0012', 'warehouse_id' => 1,
+            'status' => 'approved', 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        DB::table('packaging_sizes')->insert(['id' => 10, 'name' => '100ml', 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('master_products')->insert([
+            'id' => 60, 'packaging_size_id' => 10, 'name' => 'All Purpose Cleaner 100 ml',
+            'bom_quantity' => 100, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        DB::table('warehouse_products')->insert([
+            'warehouse_id' => 1, 'master_product_id' => 60, 'quantity' => 50, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        DB::table('material_issue_items')->insert([
+            'id' => 81, 'material_issue_id' => 31, 'product_id' => 60, 'room_name' => 'Lobby',
+            'quantity' => 1, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+
+        $update = function (int $qty) {
+            $request = Request::create('/operational/job-assign-material-issues/update-qty/81', 'PUT', ['quantity' => $qty]);
+            app(JobAssignMaterialIssueController::class)->updateQtyIssue($request, 81);
+
+            return DB::table('material_issues')->where('id', 31)->value('status');
+        };
+
+        $this->assertSame('pending', $update(10));
+        $this->assertSame('pending', $update(5));
+        $this->assertSame('approved', $update(1));
+        // Snapshot dibersihkan setelah kembali Approved; perubahan berikutnya mulai dari nol.
+        $this->assertSame('pending', $update(3));
     }
 
     public function test_unchecked_sibling_without_material_still_blocks_submit_issue(): void

@@ -318,6 +318,17 @@
                                     <label class="info-label">Remark</label>
                                     <textarea name="room_remark" class="editable-input auto-save" rows="3">{{ $masterRoom->room_remark }}</textarea>
                                 </div>
+
+                                {{-- UAT 18 Nov: tidak lagi auto-save; perubahan baru tersimpan lewat Simpan. --}}
+                                <div class="mt-4 d-flex align-items-center gap-2" id="roomFormActions">
+                                    <button type="button" class="btn btn-primary btn-sm" id="roomSaveBtn" onclick="saveRoomChanges()" disabled>
+                                        <i class="fas fa-save me-1"></i> SIMPAN
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" id="roomCancelBtn" onclick="cancelRoomChanges()" disabled>
+                                        <i class="fas fa-times me-1"></i> BATAL
+                                    </button>
+                                    <small class="text-muted" id="roomDirtyHint" style="display:none;">Ada perubahan yang belum disimpan.</small>
+                                </div>
                             </div>
                         </div>
                     </form>
@@ -396,15 +407,69 @@
 
 @push('scripts')
 <script>
+    // UAT 18 Nov: auto-save dimatikan. Perubahan ditandai lalu disimpan lewat tombol SIMPAN;
+    // BATAL mengembalikan nilai terakhir yang tersimpan.
+    let roomFormDirty = false;
+
+    function setRoomFormDirty(dirty) {
+        roomFormDirty = dirty;
+        document.getElementById('roomSaveBtn').disabled = !dirty;
+        document.getElementById('roomCancelBtn').disabled = !dirty;
+        document.getElementById('roomDirtyHint').style.display = dirty ? 'inline' : 'none';
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
-        // Setup Auto-Save for all fields with 'auto-save' class
-        const autoSaveFields = document.querySelectorAll('.auto-save');
-        autoSaveFields.forEach(field => {
-            field.addEventListener('change', function() {
-                performAutoSave();
-            });
+        document.querySelectorAll('.auto-save').forEach(field => {
+            field.addEventListener('input', () => setRoomFormDirty(true));
+            field.addEventListener('change', () => setRoomFormDirty(true));
+        });
+        // Select2 memicu 'change' lewat jQuery, yang tidak sampai ke addEventListener.
+        if (typeof $ !== 'undefined') {
+            $(document).on('change', '#roomDetailForm .auto-save', () => setRoomFormDirty(true));
+        }
+
+        window.addEventListener('beforeunload', function(event) {
+            if (roomFormDirty) {
+                event.preventDefault();
+                event.returnValue = '';
+            }
         });
     });
+
+    function saveRoomChanges() {
+        const form = document.getElementById('roomDetailForm');
+        if (!form.reportValidity()) {
+            return;
+        }
+        performAutoSave(function onSaved() {
+            // Nilai yang baru tersimpan menjadi titik kembali tombol BATAL.
+            form.querySelectorAll('.auto-save').forEach(field => {
+                if (field.tagName === 'SELECT') {
+                    Array.from(field.options).forEach(option => { option.defaultSelected = option.selected; });
+                } else {
+                    field.defaultValue = field.value;
+                }
+            });
+            setRoomFormDirty(false);
+        });
+    }
+
+    function cancelRoomChanges() {
+        document.getElementById('roomDetailForm').reset();
+        if (typeof $ !== 'undefined' && $.fn.select2) {
+            $('#roomDetailForm select').each(function () {
+                if ($(this).data('select2')) {
+                    $(this).trigger('change.select2');
+                }
+            });
+        }
+        const headerName = document.getElementById('headerRoomName');
+        const nameInput = document.querySelector('#roomDetailForm [name="room_name"]');
+        if (headerName && nameInput) {
+            headerName.textContent = nameInput.value;
+        }
+        setRoomFormDirty(false);
+    }
 
     function switchTab(evt, tabName) {
         // Hide all panels
@@ -421,7 +486,7 @@
         evt.currentTarget.classList.add('active');
     }
 
-    function performAutoSave() {
+    function performAutoSave(onSaved = null) {
         const form = document.getElementById('roomDetailForm');
         const formData = new FormData(form);
         const id = formData.get('id');
@@ -447,7 +512,9 @@
         .then(data => {
             if (data.status === 'success') {
                 showToast('Changes saved successfully!', false, 'success');
-                // Optional: No reload needed for auto-save unless specialized logic required
+                if (typeof onSaved === 'function') {
+                    onSaved();
+                }
             } else {
                 showToast('Error saving changes: ' + (data.message || 'Unknown error'), false, 'error');
             }

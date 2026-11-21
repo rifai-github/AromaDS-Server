@@ -437,7 +437,7 @@
                                         <div class="quotation-field-value">{{ $quotation->internal_notes ?? '-' }}</div>
                                     </div>
                                     <div class="quotation-field">
-                                        <div class="quotation-field-label">Sub Total</div>
+                                        <div class="quotation-field-label">Sub Total / TOP</div>
                                         <div class="quotation-field-value">Rp {{ number_format($quotation->total_amount ?? 0, 0, ',', '.') }}</div>
                                     </div>
                                    <!-- <div class="quotation-field">
@@ -479,7 +479,7 @@
                                             <th data-column="masterRental.name">Rental</th>
                                             <th data-column="qty" data-type="numeric">Qty</th>
                                             <th data-column="qty_free" data-type="numeric">Qty Free</th>
-                                            <th data-column="rental_price" data-type="numeric">Harga Rental / Bulan</th>
+                                            <th data-column="rental_price" data-type="numeric">Harga Rental / TOP</th>
                                             <th data-column="total_price" data-type="numeric">Total</th>
                                             @if($quotation->status === 'draft')
                                             <th data-no-filter style="width: 100px; text-align: center;">Action</th>

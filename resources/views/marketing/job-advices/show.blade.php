@@ -148,6 +148,10 @@
                                     $canApproveJobAdvice = auth()->user()->canApprove('job_advices');
                                 @endphp
                                 @if($canApproveJobAdvice)
+                                    {{-- UAT 18 Nov: kembalikan ke Draft agar bisa diedit sebelum approve/cancel. --}}
+                                    <button class="btn btn-outline-secondary btn-sm me-2" onclick="saveToDraft()">
+                                        <i class="fas fa-undo"></i> BACK TO DRAFT
+                                    </button>
                                     <button class="btn btn-success btn-sm me-2" onclick="approveJobAdvice()">
                                         <i class="fas fa-check"></i> APPROVE
                                     </button>
@@ -155,6 +159,11 @@
                                         <i class="fas fa-times"></i> CANCEL
                                     </button>
                                 @else
+                                    @if((int) $jobAdvice->created_by === (int) auth()->id())
+                                        <button class="btn btn-outline-secondary btn-sm me-2" onclick="saveToDraft()">
+                                            <i class="fas fa-undo"></i> BACK TO DRAFT
+                                        </button>
+                                    @endif
                                     <span class="badge bg-warning text-dark ms-2">Waiting for Approval</span>
                                 @endif
                             @elseif($jobAdvice->status === 'approved')

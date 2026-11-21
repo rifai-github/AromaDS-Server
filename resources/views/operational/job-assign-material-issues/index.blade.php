@@ -1203,6 +1203,7 @@
                         <tr class="job-group"
                             data-group="{{ $groupKey }}"
                             data-id="{{ $issue->id }}"
+                            data-building-name="{{ $jobSchedule && $jobSchedule->building ? $jobSchedule->building->building_name : '' }}"
                             data-job-number="{{ $jobSchedule ? $jobSchedule->job_number : '' }}"
                             data-job-type="{{ $jobSchedule ? strtolower($jobSchedule->type) : '' }}"
                             data-product-bom-qty="{{ $productBomQty }}"
@@ -1658,7 +1659,7 @@
                         @endforeach
                     @else
                         <!-- Fallback if no items -->
-                        <tr data-id="{{ $issue->id }}" data-job-number="{{ $jobSchedule ? $jobSchedule->job_number : '' }}" data-job-type="{{ $jobSchedule ? strtolower($jobSchedule->type) : '' }}">
+                        <tr data-id="{{ $issue->id }}" data-building-name="{{ $jobSchedule && $jobSchedule->building ? $jobSchedule->building->building_name : '' }}" data-job-number="{{ $jobSchedule ? $jobSchedule->job_number : '' }}" data-job-type="{{ $jobSchedule ? strtolower($jobSchedule->type) : '' }}">
                             <td class="text-center">
                                 <input type="checkbox" class="row-checkbox w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer" value="{{ $issue->id }}" data-job-number="{{ $jobSchedule ? $jobSchedule->job_number : '' }}" onclick="event.stopPropagation()" onchange="handleCheckboxChange(this)">
                             </td>
@@ -3081,6 +3082,27 @@ function formatSubmitUnitTotal(total) {
     }).format(total);
 }
 
+function escapeSubmitHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function formatSubmitBuildingList(rows) {
+    const buildings = [...new Set(rows
+        .map(row => (row.dataset.buildingName || '').trim())
+        .filter(Boolean))];
+
+    if (buildings.length === 0) {
+        return 'gedung yang dipilih';
+    }
+
+    const items = buildings.map(name => `<strong>${escapeSubmitHtml(name)}</strong>`);
+    return items.length === 1
+        ? `building ${items[0]}`
+        : `building:<br>${items.join('<br>')}`;
+}
+
 // Submit issue function
 function submitIssue(forceContinue = false) {
     const selectedRows = getSelectedSubmitIssueRows();
@@ -3101,7 +3123,8 @@ function submitIssue(forceContinue = false) {
         Swal.fire({
             icon: 'question',
             title: 'Submit Material Issue',
-            html: `Apakah Anda yakin ingin submit total <strong>${formatSubmitUnitTotal(totalSubmitUnits)}</strong> unit dari <strong>${materialIssueIds.length}</strong> material issue?<br><br><small>Material akan di-issue dan stok warehouse akan diperbarui.</small>`,
+            // UAT 18 Nov: tampilkan gedung tujuan, bukan "xxx unit" (refill bukan unit).
+            html: `Apakah Anda yakin material assign ini untuk ${formatSubmitBuildingList(selectedRows)}?<br><br><small>${materialIssueIds.length} material issue akan di-issue dan stok warehouse akan diperbarui.</small>`,
             showCancelButton: true,
             confirmButtonText: 'Ya, Submit!',
             cancelButtonText: 'Batal',

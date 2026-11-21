@@ -1460,7 +1460,13 @@ class SurveyWizardController extends Controller
             'new_building_phone1' => 'nullable|string|max:20',
             'new_building_phone2' => 'nullable|string|max:20',
             'new_building_fax' => 'nullable|string|max:20',
-            'building_location_detail' => 'nullable|string|max:255',
+            // Wajib saat finalize untuk gedung yang sudah ada (gedung baru memakai
+            // new_building_location_detail). UAT 18 Nov.
+            'building_location_detail' => [
+                \Illuminate\Validation\Rule::requiredIf(fn () => $request->input('action') === 'finalize'
+                    && ! in_array((string) $request->input('add_new_building'), ['true', '1'], true)),
+                'nullable', 'string', 'max:255',
+            ],
             'rooms' => 'required|array|min:1',
             'rooms.*.room_name' => 'required|string|max:255',
             'rooms.*.room_type' => 'required|string|max:255',
@@ -2171,13 +2177,12 @@ class SurveyWizardController extends Controller
             return MasterOption::where('name', 'Installation Type')->first()?->optionDetails ?? collect();
         });
 
-        $salutations = Cache::remember('survey-wizard:salutations', now()->addMinutes(10), function () {
-            $salutationOption = MasterOption::with(['optionDetails' => function ($query) {
-                $query->where('is_active', true)->orderBy('option_name');
-            }])->where('name', 'Salutation')->first();
-
-            return $salutationOption ? $salutationOption->optionDetails : collect();
-        });
+        // Tanpa cache: daftarnya kecil, dan cache 10 menit dulu membuat perubahan di Master
+        // Option Salutation tidak langsung terlihat di wizard (UAT 18 Nov).
+        $salutationOption = MasterOption::with(['optionDetails' => function ($query) {
+            $query->where('is_active', true)->orderBy('option_name');
+        }])->where('name', 'Salutation')->first();
+        $salutations = $salutationOption ? $salutationOption->optionDetails : collect();
 
         $positions = Cache::remember('survey-wizard:positions', now()->addMinutes(10), function () {
             $positionOption = MasterOption::where('name', 'Position')->first();

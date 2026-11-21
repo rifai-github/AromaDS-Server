@@ -173,17 +173,20 @@ class Survey extends Model
             ?? '-';
     }
 
+    // PIC = kontak yang dipilih di wizard (tersimpan di surveys.email / phone_1). Email/telepon
+    // customer hanya cadangan; dulu urutannya terbalik sehingga Basic Info menampilkan data
+    // master customer, bukan master contact (UAT 18 Nov).
     public function getDisplayEmailAttribute()
     {
-        return $this->normalizeDisplayValue($this->customer?->email)
-            ?? $this->normalizeDisplayValue($this->email)
+        return $this->normalizeDisplayValue($this->email)
+            ?? $this->normalizeDisplayValue($this->customer?->email)
             ?? '-';
     }
 
     public function getDisplayPhoneOneAttribute()
     {
-        return $this->normalizeDisplayValue($this->customer?->phone)
-            ?? $this->normalizeDisplayValue($this->phone_1)
+        return $this->normalizeDisplayValue($this->phone_1)
+            ?? $this->normalizeDisplayValue($this->customer?->phone)
             ?? '-';
     }
 
@@ -276,6 +279,22 @@ class Survey extends Model
 
         if ($value === '' || $value === '-' || Str::lower($value) === 'null') {
             return null;
+        }
+
+        // Survey lama sempat menyimpan teks yang sudah di-escape HTML (mis. "l&#039;arc en ciel",
+        // bisa berlapis "&amp;#039;") karena halaman detail mengirim balik nilai {{ }}. Tampilkan
+        // teks aslinya; Blade tetap meng-escape sekali saat render.
+        return self::decodeStoredHtmlEntities($value);
+    }
+
+    public static function decodeStoredHtmlEntities(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        for ($i = 0; $i < 5 && preg_match('/&(#0*39|#x0*27|quot|amp|lt|gt|apos);/i', $value); $i++) {
+            $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         }
 
         return $value;

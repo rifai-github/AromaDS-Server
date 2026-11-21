@@ -4259,7 +4259,7 @@ $(document).ready(function() {
 
         const previousPaidPrice = parseFloat(priceInput.data('paid-price-before-free')) || 0;
         if (currentPrice === 0 && previousPaidPrice > 0) {
-            priceInput.val(previousPaidPrice);
+            priceInput.val(toWholePrice(previousPaidPrice));
             return previousPaidPrice;
         }
 
@@ -4593,8 +4593,11 @@ $(document).ready(function() {
             }
         }
         
-        // Group by room if basis is "room", otherwise show each rental item
-        if (priceBasis === 'room') {
+        // UAT 18 Nov: summary step 7 selalu menampilkan qty, free, harga, dan rental untuk kedua
+        // basis harga; perbedaan basis Ruangan vs Rental hanya berlaku di printout. Ringkasan
+        // per ruangan (tanpa qty) di bawah sengaja dimatikan.
+        const summaryGroupsByRoom = false;
+        if (summaryGroupsByRoom && priceBasis === 'room') {
             // ROOM BASIS: Show room name + aroma + total (no qty, no rental details)
             const roomTotals = {};
             const processedRooms = new Set(); // Track processed rooms to avoid duplicates
@@ -4759,7 +4762,7 @@ $(document).ready(function() {
                             const priceNum = await resolveSummaryRentalPrice(productId, surveyId, productName, price);
                             const effectivePriceNum = isFreeOnlyRentalConfig(config) ? 0 : priceNum;
                             if (effectivePriceNum > 0 && parseRentalCurrencyValue(price) === 0) {
-                                config.find('input[name*="price"]').val(effectivePriceNum).trigger('change');
+                                config.find('input[name*="price"]').val(toWholePrice(effectivePriceNum)).trigger('change');
                             }
                             const qtyNum = parseRentalCurrencyValue(quantity) || 1;
                             const total = effectivePriceNum * qtyNum;
@@ -5303,7 +5306,7 @@ $(document).ready(function() {
                         // price only when the price field is still empty (see the delegated
                         // handler on .rental-product-select) — filling price here first
                         // prevents that async fetch from clobbering the restored value.
-                        targetForm.find('input[name*="price"]').val(config.formData.price);
+                        targetForm.find('input[name*="price"]').val(toWholePrice(config.formData.price));
                         targetForm.find('input[name*="quantity"]').val(config.formData.quantity);
                         targetForm.find('input[name*="qty_free"]').val(config.formData.qty_free || 0);
                         targetForm.find('input[name*="remark"]').val(config.formData.remark || '');
@@ -5649,7 +5652,7 @@ $(document).ready(function() {
         if (data?.is_corporate_price) {
             const price = data.monthly_price;
             if (price !== undefined && price !== null && price !== '') {
-                priceInput.val(price).trigger('change');
+                priceInput.val(toWholePrice(price)).trigger('change');
             }
             priceInput.prop('readonly', true).addClass('bg-light');
 
@@ -5659,7 +5662,7 @@ $(document).ready(function() {
         } else {
             const price = resolveRentalProductPriceFromData(data);
             if (price !== undefined && price !== null && price !== '') {
-                priceInput.val(price).trigger('change');
+                priceInput.val(toWholePrice(price)).trigger('change');
             } else {
                 fetchAndApplyRentalProductPrice(productSelect, data);
             }
@@ -5695,7 +5698,7 @@ $(document).ready(function() {
 
                 const price = resolveRentalProductPriceFromData(product);
                 if (price !== undefined && price !== null && price !== '') {
-                    priceInput.val(price).trigger('change');
+                    priceInput.val(toWholePrice(price)).trigger('change');
                     applyFreeOnlyPriceState(rentalConfig);
                 }
             },
@@ -5717,6 +5720,17 @@ $(document).ready(function() {
             updateNextButtonState();
         }, 300));
     });
+
+    // Harga/TOP selalu bilangan bulat: nilai dari master rental / quotation (cast decimal:2)
+    // dulu ditulis apa adanya sehingga tampil 1.000.000,00 (UAT 18 Nov).
+    // Dipasang ke window karena dipanggil dari beberapa scope fungsi di file ini.
+    window.toWholePrice = function (value) {
+        if (value === undefined || value === null || value === '') {
+            return value;
+        }
+        const number = parseFloat(value);
+        return Number.isFinite(number) ? Math.round(number) : value;
+    };
 
     function removeRentalConfiguration(surveyId, uniqueId) {
         console.log('Removing rental configuration for survey:', surveyId, 'with uniqueId:', uniqueId);
@@ -5747,17 +5761,11 @@ $(document).ready(function() {
             });
         }
         
-        // Also clean up any orphaned Select2 dropdown containers
-        $('.select2-container').each(function() {
-            const $container = $(this);
-            // Check if the parent element still exists in the DOM
-            const parentId = $container.data('select2-id');
-            if (parentId && !$(`#${parentId}`).length) {
-                $container.remove();
-                console.log('Removed orphaned Select2 container:', parentId);
-            }
-        });
-        
+        // Tidak ada lagi "bersih-bersih" container Select2 global di sini: data-select2-id adalah
+        // kunci internal Select2, bukan id elemen, sehingga pengecekan $('#'+id) selalu gagal dan
+        // container baris rental LAIN ikut terhapus -> field Produk Rental & Rental Alias rusak
+        // (UAT 18 Nov). select2('destroy') di atas sudah membersihkan container baris ini.
+
         updateNextButtonState();
         calculateStep5Totals(); // Recalculate totals after removal
     }

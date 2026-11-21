@@ -135,10 +135,36 @@ class SurveyController extends Controller
         }
 
         // Sorting
-        if ($request->filled('sort')) {
-            $sort = $request->sort;
-            $direction = $request->input('direction', 'asc');
-            $query->orderBy($sort, $direction);
+        // Header Marketing/Created By/Last Updated By mengirim nama relasi (marketing.name dll).
+        // Dulu diteruskan mentah ke orderBy -> "Unknown column" -> error 500/503 (UAT 18 Nov).
+        $sortableColumns = [
+            'survey_number' => 'surveys.survey_number',
+            'survey_date' => 'surveys.survey_date',
+            'company_name' => 'surveys.company_name',
+            'building_name' => 'surveys.building_name',
+            'survey_location' => 'surveys.survey_location',
+            'building_location_detail' => 'surveys.building_location_detail',
+            'status' => 'surveys.status',
+            'created_at' => 'surveys.created_at',
+            'updated_at' => 'surveys.updated_at',
+            'surveys.updated_at' => 'surveys.updated_at',
+        ];
+        $sortableUserRelations = [
+            'marketing.name' => 'surveys.marketing_id',
+            'creator.name' => 'surveys.created_by',
+            'updater.name' => 'surveys.updated_by',
+            'surveyor.name' => 'surveys.surveyor_id',
+        ];
+        $sort = (string) $request->input('sort', '');
+        $direction = strtolower((string) $request->input('direction', 'asc')) === 'desc' ? 'desc' : 'asc';
+
+        if (isset($sortableColumns[$sort])) {
+            $query->orderBy($sortableColumns[$sort], $direction);
+        } elseif (isset($sortableUserRelations[$sort])) {
+            $query->orderBy(
+                User::select('name')->whereColumn('users.id', $sortableUserRelations[$sort])->limit(1),
+                $direction
+            );
         } else {
             $query->orderBy('surveys.survey_date', 'desc')
                   ->orderBy('surveys.created_at', 'desc');

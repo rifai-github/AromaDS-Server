@@ -128,21 +128,36 @@ class QuotationBottomPriceEvaluatorTest extends TestCase
         $this->assertSame('director', $result['required_level']['level_code']);
     }
 
-    public function test_free_lines_never_trigger_approval(): void
+    // UAT 18 Nov 2026: free qty wajib dihitung ke total bottom price (qty + free qty).
+    // Dulu baris free dilewati sehingga giveaway tak pernah butuh approval.
+    public function test_a_free_only_quotation_needs_approval_because_free_units_carry_a_bottom_price(): void
     {
         $quotation = $this->seedQuotationWithDetail(0, qtyFree: 1, quantity: 0);
         $this->seedBottomPrice(1_000_000);
 
         $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
 
-        $this->assertFalse($result['requires_approval']);
-        $this->assertSame([], $result['issues']);
+        $this->assertTrue($result['requires_approval']);
+        $this->assertSame('below_bottom_price', $result['issues'][0]['type']);
     }
 
-    public function test_a_paid_quotation_carrying_a_free_line_is_judged_only_on_the_paid_line(): void
+    public function test_free_qty_raises_the_total_bottom_price(): void
     {
+        // 1.500.000 berbayar vs bottom (1 berbayar + 1 free) x 1.000.000 = 2.000.000 -> 25%.
         $quotation = $this->seedQuotationWithDetail(1_500_000);
         $this->addDetail($quotation, 0, qtyFree: 1, quantity: 0);
+        $this->seedBottomPrice(1_000_000);
+
+        $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
+
+        $this->assertTrue($result['requires_approval']);
+        $this->assertSame(25.0, $result['issues'][0]['discount_percentage']);
+    }
+
+    public function test_a_paid_line_high_enough_covers_its_own_free_qty(): void
+    {
+        // 2.500.000 berbayar vs bottom (1 + 1 free) x 1.000.000 = 2.000.000 -> lolos.
+        $quotation = $this->seedQuotationWithDetail(2_500_000, qtyFree: 1);
         $this->seedBottomPrice(1_000_000);
 
         $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
