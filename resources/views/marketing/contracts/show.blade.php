@@ -1154,7 +1154,12 @@
                                         </div>
                                         <div class="col-md-6 mb-3">
                                             <label class="form-label">PIC Service (Email)</label>
-                                            <input type="email" name="pic_service_email" id="editPicServiceEmail" class="form-control" value="{{ $contract->pic_service_email ?? '' }}">
+                                            @if($canSeePicInfo)
+                                                <input type="email" name="pic_service_email" id="editPicServiceEmail" class="form-control" value="{{ $contract->pic_service_email ?? '' }}">
+                                            @else
+                                                {{-- UAT 19 Nov: tanpa izin PIC Info field tak dikirim; server juga tak menimpa nilainya. --}}
+                                                <input type="text" class="form-control" value="Disembunyikan (butuh izin PIC Info)" disabled>
+                                            @endif
                                         </div>
                                         <div class="col-md-12 mb-3">
                                             <label class="form-label">Catatan Tambahan</label>

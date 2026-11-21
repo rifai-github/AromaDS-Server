@@ -692,11 +692,16 @@ class ContractController extends Controller
                 'customer_signing_3_id' => $request->customer_signing_3_id,
                 'customer_signing_4_id' => $request->customer_signing_4_id,
                 'internal_signing_id' => $request->internal_signing_id,
-                'pic_service_email' => $request->pic_service_email,
                 'external_remark' => $request->external_remark,
                 'internal_remark' => $request->internal_remark,
                 'updated_by' => Auth::id(),
             ];
+
+            // UAT 19 Nov: form untuk user tanpa izin PIC Info tidak mengirim field ini, jadi
+            // nilainya tidak boleh ikut terhapus saat ia menyimpan Additional Info.
+            if ($request->exists('pic_service_email')) {
+                $payload['pic_service_email'] = $request->pic_service_email;
+            }
 
             if (! $isPosted) {
                 $payload['ppn_code'] = $request->ppn_code;
@@ -3598,9 +3603,6 @@ class ContractController extends Controller
     }
 
     /**
-     * Toggle Hold Invoice status for a contract
-     */
-    /**
      * Customer PO Number boleh diisi/diubah kapan pun, termasuk setelah kontrak di-post
      * (UAT 19 Nov). Invoice menyalin PO saat dibuat, jadi invoice yang belum lunas/batal dan
      * masih memakai PO lama (atau kosong) ikut diperbarui supaya cetakannya benar.
@@ -3650,6 +3652,9 @@ class ContractController extends Controller
         }
     }
 
+    /**
+     * Toggle Hold Invoice status for a contract
+     */
     public function toggleHoldInvoice(Request $request, Contract $contract)
     {
         try {

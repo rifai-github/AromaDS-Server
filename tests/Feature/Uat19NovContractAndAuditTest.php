@@ -151,7 +151,13 @@ class Uat19NovContractAndAuditTest extends TestCase
         $this->assertStringContainsString('onclick="saveContractPoNumber({{ $contract->id }})"', $view);
         $this->assertStringContainsString("auth()->user()->hasPermission('marketing.contract-pic-info.view')", $view);
         $this->assertMatchesRegularExpression('/@if\(\$canSeePicInfo\)\s*<td>\{\{ \$email \}\}<\/td>\s*<td>\{\{ \$phone1 \}\}<\/td>\s*@endif/', str_replace("\r\n", "\n", $view));
-        $this->assertSame(3, substr_count($view, '@if($canSeePicInfo)'));
+        // 3 di tabel Billing Group + 1 di modal edit Additional Info (PIC Service Email).
+        $this->assertSame(4, substr_count($view, '@if($canSeePicInfo)'));
+        $this->assertMatchesRegularExpression('/@if\(\$canSeePicInfo\)\s*<input type="email" name="pic_service_email"/', $view);
+
+        // Tanpa izin, server tidak menimpa pic_service_email saat Additional Info disimpan.
+        $controller = file_get_contents(app_path('Http/Controllers/Marketing/ContractController.php'));
+        $this->assertMatchesRegularExpression('/if \(\$request->exists\(\'pic_service_email\'\)\) \{\s*\$payload\[\'pic_service_email\'\]/', $controller);
 
         $print = file_get_contents(View::getFinder()->find('finance.invoices.print_template'));
         $this->assertStringContainsString('Customer PO', $print);
