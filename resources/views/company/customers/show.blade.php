@@ -370,18 +370,8 @@
                         </div>
                     </div>
 
-                    <div class="info-label mt-4 mb-2">Multi PIC</div>
-                    <div class="info-value-text mb-4">
-                        @if($customer->contacts && count($customer->contacts) > 0)
-                            <div class="d-flex flex-wrap gap-2">
-                                @foreach($customer->contacts as $contact)
-                                    <span class="badge bg-light text-dark border"><i class="fas fa-user me-1 text-muted"></i>{{ $contact->name }} ({{ $contact->phone }})</span>
-                                @endforeach
-                            </div>
-                        @else
-                            -
-                        @endif
-                    </div>
+                    {{-- UAT 17 Nov: blok "Multi PIC" di sini dihapus karena dobel dengan tabel
+                         Customer Contacts di bawah; tabel itu kini memuat PIC pivot + legacy. --}}
 
                     <div class="info-label mt-4 mb-2">Tax Data List</div>
                     <div class="table-responsive">
@@ -585,7 +575,7 @@
             <div class="card mb-3">
                 <div class="card-header" style="background-color: #f8f9fa; border-bottom: 2px solid #1e3a8a;">
                     <h5 class="card-title mb-0" style="color: #1e3a8a;">
-                        <i class="fas fa-user-friends me-2"></i>Customer Contacts (Pegawai/Staff)
+                        <i class="fas fa-user-friends me-2"></i>Multi PIC / Customer Contacts
                     </h5>
                 </div>
                 <div class="card-body p-0">
@@ -601,7 +591,16 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                @forelse($customer->customerContacts as $staff)
+                                @php
+                                    // UAT 17 Nov: PIC baru hanya tersimpan di pivot (contacts()), sedangkan
+                                    // data lama memakai customer_contacts.customer_id (customerContacts()).
+                                    // Gabungkan keduanya, unik per id, supaya PIC baru ikut tampil.
+                                    $picContacts = collect($customer->contacts ?? [])
+                                        ->concat($customer->customerContacts ?? [])
+                                        ->unique('id')
+                                        ->values();
+                                @endphp
+                                @forelse($picContacts as $staff)
                                 <tr>
                                     <td style="padding: 12px;"><strong>{{ $staff->salutation }} {{ $staff->name }}</strong></td>
                                     <td style="padding: 12px;">{{ $staff->position ?? '-' }}</td>

@@ -378,6 +378,48 @@ class InventoryReceivingScanSerialAutoResolveTest extends TestCase
         $this->assertTrue($row['is_unit']);
     }
 
+    public function test_new_batch_code_for_refill_without_sn_flag_is_created_once_targeted(): void
+    {
+        // UAT 18 Nov: refill yang kategorinya tak ber-flag SN dulu cuma "tanpa SN" di checklist
+        // scan global, jadi kode batch baru balik 'unknown' tanpa produk yang bisa dipilih.
+        DB::table('product_categories')->insert([
+            'id' => 12, 'name' => 'Refill Tanpa Flag', 'has_serial_number' => false, 'is_unit' => false,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('master_products')->insert([
+            'id' => 300, 'product_category_id' => 12, 'name' => 'Refill Vanilla', 'sku' => 'RFL-VAN',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->seedFreshReceiving();
+        $this->seedItem(300, quantity: 2);
+
+        $unknown = $this->scan(['serial_number' => 'BATCH-NEW-01']);
+        $this->assertSame('unknown', $unknown['status']);
+
+        $row = collect($unknown['checklist']['rows'])->firstWhere('product_id', 300);
+        $this->assertFalse($row['requires_serial']);
+        $this->assertFalse($row['is_unit']);
+
+        $payload = $this->scan(['serial_number' => 'BATCH-NEW-01', 'master_product_id' => 300]);
+        $this->assertSame('success', $payload['status']);
+        $this->assertDatabaseHas('serial_numbers', [
+            'serial_number' => 'BATCH-NEW-01',
+            'master_product_id' => 300,
+            'inventory_receiving_id' => 1,
+            'status' => 'pending',
+        ]);
+
+        // Batch SN non-unit boleh berulang untuk produk yang sama.
+        $again = $this->scan(['serial_number' => 'BATCH-NEW-01', 'master_product_id' => 300]);
+        $this->assertSame('success', $again['status']);
+        $this->assertSame(2, DB::table('serial_numbers')->where('serial_number', 'BATCH-NEW-01')->count());
+
+        // Checklist UI: baris non-unit selalu bisa dipilih sebagai target dari scan global.
+        $view = file_get_contents(resource_path('views/warehouse/inventory-receivings/show.blade.php'));
+        $this->assertStringContainsString('const targetable = row.requires_serial || !row.is_unit;', $view);
+    }
+
     public function test_scan_is_refused_when_receiving_is_not_pending(): void
     {
         $this->seedReturnReceiving(status: 'completed');

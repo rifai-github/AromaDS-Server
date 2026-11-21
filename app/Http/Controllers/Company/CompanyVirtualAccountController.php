@@ -229,8 +229,26 @@ class CompanyVirtualAccountController extends Controller
     public function edit(CompanyVirtualAccount $companyVirtualAccount)
     {
         $companyVirtualAccount->load(['bankPayment', 'customer', 'createdBy', 'updatedBy']);
-        $customers = \App\Models\Customer::orderBy('name')->where('is_active', true)->get();
-        $banks = BankPayment::with('bank')->where('is_active', true)->orderBy('account_name')->get();
+        // UAT 17 Nov: dropdown edit hanya berisi data aktif, sehingga customer/bank
+        // yang sudah nonaktif hilang dari pilihan dan form gagal "required".
+        // Sertakan customer/bank yang sedang tertaut walau nonaktif.
+        $customers = \App\Models\Customer::orderBy('name')
+            ->where(function ($q) use ($companyVirtualAccount) {
+                $q->where('is_active', true);
+                if ($companyVirtualAccount->customer_id) {
+                    $q->orWhere('id', $companyVirtualAccount->customer_id);
+                }
+            })
+            ->get();
+        $banks = BankPayment::with('bank')
+            ->where(function ($q) use ($companyVirtualAccount) {
+                $q->where('is_active', true);
+                if ($companyVirtualAccount->bank_payment_id) {
+                    $q->orWhere('id', $companyVirtualAccount->bank_payment_id);
+                }
+            })
+            ->orderBy('account_name')
+            ->get();
 
         // Return JSON for AJAX requests or as fallback
         if (request()->ajax() || ! view()->exists('company.company-virtual-accounts.edit')) {
@@ -267,11 +285,15 @@ class CompanyVirtualAccountController extends Controller
 
             $bankPayment = BankPayment::findOrFail($request->bank_payment_id);
 
-            if (! $bankPayment->is_active) {
+            // UAT 17 Nov: bank payment sekarang dinonaktifkan (bukan dihapus). VA lama
+            // yang masih tertaut ke bank nonaktif tetap boleh diedit selama banknya
+            // tidak diganti; memindahkan VA ke bank nonaktif tetap ditolak.
+            $isSameBank = (int) $companyVirtualAccount->bank_payment_id === (int) $bankPayment->id;
+            if (! $bankPayment->is_active && ! $isSameBank) {
                 throw new \Exception('Bank Payment yang Anda pilih sedang tidak aktif.');
             }
 
-            $fullAccountNumber = $this->normalizeAccountNumberForBank($request->account_number, $bankPayment);
+            $fullAccountNumber = $this->normalizeAccountNumberForBank($request->account_number, $bankPayment, $companyVirtualAccount);
 
             $exists = CompanyVirtualAccount::where('account_number', $fullAccountNumber)
                 ->where('bank_payment_id', $bankPayment->id)
@@ -329,14 +351,29 @@ class CompanyVirtualAccountController extends Controller
      * The create form sends the suffix, while the edit form historically sends
      * the full account number. Accept both so existing edited VAs do not get a
      * duplicated bank prefix, then store the same canonical full number.
+     *
+     * UAT 17 Nov: saat edit, nomor yang tidak diubah diterima apa adanya. VA lama
+     * (Catalyst / prefix 88997 / 6 digit) tidak berawalan prefix bank, sehingga
+     * dulu simpan-tanpa-ubah gagal "Panjang Suffix VA harus N digit" atau malah
+     * prefix ditempel lagi (6 digit jadi 12 digit).
      */
-    private function normalizeAccountNumberForBank(?string $accountNumber, BankPayment $bankPayment): string
+    private function normalizeAccountNumberForBank(?string $accountNumber, BankPayment $bankPayment, ?CompanyVirtualAccount $existing = null): string
     {
         $prefix = preg_replace('/\D/', '', (string) ($bankPayment->bank_va_number ?? ''));
         $digits = preg_replace('/\D/', '', (string) $accountNumber);
 
         if ($digits === '') {
             throw new \Exception('Validasi Gagal: VA Number wajib diisi.');
+        }
+
+        // Form edit bisa mengirim nomor penuh (lama) atau suffix saja (prefix tampil
+        // terpisah seperti form create); keduanya dianggap "tidak berubah".
+        $storedDigits = preg_replace('/\D/', '', (string) ($existing?->account_number ?? ''));
+        if ($existing !== null
+            && (int) $existing->bank_payment_id === (int) $bankPayment->id
+            && $storedDigits !== ''
+            && ($digits === $storedDigits || ($prefix !== '' && $prefix.$digits === $storedDigits))) {
+            return (string) $existing->account_number;
         }
 
         $expectedSuffixLength = (int) ($bankPayment->length ?? 0);
@@ -356,7 +393,43 @@ class CompanyVirtualAccountController extends Controller
             throw new \Exception("Validasi Gagal: Panjang Suffix VA harus {$expectedSuffixLength} digit. (Input Anda: {$currentSuffixLength} digit)");
         }
 
+        $this->assertSuffixWithinBankRange($suffix, $bankPayment);
+
         return $prefix.$suffix;
+    }
+
+    /**
+     * UAT 17 Nov: Start Number / End Number di Bank Payment selama ini hanya
+     * disimpan, tidak pernah ditegakkan. Suffix VA manual harus berada di
+     * rentang [start_number, end_number] bila rentang itu diisi.
+     */
+    private function assertSuffixWithinBankRange(string $suffix, BankPayment $bankPayment): void
+    {
+        $start = preg_replace('/\D/', '', (string) ($bankPayment->start_number ?? ''));
+        $end = preg_replace('/\D/', '', (string) ($bankPayment->end_number ?? ''));
+
+        if ($start !== '' && $this->compareDigitStrings($suffix, $start) < 0) {
+            throw new \Exception("Validasi Gagal: Nomor VA {$suffix} di bawah Start Number bank payment ({$bankPayment->start_number}).");
+        }
+
+        if ($end !== '' && $this->compareDigitStrings($suffix, $end) > 0) {
+            throw new \Exception("Validasi Gagal: Nomor VA {$suffix} melebihi End Number bank payment ({$bankPayment->end_number}).");
+        }
+    }
+
+    /**
+     * Bandingkan dua string angka tanpa overflow integer (nomor bisa s.d. 20 digit).
+     */
+    private function compareDigitStrings(string $a, string $b): int
+    {
+        $a = ltrim($a, '0');
+        $b = ltrim($b, '0');
+
+        if (strlen($a) !== strlen($b)) {
+            return strlen($a) <=> strlen($b);
+        }
+
+        return strcmp($a, $b) <=> 0;
     }
 
     /**
@@ -367,32 +440,37 @@ class CompanyVirtualAccountController extends Controller
         try {
             DB::beginTransaction();
 
-            $companyVirtualAccount->delete();
+            // UAT 17 Nov: hapus = nonaktifkan (is_active=false), bukan soft delete,
+            // supaya VA tetap tampil di list dengan status Inactive.
+            $companyVirtualAccount->update([
+                'is_active' => false,
+                'updated_by' => Auth::id(),
+            ]);
 
             DB::commit();
 
             // Return JSON for AJAX requests
-            if (request()->ajax()) {
+            if (request()->ajax() || request()->wantsJson()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Company virtual account deleted successfully.',
+                    'message' => 'Virtual account berhasil dinonaktifkan.',
                 ]);
             }
 
             return redirect()->route('company.company-virtual-accounts.index')
-                ->with('success', 'Company virtual account deleted successfully.');
+                ->with('success', 'Virtual account berhasil dinonaktifkan.');
         } catch (\Exception $e) {
             DB::rollback();
 
             // Return JSON for AJAX requests
-            if (request()->ajax()) {
+            if (request()->ajax() || request()->wantsJson()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete company virtual account: '.$e->getMessage(),
+                    'message' => 'Gagal menonaktifkan virtual account: '.$e->getMessage(),
                 ], 422);
             }
 
-            return back()->with('error', 'Failed to delete company virtual account: '.$e->getMessage());
+            return back()->with('error', 'Gagal menonaktifkan virtual account: '.$e->getMessage());
         }
     }
 
@@ -409,32 +487,37 @@ class CompanyVirtualAccountController extends Controller
         try {
             DB::beginTransaction();
 
-            $deletedCount = CompanyVirtualAccount::whereIn('id', $request->ids)->delete();
+            // UAT 17 Nov: bulk hapus = nonaktifkan, bukan soft delete.
+            $deletedCount = CompanyVirtualAccount::whereIn('id', $request->ids)->update([
+                'is_active' => false,
+                'updated_by' => Auth::id(),
+                'updated_at' => now(),
+            ]);
 
             DB::commit();
 
-            // Return JSON for AJAX requests
-            if ($request->ajax()) {
+            // Return JSON for AJAX requests (fetch JSON dari list tidak kirim X-Requested-With)
+            if ($request->ajax() || $request->wantsJson() || $request->isJson()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => "Successfully deleted {$deletedCount} virtual account(s).",
+                    'message' => "{$deletedCount} virtual account berhasil dinonaktifkan.",
                 ]);
             }
 
             return redirect()->route('company.company-virtual-accounts.index')
-                ->with('success', "Successfully deleted {$deletedCount} virtual account(s).");
+                ->with('success', "{$deletedCount} virtual account berhasil dinonaktifkan.");
         } catch (\Exception $e) {
             DB::rollback();
 
             // Return JSON for AJAX requests
-            if ($request->ajax()) {
+            if ($request->ajax() || $request->wantsJson() || $request->isJson()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete virtual accounts: '.$e->getMessage(),
+                    'message' => 'Gagal menonaktifkan virtual account: '.$e->getMessage(),
                 ], 422);
             }
 
-            return back()->with('error', 'Failed to delete virtual accounts: '.$e->getMessage());
+            return back()->with('error', 'Gagal menonaktifkan virtual account: '.$e->getMessage());
         }
     }
 
@@ -448,6 +531,16 @@ class CompanyVirtualAccountController extends Controller
                 'is_active' => ! $companyVirtualAccount->is_active,
                 'updated_by' => Auth::id(),
             ]);
+
+            // UAT 17 Nov: tombol toggle di list memanggil via fetch dan membaca JSON.
+            if (request()->ajax() || request()->wantsJson()) {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => $companyVirtualAccount->is_active
+                        ? 'Virtual account berhasil diaktifkan.'
+                        : 'Virtual account berhasil dinonaktifkan.',
+                ]);
+            }
 
             return back()->with('success', 'Account status updated successfully.');
         } catch (\Exception $e) {

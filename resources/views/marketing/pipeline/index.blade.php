@@ -2104,7 +2104,7 @@ function openEditModal(id) {
                                 ${data.quotation_list && data.quotation_list.length > 0 ? 
                                     data.quotation_list.map(item => `
                                         <div class="quotation-item flex gap-2 mb-2">
-                                            <select name="quotation_list[]" class="form-input flex-1 quotation-select">
+                                            <select name="quotation_list[]" class="form-input flex-1 quotation-select" data-selected="${item}">
                                                 <option value="">Select Quotation</option>
                                                 @foreach($quotations as $quotation)
                                                     <option value="{{ $quotation->id }}" data-customer-id="{{ $quotation->customer_id }}" ${item == {{ $quotation->id }} ? 'selected' : ''}>{{ $quotation->quotation_number }} - {{ $quotation->customer->name ?? 'N/A' }}</option>
@@ -2134,7 +2134,7 @@ function openEditModal(id) {
                                 ${data.survey_list && data.survey_list.length > 0 ? 
                                     data.survey_list.map(item => `
                                         <div class="survey-item flex gap-2 mb-2">
-                                            <select name="survey_list[]" class="form-input flex-1 survey-select">
+                                            <select name="survey_list[]" class="form-input flex-1 survey-select" data-selected="${item}">
                                                 <option value="">Select Survey</option>
                                                 @foreach($surveys as $survey)
                                                     <option value="{{ $survey->id }}" data-customer-id="{{ $survey->customer_id }}" ${item == {{ $survey->id }} ? 'selected' : ''}>{{ $survey->survey_number }} - {{ $survey->customer->name ?? 'N/A' }}</option>
@@ -2164,7 +2164,7 @@ function openEditModal(id) {
                                 ${data.contract_list && data.contract_list.length > 0 ? 
                                     data.contract_list.map(item => `
                                         <div class="contract-item flex gap-2 mb-2">
-                                            <select name="contract_list[]" class="form-input flex-1 contract-select">
+                                            <select name="contract_list[]" class="form-input flex-1 contract-select" data-selected="${item}">
                                                 <option value="">Select Contract</option>
                                                 @foreach($contracts as $contract)
                                                     <option value="{{ $contract->id }}" data-customer-id="{{ $contract->customer_id }}" ${item == {{ $contract->id }} ? 'selected' : ''}>{{ $contract->contract_number }} - {{ $contract->customer->name ?? 'N/A' }}</option>
@@ -2194,7 +2194,7 @@ function openEditModal(id) {
                                 ${data.job_advice_list && data.job_advice_list.length > 0 ? 
                                     data.job_advice_list.map(item => `
                                         <div class="job-advice-item flex gap-2 mb-2">
-                                            <select name="job_advice_list[]" class="form-input flex-1 job-advice-select">
+                                            <select name="job_advice_list[]" class="form-input flex-1 job-advice-select" data-selected="${item}">
                                                 <option value="">Select Job Advice</option>
                                                 @foreach($job_advices as $job_advice)
                                                     <option value="{{ $job_advice->id }}" data-customer-id="{{ $job_advice->customer_id }}" ${item == {{ $job_advice->id }} ? 'selected' : ''}>{{ $job_advice->job_advice_number }} - {{ $job_advice->customer->name ?? 'N/A' }}</option>
@@ -2232,6 +2232,9 @@ function openEditModal(id) {
                 </div>
             `;
             openModal();
+
+            // UAT 17 Nov: muat Related Document customer ini via AJAX (preselect nilai tersimpan).
+            filterDocumentsByCustomer(data.customer_id);
             
             // Initialize Select2 for building dropdown in edit modal
             setTimeout(() => {
@@ -2872,8 +2875,8 @@ function addQuotationItem() {
     }
     
     // Get selected customer ID
-    const selectedCustomer = document.getElementById('customer_id');
-    const customerId = selectedCustomer ? selectedCustomer.value : null;
+    // UAT 17 Nov: di modal edit customer ada di input hidden, bukan #customer_id.
+    const customerId = currentPipelineCustomerId();
     
     const newItem = document.createElement('div');
     newItem.className = 'quotation-item flex gap-2 mb-2';
@@ -2921,8 +2924,8 @@ function addSurveyItem() {
         return;
     }
     // Get selected customer ID
-    const selectedCustomer = document.getElementById('customer_id');
-    const customerId = selectedCustomer ? selectedCustomer.value : null;
+    // UAT 17 Nov: di modal edit customer ada di input hidden, bukan #customer_id.
+    const customerId = currentPipelineCustomerId();
     
     const newItem = document.createElement('div');
     newItem.className = 'survey-item flex gap-2 mb-2';
@@ -2976,8 +2979,8 @@ function addContractItem() {
         return;
     }
     // Get selected customer ID
-    const selectedCustomer = document.getElementById('customer_id');
-    const customerId = selectedCustomer ? selectedCustomer.value : null;
+    // UAT 17 Nov: di modal edit customer ada di input hidden, bukan #customer_id.
+    const customerId = currentPipelineCustomerId();
     
     const newItem = document.createElement('div');
     newItem.className = 'contract-item flex gap-2 mb-2';
@@ -3024,8 +3027,8 @@ function addJobAdviceItem() {
         return;
     }
     // Get selected customer ID
-    const selectedCustomer = document.getElementById('customer_id');
-    const customerId = selectedCustomer ? selectedCustomer.value : null;
+    // UAT 17 Nov: di modal edit customer ada di input hidden, bukan #customer_id.
+    const customerId = currentPipelineCustomerId();
     
     const newItem = document.createElement('div');
     newItem.className = 'job-advice-item flex gap-2 mb-2';
@@ -3067,114 +3070,115 @@ function addJobAdviceItem() {
 const originalSelectHTML = new Map();
 
 // ✅ FILTER ALL DOCUMENTS BY CUSTOMER (Quotations, Surveys, Contracts, Job Advices)
-function filterDocumentsByCustomer(customerId) {
-    console.log('Filtering all documents for customer ID:', customerId);
-    
-    // Convert customerId to string for comparison
-    const customerIdStr = customerId ? String(customerId) : null;
-    
-    // Define all document types and their configurations
-    const documentTypes = [
-        { selector: '.quotation-select', emptyText: 'Select Quotation', noDataText: 'No quotations for this customer' },
-        { selector: '.survey-select', emptyText: 'Select Survey', noDataText: 'No surveys for this customer' },
-        { selector: '.contract-select', emptyText: 'Select Contract', noDataText: 'No contracts for this customer' },
-        { selector: '.job-advice-select', emptyText: 'Select Job Advice', noDataText: 'No job advices for this customer' }
-    ];
-    
-    documentTypes.forEach(docType => {
-        const selects = document.querySelectorAll(docType.selector);
-        
-        selects.forEach((select, index) => {
-            // Create unique key for this select using a more reliable method
-            const selectId = select.id || select.name || `select-${index}`;
-            const containerId = select.closest('.quotation-item, .survey-item, .contract-item, .job-advice-item')?.parentElement?.id || '';
-            const selectKey = `${docType.selector}-${selectId}-${containerId}`;
-            
-            // Store original HTML if not already stored (only once per select)
-            // Only store if select has options (not empty)
-            if (!originalSelectHTML.has(selectKey) && select.querySelectorAll('option').length > 1) {
-                originalSelectHTML.set(selectKey, select.innerHTML);
-                console.log(`Stored original options for ${selectKey}`);
-            }
-            
-            // If customer is cleared, restore all original options
-            if (!customerIdStr) {
-                const originalHTML = originalSelectHTML.get(selectKey);
-                if (originalHTML) {
-                    // Get current selected value to preserve it if possible
-                    const currentValue = select.value;
-                    select.innerHTML = originalHTML;
-                    
-                    // Restore selection if it was valid
-                    if (currentValue && select.querySelector(`option[value="${currentValue}"]`)) {
-                        select.value = currentValue;
-                    }
-                    
-                    // Update empty option text and disable
-                    const emptyOption = select.querySelector('option[value=""]');
-                    if (emptyOption) {
-                        emptyOption.textContent = 'Select customer first';
-                    }
-                    select.disabled = true;
-                    console.log(`Restored all options for ${selectKey}`);
-                } else {
-                    // If no original HTML stored, just disable the select
-                    const emptyOption = select.querySelector('option[value=""]');
-                    if (emptyOption) {
-                        emptyOption.textContent = 'Select customer first';
-                    }
-                    select.disabled = true;
-                }
-                return;
-            }
-            
-            // Filter: Remove options that don't match the selected customer
-            const options = Array.from(select.querySelectorAll('option'));
-            let visibleCount = 0;
-            const optionsToRemove = [];
-            
-            options.forEach(option => {
-                // Skip empty option
-                if (option.value === '') {
-                    return;
-                }
-                
-                const optionCustomerId = option.getAttribute('data-customer-id');
-                
-                // Remove options that don't match the selected customer
-                if (optionCustomerId !== customerIdStr) {
-                    // Clear selection if currently selected option is being removed
-                    if (option.selected) {
-                        select.value = '';
-                    }
-                    // Mark for removal
-                    optionsToRemove.push(option);
-                } else {
-                    visibleCount++;
-                }
-            });
-            
-            // Remove options that don't match the customer
-            optionsToRemove.forEach(option => {
-                option.remove();
-                console.log(`Removed document option with customer ID ${option.getAttribute('data-customer-id')} from ${docType.selector}`);
-            });
-            
-            // Update placeholder text and enable/disable dropdown
-            const emptyOption = select.querySelector('option[value=""]');
-            if (emptyOption) {
-                if (visibleCount === 0) {
-                    emptyOption.textContent = docType.noDataText;
-                    select.disabled = true;
-                } else {
-                    emptyOption.textContent = docType.emptyText;
-                    select.disabled = false;
-                }
+// UAT 17 Nov: sejak cc06a7cb daftar dokumen tidak lagi di-preload (memori habis), sehingga
+// dropdown Related Document selalu kosong ("No ... for this customer"). Sekarang opsi dimuat
+// per customer lewat AJAX (marketing.pipeline.documents.by-customer); nilai tersimpan di form
+// edit (data-selected) ikut dikirim supaya tetap terpilih.
+const PIPELINE_DOCUMENT_TYPES = [
+    { key: 'quotations', selector: '.quotation-select', emptyText: 'Select Quotation', noDataText: 'No quotations for this customer' },
+    { key: 'surveys', selector: '.survey-select', emptyText: 'Select Survey', noDataText: 'No surveys for this customer' },
+    { key: 'contracts', selector: '.contract-select', emptyText: 'Select Contract', noDataText: 'No contracts for this customer' },
+    { key: 'job_advices', selector: '.job-advice-select', emptyText: 'Select Job Advice', noDataText: 'No job advices for this customer' }
+];
+const pipelineDocumentCache = new Map();
+
+function currentPipelineCustomerId() {
+    const createSelect = document.getElementById('customer_id');
+    if (createSelect && createSelect.value) {
+        return createSelect.value;
+    }
+    const editInput = document.querySelector('#editForm input[name="customer_id"]');
+    return editInput && editInput.value ? editInput.value : null;
+}
+
+function refreshPipelineDocumentSelect(select) {
+    if (typeof jQuery !== 'undefined' && jQuery(select).hasClass('select2-hidden-accessible')) {
+        jQuery(select).trigger('change.select2');
+    }
+}
+
+function loadPipelineDocuments(customerId) {
+    const params = new URLSearchParams({ customer_id: String(customerId) });
+    PIPELINE_DOCUMENT_TYPES.forEach(docType => {
+        document.querySelectorAll(docType.selector).forEach(select => {
+            const wanted = select.value || select.getAttribute('data-selected') || '';
+            if (wanted) {
+                params.append(`selected[${docType.key}][]`, wanted);
             }
         });
     });
-    
-    console.log('Document filtering complete - removed options from other customers');
+
+    const cacheKey = params.toString();
+    if (pipelineDocumentCache.has(cacheKey)) {
+        return pipelineDocumentCache.get(cacheKey);
+    }
+
+    const request = fetch(`{{ route('marketing.pipeline.documents.by-customer') }}?${cacheKey}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+    })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+            }
+            return response.json();
+        })
+        .then(json => json.data || {})
+        .catch(error => {
+            pipelineDocumentCache.delete(cacheKey);
+            throw error;
+        });
+
+    pipelineDocumentCache.set(cacheKey, request);
+    return request;
+}
+
+function filterDocumentsByCustomer(customerId) {
+    console.log('Loading related documents for customer ID:', customerId);
+    const customerIdStr = customerId ? String(customerId) : null;
+
+    if (!customerIdStr) {
+        PIPELINE_DOCUMENT_TYPES.forEach(docType => {
+            document.querySelectorAll(docType.selector).forEach(select => {
+                select.innerHTML = '<option value="">Select customer first</option>';
+                select.disabled = true;
+                refreshPipelineDocumentSelect(select);
+            });
+        });
+        return Promise.resolve();
+    }
+
+    return loadPipelineDocuments(customerIdStr)
+        .then(documents => {
+            PIPELINE_DOCUMENT_TYPES.forEach(docType => {
+                const items = Array.isArray(documents[docType.key]) ? documents[docType.key] : [];
+                document.querySelectorAll(docType.selector).forEach(select => {
+                    const wanted = select.value || select.getAttribute('data-selected') || '';
+                    select.innerHTML = '';
+                    select.appendChild(new Option(items.length ? docType.emptyText : docType.noDataText, ''));
+                    items.forEach(item => {
+                        const option = new Option(item.label || item.number || ('#' + item.id), item.id);
+                        option.setAttribute('data-customer-id', customerIdStr);
+                        select.appendChild(option);
+                    });
+                    if (wanted && items.some(item => String(item.id) === String(wanted))) {
+                        select.value = String(wanted);
+                    }
+                    select.removeAttribute('data-selected');
+                    select.disabled = items.length === 0;
+                    refreshPipelineDocumentSelect(select);
+                });
+            });
+        })
+        .catch(error => {
+            console.error('Failed to load related documents for customer', customerIdStr, error);
+            PIPELINE_DOCUMENT_TYPES.forEach(docType => {
+                document.querySelectorAll(docType.selector).forEach(select => {
+                    select.innerHTML = '<option value="">Gagal memuat dokumen</option>';
+                    select.disabled = true;
+                    refreshPipelineDocumentSelect(select);
+                });
+            });
+        });
 }
 
 // ✅ FILTER CONTACTS BY CUSTOMER

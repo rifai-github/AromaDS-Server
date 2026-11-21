@@ -26,8 +26,26 @@ class ProfileController extends Controller
         $banks = Bank::where('is_active', true)->orderBy('bank_name')->get();
         $positions = MasterOption::where('name', 'Position')->first();
         $priceCategories = MasterOption::where('name', 'Price Category')->first();
-        
-        return view('profile.index', compact('user', 'departments', 'branches', 'banks', 'positions', 'priceCategories'));
+
+        // UAT 17 Nov: pilihan data pribadi diambil dari Master Option (dulu hardcoded / teks
+        // bebas, misalnya Religion), sama dengan sumber data master user.
+        $profileOptions = [];
+        foreach ([
+            'salutation' => 'Salutation',
+            'gender' => 'Gender',
+            'marital_status' => 'Marital Status',
+            'religion' => 'Religion',
+            'blood_type' => 'Blood Type',
+            'rhesus' => 'Rhesus',
+            'identity_type' => 'Identity Type',
+        ] as $field => $optionName) {
+            $master = MasterOption::where('name', $optionName)->first();
+            $profileOptions[$field] = $master
+                ? $master->optionDetails()->where('is_active', true)->orderBy('option_name')->pluck('option_name')->values()
+                : collect();
+        }
+
+        return view('profile.index', compact('user', 'departments', 'branches', 'banks', 'positions', 'priceCategories', 'profileOptions'));
     }
 
     public function update(Request $request)
@@ -42,15 +60,15 @@ class ProfileController extends Controller
             'handphone_2' => 'nullable|string|max:20',
             'address_1' => 'nullable|string|max:500',
             'address_2' => 'nullable|string|max:500',
-            'salutation' => 'nullable|string|max:10',
-            'gender' => 'nullable|string|max:10',
-            'marital_status' => 'nullable|string|max:20',
-            'religion' => 'nullable|string|max:50',
-            'blood_type' => 'nullable|string|max:5',
-            'rhesus' => 'nullable|string|max:10',
+            'salutation' => 'nullable|string|max:255',
+            'gender' => 'nullable|string|max:20',
+            'marital_status' => 'nullable|string|max:30',
+            'religion' => 'nullable|string|max:255',
+            'blood_type' => 'nullable|string|max:255',
+            'rhesus' => 'nullable|string|max:255',
             'emergency_contact_name' => 'nullable|string|max:255',
             'emergency_contact_number' => 'nullable|numeric',
-            'identity_type' => 'nullable|string|max:20',
+            'identity_type' => 'nullable|string|max:255',
             'identity_number' => 'nullable|string|max:50',
             'npwp_number' => 'nullable|string|max:50',
             'bpjs_number' => 'nullable|string|max:50',

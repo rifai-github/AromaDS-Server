@@ -1490,7 +1490,7 @@ async function startQRScanner() {
                     <strong>Solusi:</strong><br>
                     • Ketik di browser <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code><br>
                     • Cari opsi "Insecure origins treated as secure". <br>
-                    • Masukan alamat urlnya di kotak, yaitu: http://72.60.77.23:8082 <br>
+                    • Masukan alamat urlnya di kotak, yaitu: <code>{{ url('/') }}</code> (ip-server) <br>
                     • Opsi disable ganti menjadi enable, lalu refresh<br>
                     • Hubungi admin untuk mengaktifkan HTTPS di server<br>
                     • Atau input Serial Number secara manual di kolom di atas

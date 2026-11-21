@@ -875,7 +875,7 @@
                         <th data-column="name">Name</th>
                         <th data-column="classification__option_name">Classification</th>
                         <th data-column="label_alias">Label / Alias</th>
-                        <th data-column="customerType__name">Category</th>
+                        <th data-column="customerCategory__name">Category</th>
                         <th data-column="email">Email</th>
                         <th data-column="phone">Phone</th>
                         <th data-column="assignedTo__name">Assigned To</th>
@@ -901,7 +901,8 @@
                         <td>{{ $customer->name ?? '-' }}</td>
                         <td>{{ $customer->classification->option_name ?? '-' }}</td>
                         <td>{{ $customer->label_alias ?? '-' }}</td>
-                        <td>{{ $customer->customerType->name ?? '-' }}</td>
+                        {{-- UAT 17 Nov: Category = customer_categories (bisnis: hotel, resto, ...), bukan customer_types (badan hukum) --}}
+                        <td>{{ $customer->customerCategory->name ?? '-' }}</td>
                         <td>{{ $customer->email ?? '-' }}</td>
                         <td>{{ $customer->phone ?? '-' }}</td>
                         <td>{{ $customer->assignedTo->name ?? '-' }}</td>
@@ -1159,7 +1160,7 @@
                             <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
                             <select id="create_customer_category_id" name="customer_category_id" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                                 <option value="">Pilih Category</option>
-                                <!-- Options loaded dynamically from /system/customer-types/api/list -->
+                                <!-- Options diisi dari customer_categories (lihat loadCustomerCategories) -->
                             </select>
                         </div>
 
@@ -1229,16 +1230,14 @@
                         <div class="md:col-span-2">
                             <label class="block text-sm font-medium text-gray-700 mb-2">Multi PIC (Person In Charge)</label>
                             <div class="flex gap-2 items-start">
-                                <select id="create_contact_ids" name="contact_ids[]" multiple class="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" style="min-height: 120px;">
-                                    @foreach($allContacts as $contact)
-                                        <option value="{{ $contact->id }}">{{ $contact->name }} - {{ $contact->position ?? 'No Position' }} ({{ $contact->phone }})</option>
-                                    @endforeach
+                                {{-- UAT 17 Nov: dulu semua contact aktif dirender jadi <option> (2x) → index lambat. Sekarang select2 AJAX. --}}
+                                <select id="create_contact_ids" name="contact_ids[]" multiple data-no-select2 class="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" style="min-height: 120px;">
                                 </select>
                                 <button type="button" onclick="openCreateContactModal()" class="px-3 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors flex items-center justify-center border-2 border-green-600 shadow-md" title="Add New Contact" style="min-width: 44px; height: 44px; background-color: #22c55e !important;">
                                     <i class="fas fa-plus" style="font-size: 16px; color: white;"></i>
                                 </button>
                             </div>
-                            <small class="text-gray-500 text-xs mt-1 block">Tekan Ctrl+Click untuk pilih lebih dari satu. Klik <i class="fas fa-plus text-green-600"></i> untuk tambah contact baru.</small>
+                            <small class="text-gray-500 text-xs mt-1 block">Ketik nama / email / telepon untuk mencari PIC (bisa pilih lebih dari satu). Klik <i class="fas fa-plus text-green-600"></i> untuk tambah contact baru.</small>
                         </div>
                     </div>
                 </div>
@@ -1605,7 +1604,7 @@
                             <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
                             <select id="edit_customer_category_input" name="customer_category_id" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                                 <option value="">Pilih Category</option>
-                                <!-- Options loaded dynamically from /system/customer-types/api/list -->
+                                <!-- Options diisi dari customer_categories (lihat loadCustomerCategories) -->
                             </select>
                         </div>
                     </div>
@@ -1642,16 +1641,13 @@
                         <div class="md:col-span-2">
                             <label class="block text-sm font-medium text-gray-700 mb-2">Multi PIC (Person In Charge)</label>
                             <div class="flex gap-2 items-start">
-                                <select id="edit_contact_ids" name="contact_ids[]" multiple class="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" style="min-height: 120px;">
-                                    @foreach($allContacts as $contact)
-                                        <option value="{{ $contact->id }}">{{ $contact->name }} - {{ $contact->position ?? 'No Position' }} ({{ $contact->phone }})</option>
-                                    @endforeach
+                                <select id="edit_contact_ids" name="contact_ids[]" multiple data-no-select2 class="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" style="min-height: 120px;">
                                 </select>
                                 <button type="button" onclick="openCreateContactModal(true)" class="px-3 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors flex items-center justify-center border-2 border-green-600 shadow-md" title="Add New Contact" style="min-width: 44px; height: 44px; background-color: #22c55e !important;">
                                     <i class="fas fa-plus" style="font-size: 16px; color: white;"></i>
                                 </button>
                             </div>
-                            <small class="text-gray-500 text-xs mt-1 block">Tekan Ctrl+Click untuk pilih lebih dari satu. Klik <i class="fas fa-plus text-green-600"></i> untuk tambah contact baru.</small>
+                            <small class="text-gray-500 text-xs mt-1 block">Ketik nama / email / telepon untuk mencari PIC (bisa pilih lebih dari satu). Klik <i class="fas fa-plus text-green-600"></i> untuk tambah contact baru.</small>
                         </div>
                     </div>
                 </div>
@@ -2101,7 +2097,7 @@ function populateViewModal(customer) {
     document.getElementById('viewName').textContent = customer.name || '-';
     document.getElementById('viewClassification').textContent = customer.classification ? customer.classification.option_name : '-';
     document.getElementById('viewLabelAlias').textContent = customer.label_alias || '-';
-    document.getElementById('viewCategory').textContent = customer.customer_type ? customer.customer_type.name : '-';
+    document.getElementById('viewCategory').textContent = customer.customer_category ? customer.customer_category.name : '-';
     document.getElementById('viewCompany').textContent = customer.company_type ? customer.company_type.toUpperCase() : '-';
     document.getElementById('viewCompany').textContent = customer.company_type ? customer.company_type.toUpperCase() : '-';
     
@@ -2429,6 +2425,9 @@ function populateEditModal(customer, contacts, provinces, cities, districts, sub
             
         console.log('👥 Setting contacts:', contactIds);
 
+        // UAT 17 Nov: opsi PIC tidak lagi dirender semua; tambahkan PIC tertaut dulu.
+        ensureMultiPicOptions(contactEditSelect, customer.contacts || []);
+
         // Native multiselect population
         Array.from(contactEditSelect.options).forEach(opt => {
             opt.selected = contactIds.includes(String(opt.value));
@@ -2518,6 +2517,12 @@ function populateEditModal(customer, contacts, provinces, cities, districts, sub
              const catOptions = Array.from(categorySelect.options).map(o => o.value);
              console.log('📋 Available Categories:', catOptions);
              
+             // UAT 17 Nov: kategori nonaktif tidak ada di daftar aktif; tambahkan supaya
+             // nilai tersimpan tidak hilang saat customer disimpan ulang.
+             if (!catOptions.includes(String(customer.customer_category_id)) && customer.customer_category) {
+                 categorySelect.appendChild(new Option(customer.customer_category.name, customer.customer_category_id));
+             }
+
              categorySelect.value = customer.customer_category_id;
              
              if (categorySelect.value != customer.customer_category_id) {
@@ -2709,51 +2714,74 @@ function loadCustomerTypes(selectId) {
     });
 }
 
-// Load Customer Categories from CustomerType model
+// UAT 17 Nov: Category customer = customer_categories (Hotel, Resto, ... / MsCustGroup),
+// sesuai relasi Customer::customerCategory(). Dulu diambil dari /system/customer-types
+// yang di prod berisi badan hukum (PT/CV/UD), sehingga label kategori salah.
+const CUSTOMER_CATEGORY_OPTIONS = @json($categories->map->only(['id', 'name'])->values());
+
 function loadCustomerCategories(selectId) {
-    return fetch('/system/customer-types/api/list', {
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-            'Accept': 'application/json'
+    const select = document.getElementById(selectId);
+    if (!select) {
+        console.error(`❌ Select element with ID '${selectId}' not found`);
+        return Promise.resolve();
+    }
+
+    select.innerHTML = '<option value="">Pilih Category</option>';
+    CUSTOMER_CATEGORY_OPTIONS.forEach(category => {
+        const option = document.createElement('option');
+        option.value = category.id;
+        option.textContent = category.name;
+        select.appendChild(option);
+    });
+
+    return Promise.resolve();
+}
+
+// UAT 17 Nov: Multi PIC dicari via AJAX (maks 50 hasil, ikut filter akses contact)
+// alih-alih merender seluruh contact aktif sebagai <option> di dua modal.
+function formatMultiPicLabel(contact) {
+    return `${contact.name} - ${contact.position || 'No Position'} (${contact.phone || '-'})`;
+}
+
+function ensureMultiPicOptions(select, contacts) {
+    if (!select) return;
+    (contacts || []).forEach(contact => {
+        const exists = Array.from(select.options).some(opt => String(opt.value) === String(contact.id));
+        if (!exists) {
+            select.appendChild(new Option(formatMultiPicLabel(contact), contact.id, false, false));
         }
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error('Failed to load customer categories');
-        }
-        return response.json();
-    })
-    .then(data => {
-        const select = document.getElementById(selectId);
-        if (!select) {
-            console.error(`❌ Select element with ID '${selectId}' not found`);
-            return;
-        }
-        
-        select.innerHTML = '<option value="">Pilih Category</option>';
-        
-        // Handle both array and object response
-        const categories = Array.isArray(data) ? data : (data.data || []);
-        
-        if (categories && categories.length > 0) {
-            categories.forEach(category => {
-                // Only show active categories
-                if (category.is_active !== false) {
-                    const option = document.createElement('option');
-                    option.value = category.id;
-                    option.textContent = category.name;
-                    select.appendChild(option);
-                }
-            });
-            console.log(`✅ Loaded ${categories.length} customer categories`);
-        } else {
-            console.log('⚠️ No customer categories available');
-        }
-    })
-    .catch(error => {
-        console.error('❌ Error loading customer categories:', error);
     });
 }
+
+function initMultiPicSelect(selectId) {
+    if (typeof jQuery === 'undefined' || !jQuery.fn.select2) return;
+    const $select = jQuery('#' + selectId);
+    if (!$select.length || $select.hasClass('select2-hidden-accessible')) return;
+
+    const $modal = $select.closest('.modal-overlay, .modal-container');
+    $select.select2({
+        width: '100%',
+        placeholder: 'Ketik nama / email / telepon PIC',
+        dropdownParent: $modal.length ? $modal : jQuery('body'),
+        ajax: {
+            url: @json(route('company.customer-contacts.get-customer-contacts')),
+            dataType: 'json',
+            delay: 300,
+            data: params => ({ q: params.term || '' }),
+            processResults: data => ({
+                results: (Array.isArray(data) ? data : (data.data || [])).map(contact => ({
+                    id: contact.id,
+                    text: formatMultiPicLabel(contact) + (contact.customer ? ` — ${contact.customer.name}` : ''),
+                })),
+            }),
+        },
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    initMultiPicSelect('create_contact_ids');
+    initMultiPicSelect('edit_contact_ids');
+});
 
 function loadUsers() {
     fetch('/api/users', {

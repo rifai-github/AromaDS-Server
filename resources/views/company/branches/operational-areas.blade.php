@@ -700,6 +700,52 @@ function uncheckAllCard2() {
 }
 
 // Load cities for Card 2 based on selected province
+function completeProvinceSection(section, provinceId) {
+    const grid = document.getElementById('card2CityGrid');
+    const loading = document.getElementById('card2Loading');
+    const cityGrid = section.querySelector('.city-grid');
+    if (!cityGrid) {
+        return;
+    }
+
+    loading.classList.add('show');
+    fetch(`{{ route('company.branches.operational-areas.cities', $branch) }}?province_id=${provinceId}`)
+        .then(response => response.json())
+        .then(result => {
+            loading.classList.remove('show');
+            if (result.status !== 'success') {
+                return;
+            }
+            (result.data || []).forEach(city => {
+                if (grid.querySelector(`.card2-checkbox[value="${city.id}"]`)) {
+                    return; // sudah tampil (dan mungkin sudah dicentang)
+                }
+                const checkedAttr = city.checked ? 'checked' : '';
+                const disabledAttr = city.disabled ? 'disabled' : '';
+                cityGrid.insertAdjacentHTML('beforeend', `
+                    <div class="city-item ${city.checked ? 'checked' : ''} ${city.disabled ? 'disabled' : ''}">
+                        <input type="checkbox"
+                               name="city_ids[]"
+                               value="${city.id}"
+                               id="city_card2_${city.id}"
+                               class="city-checkbox card2-checkbox"
+                               ${checkedAttr}
+                               ${disabledAttr}
+                               onchange="updateCityItemStyle(this)">
+                        <label for="city_card2_${city.id}">${city.name}</label>
+                        ${city.assigned_to_other ? '<span class="assigned-badge">Assigned</span>' : ''}
+                    </div>
+                `);
+            });
+            section.dataset.complete = '1';
+            updateTotalCount();
+        })
+        .catch(error => {
+            loading.classList.remove('show');
+            console.error('Error loading cities:', error);
+        });
+}
+
 function loadCitiesForCard2(provinceId) {
     const grid = document.getElementById('card2CityGrid');
     const loading = document.getElementById('card2Loading');
@@ -710,6 +756,12 @@ function loadCitiesForCard2(provinceId) {
 
     const existingSection = grid.querySelector(`[data-province-id="${provinceId}"]`);
     if (existingSection) {
+        // Blok provinsi yang dirender server saat halaman dibuka hanya berisi kota yang SUDAH
+        // dipilih. Dulu fungsi berhenti di sini, sehingga kota lain di provinsi itu (mis.
+        // Bengkulu Selatan) tidak pernah bisa ditambahkan (UAT 17 Nov). Lengkapi sekali.
+        if (existingSection.dataset.complete !== '1') {
+            completeProvinceSection(existingSection, provinceId);
+        }
         existingSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
     }
@@ -730,7 +782,7 @@ function loadCitiesForCard2(provinceId) {
                 }
 
                 let html = `
-                    <div class="province-city-section" data-province-id="${result.province_id || provinceId}">
+                    <div class="province-city-section" data-province-id="${result.province_id || provinceId}" data-complete="1">
                         <div class="province-city-title">
                             <i class="fas fa-map"></i>
                             ${result.province_name || 'Provinsi Lain'}

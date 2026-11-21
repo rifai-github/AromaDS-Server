@@ -565,6 +565,76 @@ class MarketingPipelineController extends Controller
     }
 
     /**
+     * UAT 17 Nov: dropdown "Related Document" (quotation/survey/contract/job advice)
+     * kosong sejak cc06a7cb karena preload semua dokumen dimatikan (berat). Endpoint
+     * ringan ini mengembalikan dokumen untuk SATU customer saja (non-draft, dibatasi),
+     * ditambah dokumen yang sudah tersimpan di pipeline (selected[...]) supaya edit
+     * tetap bisa preselect. Cakupannya sama dengan preload lama: tanpa filter akses,
+     * hanya dibatasi customer.
+     */
+    public function documentsByCustomer(Request $request)
+    {
+        $request->validate([
+            'customer_id' => 'required|integer',
+            'selected' => 'nullable|array',
+        ]);
+
+        $customerId = (int) $request->input('customer_id');
+        $limit = 100;
+
+        $definitions = [
+            'quotations' => [\App\Models\Quotation::class, 'quotation_number', 'status'],
+            'surveys' => [\App\Models\Survey::class, 'survey_number', 'status'],
+            'contracts' => [Contract::class, 'contract_number', 'contract_status'],
+            'job_advices' => [\App\Models\JobAdvice::class, 'job_advice_number', 'status'],
+        ];
+
+        $documents = [];
+
+        foreach ($definitions as $key => [$modelClass, $numberColumn, $statusColumn]) {
+            $selectedIds = collect((array) data_get($request->input('selected', []), $key, []))
+                ->map(fn ($id) => (int) $id)
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            $columns = ['id', $numberColumn, $statusColumn];
+
+            $rows = $modelClass::query()
+                ->where('customer_id', $customerId)
+                ->where(function ($query) use ($statusColumn) {
+                    $query->whereNull($statusColumn)->orWhere($statusColumn, '!=', 'draft');
+                })
+                ->orderByDesc('id')
+                ->limit($limit)
+                ->get($columns);
+
+            if (! empty($selectedIds)) {
+                // Dokumen tersimpan selalu ikut (walau draft / di luar limit) agar tidak hilang saat edit.
+                $rows = $modelClass::query()
+                    ->where('customer_id', $customerId)
+                    ->whereIn('id', $selectedIds)
+                    ->get($columns)
+                    ->concat($rows)
+                    ->unique('id');
+            }
+
+            $documents[$key] = $rows->map(fn ($row) => [
+                'id' => $row->id,
+                'number' => $row->{$numberColumn},
+                'label' => trim(($row->{$numberColumn} ?: '#'.$row->id).($row->{$statusColumn} ? ' ('.$row->{$statusColumn}.')' : '')),
+            ])->values();
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'OK',
+            'data' => $documents,
+        ]);
+    }
+
+    /**
      * Get employees by branch and team for pipeline assignment
      */
     public function getEmployeesByBranchAndTeam(Request $request)

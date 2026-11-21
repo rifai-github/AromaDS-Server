@@ -732,9 +732,10 @@
                 </div>
                 
                 <!-- Delete Button -->
+                {{-- UAT 17 Nov: hapus = nonaktifkan; VA tetap tampil sebagai Inactive --}}
                 <button class="btn btn-secondary btn-sm ml-4" onclick="deleteSelected()">
-                    <i class="fas fa-trash"></i>
-                    <span>Delete</span>
+                    <i class="fas fa-eye-slash"></i>
+                    <span>Nonaktifkan</span>
                 </button>
             </div>
             
@@ -933,11 +934,11 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z"></path>
             </svg>
         </div>
-        <h3 class="delete-modal-title">Hide Virtual Account</h3>
-        <p class="delete-modal-description" id="deleteMessage">Are you sure you want to hide this virtual account? This action can be undone later.</p>
+        <h3 class="delete-modal-title">Nonaktifkan Virtual Account</h3>
+        <p class="delete-modal-description" id="deleteMessage">Virtual account ini akan dinonaktifkan dan tetap tampil di daftar dengan status Inactive.</p>
         <div class="delete-modal-buttons">
             <button class="btn btn-cancel" onclick="closeDeleteModal()">Cancel</button>
-            <button class="btn btn-hide" onclick="confirmDelete()">Yes, Hide</button>
+            <button class="btn btn-hide" onclick="confirmDelete()">Ya, Nonaktifkan</button>
         </div>
     </div>
 </div>
@@ -951,7 +952,7 @@
             </svg>
         </div>
         <h3 class="delete-modal-title">Hmm... Something Went Wrong</h3>
-        <p class="delete-modal-description" id="errorMessage">We couldn't hide the virtual account. Please try again.</p>
+        <p class="delete-modal-description" id="errorMessage">Virtual account gagal dinonaktifkan. Silakan coba lagi.</p>
         <div class="delete-modal-buttons">
             <button class="btn btn-cancel" onclick="closeErrorModal()">Close</button>
             <button class="btn btn-hide" onclick="retryDelete()">Try Again</button>
@@ -968,7 +969,7 @@
             </svg>
         </div>
         <h3 class="delete-modal-title">All Set!</h3>
-        <p class="delete-modal-description" id="successMessage">The virtual account has been successfully hidden.</p>
+        <p class="delete-modal-description" id="successMessage">Virtual account berhasil dinonaktifkan.</p>
     </div>
 </div>
 @endsection
@@ -1111,8 +1112,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const id = e.target.getAttribute('data-id');
             
             showConfirmDialog(
-                'Hapus virtual account ini?',
-                'Data virtual account ini akan dihapus.'
+                'Nonaktifkan virtual account ini?',
+                'Virtual account akan dinonaktifkan dan tetap tampil dengan status Inactive.'
             ).then((confirmed) => {
                 if (!confirmed) {
                     return;
@@ -1132,7 +1133,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    showErrorDialog('Gagal', 'Gagal menghapus virtual account.');
+                    showErrorDialog('Gagal', 'Gagal menonaktifkan virtual account.');
                 });
             });
         }
@@ -1259,6 +1260,10 @@ function openEditModal(id) {
         .then(data => {
             if (data.status === 'success') {
                 const account = data.data;
+                // UAT 17 Nov: tampilkan prefix + suffix seperti form create. VA lama
+                // (tanpa prefix bank / panjang beda) ditampilkan utuh; server menerima
+                // nomor yang tidak diubah apa adanya.
+                const editVa = splitEditVaNumber(account, data.banks);
                 document.getElementById('modalTitle').textContent = 'Edit Virtual Account';
                 document.getElementById('modalBody').innerHTML = `
                     <form id="editForm" class="space-y-6">
@@ -1277,10 +1282,10 @@ function openEditModal(id) {
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">Bank Payment *</label>
-                                    <select name="bank_payment_id" class="form-input" required>
+                                    <select name="bank_payment_id" class="form-input" required onchange="handleEditBankChange(this)">
                                         <option value="">Pilih Bank Payment</option>
                                         ${data.banks.map(bank => 
-                                            `<option value="${bank.id}" ${bank.id == account.bank_payment_id ? 'selected' : ''}>${bank.account_name}</option>`
+                                            `<option value="${bank.id}" data-prefix="${String(bank.bank_va_number || '').replace(/\D/g, '')}" data-length="${parseInt(bank.length) || 0}" ${bank.id == account.bank_payment_id ? 'selected' : ''}>${bank.account_name}${bank.is_active ? '' : ' (Nonaktif)'}</option>`
                                         ).join('')}
                                     </select>
                                 </div>
@@ -1292,7 +1297,11 @@ function openEditModal(id) {
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div class="form-group">
                                     <label class="form-label">Account Number *</label>
-                                    <input type="text" name="account_number" class="form-input" value="${account.account_number || ''}" required oninput="this.value = this.value.replace(/\\D/g, '')">
+                                    <div class="flex items-center">
+                                        <span id="editVaPrefixDisplay" class="bg-gray-100 border border-r-0 border-gray-300 rounded-l px-3 py-2 text-gray-600 font-mono text-sm min-w-[60px] text-center">${editVa.isLegacy ? '-' : (editVa.prefix || '-')}</span>
+                                        <input type="text" name="account_number" id="editAccountNumber" class="form-input rounded-l-none" value="${editVa.value}" required oninput="this.value = this.value.replace(/\\D/g, '')">
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1" id="editVaHelpText">${editVa.help}</p>
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">Alias Name</label>
@@ -1334,6 +1343,50 @@ function openEditModal(id) {
         });
 }
 
+// UAT 17 Nov: pecah nomor VA tersimpan menjadi prefix bank + suffix untuk form edit.
+function splitEditVaNumber(account, banks) {
+    const bank = (banks || []).find(b => b.id == account.bank_payment_id) || null;
+    const prefix = bank ? String(bank.bank_va_number || '').replace(/\D/g, '') : '';
+    const length = bank ? (parseInt(bank.length) || 0) : 0;
+    const stored = String(account.account_number || '').replace(/\D/g, '');
+    const lengthHint = length > 0 ? `${length} digit` : 'bebas';
+
+    if (prefix && stored.startsWith(prefix) && (length === 0 || stored.length - prefix.length === length)) {
+        return {
+            prefix: prefix,
+            value: stored.substring(prefix.length),
+            isLegacy: false,
+            help: `Suffix ${lengthHint}; prefix ${prefix} ditambahkan otomatis.`,
+        };
+    }
+
+    if (!prefix) {
+        return { prefix: '', value: stored, isLegacy: false, help: 'Nomor VA lengkap.' };
+    }
+
+    return {
+        prefix: prefix,
+        value: stored,
+        isLegacy: true,
+        help: `Nomor VA lama (tanpa prefix ${prefix}) disimpan apa adanya bila tidak diubah. Bila diubah, isi suffix ${lengthHint}.`,
+    };
+}
+
+function handleEditBankChange(select) {
+    const option = select.options[select.selectedIndex];
+    const prefixDisplay = document.getElementById('editVaPrefixDisplay');
+    const helpText = document.getElementById('editVaHelpText');
+    const prefix = option ? (option.getAttribute('data-prefix') || '') : '';
+    const length = option ? (parseInt(option.getAttribute('data-length')) || 0) : 0;
+    if (prefixDisplay) prefixDisplay.innerText = prefix || '-';
+    if (helpText) {
+        helpText.innerText = prefix
+            ? `Suffix ${length > 0 ? length + ' digit' : 'bebas'}; prefix ${prefix} ditambahkan otomatis.`
+            : 'Nomor VA lengkap.';
+    }
+}
+window.handleEditBankChange = handleEditBankChange;
+
 function submitForm(type) {
     const form = document.getElementById(type + 'Form');
     const formData = new FormData(form);
@@ -1345,7 +1398,10 @@ function submitForm(type) {
     } else {
         const id = formData.get('id');
         url = `{{ route("company.company-virtual-accounts.index") }}/${id}`;
-        method = 'PUT';
+        // POST + _method=PUT: PHP tidak mem-parse body multipart (FormData) pada request PUT,
+        // sehingga dulu semua field terbaca kosong dan Edit VA selalu gagal "customer id field
+        // is required" walau tidak ada yang diubah (UAT 17 Nov).
+        method = 'POST';
         formData.append('_method', 'PUT');
     }
     
@@ -1401,12 +1457,12 @@ function confirmDelete() {
                 closeDeleteModal();
                 location.reload();
             } else {
-                showErrorDialog('Gagal', data.message || 'Gagal menghapus virtual account.');
+                showErrorDialog('Gagal', data.message || 'Gagal menonaktifkan virtual account.');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            showErrorDialog('Gagal', 'Gagal menghapus virtual account.');
+            showErrorDialog('Gagal', 'Gagal menonaktifkan virtual account.');
         });
     }
 }
@@ -1443,13 +1499,14 @@ function toggleStatus(id, status) {
 function deleteSelected() {
     const selectedIds = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
     if (selectedIds.length === 0) {
-        showWarningDialog('Pilih minimal satu virtual account yang ingin dihapus.');
+        showWarningDialog('Pilih minimal satu virtual account yang ingin dinonaktifkan.');
         return;
     }
-    
+
+    // UAT 17 Nov: bulk "hapus" sekarang menonaktifkan (data tetap tampil Inactive).
     showConfirmDialog(
-        'Hapus virtual account yang dipilih?',
-        `${selectedIds.length} virtual account akan dihapus.`
+        'Nonaktifkan virtual account yang dipilih?',
+        `${selectedIds.length} virtual account akan dinonaktifkan dan tetap tampil dengan status Inactive.`
     ).then((confirmed) => {
         if (!confirmed) {
             return;
@@ -1458,6 +1515,8 @@ function deleteSelected() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             },
             body: JSON.stringify({ ids: selectedIds })
@@ -1467,12 +1526,12 @@ function deleteSelected() {
             if (data.status === 'success') {
                 location.reload();
             } else {
-                showErrorDialog('Gagal', data.message || 'Gagal menghapus virtual account.');
+                showErrorDialog('Gagal', data.message || 'Gagal menonaktifkan virtual account.');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            showErrorDialog('Gagal', 'Gagal menghapus virtual account.');
+            showErrorDialog('Gagal', 'Gagal menonaktifkan virtual account.');
         });
     });
 }

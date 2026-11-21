@@ -28,6 +28,8 @@ class RoleController extends Controller
                 'created_by',
                 'updated_by',
                 'created_at',
+                // Kolom "Updated At" di daftar role dulu selalu kosong karena tidak ikut di-select.
+                'updated_at',
             ])
             ->with(['createdBy:id,name', 'updatedBy:id,name'])
             ->withCount('users');

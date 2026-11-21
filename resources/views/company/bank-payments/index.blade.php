@@ -248,7 +248,7 @@
             <div class="flex flex-row justify-end items-center gap-2">
                 <button class="btn btn-secondary" onclick="deleteSelected()" style="color: #dc2626; border-color: #fca5a5; background-color: #fef2f2;">
                     <i class="fas fa-eye-slash"></i>
-                    <span>Hide Selected</span>
+                    <span>Nonaktifkan Terpilih</span>
                 </button>
                 <button class="btn btn-primary" onclick="openCreateModal()">
                     <i class="fas fa-plus"></i>
@@ -605,9 +605,10 @@
 
     function deleteSelected() {
         const ids = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
-        if (ids.length === 0) return alert('Select items to hide first');
+        if (ids.length === 0) return alert('Pilih data yang akan dinonaktifkan terlebih dahulu');
 
-        if (confirm('Are you sure you want to hide selected payments?')) {
+        // UAT 17 Nov: hide = nonaktifkan; data tetap tampil sebagai Inactive.
+        if (confirm('Nonaktifkan bank payment terpilih? Data tetap tampil dengan status Inactive.')) {
             fetch('/company/bank-payments/bulk-delete', {
                 method: 'POST',
                 headers: {
@@ -620,6 +621,7 @@
             .then(res => res.json())
             .then(res => {
                 if (res.success) window.location.reload();
+                else alert(res.message || 'Gagal menonaktifkan bank payment');
             });
         }
     }

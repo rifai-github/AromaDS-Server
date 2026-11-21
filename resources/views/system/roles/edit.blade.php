@@ -493,6 +493,7 @@
                                  <td>
                                     @if(!$menuData['is_action_only'])
                                     <input type="checkbox" class="permission-checkbox permission-create" 
+                                           data-permission-id="{{ $menuData['permissions']['ids']['create'] ?? '' }}"
                                            value="1"
                                            data-row="{{ $resourceKey }}"
                                            data-module="{{ strtolower($module) }}"
@@ -504,6 +505,7 @@
                                 <td>
                                     @if(!$menuData['is_action_only'])
                                     <input type="checkbox" class="permission-checkbox permission-update" 
+                                           data-permission-id="{{ $menuData['permissions']['ids']['update'] ?? '' }}"
                                            value="1"
                                            data-row="{{ $resourceKey }}"
                                            data-module="{{ strtolower($module) }}"
@@ -515,6 +517,7 @@
                                 <td>
                                     @if(!$menuData['is_action_only'])
                                     <input type="checkbox" class="permission-checkbox permission-delete" 
+                                           data-permission-id="{{ $menuData['permissions']['ids']['delete'] ?? '' }}"
                                            value="1"
                                            data-row="{{ $resourceKey }}"
                                            data-module="{{ strtolower($module) }}"
@@ -525,6 +528,7 @@
                                 {{-- View --}}
                                 <td>
                                     <input type="checkbox" class="permission-checkbox permission-view" 
+                                           data-permission-id="{{ $menuData['permissions']['ids']['view'] ?? '' }}"
                                            value="1"
                                            data-row="{{ $resourceKey }}"
                                            data-module="{{ strtolower($module) }}"
@@ -535,6 +539,7 @@
                                 <td>
                                     @if(!$menuData['is_action_only'])
                                     <input type="checkbox" class="permission-checkbox permission-approve" 
+                                           data-permission-id="{{ $menuData['permissions']['ids']['approve'] ?? '' }}"
                                            value="1"
                                            data-row="{{ $resourceKey }}"
                                            data-module="{{ strtolower($module) }}"
@@ -546,6 +551,7 @@
                                 <td>
                                     @if(!$menuData['is_action_only'])
                                     <input type="checkbox" class="permission-checkbox permission-download" 
+                                           data-permission-id="{{ $menuData['permissions']['ids']['download'] ?? '' }}"
                                            value="1"
                                            data-row="{{ $resourceKey }}"
                                            data-module="{{ strtolower($module) }}"
@@ -557,6 +563,7 @@
                                 <td>
                                     @if(!$menuData['is_action_only'])
                                     <input type="checkbox" class="permission-checkbox permission-print" 
+                                           data-permission-id="{{ $menuData['permissions']['ids']['print'] ?? '' }}"
                                            value="1"
                                            data-row="{{ $resourceKey }}"
                                            data-module="{{ strtolower($module) }}"
@@ -724,7 +731,11 @@
                     resource: resourceKey,
                     action: action,
                     menu_name: menuName,
-                    existing_id: checkbox.value !== '1' ? checkbox.value : null
+                    // UAT 17 Nov: kirim id permission yang sudah ada. Dulu value checkbox selalu "1",
+                    // existing_id selalu null, dan server membuat permission baru dari nama karangan
+                    // (permission "hantu") sehingga menu role baru tidak pernah muncul.
+                    existing_id: checkbox.dataset.permissionId || null,
+                    has_existing_id: !!checkbox.dataset.permissionId
                 };
             });
             

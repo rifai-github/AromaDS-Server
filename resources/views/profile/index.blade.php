@@ -315,11 +315,13 @@
                         <label class="form-label">Salutation</label>
                         <select class="form-select" id="salutation" name="salutation">
                             <option value="">Select Salutation</option>
-                            <option value="Mr." {{ $user->salutation == 'Mr.' ? 'selected' : '' }}>Mr.</option>
-                            <option value="Mrs." {{ $user->salutation == 'Mrs.' ? 'selected' : '' }}>Mrs.</option>
-                            <option value="Ms." {{ $user->salutation == 'Ms.' ? 'selected' : '' }}>Ms.</option>
-                            <option value="Dr." {{ $user->salutation == 'Dr.' ? 'selected' : '' }}>Dr.</option>
-                            <option value="Prof." {{ $user->salutation == 'Prof.' ? 'selected' : '' }}>Prof.</option>
+                            @php($currentValue = (string) ($user->salutation ?? ''))
+                            @foreach($profileOptions['salutation'] ?? [] as $optionName)
+                                <option value="{{ $optionName }}" {{ strcasecmp($currentValue, $optionName) === 0 ? 'selected' : '' }}>{{ $optionName }}</option>
+                            @endforeach
+                            @if($currentValue !== '' && ! collect($profileOptions['salutation'] ?? [])->contains(fn ($o) => strcasecmp($o, $currentValue) === 0))
+                                <option value="{{ $currentValue }}" selected>{{ $currentValue }} (data lama)</option>
+                            @endif
                         </select>
                     </div>
                     <div class="form-group">
@@ -348,8 +350,13 @@
                         <label class="form-label">Gender</label>
                         <select class="form-select" id="gender" name="gender">
                             <option value="">Select Gender</option>
-                            <option value="male" {{ $user->gender == 'male' ? 'selected' : '' }}>Male</option>
-                            <option value="female" {{ $user->gender == 'female' ? 'selected' : '' }}>Female</option>
+                            @php($currentValue = (string) ($user->gender ?? ''))
+                            @foreach($profileOptions['gender'] ?? [] as $optionName)
+                                <option value="{{ $optionName }}" {{ strcasecmp($currentValue, $optionName) === 0 ? 'selected' : '' }}>{{ $optionName }}</option>
+                            @endforeach
+                            @if($currentValue !== '' && ! collect($profileOptions['gender'] ?? [])->contains(fn ($o) => strcasecmp($o, $currentValue) === 0))
+                                <option value="{{ $currentValue }}" selected>{{ $currentValue }} (data lama)</option>
+                            @endif
                         </select>
                     </div>
                 </div>
@@ -359,15 +366,27 @@
                         <label class="form-label">Marital Status</label>
                         <select class="form-select" id="marital_status" name="marital_status">
                             <option value="">Select Marital Status</option>
-                            <option value="single" {{ $user->marital_status == 'single' ? 'selected' : '' }}>Single</option>
-                            <option value="married" {{ $user->marital_status == 'married' ? 'selected' : '' }}>Married</option>
-                            <option value="divorced" {{ $user->marital_status == 'divorced' ? 'selected' : '' }}>Divorced</option>
-                            <option value="widowed" {{ $user->marital_status == 'widowed' ? 'selected' : '' }}>Widowed</option>
+                            @php($currentValue = (string) ($user->marital_status ?? ''))
+                            @foreach($profileOptions['marital_status'] ?? [] as $optionName)
+                                <option value="{{ $optionName }}" {{ strcasecmp($currentValue, $optionName) === 0 ? 'selected' : '' }}>{{ $optionName }}</option>
+                            @endforeach
+                            @if($currentValue !== '' && ! collect($profileOptions['marital_status'] ?? [])->contains(fn ($o) => strcasecmp($o, $currentValue) === 0))
+                                <option value="{{ $currentValue }}" selected>{{ $currentValue }} (data lama)</option>
+                            @endif
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Religion</label>
-                        <input type="text" class="form-control" id="religion" name="religion" value="{{ $user->religion }}">
+                        <select class="form-select" id="religion" name="religion">
+                            <option value="">Select Religion</option>
+                            @php($currentValue = (string) ($user->religion ?? ''))
+                            @foreach($profileOptions['religion'] ?? [] as $optionName)
+                                <option value="{{ $optionName }}" {{ strcasecmp($currentValue, $optionName) === 0 ? 'selected' : '' }}>{{ $optionName }}</option>
+                            @endforeach
+                            @if($currentValue !== '' && ! collect($profileOptions['religion'] ?? [])->contains(fn ($o) => strcasecmp($o, $currentValue) === 0))
+                                <option value="{{ $currentValue }}" selected>{{ $currentValue }} (data lama)</option>
+                            @endif
+                        </select>
                     </div>
                 </div>
 
@@ -376,18 +395,26 @@
                         <label class="form-label">Blood Type</label>
                         <select class="form-select" id="blood_type" name="blood_type">
                             <option value="">Select Blood Type</option>
-                            <option value="A" {{ $user->blood_type == 'A' ? 'selected' : '' }}>A</option>
-                            <option value="B" {{ $user->blood_type == 'B' ? 'selected' : '' }}>B</option>
-                            <option value="AB" {{ $user->blood_type == 'AB' ? 'selected' : '' }}>AB</option>
-                            <option value="O" {{ $user->blood_type == 'O' ? 'selected' : '' }}>O</option>
+                            @php($currentValue = (string) ($user->blood_type ?? ''))
+                            @foreach($profileOptions['blood_type'] ?? [] as $optionName)
+                                <option value="{{ $optionName }}" {{ strcasecmp($currentValue, $optionName) === 0 ? 'selected' : '' }}>{{ $optionName }}</option>
+                            @endforeach
+                            @if($currentValue !== '' && ! collect($profileOptions['blood_type'] ?? [])->contains(fn ($o) => strcasecmp($o, $currentValue) === 0))
+                                <option value="{{ $currentValue }}" selected>{{ $currentValue }} (data lama)</option>
+                            @endif
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Rhesus</label>
                         <select class="form-select" id="rhesus" name="rhesus">
                             <option value="">Select Rhesus</option>
-                            <option value="positive" {{ $user->rhesus == 'positive' ? 'selected' : '' }}>Positive</option>
-                            <option value="negative" {{ $user->rhesus == 'negative' ? 'selected' : '' }}>Negative</option>
+                            @php($currentValue = (string) ($user->rhesus ?? ''))
+                            @foreach($profileOptions['rhesus'] ?? [] as $optionName)
+                                <option value="{{ $optionName }}" {{ strcasecmp($currentValue, $optionName) === 0 ? 'selected' : '' }}>{{ $optionName }}</option>
+                            @endforeach
+                            @if($currentValue !== '' && ! collect($profileOptions['rhesus'] ?? [])->contains(fn ($o) => strcasecmp($o, $currentValue) === 0))
+                                <option value="{{ $currentValue }}" selected>{{ $currentValue }} (data lama)</option>
+                            @endif
                         </select>
                     </div>
                 </div>
@@ -505,11 +532,15 @@
                 <div class="form-group">
                     <label class="form-label">Identity Type</label>
                     <select class="form-select" id="identity_type" name="identity_type">
-                        <option value="">Select Identity Type</option>
-                        <option value="ktp" {{ $user->identity_type == 'ktp' ? 'selected' : '' }}>KTP</option>
-                        <option value="sim" {{ $user->identity_type == 'sim' ? 'selected' : '' }}>SIM</option>
-                        <option value="passport" {{ $user->identity_type == 'passport' ? 'selected' : '' }}>Passport</option>
-                    </select>
+                            <option value="">Select Identity Type</option>
+                            @php($currentValue = (string) ($user->identity_type ?? ''))
+                            @foreach($profileOptions['identity_type'] ?? [] as $optionName)
+                                <option value="{{ $optionName }}" {{ strcasecmp($currentValue, $optionName) === 0 ? 'selected' : '' }}>{{ $optionName }}</option>
+                            @endforeach
+                            @if($currentValue !== '' && ! collect($profileOptions['identity_type'] ?? [])->contains(fn ($o) => strcasecmp($o, $currentValue) === 0))
+                                <option value="{{ $currentValue }}" selected>{{ $currentValue }} (data lama)</option>
+                            @endif
+                        </select>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Identity Number</label>
@@ -540,7 +571,8 @@
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Department</label>
-                    <input type="text" class="form-control" value="{{ $user->department_name ?? 'N/A' }}" disabled>
+                    {{-- Nama departemen dari master (relasi), kolom teks lama hanya cadangan. --}}
+                    <input type="text" class="form-control" value="{{ $user->department?->name ?? $user->department_name ?? 'N/A' }}" disabled>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Position</label>
@@ -573,7 +605,8 @@
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Roles</label>
-                    <input type="text" class="form-control" value="{{ $user->roles ?? 'N/A' }}" disabled>
+                    {{-- Dulu mencetak koleksi mentah (JSON); tampilkan nama role. --}}
+                    <input type="text" class="form-control" value="{{ $user->roles->pluck('name')->filter()->implode(', ') ?: 'N/A' }}" disabled>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Data Restriction</label>

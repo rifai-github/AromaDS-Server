@@ -543,10 +543,14 @@ class CustomerContactController extends Controller
         
         $contacts = CustomerContact::with('customer:id,name')
             ->where('is_active', true)
+            // UAT 17 Nov: orWhere dibungkus grup; dulu "OR email/phone" lolos dari
+            // filter is_active & filter akses contact (contact nonaktif/milik orang lain ikut).
             ->when($query, function($q) use ($query) {
-                $q->where('name', 'like', "%{$query}%")
-                  ->orWhere('email', 'like', "%{$query}%")
-                  ->orWhere('phone', 'like', "%{$query}%");
+                $q->where(function ($inner) use ($query) {
+                    $inner->where('name', 'like', "%{$query}%")
+                        ->orWhere('email', 'like', "%{$query}%")
+                        ->orWhere('phone', 'like', "%{$query}%");
+                });
             })
             ->orderBy('name')
             ->limit(50);

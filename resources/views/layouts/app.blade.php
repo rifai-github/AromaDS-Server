@@ -1441,7 +1441,9 @@
                 @endif
                 @if(auth()->user()->canAccessMenuItem('operational.master-rooms'))
                 <li data-tooltip="Master Room" class="{{ request()->routeIs('operational.master-rooms.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('operational.master-rooms.index') }}')">Master Room</li>
+                {{-- UAT 17 Nov: menu Jenis Ruangan disembunyikan; jenis ruangan dikelola di Master Option "Room Type". Route tetap ada.
                 <li data-tooltip="Jenis Ruangan" class="{{ request()->routeIs('operational.master-rooms.room-types') ? 'active' : '' }}" onclick="navigateTo('{{ route('operational.master-rooms.room-types') }}')">Jenis Ruangan</li>
+                --}}
                 @endif
                 @if(auth()->user()->canAccessMenuItem('operational.room-rental-units'))
                <!-- <li data-tooltip="Room Rental Unit" class="{{ request()->routeIs('operational.room-rental-units.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('operational.room-rental-units.index') }}')">Room Rental Unit</li> -->
@@ -1602,9 +1604,11 @@
                 @if(auth()->user()->canAccessMenuItem('warehouse.inventory-requests'))
                 <li data-tooltip="Inventory Request" class="{{ request()->routeIs('warehouse.inventory-requests.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('warehouse.inventory-requests.index') }}')">Inventory Request</li>
                 @endif
+                {{-- UAT 17 Nov: Inventory Transfer tidak dipakai, menu disembunyikan (route & permission tetap ada).
                 @if(auth()->user()->canAccessMenuItem('warehouse.inventory-transfers'))
                 <li data-tooltip="Inventory Transfer" class="{{ request()->routeIs('warehouse.inventory-transfers.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('warehouse.inventory-transfers.index') }}')">Inventory Transfer</li>
                 @endif
+                --}}
                 
                 <!-- 5. STOCK MANAGEMENT -->
                 <li class="menu-divider"></li>
@@ -3908,9 +3912,15 @@
                 button.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 5px;"></i>' + originalHTML;
             }
             
-            // Disable button setelah sedikit delay (biar click pertama sempat jalan)
-            setTimeout(() => {
-                button.disabled = true;
+            // Disable button setelah sedikit delay (biar click pertama sempat jalan).
+            // Timer disimpan & dibatalkan di enableButton: dulu, bila AJAX selesai < 100ms
+            // (ajaxStop -> enableButton), timer ini tetap jalan sesudahnya dan tombol terkunci
+            // permanen (biru muda) sampai halaman di-refresh (UAT 17 Nov, Audit Trail Detail).
+            button._disableTimeout = setTimeout(() => {
+                delete button._disableTimeout;
+                if (processingButtons.has(button)) {
+                    button.disabled = true;
+                }
             }, 100);
 
             // Spinner/opacity tidak perlu bertahan sepanjang lock. Click berikutnya tetap diblok oleh processingButtons.
@@ -3954,7 +3964,12 @@
             if (!button) return;
             
             processingButtons.delete(button);
-            
+
+            if (button._disableTimeout) {
+                clearTimeout(button._disableTimeout);
+                delete button._disableTimeout;
+            }
+
             // Clear timeout if exists
             if (button._reenableTimeout) {
                 clearTimeout(button._reenableTimeout);

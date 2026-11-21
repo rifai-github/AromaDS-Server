@@ -261,6 +261,8 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::delete('pipeline/{pipeline}', [MarketingPipelineController::class, 'destroy'])->name('pipeline.destroy');
         Route::get('pipeline/customers/search', [MarketingPipelineController::class, 'searchCustomers'])->name('pipeline.customers.search');
         Route::get('pipeline/buildings/search', [MarketingPipelineController::class, 'searchBuildings'])->name('pipeline.buildings.search');
+        // UAT 17 Nov: Related Document (quotation/survey/contract/job advice) per customer via AJAX
+        Route::get('pipeline/documents/by-customer', [MarketingPipelineController::class, 'documentsByCustomer'])->name('pipeline.documents.by-customer');
         Route::get('pipeline/employees/by-branch-team', [MarketingPipelineController::class, 'getEmployeesByBranchAndTeam'])->name('pipeline.employees.by-branch-team');
         Route::get('pipeline/statistics', [MarketingPipelineController::class, 'getStatistics'])->name('pipeline.statistics');
         Route::post('pipeline/bulk-delete', [MarketingPipelineController::class, 'bulkDelete'])->name('pipeline.bulk-delete');

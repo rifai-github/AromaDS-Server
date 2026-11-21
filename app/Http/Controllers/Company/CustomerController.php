@@ -136,7 +136,8 @@ class CustomerController extends Controller
         }
 
         $query = Customer::withoutGlobalScope('autoFilter')
-            ->with(['assignedTo', 'customerCategory', 'customerType', 'province', 'city', 'district', 'subdistrict', 'createdBy', 'updatedBy', 'classification']);
+            // UAT 17 Nov: kolom Category pakai customerCategory; customerType tak dipakai di list.
+            ->with(['assignedTo', 'customerCategory', 'province', 'city', 'district', 'subdistrict', 'createdBy', 'updatedBy', 'classification']);
 
         $this->applyAccessControlFilter($query, Auth::user(), 'created_by', 'updated_by', null, null, null);
 
@@ -320,7 +321,8 @@ class CustomerController extends Controller
 
         $customers = $query->paginateStd(25);
         $categories = CustomerCategory::active()->orderBy('name')->get();
-        $users = User::orderBy('name')->get();
+        // UAT 17 Nov: $users tidak dipakai view index; dulu memuat seluruh user tiap buka halaman.
+        $users = collect();
         $provinces = Province::orderBy('name')->get();
 
         // Customer Classification options (MOM requirement)
@@ -330,7 +332,9 @@ class CustomerController extends Controller
         // New dropdown data for Customer fields
         $ppnCodes = Customer::getPpnCodes();
         $bankPayments = BankPayment::active()->with('bank')->orderBy('account_name')->get();
-        $allContacts = CustomerContact::active()->orderBy('name')->get();
+        // UAT 17 Nov: dropdown Multi PIC kini select2 AJAX (company.customer-contacts.get-customer-contacts);
+        // dulu SELURUH contact aktif dimuat & dirender 2x sebagai <option> → index ~6 detik.
+        $allContacts = collect();
 
         // Return JSON for AJAX requests
         if ($request->ajax()) {
@@ -456,7 +460,9 @@ class CustomerController extends Controller
             'email' => 'nullable|email|max:255',
             'address' => 'nullable|string',
             'company_type' => 'nullable|string',
-            'customer_category_id' => 'nullable|exists:customer_types,id',
+            // UAT 17 Nov: customer_category_id menunjuk customer_categories (relasi customerCategory),
+            // bukan customer_types (badan hukum).
+            'customer_category_id' => 'nullable|exists:customer_categories,id',
             'status' => 'nullable|in:active,inactive',
             'assigned_to' => 'nullable|exists:customer_contacts,id', // Changed from users to customer_contacts
             // New fields
@@ -729,7 +735,17 @@ class CustomerController extends Controller
         }
 
         // Data for edit modal
-        $categories = CustomerType::active()->orderBy('name')->get();
+        // UAT 17 Nov: dropdown Category = customer_categories (bukan customer_types / badan hukum).
+        // Kategori yang sedang tertaut tetap ikut walau nonaktif.
+        $categories = CustomerCategory::query()
+            ->where(function ($q) use ($customer) {
+                $q->where('is_active', true);
+                if ($customer->customer_category_id) {
+                    $q->orWhere('id', $customer->customer_category_id);
+                }
+            })
+            ->orderBy('name')
+            ->get();
         // Option 14 is Company Types (PT, CV, etc)
         $companyTypeOptions = \App\Models\OptionDetail::where('master_option_id', 14)
             ->where('is_active', true)
@@ -787,7 +803,7 @@ class CustomerController extends Controller
 
     public function edit(Customer $customer)
     {
-        $customer->load(['assignedTo', 'customerType', 'province', 'district', 'subdistrict', 'createdBy', 'updatedBy', 'contacts', 'defaultBankPayment', 'classification']);
+        $customer->load(['assignedTo', 'customerType', 'customerCategory', 'province', 'district', 'subdistrict', 'createdBy', 'updatedBy', 'contacts', 'defaultBankPayment', 'classification']);
 
         // Get city_id from district if district exists
         $cityId = null;
@@ -848,7 +864,8 @@ class CustomerController extends Controller
     {
         $request->validate([
             'company_type' => 'nullable|string|max:100', // From /system/customer-types (hotel, restaurant, mall, etc)
-            'customer_category_id' => 'nullable|exists:customer_types,id',
+            // UAT 17 Nov: customer_categories, bukan customer_types (badan hukum).
+            'customer_category_id' => 'nullable|exists:customer_categories,id',
             'customer_code' => 'nullable|string|max:50|unique:customers,customer_code,'.$customer->id,
             'name' => 'required|string|max:255',
             'label_alias' => 'nullable|string|max:255',

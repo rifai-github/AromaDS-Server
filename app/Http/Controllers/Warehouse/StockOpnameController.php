@@ -1321,6 +1321,7 @@ class StockOpnameController extends Controller
             // Export format: No, Product Code, Product Name, Stock Fisik
             // Data starts after header rows (skip first ~10 rows that contain warehouse info + header)
             $stockData = [];
+            $emptyOrZeroSkus = [];
             $dataStarted = false;
             
             foreach ($rows as $row) {
@@ -1337,14 +1338,25 @@ class StockOpnameController extends Controller
                 $productCode = trim($row[1] ?? ''); // Column B: Product Code (SKU)
                 $stockFisik = trim($row[3] ?? '');  // Column D: Stock Fisik
                 
-                if (!empty($productCode) && is_numeric($stockFisik)) {
+                if ($productCode === '') {
+                    continue;
+                }
+
+                // UAT 18 Nov: klien minta baris Stock Fisik kosong ATAU 0 dilewati (tidak diimport),
+                // supaya produk yang belum dihitung tak tertimpa jadi 0. Dulu hanya kosong yang dilewati.
+                if ($stockFisik === '' || (is_numeric($stockFisik) && (float) $stockFisik == 0)) {
+                    $emptyOrZeroSkus[$productCode] = true;
+                    continue;
+                }
+
+                if (is_numeric($stockFisik)) {
                     $stockData[$productCode] = (int) $stockFisik;
                 }
             }
-            
+
             if (empty($stockData)) {
                 return redirect()->route('warehouse.stock-opnames.show', $stockOpname->id)
-                    ->with('error', 'Tidak ada data valid ditemukan dalam file. Pastikan kolom Stock Fisik sudah diisi.');
+                    ->with('error', 'Tidak ada data valid ditemukan dalam file. Pastikan kolom Stock Fisik sudah diisi (baris kosong atau 0 dilewati).');
             }
             
             // Update stock opname details
@@ -1352,7 +1364,8 @@ class StockOpnameController extends Controller
             
             $updatedCount = 0;
             $skippedCount = 0;
-            
+            $emptyOrZeroCount = 0;
+
             $details = $stockOpname->stockOpnameDetails()
                 ->with('masterProduct')
                 ->get();
@@ -1371,15 +1384,17 @@ class StockOpnameController extends Controller
                     ]);
                     
                     $updatedCount++;
+                } elseif (isset($emptyOrZeroSkus[$sku])) {
+                    $emptyOrZeroCount++;
                 } else {
                     $skippedCount++;
                 }
             }
-            
+
             DB::commit();
-            
+
             return redirect()->route('warehouse.stock-opnames.show', $stockOpname->id)
-                ->with('success', "Berhasil import {$updatedCount} produk. {$skippedCount} produk tidak ditemukan dalam file.");
+                ->with('success', "Berhasil import {$updatedCount} produk. {$emptyOrZeroCount} produk dilewati karena Stock Fisik kosong/0. {$skippedCount} produk tidak ditemukan dalam file.");
                 
         } catch (\Exception $e) {
             DB::rollback();

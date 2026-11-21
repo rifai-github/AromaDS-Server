@@ -934,8 +934,8 @@ function openScanSNModal(preSelectedProductId = null) {
                                     autocomplete="off"
                                     {{-- Enter is handled by the document-level keydown listener below; an inline
                                          handler here would fire submitScanSN() a second time for the same key. --}}
-                                    style="padding: 10px 12px; border: 2px solid #e5e7eb; border-radius: 8px 0 0 8px; font-size: 14px; text-transform: uppercase;"
-                                    onkeyup="this.value = this.value.toUpperCase()">
+                                    {{-- SN case-sensitive (migrasi utf8mb4_bin, 14 Agu): jangan diubah jadi huruf besar. --}}
+                                    style="padding: 10px 12px; border: 2px solid #e5e7eb; border-radius: 8px 0 0 8px; font-size: 14px;">
                                 <button type="button" class="btn btn-primary" onclick="startQRScannerReceiving()" id="scanQRBtnReceiving" style="border-radius: 0 8px 8px 0; border: 2px solid #1e3a8a; border-left: none; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);">
                                     <i class="fas fa-camera me-2"></i>Scan
                                 </button>
@@ -1051,9 +1051,14 @@ function renderReceivingChecklist() {
             ? row.serials.map(sn => `<span style="display: inline-block; font-family: monospace; font-size: 0.78rem; background: #e0e7ff; color: #1e3a8a; border-radius: 999px; padding: 2px 10px; margin: 2px 4px 2px 0;">${escapeReceivingText(sn)}</span>`).join('')
             : '<span class="text-muted" style="font-style: italic; font-size: 0.8rem;">belum ada SN</span>';
 
-        // Products counted by hand have no SN to scan, so they get no target button.
-        const action = row.requires_serial
-            ? `<button type="button" class="btn btn-sm ${isTarget ? 'btn-primary' : 'btn-outline-secondary'}" style="padding: 1px 10px; font-size: 0.75rem;"
+        // UAT 18 Nov: refill/non-unit yang kategorinya tak ber-flag SN tetap boleh diberi batch SN
+        // (sama seperti tombol "Input Batch SN (Optional)" di tab Products). Dulu barisnya cuma
+        // "tanpa SN" sehingga kode batch baru hasil scan global balik 'unknown' tanpa produk yang
+        // bisa dipilih. Sekarang non-unit selalu bisa jadi target; SN tetap opsional untuknya.
+        const targetable = row.requires_serial || !row.is_unit;
+        const action = targetable
+            ? (row.requires_serial ? '' : '<span class="text-muted" style="font-size: 0.7rem; font-style: italic;">SN opsional</span>')
+                + `<button type="button" class="btn btn-sm ${isTarget ? 'btn-primary' : 'btn-outline-secondary'}" style="padding: 1px 10px; font-size: 0.75rem;"
                    onclick="setReceivingScanTarget(${row.product_id})">${isTarget ? 'Dipilih' : 'Pilih'}</button>`
             : '<span class="text-muted" style="font-size: 0.7rem; font-style: italic;">tanpa SN</span>';
 
@@ -1070,7 +1075,7 @@ function renderReceivingChecklist() {
                         ${action}
                     </div>
                 </div>
-                ${row.requires_serial ? `<div style="margin-top: 8px;">${chips}</div>` : ''}
+                ${(row.requires_serial || row.serials.length) ? `<div style="margin-top: 8px;">${chips}</div>` : ''}
             </div>
         `;
     }).join('');
@@ -1191,7 +1196,7 @@ async function startQRScannerReceiving() {
                     <strong>Solusi:</strong><br>
                     • Ketik di browser <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code><br>
                     • Cari opsi "Insecure origins treated as secure". <br>
-                    • Masukan alamat urlnya di kotak, yaitu: http://72.60.77.23:8082 <br>
+                    • Masukan alamat urlnya di kotak, yaitu: <code>{{ url('/') }}</code> (ip-server) <br>
                     • Opsi disable ganti menjadi enable, lalu refresh<br>
                     • Hubungi admin untuk mengaktifkan HTTPS di server<br>
                     • Atau input Serial Number secara manual di kolom di atas
@@ -1234,7 +1239,7 @@ async function startQRScannerReceiving() {
             (decodedText, decodedResult) => {
                 // Success callback
                 console.log('QR Code scanned:', decodedText);
-                const cleanedSN = decodedText.trim().toUpperCase();
+                const cleanedSN = decodedText.trim(); // SN case-sensitive
                 serialInput.value = cleanedSN;
                 
                 // Manually trigger events so any listeners know the value changed
@@ -1341,7 +1346,7 @@ function submitScanSN() {
     successDiv.classList.add('d-none');
     
     // Validate form
-    const serialNumber = document.getElementById('scanSNSerial').value.trim().toUpperCase();
+    const serialNumber = document.getElementById('scanSNSerial').value.trim(); // SN case-sensitive
     
     if (!serialNumber) {
         errorDiv.textContent = 'Serial Number harus diisi!';

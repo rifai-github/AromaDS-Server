@@ -107,7 +107,11 @@ class CustomerTaxController extends Controller
             });
         }
 
-        $customerTaxes = $query->orderBy('created_at', 'desc')->paginateStd(25);
+        // UAT 17 Nov: sort header global (?sort=&direction=) dulu diabaikan karena
+        // urutan di-hardcode created_at desc. Kolom di-whitelist sesuai data-column view.
+        $this->applyCustomerTaxSort($query, $request);
+
+        $customerTaxes = $query->paginateStd(25);
         // Dropdown create hanya butuh id + nama; dulu semua kolom semua customer ikut di-embed.
         $customers = Customer::orderBy('name')->get(['id', 'name']);
         $defaultVatSetting = TaxSetting::getDefaultPpnSetting();
@@ -490,24 +494,30 @@ class CustomerTaxController extends Controller
     public function destroy(CustomerTax $customerTax)
     {
         try {
-            $customerTax->delete();
+            // UAT 17 Nov: hapus = nonaktifkan (status inactive), bukan soft delete,
+            // supaya baris tetap tampil di list dengan status Inactive.
+            $customerTax->update([
+                'status' => 'inactive',
+                'is_active' => false,
+                'updated_by' => Auth::id(),
+            ]);
 
             // Return JSON for AJAX requests
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Customer tax setting deleted successfully.',
+                    'message' => 'Pengaturan pajak customer berhasil dinonaktifkan.',
                 ]);
             }
 
             return redirect()->route('company.customer-taxes.index')
-                ->with('success', 'Pengaturan pajak pelanggan berhasil dihapus.');
+                ->with('success', 'Pengaturan pajak customer berhasil dinonaktifkan.');
         } catch (\Exception $e) {
             // Return JSON for AJAX requests
             if (request()->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete customer tax setting: '.$e->getMessage(),
+                    'message' => 'Gagal menonaktifkan pengaturan pajak customer: '.$e->getMessage(),
                 ], 422);
             }
 
@@ -695,7 +705,13 @@ class CustomerTaxController extends Controller
         try {
             DB::beginTransaction();
 
-            $deletedCount = CustomerTax::whereIn('id', $request->ids)->delete();
+            // UAT 17 Nov: bulk hapus = nonaktifkan (status inactive), bukan soft delete.
+            $deletedCount = CustomerTax::whereIn('id', $request->ids)->update([
+                'status' => 'inactive',
+                'is_active' => false,
+                'updated_by' => Auth::id(),
+                'updated_at' => now(),
+            ]);
 
             DB::commit();
 
@@ -703,12 +719,12 @@ class CustomerTaxController extends Controller
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => "Successfully deleted {$deletedCount} customer tax setting(s).",
+                    'message' => "{$deletedCount} pengaturan pajak customer berhasil dinonaktifkan.",
                 ]);
             }
 
             return redirect()->route('company.customer-taxes.index')
-                ->with('success', "Successfully deleted {$deletedCount} customer tax setting(s).");
+                ->with('success', "{$deletedCount} pengaturan pajak customer berhasil dinonaktifkan.");
         } catch (\Exception $e) {
             DB::rollback();
 
@@ -716,11 +732,11 @@ class CustomerTaxController extends Controller
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to delete customer tax settings: '.$e->getMessage(),
+                    'message' => 'Gagal menonaktifkan pengaturan pajak customer: '.$e->getMessage(),
                 ], 422);
             }
 
-            return back()->with('error', 'Failed to delete customer tax settings: '.$e->getMessage());
+            return back()->with('error', 'Gagal menonaktifkan pengaturan pajak customer: '.$e->getMessage());
         }
     }
 
@@ -735,6 +751,55 @@ class CustomerTaxController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Terjadi kesalahan: '.$e->getMessage());
         }
+    }
+
+    /**
+     * UAT 17 Nov: urutan list Customer Tax dari header global (?sort=<data-column>&direction=).
+     * Kolom relasi (customer/createdBy/updatedBy) diurutkan lewat subquery nama.
+     */
+    private function applyCustomerTaxSort($query, Request $request): void
+    {
+        $direction = strtolower((string) $request->input('direction', 'desc')) === 'asc' ? 'asc' : 'desc';
+        $sort = (string) $request->input('sort', '');
+
+        $plainColumns = [
+            'label' => 'label',
+            'tax_name' => 'tax_name',
+            'tax_number' => 'tax_number',
+            'nitku' => 'nitku',
+            'tax_type' => 'tax_type',
+            'ppn_code' => 'ppn_code',
+            'tax_rate' => 'tax_rate',
+            'effective_date' => 'effective_date',
+            // Kolom Status menampilkan `status` (active/inactive).
+            'is_active' => 'status',
+            'status' => 'status',
+            'created_at' => 'created_at',
+            'updated_at' => 'updated_at',
+        ];
+
+        $relationColumns = [
+            'customer__name' => ['customers', 'customer_id'],
+            'createdBy__name' => ['users', 'created_by'],
+            'updatedBy__name' => ['users', 'updated_by'],
+        ];
+
+        if (isset($plainColumns[$sort])) {
+            $query->orderBy('customer_tax_settings.'.$plainColumns[$sort], $direction);
+        } elseif (isset($relationColumns[$sort])) {
+            [$table, $foreignKey] = $relationColumns[$sort];
+            $query->orderBy(
+                DB::table($table)
+                    ->select('name')
+                    ->whereColumn($table.'.id', 'customer_tax_settings.'.$foreignKey)
+                    ->limit(1),
+                $direction
+            );
+        } else {
+            $query->orderBy('customer_tax_settings.created_at', 'desc');
+        }
+
+        $query->orderBy('customer_tax_settings.id', 'desc');
     }
 
     private function respondWithError(Request $request, string $message, ?string $field = null)

@@ -601,7 +601,8 @@
     function parseSerialNumbers(value) {
         return (value || '')
             .split(/[\s,;]+/)
-            .map(sn => sn.trim().toUpperCase())
+            // SN case-sensitive: jangan di-uppercase, cukup trim (dipakai untuk SN increase).
+            .map(sn => sn.trim())
             .filter(Boolean);
     }
 
@@ -659,7 +660,8 @@
                         return;
                     }
 
-                    const cleanedSN = scanned.toUpperCase();
+                    // SN case-sensitive di seluruh sistem: hasil scan dipakai apa adanya (hanya di-trim).
+                    const cleanedSN = scanned;
                     const existingLines = parseSerialNumbers(textarea.value);
                     if (!existingLines.includes(cleanedSN)) {
                         existingLines.push(cleanedSN);
@@ -919,7 +921,10 @@
 
         if (type === 'increase') {
             increaseGroup.style.display = 'block';
-            help.textContent = 'Untuk increase, masukkan SN unit tambahan yang belum pernah terdaftar. Pisahkan dengan baris baru, koma, atau spasi, atau klik Scan untuk scan QR code.';
+            // UAT 18 Nov: dulu selalu "SN unit" padahal refill/non-unit juga lewat sini (batch SN boleh berulang).
+            help.textContent = product.requires_unique_serial_number
+                ? 'Untuk increase, masukkan Serial Number unit tambahan yang belum pernah terdaftar. Pisahkan dengan baris baru, koma, atau spasi, atau klik Scan untuk scan QR code.'
+                : 'Untuk increase, masukkan Serial Number (batch) tambahan. Pisahkan dengan baris baru, koma, atau spasi, atau klik Scan untuk scan QR code.';
             return;
         }
 

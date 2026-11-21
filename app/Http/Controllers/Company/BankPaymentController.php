@@ -305,16 +305,21 @@ class BankPaymentController extends Controller
     {
         try {
             $bankPayment = BankPayment::findOrFail($id);
-            $bankPayment->delete(); // This will use soft delete
+            // UAT 17 Nov: hapus/hide = nonaktifkan, bukan soft delete. Klien
+            // ingin data tetap terlihat di list dengan status Inactive.
+            $bankPayment->update([
+                'is_active' => false,
+                'updated_by' => Auth::id(),
+            ]);
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Bank payment hidden successfully'
+                'message' => 'Bank payment berhasil dinonaktifkan'
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Error hiding bank payment: ' . $e->getMessage()
+                'message' => 'Gagal menonaktifkan bank payment: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -327,17 +332,22 @@ class BankPaymentController extends Controller
                 'ids.*' => 'integer|exists:bank_payments,id'
             ]);
 
-            $count = BankPayment::whereIn('id', $request->ids)->delete(); // This will use soft delete
+            // UAT 17 Nov: bulk hide = nonaktifkan (is_active=false), bukan soft delete.
+            $count = BankPayment::whereIn('id', $request->ids)->update([
+                'is_active' => false,
+                'updated_by' => Auth::id(),
+                'updated_at' => now(),
+            ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Bank payments hidden successfully',
+                'message' => "{$count} bank payment berhasil dinonaktifkan",
                 'count' => $count
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error hiding bank payments: ' . $e->getMessage()
+                'message' => 'Gagal menonaktifkan bank payment: ' . $e->getMessage()
             ], 500);
         }
     }

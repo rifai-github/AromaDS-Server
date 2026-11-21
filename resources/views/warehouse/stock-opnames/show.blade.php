@@ -949,6 +949,7 @@
                                 <strong>Petunjuk:</strong>
                                 <ol class="mb-0 mt-2">
                                     <li>Isi kolom "Stock Fisik" untuk setiap produk</li>
+                                    <li>Baris dengan Stock Fisik kosong atau 0 dilewati (tidak diimpor)</li>
                                     <li>Upload file yang sudah dilengkapi di sini</li>
                                 </ol>
                             </div>

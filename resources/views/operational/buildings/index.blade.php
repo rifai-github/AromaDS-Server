@@ -1101,10 +1101,6 @@ function openCreateModal() {
                             <input type="text" name="alamat_1" class="form-input" placeholder="Enter address" required>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Address (English)</label>
-                            <input type="text" name="address" class="form-input" placeholder="Enter address">
-                        </div>
-                        <div class="form-group">
                             <label class="form-label">Address 2</label>
                             <input type="text" name="alamat_2" class="form-input" placeholder="Enter address 2">
                         </div>
@@ -1113,10 +1109,6 @@ function openCreateModal() {
                         <div class="form-group">
                             <label class="form-label">Postal Code</label>
                             <input type="text" name="kode_pos" class="form-input" placeholder="Auto-fill dari kelurahan" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Postal Code (English)</label>
-                            <input type="text" name="postal_code" class="form-input" placeholder="Enter postal code">
                         </div>
                     </div>
                 </div>
@@ -1414,10 +1406,6 @@ function openEditModal(id) {
                                     <input type="text" name="alamat_1" class="form-input" value="${data.alamat_1 || ''}" placeholder="Enter address" required>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Address  </label>
-                                    <input type="text" name="address" class="form-input" value="${data.address || ''}" placeholder="Enter address  ">
-                                </div>
-                                <div class="form-group">
                                     <label class="form-label">Address 2</label>
                                     <input type="text" name="alamat_2" class="form-input" value="${data.alamat_2 || ''}" placeholder="Enter address 2">
                                 </div>
@@ -1426,10 +1414,6 @@ function openEditModal(id) {
                                 <div class="form-group">
                                     <label class="form-label">Postal Code</label>
                                     <input type="text" name="kode_pos" class="form-input" value="${data.kode_pos || ''}" placeholder="Auto-fill dari kelurahan" readonly>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Postal Code (English)</label>
-                                    <input type="text" name="postal_code" class="form-input" value="${data.postal_code || ''}" placeholder="Enter postal code">
                                 </div>
                             </div>
                         </div>

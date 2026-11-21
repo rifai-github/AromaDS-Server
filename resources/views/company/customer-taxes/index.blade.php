@@ -718,9 +718,10 @@
                 </div>
                 
                 <!-- Delete Button -->
+                {{-- UAT 17 Nov: hapus = nonaktifkan; data tetap tampil sebagai Inactive --}}
                 <button class="btn btn-secondary btn-sm ml-4" onclick="deleteSelected()">
-                    <i class="fas fa-trash"></i>
-                    <span>Delete</span>
+                    <i class="fas fa-eye-slash"></i>
+                    <span>Nonaktifkan</span>
                 </button>
             </div>
             
@@ -847,11 +848,11 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z"></path>
             </svg>
         </div>
-        <h3 class="delete-modal-title">Hide Customer Tax Setting</h3>
-        <p class="delete-modal-description" id="deleteMessage">Are you sure you want to hide this customer tax setting? This action can be undone later.</p>
+        <h3 class="delete-modal-title">Nonaktifkan Pengaturan Pajak</h3>
+        <p class="delete-modal-description" id="deleteMessage">Pengaturan pajak customer ini akan dinonaktifkan dan tetap tampil dengan status Inactive.</p>
         <div class="delete-modal-buttons">
             <button class="btn btn-cancel" onclick="closeDeleteModal()">Cancel</button>
-            <button class="btn btn-hide" onclick="confirmDelete()">Yes, Hide</button>
+            <button class="btn btn-hide" onclick="confirmDelete()">Ya, Nonaktifkan</button>
         </div>
     </div>
 </div>
@@ -865,7 +866,7 @@
             </svg>
         </div>
         <h3 class="delete-modal-title">Hmm... Something Went Wrong</h3>
-        <p class="delete-modal-description" id="errorMessage">We couldn't hide the customer tax setting. Please try again.</p>
+        <p class="delete-modal-description" id="errorMessage">Pengaturan pajak customer gagal dinonaktifkan. Silakan coba lagi.</p>
         <div class="delete-modal-buttons">
             <button class="btn btn-cancel" onclick="closeErrorModal()">Close</button>
             <button class="btn btn-hide" onclick="retryDelete()">Try Again</button>
@@ -882,7 +883,7 @@
             </svg>
         </div>
         <h3 class="delete-modal-title">All Set!</h3>
-        <p class="delete-modal-description" id="successMessage">The customer tax setting has been successfully hidden.</p>
+        <p class="delete-modal-description" id="successMessage">Pengaturan pajak customer berhasil dinonaktifkan.</p>
     </div>
 </div>
 @endsection
@@ -1598,8 +1599,8 @@ function openDeleteModal(id = null) {
     
     const count = selectedIdsForRetry.length;
     const message = count === 1 
-        ? 'Apakah Anda yakin ingin menyembunyikan pengaturan pajak customer ini? Tindakan ini masih bisa dibatalkan nanti.'
-        : `Apakah Anda yakin ingin menyembunyikan ${count} pengaturan pajak customer? Tindakan ini masih bisa dibatalkan nanti.`;
+        ? 'Nonaktifkan pengaturan pajak customer ini? Data tetap tampil dengan status Inactive.'
+        : `Nonaktifkan ${count} pengaturan pajak customer? Data tetap tampil dengan status Inactive.`;
     
     document.getElementById('deleteMessage').textContent = message;
     document.getElementById('deleteModalOverlay').classList.add('show');
@@ -1644,7 +1645,7 @@ function confirmDelete() {
 function deleteSelected() {
     const checkboxes = document.querySelectorAll('.row-checkbox:checked');
     if (checkboxes.length === 0) {
-        showWarningDialog('Pilih minimal satu pengaturan pajak customer yang ingin disembunyikan.');
+        showWarningDialog('Pilih minimal satu pengaturan pajak customer yang ingin dinonaktifkan.');
         return;
     }
     
@@ -1655,8 +1656,8 @@ function deleteSelected() {
 // Success Modal functions
 function showSuccessModal(count) {
     const message = count === 1 
-        ? 'Pengaturan pajak customer berhasil disembunyikan.'
-        : `${count} pengaturan pajak customer berhasil disembunyikan.`;
+        ? 'Pengaturan pajak customer berhasil dinonaktifkan.'
+        : `${count} pengaturan pajak customer berhasil dinonaktifkan.`;
     
     document.getElementById('successMessage').textContent = message;
     document.getElementById('successModalOverlay').classList.add('show');

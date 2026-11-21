@@ -113,14 +113,34 @@ class MasterRentalController extends Controller
         }
 
         // Sort options
-        $sortBy = $request->get('sort_by', 'created_at');
-        $sortOrder = $request->get('sort_order', 'desc');
+        // UAT 18 Nov: sort header global (layouts/app) mengirim ?sort=<data-column>&direction=asc|desc,
+        // tapi dulu cuma sort_by/sort_order yang dibaca -> klik header tak berefek. Terima keduanya
+        // (sort_by/sort_order tetap untuk kompatibilitas), whitelist kolom header index, arah dipaksa asc/desc.
+        $sortBy = (string) $request->get('sort', $request->get('sort_by', 'created_at'));
+        $sortOrder = strtolower((string) $request->get('direction', $request->get('sort_order', 'desc'))) === 'asc' ? 'asc' : 'desc';
 
-        $allowedSortFields = ['rental_name', 'rental_code', 'category', 'created_at', 'updated_at'];
-        if (in_array($sortBy, $allowedSortFields)) {
-            $query->orderBy($sortBy, $sortOrder);
+        $allowedSortFields = [
+            'rental_code', 'rental_name', 'category', 'is_active', 'daily_price', 'monthly_price',
+            'install_duration', 'service_duration', 'created_at', 'updated_at',
+        ];
+        // Kolom relasi dari header: diurutkan lewat subquery agar select master_rentals.* tak terganggu join.
+        $relationSortFields = [
+            'serviceFrequency__name' => ['table' => 'rental_service_frequencies', 'fk' => 'service_frequency_id'],
+            'serviceFrequency.name' => ['table' => 'rental_service_frequencies', 'fk' => 'service_frequency_id'],
+            'creator.name' => ['table' => 'users', 'fk' => 'created_by'],
+            'updater.name' => ['table' => 'users', 'fk' => 'updated_by'],
+        ];
+
+        if (in_array($sortBy, $allowedSortFields, true)) {
+            $query->orderBy('master_rentals.'.$sortBy, $sortOrder);
+        } elseif (isset($relationSortFields[$sortBy])) {
+            $rel = $relationSortFields[$sortBy];
+            $query->orderBy(
+                DB::table($rel['table'])->select('name')->whereColumn($rel['table'].'.id', 'master_rentals.'.$rel['fk'])->limit(1),
+                $sortOrder
+            );
         } else {
-            $query->orderBy('created_at', 'desc');
+            $query->orderBy('master_rentals.created_at', 'desc');
         }
 
         $rentals = $query->paginateStd(25);

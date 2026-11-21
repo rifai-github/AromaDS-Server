@@ -99,8 +99,9 @@
                             <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase">Category</label>
                             <select id="create_category_id" name="customer_category_id" class="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all h-[42px] select2">
                                 <option value="">Select Category</option>
-                                @foreach($customerTypes as $type)
-                                    <option value="{{ $type->id }}">{{ $type->name }}</option>
+                                {{-- UAT 17 Nov: customer_category_id = customer_categories (bukan customer_types / badan hukum) --}}
+                                @foreach(($categories ?? collect()) as $category)
+                                    <option value="{{ $category->id }}">{{ $category->name }}</option>
                                 @endforeach
                             </select>
                         </div>
