@@ -34,6 +34,13 @@ class AppServiceProvider extends ServiceProvider
             User::observe(UserObserver::class);
         }
 
+        // UAT 17 Nov: catat semua penghapusan model (yang belum punya trait audit) ke Audit Trail.
+        \App\Support\DeletionAuditLogger::resetCache();
+        \Illuminate\Support\Facades\Event::listen(
+            'eloquent.deleted: *',
+            [\App\Support\DeletionAuditLogger::class, 'handle']
+        );
+
         // Standardize pagination rendering across all views
         Paginator::defaultView('pagination.custom');
         Paginator::defaultSimpleView('pagination.custom');

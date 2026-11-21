@@ -207,10 +207,33 @@ class BrandVariantController extends Controller
             $newName = $variant->name;
 
             // Sync with MasterProduct if brand or name changed
-            if ($oldBrandName && ($oldName !== $newName || $oldBrandName !== $newBrandName)) {
-                $products = MasterProduct::where('brand_line', $oldBrandName)
-                    ->where('variant_name', $oldName)
-                    ->get();
+            if ($oldName !== $newName || $oldBrandName !== $newBrandName) {
+                // UAT 17 Nov: dulu hanya produk dengan brand_line & variant_name yang SAMA PERSIS
+                // yang ikut, sehingga beda kapital/spasi (data import) tertinggal dengan nama lama.
+                // Produk yang sudah ber-FK brand_variant_id ke varian ini selalu ikut; produk tanpa
+                // FK dicocokkan teks case-insensitive + trim. Produk ber-FK ke varian LAIN tidak
+                // disentuh walau teksnya kebetulan sama.
+                $normalizedOldName = mb_strtolower(trim((string) $oldName));
+                $normalizedOldBrand = mb_strtolower(trim((string) $oldBrandName));
+
+                $products = MasterProduct::where(function ($query) use ($variant, $normalizedOldName, $normalizedOldBrand) {
+                    $query->where('brand_variant_id', $variant->id);
+
+                    if ($normalizedOldName !== '' && $normalizedOldBrand !== '') {
+                        $query->orWhere(function ($textMatch) use ($normalizedOldName, $normalizedOldBrand) {
+                            $textMatch->whereNull('brand_variant_id')
+                                ->whereRaw('LOWER(TRIM(variant_name)) = ?', [$normalizedOldName])
+                                ->whereRaw('LOWER(TRIM(brand_line)) = ?', [$normalizedOldBrand]);
+                        });
+                    }
+                })->get();
+
+                \Log::info('Brand Variant rename disinkronkan ke master_products', [
+                    'brand_variant_id' => $variant->id,
+                    'old' => [$oldBrandName, $oldName],
+                    'new' => [$newBrandName, $newName],
+                    'master_products_updated' => $products->count(),
+                ]);
 
                 foreach ($products as $product) {
                     $updateData = [

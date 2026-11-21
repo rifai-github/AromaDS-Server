@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Other;
 use App\Http\Controllers\Controller;
 use App\Http\Traits\ColumnFilterTrait;
 use App\Models\MasterOption;
+use App\Services\Warehouse\BrandLineRenameSync;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +22,8 @@ class MasterOptionController extends Controller
             ? MasterOption::onlyTrashed()->with(['updatedBy', 'createdBy'])
             : MasterOption::with(['updatedBy', 'createdBy']);
 
-        $query->whereNotIn('name', array_keys(MasterOption::MANAGED_ELSEWHERE));
+        // UAT 17 Nov: ikut sembunyikan master option yang tak terpakai (HIDDEN_UNUSED, mis. 'Units').
+        $query->whereNotIn('name', MasterOption::hiddenFromGenericScreen());
 
         $this->applyColumnFilters($query, null, [
             'name' => ['column' => 'name'],
@@ -229,9 +231,12 @@ class MasterOptionController extends Controller
                         : null;
 
                     if ($optionDetail) {
+                        $oldOptionName = $optionDetail->option_name;
                         $optionDetail->fill($attributes);
                         if ($optionDetail->isDirty()) {
                             $optionDetail->save();
+                            // UAT 17 Nov: rename Brand Line ikut ke master_products.brand_line.
+                            app(BrandLineRenameSync::class)->propagate($optionDetail, $oldOptionName);
                         }
                         $submittedIds[] = $optionDetail->id;
                     } else {
@@ -572,12 +577,17 @@ class MasterOptionController extends Controller
     private function redirectIfManagedElsewhere(MasterOption $masterOption)
     {
         $routeName = MasterOption::MANAGED_ELSEWHERE[$masterOption->name] ?? null;
+        $message = "'{$masterOption->name}' dikelola dari halaman tersendiri, bukan dari Master Options.";
+
+        // UAT 17 Nov: master option tak terpakai tidak punya halaman sendiri; kembalikan ke list.
+        if (! $routeName && in_array($masterOption->name, MasterOption::HIDDEN_UNUSED, true)) {
+            $routeName = 'other.master-options.index';
+            $message = "'{$masterOption->name}' tidak dipakai sistem (satuan memakai 'Product Units') dan disembunyikan dari Master Options.";
+        }
 
         if (! $routeName) {
             return null;
         }
-
-        $message = "'{$masterOption->name}' dikelola dari halaman tersendiri, bukan dari Master Options.";
 
         if (request()->ajax()) {
             return response()->json(['status' => 'error', 'message' => $message], 403);

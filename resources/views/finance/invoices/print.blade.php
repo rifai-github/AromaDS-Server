@@ -40,6 +40,8 @@
                 <strong>Date:</strong> {{ $invoice->invoice_date->format('d/M/Y') }}<br>
                 <strong>Due Date:</strong> {{ $invoice->due_date->format('d/M/Y') }}<br>
                 <strong>Contract:</strong> {{ $invoice->contract_number }}
+                @php($customerPoNumber = trim((string) ($invoice->po_number ?: $invoice->contract?->po_number)))
+                @if($customerPoNumber !== '')<br><strong>Customer PO:</strong> {{ $customerPoNumber }}@endif
             </td>
         </tr>
     </table>

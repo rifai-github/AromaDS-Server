@@ -46,6 +46,26 @@ class MasterOption extends Model
     ];
 
     /**
+     * UAT 17 Nov: master option yang tidak dibaca kode mana pun, disembunyikan dari layar
+     * generik Master Options (list/show/edit/update) dengan mekanisme yang sama seperti
+     * MANAGED_ELSEWHERE. Datanya TIDAK dihapus.
+     * - 'Units' (id 45, Pcs/Set/Box...): semua dropdown satuan membaca 'Product Units' (id 46);
+     *   'Units' hanya duplikat yang membingungkan admin. Dicocokkan persis by name supaya
+     *   'Product Units' tetap tampil.
+     */
+    public const HIDDEN_UNUSED = [
+        'Units',
+    ];
+
+    /**
+     * Semua nama yang tidak boleh tampil di layar generik Master Options.
+     */
+    public static function hiddenFromGenericScreen(): array
+    {
+        return array_merge(array_keys(self::MANAGED_ELSEWHERE), self::HIDDEN_UNUSED);
+    }
+
+    /**
      * Names looked up directly via MasterOption::where('name', ...) elsewhere in the app
      * (dropdowns in wizards, product/rental forms, employee profile fields, etc). Deleting
      * one of these would silently break whatever reads it, so deletion is blocked for these

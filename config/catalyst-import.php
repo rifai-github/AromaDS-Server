@@ -19,4 +19,8 @@ return [
     ],
 
     'chunk_size' => (int) env('CATALYST_IMPORT_CHUNK_SIZE', 250),
+
+    // UAT 19 Nov 2026: hanya baris FgActive <> 'N' yang diimport untuk step di
+    // CatalystMasterDataImporter::ACTIVE_ONLY_STEPS (employee tetap semua).
+    'active_only' => filter_var(env('CATALYST_IMPORT_ACTIVE_ONLY', true), FILTER_VALIDATE_BOOLEAN),
 ];

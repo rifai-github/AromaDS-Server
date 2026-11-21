@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Imports\Catalyst\CatalystMasterOptionWriter;
+use App\Services\Imports\Catalyst\CatalystSalutation;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -60,6 +62,14 @@ class ImportCatalystCustomerCompletenessFromExport extends Command
             'failed' => 0,
         ];
 
+        // UAT 19 Nov 2026: pastikan master option Salutation punya Bapak & Ibu.
+        if ($apply) {
+            $salutationWriter = new CatalystMasterOptionWriter();
+            foreach (CatalystSalutation::DETAILS as $detail) {
+                $salutationWriter->upsert(CatalystSalutation::MASTER_OPTION, $detail, true, auth()->id());
+            }
+        }
+
         foreach ($this->readCsv($contactsFile) as $row) {
             $contactStats['processed']++;
 
@@ -105,7 +115,8 @@ class ImportCatalystCustomerCompletenessFromExport extends Command
 
             $payload = $this->onlyColumns([
                 'customer_id' => $customerId,
-                'salutation' => $this->cleanString($row['contacttype'] ?? null),
+                // UAT 19 Nov 2026: Mr -> Bapak, Mrs/Miss -> Ibu (aturan sama dengan importer).
+                'salutation' => CatalystSalutation::normalize($row['contacttype'] ?? null),
                 'position' => $position,
                 'name' => $name,
                 'email' => $email,

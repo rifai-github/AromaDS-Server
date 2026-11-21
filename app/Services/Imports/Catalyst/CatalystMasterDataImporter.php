@@ -75,6 +75,10 @@ class CatalystMasterDataImporter
         'banks',
         'branches',
         'departments',
+        // UAT 19 Nov 2026: detail Master Option (Position, Product Units, rental_alias, Room Type,
+        // Termination Reason, Floor) dari tabel Ms* Catalyst. Tanpa dependency; ditaruh sebelum
+        // users supaya pilihan Position sudah ada saat employee diimport.
+        'master_option_details',
         'users',               // depends on: branches, departments
         'customer_categories',
         'customer_types',
@@ -119,7 +123,50 @@ class CatalystMasterDataImporter
         'job_advice_rooms',    // depends on: job_advices and contract/quotation rooms + rentals
     ];
 
+    /**
+     * UAT 19 Nov 2026 (Database Mapping): "semua database di Catalyst, ambil yang FgActive-nya Y,
+     * abaikan jika N" - KECUALI employee (step users / MsEmployee wajib ditarik semua).
+     *
+     * Daftar ini eksplisit, bukan "semua step": hanya step yang tabel sumbernya terbukti punya
+     * kolom FgActive (mapper-nya membaca $row['FgActive']). Menambahkan step yang tabelnya tidak
+     * punya kolom itu akan bikin query SQL Server gagal ("Invalid column name").
+     * Step produk/rental yang dimatikan (DISABLED_STEPS) sengaja tidak ikut.
+     * Matikan sementara lewat config catalyst-import.active_only = false.
+     */
+    public const ACTIVE_ONLY_STEPS = [
+        'banks',
+        'branches',
+        'departments',
+        'customer_categories',
+        'customer_types',
+        'warehouse_types',
+        'warehouses',
+        'customers',
+        'customer_contacts',
+        'customer_tax_settings',
+        'company_virtual_accounts',
+        'buildings',
+        'building_customers',
+    ];
+
+    /**
+     * UAT 19 Nov 2026: sumber detail Master Option. Master option dicari berdasarkan NAMA
+     * (id di DB bootstrap vs DB lama bisa beda). Kolom nama dicoba berurutan; untuk MsUnit
+     * dan MsFloor nama kolomnya belum terkonfirmasi, jadi beberapa kandidat dicoba.
+     */
+    public const MASTER_OPTION_DETAIL_SOURCES = [
+        ['master_option' => 'Position', 'table' => 'MsJobTitle', 'columns' => ['JobTtlName']],
+        ['master_option' => 'Product Units', 'table' => 'MsUnit', 'columns' => ['UnitName', 'Unit', 'UnitDesc', 'Description', 'UnitCode']],
+        ['master_option' => 'rental_alias', 'table' => 'MsProductCategoryInfo', 'columns' => ['CategoryName']],
+        ['master_option' => 'Room Type', 'table' => 'MsRoom', 'columns' => ['RoomName']],
+        ['master_option' => 'Termination Reason', 'table' => 'MsReasonTerminate', 'columns' => ['ReasonName']],
+        ['master_option' => 'Floor', 'table' => 'MsFloor', 'columns' => ['FloorName', 'Floor', 'FloorDesc', 'Description', 'FloorCode']],
+    ];
+
     private bool $apply = false;
+    private ?CatalystMasterOptionWriter $masterOptionWriter = null;
+    /** @var array<int, array<string, int|null>> city_id -> [nama kecamatan ternormalisasi => districts.id] */
+    private array $districtIdByCityLookup = [];
     private array $bankPaymentIdByBankId = [];
     private array $loggedOnceKeys = [];
     private array $activeSteps = [];
@@ -441,7 +488,7 @@ class CatalystMasterDataImporter
 
     protected function warehouse_types(): array
     {
-        $rows = $this->source()->table('MsWarehouse')
+        $rows = $this->applyActiveOnlyScope('warehouse_types', $this->source()->table('MsWarehouse'))
             ->select('WrhsType', DB::raw('MAX(FgActive) as FgActive'))
             ->whereNotNull('WrhsType')
             ->groupBy('WrhsType')
@@ -772,7 +819,9 @@ class CatalystMasterDataImporter
                 'nib_number' => $this->cleanString($row['NoNIB'] ?? null),
                 'is_pkp' => $this->yesNoToBool($row['FgPPN'] ?? null, false),
                 'is_active' => $this->yesNoToBool($row['FgActive'] ?? null, true),
-                'grace_period_days' => $row['GracePeriod'] ?? null,
+                // UAT 19 Nov 2026: kolom target NOT NULL DEFAULT 0 - GracePeriod NULL di Catalyst
+                // dulu bikin insert gagal / update menimpa jadi NULL.
+                'grace_period_days' => max(0, (int) ($row['GracePeriod'] ?? 0)),
                 'default_payment' => 'credit',
                 'member_since' => $this->toDate($row['UserDate'] ?? null),
                 'email' => $this->cleanString($row['Email'] ?? null),
@@ -800,12 +849,14 @@ class CatalystMasterDataImporter
 
     protected function customer_contacts(): array
     {
-        $rows = $this->source()->table('MsCustContact')
+        $rows = $this->applyActiveOnlyScope('customer_contacts', $this->source()->table('MsCustContact'))
             ->orderBy('CustCode')
             ->orderBy('ItemNo')
             ->get()
             ->map(fn ($row) => (array) $row)
             ->all();
+
+        $this->ensureSalutationOptionDetails();
 
         return $this->runRows('customer_contacts', 'MsCustContact', $rows, function (array $row) {
             $customerKey = $this->makeKey($row['CustCode'] ?? null);
@@ -831,7 +882,8 @@ class CatalystMasterDataImporter
                 'customer_id' => $customerId,
                 'name' => $name,
             ], [
-                'salutation' => $this->cleanString($row['ContactType'] ?? null),
+                // UAT 19 Nov 2026: Mr -> Bapak, Mrs/Miss -> Ibu (lihat CatalystSalutation).
+                'salutation' => CatalystSalutation::normalize($row['ContactType'] ?? null),
                 'position' => $position,
                 'email' => $email,
                 'phone' => $phone,
@@ -965,7 +1017,12 @@ class CatalystMasterDataImporter
             // Membuang barisnya bikin SELURUH VA Catalyst hilang begitu bank BC001
             // belum didaftarkan di bank_payments - persis yang terjadi di DB hasil
             // bootstrap baru.
-            $bankPaymentId = $bankId ? $this->resolveBankPaymentIdForBank($bankId) : null;
+            //
+            // UAT 19 Nov 2026: kalau baris VA membawa referensi rekening (PayCode / PaymentTo -
+            // nama kolomnya belum terkonfirmasi, jadi dibaca defensif), rekening MsPayType itu
+            // yang dipakai. Baru kalau tidak ada, fallback ke rekening pertama milik banknya.
+            $bankPaymentId = $this->resolveBankPaymentIdForVirtualAccountRow($row, $bankId)
+                ?? ($bankId ? $this->resolveBankPaymentIdForBank($bankId) : null);
 
             if (!$bankPaymentId) {
                 $this->logOnce('company_virtual_accounts', 'warning', 'va-no-bank-payment:'.($bankCode ?: '?'), sprintf(
@@ -1096,10 +1153,19 @@ class CatalystMasterDataImporter
                 ]);
             }
 
+            $zipCode = $this->cleanString($row['ZipCode'] ?? null);
+            $district = $this->resolveBuildingDistrict(
+                $area['name'] ?? null,
+                $city['target_city_id'] ?? null,
+                $zipCode,
+                $city['name'] ?? $area['city_name'] ?? null,
+                $city['target_province_id'] ?? null
+            );
+
             return $this->syncRecord('buildings', 'MsBuilding', $sourceKey, 'buildings', [
                 'nama_gedung' => $name,
                 'alamat_1' => $address,
-            ], [
+            ], array_merge([
                 'name' => $name,
                 'address' => $address,
                 'postal_code' => $this->cleanString($row['ZipCode'] ?? null),
@@ -1119,7 +1185,7 @@ class CatalystMasterDataImporter
                     'AreaCity' => $area['city_name'] ?? null,
                 ]),
                 'status_update' => $this->yesNoToBool($row['FgActive'] ?? null, true),
-            ], $row);
+            ], array_filter($district, fn ($value) => $value !== null)), $row);
         });
     }
 
@@ -1151,11 +1217,30 @@ class CatalystMasterDataImporter
     protected function runStep(string $step, string $sourceTable, string $orderBy, callable $mapper, ?callable $scope = null): array
     {
         $query = $this->source()->table($sourceTable)->orderBy($orderBy);
+        $query = $this->applyActiveOnlyScope($step, $query);
         if ($scope) {
             $query = $scope($query) ?? $query;
         }
 
         return $this->runRows($step, $sourceTable, $query->get()->map(fn ($row) => (array) $row)->all(), $mapper);
+    }
+
+    /**
+     * Filter FgActive untuk step di ACTIVE_ONLY_STEPS (UAT 19 Nov 2026).
+     *
+     * Yang dibuang hanya FgActive = 'N'; NULL / kosong tetap ikut, sama dengan arti
+     * yesNoToBool($row['FgActive'], true) yang dipakai mapper selama ini dan dengan filter
+     * pivot MsBranchUser/MsDeptUser di export users (ISNULL(FgActive, 'Y') <> 'N').
+     */
+    protected function applyActiveOnlyScope(string $step, $query)
+    {
+        if (!in_array($step, self::ACTIVE_ONLY_STEPS, true) || !config('catalyst-import.active_only', true)) {
+            return $query;
+        }
+
+        return $query->where(function ($inner) {
+            $inner->whereNull('FgActive')->orWhere('FgActive', '<>', 'N');
+        });
     }
 
     protected function runRows(string $step, string $sourceTable, array $rows, callable $mapper): array
@@ -1848,6 +1933,81 @@ class CatalystMasterDataImporter
         return $this->postalAdministrativeAreaLookup[$cacheKey] = [];
     }
 
+    /**
+     * UAT 19 Nov 2026 (Database Mapping #14): AreaServiceName Catalyst = kecamatan. Dulu cuma
+     * ditulis ke description, buildings.district_id tidak pernah diisi.
+     *
+     * Urutan: cocokkan nama kecamatan di dalam city_id yang sudah ter-resolve (tanpa awalan
+     * "Kec."/"Kecamatan", abaikan huruf besar/spasi); kalau tidak ketemu, pakai resolver kode
+     * pos yang sama dengan customers. Subdistrict hanya diisi dari resolver kode pos, dan
+     * hanya kalau kecamatannya konsisten. Nilai null tidak dikirim (lihat pemanggil) supaya
+     * kecamatan yang diisi manual tidak tertimpa kosong saat import diulang.
+     *
+     * @return array{district_id: int|null, subdistrict_id: int|null}
+     */
+    protected function resolveBuildingDistrict(?string $areaName, ?int $cityId, ?string $postalCode, ?string $cityName = null, ?int $provinceId = null): array
+    {
+        $districtId = $cityId ? $this->resolveDistrictIdByName($areaName, $cityId) : null;
+        $location = $this->resolveAdministrativeAreaByPostalCode($postalCode, $cityName, $provinceId);
+
+        if ($districtId) {
+            $subdistrictId = (int) ($location['district_id'] ?? 0) === $districtId
+                ? ($location['subdistrict_id'] ?? null)
+                : null;
+
+            return ['district_id' => $districtId, 'subdistrict_id' => $subdistrictId];
+        }
+
+        // Hasil kode pos yang jatuh di kota lain dibuang - lebih baik kosong daripada salah kota.
+        if (!empty($location['district_id']) && (!$cityId || (int) ($location['city_id'] ?? 0) === $cityId)) {
+            return [
+                'district_id' => (int) $location['district_id'],
+                'subdistrict_id' => isset($location['subdistrict_id']) ? (int) $location['subdistrict_id'] : null,
+            ];
+        }
+
+        return ['district_id' => null, 'subdistrict_id' => null];
+    }
+
+    protected function resolveDistrictIdByName(?string $areaName, int $cityId): ?int
+    {
+        $key = $this->normalizeDistrictName($areaName);
+        if ($key === null || !Schema::hasTable('districts')) {
+            return null;
+        }
+
+        if (!isset($this->districtIdByCityLookup[$cityId])) {
+            $lookup = [];
+            $query = DB::table('districts')->where('city_id', $cityId);
+            if (Schema::hasColumn('districts', 'deleted_at')) {
+                $query->whereNull('deleted_at');
+            }
+
+            foreach ($query->get(['id', 'name']) as $district) {
+                $districtKey = $this->normalizeDistrictName($district->name ?? null);
+                if ($districtKey === null) {
+                    continue;
+                }
+
+                // Nama kembar dalam satu kota = ambigu; ditandai null supaya tidak ditebak.
+                $lookup[$districtKey] = array_key_exists($districtKey, $lookup) ? null : (int) $district->id;
+            }
+
+            $this->districtIdByCityLookup[$cityId] = $lookup;
+        }
+
+        return $this->districtIdByCityLookup[$cityId][$key] ?? null;
+    }
+
+    protected function normalizeDistrictName(?string $value): ?string
+    {
+        $value = Str::ascii(Str::lower($this->cleanString($value) ?? ''));
+        $value = preg_replace('/^\s*(kecamatan|kec)\b\.?/', ' ', $value);
+        $value = preg_replace('/[^a-z0-9]+/', '', (string) $value);
+
+        return $value === '' ? null : $value;
+    }
+
     protected function resolveDefaultImportCompanyId(): ?int
     {
         if ($this->defaultImportCompanyId !== null) {
@@ -2301,6 +2461,31 @@ class CatalystMasterDataImporter
             ->value('id');
 
         return $this->bankPaymentIdByBankId[$bankId] = $bankPaymentId ? (int) $bankPaymentId : null;
+    }
+
+    /**
+     * Rekening spesifik yang ditunjuk baris MsVirtualAccount lewat kode MsPayType
+     * (peta MsPayType -> bank_payments ditulis catalyst:import-bank-payments-export).
+     * Rekening milik bank lain diabaikan supaya VA tidak nyasar ke bank yang salah.
+     */
+    protected function resolveBankPaymentIdForVirtualAccountRow(array $row, ?int $bankId): ?int
+    {
+        $payCode = $this->cleanString($this->sourceValue($row, 'PayCode', 'PaymentTo', 'PayType', 'PayTypeCode'));
+        if (!$payCode) {
+            return null;
+        }
+
+        $bankPaymentId = $this->findMappedTargetId('MsPayType', $payCode, 'bank_payments');
+        if (!$bankPaymentId) {
+            return null;
+        }
+
+        $bankPayment = DB::table('bank_payments')->where('id', $bankPaymentId)->whereNull('deleted_at')->first();
+        if (!$bankPayment || ($bankId && (int) $bankPayment->bank_id !== $bankId)) {
+            return null;
+        }
+
+        return (int) $bankPayment->id;
     }
 
     protected function cleanString($value): ?string
@@ -3070,6 +3255,198 @@ class CatalystMasterDataImporter
     // Depends: branches, departments (must already be imported)
     // =========================================================================
 
+    /**
+     * Satu baris SAUsers per EmpNumb: aktif (FgActive bukan 'N') dulu, lalu CreateDate terbaru,
+     * lalu UserId terkecil - urutan yang sama dengan OUTER APPLY TOP 1 di export_catalyst_users.ps1.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @return array<string, array<string, mixed>>
+     */
+    protected function pickPreferredSaUsers(array $rows): array
+    {
+        $grouped = [];
+        foreach ($rows as $row) {
+            $key = $this->makeKey($row['EmpNumb'] ?? null);
+            if ($key) {
+                $grouped[$key][] = $row;
+            }
+        }
+
+        $picked = [];
+        foreach ($grouped as $key => $candidates) {
+            usort($candidates, function (array $a, array $b): int {
+                $activeA = $this->yesNoToBool($a['FgActive'] ?? null, true) ? 0 : 1;
+                $activeB = $this->yesNoToBool($b['FgActive'] ?? null, true) ? 0 : 1;
+                if ($activeA !== $activeB) {
+                    return $activeA <=> $activeB;
+                }
+
+                $dateA = $this->toDateTimeSortKey($a['CreateDate'] ?? null);
+                $dateB = $this->toDateTimeSortKey($b['CreateDate'] ?? null);
+                if ($dateA !== $dateB) {
+                    return $dateB <=> $dateA;
+                }
+
+                return strcmp((string) ($a['UserId'] ?? ''), (string) ($b['UserId'] ?? ''));
+            });
+
+            $picked[$key] = $candidates[0];
+        }
+
+        return $picked;
+    }
+
+    protected function toDateTimeSortKey($value): string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d H:i:s');
+        }
+
+        $value = $this->cleanString($value);
+        if (!$value) {
+            return '';
+        }
+
+        try {
+            return Carbon::parse($value)->format('Y-m-d H:i:s');
+        } catch (Throwable) {
+            return '';
+        }
+    }
+
+    /**
+     * Baca tabel sumber yang keberadaannya / skemanya belum terkonfirmasi. Gagal baca dicatat
+     * sekali sebagai warning lalu dianggap kosong, supaya satu tabel opsional tidak menggagalkan
+     * seluruh step.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function optionalSourceRows(string $step, string $table): array
+    {
+        try {
+            return $this->source()->table($table)->get()->map(fn ($row) => (array) $row)->all();
+        } catch (Throwable $e) {
+            $this->logOnce($step, 'warning', 'optional-source:'.$table, sprintf(
+                'Tabel Catalyst %s tidak bisa dibaca (%s) - dilewati.',
+                $table,
+                Str::limit($e->getMessage(), 200)
+            ), ['source_table' => $table]);
+
+            return [];
+        }
+    }
+
+    protected function masterOptionWriter(): CatalystMasterOptionWriter
+    {
+        return $this->masterOptionWriter ??= new CatalystMasterOptionWriter();
+    }
+
+    // =========================================================================
+    // STEP: master_option_details (UAT 19 Nov 2026)
+    // Source : MsJobTitle, MsUnit, MsProductCategoryInfo, MsRoom, MsReasonTerminate, MsFloor
+    // Target : option_details (master option dicari berdasarkan nama)
+    // Detail yang sudah ada tidak pernah diubah/dihapus; baris FgActive = 'N' dilewati.
+    // MsProductCategoryInfo juga sumber step product_categories yang DIMATIKAN - di sini
+    // hanya CategoryName-nya yang dibaca sebagai alias rental, step produk tetap mati.
+    // =========================================================================
+
+    protected function master_option_details(): array
+    {
+        $stats = $this->blankStats();
+
+        foreach (self::MASTER_OPTION_DETAIL_SOURCES as $source) {
+            $masterOption = $source['master_option'];
+            $table = $source['table'];
+
+            if (!$this->masterOptionWriter()->masterOptionId($masterOption)) {
+                $this->log('master_option_details', 'warning', sprintf(
+                    'Master option "%s" tidak ada di database target - detail dari %s dilewati.',
+                    $masterOption,
+                    $table
+                ), ['source_table' => $table, 'target_table' => 'option_details']);
+
+                continue;
+            }
+
+            $rows = $this->optionalSourceRows('master_option_details', $table);
+            $nameColumn = $this->detectNameColumn($rows, $source['columns']);
+
+            if ($rows !== [] && $nameColumn === null) {
+                $this->log('master_option_details', 'warning', sprintf(
+                    'Tabel %s tidak punya kolom nama yang dikenal (%s) - detail "%s" dilewati.',
+                    $table,
+                    implode(', ', $source['columns']),
+                    $masterOption
+                ), ['source_table' => $table, 'columns' => array_keys($rows[0])]);
+
+                continue;
+            }
+
+            $summary = $this->runRows('master_option_details', $table, $rows, function (array $row) use ($masterOption, $table, $nameColumn) {
+                $name = $this->cleanString($this->sourceValue($row, $nameColumn));
+
+                if (!$name) {
+                    return ['action' => 'skipped'];
+                }
+
+                // Hormati FgActive kalau tabelnya punya kolom itu (MsUnit/MsFloor dll belum pasti).
+                $fgActive = $this->sourceValue($row, 'FgActive');
+                if ($fgActive !== null && !$this->yesNoToBool($fgActive, true)) {
+                    return ['action' => 'skipped'];
+                }
+
+                $result = $this->masterOptionWriter()->upsert($masterOption, $name, $this->apply, $this->actorId());
+
+                if (($result['id'] ?? null) && $result['id'] > 0) {
+                    $this->rememberMap($table, Str::lower($name), 'option_details', (int) $result['id'], $row);
+                }
+
+                return ['action' => $result['action'] === 'inserted' ? 'inserted' : 'skipped', 'target_id' => $result['id'] ?? null];
+            });
+
+            $stats = $this->mergeStats($stats, $summary['stats']);
+        }
+
+        return ['stats' => $stats];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @param  list<string>  $candidates
+     */
+    protected function detectNameColumn(array $rows, array $candidates): ?string
+    {
+        if ($rows === []) {
+            return null;
+        }
+
+        $columns = array_change_key_case(array_flip(array_keys($rows[0])), CASE_LOWER);
+        foreach ($candidates as $candidate) {
+            if (isset($columns[Str::lower($candidate)])) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * UAT 19 Nov 2026: master option Salutation wajib punya "Bapak" dan "Ibu" sebelum kontak
+     * hasil import (yang sapaannya sudah dinormalisasi) dipakai di dropdown.
+     */
+    protected function ensureSalutationOptionDetails(): void
+    {
+        foreach (CatalystSalutation::DETAILS as $detail) {
+            $result = $this->masterOptionWriter()->upsert(CatalystSalutation::MASTER_OPTION, $detail, $this->apply, $this->actorId());
+
+            if ($result['action'] === 'missing_master') {
+                $this->logOnce('customer_contacts', 'warning', 'salutation-master-missing', 'Master option "Salutation" tidak ada - detail Bapak/Ibu tidak bisa dipastikan.');
+
+                return;
+            }
+        }
+    }
+
     protected function newImportedUserPassword(): string
     {
         return Hash::make(Str::random(64));
@@ -3083,10 +3460,22 @@ class CatalystMasterDataImporter
             ->where('EmpNumb', '!=', '')
             ->get();
 
-        $saUsersMap = $saUsers
-            ->keyBy(fn ($row) => $this->makeKey($row->EmpNumb))
-            ->map(fn ($row) => (array) $row)
-            ->all();
+        // UAT 19 Nov 2026: keyBy() menyimpan baris TERAKHIR, jadi employee yang punya beberapa
+        // akun SAUsers bisa terpetakan ke akun nonaktif (username salah + user ikut nonaktif).
+        // Sekarang dipilih sama seperti export PS1: aktif dulu, lalu CreateDate terbaru, lalu UserId.
+        $saUsersMap = $this->pickPreferredSaUsers($saUsers->map(fn ($row) => (array) $row)->all());
+
+        // UAT 19 Nov 2026: data pribadi dari MsEmployeeDt + MsEmpStatus. Kedua tabel (dan nama
+        // kolomnya) belum terkonfirmasi, jadi dibaca defensif - kalau gagal, import user tetap jalan.
+        $employeeDetailMap = [];
+        foreach ($this->optionalSourceRows('users', 'MsEmployeeDt') as $detailRow) {
+            $detailKey = $this->makeKey($this->sourceValue($detailRow, 'EmpNumb', 'EmpNo', 'EmployeeNo'));
+            if ($detailKey && !isset($employeeDetailMap[$detailKey])) {
+                $employeeDetailMap[$detailKey] = $detailRow;
+            }
+        }
+        $empStatusNames = CatalystEmployeeProfileMapper::empStatusLookup($this->optionalSourceRows('users', 'MsEmpStatus'));
+        $profileMapper = new CatalystEmployeeProfileMapper();
 
         $branchAssignmentsByUserId = [];
         foreach ($this->source()->table('MsBranchUser')->get() as $row) {
@@ -3141,6 +3530,9 @@ class CatalystMasterDataImporter
             $branchAssignmentsByUserId,
             $departmentAssignmentsByUserId,
             $jobTitleMap,
+            $employeeDetailMap,
+            $empStatusNames,
+            $profileMapper,
             &$usedUsernames,
             &$usedEmails,
         ) {
@@ -3281,6 +3673,19 @@ class CatalystMasterDataImporter
                     'LoginUserId' => $this->cleanString($saUser['UserId'] ?? null),
                 ]),
             ];
+
+            // Profil (teks option_name Master Option). Hanya field yang berhasil dipetakan yang
+            // dikirim, jadi nilai lama di users tidak pernah tertimpa kosong. Kolom MsEmployee
+            // menang atas MsEmployeeDt kalau keduanya terisi.
+            $profileRow = $row;
+            foreach ($employeeDetailMap[$sourceKey] ?? [] as $detailColumn => $detailValue) {
+                if (blank($profileRow[$detailColumn] ?? null)) {
+                    $profileRow[$detailColumn] = $detailValue;
+                }
+            }
+            foreach ($profileMapper->map($profileRow, $empStatusNames) as $profileField => $profileValue) {
+                $userPayload[$profileField] = $profileValue;
+            }
 
             if ($this->apply && !$existingTargetUser) {
                 $userPayload['password'] = $this->newImportedUserPassword();

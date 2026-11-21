@@ -247,6 +247,115 @@ class QuotationSurveySelectionDedupTest extends TestCase
         ], array_column($payload, 'survey_number'));
     }
 
+    // UAT 18 Nov: Step 2 memakai select2 AJAX (searchSurveys) alih-alih preload semua survey.
+    public function test_search_surveys_paginates_and_keeps_dedup(): void
+    {
+        $this->insertSurvey(10, 'JKT-SR/26-05/0001', now()->subMinutes(4));
+        $this->insertSurvey(11, 'JKT-SR/26-05/0002', now()->subMinutes(3));
+        $this->insertSurvey(12, 'JKT-SR/26-05/0003', now()->subMinutes(2));
+        $this->insertSurvey(13, 'JKT-SR/26-05/0003', now()->subMinute()); // duplikat nomor, lebih baru
+        $this->actingAs(User::findOrFail(7));
+
+        $first = $this->searchSurveys(['marketing_id' => 7, 'limit' => 2, 'page' => 1]);
+        $this->assertSame([13, 11], array_column($first['results'], 'id'));
+        $this->assertTrue($first['pagination']['more']);
+        $this->assertSame('JKT-SR/26-05/0003 - Hotel JKT45 - Hotel jakarta II', $first['results'][0]['text']);
+        $this->assertSame(1, $first['results'][0]['customer_id']);
+
+        $second = $this->searchSurveys(['marketing_id' => 7, 'limit' => 2, 'page' => 2]);
+        $this->assertSame([10], array_column($second['results'], 'id'));
+        $this->assertFalse($second['pagination']['more']);
+    }
+
+    public function test_search_surveys_filters_by_term_on_number_customer_and_building(): void
+    {
+        DB::table('customers')->insert(['id' => 3, 'name' => 'Klinik Sehat', 'created_at' => now(), 'updated_at' => now()]);
+        $this->insertSurvey(10, 'JKT-SR/26-05/0001', now()->subMinutes(2));
+        $this->insertSurvey(11, 'SBY-SR/26-05/0002', now()->subMinute(), customerId: 3);
+        $this->actingAs(User::findOrFail(7));
+
+        $this->assertSame([11], array_column($this->searchSurveys(['marketing_id' => 7, 'term' => 'SBY-SR'])['results'], 'id'));
+        $this->assertSame([11], array_column($this->searchSurveys(['marketing_id' => 7, 'term' => 'klinik'])['results'], 'id'));
+        $this->assertSame([11, 10], array_column($this->searchSurveys(['marketing_id' => 7, 'term' => 'jakarta II'])['results'], 'id'));
+    }
+
+    public function test_search_surveys_locks_to_selected_customer_id_not_customer_name(): void
+    {
+        // Customer 2 sengaja bernama sama dengan customer 1: penguncian harus by id.
+        DB::table('customers')->insert(['id' => 2, 'name' => 'Hotel JKT45', 'created_at' => now(), 'updated_at' => now()]);
+        $this->insertSurvey(10, 'JKT-SR/26-05/0001', now()->subMinutes(3), customerId: 1);
+        $this->insertSurvey(11, 'JKT-SR/26-05/0002', now()->subMinutes(2), customerId: 2);
+        $this->insertSurvey(12, 'JKT-SR/26-05/0003', now()->subMinute(), customerId: 1);
+        $this->actingAs(User::findOrFail(7));
+
+        $payload = $this->searchSurveys(['marketing_id' => 7, 'selected_customer_id' => 1]);
+
+        $this->assertSame([12, 10], array_column($payload['results'], 'id'));
+    }
+
+    public function test_search_surveys_applies_same_marketing_filter_as_legacy_endpoint(): void
+    {
+        $this->insertSurvey(10, 'JKT-SR/26-05/0001', now()->subMinutes(2), marketingId: 7);
+        $this->insertSurvey(11, 'JKT-SR/26-05/0002', now()->subMinute(), marketingId: 8);
+        $this->actingAs(User::findOrFail(7));
+
+        // Marketing lain dipilih -> hanya survey marketing itu; marketing = diri sendiri ->
+        // semua survey yang boleh diakses (sama dengan getSurveysByCustomer).
+        $this->assertSame([11], array_column($this->searchSurveys(['marketing_id' => 8])['results'], 'id'));
+        $this->assertSame([11, 10], array_column($this->searchSurveys(['marketing_id' => 7])['results'], 'id'));
+        $this->assertSame(
+            array_column($this->getSurveysByCustomerPayload(['marketing_id' => 7]), 'id'),
+            array_column($this->searchSurveys(['marketing_id' => 7])['results'], 'id')
+        );
+    }
+
+    private function getSurveysByCustomerPayload(array $query): array
+    {
+        return app(QuotationWizardController::class)->getSurveysByCustomer(Request::create(
+            '/marketing/quotations/wizard/get-surveys-by-customer',
+            'GET',
+            $query
+        ))->getData(true);
+    }
+
+    public function test_search_surveys_loads_selected_ids_for_restore(): void
+    {
+        $this->insertSurvey(10, 'JKT-SR/26-05/0001', now()->subMinutes(2));
+        $this->insertSurvey(11, 'JKT-SR/26-05/0002', now()->subMinute());
+        $this->actingAs(User::findOrFail(7));
+
+        $payload = $this->searchSurveys(['ids' => [10, 11]]);
+
+        $this->assertSame([10, 11], array_column($payload['results'], 'id'));
+        $this->assertSame('JKT-SR/26-05/0001 - Hotel JKT45 - Hotel jakarta II', $payload['results'][0]['text']);
+        $this->assertFalse($payload['pagination']['more']);
+    }
+
+    public function test_search_surveys_ids_within_context_drops_surveys_outside_new_marketing(): void
+    {
+        $this->insertSurvey(10, 'JKT-SR/26-05/0001', now()->subMinutes(2), marketingId: 7);
+        $this->insertSurvey(11, 'JKT-SR/26-05/0002', now()->subMinute(), marketingId: 8);
+        $this->actingAs(User::findOrFail(7));
+
+        // Restore biasa (edit/kembali dari step lain): semua id yang boleh diakses kembali.
+        $this->assertSame([10, 11], array_column($this->searchSurveys(['ids' => [10, 11]])['results'], 'id'));
+
+        // Marketing di Step 1 diganti ke user 8: survey milik marketing lain dilepas.
+        $payload = $this->searchSurveys(['ids' => [10, 11], 'within_context' => 1, 'marketing_id' => 8]);
+        $this->assertSame([11], array_column($payload['results'], 'id'));
+    }
+
+    private function searchSurveys(array $query): array
+    {
+        $response = app(QuotationWizardController::class)->searchSurveys(Request::create(
+            '/marketing/quotations/wizard/search-surveys',
+            'GET',
+            $query
+        ));
+
+        return $response->getData(true);
+    }
+
     private function insertSurvey(
         int $id,
         string $number,

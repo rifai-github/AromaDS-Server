@@ -24,6 +24,9 @@ class BootstrapCatalystFreshDatabase extends Command
             'banks',
             'branches',
             'departments',
+            // UAT 19 Nov 2026: detail Master Option (Position, Product Units, rental_alias,
+            // Room Type, Termination Reason, Floor) dari tabel Ms* Catalyst.
+            'master_option_details',
             'customer_categories',
             'customer_types',
             'master_products',

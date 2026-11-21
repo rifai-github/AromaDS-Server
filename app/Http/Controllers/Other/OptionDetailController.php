@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Other;
 use App\Http\Controllers\Controller;
 use App\Models\OptionDetail;
 use App\Models\MasterOption;
+use App\Services\Warehouse\BrandLineRenameSync;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -114,11 +115,19 @@ class OptionDetailController extends Controller
         ]);
 
         try {
-            $optionDetail->update([
-                'option_name' => $request->option_name,
-                'option_description' => $request->option_description,
-                'is_active' => $request->boolean('is_active', true)
-            ]);
+            // UAT 17 Nov: rename Brand Line harus ikut ke master_products.brand_line (salinan
+            // teks), dalam satu transaksi supaya nama master dan produk tidak pernah beda.
+            $oldOptionName = $optionDetail->option_name;
+
+            DB::transaction(function () use ($request, $optionDetail, $oldOptionName) {
+                $optionDetail->update([
+                    'option_name' => $request->option_name,
+                    'option_description' => $request->option_description,
+                    'is_active' => $request->boolean('is_active', true)
+                ]);
+
+                app(BrandLineRenameSync::class)->propagate($optionDetail, $oldOptionName);
+            });
 
             if ($request->ajax()) {
                 return response()->json([

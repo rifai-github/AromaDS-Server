@@ -114,6 +114,14 @@
                             <h3 class="card-title mb-0" style="color: white; font-size: 1.5rem; font-weight: bold;">
                                  {{ $quotation->quotation_number }}
                             </h3>
+                            {{-- UAT 18 Nov: selalu tampilkan revisi ke berapa (dulu hanya muncul sebagai "Revisi Lama" di revisi yang sudah digantikan). --}}
+                            @if((int) $quotation->revision_number > 0)
+                                <div class="text-center mt-1">
+                                    <span id="quotationRevisionBadge" class="badge {{ $quotation->is_latest_revision ? 'bg-light text-dark' : 'bg-secondary' }}">
+                                        Revisi ke-{{ (int) $quotation->revision_number }}@if($quotation->is_latest_revision) (terbaru)@endif
+                                    </span>
+                                </div>
+                            @endif
                         </div>
                         <div>
                             @if(!$quotation->is_latest_revision)

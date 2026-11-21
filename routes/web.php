@@ -345,6 +345,8 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
             Route::post('/{id}/reject', [QuotationWizardController::class, 'rejectQuotation'])->name('reject');
             Route::post('/save', [QuotationWizardController::class, 'save'])->name('save');
             Route::get('/get-surveys-by-customer', [QuotationWizardController::class, 'getSurveysByCustomer'])->name('get-surveys-by-customer');
+            // UAT 18 Nov: pencarian survey Step 2 via select2 AJAX (paginasi), ganti preload ribuan option.
+            Route::get('/search-surveys', [QuotationWizardController::class, 'searchSurveys'])->name('search-surveys');
             Route::get('/get-rooms-by-survey', [QuotationWizardController::class, 'getRoomsBySurvey'])->name('get-rooms-by-survey');
             Route::get('/get-survey-rooms', [QuotationWizardController::class, 'getSurveyRooms'])->name('get-survey-rooms');
             Route::get('/get-products', [QuotationWizardController::class, 'getProducts'])->name('get-products');
@@ -516,6 +518,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::put('contracts/{contract}/editable-fields', [ContractController::class, 'updateEditableFields'])->name('contracts.update-editable-fields');
         Route::post('contracts/{contract}/toggle-ba-supported', [ContractController::class, 'toggleBaFilesSupported'])->name('contracts.toggle-ba-supported');
         Route::post('contracts/{contract}/toggle-hold-invoice', [ContractController::class, 'toggleHoldInvoice'])->name('contracts.toggle-hold-invoice');
+        Route::post('contracts/{contract}/update-po-number', [ContractController::class, 'updatePoNumber'])->name('contracts.update-po-number');
         Route::post('contracts/{contract}/toggle-contract-target', [ContractController::class, 'toggleContractTarget'])->name('contracts.toggle-contract-target');
 
         Route::post('contracts/{contract}/update-achiever', [ContractController::class, 'updateAchiever'])->name('contracts.update-achiever');

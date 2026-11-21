@@ -14,6 +14,16 @@
 @endpush
 
 @section('content')
+@php
+    // UAT 19 Nov: role "PIC Info". Email & telepon PIC hanya untuk Admin/Management atau user
+    // dengan izin marketing.contract-pic-info.view; lainnya hanya melihat nama PIC.
+    $canSeePicInfo = auth()->check() && (
+        auth()->user()->hasRole('super_admin')
+        || auth()->user()->hasRole('Admin')
+        || auth()->user()->hasRoleStartingWith('Management')
+        || auth()->user()->hasPermission('marketing.contract-pic-info.view')
+    );
+@endphp
 <style>
     .contract-layout-fix {
         display: flex !important;
@@ -615,6 +625,18 @@
                                             </small>
                                         </div>
                                     </div>
+                                    {{-- UAT 19 Nov: Customer PO Number bisa diketik kapan pun (termasuk setelah post); dipakai di invoice. --}}
+                                    <div class="contract-field">
+                                        <div class="contract-field-label">Customer PO Number</div>
+                                        <div class="contract-field-value">
+                                            <div class="input-group input-group-sm" style="max-width: 320px;">
+                                                <input type="text" id="contractPoNumber" class="form-control" maxlength="255"
+                                                       value="{{ $contract->po_number }}" placeholder="Belum ada PO">
+                                                <button type="button" class="btn btn-primary" id="btnSavePoNumber"
+                                                        onclick="saveContractPoNumber({{ $contract->id }})">Simpan</button>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Contract</div>
                                         <div class="contract-field-value">
@@ -1035,7 +1057,7 @@
                                     <div class="col-md-6 mb-3">
                                         <div class="contract-field">
                                             <div class="contract-field-label">PIC Service (Email)</div>
-                                            <div class="contract-field-value">{{ $contract->pic_service_email ?? '-' }}</div>
+                                            <div class="contract-field-value">{{ $canSeePicInfo ? ($contract->pic_service_email ?? '-') : 'Disembunyikan (butuh izin PIC Info)' }}</div>
                                         </div>
                                     </div>
                                     <div class="col-md-12 mb-3">
@@ -1330,8 +1352,10 @@
                                              <th>Alamat Penagihan</th>
                                              <th>Alamat Penagihan Pajak</th>
                                             <th>PIC Finance</th>
+                                            @if($canSeePicInfo)
                                             <th>E-Mail</th>
                                             <th>Phone 1</th>
+                                            @endif
                                             <th>Bank Name</th>
                                             <th>Account Name</th>
                                             <th>Account No</th>
@@ -1358,8 +1382,10 @@
                                             <th><input type="text" class="form-control form-control-sm" placeholder="Filter"></th>
                                             <th><input type="text" class="form-control form-control-sm" placeholder="Filter"></th>
                                             <th><input type="text" class="form-control form-control-sm" placeholder="Filter"></th>
+                                            @if($canSeePicInfo)
                                             <th><input type="text" class="form-control form-control-sm" placeholder="Filter"></th>
                                             <th><input type="text" class="form-control form-control-sm" placeholder="Filter"></th>
+                                            @endif
                                             <th><input type="text" class="form-control form-control-sm" placeholder="Filter"></th>
                                             <th><input type="text" class="form-control form-control-sm" placeholder="Filter"></th>
                                             <th><input type="text" class="form-control form-control-sm" placeholder="Filter"></th>
@@ -1450,7 +1476,8 @@
                                                 // Phone 1 & 2 dari PIC Finance (customer contact)
                                                 // Note: CustomerContact hanya punya 1 field phone, tidak ada phone_1 dan phone_2
                                                 // Kita perlu cari customer contact berdasarkan pic_name atau simpan contact_id
-                                                $phone1 = '-';
+                                                // Telepon tersimpan di billing group (wizard kini menyimpannya) menang.
+                                                $phone1 = $billingGroup->pic_phone ?: '-';
                                                 $phone2 = '-';
                                                 
                                                 // Try to find customer contact by name or email
@@ -1467,7 +1494,7 @@
                                                         ->where('is_active', true)
                                                         ->first();
                                                     
-                                                    if ($picContact) {
+                                                    if ($picContact && ! $billingGroup->pic_phone) {
                                                         $phone1 = $picContact->phone ?? '-';
                                                         // CustomerContact hanya punya 1 phone, jadi phone2 tetap '-'
                                                     }
@@ -1556,8 +1583,10 @@
                                                  <td>{{ $alamatTagihan }}</td>
                                                  <td>{{ $alamatPenagihan }}</td>
                                                 <td>{{ $picFinance }}</td>
+                                                @if($canSeePicInfo)
                                                 <td>{{ $email }}</td>
                                                 <td>{{ $phone1 }}</td>
+                                                @endif
                                                 <td>{{ $bankName }}</td>
                                                 <td>{{ $accountName }}</td>
                                                 <td>{{ $accountNo }}</td>
@@ -4872,6 +4901,37 @@ function updateBaFilesSupported(contractId, supported) {
                 btnNo.disabled = false;
             });
         }
+    });
+}
+
+function saveContractPoNumber(contractId) {
+    const input = document.getElementById('contractPoNumber');
+    const button = document.getElementById('btnSavePoNumber');
+    button.disabled = true;
+
+    fetch(`/marketing/contracts/${contractId}/update-po-number`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({ po_number: input.value })
+    })
+    .then(async response => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) {
+            const firstError = data.errors ? Object.values(data.errors).flat()[0] : null;
+            throw new Error(firstError || data.message || 'Gagal menyimpan Customer PO Number');
+        }
+        input.value = data.po_number || '';
+        Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message, timer: 1800, showConfirmButton: false });
+    })
+    .catch(error => {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    })
+    .finally(() => {
+        button.disabled = false;
     });
 }
 

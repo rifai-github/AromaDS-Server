@@ -138,23 +138,24 @@
         min-width: 50px;
         max-width: 50px;
     }
-    
+
+    /* UAT 18 Nov: Revisi (2) & Aksi (3) kini tepat setelah checkbox; kolom lain bergeser +2 */
     .responsive-table th:nth-child(2),
     .responsive-table td:nth-child(2) {
-        width: 150px;
-        min-width: 150px;
+        width: 70px;
+        min-width: 70px;
     }
-    
+
     .responsive-table th:nth-child(3),
     .responsive-table td:nth-child(3) {
-        width: 120px;
-        min-width: 120px;
+        width: 80px;
+        min-width: 80px;
     }
     
     .responsive-table th:nth-child(4),
     .responsive-table td:nth-child(4) {
-        width: 200px;
-        min-width: 200px;
+        width: 150px;
+        min-width: 150px;
     }
     
     .responsive-table th:nth-child(5),
@@ -165,38 +166,38 @@
     
     .responsive-table th:nth-child(6),
     .responsive-table td:nth-child(6) {
-        width: 120px;
-        min-width: 120px;
+        width: 200px;
+        min-width: 200px;
     }
     
     .responsive-table th:nth-child(7),
     .responsive-table td:nth-child(7) {
-        width: 100px;
-        min-width: 100px;
+        width: 120px;
+        min-width: 120px;
     }
     
     .responsive-table th:nth-child(8),
     .responsive-table td:nth-child(8) {
-        width: 100px;
-        min-width: 100px;
-    }
-
-    .responsive-table th:nth-child(9),
-    .responsive-table td:nth-child(9) {
         width: 120px;
         min-width: 120px;
+    }
+    
+    .responsive-table th:nth-child(9),
+    .responsive-table td:nth-child(9) {
+        width: 100px;
+        min-width: 100px;
     }
     
     .responsive-table th:nth-child(10),
     .responsive-table td:nth-child(10) {
-        width: 120px;
-        min-width: 120px;
+        width: 100px;
+        min-width: 100px;
     }
-    
+
     .responsive-table th:nth-child(11),
     .responsive-table td:nth-child(11) {
-        width: 150px;
-        min-width: 150px;
+        width: 120px;
+        min-width: 120px;
     }
     
     .responsive-table th:nth-child(12),
@@ -207,30 +208,42 @@
     
     .responsive-table th:nth-child(13),
     .responsive-table td:nth-child(13) {
-        width: 120px;
-        min-width: 120px;
-    }
-    
-    .responsive-table th:nth-child(14),
-    .responsive-table td:nth-child(14) {
-        width: 200px;
-        min-width: 200px;
-    }
-    
-    .responsive-table th:nth-child(15),
-    .responsive-table td:nth-child(15) {
-        width: 200px;
-        min-width: 200px;
-    }
-    
-    .responsive-table th:nth-child(16),
-    .responsive-table td:nth-child(16) {
         width: 150px;
         min-width: 150px;
     }
     
+    .responsive-table th:nth-child(14),
+    .responsive-table td:nth-child(14) {
+        width: 120px;
+        min-width: 120px;
+    }
+    
+    .responsive-table th:nth-child(15),
+    .responsive-table td:nth-child(15) {
+        width: 120px;
+        min-width: 120px;
+    }
+    
+    .responsive-table th:nth-child(16),
+    .responsive-table td:nth-child(16) {
+        width: 200px;
+        min-width: 200px;
+    }
+    
     .responsive-table th:nth-child(17),
     .responsive-table td:nth-child(17) {
+        width: 200px;
+        min-width: 200px;
+    }
+    
+    .responsive-table th:nth-child(18),
+    .responsive-table td:nth-child(18) {
+        width: 150px;
+        min-width: 150px;
+    }
+    
+    .responsive-table th:nth-child(19),
+    .responsive-table td:nth-child(19) {
         width: 120px;
         min-width: 120px;
     }
@@ -1368,6 +1381,9 @@
                         <th data-no-filter>
                             <input type="checkbox" id="headerSelectAll" class="w-4 h-4 bg-white border border-gray-300 rounded cursor-pointer">
                         </th>
+                        {{-- UAT 18 Nov: kolom Revisi & Aksi dipindah ke paling kiri (setelah checkbox). --}}
+                        <th data-column="revision_number" data-type="numeric">Revisi</th>
+                        <th data-no-filter>Aksi</th>
                         <th data-column="quotation_number">Quotation Number</th>
                         <th data-column="quotation_date" data-type="date">Quotation Date</th>
                         <th data-column="company_name">Company Name</th>
@@ -1389,8 +1405,6 @@
                         <th data-column="created_at" data-type="date">Created At</th>
                         <th data-column="updater.name" data-relation="updater">Last Updated By</th>
                         <th data-column="quotations.updated_at" data-type="date">Last Updated At</th>
-                        <th data-column="revision_number" data-type="numeric">Revisi</th>
-                        <th data-no-filter>Aksi</th>
                     </tr>
                 </thead>
                 
@@ -1400,6 +1414,18 @@
                     <tr class="table-row-hover cursor-pointer border-b border-gray-200" data-id="{{ $quotation->id }}" onclick="openQuotationDetail({{ $quotation->id }})">
                         <td class="w-[50px] p-2 text-center">
                             <input type="checkbox" class="row-checkbox w-[10px] h-[10px] md:w-[15px] md:h-[15px] lg:w-[20px] lg:h-[20px] bg-white border border-[#888888] rounded-[4px] cursor-pointer" value="{{ $quotation->id }}" onclick="event.stopPropagation()">
+                        </td>
+                        <td class="w-[60px] p-2 text-center">
+                            <span class="text-[10px] md:text-[12px] lg:text-[14px] font-bold text-[#3d3d3d]">{{ $quotation->revision_number ?? 0 }}</span>
+                        </td>
+                        <td class="w-[80px] p-2 text-center">
+                            @if($quotation->status === 'approved' && (int)($quotation->newer_revision_count ?? 0) === 0)
+                                <button type="button" class="btn btn-sm btn-primary" onclick="event.stopPropagation(); copyQuotation({{ $quotation->id }})" title="Copy sebagai Revisi">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            @else
+                                <span class="text-gray-400">-</span>
+                            @endif
                         </td>
                         <td class="w-[150px] p-2">
                             <p class="text-[6px] md:text-[9px] lg:text-[12px] font-inter font-normal leading-[7px] md:leading-[11px] lg:leading-[15px] text-left text-[#3d3d3d] break-words">{{ $quotation->quotation_number ?? 'N/A' }}</p>
@@ -1505,22 +1531,10 @@
                                 {!! $quotation->updated_at ? \Carbon\Carbon::parse($quotation->updated_at)->format('d/M/Y') . '<br />at ' . \Carbon\Carbon::parse($quotation->updated_at)->format('H.i') . ' WIB' : 'N/A' !!}
                             </p>
                         </td>
-                        <td class="w-[60px] p-2 text-center">
-                            <span class="text-[10px] md:text-[12px] lg:text-[14px] font-bold text-[#3d3d3d]">{{ $quotation->revision_number ?? 0 }}</span>
-                        </td>
-                        <td class="w-[80px] p-2 text-center">
-                            @if($quotation->status === 'approved' && (int)($quotation->newer_revision_count ?? 0) === 0)
-                                <button type="button" class="btn btn-sm btn-primary" onclick="event.stopPropagation(); copyQuotation({{ $quotation->id }})" title="Copy sebagai Revisi">
-                                    <i class="fas fa-copy"></i>
-                                </button>
-                            @else
-                                <span class="text-gray-400">-</span>
-                            @endif
-                        </td>
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="23" class="p-8 text-center">
+                        <td colspan="24" class="p-8 text-center">
                             <p class="text-[14px] md:text-[16px] lg:text-[18px] font-inter font-normal text-center text-[#666]">No quotations found</p>
                         </td>
                     </tr>

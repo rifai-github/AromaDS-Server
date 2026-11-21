@@ -1965,6 +1965,161 @@ class QuotationWizardController extends Controller
     }
 
     /**
+     * UAT 18 Nov: pencarian survey untuk select2 AJAX di Step 2.
+     *
+     * getSurveysByCustomer() mengirim SEMUA survey approved (bisa ~14,6rb) lalu
+     * dirender jadi <option> di browser - Step 2 jadi sangat lambat. Endpoint ini
+     * memakai filter yang sama (akses, marketing, customer renewal, status approved,
+     * dedup nomor survey) tapi hanya mengirim satu halaman hasil per pencarian.
+     *
+     * Parameter:
+     * - term, page, limit (maks 50)    : pencarian + paginasi select2
+     * - marketing_id, customer_id       : sama persis dengan getSurveysByCustomer
+     * - selected_customer_id            : customer survey yang sudah dipilih;
+     *                                     1 quotation = 1 customer, jadi hanya
+     *                                     survey customer itu yang ditawarkan
+     *                                     (dulu option customer lain dihapus dari
+     *                                     DOM berdasarkan NAMA customer - salah)
+     * - ids[]                           : muat survey terpilih berdasarkan id
+     *                                     (edit, renewal, kembali dari step lain)
+     */
+    public function searchSurveys(Request $request)
+    {
+        $user = auth()->user();
+        $marketingId = $request->get('marketing_id');
+        $customerId = $request->get('customer_id');
+        $selectedCustomerId = $request->get('selected_customer_id');
+        $term = trim((string) $request->get('term', ''));
+        $page = max((int) $request->get('page', 1), 1);
+        $limit = min(max((int) $request->get('limit', 30), 1), 50);
+        $emptyResponse = ['results' => [], 'pagination' => ['more' => false]];
+
+        $ids = collect((array) $request->input('ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $baseQuery = function () use ($user, $customerId, $marketingId, $selectedCustomerId) {
+            $query = $this->accessibleApprovedSurveyQuery($user);
+
+            if ($customerId) {
+                $query->where('customer_id', $customerId);
+            } elseif ($marketingId && (int) $marketingId !== (int) $user->id) {
+                $query->where('marketing_id', $marketingId);
+            }
+
+            if ($selectedCustomerId) {
+                $query->where('customer_id', $selectedCustomerId);
+            }
+
+            return $query;
+        };
+
+        if ($ids->isNotEmpty()) {
+            // Survey yang SUDAH tertaut ke quotation tetap harus bisa dipulihkan
+            // walau tidak lagi muncul di hasil pencarian - cukup lolos hak akses.
+            // within_context=1 (marketing/customer di Step 1 berubah): hanya survey
+            // yang masih masuk filter konteks baru yang dipertahankan, sama seperti
+            // dulu saat daftar option dimuat ulang.
+            if ($request->boolean('within_context')
+                && !$customerId && $marketingId && !$this->userCanAccessMarketingId($marketingId, $user)) {
+                return response()->json($emptyResponse);
+            }
+
+            $idQuery = $request->boolean('within_context') ? $baseQuery() : $this->accessibleSurveyQuery($user);
+            $surveys = $idQuery
+                ->select(['id', 'survey_number', 'customer_id', 'building_id', 'created_at'])
+                ->with(['customer:id,name,company_type', 'building:id,name,nama_gedung'])
+                ->whereIn('id', $ids->all())
+                ->get()
+                ->sortBy(fn (Survey $survey) => $ids->search($survey->id))
+                ->values();
+
+            return response()->json([
+                'results' => $surveys->map(fn (Survey $survey) => $this->surveySearchResult($survey))->all(),
+                'pagination' => ['more' => false],
+            ]);
+        }
+
+        if (!$customerId && $marketingId && !$this->userCanAccessMarketingId($marketingId, $user)) {
+            return response()->json($emptyResponse);
+        }
+
+        // Dedup per nomor survey dihitung dari himpunan TANPA kata kunci (survey
+        // terbaru per nomor menang, sama seperti getSurveysByCustomer), supaya hasil
+        // pencarian tidak memunculkan duplikat lama. Hanya id + nomor yang dibaca
+        // (cursor), jadi tetap ringan meski ada belasan ribu survey.
+        $keptIds = [];
+        $seenKeys = [];
+        foreach ($baseQuery()->toBase()->select(['id', 'survey_number'])->orderByDesc('created_at')->orderByDesc('id')->cursor() as $row) {
+            $surveyNumber = strtolower(trim((string) $row->survey_number));
+            $key = $surveyNumber !== '' ? $surveyNumber : 'survey-id:' . $row->id;
+
+            if (!isset($seenKeys[$key])) {
+                $seenKeys[$key] = true;
+                $keptIds[] = (int) $row->id;
+            }
+        }
+
+        if ($term !== '') {
+            $like = '%' . $term . '%';
+            $matchingIds = [];
+            $matchQuery = $baseQuery()->where(function ($q) use ($like) {
+                $q->where('survey_number', 'like', $like)
+                    ->orWhereHas('customer', fn ($cq) => $cq->where('name', 'like', $like))
+                    ->orWhereHas('building', function ($bq) use ($like) {
+                        $bq->where('name', 'like', $like)->orWhere('nama_gedung', 'like', $like);
+                    });
+            });
+
+            foreach ($matchQuery->toBase()->select(['id'])->cursor() as $row) {
+                $matchingIds[(int) $row->id] = true;
+            }
+
+            $keptIds = array_values(array_filter($keptIds, fn ($id) => isset($matchingIds[$id])));
+        }
+
+        $pageIds = array_slice($keptIds, ($page - 1) * $limit, $limit);
+
+        if (empty($pageIds)) {
+            return response()->json($emptyResponse);
+        }
+
+        $order = array_flip($pageIds);
+        $surveys = Survey::query()
+            ->select(['id', 'survey_number', 'customer_id', 'building_id', 'created_at'])
+            ->with(['customer:id,name,company_type', 'building:id,name,nama_gedung'])
+            ->whereIn('id', $pageIds)
+            ->get()
+            ->sortBy(fn (Survey $survey) => $order[$survey->id] ?? PHP_INT_MAX)
+            ->values();
+
+        return response()->json([
+            'results' => $surveys->map(fn (Survey $survey) => $this->surveySearchResult($survey))->all(),
+            'pagination' => ['more' => count($keptIds) > $page * $limit],
+        ]);
+    }
+
+    private function surveySearchResult(Survey $survey): array
+    {
+        $customerName = $survey->customer?->name ?: 'Unknown Customer';
+        $buildingName = $survey->building ? ($survey->building->name ?: $survey->building->nama_gedung) : null;
+        $buildingName = $buildingName ?: 'Unknown Building';
+
+        return [
+            'id' => $survey->id,
+            // Label sama dengan option lama: "NO SURVEY - Customer - Gedung"
+            'text' => "{$survey->survey_number} - {$customerName} - {$buildingName}",
+            'survey_number' => $survey->survey_number,
+            'customer_id' => $survey->customer_id,
+            'customer_name' => $customerName,
+            'company_type' => $survey->customer?->company_type ? strtoupper((string) $survey->customer->company_type) : '-',
+            'building_name' => $buildingName,
+        ];
+    }
+
+    /**
      * Get rooms by survey
      */
     public function getRoomsBySurvey(Request $request)

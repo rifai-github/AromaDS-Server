@@ -2881,161 +2881,224 @@ $(document).ready(function() {
         return window.renewalContractData.customer?.id || window.renewalContractData.customer_id || null;
     }
 
+    // UAT 18 Nov: Step 2 dulu memuat SEMUA survey approved (~14,6rb) jadi <option>
+    // sekaligus -> lambat. Sekarang select2 mencari ke server (search-surveys, 30 per
+    // halaman). Survey yang sudah dipilih dipertahankan sebagai <option> terpilih dan
+    // dipulihkan berdasarkan id (edit, renewal, kembali dari step lain).
+    const surveySearchCache = {};
+
+    function getSurveyContextKey() {
+        return [$('#marketing_id').val() || '', getRenewalSurveyCustomerId() || ''].join('|');
+    }
+
+    function findSurveyOption(id) {
+        return $('#survey_tags option').filter(function() {
+            return this.value === String(id);
+        }).first();
+    }
+
+    // 1 quotation = 1 customer: customer dari survey yang sudah terpilih (by customer_id,
+    // bukan nama - nama customer bisa kembar antar record).
+    function getSelectedSurveyCustomerId() {
+        const selectedIds = ($('#survey_tags').val() || []).filter(Boolean);
+        for (let i = 0; i < selectedIds.length; i++) {
+            const customerId = findSurveyOption(selectedIds[i]).attr('data-customer-id');
+            if (customerId) {
+                return customerId;
+            }
+        }
+        return null;
+    }
+
+    // Ringkasan Step 7 membaca .data('customer') / .data('company-type') dari option.
+    function applySurveyOptionMeta(option, survey) {
+        if (!option || !survey) return;
+        const $option = $(option);
+        $option.attr('data-customer-id', survey.customer_id || '');
+        $option.data('customer', survey.customer_name || 'Unknown Customer');
+        $option.data('company-type', survey.company_type || '-');
+        $option.data('building', survey.building_name || 'Unknown Building');
+    }
+
+    function ensureSurveySelectOptions(surveys) {
+        const surveySelect = $('#survey_tags');
+        (surveys || []).forEach(function(survey) {
+            if (!survey || !survey.id) return;
+            surveySearchCache[survey.id] = survey;
+            let option = findSurveyOption(survey.id).get(0);
+            if (!option) {
+                option = new Option(survey.text || ('Survey ID: ' + survey.id), survey.id, false, false);
+                surveySelect.append(option);
+            } else if (survey.text) {
+                option.text = survey.text;
+            }
+            applySurveyOptionMeta(option, survey);
+        });
+    }
+
+    function syncSurveyOptionMetaFromCache() {
+        $('#survey_tags option').each(function() {
+            if (this.value && !this.getAttribute('data-customer-id') && surveySearchCache[this.value]) {
+                applySurveyOptionMeta(this, surveySearchCache[this.value]);
+            }
+        });
+    }
+
+    function initSurveySelect2() {
+        const surveySelect = $('#survey_tags');
+        if (surveySelect.data('survey-ajax-select2') && surveySelect.hasClass('select2-hidden-accessible')) {
+            return;
+        }
+        if (surveySelect.hasClass('select2-hidden-accessible')) {
+            surveySelect.select2('destroy');
+        }
+        // Option placeholder kosong tidak dipakai di select multiple + AJAX.
+        surveySelect.find('option').filter(function() { return !this.value; }).remove();
+
+        surveySelect.select2({
+            placeholder: 'Ketik nomor survey / customer / gedung...',
+            allowClear: true,
+            width: '100%',
+            dropdownParent: $('body'),
+            ajax: {
+                url: '{{ route("marketing.quotations.wizard.search-surveys") }}',
+                dataType: 'json',
+                delay: 300,
+                data: function(params) {
+                    return {
+                        term: params.term || '',
+                        page: params.page || 1,
+                        limit: 30,
+                        marketing_id: $('#marketing_id').val(),
+                        customer_id: getRenewalSurveyCustomerId(),
+                        // Survey customer lain disaring di server (dulu option-nya dihapus
+                        // dari DOM saat dropdown dibuka, membandingkan NAMA customer).
+                        selected_customer_id: getSelectedSurveyCustomerId()
+                    };
+                },
+                processResults: function(data) {
+                    const results = (data && Array.isArray(data.results)) ? data.results : [];
+                    results.forEach(function(survey) { surveySearchCache[survey.id] = survey; });
+                    return {
+                        results: results,
+                        pagination: { more: !!(data && data.pagination && data.pagination.more) }
+                    };
+                }
+            }
+        });
+        surveySelect.data('survey-ajax-select2', true);
+    }
+
+    function readStoredSurveySelections() {
+        if (Array.isArray(globalSurveySelections) && globalSurveySelections.length > 0) {
+            return globalSurveySelections;
+        }
+        if (Array.isArray(window.globalSurveySelections) && window.globalSurveySelections.length > 0) {
+            return window.globalSurveySelections;
+        }
+        try {
+            const parsed = JSON.parse(localStorage.getItem('quotation_survey_selections') || '[]');
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            console.error('Error parsing localStorage survey selections', e);
+            return [];
+        }
+    }
+
     function loadSurveys() {
         const marketingId = $('#marketing_id').val();
-        const renewalCustomerId = getRenewalSurveyCustomerId();
         const surveySelect = $('#survey_tags');
-        
+
         if (!marketingId) {
             console.log('No marketing selected');
             return;
         }
 
-        // SMART LOAD: Check if surveys are already loaded for this marketing ID
-        const loadedMarketingId = surveySelect.data('loaded-marketing-id');
-        const loadedCustomerId = surveySelect.data('loaded-customer-id') || null;
-        if (loadedMarketingId == marketingId && loadedCustomerId == renewalCustomerId && surveySelect.children('option').length > 1) {
-            console.log('Surveys already loaded for marketing/customer:', marketingId, renewalCustomerId, '- skipping reload');
-            restoreSurveySelections();
-            return;
-        }
-        
-        console.log('Loading surveys for marketing/customer:', marketingId, renewalCustomerId);
-        
-        // Clear existing options
-        surveySelect.empty();
-        
-        // Destroy existing Select2
-        if (surveySelect.hasClass('select2-hidden-accessible')) {
-            surveySelect.select2('destroy');
-        }
-        
-        // Show loading
-        surveySelect.html('<option value="">Loading surveys...</option>');
-        
-        $.ajax({
-            url: '{{ route("marketing.quotations.wizard.get-surveys-by-customer") }}',
-            method: 'GET',
-            data: {
-                marketing_id: marketingId,
-                customer_id: renewalCustomerId
-            },
-            success: function(response) {
-                console.log('Surveys loaded:', response ? response.length : 0);
+        initSurveySelect2();
 
-                // Clear loading option
-                surveySelect.empty();
+        // Konteks Step 1 (marketing / customer renewal) berubah sejak Step 2 terakhir
+        // dibuka -> survey terpilih divalidasi ulang ke konteks baru.
+        const contextKey = getSurveyContextKey();
+        const previousContextKey = surveySelect.data('survey-context-key');
+        surveySelect.data('survey-context-key', contextKey);
 
-                // Add surveys to select (built off-DOM, then appended once — the list can
-                // run into the thousands and per-option appends lock the browser up)
-                if (response && response.length > 0) {
-                    const options = response.map(function(survey) {
-                        return $('<option></option>')
-                            .val(survey.id)
-                            .text(`${survey.survey_number} - ${survey.customer ? survey.customer.name : 'Unknown Customer'} - ${survey.building ? (survey.building.name || survey.building.nama_gedung) : 'Unknown Building'}`)
-                            .data('customer', survey.customer ? survey.customer.name : 'Unknown Customer')
-                            .data('company-type', survey.customer && survey.customer.company_type ? survey.customer.company_type.toUpperCase() : '-')
-                            .data('building', survey.building ? (survey.building.name || survey.building.nama_gedung) : 'Unknown Building')
-                            .get(0);
-                    });
-                    surveySelect.append(options);
-                }
-                
-                // Initialize Select2
-                surveySelect.select2({
-                    placeholder: 'Pilih survey...',
-                    allowClear: true,
-                    width: '100%',
-                    dropdownParent: $('body')
-                });
-                
-                // Restore previous selections
-                // Restore previous selections
-                console.log('Attempting to restore survey selections in AJAX callback...');
-                
-                let selectionsToRestore = null;
-                
-                // Strategy 1: Global variable
-                if (typeof globalSurveySelections !== 'undefined' && globalSurveySelections && globalSurveySelections.length > 0) {
-                    console.log('Strategy 1: Found in globalSurveySelections:', globalSurveySelections);
-                    selectionsToRestore = globalSurveySelections;
-                }
-                
-                // Strategy 2: Window property (if shadowed)
-                else if (typeof window.globalSurveySelections !== 'undefined' && window.globalSurveySelections && window.globalSurveySelections.length > 0) {
-                     console.log('Strategy 2: Found in window.globalSurveySelections:', window.globalSurveySelections);
-                     selectionsToRestore = window.globalSurveySelections;
-                }
-                
-                // Strategy 3: LocalStorage
-                else {
-                    const stored = localStorage.getItem('quotation_survey_selections');
-                    if (stored) {
-                        try {
-                            const parsed = JSON.parse(stored);
-                            if (parsed && parsed.length > 0) {
-                                console.log('Strategy 3: Found in localStorage:', parsed);
-                                selectionsToRestore = parsed;
-                                // Restore to global for consistency
-                                window.globalSurveySelections = parsed;
-                            }
-                        } catch(e) { console.error('Error parsing localStorage survey selections', e); }
-                    }
-                }
-                
-                if (selectionsToRestore && selectionsToRestore.length > 0) {
-                    // Convert to strings to ensure Select2 match
-                    const stringSelections = selectionsToRestore.map(String);
-                    console.log('Applying selections:', stringSelections);
-                    
-                    surveySelect.val(stringSelections).trigger('change');
-                    
-                    console.log('Survey select value after set:', surveySelect.val());
-                } else {
-                    console.warn('All strategies failed: No survey selections found to restore.');
-                }
-                
-                // Mark as loaded for this marketing ID
-                surveySelect.data('loaded-marketing-id', marketingId);
-                surveySelect.data('loaded-customer-id', renewalCustomerId);
-                
-                // Update button state
-                updateNextButtonState();
-            },
-            error: function(xhr, status, error) {
-                console.error('Error loading surveys:', error);
-                surveySelect.html('<option value="">Error loading surveys</option>');
-                
-                // Initialize Select2 even on error
-                surveySelect.select2({
-                    placeholder: 'Pilih survey...',
-                    allowClear: true,
-                    width: '100%',
-                    dropdownParent: $('body')
-                });
-            }
-        });
+        restoreSurveySelections(previousContextKey !== undefined && previousContextKey !== contextKey);
     }
 
-    function saveSurveySelections() {
-        if (window.isRestoringData || window.isPopulatingData) {
+    function saveSurveySelections(force = false) {
+        if (!force && (window.isRestoringData || window.isPopulatingData)) {
             console.log('Skipping saveSurveySelections: Restoration/Population in progress');
             return;
         }
         const selectedSurveys = $('#survey_tags').val() || [];
         globalSurveySelections = selectedSurveys;
+        window.globalSurveySelections = selectedSurveys;
         localStorage.setItem('quotation_survey_selections', JSON.stringify(globalSurveySelections));
         console.log('Survey selections saved:', globalSurveySelections);
     }
 
-    function restoreSurveySelections() {
-        if (globalSurveySelections.length > 0) {
-            console.log('Restoring survey selections:', globalSurveySelections);
-            setTimeout(function() {
-                $('#survey_tags').val(globalSurveySelections).trigger('change');
-                updateNextButtonState();
-            }, 500);
+    // UAT 18 Nov: kembali ke Step 1 lalu maju ke Step 2 dulu kehilangan survey terpilih.
+    // Restore hanya membaca globalSurveySelections (yang tidak ter-update bila pilihan
+    // dibuat saat flag isRestoringData/isPopulatingData aktif), lalu val() membuang id
+    // yang <option>-nya sudah dihapus dari DOM oleh filter customer di select2:open.
+    // Sekarang nilai <select> sendiri jadi sumber utama, option terpilih dimuat ulang
+    // by id (new Option terpilih), dan pilihan user selalu disimpan (force).
+    function restoreSurveySelections(withinContext = false) {
+        const surveySelect = $('#survey_tags');
+        let ids = (surveySelect.val() || []).filter(Boolean).map(String);
+        if (ids.length === 0) {
+            ids = readStoredSurveySelections().filter(Boolean).map(String);
         }
+        ids = [...new Set(ids)];
+
+        const applySelection = function(validIds) {
+            const current = (surveySelect.val() || []).map(String).sort().join(',');
+            if (current !== validIds.slice().sort().join(',')) {
+                surveySelect.val(validIds).trigger('change');
+            } else {
+                surveySelect.trigger('change.select2');
+            }
+            updateNextButtonState();
+        };
+
+        if (ids.length === 0) {
+            updateNextButtonState();
+            return;
+        }
+
+        const needsLookup = withinContext || ids.some(function(id) {
+            return !findSurveyOption(id).attr('data-customer-id') && !surveySearchCache[id];
+        });
+
+        if (!needsLookup) {
+            ensureSurveySelectOptions(ids.map(function(id) { return surveySearchCache[id]; }).filter(Boolean));
+            syncSurveyOptionMetaFromCache();
+            applySelection(ids.filter(function(id) { return findSurveyOption(id).length > 0; }));
+            return;
+        }
+
+        $.ajax({
+            url: '{{ route("marketing.quotations.wizard.search-surveys") }}',
+            method: 'GET',
+            data: {
+                ids: ids,
+                within_context: withinContext ? 1 : 0,
+                marketing_id: $('#marketing_id').val(),
+                customer_id: getRenewalSurveyCustomerId()
+            },
+            success: function(response) {
+                const results = (response && Array.isArray(response.results)) ? response.results : [];
+                ensureSurveySelectOptions(results);
+                const returnedIds = results.map(function(survey) { return String(survey.id); });
+                applySelection(ids.filter(function(id) {
+                    return returnedIds.includes(id) || (!withinContext && findSurveyOption(id).length > 0);
+                }));
+            },
+            error: function(xhr) {
+                console.error('Error restoring survey selections:', xhr);
+                applySelection(ids.filter(function(id) { return findSurveyOption(id).length > 0; }));
+            }
+        });
     }
 
     function saveRoomSelections() {
@@ -6393,6 +6456,8 @@ $(document).ready(function() {
                         
                         // Set global variable for loadSurveys() to pick up when it finishes
                         const surveyIds = renewalSurveyIds.map(id => id.toString());
+                        // UAT 18 Nov: set juga variabel lokal - restore Step 2 membacanya lebih dulu.
+                        globalSurveySelections = surveyIds;
                         window.globalSurveySelections = surveyIds;
                         localStorage.setItem('quotation_survey_selections', JSON.stringify(surveyIds));
                         
@@ -6405,14 +6470,17 @@ $(document).ready(function() {
                                 ? data.surveys
                                 : (data.survey ? [data.survey] : []);
 
-                             surveysForOptions.forEach(function(survey) {
-                                  const label = `${survey.survey_number} - ${survey.customer_name}`;
-                                  // Check if option exists
-                                  if ($('#survey_tags option[value="' + survey.id + '"]').length === 0) {
-                                      const newOption = new Option(label, survey.id, true, true);
-                                      $('#survey_tags').append(newOption);
-                                  }
-                             });
+                             // UAT 18 Nov: option renewal ikut membawa customer_id supaya
+                             // pencarian survey berikutnya terkunci ke customer kontrak.
+                             ensureSurveySelectOptions(surveysForOptions.map(function(survey) {
+                                  return {
+                                      id: survey.id,
+                                      text: `${survey.survey_number} - ${survey.customer_name}`,
+                                      customer_id: survey.customer_id || data.customer?.id || data.customer_id || null,
+                                      customer_name: survey.customer_name || data.customer?.name,
+                                      company_type: data.customer?.company_type ? String(data.customer.company_type).toUpperCase() : '-'
+                                  };
+                             }));
                              $('#survey_tags').val(surveyIds).trigger('change');
                         }
                     }
@@ -6537,38 +6605,22 @@ $(document).ready(function() {
         });
     }
 
-    // Survey selection change with customer filtering
+    // Survey selection change
     $('#survey_tags').on('change', function() {
+        syncSurveyOptionMetaFromCache();
         saveSurveySelections();
         updateNextButtonState();
     });
 
-    // Apply customer filtering when dropdown opens
-    $(document).on('select2:open', '#survey_tags', function() {
-        const selectedValues = $(this).val() || [];
-        if (selectedValues.length > 0) {
-            const firstCustomer = $(this).find('option:selected').first().data('customer');
-            $(this).find('option').each(function() {
-                const optionCustomer = $(this).data('customer');
-                const optionValue = $(this).val();
-                const isSelected = selectedValues.includes(optionValue);
-                
-                if (optionValue && !isSelected) {
-                    if (optionCustomer !== firstCustomer) {
-                        $(this).remove(); // Remove from DOM
-                    }
-                }
-            });
-        }
-    });
-
-    // On unselect event - reset filtering
-    $('#survey_tags').on('select2:unselect', function(e) {
-        const remainingValues = $(this).val() || [];
-        if (remainingValues.length === 0) {
-            // If no surveys left, reload all options
-            loadSurveys();
-        }
+    // UAT 18 Nov: filter "1 quotation = 1 customer" kini di server (selected_customer_id
+    // pada search-surveys). Handler select2:open lama menghapus option yang NAMA
+    // customer-nya beda dari DOM setelah hasil dropdown sudah dirender, sehingga survey
+    // ke-2 yang diklik "hilang" (option-nya sudah lepas dari <select>).
+    // Pilihan yang dibuat user sendiri selalu disimpan, walau flag restore masih aktif.
+    $('#survey_tags').on('select2:select select2:unselect', function() {
+        syncSurveyOptionMetaFromCache();
+        saveSurveySelections(true);
+        updateNextButtonState();
     });
 
     // Room checkbox change

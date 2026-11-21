@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Imports\Catalyst\CatalystEmployeeProfileMapper;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -64,15 +65,30 @@ class ImportCatalystUsersFromExport extends Command
         }
 
         $header = array_map(fn ($value) => $this->normalizeHeader($value), $header);
+        // UAT 19 Nov 2026: satu baris per EmpNumb, baris PERTAMA yang menang. Export PS1 sudah
+        // memilih akun SAUsers terbaik per employee (aktif dulu, lalu terbaru); kalau CSV-nya tetap
+        // punya EmpNumb kembar, baris berikutnya tidak boleh menimpa pilihan itu.
         $rows = [];
         while (($data = fgetcsv($handle)) !== false) {
             $row = [];
             foreach ($header as $index => $column) {
                 $row[$column] = $data[$index] ?? null;
             }
-            $rows[] = $row;
+
+            $empKey = $this->cleanString($row['empnumb'] ?? null);
+            if ($empKey !== null && isset($rows[$empKey])) {
+                continue;
+            }
+
+            if ($empKey !== null) {
+                $rows[$empKey] = $row;
+            } else {
+                $rows[] = $row;
+            }
         }
         fclose($handle);
+        $rows = array_values($rows);
+        $profileMapper = new CatalystEmployeeProfileMapper();
 
         $usedUsernames = DB::table('users')
             ->whereNull('deleted_at')
@@ -189,6 +205,14 @@ class ImportCatalystUsersFromExport extends Command
                 ]),
                 'updated_at' => now(),
             ];
+
+            // UAT 19 Nov 2026: profil sebagai teks option_name Master Option. Kolomnya hanya ada
+            // kalau export PS1 berhasil menemukannya di MsEmployee/MsEmployeeDt; yang tidak
+            // terpetakan tidak dikirim, jadi nilai lama tidak tertimpa kosong.
+            foreach ($profileMapper->map($row) as $profileField => $profileValue) {
+                $payload[$profileField] = $profileValue;
+            }
+
             $payload = $this->onlyColumns($payload, $userColumns);
 
             if (!$apply) {

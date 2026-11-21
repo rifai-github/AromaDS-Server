@@ -209,10 +209,7 @@
                 <div class="card-body">
                     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 2rem;">
                         <!-- Row 1 -->
-                        <div>
-                            <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Request No</div>
-                            <div style="font-size: 1rem; font-weight: 600; color: #212529;">{{ $requestData->request_number }}</div>
-                        </div>
+                        {{-- UAT 17 Nov: "Request No" dihapus dari sini, sudah tampil di judul header. --}}
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Status</div>
                             <div>
@@ -233,7 +230,15 @@
                             <div style="font-size: 1rem; color: #212529;">{{ $requestData->required_date ? $requestData->required_date->format('d/M/Y') : '-' }}</div>
                         </div>
                         <div>
-                            <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem;">Cabang</div>
+                            {{-- UAT 17 Nov: tombol editBranch() dipindah ke sini dari Request Summary Bar yang dihapus (duplikat Basic Info). --}}
+                            <div style="font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                                Cabang
+                                @if($requestData->status === 'draft')
+                                <button class="btn btn-link btn-sm p-0 text-primary" onclick="editBranch()" title="Edit Cabang">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                @endif
+                            </div>
                             <div style="font-size: 1rem; color: #212529;">{{ $requestData->branch_name }}</div>
                         </div>
                         
@@ -327,56 +332,8 @@
                 </div>
             </div>
 
-            <!-- Request Summary Bar - Date & Branch Above Item List -->
-            <div class="card mb-3" style="border: none; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                <div class="card-body" style="padding: 1.25rem 2rem;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 2rem;">
-                        <div style="display: flex; align-items: center; gap: 3rem;">
-                            <!-- Required Date -->
-                            <div style="display: flex; align-items: center; gap: 1rem;">
-                                <div style="width: 48px; height: 48px; background: #1e3a8a; border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(30, 58, 138, 0.2);">
-                                    <i class="fas fa-calendar-alt" style="color: white; font-size: 1.2rem;"></i>
-                                </div>
-                                <div style="position: relative;">
-                                    <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">Required Date</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600; color: #1e293b;">
-                                        <span class="{{ $requestData->status === 'draft' ? 'cursor-pointer hover:text-blue-600' : '' }} transition-colors" 
-                                            @if($requestData->status === 'draft') onclick="editRequiredDate()" @endif>
-                                            {{ $requestData->required_date ? $requestData->required_date->format('d/M/Y') : '-' }}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Branch -->
-                            <div style="display: flex; align-items: center; gap: 1rem;">
-                                <div style="width: 48px; height: 48px; background: #059669; border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(5, 150, 105, 0.2);">
-                                    <i class="fas fa-building" style="color: white; font-size: 1.2rem;"></i>
-                                </div>
-                                <div style="position: relative;">
-                                    <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">Branch</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600; color: #1e293b; display: flex; align-items: center; min-width: 200px;">
-                                        <div class="{{ $requestData->status === 'draft' ? 'cursor-pointer hover:text-blue-600' : 'text-muted' }} transition-colors" 
-                                            @if($requestData->status === 'draft') onclick="editBranch()" @endif 
-                                            style="display: flex; align-items: center; gap: 0.5rem; width: 100%;">
-                                            <span>{{ $requestData->branch_name }}</span>
-                                            @if($requestData->status === 'draft')
-                                            <i class="fas fa-edit" style="font-size: 0.8rem; color: #94a3b8;"></i>
-                                            @endif
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Reason/Notes -->
-                        <div style="flex: 1; min-width: 250px; padding-left: 2.5rem; border-left: 2px solid #e2e8f0;">
-                            <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Reason for Request</div>
-                            <div style="font-size: 1rem; color: #334155; line-height: 1.5;">{{ $requestData->reason ?? '-' }}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            {{-- UAT 17 Nov: "Request Summary Bar" (Required Date, Branch, Reason) dihapus karena
+                 mengulang field yang sama di Basic Info. Tombol edit cabang dipindah ke Basic Info. --}}
 
             <!-- Item List Section -->
             <div class="card">

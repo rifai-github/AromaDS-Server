@@ -175,6 +175,8 @@ class ImportCatalystBankPaymentsFromExport extends Command
                 ->all() + $sourceToTargetBankPayment;
         }
 
+        $vaStats = $this->relinkVirtualAccountsWithoutBankPayment($apply, $bankMap);
+
         foreach ($this->readCsv($customersFile) as $row) {
             $customerKey = $this->cleanString($row['custcode'] ?? null);
             $paymentTo = $this->cleanString($row['resolvedpaymentto'] ?? $row['paymentto'] ?? null);
@@ -231,6 +233,8 @@ class ImportCatalystBankPaymentsFromExport extends Command
                 ['Customers Default Bank Updated', $stats['customers_updated']],
                 ['Customers Updated via BillTo Fallback', $stats['customers_billto_fallback']],
                 ['Customers Skipped', $stats['customers_skipped']],
+                ['VA Bank Payment Relinked', $vaStats['relinked']],
+                ['VA Still Without Bank Payment', $vaStats['unresolved']],
                 ['Failed', $stats['failed']],
             ]
         );
@@ -238,6 +242,72 @@ class ImportCatalystBankPaymentsFromExport extends Command
         $this->warn('Hanya PayCode yang punya bank source yang jelas dari MsPayType yang dipetakan ke default bank payment customer. Fallback bill-to hanya dipakai jika customer source tidak punya PaymentTo langsung.');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * UAT 19 Nov 2026: VA Catalyst (step company_virtual_accounts) bisa diimport SEBELUM
+     * rekening bank ada di bank_payments - Full Migration tidak menjalankan import ini, dan di DB
+     * bootstrap baru bank_payments masih kosong - sehingga bank_payment_id VA tertinggal NULL.
+     * Setelah rekening tersinkron di sini, VA yang masih NULL ditautkan ulang ke rekening milik
+     * banknya (default VA dulu, lalu yang aktif). Kode bank dibaca dari description VA
+     * ("BankCode: ...") yang ditulis importer. VA yang sudah punya rekening tidak disentuh.
+     *
+     * @return array{relinked: int, unresolved: int}
+     */
+    private function relinkVirtualAccountsWithoutBankPayment(bool $apply, array $bankMap): array
+    {
+        $stats = ['relinked' => 0, 'unresolved' => 0];
+
+        if (!Schema::hasTable('company_virtual_accounts') || !Schema::hasColumn('company_virtual_accounts', 'bank_payment_id')) {
+            return $stats;
+        }
+
+        $vaColumns = array_flip(Schema::getColumnListing('company_virtual_accounts'));
+        $query = DB::table('company_virtual_accounts')->whereNull('bank_payment_id');
+        if (isset($vaColumns['deleted_at'])) {
+            $query->whereNull('deleted_at');
+        }
+
+        $bankPaymentByBankId = [];
+
+        foreach ($query->orderBy('id')->get(['id', 'description']) as $va) {
+            $bankCode = preg_match('/^\s*BankCode:\s*([^\r\n|]+)/mi', (string) $va->description, $match)
+                ? trim($match[1])
+                : null;
+            $bankId = $bankCode ? ($bankMap[$bankCode] ?? null) : null;
+
+            if (!$bankId) {
+                $stats['unresolved']++;
+                continue;
+            }
+
+            if (!array_key_exists($bankId, $bankPaymentByBankId)) {
+                $bankPaymentByBankId[$bankId] = DB::table('bank_payments')
+                    ->where('bank_id', $bankId)
+                    ->whereNull('deleted_at')
+                    ->orderByDesc('is_default_va')
+                    ->orderByDesc('is_active')
+                    ->orderBy('id')
+                    ->value('id');
+            }
+
+            $bankPaymentId = $bankPaymentByBankId[$bankId];
+            if (!$bankPaymentId) {
+                $stats['unresolved']++;
+                continue;
+            }
+
+            if ($apply) {
+                DB::table('company_virtual_accounts')->where('id', $va->id)->update($this->onlyColumns([
+                    'bank_payment_id' => (int) $bankPaymentId,
+                    'updated_at' => now(),
+                ], $vaColumns));
+            }
+
+            $stats['relinked']++;
+        }
+
+        return $stats;
     }
 
     private function readCsv(string $file): array

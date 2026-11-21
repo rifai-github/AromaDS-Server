@@ -3600,6 +3600,56 @@ class ContractController extends Controller
     /**
      * Toggle Hold Invoice status for a contract
      */
+    /**
+     * Customer PO Number boleh diisi/diubah kapan pun, termasuk setelah kontrak di-post
+     * (UAT 19 Nov). Invoice menyalin PO saat dibuat, jadi invoice yang belum lunas/batal dan
+     * masih memakai PO lama (atau kosong) ikut diperbarui supaya cetakannya benar.
+     */
+    public function updatePoNumber(Request $request, Contract $contract)
+    {
+        $validated = $request->validate([
+            'po_number' => 'nullable|string|max:255',
+        ]);
+
+        $newPo = trim((string) ($validated['po_number'] ?? '')) ?: null;
+        $oldPo = $contract->po_number;
+
+        try {
+            $updatedInvoices = DB::transaction(function () use ($contract, $newPo, $oldPo) {
+                $contract->update([
+                    'po_number' => $newPo,
+                    'updated_by' => Auth::id(),
+                ]);
+
+                return DB::table('invoices')
+                    ->where('contract_id', $contract->id)
+                    ->whereNull('deleted_at')
+                    ->whereNotIn('status', ['paid', 'cancelled'])
+                    ->whereNotIn('invoice_status', ['paid', 'cancelled', 'Paid', 'Cancelled'])
+                    ->where(function ($q) use ($oldPo) {
+                        $q->whereNull('po_number')->orWhere('po_number', '');
+                        if ($oldPo !== null && $oldPo !== '') {
+                            $q->orWhere('po_number', $oldPo);
+                        }
+                    })
+                    ->update(['po_number' => $newPo, 'updated_at' => now()]);
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Customer PO Number disimpan.'.($updatedInvoices ? " {$updatedInvoices} invoice yang belum lunas ikut diperbarui." : ''),
+                'po_number' => $newPo,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('ContractController@updatePoNumber error: '.$e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan Customer PO Number: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function toggleHoldInvoice(Request $request, Contract $contract)
     {
         try {
