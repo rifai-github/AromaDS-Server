@@ -286,8 +286,10 @@ class CustomerContactController extends Controller
     {
         $this->authorizeCustomerContactAccess($customerContact);
 
-        $customerContact->load(['customer']);
-        
+        // Termasuk pivot customers: dulu hanya customer_id lama yang dikirim, form edit
+        // memilih 1 customer saja, lalu simpan me-sync pivot dan melepas customer lainnya.
+        $customerContact->load(['customer', 'customers:id,name']);
+
         if (request()->ajax()) {
             try {
                 // Convert to array to avoid JSON encoding issues
@@ -305,6 +307,11 @@ class CustomerContactController extends Controller
                         'id' => $customerContact->customer->id,
                         'name' => $customerContact->customer->name ?? '',
                     ] : null,
+                    'customers' => $customerContact->customers->map(fn ($c) => [
+                        'id' => $c->id,
+                        'name' => $c->name ?? '',
+                        'is_primary' => (bool) ($c->pivot->is_primary ?? false),
+                    ])->values()->all(),
                 ];
                 
                 // Clean any invalid UTF-8 characters
@@ -398,9 +405,14 @@ class CustomerContactController extends Controller
         // Sync many-to-many relationship
         if ($request->has('customer_ids')) {
             $syncData = [];
-            foreach ($request->customer_ids as $index => $id) {
+            $customerIds = array_values(array_filter((array) $request->customer_ids));
+            // Primary yang dikirim tapi tidak ikut dipilih lagi: jatuh ke customer pertama.
+            $primaryId = in_array((string) $request->primary_customer_id, array_map('strval', $customerIds), true)
+                ? $request->primary_customer_id
+                : null;
+            foreach ($customerIds as $index => $id) {
                 // Keep existing primary if it exists, otherwise set first one as primary
-                $isPrimary = $request->primary_customer_id ? ($id == $request->primary_customer_id) : ($index === 0);
+                $isPrimary = $primaryId ? ($id == $primaryId) : ($index === 0);
                 $syncData[$id] = ['is_primary' => $isPrimary];
             }
             $customerContact->customers()->sync($syncData);

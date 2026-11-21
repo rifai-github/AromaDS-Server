@@ -964,14 +964,26 @@ function openEditModal(id) {
 
             // Re-render customersOptions with multiple selected support
             customersOptions = '';
-            const linkedCustomerIds = data.customers ? data.customers.map(c => c.id) : (data.customer_id ? [data.customer_id] : []);
+            const linkedCustomers = (data.customers && data.customers.length > 0)
+                ? data.customers
+                : (data.customer_id ? [{ id: data.customer_id, name: data.customer ? data.customer.name : '' }] : []);
+            const linkedCustomerIds = linkedCustomers.map(c => Number(c.id));
+            const listedIds = customers.map(c => Number(c.id));
             customers.forEach(customer => {
-                const isSelected = linkedCustomerIds.includes(customer.id) ? 'selected' : '';
+                const isSelected = linkedCustomerIds.includes(Number(customer.id)) ? 'selected' : '';
                 customersOptions += `<option value="${customer.id}" ${isSelected}>${customer.name}</option>`;
             });
+            // Customer tertaut yang tidak ada di daftar pilihan (mis. nonaktif) tetap ikut terpilih,
+            // supaya simpan tidak melepas tautannya.
+            linkedCustomers.filter(c => !listedIds.includes(Number(c.id))).forEach(c => {
+                customersOptions += `<option value="${c.id}" selected>${c.name || ('Customer #' + c.id)}</option>`;
+            });
+            const primaryCustomer = linkedCustomers.find(c => c.is_primary) || linkedCustomers[0];
+            const primaryCustomerId = primaryCustomer ? primaryCustomer.id : '';
             
             document.getElementById('modalBody').innerHTML = `
                 <form id="form" onsubmit="submitForm(event, ${id})">
+                    <input type="hidden" name="primary_customer_id" value="${primaryCustomerId}">
                     <div class="modal-section">
                         <div class="modal-section-title">Contact Information</div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">

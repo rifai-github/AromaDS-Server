@@ -210,7 +210,8 @@ class InventoryRequestImportController extends Controller
                     ]);
                 }
 
-                DB::commit();
+                // Tidak commit per grup: dulu commit di sini menutup transaksi luar, jadi bila
+                // grup berikutnya gagal, request yang sudah dibuat tidak ikut dibatalkan.
 
                 $stats['success'] += count($group['rows']);
                 $stats['requests_created']++;

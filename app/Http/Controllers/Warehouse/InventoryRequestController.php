@@ -992,14 +992,11 @@ class InventoryRequestController extends Controller
 
             // Auto-create Inventory Receiving
             $documentNumberService = new \App\Services\DocumentNumberService();
+            // Argumen bernama: dulu urutan posisi kurang satu sehingga branch_id masuk ke slot
+            // warehouse_id, dan kode cabang IRC diambil dari gudang acak (JKT jadi MAK).
             $receivingNumber = $documentNumberService->generate(
                 'inventory_receiving', // type IRC
-                null,
-                null,
-                null,
-                null, // survey_id
-                null, // warehouse_id
-                $inventoryRequest->branch_id // branch_id
+                branchId: $inventoryRequest->branch_id
             );
 
             $receiving = \App\Models\InventoryReceiving::create([

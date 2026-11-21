@@ -1262,6 +1262,7 @@ function openAddDetailModal() {
 
     document.getElementById('detailForm').reset();
     document.getElementById('detail_id').value = '';
+    document.getElementById('product_category_id').dataset.previousCategoryId = '';
     setAutoExpandMode(false);
     document.getElementById('bom_rental_qty').value = 1;
     
@@ -1337,6 +1338,8 @@ function editDetail(detailId) {
             // Set Product Category ID with Select2 support
             const productCategorySelect = document.getElementById('product_category_id');
             if (productCategorySelect) {
+                // Memuat data, bukan user mengganti kategori.
+                productCategorySelect.dataset.previousCategoryId = String(detail.product_category_id || '');
                 productCategorySelect.value = detail.product_category_id;
                 if (typeof $ !== 'undefined') {
                     $(productCategorySelect).val(detail.product_category_id).trigger('change');
@@ -2303,17 +2306,49 @@ document.addEventListener('DOMContentLoaded', function() {
         // Combine validation calls
         const handleChange = function() {
             if (this && this.id === 'product_category_id') {
-                refreshProductsForSelectedCategory(getSelectedMultiProductIds());
+                // Ganti kategori (mis. FRAGRANCE -> HEPA): produk kategori lama dilepas, dan bila
+                // baris mengikuti seluruh kategori (auto expand), seluruh produk kategori baru
+                // dipilih. Dulu produk lama tetap terpilih dan tersimpan sebagai produk utama.
+                const previousCategoryId = this.dataset.previousCategoryId || '';
+                const newCategoryId = this.value || '';
+                let keepIds = getSelectedMultiProductIds();
+                if (previousCategoryId && previousCategoryId !== newCategoryId) {
+                    const wasAutoExpand = document.getElementById('auto_expand')?.value === '1';
+                    const oldCategoryIds = new Set(masterProductsCatalog
+                        .filter(product => String(product.product_category_id) === previousCategoryId)
+                        .map(product => parseInt(product.id, 10)));
+                    keepIds = keepIds.filter(id => !oldCategoryIds.has(id));
+                    if (wasAutoExpand) {
+                        keepIds = getProductsForSelectedCategory().map(product => parseInt(product.id, 10)).concat(keepIds);
+                    }
+                    const primary = document.getElementById('master_product_id');
+                    if (primary && oldCategoryIds.has(parseInt(primary.value, 10))) {
+                        primary.value = '';
+                    }
+                }
+                this.dataset.previousCategoryId = newCategoryId;
+                refreshProductsForSelectedCategory(keepIds);
+                syncAutoExpandModeFromProductSelection();
             }
             window.validateRentalCompliance();
             window.handleFrequencyValidation();
         };
 
-        productCategorySelect.addEventListener('change', handleChange);
-        
+        // Didelegasikan ke document: handler yang dipasang langsung di elemen kategori hilang
+        // (select2 memasang ulang elemen), jadi mengganti kategori lewat select2 tidak pernah
+        // memanggil handleChange dan produk kategori lama tetap terpilih (UAT 17 Nov).
+        if (typeof $ !== 'undefined') {
+            $(document).on('change', '#product_category_id', handleChange);
+        } else {
+            document.addEventListener('change', function(event) {
+                if (event.target && event.target.id === 'product_category_id') {
+                    handleChange.call(event.target);
+                }
+            });
+        }
+
         // Also listen for jQuery change if Select2 is used
         if (typeof $ !== 'undefined') {
-            $(productCategorySelect).on('change', handleChange);
             $(document).on('change', '#master_product_id', handleChange);
             $(document).on('change', '#master_product_ids', handleChange);
             $(document).on('change', '#master_product_ids', syncAutoExpandModeFromProductSelection);

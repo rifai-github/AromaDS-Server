@@ -22,23 +22,55 @@ class MarketingTargetService
             // The create form has no lock checkbox, so the key is usually absent.
             $isLocked = (bool) ($data['is_locked'] ?? false);
 
-            $target = MarketingTarget::updateOrCreate(
-                [
-                    'user_id' => $data['user_id'],
-                    'achievement_period_id' => $data['achievement_period_id'],
-                    'target_type' => $data['target_type']
-                ],
-                [
-                    'target_amount' => $data['target_amount'],
+            $key = [
+                'user_id' => $data['user_id'],
+                'achievement_period_id' => $data['achievement_period_id'],
+                'target_type' => $data['target_type']
+            ];
+
+            // Satu target per marketing + periode + tipe (unique key, ikut menghitung baris
+            // terhapus). Dulu Create memakai updateOrCreate sehingga membuat target "baru" untuk
+            // periode yang sama menimpa target lama: pencapaian kembali 0 dan lock terlepas,
+            // padahal komisi/achievement kontraknya masih ada (UAT 17 Nov: Elly 7jt -> 100jt).
+            $existing = MarketingTarget::withTrashed()->where($key)->lockForUpdate()->first();
+            if ($existing && ! $existing->trashed()) {
+                DB::rollBack();
+                $existing->loadMissing('user', 'achievementPeriod');
+
+                return [
+                    'success' => false,
+                    'duplicate' => true,
+                    'target' => $existing,
+                    'message' => 'Marketing Target '.ucfirst($data['target_type'])
+                        .' untuk '.($existing->user->name ?? 'marketing ini')
+                        .' periode '.($existing->achievementPeriod->period_name ?? '#'.$existing->achievement_period_id)
+                        .' sudah ada (target Rp '.number_format((float) $existing->target_amount, 0, ',', '.')
+                        .', tercapai Rp '.number_format((float) $existing->achieved_amount, 0, ',', '.')
+                        .'). Ubah nilai target lewat tombol Edit pada target tersebut.',
+                ];
+            }
+
+            $attributes = [
+                'target_amount' => $data['target_amount'],
+                'is_locked' => $isLocked,
+                'lock_date' => $isLocked ? now() : null,
+                'locked_by' => $isLocked ? (auth()->id() ?? $data['locked_by'] ?? null) : null,
+                'notes' => $data['notes'] ?? null,
+                'updated_by' => auth()->id() ?? 1
+            ];
+
+            if ($existing) {
+                // Target yang pernah dihapus dipulihkan dengan pencapaiannya tetap: komisi
+                // kontrak yang sudah dihitung masih menunjuk baris ini.
+                $existing->restore();
+                $existing->update($attributes);
+                $target = $existing;
+            } else {
+                $target = MarketingTarget::create($key + $attributes + [
                     'achieved_amount' => $data['achieved_amount'] ?? 0,
-                    'is_locked' => $isLocked,
-                    'lock_date' => $isLocked ? now() : null,
-                    'locked_by' => $isLocked ? (auth()->id() ?? $data['locked_by'] ?? null) : null,
-                    'notes' => $data['notes'] ?? null,
                     'created_by' => auth()->id() ?? 1,
-                    'updated_by' => auth()->id() ?? 1
-                ]
-            );
+                ]);
+            }
 
             DB::commit();
 

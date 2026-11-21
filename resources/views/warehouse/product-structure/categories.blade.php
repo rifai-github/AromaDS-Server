@@ -867,7 +867,7 @@
                     <select class="form-select" id="parent_id" name="parent_id">
                         <option value="">Select Parent Category</option>
                         @foreach($parentCategories as $parent)
-                            <option value="{{ $parent->id }}">{{ $parent->name }}</option>
+                            <option value="{{ $parent->id }}" data-path="{{ implode(',', $parent->ancestor_path ?? []) }}">{{ str_repeat('— ', (int) ($parent->tree_level ?? 0)) }}{{ $parent->name }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -1068,8 +1068,28 @@ function updateHasSerialNumberLock(forcedMandatory = null) {
     document.getElementById(id).addEventListener('input', () => updateHasSerialNumberLock());
 });
 
+function refreshSelect2Display(ids) {
+    if (typeof $ === 'undefined' || !$.fn.select2) return;
+    ids.forEach(id => {
+        const $el = $('#' + id);
+        if ($el.length && $el.data('select2')) {
+            $el.trigger('change.select2');
+        }
+    });
+}
+
+function setParentOptionsDisabledFor(categoryId) {
+    const id = categoryId ? String(categoryId) : null;
+    document.querySelectorAll('#parent_id option[value]').forEach(option => {
+        if (!option.value) return;
+        const path = (option.dataset.path || '').split(',').filter(Boolean);
+        option.disabled = !!id && (option.value === id || path.includes(id));
+    });
+}
+
 function openAddModal() {
     currentCategoryId = null;
+    setParentOptionsDisabledFor(null);
     document.getElementById('modalTitle').textContent = 'Add Product Category';
     document.getElementById('saveButtonText').textContent = 'Save Category';
     document.getElementById('categoryForm').reset();
@@ -1078,6 +1098,7 @@ function openAddModal() {
     // Reset technical fields
     document.getElementById('sku_prefix').value = '';
     document.getElementById('unit').value = '';
+    refreshSelect2Display(['parent_id', 'unit']);
     document.getElementById('has_serial_number').checked = false;
     document.getElementById('is_unit').checked = false;
     updateHasSerialNumberLock(false);
@@ -1282,6 +1303,8 @@ function editCategory(id) {
                 document.getElementById('code').value = category.code;
                 document.getElementById('name').value = category.name;
                 document.getElementById('description').value = category.description || '';
+                // Kategori ini dan turunannya tidak boleh jadi parent-nya sendiri.
+                setParentOptionsDisabledFor(category.id);
                 document.getElementById('parent_id').value = category.parent_id || '';
                 document.getElementById('sort_order').value = category.sort_order;
                 document.getElementById('icon').value = category.icon || '';
@@ -1296,7 +1319,11 @@ function editCategory(id) {
                     : (category.raw_has_serial_number ?? category.has_serial_number ?? false);
                 updateHasSerialNumberLock(category.mandatory_serial_policy || false);
                 document.getElementById('is_unit').checked = category.is_unit || false;
-                
+
+                // Parent & Unit memakai select2 (auto-init global): mengisi .value saja tidak
+                // memperbarui tampilannya, jadi field terlihat kosong saat edit (UAT 17 Nov).
+                refreshSelect2Display(['parent_id', 'unit']);
+
                 // Update modal title and form action
                 document.getElementById('modalTitle').textContent = 'Edit Product Category';
                 document.getElementById('saveButtonText').textContent = 'Update Category';

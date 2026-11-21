@@ -74,7 +74,7 @@ class MarketingTargetController extends Controller
         $result = $this->marketingTargetService->createOrUpdateTarget($request->all());
 
         if (request()->expectsJson() || request()->is('api/*')) {
-            return response()->json($result, $result['success'] ? 201 : 500);
+            return response()->json($result, $result['success'] ? 201 : (! empty($result['duplicate']) ? 422 : 500));
         }
 
         if ($result['success']) {

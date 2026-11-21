@@ -114,10 +114,66 @@ class ProductStructureController extends Controller
         });
 
         $categories = $categoryTreeRows;
-        $parentCategories = ProductCategory::whereNull('parent_id')->orderBy('name')->get();
+        $parentCategories = $this->parentCategoryOptions();
         $unitOptions = $this->getUnitOptions();
 
         return view('warehouse.product-structure.categories', compact('categories', 'parentCategories', 'unitOptions'));
+    }
+
+    /**
+     * Semua kategori (bukan hanya level atas) untuk dropdown Parent, urut pohon dengan
+     * kedalaman dan jalur leluhur. Dulu hanya kategori tanpa parent yang ditawarkan, sehingga
+     * kategori level 3 (mis. ADS di bawah Difusser) membuka form edit dengan Parent kosong
+     * dan menyimpannya menjadikan kategori itu level atas.
+     */
+    private function parentCategoryOptions(): \Illuminate\Support\Collection
+    {
+        $all = ProductCategory::query()
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'parent_id']);
+        $byParent = $all->groupBy(fn ($category) => (int) ($category->parent_id ?? 0));
+        $options = collect();
+        $seen = [];
+
+        $walk = function (int $parentId, int $depth, array $path) use (&$walk, $byParent, $options, &$seen) {
+            foreach ($byParent->get($parentId, collect()) as $category) {
+                if (isset($seen[$category->id])) {
+                    continue;
+                }
+                $seen[$category->id] = true;
+                $category->tree_level = $depth;
+                $category->ancestor_path = $path;
+                $options->push($category);
+                $walk((int) $category->id, $depth + 1, array_merge($path, [(int) $category->id]));
+            }
+        };
+        $walk(0, 0, []);
+
+        // Kategori yatim (parent terhapus) tetap bisa dipilih.
+        $all->reject(fn ($category) => isset($seen[$category->id]))->each(function ($category) use ($options) {
+            $category->tree_level = 0;
+            $category->ancestor_path = [];
+            $options->push($category);
+        });
+
+        return $options;
+    }
+
+    /**
+     * True bila $candidateParentId adalah kategori itu sendiri atau salah satu turunannya.
+     */
+    private function wouldCreateCategoryCycle(int $categoryId, ?int $candidateParentId): bool
+    {
+        $guard = 0;
+        while ($candidateParentId && $guard++ < 50) {
+            if ($candidateParentId === $categoryId) {
+                return true;
+            }
+            $candidateParentId = (int) (ProductCategory::withTrashed()->whereKey($candidateParentId)->value('parent_id') ?? 0) ?: null;
+        }
+
+        return false;
     }
 
     private function normalizeSerialPolicyData(array $data): array
@@ -328,6 +384,14 @@ class ProductStructureController extends Controller
                     'status' => 'error',
                     'message' => 'Validation failed',
                     'errors' => $validator->errors()
+                ], 422);
+            }
+
+            if ($this->wouldCreateCategoryCycle((int) $category->id, $request->parent_id ? (int) $request->parent_id : null)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Validation failed',
+                    'errors' => ['parent_id' => ['Parent tidak boleh kategori ini sendiri atau turunannya.']]
                 ], 422);
             }
 

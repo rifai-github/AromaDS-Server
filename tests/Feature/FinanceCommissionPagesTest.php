@@ -29,7 +29,7 @@ class FinanceCommissionPagesTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['commission_payments', 'commission_calculations', 'marketing_targets', 'contracts', 'user_roles', 'roles', 'departments', 'users'] as $table) {
+        foreach (['commission_payments', 'commission_calculations', 'marketing_targets', 'achievement_periods', 'contracts', 'user_roles', 'roles', 'departments', 'users'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -178,6 +178,67 @@ class FinanceCommissionPagesTest extends TestCase
         ]);
         $this->assertTrue($locked['success']);
         $this->assertDatabaseHas('marketing_targets', ['user_id' => 2, 'is_locked' => true, 'locked_by' => 9]);
+    }
+
+    public function test_creating_a_target_for_an_existing_marketing_period_and_type_does_not_overwrite_it(): void
+    {
+        // UAT 17 Nov: target Elly Nov 7jt (tercapai 30%) lalu "buat" target Nov 100jt lagi ->
+        // target lama tertimpa, pencapaian kembali 0.
+        $this->createUserSchema();
+        Schema::create('achievement_periods', function (Blueprint $table) {
+            $table->id();
+            $table->string('period_name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+        Schema::create('marketing_targets', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id');
+            $table->foreignId('achievement_period_id');
+            $table->string('target_type');
+            $table->decimal('target_amount', 15, 2);
+            $table->decimal('achieved_amount', 15, 2)->default(0);
+            $table->boolean('is_locked')->default(false);
+            $table->date('lock_date')->nullable();
+            $table->foreignId('locked_by')->nullable();
+            $table->text('notes')->nullable();
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+        DB::table('users')->insert(['id' => 1, 'name' => 'Elly']);
+        DB::table('achievement_periods')->insert(['id' => 1, 'period_name' => 'November 2026']);
+        DB::table('marketing_targets')->insert([
+            ['id' => 1, 'user_id' => 1, 'achievement_period_id' => 1, 'target_type' => 'new',
+             'target_amount' => 7_000_000, 'achieved_amount' => 2_100_000, 'is_locked' => true],
+            ['id' => 2, 'user_id' => 1, 'achievement_period_id' => 1, 'target_type' => 'renewal',
+             'target_amount' => 5_000_000, 'achieved_amount' => 1_000_000, 'is_locked' => false],
+        ]);
+        DB::table('marketing_targets')->where('id', 2)->update(['deleted_at' => now()]);
+        $service = app(\App\Services\Finance\MarketingTargetService::class);
+
+        $duplicate = $service->createOrUpdateTarget([
+            'user_id' => 1, 'achievement_period_id' => 1, 'target_type' => 'new', 'target_amount' => 100_000_000,
+        ]);
+
+        $this->assertFalse($duplicate['success']);
+        $this->assertStringContainsString('sudah ada', $duplicate['message']);
+        $row = DB::table('marketing_targets')->find(1);
+        $this->assertEquals(7_000_000, $row->target_amount);
+        $this->assertEquals(2_100_000, $row->achieved_amount);
+        $this->assertEquals(1, $row->is_locked);
+
+        // Target yang pernah dihapus dipulihkan tanpa membuang pencapaiannya.
+        $restored = $service->createOrUpdateTarget([
+            'user_id' => 1, 'achievement_period_id' => 1, 'target_type' => 'renewal', 'target_amount' => 8_000_000,
+        ]);
+        $this->assertTrue($restored['success'], $restored['message'] ?? '');
+        $row = DB::table('marketing_targets')->find(2);
+        $this->assertNull($row->deleted_at);
+        $this->assertEquals(8_000_000, $row->target_amount);
+        $this->assertEquals(1_000_000, $row->achieved_amount);
+        $this->assertSame(2, DB::table('marketing_targets')->count());
     }
 
     public function test_achievement_optional_fields_are_not_required_and_new_button_opens_create_page(): void

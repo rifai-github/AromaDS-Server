@@ -204,4 +204,44 @@ class AccessControlFilterBranchFallbackTest extends TestCase
 
         $this->assertSame([100, 200], $visibleIds, 'Explicit allowed_branches config must still be honored, not overridden by the fallback.');
     }
+
+    public function test_explicit_branch_hierarchy_wins_over_imported_data_restriction_none(): void
+    {
+        // UAT 17 Nov: user hasil import Catalyst (data_restriction = 'none') di-set Hirarki
+        // Data Branch = Bali, tapi tetap melihat data Jakarta/Makassar.
+        DB::table('users')->insert(['id' => 1, 'name' => 'Sender', 'branch_id' => 10]);
+        DB::table('users')->insert(['id' => 6, 'name' => 'User A Bali', 'branch_id' => 10, 'data_restriction' => 'none']);
+        DB::table('user_access_levels')->insert([
+            'user_id' => 6,
+            'access_type' => 'branch',
+            'access_config' => json_encode(['allowed_branches' => [10]]),
+            'is_active' => true,
+        ]);
+
+        DB::table('records')->insert(['id' => 100, 'created_by' => 1, 'branch_id' => 10]); // Bali
+        DB::table('records')->insert(['id' => 200, 'created_by' => 1, 'branch_id' => 20]); // Jakarta
+        DB::table('records')->insert(['id' => 300, 'created_by' => 1, 'branch_id' => 30]); // Makassar
+
+        $visibleIds = $this->filterAsController($this->recordModel()->newQuery(), User::findOrFail(6))
+            ->pluck('id')
+            ->all();
+
+        $this->assertSame([100], $visibleIds);
+    }
+
+    public function test_data_restriction_none_without_any_hierarchy_keeps_unrestricted_access(): void
+    {
+        DB::table('users')->insert(['id' => 1, 'name' => 'Sender', 'branch_id' => 10]);
+        DB::table('users')->insert(['id' => 7, 'name' => 'Legacy unrestricted', 'branch_id' => 10, 'data_restriction' => 'none']);
+        DB::table('records')->insert(['id' => 100, 'created_by' => 1, 'branch_id' => 10]);
+        DB::table('records')->insert(['id' => 200, 'created_by' => 1, 'branch_id' => 20]);
+
+        $visibleIds = $this->filterAsController($this->recordModel()->newQuery(), User::findOrFail(7))
+            ->pluck('id')
+            ->sort()
+            ->values()
+            ->all();
+
+        $this->assertSame([100, 200], $visibleIds);
+    }
 }

@@ -10,17 +10,28 @@ trait AccessControlFilterTrait
 {
     protected function hasUnrestrictedAccessControlData(User $user): bool
     {
-        if (($user->data_restriction ?? null) === 'none') {
-            return true;
-        }
-
         if (\Illuminate\Support\Facades\Schema::hasTable('roles')) {
             if ($user->hasRole('super_admin') || $user->hasRoleStartingWith('Management') || $user->hasRole('Admin')) {
                 return true;
             }
         }
 
-        if (! \Illuminate\Support\Facades\Schema::hasTable('user_access_levels')) {
+        $hasAccessLevelsTable = \Illuminate\Support\Facades\Schema::hasTable('user_access_levels');
+
+        // Kolom lama users.data_restriction = 'none' (diisi import Catalyst untuk semua user)
+        // berarti "tanpa batasan". Dulu dicek paling awal, sehingga Hirarki Data yang diatur
+        // eksplisit (mis. Branch = Bali) tidak pernah berlaku dan user tetap melihat data
+        // Jakarta/Makassar (UAT 17 Nov). Pengaturan Hirarki Data yang aktif sekarang menang.
+        if (($user->data_restriction ?? null) === 'none') {
+            $hasExplicitHierarchy = $hasAccessLevelsTable
+                && $user->accessLevels()->where('is_active', true)->exists();
+
+            if (! $hasExplicitHierarchy) {
+                return true;
+            }
+        }
+
+        if (! $hasAccessLevelsTable) {
             return false;
         }
 

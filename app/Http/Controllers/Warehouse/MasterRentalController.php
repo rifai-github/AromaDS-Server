@@ -789,14 +789,38 @@ class MasterRentalController extends Controller
             DB::beginTransaction();
 
             $masterProductId = $request->master_product_id;
-            $multiProductIds = $request->master_product_ids ?? [];
+            $multiProductIds = array_values(array_map('intval', $request->master_product_ids ?? []));
             $autoExpand = $request->boolean('auto_expand');
 
-            if ($autoExpand && empty($multiProductIds)) {
-                $multiProductIds = $this->getProductsForRentalDetailScope(
-                    (int) $request->product_category_id,
-                    $request->product_type_id ? (int) $request->product_type_id : null
-                )->pluck('id')->toArray();
+            // Kategori baris diganti (mis. FRAGRANCE -> HEPA): produk milik kategori lama ikut
+            // terbawa dari form dan dulu tersimpan sebagai produk utama/diizinkan, sehingga baris
+            // "kembali" ke Fragrance saat dibuka lagi. Buang produk kategori lama; produk kategori
+            // lain yang dipilih sengaja tetap disimpan.
+            $previousCategoryId = (int) $detail->product_category_id;
+            if ($previousCategoryId && $previousCategoryId !== (int) $request->product_category_id) {
+                $oldScopeIds = $this->getProductsForRentalDetailScope(
+                    $previousCategoryId,
+                    $detail->product_type_id ? (int) $detail->product_type_id : null
+                )->pluck('id')->map(fn ($id) => (int) $id)->all();
+                $multiProductIds = array_values(array_diff($multiProductIds, $oldScopeIds));
+                if ($masterProductId && in_array((int) $masterProductId, $oldScopeIds, true)) {
+                    $masterProductId = null;
+                }
+            }
+
+            if ($autoExpand) {
+                $multiProductIds = array_values(array_unique(array_merge(
+                    $this->getProductsForRentalDetailScope(
+                        (int) $request->product_category_id,
+                        $request->product_type_id ? (int) $request->product_type_id : null
+                    )->pluck('id')->map(fn ($id) => (int) $id)->all(),
+                    $multiProductIds
+                )));
+            }
+
+            // Produk utama harus termasuk produk yang diizinkan.
+            if ($masterProductId && ! empty($multiProductIds) && ! in_array((int) $masterProductId, $multiProductIds, true)) {
+                $masterProductId = null;
             }
 
             // If multi-select is used but single isn't, use first from multi as primary
@@ -1128,9 +1152,17 @@ class MasterRentalController extends Controller
             $detail->product_type_id ? (int) $detail->product_type_id : null
         );
 
+        // Auto-expand hanya MENAMBAH produk kategori baris ini. Dulu sync() mengganti seluruh
+        // daftar, jadi produk kategori lain yang sengaja ditambahkan lewat Material List (mis.
+        // HEPA di baris FRAGRANCE) hilang lagi setiap kali detail dibuka (UAT 17 Nov).
+        $productIds = $products->pluck('id')->map(fn ($id) => (int) $id)
+            ->merge($detail->allowedProducts()->pluck('master_products.id')->map(fn ($id) => (int) $id))
+            ->unique()
+            ->values();
+
         $syncData = [];
-        foreach ($products as $index => $product) {
-            $syncData[$product->id] = [
+        foreach ($productIds as $index => $productId) {
+            $syncData[$productId] = [
                 'is_selected' => true,
                 'sort_order' => $index,
                 'created_at' => now(),
@@ -1139,6 +1171,16 @@ class MasterRentalController extends Controller
         }
 
         $detail->allowedProducts()->sync($syncData);
+
+        // Produk utama harus salah satu produk yang diizinkan; dulu tetap menunjuk produk
+        // kategori lama setelah kategori baris diganti (FRAGRANCE -> HEPA).
+        if ($productIds->isNotEmpty() && ! $productIds->contains((int) $detail->master_product_id)) {
+            $detail->update([
+                'master_product_id' => $productIds->first(),
+                'item_type' => 'product',
+                'item_id' => $productIds->first(),
+            ]);
+        }
     }
 
     // Rental Prices
