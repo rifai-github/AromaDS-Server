@@ -108,7 +108,8 @@ class CustomerTaxController extends Controller
         }
 
         $customerTaxes = $query->orderBy('created_at', 'desc')->paginateStd(25);
-        $customers = Customer::orderBy('name')->get();
+        // Dropdown create hanya butuh id + nama; dulu semua kolom semua customer ikut di-embed.
+        $customers = Customer::orderBy('name')->get(['id', 'name']);
         $defaultVatSetting = TaxSetting::getDefaultPpnSetting();
         $financeTaxCodes = FinanceTaxCode::query()
             ->where('is_active', true)
@@ -327,7 +328,9 @@ class CustomerTaxController extends Controller
     public function edit(CustomerTax $customerTax)
     {
         $customerTax->load(['customer', 'createdBy', 'updatedBy']);
-        $customers = Customer::orderBy('name')->get();
+        // Customer tidak bisa diganti saat edit (UAT 17 Nov): cukup kirim customer milik baris ini.
+        // Dulu seluruh customer beserta semua kolomnya dikirim, sehingga modal edit lambat terbuka.
+        $customers = Customer::whereKey($customerTax->customer_id)->get(['id', 'name']);
 
         // Return JSON for AJAX requests
         if (request()->ajax()) {
@@ -343,6 +346,10 @@ class CustomerTaxController extends Controller
 
     public function update(Request $request, CustomerTax $customerTax)
     {
+        // Customer pemilik setting pajak dikunci: edit tidak boleh memindahkan setting ini ke
+        // customer lain (dulu dropdown customer tetap bisa diganti saat edit).
+        $request->merge(['customer_id' => $customerTax->customer_id]);
+
         // 1. Determine Validation Rules
         $taxName = $request->tax_name;
 

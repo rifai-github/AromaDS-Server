@@ -91,6 +91,21 @@
                                     }
                                     // Unique by ID/Name to avoid dupes if logic overlaps
                                     $allContacts = $allContacts->unique('id');
+
+                                    // Kontak PIC yang dipakai billing group ini. Wizard kontrak tidak menyimpan
+                                    // pic_phone, sedangkan daftar BG di detail kontrak mengambil telepon langsung
+                                    // dari kontak (cocok nama/email) - jadi form edit ikut memakai kontak yang sama
+                                    // sebagai isian awal, bukan kosong (UAT 19 Nov).
+                                    $normalize = fn ($value) => mb_strtolower(trim((string) $value));
+                                    $matchedPicContact = $allContacts->first(fn ($contact) =>
+                                        ($billingGroup->pic_name && $normalize($contact->name) === $normalize($billingGroup->pic_name))
+                                        || ($billingGroup->pic_email && $normalize($contact->email) === $normalize($billingGroup->pic_email)));
+                                    $matchedPicPhone = $matchedPicContact
+                                        ? ($matchedPicContact->phone ?? $matchedPicContact->phone_1 ?? $matchedPicContact->office_phone ?? $matchedPicContact->mobile ?? '')
+                                        : '';
+                                    $picNameValue = old('pic_name', $billingGroup->pic_name ?: ($matchedPicContact->name ?? ''));
+                                    $picEmailValue = old('pic_email', $billingGroup->pic_email ?: ($matchedPicContact->email ?? ''));
+                                    $picPhoneValue = old('pic_phone', $billingGroup->pic_phone ?: $matchedPicPhone);
                                 @endphp
                                 @foreach($allContacts as $contact)
                                     @php
@@ -102,7 +117,7 @@
                                             data-email="{{ $contact->email }}"
                                             data-phone="{{ $phone }}"
                                             data-position="{{ $contact->position ?? '' }}"
-                                            {{ (old('pic_name', $billingGroup->pic_name) == $contact->name) ? 'selected' : '' }}>
+                                            {{ ($matchedPicContact && $matchedPicContact->id === $contact->id) ? 'selected' : '' }}>
                                         {{ $contact->name }} - {{ $contact->position ?? 'No Position' }}
                                     </option>
                                 @endforeach
@@ -114,8 +129,8 @@
                                 <div class="mb-3">
                                     <label for="pic_name" class="form-label">PIC Finance</label>
                                     <input type="text" class="form-control @error('pic_name') is-invalid @enderror" 
-                                           id="pic_name" name="pic_name" 
-                                           value="{{ old('pic_name', $billingGroup->pic_name) }}">
+                                           id="pic_name" name="pic_name"
+                                           value="{{ $picNameValue }}">
                                     @error('pic_name')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -125,8 +140,8 @@
                                 <div class="mb-3">
                                     <label for="pic_email" class="form-label">E-Mail</label>
                                     <input type="email" class="form-control @error('pic_email') is-invalid @enderror" 
-                                           id="pic_email" name="pic_email" 
-                                           value="{{ old('pic_email', $billingGroup->pic_email) }}">
+                                           id="pic_email" name="pic_email"
+                                           value="{{ $picEmailValue }}">
                                     @error('pic_email')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -136,8 +151,8 @@
                                 <div class="mb-3">
                                     <label for="pic_phone" class="form-label">Phone 1</label>
                                     <input type="text" class="form-control @error('pic_phone') is-invalid @enderror" 
-                                           id="pic_phone" name="pic_phone" 
-                                           value="{{ old('pic_phone', $billingGroup->pic_phone) }}">
+                                           id="pic_phone" name="pic_phone"
+                                           value="{{ $picPhoneValue }}">
                                     @error('pic_phone')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -150,7 +165,7 @@
                                     <label for="pic_address" class="form-label">Alamat Penagihan</label>
                                     <textarea class="form-control @error('pic_address') is-invalid @enderror"
                                               id="pic_address" name="pic_address" rows="2">{{ old('pic_address', $billingGroup->pic_address) }}</textarea>
-                                    <small class="text-muted">Alamat tujuan penagihan billing group ini, dipakai sebagai Billing Address di invoice. Dikosongkan berarti memakai alamat customer. Berbeda dari Tax Address (alamat kantor pajak) di bagian Tax Configuration.</small>
+                                    <small class="text-muted">Alamat tujuan penagihan billing group ini, dipakai sebagai Billing Address di invoice. Dikosongkan berarti memakai alamat customer. Berbeda dari Tax Address (alamat penagihan pajak) di bagian Tax Configuration.</small>
                                     @error('pic_address')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -461,7 +476,8 @@
                                         data-account-no="{{ $payment->account_number }}"
                                         data-is-va="{{ $payment->is_default_va ? '1' : '0' }}"
                                         {{-- Try to match existing data if possible, though strict matching might be hard if data was manual --}}
-                                        {{ ($billingGroup->bank_name == ($payment->bank->name ?? '') && $billingGroup->virtual_account_number == $payment->account_number) ? 'selected' : '' }}
+                                        {{-- virtual_account_number disimpan sebagai "Bank - Nama (No)", jadi bandingkan nomor hasil parse ($accountNo); dulu dibandingkan string utuh sehingga tak pernah terpilih. --}}
+                                        {{ ((string) $accountNo !== '' && trim((string) $accountNo) === trim((string) $payment->account_number)) ? 'selected' : '' }}
                                     >
                                         {{ $payment->bank->name ?? 'Unknown' }} - {{ $payment->account_name }} ({{ $payment->account_number }})
                                     </option>
@@ -717,8 +733,8 @@
             if (npwpInput) npwpInput.value = '';
             if (nitkuInput) nitkuInput.value = '';
             if (nikInput) nikInput.value = '';
-            if (ppnCodeInput) ppnCodeInput.value = '';
-            if (ppnCodeDisplay) ppnCodeDisplay.value = '';
+            // ppnCodeInput/ppnCodeDisplay tidak pernah dideklarasikan di halaman ini: dulu baris
+            // ini melempar ReferenceError setiap pilihan pajak dikosongkan dan sisa form tak terisi.
             if (taxTypeInput) taxTypeInput.value = '';
             if (taxNumberDisplay) taxNumberDisplay.value = '';
             if (taxAddressDisplay) taxAddressDisplay.value = '';

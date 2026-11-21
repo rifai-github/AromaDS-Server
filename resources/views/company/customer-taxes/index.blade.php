@@ -1264,12 +1264,9 @@ function openEditModal(id) {
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="form-group">
                                 <label class="form-label">Customer *</label>
-                                    <select name="customer_id" class="form-input" required onchange="fetchCustomerTaxInfo(this.value, 'edit')">
-                                    <option value="">Select Customer</option>
-                                    ${data.customers ? data.customers.map(customer => 
-                                        `<option value="${customer.id}" ${customer.id == data.data.customer_id ? 'selected' : ''}>${customer.name}</option>`
-                                    ).join('') : ''}
-                                </select>
+                                <!-- Dikunci: setting pajak milik customer ini tidak boleh dipindah ke customer lain. -->
+                                <input type="hidden" name="customer_id" value="${data.data.customer_id}">
+                                <input type="text" class="form-input" value="${(data.data.customer && data.data.customer.name) || (data.customers && data.customers[0] ? data.customers[0].name : '')}" readonly style="background:#f3f4f6;cursor:not-allowed;">
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Label / Nama Cabang</label>
@@ -1350,6 +1347,11 @@ function openEditModal(id) {
             `;
 
             syncCustomerTaxCodeFields('edit');
+
+            // Atur panjang maksimal + tampilkan NITKU sesuai tipe yang tersimpan, tepat setelah
+            // form dirender. Dulu dijalankan lewat setTimeout 500ms dari luar: bila respons edit
+            // lebih lambat, form belum ada, jadi NITKU tak muncul dan counter tetap /30.
+            updateTaxNumberMaxLength('edit');
         })
         .catch(error => {
             console.error('Error:', error);
@@ -1720,7 +1722,14 @@ function normalizeTaxNumberInput(mode) {
 
     if (input) {
         const maxLength = parseInt(input.getAttribute('maxlength') || 30, 10);
-        input.value = input.value.replace(/[^0-9]/g, '').substring(0, maxLength);
+        const taxName = document.getElementById(mode === 'create' ? 'create_tax_name' : 'edit_tax_name')?.value || '';
+        // NPWP/NIK/NITKU hanya angka; KITAS/paspor/lainnya boleh berisi huruf (dulu semua huruf
+        // dibuang sehingga nomor paspor/KITAS rusak).
+        const numericOnly = ['NPWP', 'NIK', 'NITKU'].includes(taxName);
+        const cleaned = numericOnly
+            ? input.value.replace(/[^0-9]/g, '')
+            : input.value.replace(/[^0-9A-Za-z\-\/ ]/g, '');
+        input.value = cleaned.substring(0, maxLength);
     }
 
     updateTaxNumberCounter(mode);
@@ -1821,17 +1830,6 @@ function updateTaxNumberMaxLength(mode) {
     }
 }
 
-// Initialize counter when edit modal opens
-const originalOpenEditModal = openEditModal;
-openEditModal = function(id) {
-    originalOpenEditModal(id);
-    
-    // Update counter and maxlength after modal data is loaded
-    setTimeout(() => {
-        updateTaxNumberMaxLength('edit');
-        updateTaxNumberCounter('edit');
-    }, 500);
-};
 
 // Fetch Customer Tax Info for Auto-fill
 function fetchCustomerTaxInfo(customerId, mode) {

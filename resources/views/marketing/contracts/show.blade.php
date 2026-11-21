@@ -1294,9 +1294,21 @@
                                     <i class="fas fa-credit-card me-2"></i>
                                     Contract Billing Groups
                                 </h5>
-                                <a href="{{ route('finance.billing-groups.add', $contract->id) }}" class="btn btn-primary btn-sm">
-                                    <i class="fas fa-plus me-1"></i> ADD NEW
-                                </a>
+                                <div class="d-flex gap-2">
+                                    {{-- Aksi berdasarkan baris yang dicentang, supaya tidak perlu menggulir ke
+                                         kolom Action paling kanan (UAT 19 Nov). --}}
+                                    <button type="button" id="bgEditSelectedBtn" class="btn btn-outline-primary btn-sm" disabled
+                                            onclick="editSelectedBillingGroup()" title="Centang tepat 1 billing group">
+                                        <i class="fas fa-edit me-1"></i> EDIT
+                                    </button>
+                                    <button type="button" id="bgDeleteSelectedBtn" class="btn btn-outline-danger btn-sm" disabled
+                                            onclick="deleteSelectedBillingGroups()" title="Centang billing group yang akan dihapus">
+                                        <i class="fas fa-trash me-1"></i> HAPUS
+                                    </button>
+                                    <a href="{{ route('finance.billing-groups.add', $contract->id) }}" class="btn btn-primary btn-sm">
+                                        <i class="fas fa-plus me-1"></i> ADD NEW
+                                    </a>
+                                </div>
                             </div>
                         </div>
                         <div class="card-body">
@@ -1316,7 +1328,7 @@
                                              {{-- Alamat tujuan penagihan (billing_groups.pic_address); inilah
                                                   yang dipakai jadi Billing Address di invoice. --}}
                                              <th>Alamat Penagihan</th>
-                                             <th>Alamat Kantor Pajak</th>
+                                             <th>Alamat Penagihan Pajak</th>
                                             <th>PIC Finance</th>
                                             <th>E-Mail</th>
                                             <th>Phone 1</th>
@@ -2235,13 +2247,15 @@ $(document).ready(function() {
     // Billing Groups Table - Select All Checkbox
     $('#selectAllBillingGroups').on('change', function() {
         $('.billing-group-checkbox').prop('checked', $(this).prop('checked'));
+        updateBillingGroupSelectionButtons();
     });
-    
+
     // Billing Groups Table - Individual Checkbox
     $(document).on('change', '.billing-group-checkbox', function() {
         var totalCheckboxes = $('.billing-group-checkbox').length;
         var checkedCheckboxes = $('.billing-group-checkbox:checked').length;
         $('#selectAllBillingGroups').prop('checked', totalCheckboxes === checkedCheckboxes);
+        updateBillingGroupSelectionButtons();
     });
     
     // Billing Groups Table - Filter functionality
@@ -2290,6 +2304,62 @@ function deleteBillingGroup(billingGroupId) {
                 showErrorDialog('Gagal menghapus billing group: ' + (xhr.responseJSON?.message || 'Terjadi kesalahan.'));
             }
         });
+    });
+}
+
+function selectedBillingGroupIds() {
+    return $('.billing-group-checkbox:checked').map(function() { return this.value; }).get();
+}
+
+function updateBillingGroupSelectionButtons() {
+    const count = selectedBillingGroupIds().length;
+    $('#bgEditSelectedBtn').prop('disabled', count !== 1);
+    $('#bgDeleteSelectedBtn').prop('disabled', count === 0);
+}
+
+function editSelectedBillingGroup() {
+    const ids = selectedBillingGroupIds();
+    if (ids.length !== 1) {
+        showErrorDialog('Centang tepat satu billing group untuk diedit.');
+        return;
+    }
+    window.location.href = @js(route('finance.billing-groups.edit-for-contract', [$contract->id, '__BG__'])).replace('__BG__', ids[0]);
+}
+
+function deleteSelectedBillingGroups() {
+    const ids = selectedBillingGroupIds();
+    if (ids.length === 0) return;
+    if (ids.length === 1) {
+        deleteBillingGroup(ids[0]);
+        return;
+    }
+
+    showConfirmDialog({
+        title: `Hapus ${ids.length} Billing Group?`,
+        text: 'Semua assignment gedung pada billing group yang dicentang akan ikut dilepas.',
+        icon: 'warning',
+        confirmButtonText: 'Ya, hapus',
+        cancelButtonText: 'Batal'
+    }).then(async (result) => {
+        if (!result.isConfirmed) return;
+
+        const failed = [];
+        for (const id of ids) {
+            try {
+                await $.ajax({
+                    url: `/api/billing-groups/${id}`,
+                    method: 'DELETE',
+                    headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') }
+                });
+            } catch (xhr) {
+                failed.push(`#${id}: ${xhr.responseJSON?.message || 'Terjadi kesalahan.'}`);
+            }
+        }
+
+        const done = failed.length
+            ? showErrorDialog('Sebagian gagal dihapus:\n' + failed.join('\n'))
+            : showSuccessDialog(`${ids.length} billing group berhasil dihapus.`);
+        Promise.resolve(done).then(() => location.reload());
     });
 }
 

@@ -2366,7 +2366,9 @@ class InvoiceController extends Controller
             $invoice = Invoice::create([
                 'contract_number' => $contract->contract_number,
                 'invoice_number' => $invoiceNumber,
-                'po_number' => $contract->quotation->quotation_number ?? null,
+                // PO Number = nomor PO customer di kontrak (sama dengan jalur invoice otomatis);
+                // dulu diisi nomor quotation sehingga PO di invoice ini salah.
+                'po_number' => $contract->po_number,
                 'customer_id' => $contract->customer_id,
                 'billing_address' => $contract->customer->address ?? '',
                 'period_invoice' => $request->rental_period,

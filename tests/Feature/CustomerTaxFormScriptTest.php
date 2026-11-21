@@ -25,7 +25,10 @@ class CustomerTaxFormScriptTest extends TestCase
         $this->assertStringContainsString('oninput="normalizeTaxNumberInput(\'create\')"', $view);
         $this->assertStringContainsString('oninput="normalizeTaxNumberInput(\'edit\')"', $view);
         $this->assertStringContainsString('function normalizeTaxNumberInput(mode)', $view);
-        $this->assertStringContainsString("input.value = input.value.replace(/[^0-9]/g, '').substring(0, maxLength);", $view);
+        // Tetap dipotong ke maxlength aktif; hanya NPWP/NIK/NITKU yang digit saja (UAT 19 Nov:
+        // nomor KITAS/paspor berisi huruf dan dulu ikut terhapus).
+        $this->assertStringContainsString('input.value = cleaned.substring(0, maxLength);', $view);
+        $this->assertStringContainsString("['NPWP', 'NIK', 'NITKU'].includes(taxName)", $view);
         $this->assertStringContainsString('normalizeTaxNumberInput(mode);', $view);
         $this->assertStringContainsString("const maxLength = parseInt(input.getAttribute('maxlength') || 30, 10);", $view);
         $this->assertStringContainsString("case 'NITKU':", $view);

@@ -660,11 +660,14 @@ class ContractWizardController extends Controller
                     $picFinanceContact = null;
                     $picName = null;
                     $picEmail = null;
+                    $picPhone = null;
                     if (isset($billingAddress['pic_finance']) && $billingAddress['pic_finance']) {
                         $picFinanceContact = \App\Models\CustomerContact::find($billingAddress['pic_finance']);
                         if ($picFinanceContact) {
                             $picName = $picFinanceContact->name;
                             $picEmail = $picFinanceContact->email;
+                            // Dulu telepon PIC tidak disimpan, jadi form Edit Billing Group kosong.
+                            $picPhone = $picFinanceContact->phone;
                         }
                     }
                     
@@ -715,6 +718,7 @@ class ContractWizardController extends Controller
                         'npwp_address' => $taxAddress, // NEW: Save the tax address
                         'pic_name' => $picName,
                         'pic_email' => $picEmail ?? $billingEmail,
+                        'pic_phone' => $picPhone,
                         'bank_name' => $bankName,
                         'virtual_account_number' => $virtualAccountNumber,
                         'invoice_type' => $invoiceType,
