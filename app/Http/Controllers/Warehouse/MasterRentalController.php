@@ -311,6 +311,24 @@ class MasterRentalController extends Controller
             'serviceFrequency',
         ]);
 
+        // MOM 18 Nov 2026 p7: baris auto_expand hasil seed/import yang material list-nya masih
+        // kosong langsung dihubungkan ke produk kategorinya, tanpa harus membuka modal & Simpan.
+        $materialSync = app(\App\Services\Warehouse\RentalDetailMaterialSync::class);
+        $syncedAny = false;
+        foreach ($masterRental->rentalDetails as $detail) {
+            if ($materialSync->needsSync($detail)) {
+                try {
+                    $materialSync->syncAutoExpanded($detail);
+                    $syncedAny = true;
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning("Auto-link material rental detail #{$detail->id} gagal: ".$e->getMessage());
+                }
+            }
+        }
+        if ($syncedAny) {
+            $masterRental->load(['rentalDetails.allowedProducts', 'rentalDetails.masterProduct.packagingSize']);
+        }
+
         // Return JSON for AJAX requests
         if (request()->ajax() || request()->expectsJson()) {
             return response()->json([
@@ -1173,56 +1191,13 @@ class MasterRentalController extends Controller
 
     private function getProductsForRentalDetailScope(int $productCategoryId, ?int $productTypeId = null)
     {
-        return MasterProduct::with(['packagingSize', 'productCategory', 'productType'])
-            ->where('is_active', true)
-            ->where('product_category_id', $productCategoryId)
-            ->when($productTypeId, fn ($query) => $query->where(function ($sub) use ($productTypeId) {
-                $sub->where('product_type_id', $productTypeId)->orWhereNull('product_type_id');
-            }))
-            ->orderBy('name')
-            ->get();
+        return app(\App\Services\Warehouse\RentalDetailMaterialSync::class)
+            ->productsForScope($productCategoryId, $productTypeId);
     }
 
     private function syncAutoExpandedProducts(RentalDetail $detail): void
     {
-        if (! $detail->product_category_id) {
-            return;
-        }
-
-        $products = $this->getProductsForRentalDetailScope(
-            (int) $detail->product_category_id,
-            $detail->product_type_id ? (int) $detail->product_type_id : null
-        );
-
-        // Auto-expand hanya MENAMBAH produk kategori baris ini. Dulu sync() mengganti seluruh
-        // daftar, jadi produk kategori lain yang sengaja ditambahkan lewat Material List (mis.
-        // HEPA di baris FRAGRANCE) hilang lagi setiap kali detail dibuka (UAT 17 Nov).
-        $productIds = $products->pluck('id')->map(fn ($id) => (int) $id)
-            ->merge($detail->allowedProducts()->pluck('master_products.id')->map(fn ($id) => (int) $id))
-            ->unique()
-            ->values();
-
-        $syncData = [];
-        foreach ($productIds as $index => $productId) {
-            $syncData[$productId] = [
-                'is_selected' => true,
-                'sort_order' => $index,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        }
-
-        $detail->allowedProducts()->sync($syncData);
-
-        // Produk utama harus salah satu produk yang diizinkan; dulu tetap menunjuk produk
-        // kategori lama setelah kategori baris diganti (FRAGRANCE -> HEPA).
-        if ($productIds->isNotEmpty() && ! $productIds->contains((int) $detail->master_product_id)) {
-            $detail->update([
-                'master_product_id' => $productIds->first(),
-                'item_type' => 'product',
-                'item_id' => $productIds->first(),
-            ]);
-        }
+        app(\App\Services\Warehouse\RentalDetailMaterialSync::class)->syncAutoExpanded($detail);
     }
 
     // Rental Prices
