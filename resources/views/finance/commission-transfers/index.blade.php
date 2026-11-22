@@ -74,7 +74,7 @@
                             <td>{{ $transfer->contract->contract_number ?? 'N/A' }}</td>
                             <td>{{ $transfer->fromUser->name ?? 'N/A' }}</td>
                             <td><strong>{{ $transfer->toUser->name ?? 'N/A' }}</strong></td>
-                            <td><strong>Rp {{ number_format($transfer->commission_amount, 0, ',', '.') }}</strong></td>
+                            <td><strong>{{ currency_symbol() }} {{ number_format($transfer->commission_amount, 0, ',', '.') }}</strong></td>
                             <td>
                                 @if($transfer->status == 'approved')
                                     <span class="badge badge-success">Approved</span>

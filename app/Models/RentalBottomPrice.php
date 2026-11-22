@@ -99,12 +99,12 @@ class RentalBottomPrice extends Model
     // Helper methods
     public function getFormattedBottomPriceAttribute()
     {
-        return 'Rp ' . number_format($this->bottom_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->bottom_price, 0, ',', '.');
     }
 
     public function getFormattedReplacementPriceAttribute()
     {
-        return 'Rp ' . number_format($this->replacement_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->replacement_price, 0, ',', '.');
     }
 
     public function getPriceDifferenceAttribute()
@@ -116,7 +116,7 @@ class RentalBottomPrice extends Model
     {
         $difference = $this->price_difference;
         $sign = $difference >= 0 ? '+' : '';
-        return $sign . 'Rp ' . number_format(abs($difference), 0, ',', '.');
+        return $sign . currency_symbol().' ' . number_format(abs($difference), 0, ',', '.');
     }
 
     public function isReplacementMoreExpensive()

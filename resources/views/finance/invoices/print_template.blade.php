@@ -576,7 +576,7 @@ $terbilang = function ($number) use (&$terbilang) {
     }
     return trim($terbilang(intdiv($number, 1000000000000)) . ' triliun ' . $terbilang($number % 1000000000000));
 };
-$terbilangText = strtoupper(trim(preg_replace('/\s+/', ' ', $terbilang($invoice->grand_total)))) . '  RUPIAH';
+$terbilangText = strtoupper(trim(preg_replace('/\s+/', ' ', $terbilang($invoice->grand_total)))) . '  '.\App\Support\AppCurrency::word();
 
 /* ===== Logo (base64) ===== */
 $logoPath = public_path('images/logo.png');

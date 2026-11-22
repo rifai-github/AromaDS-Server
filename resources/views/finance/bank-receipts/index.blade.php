@@ -448,7 +448,7 @@
                         <td>{{ $receipt->receipt_number }}</td>
                         <td>{{ $receipt->customer->name ?? 'N/A' }}</td>
                         <td>{{ $receipt->bank->bank_name ?? 'N/A' }}</td>
-                        <td class="font-semibold">IDR {{ number_format($receipt->amount) }}</td>
+                        <td class="font-semibold">{{ currency_code() }} {{ number_format($receipt->amount) }}</td>
                         <td>{{ $receipt->payment_date ? \Carbon\Carbon::parse($receipt->payment_date)->format('d/M/Y') : 'N/A' }}</td>
                         <td>
                             <span class="badge badge-{{ $receipt->status }}">
@@ -724,7 +724,7 @@ function openViewModal(id) {
                     </div>
                     <div class="detail-item">
                         <label class="form-label">Amount</label>
-                        <p class="detail-value font-semibold">IDR ${data.amount ? new Intl.NumberFormat('id-ID').format(data.amount) : 'N/A'}</p>
+                        <p class="detail-value font-semibold">{{ currency_code() }} ${data.amount ? new Intl.NumberFormat('id-ID').format(data.amount) : 'N/A'}</p>
                     </div>
                     <div class="detail-item">
                         <label class="form-label">Payment Date</label>

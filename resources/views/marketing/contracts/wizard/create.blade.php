@@ -1847,7 +1847,7 @@ function displayQuotationItems(items) {
         if (price && price > 0) {
             formattedPrice = new Intl.NumberFormat('id-ID', { 
                 style: 'currency', 
-                currency: 'IDR',
+                currency: @json(currency_code()),
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 0
             }).format(price);
@@ -1879,7 +1879,7 @@ function displayQuotationSummary(quotation) {
         if (!amount || amount === 0) return '-';
         return new Intl.NumberFormat('id-ID', { 
             style: 'currency', 
-            currency: 'IDR',
+            currency: @json(currency_code()),
             minimumFractionDigits: 0,
             maximumFractionDigits: 0
         }).format(amount);

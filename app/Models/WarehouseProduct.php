@@ -146,6 +146,6 @@ class WarehouseProduct extends Model
 
     public function getFormattedStockValueAttribute()
     {
-        return 'Rp ' . number_format($this->stock_value, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->stock_value, 0, ',', '.');
     }
 }

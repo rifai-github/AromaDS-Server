@@ -931,7 +931,7 @@
                         <td>{{ $report->report_number ?? 'N/A' }}</td>
                         <td>{{ $report->contract_number ?? 'N/A' }}</td>
                         <td>{{ $report->company_name ?? 'N/A' }}</td>
-                        <td class="text-right">Rp {{ number_format($report->lost_unit_price ?? 0, 0, ',', '.') }}</td>
+                        <td class="text-right">{{ currency_symbol() }} {{ number_format($report->lost_unit_price ?? 0, 0, ',', '.') }}</td>
                         <td>
                             @if(($report->rental_name == 'Multi-Item' || $report->items->count() > 1) && $report->items->count() > 0)
                                 <div class="flex flex-col gap-1">
@@ -1216,7 +1216,7 @@ function openCreateModal() {
                         </div>
                         <div class="form-group">
                             <label class="form-label">Lost Unit Price</label>
-                            <input type="text" class="form-input" id="lost_price_display" readonly value="Rp 0" style="background: #f3f4f6;">
+                            <input type="text" class="form-input" id="lost_price_display" readonly value="{{ currency_symbol() }} 0" style="background: #f3f4f6;">
                             <small style="color: #666;">Total price calculated from selected rentals</small>
                         </div>
                     </div>
@@ -1256,7 +1256,7 @@ function onContractChange(contractId) {
     roomSelect.disabled = true;
     rentalSelect.innerHTML = '';
     rentalSelect.disabled = true;
-    document.getElementById('lost_price_display').value = 'Rp 0';
+    document.getElementById('lost_price_display').value = '{{ currency_symbol() }} 0';
     roomRentalsMap = {};
     rentalPrices = {};
     
@@ -1298,7 +1298,7 @@ async function onRoomChange(selectElement) {
     // Reset rental select
     rentalSelect.innerHTML = '';
     rentalSelect.disabled = true;
-    document.getElementById('lost_price_display').value = 'Rp 0';
+    document.getElementById('lost_price_display').value = '{{ currency_symbol() }} 0';
     roomRentalsMap = {};
     
     if (selectedRoomIds.length === 0 || !contractId) return;
@@ -1412,7 +1412,7 @@ async function onRentalChange(selectElement) {
     const prices = await Promise.all(pricePromises);
     totalPrice = prices.reduce((a, b) => a + b, 0);
     
-    document.getElementById('lost_price_display').value = 'Rp ' + totalPrice.toLocaleString('id-ID');
+    document.getElementById('lost_price_display').value = '{{ currency_symbol() }} ' + totalPrice.toLocaleString('id-ID');
 }
 
 // Override submitForm to handle items construction

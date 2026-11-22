@@ -49,11 +49,11 @@
                         </tr>
                         <tr>
                             <th>Target Amount</th>
-                            <td><strong>Rp {{ number_format($marketingTarget->target_amount, 0, ',', '.') }}</strong></td>
+                            <td><strong>{{ currency_symbol() }} {{ number_format($marketingTarget->target_amount, 0, ',', '.') }}</strong></td>
                         </tr>
                         <tr>
                             <th>Achieved Amount</th>
-                            <td>Rp {{ number_format($marketingTarget->achieved_amount, 0, ',', '.') }}</td>
+                            <td>{{ currency_symbol() }} {{ number_format($marketingTarget->achieved_amount, 0, ',', '.') }}</td>
                         </tr>
                         <tr>
                             <th>Progress</th>

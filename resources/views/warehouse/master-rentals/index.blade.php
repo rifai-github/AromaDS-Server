@@ -906,8 +906,8 @@
                                 {{ $rental->is_active ? 'Active' : 'Inactive' }}
                             </span>
                         </td>
-                        <td>{{ $rental->daily_price ? 'Rp ' . number_format($rental->daily_price, 2, ',', '.') : '-' }}</td>
-                        <td>{{ $rental->monthly_price ? 'Rp ' . number_format($rental->monthly_price, 2, ',', '.') : '-' }}</td>
+                        <td>{{ $rental->daily_price ? currency_symbol().' ' . number_format($rental->daily_price, 2, ',', '.') : '-' }}</td>
+                        <td>{{ $rental->monthly_price ? currency_symbol().' ' . number_format($rental->monthly_price, 2, ',', '.') : '-' }}</td>
                         <td>{{ $rental->install_duration ? $rental->install_duration . ' menit' : '-' }}</td>
                         <td>{{ $rental->service_duration ? $rental->service_duration . ' menit' : '-' }}</td>
                         <td>
@@ -1380,15 +1380,15 @@ function openViewModal(id) {
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div class="detail-item">
                             <label class="form-label">Daily Price</label>
-                            <p class="detail-value">${data.data.daily_price ? 'Rp ' + data.data.daily_price.toLocaleString('id-ID', {minimumFractionDigits: 2}) : '-'}</p>
+                            <p class="detail-value">${data.data.daily_price ? '{{ currency_symbol() }} ' + data.data.daily_price.toLocaleString('id-ID', {minimumFractionDigits: 2}) : '-'}</p>
                         </div>
                         <div class="detail-item">
                             <label class="form-label">Monthly Price</label>
-                            <p class="detail-value">${data.data.monthly_price ? 'Rp ' + data.data.monthly_price.toLocaleString('id-ID', {minimumFractionDigits: 2}) : '-'}</p>
+                            <p class="detail-value">${data.data.monthly_price ? '{{ currency_symbol() }} ' + data.data.monthly_price.toLocaleString('id-ID', {minimumFractionDigits: 2}) : '-'}</p>
                         </div>
                         <div class="detail-item">
                             <label class="form-label">Lost Unit Price</label>
-                            <p class="detail-value">${data.data.lost_unit_price ? 'Rp ' + data.data.lost_unit_price.toLocaleString('id-ID', {minimumFractionDigits: 2}) : '-'}</p>
+                            <p class="detail-value">${data.data.lost_unit_price ? '{{ currency_symbol() }} ' + data.data.lost_unit_price.toLocaleString('id-ID', {minimumFractionDigits: 2}) : '-'}</p>
                         </div>
                     </div>
                 </div>
@@ -2103,13 +2103,13 @@ function showRental(id) {
                         <div class="col-md-4">
                             <div class="form-group">
                                 <label class="form-label">Daily Price</label>
-                                <p class="form-control-plaintext">${rental.daily_price ? 'Rp ' + rental.daily_price.toLocaleString() : 'N/A'}</p>
+                                <p class="form-control-plaintext">${rental.daily_price ? '{{ currency_symbol() }} ' + rental.daily_price.toLocaleString() : 'N/A'}</p>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="form-group">
                                 <label class="form-label">Monthly Price</label>
-                                <p class="form-control-plaintext">${rental.monthly_price ? 'Rp ' + rental.monthly_price.toLocaleString() : 'N/A'}</p>
+                                <p class="form-control-plaintext">${rental.monthly_price ? '{{ currency_symbol() }} ' + rental.monthly_price.toLocaleString() : 'N/A'}</p>
                             </div>
                         </div>
                         <div class="col-md-4">

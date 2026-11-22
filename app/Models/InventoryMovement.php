@@ -122,12 +122,12 @@ class InventoryMovement extends Model
 
     public function getFormattedUnitPriceAttribute()
     {
-        return 'Rp ' . number_format($this->unit_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->unit_price, 0, ',', '.');
     }
 
     public function getFormattedTotalValueAttribute()
     {
-        return 'Rp ' . number_format($this->total_value, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->total_value, 0, ',', '.');
     }
 
     public function getIsInboundAttribute()

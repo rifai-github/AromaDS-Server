@@ -182,7 +182,7 @@
                                     </span>
                                 </td>
                                 <td class="font-medium text-gray-900">
-                                    IDR {{ number_format($form->grand_total ?? 0) }}
+                                    {{ currency_code() }} {{ number_format($form->grand_total ?? 0) }}
                                 </td>
                                 <td>
                                     <span class="status-badge 

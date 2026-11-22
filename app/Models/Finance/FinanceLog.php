@@ -58,12 +58,12 @@ class FinanceLog extends Model
     // Accessors & Mutators
     public function getFormattedAmountAttribute()
     {
-        return 'Rp ' . number_format($this->amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->amount, 0, ',', '.');
     }
 
     public function getFormattedBalanceAttribute()
     {
-        return 'Rp ' . number_format($this->balance, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->balance, 0, ',', '.');
     }
 
     public function getTransactionTypeBadgeAttribute()

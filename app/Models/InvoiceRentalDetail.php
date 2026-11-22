@@ -93,12 +93,12 @@ class InvoiceRentalDetail extends Model
     // Accessors
     public function getUnitPriceFormattedAttribute()
     {
-        return 'Rp ' . number_format($this->unit_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->unit_price, 0, ',', '.');
     }
 
     public function getTotalPriceFormattedAttribute()
     {
-        return 'Rp ' . number_format($this->total_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->total_price, 0, ',', '.');
     }
 
     public function getQuantityFormattedAttribute()
@@ -138,7 +138,7 @@ class InvoiceRentalDetail extends Model
 
     public function getSubtotalFormattedAttribute()
     {
-        return 'Rp ' . number_format($this->subtotal, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->subtotal, 0, ',', '.');
     }
 
     // Methods

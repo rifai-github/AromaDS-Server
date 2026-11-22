@@ -619,7 +619,7 @@
                             <th>Reason</th>
                             <th>Requested By</th>
                             <th>Approved By</th>
-                            <th>Penalty (Rp)</th>
+                            <th>Penalty ({{ currency_symbol() }})</th>
                             <th>Status</th>
                             <th>Created By</th>
                             <th>Created At</th>
@@ -765,7 +765,7 @@
                 </div>
 
                 <div class="form-group" style="margin-bottom: 16px;">
-                    <label class="form-label">Penalty Amount (Rp) <span class="text-danger">*</span></label>
+                    <label class="form-label">Penalty Amount ({{ currency_symbol() }}) <span class="text-danger">*</span></label>
                     <input type="number" name="penalty_amount" id="penaltyAmount" class="form-control" min="0" step="1000" required placeholder="0">
                     <small class="text-muted">Besaran penalty kontrak</small>
                 </div>
@@ -949,7 +949,7 @@ $('#contractSelect').on('change', function() {
                             <div><strong>Customer:</strong> ${contract.customer?.name || '-'}</div>
                             <div><strong>Start Date:</strong> ${formatDate(contract.start_date)}</div>
                             <div><strong>End Date:</strong> ${formatDate(contract.end_date)}</div>
-                            <div><strong>Total Value:</strong> Rp ${new Intl.NumberFormat('id-ID').format(contract.contract_value || 0)}</div>
+                            <div><strong>Total Value:</strong> {{ currency_symbol() }} ${new Intl.NumberFormat('id-ID').format(contract.contract_value || 0)}</div>
                         </div>
                     `;
                     $('#contractInfoContent').html(info);

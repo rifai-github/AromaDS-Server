@@ -154,14 +154,14 @@
                             <div class="stat-icon success">
                                 <i class="fas fa-money-bill-wave"></i>
                             </div>
-                            <div class="stat-value">Rp {{ number_format($summary['total_commission'], 0, ',', '.') }}</div>
+                            <div class="stat-value">{{ currency_symbol() }} {{ number_format($summary['total_commission'], 0, ',', '.') }}</div>
                             <div class="stat-label">Total Commission</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-icon warning">
                                 <i class="fas fa-clock"></i>
                             </div>
-                            <div class="stat-value">Rp {{ number_format($summary['pending_commission'], 0, ',', '.') }}</div>
+                            <div class="stat-value">{{ currency_symbol() }} {{ number_format($summary['pending_commission'], 0, ',', '.') }}</div>
                             <div class="stat-label">Pending Commission</div>
                         </div>
                         <div class="stat-card">
@@ -185,8 +185,8 @@
                         @if($newTarget)
                         <div class="col-md-6">
                             <h5>New Contract Target</h5>
-                            <p><strong>Target:</strong> Rp {{ number_format($newTarget->target_amount, 0, ',', '.') }}</p>
-                            <p><strong>Achieved:</strong> Rp {{ number_format($newTarget->achieved_amount, 0, ',', '.') }}</p>
+                            <p><strong>Target:</strong> {{ currency_symbol() }} {{ number_format($newTarget->target_amount, 0, ',', '.') }}</p>
+                            <p><strong>Achieved:</strong> {{ currency_symbol() }} {{ number_format($newTarget->achieved_amount, 0, ',', '.') }}</p>
                             @php
                                 $progress = $newTarget->target_amount > 0 ? ($newTarget->achieved_amount / $newTarget->target_amount) * 100 : 0;
                             @endphp
@@ -200,8 +200,8 @@
                         @if($renewalTarget)
                         <div class="col-md-6">
                             <h5>Renewal Contract Target</h5>
-                            <p><strong>Target:</strong> Rp {{ number_format($renewalTarget->target_amount, 0, ',', '.') }}</p>
-                            <p><strong>Achieved:</strong> Rp {{ number_format($renewalTarget->achieved_amount, 0, ',', '.') }}</p>
+                            <p><strong>Target:</strong> {{ currency_symbol() }} {{ number_format($renewalTarget->target_amount, 0, ',', '.') }}</p>
+                            <p><strong>Achieved:</strong> {{ currency_symbol() }} {{ number_format($renewalTarget->achieved_amount, 0, ',', '.') }}</p>
                             @php
                                 $progress = $renewalTarget->target_amount > 0 ? ($renewalTarget->achieved_amount / $renewalTarget->target_amount) * 100 : 0;
                             @endphp
@@ -247,7 +247,7 @@
                             <tr>
                                 <td>{{ $commission->contract->contract_number ?? 'N/A' }}</td>
                                 <td>{{ $commission->contract->customer->name ?? 'N/A' }}</td>
-                                <td><strong>Rp {{ number_format($commission->final_amount ?? 0, 0, ',', '.') }}</strong></td>
+                                <td><strong>{{ currency_symbol() }} {{ number_format($commission->final_amount ?? 0, 0, ',', '.') }}</strong></td>
                                 <td>
                                     @if($commission->status == 'approved')
                                         <span class="badge badge-success">Approved</span>

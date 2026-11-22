@@ -216,8 +216,8 @@ class CommissionTransferController extends Controller
         $amount = round((float) $transfer->commission_amount, 2);
         $available = round((float) $calculation->final_amount, 2);
         if ($amount <= 0 || $amount > $available) {
-            return 'Nominal transfer Rp '.number_format($amount, 0, ',', '.')
-                .' harus lebih dari 0 dan tidak melebihi komisi Rp '.number_format($available, 0, ',', '.').'.';
+            return 'Nominal transfer '.currency_symbol().' '.number_format($amount, 0, ',', '.')
+                .' harus lebih dari 0 dan tidak melebihi komisi '.currency_symbol().' '.number_format($available, 0, ',', '.').'.';
         }
 
         return null;
@@ -262,7 +262,7 @@ class CommissionTransferController extends Controller
         $calculation->update([
             'commission_amount' => round((float) $calculation->commission_amount - $amount, 2),
             'final_amount' => round((float) $calculation->final_amount - $amount, 2),
-            'calculation_notes' => trim(($calculation->calculation_notes ?? '')."\n{$note}: dikurangi Rp ".number_format($amount, 0, ',', '.')),
+            'calculation_notes' => trim(($calculation->calculation_notes ?? '')."\n{$note}: dikurangi ".currency_symbol()." ".number_format($amount, 0, ',', '.')),
             'updated_by' => Auth::id(),
         ]);
     }

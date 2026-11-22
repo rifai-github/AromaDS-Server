@@ -113,12 +113,12 @@ class MarketingTarget extends Model
 
     public function getFormattedTargetAmountAttribute()
     {
-        return 'Rp ' . number_format($this->target_amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->target_amount, 0, ',', '.');
     }
 
     public function getFormattedAchievedAmountAttribute()
     {
-        return 'Rp ' . number_format($this->achieved_amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->achieved_amount, 0, ',', '.');
     }
 
     // Methods

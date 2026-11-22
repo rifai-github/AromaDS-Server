@@ -183,12 +183,12 @@ class InventoryIssuingItem extends Model
 
     public function getUnitPriceFormattedAttribute()
     {
-        return $this->unit_price ? 'Rp ' . number_format($this->unit_price, 0, ',', '.') : 'N/A';
+        return $this->unit_price ? currency_symbol().' ' . number_format($this->unit_price, 0, ',', '.') : 'N/A';
     }
 
     public function getTotalPriceFormattedAttribute()
     {
-        return $this->total_price ? 'Rp ' . number_format($this->total_price, 0, ',', '.') : 'N/A';
+        return $this->total_price ? currency_symbol().' ' . number_format($this->total_price, 0, ',', '.') : 'N/A';
     }
 
     public function getProductNameFormattedAttribute()

@@ -409,8 +409,8 @@
                                                         </td>
                                                         <td>{{ $detail->quantity }}</td>
                                                         <td>{{ $detail->qty_free ?? 0 }}</td>
-                                                        <td>Rp {{ number_format($detail->unit_price, 0, ',', '.') }}</td>
-                                                        <td>Rp {{ number_format($detail->total_price, 0, ',', '.') }}</td>
+                                                        <td>{{ currency_symbol() }} {{ number_format($detail->unit_price, 0, ',', '.') }}</td>
+                                                        <td>{{ currency_symbol() }} {{ number_format($detail->total_price, 0, ',', '.') }}</td>
                                                         <td>
                                                             @if($quotation->status == 'draft')
                                                                 <button class="btn btn-sm btn-outline-danger" onclick="removeRoom({{ $detail->id }})">
@@ -477,8 +477,8 @@
                                                         </td>
                                                         <td>{{ $detail->quantity }}</td>
                                                         <td>{{ $detail->qty_free ?? 0 }}</td>
-                                                        <td>Rp {{ number_format($detail->unit_price, 0, ',', '.') }}</td>
-                                                        <td>Rp {{ number_format($detail->total_price, 0, ',', '.') }}</td>
+                                                        <td>{{ currency_symbol() }} {{ number_format($detail->unit_price, 0, ',', '.') }}</td>
+                                                        <td>{{ currency_symbol() }} {{ number_format($detail->total_price, 0, ',', '.') }}</td>
                                                         <td>
                                                             @if($quotation->status == 'draft')
                                                                 <button class="btn btn-sm btn-outline-primary" onclick="editRental({{ $detail->id }})">

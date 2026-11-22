@@ -385,7 +385,7 @@
                                                   step="1000"
                                                   min="0">
                                        @else
-                                           <span class="text-end">{{ 'Rp ' . number_format($item->price, 0, ',', '.') }}</span>
+                                           <span class="text-end">{{ currency_symbol().' ' . number_format($item->price, 0, ',', '.') }}</span>
                                        @endif
                                    </td>
                                </tr>

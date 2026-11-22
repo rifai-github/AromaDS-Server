@@ -59,9 +59,9 @@
             @foreach($invoice->invoiceDetails as $detail)
             <tr>
                 <td>{{ $detail->description }}</td>
-                <td align="right">Rp {{ number_format($detail->unit_price, 0, ',', '.') }}</td>
+                <td align="right">{{ currency_symbol() }} {{ number_format($detail->unit_price, 0, ',', '.') }}</td>
                 <td align="center">{{ $detail->quantity }}</td>
-                <td align="right">Rp {{ number_format($detail->total_price, 0, ',', '.') }}</td>
+                <td align="right">{{ currency_symbol() }} {{ number_format($detail->total_price, 0, ',', '.') }}</td>
             </tr>
             @endforeach
         </tbody>
@@ -70,21 +70,21 @@
     <table class="totals-table">
         <tr>
             <td class="label">Subtotal</td>
-            <td class="value">Rp {{ number_format($invoice->subtotal, 0, ',', '.') }}</td>
+            <td class="value">{{ currency_symbol() }} {{ number_format($invoice->subtotal, 0, ',', '.') }}</td>
         </tr>
         <tr>
             <td class="label">PPN (Tax)</td>
-            <td class="value">Rp {{ number_format($invoice->tax_amount, 0, ',', '.') }}</td>
+            <td class="value">{{ currency_symbol() }} {{ number_format($invoice->tax_amount, 0, ',', '.') }}</td>
         </tr>
         @if($invoice->discount_amount > 0)
         <tr>
             <td class="label">Discount</td>
-            <td class="value text-danger">- Rp {{ number_format($invoice->discount_amount, 0, ',', '.') }}</td>
+            <td class="value text-danger">- {{ currency_symbol() }} {{ number_format($invoice->discount_amount, 0, ',', '.') }}</td>
         </tr>
         @endif
         <tr class="total-row">
             <td class="label">Total Amount</td>
-            <td class="value"><strong>Rp {{ number_format($invoice->total_amount, 0, ',', '.') }}</strong></td>
+            <td class="value"><strong>{{ currency_symbol() }} {{ number_format($invoice->total_amount, 0, ',', '.') }}</strong></td>
         </tr>
     </table>
     

@@ -877,16 +877,16 @@
                             </td>
                             {{-- Komisi dihitung dari Contract Net (net_value); base_amount = Contract Value, dulu kolom ini menampilkannya sehingga QA mengira Net diabaikan. --}}
                             <td>
-                                Rp {{ number_format($commission->net_value ?? $commission->base_amount, 0, ',', '.') }}
+                                {{ currency_symbol() }} {{ number_format($commission->net_value ?? $commission->base_amount, 0, ',', '.') }}
                                 @if($commission->net_value !== null && (float) $commission->net_value !== (float) $commission->base_amount)
-                                    <br><small class="text-muted">Contract Value: Rp {{ number_format($commission->base_amount, 0, ',', '.') }}</small>
+                                    <br><small class="text-muted">Contract Value: {{ currency_symbol() }} {{ number_format($commission->base_amount, 0, ',', '.') }}</small>
                                 @endif
                             </td>
                             <td>{{ $commission->commission_rate }}%</td>
                             <td class="font-weight-bold">
-                                Rp {{ number_format($commission->final_amount, 0, ',', '.') }}
+                                {{ currency_symbol() }} {{ number_format($commission->final_amount, 0, ',', '.') }}
                                 @if($commission->status === 'over_period')
-                                    <br><small class="text-muted font-weight-normal">Komisi asli: Rp {{ number_format($commission->overPeriodCap(), 0, ',', '.') }}</small>
+                                    <br><small class="text-muted font-weight-normal">Komisi asli: {{ currency_symbol() }} {{ number_format($commission->overPeriodCap(), 0, ',', '.') }}</small>
                                 @endif
                             </td>
                             <td>
@@ -1066,7 +1066,7 @@
                     Marketing: <strong id="overrideUser">-</strong><br>
                     Komisi asli (batas maksimal): <strong id="overrideCapLabel">-</strong>
                 </p>
-                <label for="overrideAmount">Nominal Komisi (Rp)</label>
+                <label for="overrideAmount">Nominal Komisi ({{ currency_symbol() }})</label>
                 <input type="number" step="1" min="0" name="final_amount" id="overrideAmount" class="form-control" required>
                 <label for="overrideReason" style="margin-top: 12px;">Alasan / dasar kebijakan management</label>
                 <textarea name="reason" id="overrideReason" class="form-control" rows="3" maxlength="500" required></textarea>
@@ -1088,7 +1088,7 @@
         const form = document.getElementById('overrideForm');
         form.action = @js(route('finance.commissions.override-amount', '__ID__')).replace('__ID__', id);
         document.getElementById('overrideUser').textContent = userName;
-        document.getElementById('overrideCapLabel').textContent = 'Rp ' + Number(cap).toLocaleString('id-ID');
+        document.getElementById('overrideCapLabel').textContent = '{{ currency_symbol() }} ' + Number(cap).toLocaleString('id-ID');
         const amount = document.getElementById('overrideAmount');
         amount.max = cap;
         amount.value = current;
@@ -1189,7 +1189,7 @@ function loadStatistics() {
         dataType: 'json',
         success: function(data) {
             $('#totalCommissions').text(data.total_commissions || 0);
-            $('#totalAmount').text('Rp ' + (data.total_amount || 0).toLocaleString('id-ID'));
+            $('#totalAmount').text('{{ currency_symbol() }} ' + (data.total_amount || 0).toLocaleString('id-ID'));
             $('#pendingApproval').text(data.pending_approval || 0);
             $('#paid').text(data.paid || 0);
         }
@@ -1222,7 +1222,7 @@ function openViewModal(commissionId) {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                     <div>
                         <label style="font-weight: 500; font-size: 13px; color: #666;">Final Amount</label>
-                        <p style="margin: 5px 0 0 0; font-weight: bold; font-size: 16px;">Rp ${commission.final_amount ? commission.final_amount.toLocaleString('id-ID') : '0'}</p>
+                        <p style="margin: 5px 0 0 0; font-weight: bold; font-size: 16px;">{{ currency_symbol() }} ${commission.final_amount ? commission.final_amount.toLocaleString('id-ID') : '0'}</p>
                     </div>
                     <div>
                         <label style="font-weight: 500; font-size: 13px; color: #666;">Date</label>

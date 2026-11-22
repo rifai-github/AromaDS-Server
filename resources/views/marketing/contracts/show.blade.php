@@ -554,7 +554,7 @@
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Contract Value</div>
-                                        <div class="contract-field-value">Rp {{ number_format($contract->contract_value, 0, ',', '.') }}</div>
+                                        <div class="contract-field-value">{{ currency_symbol() }} {{ number_format($contract->contract_value, 0, ',', '.') }}</div>
                                     </div>
                                     @php
                                         $hasViewNet = Auth::user()->hasPermission('marketing.contract-net.view') || Auth::user()->hasPermission('contractNet_approved');
@@ -567,7 +567,7 @@
                                             <div class="contract-field-label">Contract Net</div>
                                             <div class="contract-field-value">
                                                 <div style="display: flex !important; align-items: center !important;">
-                                                    <span style="margin-right: 8px;">Rp</span>
+                                                    <span style="margin-right: 8px;">{{ currency_symbol() }}</span>
                                                     <div style="position: relative;">
                                                         <input type="number" 
                                                                id="contractNetInput" 
@@ -910,11 +910,11 @@
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Total Amount</div>
-                                        <div class="contract-field-value">Rp {{ number_format($contract->display_quotation_total_amount, 0, ',', '.') }}</div>
+                                        <div class="contract-field-value">{{ currency_symbol() }} {{ number_format($contract->display_quotation_total_amount, 0, ',', '.') }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Grand Total</div>
-                                        <div class="contract-field-value">Rp {{ number_format($contract->display_quotation_grand_total, 0, ',', '.') }}</div>
+                                        <div class="contract-field-value">{{ currency_symbol() }} {{ number_format($contract->display_quotation_grand_total, 0, ',', '.') }}</div>
                                     </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Status</div>
@@ -1355,8 +1355,8 @@
                                             </td>
                                             <td>{{ $rowRental->quantity ?? '-' }}</td>
                                             <td>{{ $rowRental ? ($rowRental->qty_free ?? 0) : '-' }}</td>
-                                            <td>{{ $rowRental ? 'Rp ' . number_format($rowRental->unit_price, 0, ',', '.') : '-' }}</td>
-                                            <td>{{ $rowRental ? 'Rp ' . number_format($rowRental->total_price, 0, ',', '.') : '-' }}</td>
+                                            <td>{{ $rowRental ? currency_symbol().' ' . number_format($rowRental->unit_price, 0, ',', '.') : '-' }}</td>
+                                            <td>{{ $rowRental ? currency_symbol().' ' . number_format($rowRental->total_price, 0, ',', '.') : '-' }}</td>
                                             <td>{{ $rowRental?->masterRental?->description ?? '-' }}</td>
                                         </tr>
                                         @empty
@@ -1372,7 +1372,7 @@
                                     <tfoot>
                                         <tr>
                                             <td colspan="10"><strong>Total</strong></td>
-                                            <td><strong>Rp {{ number_format($roomRentalTotal, 0, ',', '.') }}</strong></td>
+                                            <td><strong>{{ currency_symbol() }} {{ number_format($roomRentalTotal, 0, ',', '.') }}</strong></td>
                                             <td></td>
                                         </tr>
                                     </tfoot>

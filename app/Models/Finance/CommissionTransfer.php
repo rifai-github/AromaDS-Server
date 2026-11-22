@@ -105,7 +105,7 @@ class CommissionTransfer extends Model
     // Accessors
     public function getFormattedCommissionAmountAttribute()
     {
-        return 'Rp ' . number_format($this->commission_amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->commission_amount, 0, ',', '.');
     }
 
     public function getStatusBadgeAttribute()

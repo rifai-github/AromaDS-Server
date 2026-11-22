@@ -30,7 +30,7 @@ class CommissionPayoutProcessedMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Pencairan Komisi Diproses - '.$this->marketingCount.' marketing, Rp '.number_format($this->totalAmount, 0, ',', '.'),
+            subject: 'Pencairan Komisi Diproses - '.$this->marketingCount.' marketing, '.currency_symbol().' '.number_format($this->totalAmount, 0, ',', '.'),
         );
     }
 

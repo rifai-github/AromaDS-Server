@@ -235,27 +235,27 @@ class CommissionCalculation extends Model
 
     public function getFormattedBaseAmountAttribute()
     {
-        return 'Rp ' . number_format($this->base_amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->base_amount, 0, ',', '.');
     }
 
     public function getFormattedCommissionAmountAttribute()
     {
-        return 'Rp ' . number_format($this->commission_amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->commission_amount, 0, ',', '.');
     }
 
     public function getFormattedBonusAmountAttribute()
     {
-        return 'Rp ' . number_format($this->bonus_amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->bonus_amount, 0, ',', '.');
     }
 
     public function getFormattedPenaltyAmountAttribute()
     {
-        return 'Rp ' . number_format($this->penalty_amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->penalty_amount, 0, ',', '.');
     }
 
     public function getFormattedFinalAmountAttribute()
     {
-        return 'Rp ' . number_format($this->final_amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->final_amount, 0, ',', '.');
     }
 
     public function getCalculationTypeLabelAttribute()
@@ -346,7 +346,7 @@ class CommissionCalculation extends Model
         $cap = $this->overPeriodCap();
         if ($amount < 0 || $amount > $cap) {
             throw new \InvalidArgumentException(
-                'Nominal harus antara Rp 0 dan Rp '.number_format($cap, 0, ',', '.').' (komisi aslinya).'
+                'Nominal harus antara '.currency_symbol().' 0 dan '.currency_symbol().' '.number_format($cap, 0, ',', '.').' (komisi aslinya).'
             );
         }
 
@@ -364,8 +364,8 @@ class CommissionCalculation extends Model
             'original_amount' => $cap,
             'final_amount' => $amount,
             'calculation_notes' => trim(($this->calculation_notes ?? '')."\n".now()->format('Y-m-d H:i')
-                ." Over Period: nominal diubah {$actor} dari Rp ".number_format($old, 0, ',', '.')
-                .' menjadi Rp '.number_format($amount, 0, ',', '.')." (maks Rp ".number_format($cap, 0, ',', '.')."). Alasan: {$reason}"),
+                ." Over Period: nominal diubah {$actor} dari ".currency_symbol()." ".number_format($old, 0, ',', '.')
+                .' menjadi '.currency_symbol().' '.number_format($amount, 0, ',', '.')." (maks ".currency_symbol()." ".number_format($cap, 0, ',', '.')."). Alasan: {$reason}"),
             'updated_by' => $userId ?? $this->updated_by,
         ]);
 

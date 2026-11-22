@@ -81,7 +81,7 @@
                             </td>
                             <td>
                                 @if($assignment->target_amount)
-                                    Rp {{ number_format($assignment->target_amount, 0, ',', '.') }}
+                                    {{ currency_symbol() }} {{ number_format($assignment->target_amount, 0, ',', '.') }}
                                 @else
                                     -
                                 @endif

@@ -1768,7 +1768,7 @@ function openViewModal(id) {
                         <div class="space-y-4">
                             <div class="detail-item">
                                 <label class="form-label">Contract Value</label>
-                                <p class="detail-value">${data.formatted_contract_value || (data.contract_value ? 'Rp ' + new Intl.NumberFormat('id-ID').format(data.contract_value) : 'N/A')}</p>
+                                <p class="detail-value">${data.formatted_contract_value || (data.contract_value ? '{{ currency_symbol() }} ' + new Intl.NumberFormat('id-ID').format(data.contract_value) : 'N/A')}</p>
                             </div>
                             <div class="detail-item">
                                 <label class="form-label">Payment Terms</label>
@@ -1898,7 +1898,7 @@ function openViewModal(id) {
                             </div>
                             <div class="detail-item">
                                 <label class="form-label">Total Amount</label>
-                                <p class="detail-value">${data.quotation ? (data.quotation.formatted_grand_total || (data.quotation.grand_total ? 'Rp ' + new Intl.NumberFormat('id-ID').format(data.quotation.grand_total) : 'N/A')) : 'N/A'}</p>
+                                <p class="detail-value">${data.quotation ? (data.quotation.formatted_grand_total || (data.quotation.grand_total ? '{{ currency_symbol() }} ' + new Intl.NumberFormat('id-ID').format(data.quotation.grand_total) : 'N/A')) : 'N/A'}</p>
                             </div>
                         </div>
                     </div>

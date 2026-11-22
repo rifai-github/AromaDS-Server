@@ -74,17 +74,17 @@ class InvoiceRentalDetail extends Model
 
     public function getFormattedUnitPriceAttribute()
     {
-        return 'Rp '.number_format($this->unit_price, 0, ',', '.');
+        return currency_symbol().' '.number_format($this->unit_price, 0, ',', '.');
     }
 
     public function getFormattedTotalPriceAttribute()
     {
-        return 'Rp '.number_format($this->total_price, 0, ',', '.');
+        return currency_symbol().' '.number_format($this->total_price, 0, ',', '.');
     }
 
     public function getFormattedDiscountAmountAttribute()
     {
-        return 'Rp '.number_format($this->discount_amount ?? 0, 0, ',', '.');
+        return currency_symbol().' '.number_format($this->discount_amount ?? 0, 0, ',', '.');
     }
 
     /**
@@ -98,6 +98,6 @@ class InvoiceRentalDetail extends Model
 
     public function getFormattedNetTotalAttribute()
     {
-        return 'Rp '.number_format($this->net_total, 0, ',', '.');
+        return currency_symbol().' '.number_format($this->net_total, 0, ',', '.');
     }
 }

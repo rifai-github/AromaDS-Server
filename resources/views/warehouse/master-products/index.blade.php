@@ -801,7 +801,7 @@
                         <td>{{ $product->unit ?? ($product->packagingSize->code ?? '-') }}</td>
                         <td>{{ number_format($product->minimum_stock ?? 0) }}</td>
                         <td>{{ number_format($product->maximum_stock ?? 0) }}</td>
-                        <td>{{ $product->unit_price ? 'Rp ' . number_format($product->unit_price, 2, ',', '.') : '-' }}</td>
+                        <td>{{ $product->unit_price ? currency_symbol().' ' . number_format($product->unit_price, 2, ',', '.') : '-' }}</td>
                         <td>
                             <span class="px-2 py-1 text-xs rounded-full {{ $product->is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
                                 {{ $product->is_active ? 'Active' : 'Inactive' }}

@@ -19,6 +19,10 @@ class AppServiceProvider extends ServiceProvider
         // Shared per request so generating material for a job with many rooms resolves
         // each repeated aroma label once instead of once per room.
         $this->app->singleton(\App\Services\Marketing\AromaProductResolver::class);
+
+        // currency_symbol()/currency_code(). Dimuat di sini juga (selain composer "files") supaya
+        // deploy tanpa `composer dump-autoload` tetap jalan.
+        require_once app_path('Helpers/CurrencyHelper.php');
     }
 
     /**

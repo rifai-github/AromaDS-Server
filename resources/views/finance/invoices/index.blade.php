@@ -1591,15 +1591,15 @@ function openViewModal(id) {
                     </div>
                     <div class="detail-item">
                         <label class="form-label">Subtotal</label>
-                        <p class="detail-value">${data.subtotal ? 'Rp ' + new Intl.NumberFormat('id-ID').format(data.subtotal) : 'N/A'}</p>
+                        <p class="detail-value">${data.subtotal ? '{{ currency_symbol() }} ' + new Intl.NumberFormat('id-ID').format(data.subtotal) : 'N/A'}</p>
                     </div>
                     <div class="detail-item">
                         <label class="form-label">Tax Amount</label>
-                        <p class="detail-value">${data.tax_amount ? 'Rp ' + new Intl.NumberFormat('id-ID').format(data.tax_amount) : 'N/A'}</p>
+                        <p class="detail-value">${data.tax_amount ? '{{ currency_symbol() }} ' + new Intl.NumberFormat('id-ID').format(data.tax_amount) : 'N/A'}</p>
                     </div>
                     <div class="detail-item">
                         <label class="form-label">Total Amount</label>
-                        <p class="detail-value font-semibold">${data.total_amount ? 'Rp ' + new Intl.NumberFormat('id-ID').format(data.total_amount) : 'N/A'}</p>
+                        <p class="detail-value font-semibold">${data.total_amount ? '{{ currency_symbol() }} ' + new Intl.NumberFormat('id-ID').format(data.total_amount) : 'N/A'}</p>
                     </div>
                     <div class="detail-item">
                         <label class="form-label">Invoice Status</label>
@@ -2215,7 +2215,7 @@ function renderTaxFileExportModal(usable, skipped, eligible) {
             <div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #f3f4f6;">
                 <div style="flex: 1;">
                     <strong>${inv.invoice_number}</strong> - ${inv.customer_name || 'N/A'}
-                    <br><small style="color: #6b7280;">${date} | ${inv.formatted_total_amount || 'Rp 0'}</small>
+                    <br><small style="color: #6b7280;">${date} | ${inv.formatted_total_amount || '{{ currency_symbol() }} 0'}</small>
                 </div>
             </div>
         `;

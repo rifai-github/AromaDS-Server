@@ -488,7 +488,7 @@
             return trim($terbilang(intdiv($number, 1000000000000)) . ' triliun ' . $terbilang($number % 1000000000000));
         };
         $contractTotal = (float) ($contract->contract_value ?? $contract->net_value ?? 0);
-        $terbilangText = strtoupper(trim(preg_replace('/\s+/', ' ', $terbilang($contractTotal)))) . '  RUPIAH';
+        $terbilangText = strtoupper(trim(preg_replace('/\s+/', ' ', $terbilang($contractTotal)))) . '  '.\App\Support\AppCurrency::word();
 
         /* ===== Logo (base64) ===== */
         $logoPath = public_path('images/logo.png');
@@ -690,7 +690,7 @@
         <thead>
             <tr>
                 <th style="width: 80%;">GEDUNG</th>
-                <th style="width: 20%;" class="right">Total (IDR) / TOP</th>
+                <th style="width: 20%;" class="right">Total ({{ currency_code() }}) / TOP</th>
             </tr>
         </thead>
         <tbody>
@@ -727,7 +727,7 @@
                 </div>
             </td>
             <td style="width: 40%;">
-                <span class="top-label">TOTAL / TOP :Rp</span>&nbsp;&nbsp;<span class="top-value">{{ number_format($contractTotal, 0) }}</span>
+                <span class="top-label">TOTAL / TOP :{{ currency_symbol() }}</span>&nbsp;&nbsp;<span class="top-value">{{ number_format($contractTotal, 0) }}</span>
             </td>
         </tr>
     </table>

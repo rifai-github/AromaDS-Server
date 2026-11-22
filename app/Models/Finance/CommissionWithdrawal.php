@@ -65,7 +65,7 @@ class CommissionWithdrawal extends Model
     // Accessors & Mutators
     public function getFormattedAmountAttribute()
     {
-        return 'Rp ' . number_format($this->amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->amount, 0, ',', '.');
     }
 
     public function getStatusBadgeAttribute()

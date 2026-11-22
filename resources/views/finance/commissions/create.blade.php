@@ -110,7 +110,7 @@
                                     <label for="base_amount">Base Amount <span class="text-danger">*</span></label>
                                     <div class="input-group">
                                         <div class="input-group-prepend">
-                                            <span class="input-group-text">Rp</span>
+                                            <span class="input-group-text">{{ currency_symbol() }}</span>
                                         </div>
                                         <input type="number" name="base_amount" id="base_amount" 
                                                class="form-control @error('base_amount') is-invalid @enderror" 
@@ -148,7 +148,7 @@
                                     <label for="bonus_amount">Bonus Amount</label>
                                     <div class="input-group">
                                         <div class="input-group-prepend">
-                                            <span class="input-group-text">Rp</span>
+                                            <span class="input-group-text">{{ currency_symbol() }}</span>
                                         </div>
                                         <input type="number" name="bonus_amount" id="bonus_amount" 
                                                class="form-control @error('bonus_amount') is-invalid @enderror" 
@@ -166,7 +166,7 @@
                                     <label for="penalty_amount">Penalty Amount</label>
                                     <div class="input-group">
                                         <div class="input-group-prepend">
-                                            <span class="input-group-text">Rp</span>
+                                            <span class="input-group-text">{{ currency_symbol() }}</span>
                                         </div>
                                         <input type="number" name="penalty_amount" id="penalty_amount" 
                                                class="form-control @error('penalty_amount') is-invalid @enderror" 
@@ -213,7 +213,7 @@
                     <div class="row mb-3">
                         <div class="col-6">
                             <small class="text-muted">Base Amount</small>
-                            <div id="previewBaseAmount">Rp 0</div>
+                            <div id="previewBaseAmount">{{ currency_symbol() }} 0</div>
                         </div>
                         <div class="col-6">
                             <small class="text-muted">Commission Rate</small>
@@ -224,22 +224,22 @@
                     <div class="row mb-3">
                         <div class="col-6">
                             <small class="text-muted">Commission Amount</small>
-                            <div id="previewCommissionAmount">Rp 0</div>
+                            <div id="previewCommissionAmount">{{ currency_symbol() }} 0</div>
                         </div>
                         <div class="col-6">
                             <small class="text-muted">Bonus Amount</small>
-                            <div id="previewBonusAmount">Rp 0</div>
+                            <div id="previewBonusAmount">{{ currency_symbol() }} 0</div>
                         </div>
                     </div>
                     
                     <div class="row mb-3">
                         <div class="col-6">
                             <small class="text-muted">Penalty Amount</small>
-                            <div id="previewPenaltyAmount">Rp 0</div>
+                            <div id="previewPenaltyAmount">{{ currency_symbol() }} 0</div>
                         </div>
                         <div class="col-6">
                             <small class="text-muted">Final Amount</small>
-                            <div id="previewFinalAmount" class="font-weight-bold text-primary">Rp 0</div>
+                            <div id="previewFinalAmount" class="font-weight-bold text-primary">{{ currency_symbol() }} 0</div>
                         </div>
                     </div>
                 </div>
@@ -270,12 +270,12 @@ function updatePreview() {
     const commissionAmount = baseAmount * (commissionRate / 100);
     const finalAmount = commissionAmount + bonusAmount - penaltyAmount;
     
-    $('#previewBaseAmount').text('Rp ' + baseAmount.toLocaleString());
+    $('#previewBaseAmount').text('{{ currency_symbol() }} ' + baseAmount.toLocaleString());
     $('#previewCommissionRate').text(commissionRate + '%');
-    $('#previewCommissionAmount').text('Rp ' + commissionAmount.toLocaleString());
-    $('#previewBonusAmount').text('Rp ' + bonusAmount.toLocaleString());
-    $('#previewPenaltyAmount').text('Rp ' + penaltyAmount.toLocaleString());
-    $('#previewFinalAmount').text('Rp ' + finalAmount.toLocaleString());
+    $('#previewCommissionAmount').text('{{ currency_symbol() }} ' + commissionAmount.toLocaleString());
+    $('#previewBonusAmount').text('{{ currency_symbol() }} ' + bonusAmount.toLocaleString());
+    $('#previewPenaltyAmount').text('{{ currency_symbol() }} ' + penaltyAmount.toLocaleString());
+    $('#previewFinalAmount').text('{{ currency_symbol() }} ' + finalAmount.toLocaleString());
 }
 </script>
 @endpush

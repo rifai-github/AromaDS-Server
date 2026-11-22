@@ -775,7 +775,7 @@
                         <td>{{ $slab->masterRental->rental_name ?? '-' }}</td>
                         <td>{{ $slab->min_quantity ?? '-' }}</td>
                         <td>{{ $slab->max_quantity ?? 'Tanpa Batas' }}</td>
-                        <td>{{ $slab->unit_price ? 'Rp ' . number_format($slab->unit_price, 2, ',', '.') : '-' }}</td>
+                        <td>{{ $slab->unit_price ? currency_symbol().' ' . number_format($slab->unit_price, 2, ',', '.') : '-' }}</td>
                         <td>{{ $slab->discount_percentage ?? '-' }}%</td>
                         <td>{{ $slab->effective_date ? $slab->effective_date->format('d/M/Y') : '-' }}</td>
                         <td>
@@ -1148,7 +1148,7 @@ function openViewModal(id) {
                         </div>
                         <div class="detail-item">
                             <label class="form-label">Unit Price</label>
-                            <div class="detail-value">${slab.unit_price ? 'Rp ' + new Intl.NumberFormat('id-ID').format(slab.unit_price) : '-'}</div>
+                            <div class="detail-value">${slab.unit_price ? '{{ currency_symbol() }} ' + new Intl.NumberFormat('id-ID').format(slab.unit_price) : '-'}</div>
                         </div>
                         <div class="detail-item">
                             <label class="form-label">Discount Percentage</label>

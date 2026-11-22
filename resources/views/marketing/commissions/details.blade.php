@@ -42,7 +42,7 @@
                         </tr>
                         <tr>
                             <th>Base Amount</th>
-                            <td><strong>Rp {{ number_format($calculation->base_amount ?? 0, 0, ',', '.') }}</strong></td>
+                            <td><strong>{{ currency_symbol() }} {{ number_format($calculation->base_amount ?? 0, 0, ',', '.') }}</strong></td>
                         </tr>
                         <tr>
                             <th>Commission Rate</th>
@@ -50,11 +50,11 @@
                         </tr>
                         <tr>
                             <th>Commission Amount</th>
-                            <td><strong>Rp {{ number_format($calculation->commission_amount ?? 0, 0, ',', '.') }}</strong></td>
+                            <td><strong>{{ currency_symbol() }} {{ number_format($calculation->commission_amount ?? 0, 0, ',', '.') }}</strong></td>
                         </tr>
                         <tr>
                             <th>Final Amount</th>
-                            <td><strong>Rp {{ number_format($calculation->final_amount ?? 0, 0, ',', '.') }}</strong></td>
+                            <td><strong>{{ currency_symbol() }} {{ number_format($calculation->final_amount ?? 0, 0, ',', '.') }}</strong></td>
                         </tr>
                         <tr>
                             <th>Status</th>

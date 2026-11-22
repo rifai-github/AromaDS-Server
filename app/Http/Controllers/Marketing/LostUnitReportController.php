@@ -902,7 +902,7 @@ class LostUnitReportController extends Controller
                 'status' => 'success',
                 'message' => 'Price updated successfully',
                 'total' => $total,
-                'formatted_total' => 'Rp ' . number_format($total, 0, ',', '.'),
+                'formatted_total' => currency_symbol().' ' . number_format($total, 0, ',', '.'),
                 'charge_amount' => (float) $report->fresh()->charge_amount,
             ]);
         } catch (\Exception $e) {
@@ -1337,7 +1337,7 @@ class LostUnitReportController extends Controller
                 'status' => 'error',
                 'message' => 'Master Rental not found',
                 'price' => 0,
-                'formatted_price' => 'Rp 0'
+                'formatted_price' => currency_symbol().' 0'
             ], 404);
         }
 
@@ -1403,7 +1403,7 @@ class LostUnitReportController extends Controller
         return response()->json([
             'status' => 'success',
             'price' => (float)$price,
-            'formatted_price' => 'Rp ' . number_format($price, 0, ',', '.')
+            'formatted_price' => currency_symbol().' ' . number_format($price, 0, ',', '.')
         ]);
     }
 

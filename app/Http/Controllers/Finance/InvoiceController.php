@@ -2777,7 +2777,7 @@ class InvoiceController extends Controller
         if ($discountAmount > $lineTotal) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Diskon tidak boleh melebihi total baris ini (Rp '.number_format($lineTotal, 0, ',', '.').').',
+                'message' => 'Diskon tidak boleh melebihi total baris ini ('.currency_symbol().' '.number_format($lineTotal, 0, ',', '.').').',
             ], 422);
         }
 

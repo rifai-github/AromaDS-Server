@@ -177,7 +177,7 @@ if ($invoice->invoice_date) {
     );
 }
 
-$amountIdr = 'IDR ' . number_format($invoice->grand_total, 0, ',', ',');
+$amountIdr = currency_code().' ' . number_format($invoice->grand_total, 0, ',', ',');
 $dikirimOleh = trim((string) ($invoice->dikirim_oleh ?? ''));
 $diterimaOleh = trim((string) ($invoice->diterima_oleh ?? ''));
 

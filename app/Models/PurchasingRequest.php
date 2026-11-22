@@ -169,7 +169,7 @@ class PurchasingRequest extends Model
 
     public function getFormattedEstimatedCostAttribute()
     {
-        return 'Rp ' . number_format($this->estimated_cost, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->estimated_cost, 0, ',', '.');
     }
 
     public function getDaysSinceRequestedAttribute()

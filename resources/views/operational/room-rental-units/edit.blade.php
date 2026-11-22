@@ -136,7 +136,7 @@
                     <!-- Rental Price -->
                     <div class="form-group">
                         <label for="rental_price" class="block text-sm font-medium text-gray-700 mb-2">
-                            Rental Price (IDR)
+                            Rental Price ({{ currency_code() }})
                         </label>
                         <input type="number" 
                                class="form-input @error('rental_price') border-red-500 @enderror" 

@@ -507,7 +507,7 @@
         <div class="stat-card">
             <div class="stat-header">
                 <div>
-                    <p class="stat-value">Rp {{ number_format($commissionPayments->sum('amount'), 0, ',', '.') }}</p>
+                    <p class="stat-value">{{ currency_symbol() }} {{ number_format($commissionPayments->sum('amount'), 0, ',', '.') }}</p>
                     <p class="stat-label">Total Amount</p>
                 </div>
                 <div class="stat-icon info">
@@ -616,7 +616,7 @@
                         <tr>
                             <td>{{ $payment->id }}</td>
                             <td>{{ $payment->user->name }}</td>
-                            <td>Rp {{ number_format($payment->amount, 0, ',', '.') }}</td>
+                            <td>{{ currency_symbol() }} {{ number_format($payment->amount, 0, ',', '.') }}</td>
                             <td>
                                 <span class="badge badge-info">
                                     {{ ucfirst(str_replace('_', ' ', $payment->payment_method)) }}

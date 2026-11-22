@@ -202,7 +202,7 @@ $(document).ready(function() {
                 if (response.status === 'success' && response.data.length > 0) {
                     response.data.forEach(function(calc) {
                         const date = new Date(calc.calculation_date).toLocaleDateString();
-                        const amount = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(calc.final_amount);
+                        const amount = new Intl.NumberFormat('id-ID', { style: 'currency', currency: @json(currency_code()) }).format(calc.final_amount);
                         calculationSelect.append(`<option value="${calc.id}">${calc.calculation_type.toUpperCase()} - ${date} (${amount})</option>`);
                     });
                 } else {

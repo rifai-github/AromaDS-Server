@@ -619,8 +619,8 @@
                                     {{ ucfirst($achievement->achievement_type) }}
                                 </span>
                             </td>
-                            <td>Rp {{ number_format($achievement->target_amount, 0, ',', '.') }}</td>
-                            <td>Rp {{ number_format($achievement->achieved_amount, 0, ',', '.') }}</td>
+                            <td>{{ currency_symbol() }} {{ number_format($achievement->target_amount, 0, ',', '.') }}</td>
+                            <td>{{ currency_symbol() }} {{ number_format($achievement->achieved_amount, 0, ',', '.') }}</td>
                             <td>
                                 @if($achievement->status == 'achieved')
                                     <span class="badge badge-success">Achieved</span>
@@ -710,7 +710,7 @@ function loadStatistics() {
         $('#totalAchievements').text(data.total_achievements);
         $('#achievedCount').text(data.achieved_count);
         $('#exceededCount').text(data.exceeded_count);
-        $('#totalAmount').text('Rp ' + data.total_amount.toLocaleString());
+        $('#totalAmount').text('{{ currency_symbol() }} ' + data.total_amount.toLocaleString());
     });
 }
 </script>

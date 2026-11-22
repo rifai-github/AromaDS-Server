@@ -284,7 +284,7 @@ function loadStatistics() {
         $('#totalAchievements').text(data.total_achievements);
         $('#achievedCount').text(data.achieved_count);
         $('#exceededCount').text(data.exceeded_count);
-        $('#totalAmount').text('Rp ' + data.total_amount.toLocaleString());
+        $('#totalAmount').text('{{ currency_symbol() }} ' + data.total_amount.toLocaleString());
     });
 }
 </script>

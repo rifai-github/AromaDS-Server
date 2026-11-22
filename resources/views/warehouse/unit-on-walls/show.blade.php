@@ -547,7 +547,7 @@
                                                     {{ ucfirst(str_replace('_', ' ', $repair->repair_status ?? '-')) }}
                                                 </span>
                                             </td>
-                                            <td>{{ $repair->repair_cost ? 'Rp ' . number_format($repair->repair_cost, 0, ',', '.') : '-' }}</td>
+                                            <td>{{ $repair->repair_cost ? currency_symbol().' ' . number_format($repair->repair_cost, 0, ',', '.') : '-' }}</td>
                                             <td>{{ $repair->reported_at?->format('d/M/Y H:i') ?? '-' }}</td>
                                             <td>{{ $repair->completed_at?->format('d/M/Y H:i') ?? '-' }}</td>
                                         </tr>

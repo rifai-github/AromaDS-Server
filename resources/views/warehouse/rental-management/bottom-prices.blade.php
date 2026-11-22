@@ -274,7 +274,7 @@
                     </div>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Bottom Price (Rp) <span class="text-danger">*</span></label>
+                    <label class="form-label">Bottom Price ({{ currency_symbol() }}) <span class="text-danger">*</span></label>
                     <input type="number" class="form-control" id="bottom_price" name="bottom_price" min="0" step="0.01" required>
                 </div>
                 {{-- Replacement Price hidden from UI (not used by any pricing/approval logic yet,

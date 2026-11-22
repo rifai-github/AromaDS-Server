@@ -532,7 +532,7 @@ function displaySQData(data) {
         </div>
         <div class="sq-info-item">
             <div class="sq-info-label">Contract Value</div>
-            <div class="sq-info-value">Rp ${parseFloat(data.contract_value).toLocaleString('id-ID')}</div>
+            <div class="sq-info-value">{{ currency_symbol() }} ${parseFloat(data.contract_value).toLocaleString('id-ID')}</div>
         </div>
         <div class="sq-info-item">
             <div class="sq-info-label">Payment Terms</div>

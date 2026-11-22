@@ -177,7 +177,7 @@
                                             <div class="small text-muted">{{ $item->masterRental->rental_type ?? '' }}</div>
                                         </td>
                                         <td>
-                                            <div class="fw-bold text-success">Rp {{ number_format($item->price, 0, ',', '.') }}</div>
+                                            <div class="fw-bold text-success">{{ currency_symbol() }} {{ number_format($item->price, 0, ',', '.') }}</div>
                                         </td>
                                         <td>
                                             @php

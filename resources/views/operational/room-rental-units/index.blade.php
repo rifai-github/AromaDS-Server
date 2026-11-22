@@ -500,7 +500,7 @@
                         <td>{{ $unit->code ?? '-' }}</td>
                         <td>{{ $unit->room->name ?? '-' }}</td>
                         <td>{{ $unit->customer->name ?? '-' }}</td>
-                        <td>{{ $unit->monthly_rent ? 'Rp ' . number_format($unit->monthly_rent, 0, ',', '.') : '-' }}</td>
+                        <td>{{ $unit->monthly_rent ? currency_symbol().' ' . number_format($unit->monthly_rent, 0, ',', '.') : '-' }}</td>
                         <td>
                             <span class="status-badge {{ $unit->status === 'occupied' ? 'status-occupied' : 'status-available' }}">
                                 {{ ucfirst($unit->status) }}
@@ -764,7 +764,7 @@ function openViewModal(id) {
                         </div>
                         <div class="detail-item">
                             <label class="form-label">Monthly Rent</label>
-                            <p class="detail-value">${data.data.monthly_rent ? 'Rp ' + new Intl.NumberFormat('id-ID').format(data.data.monthly_rent) : '-'}</p>
+                            <p class="detail-value">${data.data.monthly_rent ? '{{ currency_symbol() }} ' + new Intl.NumberFormat('id-ID').format(data.data.monthly_rent) : '-'}</p>
                         </div>
                         <div class="detail-item">
                             <label class="form-label">Created At</label>

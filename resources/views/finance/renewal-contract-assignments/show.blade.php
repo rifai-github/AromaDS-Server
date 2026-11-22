@@ -51,7 +51,7 @@
                             <th>Target Amount</th>
                             <td>
                                 @if($renewalContractAssignment->target_amount)
-                                    <strong>Rp {{ number_format($renewalContractAssignment->target_amount, 0, ',', '.') }}</strong>
+                                    <strong>{{ currency_symbol() }} {{ number_format($renewalContractAssignment->target_amount, 0, ',', '.') }}</strong>
                                 @else
                                     -
                                 @endif

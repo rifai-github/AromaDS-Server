@@ -432,7 +432,7 @@ class CommissionController extends Controller
         }
 
         return redirect()->back()->with('success',
-            'Nominal komisi Over Period diubah menjadi Rp '.number_format((float) $validated['final_amount'], 0, ',', '.').'.');
+            'Nominal komisi Over Period diubah menjadi '.currency_symbol().' '.number_format((float) $validated['final_amount'], 0, ',', '.').'.');
     }
 
     /**

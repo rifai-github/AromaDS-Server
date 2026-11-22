@@ -166,6 +166,7 @@ class CompanyController extends Controller
             'footer_line_1' => 'nullable|string',
             'footer_line_2' => 'nullable|string',
             'footer_line_3' => 'nullable|string',
+            'currency_code' => ['nullable', 'string', 'size:3', \Illuminate\Validation\Rule::in(array_keys(\App\Support\AppCurrency::options()))],
         ]);
 
         if ($validator->fails()) {
@@ -243,6 +244,8 @@ class CompanyController extends Controller
                 'footer_line_1' => $request->footer_line_1,
                 'footer_line_2' => $request->footer_line_2,
                 'footer_line_3' => $request->footer_line_3,
+                // Mata uang berlaku se-sistem: company baru ikut mata uang yang sedang dipakai.
+                'currency_code' => \App\Support\AppCurrency::code(),
                 'created_by' => Auth::id() ?? 28,
                 'updated_by' => Auth::id() ?? 28,
             ]);
@@ -328,6 +331,7 @@ class CompanyController extends Controller
             'footer_line_1' => 'nullable|string',
             'footer_line_2' => 'nullable|string',
             'footer_line_3' => 'nullable|string',
+            'currency_code' => ['nullable', 'string', 'size:3', \Illuminate\Validation\Rule::in(array_keys(\App\Support\AppCurrency::options()))],
         ]);
 
         if ($validator->fails()) {
@@ -378,6 +382,16 @@ class CompanyController extends Controller
                 'footer_line_3' => $request->footer_line_3,
                 'updated_by' => Auth::id() ?? 28,
             ]);
+
+            // Jawaban klien #12: mata uang diatur di Master Company dan berlaku untuk semua
+            // customer, jadi disimpan ke semua company sekaligus (satu pengaturan se-sistem).
+            if ($request->filled('currency_code')) {
+                $currencyCode = strtoupper($request->currency_code);
+                if ($currencyCode !== \App\Support\AppCurrency::code()) {
+                    Company::query()->update(['currency_code' => $currencyCode]);
+                    \App\Support\AppCurrency::forget();
+                }
+            }
 
             DB::commit();
 

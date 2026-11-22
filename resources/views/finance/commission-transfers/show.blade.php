@@ -56,7 +56,7 @@
                         </tr>
                         <tr>
                             <th>Commission Amount</th>
-                            <td><strong>Rp {{ number_format($commissionTransfer->commission_amount, 0, ',', '.') }}</strong></td>
+                            <td><strong>{{ currency_symbol() }} {{ number_format($commissionTransfer->commission_amount, 0, ',', '.') }}</strong></td>
                         </tr>
                         <tr>
                             <th>Status</th>

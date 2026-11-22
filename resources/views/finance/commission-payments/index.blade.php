@@ -400,7 +400,7 @@
                             @endif
                         </td>
                         <td>{{ $payoutRequest['count'] }}</td>
-                        <td><strong>Rp {{ number_format($payoutRequest['amount'], 0, ',', '.') }}</strong></td>
+                        <td><strong>{{ currency_symbol() }} {{ number_format($payoutRequest['amount'], 0, ',', '.') }}</strong></td>
                         <td>
                             @foreach($payoutRequest['calculation_ids'] as $calculationId)
                                 <a href="{{ route('finance.commission-payments.create', ['calculation_id' => $calculationId]) }}" class="badge badge-primary">#{{ $calculationId }}</a>
@@ -419,7 +419,7 @@
                 @csrf
                 <h3 style="font-size:18px; font-weight:600; margin-bottom:8px;">Proses Pencairan Komisi</h3>
                 <p class="text-muted" style="margin-bottom:12px;">
-                    <span id="payoutSelectedCount">0</span> marketing, total <strong id="payoutSelectedTotal">Rp 0</strong>.
+                    <span id="payoutSelectedCount">0</span> marketing, total <strong id="payoutSelectedTotal">{{ currency_symbol() }} 0</strong>.
                     Finance akan menerima email ringkasan.
                 </p>
                 <div id="payoutUserInputs"></div>
@@ -487,7 +487,7 @@
                     total += Number(box.dataset.amount || 0);
                 });
                 document.getElementById('payoutSelectedCount').textContent = boxes.length;
-                document.getElementById('payoutSelectedTotal').textContent = 'Rp ' + total.toLocaleString('id-ID', { maximumFractionDigits: 0 });
+                document.getElementById('payoutSelectedTotal').textContent = '{{ currency_symbol() }} ' + total.toLocaleString('id-ID', { maximumFractionDigits: 0 });
                 document.getElementById('payoutProcessModal').style.display = 'flex';
             };
 
@@ -520,7 +520,7 @@
         </div>
         <div class="stat-card">
             <div class="stat-header">
-                <div><p class="stat-value">Rp {{ number_format($payments->sum('amount'), 0, ',', '.') }}</p><p class="stat-label">Total Amount</p></div>
+                <div><p class="stat-value">{{ currency_symbol() }} {{ number_format($payments->sum('amount'), 0, ',', '.') }}</p><p class="stat-label">Total Amount</p></div>
                 <div class="stat-icon info"><i class="fas fa-dollar-sign"></i></div>
             </div>
         </div>
@@ -738,7 +738,7 @@ function openViewModal(id) {
         document.getElementById('modalBody').innerHTML = `
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <div><label>User</label><p>${p.user ? p.user.name : '-'}</p></div>
-                <div><label>Amount</label><p>Rp ${p.amount.toLocaleString()}</p></div>
+                <div><label>Amount</label><p>{{ currency_symbol() }} ${p.amount.toLocaleString()}</p></div>
                 <div><label>Method</label><p>${p.payment_method}</p></div>
                 <div><label>Status</label><p>${p.status}</p></div>
             </div>

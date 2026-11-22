@@ -77,7 +77,7 @@ class CommissionWithdrawalController extends Controller
 
             if ($validCommissions < $request->amount) {
                 return redirect()->back()
-                    ->with('error', 'Insufficient commission balance. Available: Rp ' . number_format($validCommissions, 0, ',', '.'))
+                    ->with('error', 'Insufficient commission balance. Available: '.currency_symbol().' ' . number_format($validCommissions, 0, ',', '.'))
                     ->withInput();
             }
 

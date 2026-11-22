@@ -1567,8 +1567,8 @@ function openViewModal(id) {
                                             <td class="px-4 py-2">${item.product ? item.product.sku : 'N/A'}</td>
                                             <td class="px-4 py-2">${item.quantity_requested || 0}</td>
                                             <td class="px-4 py-2">${item.quantity_issued || 0}</td>
-                                            <td class="px-4 py-2">${item.unit_price ? 'Rp ' + new Intl.NumberFormat('id-ID').format(item.unit_price) : 'N/A'}</td>
-                                            <td class="px-4 py-2">${item.total_price ? 'Rp ' + new Intl.NumberFormat('id-ID').format(item.total_price) : 'N/A'}</td>
+                                            <td class="px-4 py-2">${item.unit_price ? '{{ currency_symbol() }} ' + new Intl.NumberFormat('id-ID').format(item.unit_price) : 'N/A'}</td>
+                                            <td class="px-4 py-2">${item.total_price ? '{{ currency_symbol() }} ' + new Intl.NumberFormat('id-ID').format(item.total_price) : 'N/A'}</td>
                                         </tr>
                                     `).join('')}
                                 </tbody>

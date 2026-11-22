@@ -281,12 +281,12 @@ class LostUnitReport extends Model
 
     public function getFormattedLostUnitPriceAttribute()
     {
-        return 'Rp ' . number_format($this->lost_unit_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->lost_unit_price, 0, ',', '.');
     }
 
     public function getFormattedOriginalPriceAttribute()
     {
-        return 'Rp ' . number_format($this->original_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->original_price, 0, ',', '.');
     }
 
     /**

@@ -64,10 +64,10 @@
                         <tr>
                             <td>{{ $issue['room_name'] ?? '-' }}</td>
                             <td>{{ $issue['rental_name'] ?? '-' }}</td>
-                            <td class="text-end">Rp {{ number_format((float) ($issue['unit_price'] ?? 0), 0, ',', '.') }}</td>
+                            <td class="text-end">{{ currency_symbol() }} {{ number_format((float) ($issue['unit_price'] ?? 0), 0, ',', '.') }}</td>
                             <td class="text-end">
                                 @if(!empty($issue['bottom_price']))
-                                    Rp {{ number_format((float) $issue['bottom_price'], 0, ',', '.') }}
+                                    {{ currency_symbol() }} {{ number_format((float) $issue['bottom_price'], 0, ',', '.') }}
                                 @else
                                     <span class="text-muted">belum diatur</span>
                                 @endif

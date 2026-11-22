@@ -97,7 +97,7 @@ class QuotationRoom extends Model
     // Accessors
     public function getFormattedRoomTotalAmountAttribute()
     {
-        return 'Rp ' . number_format($this->room_total_amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->room_total_amount, 0, ',', '.');
     }
 
     // Methods

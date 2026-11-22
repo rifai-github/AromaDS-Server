@@ -13,7 +13,7 @@
                             {{ old('commission_calculation_id', $payment->commission_calculation_id ?? request('calculation_id')) == $calculation->id ? 'selected' : '' }}>
                         #{{ $calculation->id }} - {{ $calculation->user->name ?? '-' }}
                         @if($calculation->achievementPeriod) ({{ $calculation->achievementPeriod->period_name }}) @endif
-                        - Rp {{ number_format((float) $calculation->final_amount, 0, ',', '.') }}
+                        - {{ currency_symbol() }} {{ number_format((float) $calculation->final_amount, 0, ',', '.') }}
                         @if($calculation->status === 'over_period') [Over Period] @endif
                         @if($calculation->payout_requested_at) [Request Pencairan {{ $calculation->payout_requested_at->format('d/M/Y') }}] @endif
                     </option>

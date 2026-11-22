@@ -289,7 +289,7 @@
             </div>
             <div class="detail-item">
                 <div class="detail-label">Contract Value</div>
-                <div class="detail-value">Rp {{ number_format($contractTermination->contract->contract_value ?? 0, 0, ',', '.') }}</div>
+                <div class="detail-value">{{ currency_symbol() }} {{ number_format($contractTermination->contract->contract_value ?? 0, 0, ',', '.') }}</div>
             </div>
         </div>
     </div>
@@ -308,7 +308,7 @@
             <div class="detail-item">
                 <div class="detail-label">Penalty Amount</div>
                 <div class="detail-value text-danger">
-                    <strong>Rp {{ number_format($contractTermination->penalty_amount, 0, ',', '.') }}</strong>
+                    <strong>{{ currency_symbol() }} {{ number_format($contractTermination->penalty_amount, 0, ',', '.') }}</strong>
                 </div>
             </div>
             @if($contractTermination->approved_by)
@@ -354,7 +354,7 @@
                     <th>Room Name</th>
                     <th>Room Type</th>
                     <th>Size (m²)</th>
-                    <th>Rental Price (Rp)</th>
+                    <th>Rental Price ({{ currency_symbol() }})</th>
                 </tr>
             </thead>
             <tbody>

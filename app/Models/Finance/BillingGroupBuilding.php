@@ -67,7 +67,7 @@ class BillingGroupBuilding extends Model
     // Accessors
     public function getFormattedBillingAmountAttribute()
     {
-        return 'Rp ' . number_format($this->billing_amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->billing_amount, 0, ',', '.');
     }
 
     public function getStatusTextAttribute()

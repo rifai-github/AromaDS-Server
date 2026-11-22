@@ -61,11 +61,11 @@ class RentalPrice extends Model
     // Accessors
     public function getFormattedDailyPriceAttribute()
     {
-        return 'Rp ' . number_format($this->daily_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->daily_price, 0, ',', '.');
     }
 
     public function getFormattedMonthlyPriceAttribute()
     {
-        return 'Rp ' . number_format($this->monthly_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->monthly_price, 0, ',', '.');
     }
 }

@@ -142,7 +142,7 @@ class VirtualAccountImportTransaction extends Model
 
     public function getAmountFormattedAttribute()
     {
-        return $this->amount ? 'Rp ' . number_format($this->amount, 0, ',', '.') : 'N/A';
+        return $this->amount ? currency_symbol().' ' . number_format($this->amount, 0, ',', '.') : 'N/A';
     }
 
     public function getTransactionDateFormattedAttribute()

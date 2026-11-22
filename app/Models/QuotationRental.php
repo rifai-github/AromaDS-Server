@@ -106,17 +106,17 @@ class QuotationRental extends Model
     // Accessors
     public function getFormattedUnitPriceAttribute()
     {
-        return 'Rp ' . number_format($this->unit_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->unit_price, 0, ',', '.');
     }
 
     public function getFormattedTotalPriceAttribute()
     {
-        return 'Rp ' . number_format($this->total_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->total_price, 0, ',', '.');
     }
 
     public function getFormattedBottomPriceAttribute()
     {
-        return $this->bottom_price ? 'Rp ' . number_format($this->bottom_price, 0, ',', '.') : '-';
+        return $this->bottom_price ? currency_symbol().' ' . number_format($this->bottom_price, 0, ',', '.') : '-';
     }
 
     public function getApprovalStatusAttribute()

@@ -145,7 +145,7 @@ class BeritaAcara extends Model
 
     public function getFormattedEstimatedValueAttribute()
     {
-        return 'Rp ' . number_format($this->estimated_value, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->estimated_value, 0, ',', '.');
     }
 
     public function getDaysSinceReportedAttribute()

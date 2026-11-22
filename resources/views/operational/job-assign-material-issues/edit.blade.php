@@ -156,7 +156,7 @@
                     <!-- Unit Price -->
                     <div class="form-group">
                         <label for="unit_price" class="form-label">
-                            Unit Price (IDR)
+                            Unit Price ({{ currency_code() }})
                         </label>
                         <input type="number" 
                                class="form-input @error('unit_price') border-red-500 @enderror" 
@@ -174,7 +174,7 @@
                     <!-- Total Amount -->
                     <div class="form-group">
                         <label for="total_amount" class="form-label">
-                            Total Amount (IDR)
+                            Total Amount ({{ currency_code() }})
                         </label>
                         <input type="number" 
                                class="form-input @error('total_amount') border-red-500 @enderror" 

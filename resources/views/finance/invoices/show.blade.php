@@ -425,23 +425,23 @@
                                 <div class="invoice-card-body">
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Subtotal</div>
-                                        <div class="invoice-field-value" id="basic-subtotal">Rp {{ number_format($invoice->subtotal, 0, ',', '.') }}</div>
+                                        <div class="invoice-field-value" id="basic-subtotal">{{ currency_symbol() }} {{ number_format($invoice->subtotal, 0, ',', '.') }}</div>
                                     </div>
                                     <div class="invoice-field" id="basic-tax-row" style="{{ $showTaxSummary ? '' : 'display:none;' }}">
                                         <div class="invoice-field-label" id="basic-tax-label">{{ $taxSummaryLabel }}</div>
-                                        <div class="invoice-field-value" id="basic-tax">Rp {{ number_format($invoice->tax_amount, 0, ',', '.') }}</div>
+                                        <div class="invoice-field-value" id="basic-tax">{{ currency_symbol() }} {{ number_format($invoice->tax_amount, 0, ',', '.') }}</div>
                                     </div>
                                     <div class="invoice-field" id="basic-discount-row" style="{{ $showDiscountSummary ? '' : 'display:none;' }}">
                                         <div class="invoice-field-label">Discount</div>
-                                        <div class="invoice-field-value text-danger" id="basic-discount">Rp {{ number_format($invoice->discount_amount, 0, ',', '.') }}</div>
+                                        <div class="invoice-field-value text-danger" id="basic-discount">{{ currency_symbol() }} {{ number_format($invoice->discount_amount, 0, ',', '.') }}</div>
                                     </div>
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Total Amount</div>
-                                        <div class="invoice-field-value text-primary fw-bold fs-5" id="basic-grand-total">Rp {{ number_format($invoice->total_amount, 0, ',', '.') }}</div>
+                                        <div class="invoice-field-value text-primary fw-bold fs-5" id="basic-grand-total">{{ currency_symbol() }} {{ number_format($invoice->total_amount, 0, ',', '.') }}</div>
                                     </div>
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Paid Amount</div>
-                                        <div class="invoice-field-value text-success">Rp {{ number_format((float) $invoice->total_paid, 0, ',', '.') }}</div>
+                                        <div class="invoice-field-value text-success">{{ currency_symbol() }} {{ number_format((float) $invoice->total_paid, 0, ',', '.') }}</div>
                                     </div>
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Outstanding</div>
@@ -450,7 +450,7 @@
                                             // Ensure no negative outstanding if paid > total (shouldn't happen but safe to handle)
                                             $outstanding = max(0, $outstanding);
                                         @endphp
-                                        <div class="invoice-field-value text-danger fw-bold" id="basic-outstanding">Rp {{ number_format($outstanding, 0, ',', '.') }}</div>
+                                        <div class="invoice-field-value text-danger fw-bold" id="basic-outstanding">{{ currency_symbol() }} {{ number_format($outstanding, 0, ',', '.') }}</div>
                                     </div>
                                 </div>
                             </div>
@@ -626,9 +626,9 @@
                                     <td>{{ $invoice->invoice_number }}</td>
                                     <td>{{ $detail['reference_no'] }}</td>
                                     <td>{{ $detail['item_name'] }}</td>
-                                    <td class="text-end">Rp {{ number_format($detail['unit_price'], 0, ',', '.') }}</td>
+                                    <td class="text-end">{{ currency_symbol() }} {{ number_format($detail['unit_price'], 0, ',', '.') }}</td>
                                     <td class="text-center">{{ number_format($detail['quantity'], 0) }}</td>
-                                    <td class="text-end fw-bold">Rp {{ number_format($detail['total_price'], 0, ',', '.') }}</td>
+                                    <td class="text-end fw-bold">{{ currency_symbol() }} {{ number_format($detail['total_price'], 0, ',', '.') }}</td>
                                     <td>{{ $detail['updated_at']?->format('d/M/Y - H:i') ?? '-' }}</td>
                                     <td>{{ $detail['updated_by'] }}</td>
                                 </tr>
@@ -643,7 +643,7 @@
                             <tfoot class="table-light">
                                 <tr>
                                     <td colspan="6" class="text-end fw-bold">Subtotal</td>
-                                    <td class="text-end fw-bold" id="detail-subtotal">Rp {{ number_format($invoice->subtotal, 0, ',', '.') }}</td>
+                                    <td class="text-end fw-bold" id="detail-subtotal">{{ currency_symbol() }} {{ number_format($invoice->subtotal, 0, ',', '.') }}</td>
                                     <td colspan="2"></td>
                                 </tr>
                                 {{-- Read-only here: the discount is entered per rental line on the
@@ -651,18 +651,18 @@
                                 <tr id="detail-discount-row" style="{{ $showDiscountSummary ? '' : 'display:none;' }}">
                                     <td colspan="6" class="text-end fw-bold text-danger" id="detail-discount-label">Discount</td>
                                     <td class="text-end fw-bold text-danger">
-                                        <span id="detail-discount">Rp {{ number_format($invoice->discount_amount, 0, ',', '.') }}</span>
+                                        <span id="detail-discount">{{ currency_symbol() }} {{ number_format($invoice->discount_amount, 0, ',', '.') }}</span>
                                     </td>
                                     <td colspan="2"></td>
                                 </tr>
                                 <tr id="detail-tax-row" style="{{ $showTaxSummary ? '' : 'display:none;' }}">
                                     <td colspan="6" class="text-end fw-bold" id="detail-tax-label">{{ $taxSummaryLabel }}</td>
-                                    <td class="text-end fw-bold" id="detail-tax">Rp {{ number_format($invoice->tax_amount, 0, ',', '.') }}</td>
+                                    <td class="text-end fw-bold" id="detail-tax">{{ currency_symbol() }} {{ number_format($invoice->tax_amount, 0, ',', '.') }}</td>
                                     <td colspan="2"></td>
                                 </tr>
                                 <tr>
                                     <td colspan="6" class="text-end fw-bold text-primary fs-6">Grand Total</td>
-                                    <td class="text-end fw-bold text-primary fs-6" id="detail-grand-total">Rp {{ number_format($invoice->total_amount, 0, ',', '.') }}</td>
+                                    <td class="text-end fw-bold text-primary fs-6" id="detail-grand-total">{{ currency_symbol() }} {{ number_format($invoice->total_amount, 0, ',', '.') }}</td>
                                     <td colspan="2"></td>
                                 </tr>
                             </tfoot>
@@ -700,9 +700,9 @@
                                     <td class="text-center">{{ number_format($rental->quantity, 0) }}</td>
                                     <td class="text-center">{{ number_format($rental->qty_free ?? 0, 0) }}</td>
                                     <td class="text-end">
-                                        Rp {{ number_format($rental->unit_price, 0, ',', '.') }}
+                                        {{ currency_symbol() }} {{ number_format($rental->unit_price, 0, ',', '.') }}
                                     </td>
-                                    <td class="text-end rental-total-{{ $rental->id }}">Rp {{ number_format($rental->total_price, 0, ',', '.') }}</td>
+                                    <td class="text-end rental-total-{{ $rental->id }}">{{ currency_symbol() }} {{ number_format($rental->total_price, 0, ',', '.') }}</td>
                                     <td class="text-end text-danger fw-bold">
                                         @if($invoice->invoice_status === 'draft')
                                             <input type="number"
@@ -716,10 +716,10 @@
                                                    max="{{ (float) $rental->total_price }}"
                                                    style="width: 140px; display: inline-block;">
                                         @else
-                                            <span class="rental-discount-{{ $rental->id }}">Rp {{ number_format($rental->discount_amount ?? 0, 0, ',', '.') }}</span>
+                                            <span class="rental-discount-{{ $rental->id }}">{{ currency_symbol() }} {{ number_format($rental->discount_amount ?? 0, 0, ',', '.') }}</span>
                                         @endif
                                     </td>
-                                    <td class="text-end fw-bold rental-net-total-{{ $rental->id }}">Rp {{ number_format($rental->net_total, 0, ',', '.') }}</td>
+                                    <td class="text-end fw-bold rental-net-total-{{ $rental->id }}">{{ currency_symbol() }} {{ number_format($rental->net_total, 0, ',', '.') }}</td>
                                     <td>{{ $rental->updated_at->format('d/M/Y - H:i') }}</td>
                                     <td>{{ $invoice->updater->name ?? '-' }}</td>
                                 </tr>
@@ -735,7 +735,7 @@
                             <tfoot class="table-light">
                                 <tr>
                                     <td colspan="8" class="text-end fw-bold">Total Diskon Rental</td>
-                                    <td class="text-end fw-bold text-danger" id="rental-total-discount">Rp {{ number_format($invoice->invoiceRentalDetails->sum('discount_amount'), 0, ',', '.') }}</td>
+                                    <td class="text-end fw-bold text-danger" id="rental-total-discount">{{ currency_symbol() }} {{ number_format($invoice->invoiceRentalDetails->sum('discount_amount'), 0, ',', '.') }}</td>
                                     <td colspan="3"></td>
                                 </tr>
                             </tfoot>
@@ -846,7 +846,7 @@
                                     <td>{{ $receipt->account_number ?? '-' }}</td>
                                     <td>{{ $receipt->account_holder_name ?? '-' }}</td>
                                     <td>{{ $receipt->payment_date ? $receipt->payment_date->format('d/M/Y') : '-' }}</td>
-                                    <td class="text-end">Rp {{ number_format($receipt->amount, 0, ',', '.') }}</td>
+                                    <td class="text-end">{{ currency_symbol() }} {{ number_format($receipt->amount, 0, ',', '.') }}</td>
                                     <td><span class="badge bg-light text-dark border">{{ ucfirst($receipt->payment_method) }}</span></td>
                                     <td>{{ $receipt->creator->name ?? '-' }}</td>
                                 </tr>
@@ -1678,19 +1678,19 @@ $(document).ready(function() {
 
     // Auto-save rental price on change
     function syncInvoiceTotals(response) {
-        $('#detail-subtotal').text('Rp ' + response.formatted_subtotal);
-        $('#detail-tax').text('Rp ' + response.formatted_tax);
-        $('#detail-grand-total').text('Rp ' + response.formatted_grand_total);
+        $('#detail-subtotal').text('{{ currency_symbol() }} ' + response.formatted_subtotal);
+        $('#detail-tax').text('{{ currency_symbol() }} ' + response.formatted_tax);
+        $('#detail-grand-total').text('{{ currency_symbol() }} ' + response.formatted_grand_total);
 
-        $('#basic-subtotal').text('Rp ' + response.formatted_subtotal);
-        $('#basic-discount').text('Rp ' + response.formatted_discount);
-        $('#basic-tax').text('Rp ' + response.formatted_tax);
-        $('#basic-grand-total').text('Rp ' + response.formatted_grand_total);
-        $('#basic-outstanding').text('Rp ' + response.formatted_outstanding);
+        $('#basic-subtotal').text('{{ currency_symbol() }} ' + response.formatted_subtotal);
+        $('#basic-discount').text('{{ currency_symbol() }} ' + response.formatted_discount);
+        $('#basic-tax').text('{{ currency_symbol() }} ' + response.formatted_tax);
+        $('#basic-grand-total').text('{{ currency_symbol() }} ' + response.formatted_grand_total);
+        $('#basic-outstanding').text('{{ currency_symbol() }} ' + response.formatted_outstanding);
 
         $('#basic-discount-row').toggle(!!response.show_discount);
         $('#detail-discount-row').toggle(!!response.show_discount);
-        $('#detail-discount').text('Rp ' + response.formatted_discount);
+        $('#detail-discount').text('{{ currency_symbol() }} ' + response.formatted_discount);
         $('#basic-tax-row').toggle(!!response.show_tax);
         $('#detail-tax-row').toggle(!!response.show_tax);
 
@@ -1719,8 +1719,8 @@ $(document).ready(function() {
                 $input.data('previous-value', line.discount_amount);
             }
 
-            $('.rental-discount-' + line.id).text('Rp ' + line.formatted_discount);
-            $('.rental-net-total-' + line.id).text('Rp ' + line.formatted_net_total);
+            $('.rental-discount-' + line.id).text('{{ currency_symbol() }} ' + line.formatted_discount);
+            $('.rental-net-total-' + line.id).text('{{ currency_symbol() }} ' + line.formatted_net_total);
         });
     }
 
@@ -1758,7 +1758,7 @@ $(document).ready(function() {
                 syncInvoiceTotals(response);
                 syncRentalDiscountLines(response.lines);
 
-                $('#rental-total-discount').text('Rp ' + response.formatted_discount);
+                $('#rental-total-discount').text('{{ currency_symbol() }} ' + response.formatted_discount);
                 $input.prop('disabled', false);
 
                 showNotification('success', 'Diskon rental berhasil diperbarui.');

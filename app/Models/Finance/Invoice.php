@@ -428,17 +428,17 @@ class Invoice extends Model
     // Accessors & Mutators
     public function getFormattedSubtotalAttribute()
     {
-        return 'Rp '.number_format($this->subtotal, 0, ',', '.');
+        return currency_symbol().' '.number_format($this->subtotal, 0, ',', '.');
     }
 
     public function getFormattedTaxAmountAttribute()
     {
-        return 'Rp '.number_format($this->tax_amount, 0, ',', '.');
+        return currency_symbol().' '.number_format($this->tax_amount, 0, ',', '.');
     }
 
     public function getFormattedTotalAmountAttribute()
     {
-        return 'Rp '.number_format($this->total_amount, 0, ',', '.');
+        return currency_symbol().' '.number_format($this->total_amount, 0, ',', '.');
     }
 
     public function getTotalInvoiceAttribute($value)

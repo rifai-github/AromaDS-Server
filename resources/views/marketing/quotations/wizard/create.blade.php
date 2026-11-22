@@ -1004,7 +1004,7 @@
                                             <div class="form-group">
                                                 <label class="form-label">Sub Total</label>
                                                 <div class="input-group">
-                                                    <span class="input-group-text">Rp</span>
+                                                    <span class="input-group-text">{{ currency_symbol() }}</span>
                                                     <input type="text" class="form-control" id="sub_total" name="sub_total" readonly placeholder="0">
                                                 </div>
                                             </div>
@@ -1032,7 +1032,7 @@
                                             <div class="form-group">
                                                 <label class="form-label">Total Penawaran/TOP</label>
                                                 <div class="input-group">
-                                                    <span class="input-group-text">Rp</span>
+                                                    <span class="input-group-text">{{ currency_symbol() }}</span>
                                                     <input type="text" class="form-control" id="total_penawaran" name="total_penawaran" readonly placeholder="0">
                                                 </div>
                                             </div>
@@ -4807,7 +4807,7 @@ $(document).ready(function() {
                             ${roomData.aromaText}
                         </td>
                         <td class="text-center" colspan="3">-</td>
-                        <td class="text-end"><strong>Rp ${Math.round(roomData.room.total).toLocaleString('id-ID')}</strong></td>
+                        <td class="text-end"><strong>{{ currency_symbol() }} ${Math.round(roomData.room.total).toLocaleString('id-ID')}</strong></td>
                     </tr>
                 `;
             });
@@ -4868,8 +4868,8 @@ $(document).ready(function() {
                                     </td>
                                     <td class="text-center">${quantity}</td>
                                     <td class="text-center">${qtyFree}</td>
-                                    <td class="text-end">Rp ${Math.round(effectivePriceNum).toLocaleString('id-ID')}</td>
-                                    <td class="text-end">Rp ${Math.round(total).toLocaleString('id-ID')}</td>
+                                    <td class="text-end">{{ currency_symbol() }} ${Math.round(effectivePriceNum).toLocaleString('id-ID')}</td>
+                                    <td class="text-end">{{ currency_symbol() }} ${Math.round(total).toLocaleString('id-ID')}</td>
                                 </tr>
                             `;
                         })());
@@ -4924,8 +4924,8 @@ $(document).ready(function() {
                                         </td>
                                         <td class="text-center">${quantity}</td>
                                         <td class="text-center">${qtyFree}</td>
-                                        <td class="text-end">Rp ${Math.round(effectivePriceNum).toLocaleString('id-ID')}</td>
-                                        <td class="text-end">Rp ${Math.round(total).toLocaleString('id-ID')}</td>
+                                        <td class="text-end">{{ currency_symbol() }} ${Math.round(effectivePriceNum).toLocaleString('id-ID')}</td>
+                                        <td class="text-end">{{ currency_symbol() }} ${Math.round(total).toLocaleString('id-ID')}</td>
                                     </tr>
                                 `;
                             })());

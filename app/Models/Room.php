@@ -93,7 +93,7 @@ class Room extends Model
 
     public function getFormattedRentalRateAttribute()
     {
-        return 'Rp ' . number_format($this->rental_rate, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->rental_rate, 0, ',', '.');
     }
 
     public function getIsAvailableAttribute()

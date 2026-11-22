@@ -446,15 +446,15 @@
                                     </div>
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">Sub Total / TOP</div>
-                                        <div class="quotation-field-value">Rp {{ number_format($quotation->total_amount ?? 0, 0, ',', '.') }}</div>
+                                        <div class="quotation-field-value">{{ currency_symbol() }} {{ number_format($quotation->total_amount ?? 0, 0, ',', '.') }}</div>
                                     </div>
                                    <!-- <div class="quotation-field">
                                         <div class="quotation-field-label">PPN</div>
-                                        <div class="quotation-field-value">Rp {{ number_format($quotation->tax_amount ?? 0, 0, ',', '.') }}</div>
+                                        <div class="quotation-field-value">{{ currency_symbol() }} {{ number_format($quotation->tax_amount ?? 0, 0, ',', '.') }}</div>
                                     </div> -->
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">Total Penawaran</div>
-                                        <div class="quotation-field-value"><strong>Rp {{ number_format($quotation->grand_total ?? 0, 0, ',', '.') }}</strong></div>
+                                        <div class="quotation-field-value"><strong>{{ currency_symbol() }} {{ number_format($quotation->grand_total ?? 0, 0, ',', '.') }}</strong></div>
                                     </div>
                                 </div>
                             </div>
@@ -757,8 +757,8 @@
                                             <td>{{ $displayRentalName }}</td>
                                             <td>{{ $detail->quantity ?? '-' }}</td>
                                             <td>{{ $detail->qty_free ?? 0 }}</td>
-                                            <td>Rp {{ number_format($detail->unit_price ?? 0, 0, ',', '.') }}</td>
-                                            <td>Rp {{ number_format($detail->total_price ?? 0, 0, ',', '.') }}</td>
+                                            <td>{{ currency_symbol() }} {{ number_format($detail->unit_price ?? 0, 0, ',', '.') }}</td>
+                                            <td>{{ currency_symbol() }} {{ number_format($detail->total_price ?? 0, 0, ',', '.') }}</td>
                                             @if($quotation->status === 'draft')
                                             <td style="text-align: center;">
                                                 <button class="btn btn-sm btn-danger" onclick="removeRoom({{ $detail->id }}, '{{ $displayRoomName }}')" title="Hapus Room">
@@ -779,18 +779,18 @@
                                     <tfoot>
                                         <tr>
                                             <td colspan="10"><strong>Sub Total</strong></td>
-                                            <td><strong>Rp {{ number_format($quotation->total_amount ?? 0, 0, ',', '.') }}</strong></td>
+                                            <td><strong>{{ currency_symbol() }} {{ number_format($quotation->total_amount ?? 0, 0, ',', '.') }}</strong></td>
                                             @if($quotation->status === 'draft')
                                             <td></td>
                                             @endif
                                         </tr>
                                         <!--<tr>
                                             <td colspan="{{ $quotation->status === 'draft' ? '8' : '7' }}"><strong>PPN</strong></td>
-                                            <td><strong>Rp {{ number_format($quotation->tax_amount ?? 0, 0, ',', '.') }}</strong></td>
+                                            <td><strong>{{ currency_symbol() }} {{ number_format($quotation->tax_amount ?? 0, 0, ',', '.') }}</strong></td>
                                         </tr> -->
                                         <tr>
                                             <td colspan="10"><strong>Grand Total</strong></td>
-                                            <td><strong>Rp {{ number_format($quotation->grand_total ?? 0, 0, ',', '.') }}</strong></td>
+                                            <td><strong>{{ currency_symbol() }} {{ number_format($quotation->grand_total ?? 0, 0, ',', '.') }}</strong></td>
                                             @if($quotation->status === 'draft')
                                             <td></td>
                                             @endif

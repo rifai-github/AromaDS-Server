@@ -495,19 +495,19 @@
                 <div class="info-item">
                     <div class="info-label">Daily Price</div>
                     <div class="info-value">
-                        {{ $masterRental->daily_price ? 'Rp ' . number_format($masterRental->daily_price, 0, ',', '.') : '-' }}
+                        {{ $masterRental->daily_price ? currency_symbol().' ' . number_format($masterRental->daily_price, 0, ',', '.') : '-' }}
                     </div>
                 </div>
                 <div class="info-item">
                     <div class="info-label">Monthly Price</div>
                     <div class="info-value">
-                        {{ $masterRental->monthly_price ? 'Rp ' . number_format($masterRental->monthly_price, 0, ',', '.') : '-' }}
+                        {{ $masterRental->monthly_price ? currency_symbol().' ' . number_format($masterRental->monthly_price, 0, ',', '.') : '-' }}
                     </div>
                 </div>
                 <div class="info-item">
                     <div class="info-label">Lost Unit Price</div>
                     <div class="info-value">
-                        {{ $masterRental->lost_unit_price ? 'Rp ' . number_format($masterRental->lost_unit_price, 0, ',', '.') : '-' }}
+                        {{ $masterRental->lost_unit_price ? currency_symbol().' ' . number_format($masterRental->lost_unit_price, 0, ',', '.') : '-' }}
                     </div>
                 </div>
                 <div class="info-item">

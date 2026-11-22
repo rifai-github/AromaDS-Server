@@ -139,7 +139,7 @@ class CommissionPayment extends Model
 
     public function getFormattedAmountAttribute()
     {
-        return 'Rp ' . number_format($this->amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->amount, 0, ',', '.');
     }
 
     public function getPaymentMethodLabelAttribute()

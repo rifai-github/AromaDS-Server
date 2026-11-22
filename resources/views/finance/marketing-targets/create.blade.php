@@ -90,7 +90,7 @@
                                     @error('target_amount')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
-                                    <small class="form-text text-muted">Target amount in Rupiah</small>
+                                    <small class="form-text text-muted">Target amount in {{ currency_code() }}</small>
                                 </div>
                             </div>
                         </div>

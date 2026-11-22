@@ -91,7 +91,7 @@ class RentalComponent extends Model
     // Helper methods
     public function getFormattedReplacementPriceAttribute()
     {
-        return 'Rp ' . number_format($this->replacement_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->replacement_price, 0, ',', '.');
     }
 
     public function getTotalReplacementPriceAttribute()
@@ -101,7 +101,7 @@ class RentalComponent extends Model
 
     public function getFormattedTotalReplacementPriceAttribute()
     {
-        return 'Rp ' . number_format($this->total_replacement_price, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->total_replacement_price, 0, ',', '.');
     }
 
     public function hasAllowedProducts()

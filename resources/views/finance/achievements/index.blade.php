@@ -892,8 +892,8 @@
                                     {{ ucfirst($achievement->achievement_type) }}
                                 </span>
                             </td>
-                            <td>Rp {{ number_format($achievement->target_amount, 0, ',', '.') }}</td>
-                            <td>Rp {{ number_format($achievement->achieved_amount, 0, ',', '.') }}</td>
+                            <td>{{ currency_symbol() }} {{ number_format($achievement->target_amount, 0, ',', '.') }}</td>
+                            <td>{{ currency_symbol() }} {{ number_format($achievement->achieved_amount, 0, ',', '.') }}</td>
                             <td>
                                 @if($achievement->status == 'achieved')
                                     <span class="badge badge-success">Achieved</span>
@@ -1052,7 +1052,7 @@ function loadStatistics() {
             $('#totalAchievements').text(data.total_achievements || 0);
             $('#achievedCount').text(data.achieved_count || 0);
             $('#exceededCount').text(data.exceeded_count || 0);
-            $('#totalAmount').text('Rp ' + (data.total_amount || 0).toLocaleString());
+            $('#totalAmount').text('{{ currency_symbol() }} ' + (data.total_amount || 0).toLocaleString());
             
             console.log('Statistics updated successfully');
         },
@@ -1066,7 +1066,7 @@ function loadStatistics() {
             $('#totalAchievements').text('0');
             $('#achievedCount').text('0');
             $('#exceededCount').text('0');
-            $('#totalAmount').text('Rp 0');
+            $('#totalAmount').text('{{ currency_symbol() }} 0');
         }
     });
 }
@@ -1098,11 +1098,11 @@ function openViewModal(achievementId) {
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="text-sm font-medium text-gray-600">Target Amount</label>
-                        <p class="text-gray-900">Rp ${achievement.target_amount ? achievement.target_amount.toLocaleString() : '0'}</p>
+                        <p class="text-gray-900">{{ currency_symbol() }} ${achievement.target_amount ? achievement.target_amount.toLocaleString() : '0'}</p>
                     </div>
                     <div>
                         <label class="text-sm font-medium text-gray-600">Achieved Amount</label>
-                        <p class="text-gray-900">Rp ${achievement.achieved_amount ? achievement.achieved_amount.toLocaleString() : '0'}</p>
+                        <p class="text-gray-900">{{ currency_symbol() }} ${achievement.achieved_amount ? achievement.achieved_amount.toLocaleString() : '0'}</p>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-4">

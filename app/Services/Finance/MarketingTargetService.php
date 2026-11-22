@@ -44,8 +44,8 @@ class MarketingTargetService
                     'message' => 'Marketing Target '.ucfirst($data['target_type'])
                         .' untuk '.($existing->user->name ?? 'marketing ini')
                         .' periode '.($existing->achievementPeriod->period_name ?? '#'.$existing->achievement_period_id)
-                        .' sudah ada (target Rp '.number_format((float) $existing->target_amount, 0, ',', '.')
-                        .', tercapai Rp '.number_format((float) $existing->achieved_amount, 0, ',', '.')
+                        .' sudah ada (target '.currency_symbol().' '.number_format((float) $existing->target_amount, 0, ',', '.')
+                        .', tercapai '.currency_symbol().' '.number_format((float) $existing->achieved_amount, 0, ',', '.')
                         .'). Ubah nilai target lewat tombol Edit pada target tersebut.',
                 ];
             }

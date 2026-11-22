@@ -80,8 +80,8 @@
                                     {{ ucfirst($target->target_type) }}
                                 </span>
                             </td>
-                            <td>Rp {{ number_format($target->target_amount, 0, ',', '.') }}</td>
-                            <td>Rp {{ number_format($target->achieved_amount, 0, ',', '.') }}</td>
+                            <td>{{ currency_symbol() }} {{ number_format($target->target_amount, 0, ',', '.') }}</td>
+                            <td>{{ currency_symbol() }} {{ number_format($target->achieved_amount, 0, ',', '.') }}</td>
                             <td>
                                 @php
                                     $progress = $target->target_amount > 0 ? ($target->achieved_amount / $target->target_amount) * 100 : 0;

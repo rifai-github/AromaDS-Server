@@ -126,7 +126,7 @@
                         <div class="form-group">
                             <label class="form-label">Corporate Price <span class="text-danger">*</span></label>
                             <div class="input-group flex-nowrap">
-                                <span class="input-group-text bg-light border-end-0" style="border-color: #d1d5db;">Rp</span>
+                                <span class="input-group-text bg-light border-end-0" style="border-color: #d1d5db;">{{ currency_symbol() }}</span>
                                 <input type="number" class="form-control border-start-0 ps-0" id="price" name="price" value="{{ round($masterCorporate->price) }}" required min="0">
                             </div>
                             <small class="text-muted mt-1 d-block">Set the special fixed price for this customer and product.</small>

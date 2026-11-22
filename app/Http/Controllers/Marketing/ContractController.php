@@ -3922,7 +3922,7 @@ class ContractController extends Controller
                     $result = (new \App\Services\Finance\CommissionCalculationService)->applyNetValueChange($contract->fresh());
                     if ($result !== null) {
                         $commissionMessage = $result['success']
-                            ? 'Komisi dihitung ulang: Rp '.number_format((float) $result['amount'], 0, ',', '.')
+                            ? 'Komisi dihitung ulang: '.currency_symbol().' '.number_format((float) $result['amount'], 0, ',', '.')
                             : 'Komisi tidak dihitung ulang: '.$result['message'];
                     }
                 } catch (\Exception $e) {
@@ -3934,7 +3934,7 @@ class ContractController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Contract Net berhasil diperbarui',
-                'formatted_value' => 'Rp '.number_format($request->net_value, 0, ',', '.'),
+                'formatted_value' => currency_symbol().' '.number_format($request->net_value, 0, ',', '.'),
                 'commission_message' => $commissionMessage,
             ]);
 

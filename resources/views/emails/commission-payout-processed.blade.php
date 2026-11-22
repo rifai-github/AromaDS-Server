@@ -24,7 +24,7 @@
         </tr>
         <tr>
             <td style="color:#6b7280;">Total nominal komisi</td>
-            <td><strong>Rp {{ number_format($totalAmount, 0, ',', '.') }}</strong></td>
+            <td><strong>{{ currency_symbol() }} {{ number_format($totalAmount, 0, ',', '.') }}</strong></td>
         </tr>
     </table>
 
@@ -42,7 +42,7 @@
                     <tr>
                         <td style="border: 1px solid #e5e7eb;">{{ $row['name'] }}</td>
                         <td align="right" style="border: 1px solid #e5e7eb;">{{ $row['count'] }}</td>
-                        <td align="right" style="border: 1px solid #e5e7eb;">Rp {{ number_format($row['amount'], 0, ',', '.') }}</td>
+                        <td align="right" style="border: 1px solid #e5e7eb;">{{ currency_symbol() }} {{ number_format($row['amount'], 0, ',', '.') }}</td>
                     </tr>
                 @endforeach
             </tbody>

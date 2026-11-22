@@ -465,6 +465,20 @@ let currentPage = 1;
 let totalPages = 1;
 let companies = [];
 let filteredCompanies = [];
+// Jawaban klien #12: mata uang se-sistem diatur di Master Company (default Rupiah).
+const currencyOptions = @json(\App\Support\AppCurrency::options());
+const systemCurrencyCode = @json(\App\Support\AppCurrency::code());
+
+function currencyLabel(code) {
+    const option = currencyOptions[code];
+    return option ? `${code} - ${option.name} (${option.symbol})` : (code || '-');
+}
+
+function currencySelectOptions(selected) {
+    return Object.keys(currencyOptions).map(code =>
+        `<option value="${code}" ${code === selected ? 'selected' : ''}>${currencyLabel(code)}</option>`
+    ).join('');
+}
 
 // Load companies data
 async function loadCompanies() {
@@ -808,6 +822,14 @@ function openViewModal(id) {
                     <div style="padding: 8px 12px; background: #f9fafb; border-radius: 6px;">${company.footer_line_3 || ''}</div>
                 </div>
             </div>
+
+            <div class="section">
+                <div class="section-title">Mata Uang</div>
+                <div class="form-group">
+                    <label>Mata Uang Sistem</label>
+                    <div style="padding: 8px 12px; background: #f9fafb; border-radius: 6px;">${currencyLabel(company.currency_code || systemCurrencyCode)}</div>
+                </div>
+            </div>
             
         `;
         
@@ -919,6 +941,17 @@ function openEditModal(id) {
                 <div class="form-group">
                     <label for="footer_line_3">Footer Line 3</label>
                     <input type="text" id="footer_line_3" name="footer_line_3" value="${company.footer_line_3 || ''}" placeholder="Third line of footer">
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Mata Uang</div>
+                <div class="form-group">
+                    <label for="currency_code">Mata Uang Sistem</label>
+                    <select id="currency_code" name="currency_code">
+                        ${currencySelectOptions(company.currency_code || systemCurrencyCode)}
+                    </select>
+                    <small style="color: #6b7280;">Berlaku untuk seluruh sistem dan semua customer (harga, quotation, kontrak, invoice). Nominal tidak dikonversi. Pajak dan e-Materai tetap Rupiah.</small>
                 </div>
             </div>
             

@@ -536,7 +536,7 @@
                         <div class="stat-label">Paid Invoices</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number">Rp {{ number_format($statistics['total_revenue'] ?? 0, 0, ',', '.') }}</div>
+                        <div class="stat-number">{{ currency_symbol() }} {{ number_format($statistics['total_revenue'] ?? 0, 0, ',', '.') }}</div>
                         <div class="stat-label">Total Revenue</div>
                     </div>
                     <div class="stat-card">
@@ -628,7 +628,7 @@
                                 </td>
                                 <td>{{ $quotation->quotation_date ? \Carbon\Carbon::parse($quotation->quotation_date)->format('d/M/Y') : '-' }}</td>
                                 <td class="amount amount-positive">
-                                    Rp {{ number_format($quotation->total_amount ?? 0, 0, ',', '.') }}
+                                    {{ currency_symbol() }} {{ number_format($quotation->total_amount ?? 0, 0, ',', '.') }}
                                 </td>
                                 <td>{{ $quotation->marketingStaff->name ?? '-' }}</td>
                             </tr>
@@ -743,10 +743,10 @@
                                 <td>{{ $invoice->invoice_date ? \Carbon\Carbon::parse($invoice->invoice_date)->format('d/M/Y') : '-' }}</td>
                                 <td>{{ $invoice->due_date ? \Carbon\Carbon::parse($invoice->due_date)->format('d/M/Y') : '-' }}</td>
                                 <td class="amount amount-positive">
-                                    Rp {{ number_format($invoice->total_amount ?? 0, 0, ',', '.') }}
+                                    {{ currency_symbol() }} {{ number_format($invoice->total_amount ?? 0, 0, ',', '.') }}
                                 </td>
                                 <td class="amount {{ ($invoice->outstanding ?? 0) > 0 ? 'amount-negative' : 'amount-positive' }}">
-                                    Rp {{ number_format($invoice->outstanding ?? 0, 0, ',', '.') }}
+                                    {{ currency_symbol() }} {{ number_format($invoice->outstanding ?? 0, 0, ',', '.') }}
                                 </td>
                             </tr>
                             @endforeach

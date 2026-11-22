@@ -205,7 +205,7 @@
                                 <tr>
                                     <th>Level</th>
                                     <th>Maks Diskon</th>
-                                    <th>Contoh (bottom price Rp 1.000.000)</th>
+                                    <th>Contoh (bottom price {{ currency_symbol() }} 1.000.000)</th>
                                     <th>User Berwenang</th>
                                     <th>Status</th>
                                     <th>Actions</th>
@@ -228,7 +228,7 @@
                                         </td>
                                         <td class="discount-cell">{{ rtrim(rtrim(number_format($maxDiscount, 2, ',', '.'), '0'), ',') }}%</td>
                                         <td>
-                                            boleh sampai <strong>Rp {{ number_format($minPrice, 0, ',', '.') }}</strong>
+                                            boleh sampai <strong>{{ currency_symbol() }} {{ number_format($minPrice, 0, ',', '.') }}</strong>
                                             <span class="hint">harga terendah yang bisa disetujui level ini</span>
                                         </td>
                                         <td>
@@ -351,7 +351,7 @@
         }
 
         const minPrice = 1000000 * (1 - (value / 100));
-        preview.textContent = 'Dengan bottom price Rp 1.000.000, level ini boleh menyetujui harga sampai Rp '
+        preview.textContent = 'Dengan bottom price {{ currency_symbol() }} 1.000.000, level ini boleh menyetujui harga sampai {{ currency_symbol() }} '
             + minPrice.toLocaleString('id-ID', { maximumFractionDigits: 0 }) + '.';
     }
 

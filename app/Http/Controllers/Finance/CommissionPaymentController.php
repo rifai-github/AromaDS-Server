@@ -27,13 +27,13 @@ class CommissionPaymentController extends Controller
     {
         if (! $calculation->isPayable()) {
             return $calculation->status === 'over_period'
-                ? "Komisi #{$calculation->id} Over Period dengan nominal Rp 0. Edit nominalnya dulu di Commission System bila management menyetujui."
+                ? "Komisi #{$calculation->id} Over Period dengan nominal ".currency_symbol()." 0. Edit nominalnya dulu di Commission System bila management menyetujui."
                 : "Komisi #{$calculation->id} berstatus {$calculation->status}, hanya komisi Approved yang bisa dibayar.";
         }
 
         if ((float) $amount > (float) $calculation->final_amount) {
-            return 'Nominal pembayaran Rp '.number_format((float) $amount, 0, ',', '.')
-                .' melebihi komisi #'.$calculation->id.' (Rp '.number_format((float) $calculation->final_amount, 0, ',', '.').').';
+            return 'Nominal pembayaran '.currency_symbol().' '.number_format((float) $amount, 0, ',', '.')
+                .' melebihi komisi #'.$calculation->id.' ('.currency_symbol().' '.number_format((float) $calculation->final_amount, 0, ',', '.').').';
         }
 
         $existing = $this->calculationAlreadyPaidBy($calculation->id, $exceptPaymentId);
@@ -148,7 +148,7 @@ class CommissionPaymentController extends Controller
             'amount' => (float) $rows->sum('amount'),
         ])->values()->all();
         $total = (float) $created->sum('amount');
-        $summary = count($marketingRows).' marketing, '.$created->count().' komisi, total Rp '.number_format($total, 0, ',', '.');
+        $summary = count($marketingRows).' marketing, '.$created->count().' komisi, total '.currency_symbol().' '.number_format($total, 0, ',', '.');
 
         $emailNote = $this->notifyFinanceOfPayout($total, $marketingRows, $validated['payment_date']);
 
@@ -327,7 +327,7 @@ class CommissionPaymentController extends Controller
             }
         } elseif ((float) $request->amount > (float) $calculation->final_amount) {
             return redirect()->back()->with('error',
-                'Nominal pembayaran melebihi komisi #'.$calculation->id.' (Rp '.number_format((float) $calculation->final_amount, 0, ',', '.').').')
+                'Nominal pembayaran melebihi komisi #'.$calculation->id.' ('.currency_symbol().' '.number_format((float) $calculation->final_amount, 0, ',', '.').').')
                 ->withInput();
         }
 

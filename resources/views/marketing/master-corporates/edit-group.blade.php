@@ -74,7 +74,7 @@
                                             </td>
                                             <td>
                                                 <div class="input-group flex-nowrap" style="display: flex !important; align-items: stretch !important;">
-                                                    <span class="input-group-text bg-light border-end-0 d-flex align-items-center" style="white-space: nowrap;">Rp</span>
+                                                    <span class="input-group-text bg-light border-end-0 d-flex align-items-center" style="white-space: nowrap;">{{ currency_symbol() }}</span>
                                                     <input type="number" class="form-control border-start-0 ps-0" name="rentals[{{ $index }}][price]" 
                                                            value="{{ $item->price }}" placeholder="0" min="0" required style="flex: 1 !important; width: auto !important;">
                                                 </div>
@@ -138,7 +138,7 @@
                     </td>
                     <td>
                         <div class="input-group flex-nowrap" style="display: flex !important; align-items: stretch !important;">
-                            <span class="input-group-text bg-light border-end-0 d-flex align-items-center" style="white-space: nowrap;">Rp</span>
+                            <span class="input-group-text bg-light border-end-0 d-flex align-items-center" style="white-space: nowrap;">{{ currency_symbol() }}</span>
                             <input type="number" class="form-control border-start-0 ps-0" name="rentals[${rowIdx}][price]" placeholder="0" min="0" required style="flex: 1 !important; width: auto !important;">
                         </div>
                     </td>

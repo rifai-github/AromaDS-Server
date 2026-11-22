@@ -111,12 +111,12 @@ class QuotationRevision extends Model
 
     public function getFormattedTotalAmountAttribute()
     {
-        return 'Rp ' . number_format($this->total_amount, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->total_amount, 0, ',', '.');
     }
 
     public function getFormattedGrandTotalAttribute()
     {
-        return 'Rp ' . number_format($this->grand_total, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->grand_total, 0, ',', '.');
     }
 
     public function getFormattedDateApprovedAttribute()

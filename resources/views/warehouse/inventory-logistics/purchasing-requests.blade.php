@@ -558,7 +558,7 @@
                                 <strong>{{ $request->request_number }}</strong>
                             </td>
                             <td>{{ $request->reason ?? 'N/A' }}</td>
-                            <td>Rp {{ number_format($request->total_amount, 0, ',', '.') }}</td>
+                            <td>{{ currency_symbol() }} {{ number_format($request->total_amount, 0, ',', '.') }}</td>
                             <td>
                                 <span class="badge badge-{{ $request->status == 'approved' ? 'success' : ($request->status == 'rejected' ? 'danger' : ($request->status == 'completed' ? 'info' : 'warning')) }}">
                                     {{ ucfirst($request->status) }}
@@ -710,7 +710,7 @@ function viewPurchasingRequest(id) {
                 </div>
                 <div class="detail-group">
                     <div class="detail-label">Total Amount</div>
-                    <div class="detail-value">Rp ${data.total_amount ? data.total_amount.toLocaleString('id-ID') : 'N/A'}</div>
+                    <div class="detail-value">{{ currency_symbol() }} ${data.total_amount ? data.total_amount.toLocaleString('id-ID') : 'N/A'}</div>
                 </div>
                 <div class="detail-group">
                     <div class="detail-label">Notes</div>

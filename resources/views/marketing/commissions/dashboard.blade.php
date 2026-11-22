@@ -43,7 +43,7 @@
             <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                 <h3 class="card-title"><i class="fas fa-wallet"></i> Wallet Komisi</h3>
                 <form method="POST" action="{{ route('marketing.commissions.request-payout') }}"
-                      onsubmit="return confirm('Request pencairan komisi Rp {{ number_format($wallet['available'] ?? 0, 0, ',', '.') }} ke Finance?');">
+                      onsubmit="return confirm('Request pencairan komisi {{ currency_symbol() }} {{ number_format($wallet['available'] ?? 0, 0, ',', '.') }} ke Finance?');">
                     @csrf
                     <button type="submit" class="btn btn-primary" @disabled(($wallet['available'] ?? 0) <= 0)>
                         <i class="fas fa-hand-holding-usd"></i> Request
@@ -53,11 +53,11 @@
             <div class="card-body">
                 <div class="stats-grid" style="margin-bottom: 0;">
                     <div>
-                        <div class="stat-value" style="color: #16a34a;">Rp {{ number_format($wallet['available'] ?? 0, 0, ',', '.') }}</div>
+                        <div class="stat-value" style="color: #16a34a;">{{ currency_symbol() }} {{ number_format($wallet['available'] ?? 0, 0, ',', '.') }}</div>
                         <div class="stat-label">Siap dicairkan ({{ $wallet['available_count'] ?? 0 }} komisi)</div>
                     </div>
                     <div>
-                        <div class="stat-value" style="font-size: 24px;">Rp {{ number_format($wallet['requested'] ?? 0, 0, ',', '.') }}</div>
+                        <div class="stat-value" style="font-size: 24px;">{{ currency_symbol() }} {{ number_format($wallet['requested'] ?? 0, 0, ',', '.') }}</div>
                         <div class="stat-label">
                             Sudah di-request, menunggu Finance
                             @if(!empty($wallet['requested_at']))
@@ -66,11 +66,11 @@
                         </div>
                     </div>
                     <div>
-                        <div class="stat-value" style="font-size: 24px;">Rp {{ number_format($wallet['in_process'] ?? 0, 0, ',', '.') }}</div>
+                        <div class="stat-value" style="font-size: 24px;">{{ currency_symbol() }} {{ number_format($wallet['in_process'] ?? 0, 0, ',', '.') }}</div>
                         <div class="stat-label">Sedang diproses Finance</div>
                     </div>
                     <div>
-                        <div class="stat-value" style="font-size: 24px;">Rp {{ number_format($wallet['paid'] ?? 0, 0, ',', '.') }}</div>
+                        <div class="stat-value" style="font-size: 24px;">{{ currency_symbol() }} {{ number_format($wallet['paid'] ?? 0, 0, ',', '.') }}</div>
                         <div class="stat-label">Sudah dibayarkan</div>
                     </div>
                 </div>
@@ -97,11 +97,11 @@
         <!-- Summary Statistics -->
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="stat-value">Rp {{ number_format($summary['total_commission'] ?? 0, 0, ',', '.') }}</div>
+                <div class="stat-value">{{ currency_symbol() }} {{ number_format($summary['total_commission'] ?? 0, 0, ',', '.') }}</div>
                 <div class="stat-label">Total Commission</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value">Rp {{ number_format($summary['pending_commission'] ?? 0, 0, ',', '.') }}</div>
+                <div class="stat-value">{{ currency_symbol() }} {{ number_format($summary['pending_commission'] ?? 0, 0, ',', '.') }}</div>
                 <div class="stat-label">Pending Commission</div>
             </div>
             <div class="stat-card">
@@ -123,8 +123,8 @@
                     </div>
                     <div class="card-body">
                         @if($newTarget)
-                            <p><strong>Target:</strong> Rp {{ number_format($newTarget->target_amount, 0, ',', '.') }}</p>
-                            <p><strong>Achieved:</strong> Rp {{ number_format($newTarget->achieved_amount, 0, ',', '.') }}</p>
+                            <p><strong>Target:</strong> {{ currency_symbol() }} {{ number_format($newTarget->target_amount, 0, ',', '.') }}</p>
+                            <p><strong>Achieved:</strong> {{ currency_symbol() }} {{ number_format($newTarget->achieved_amount, 0, ',', '.') }}</p>
                             @php
                                 $progress = $newTarget->target_amount > 0 ? ($newTarget->achieved_amount / $newTarget->target_amount) * 100 : 0;
                             @endphp
@@ -146,8 +146,8 @@
                     </div>
                     <div class="card-body">
                         @if($renewalTarget)
-                            <p><strong>Target:</strong> Rp {{ number_format($renewalTarget->target_amount, 0, ',', '.') }}</p>
-                            <p><strong>Achieved:</strong> Rp {{ number_format($renewalTarget->achieved_amount, 0, ',', '.') }}</p>
+                            <p><strong>Target:</strong> {{ currency_symbol() }} {{ number_format($renewalTarget->target_amount, 0, ',', '.') }}</p>
+                            <p><strong>Achieved:</strong> {{ currency_symbol() }} {{ number_format($renewalTarget->achieved_amount, 0, ',', '.') }}</p>
                             @php
                                 $progress = $renewalTarget->target_amount > 0 ? ($renewalTarget->achieved_amount / $renewalTarget->target_amount) * 100 : 0;
                             @endphp
@@ -191,7 +191,7 @@
                             <tr>
                                 <td>{{ $commission->contract->contract_number ?? 'N/A' }}</td>
                                 <td>{{ $commission->contract->customer->name ?? 'N/A' }}</td>
-                                <td><strong>Rp {{ number_format($commission->final_amount ?? 0, 0, ',', '.') }}</strong></td>
+                                <td><strong>{{ currency_symbol() }} {{ number_format($commission->final_amount ?? 0, 0, ',', '.') }}</strong></td>
                                 <td>
                                     @if($commission->status == 'approved')
                                         <span class="badge badge-success">Approved</span>

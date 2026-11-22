@@ -82,7 +82,7 @@
                 <div class="info-group">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Rental Price</label>
                     <p class="text-sm text-gray-900 bg-gray-50 p-3 rounded-md">
-                        {{ $rentalUnit->rental_price ? 'Rp ' . number_format($rentalUnit->rental_price, 0, ',', '.') : 'N/A' }}
+                        {{ $rentalUnit->rental_price ? currency_symbol().' ' . number_format($rentalUnit->rental_price, 0, ',', '.') : 'N/A' }}
                     </p>
                 </div>
 

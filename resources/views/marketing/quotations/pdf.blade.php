@@ -394,7 +394,7 @@
         $terbilangText =
             strtoupper(
                 trim(preg_replace('/\s+/', ' ', $terbilang($quotation->grand_total ?? $quotation->total_amount))),
-            ) . '  RUPIAH';
+            ) . '  '.\App\Support\AppCurrency::word();
 
         /* ===== Logo (base64) ===== */
         $logoPath = public_path('images/logo.png');

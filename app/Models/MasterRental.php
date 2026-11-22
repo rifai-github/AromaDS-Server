@@ -187,12 +187,12 @@ class MasterRental extends Model
 
     public function getDailyPriceFormattedAttribute()
     {
-        return 'Rp ' . number_format($this->daily_price, 2, ',', '.');
+        return currency_symbol().' ' . number_format($this->daily_price, 2, ',', '.');
     }
 
     public function getMonthlyPriceFormattedAttribute()
     {
-        return 'Rp ' . number_format($this->monthly_price, 2, ',', '.');
+        return currency_symbol().' ' . number_format($this->monthly_price, 2, ',', '.');
     }
 
     public function getRentalTypeTextAttribute()
@@ -237,6 +237,6 @@ class MasterRental extends Model
 
     public function getFormattedTotalComponentReplacementPriceAttribute()
     {
-        return 'Rp ' . number_format($this->getTotalComponentReplacementPrice(), 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->getTotalComponentReplacementPrice(), 0, ',', '.');
     }
 }

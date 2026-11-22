@@ -24,6 +24,7 @@ class Company extends Model
         'is_pkp',
         'is_active',
         'grace_period_days',
+        'currency_code', // Jawaban klien #12: mata uang se-sistem
         'default_payment',
         'member_since',
         'balance',

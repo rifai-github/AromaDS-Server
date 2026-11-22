@@ -221,7 +221,7 @@ class CommissionCalculationService
             return [
                 'success' => true,
                 'message' => $isCrExpired
-                    ? "Komisi Over Period: penerimaan kas melewati masa CR {$crDays} hari, nominal komisi Rp 0."
+                    ? "Komisi Over Period: penerimaan kas melewati masa CR {$crDays} hari, nominal komisi ".currency_symbol()." 0."
                     : 'Commission calculated successfully',
                 'is_cr_expired' => $isCrExpired,
                 'commission' => $commissionCalculation,
@@ -315,7 +315,7 @@ class CommissionCalculationService
                 return [
                     'success' => true,
                     'message' => $isCrExpired
-                        ? "Komisi Over Period: penerimaan kas melewati masa CR {$crDays} hari, nominal komisi Rp 0."
+                        ? "Komisi Over Period: penerimaan kas melewati masa CR {$crDays} hari, nominal komisi ".currency_symbol()." 0."
                         : "Commission approved: cash receipt (penerimaan) within {$crDays} days",
                     'commission' => $existingCalculation,
                     'is_cr_expired' => $isCrExpired

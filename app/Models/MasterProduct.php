@@ -406,7 +406,7 @@ class MasterProduct extends Model
 
     public function getUnitPriceFormattedAttribute()
     {
-        return $this->unit_price ? 'Rp '.number_format($this->unit_price, 2, ',', '.') : '-';
+        return $this->unit_price ? currency_symbol().' '.number_format($this->unit_price, 2, ',', '.') : '-';
     }
 
     public function getTotalStockAttribute()

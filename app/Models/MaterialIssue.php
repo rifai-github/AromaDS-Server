@@ -151,12 +151,12 @@ class MaterialIssue extends Model
 
     public function getUnitPriceFormattedAttribute()
     {
-        return $this->unit_price ? 'Rp ' . number_format($this->unit_price, 0, ',', '.') : 'Rp 0';
+        return $this->unit_price ? currency_symbol().' ' . number_format($this->unit_price, 0, ',', '.') : currency_symbol().' 0';
     }
 
     public function getTotalAmountFormattedAttribute()
     {
-        return $this->total_amount ? 'Rp ' . number_format($this->total_amount, 0, ',', '.') : 'Rp 0';
+        return $this->total_amount ? currency_symbol().' ' . number_format($this->total_amount, 0, ',', '.') : currency_symbol().' 0';
     }
 
     public function getPriorityBadgeAttribute()

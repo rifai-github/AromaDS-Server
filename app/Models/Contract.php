@@ -1148,7 +1148,7 @@ class Contract extends Model
 
     public function getFormattedContractValueAttribute()
     {
-        return 'Rp ' . number_format($this->contract_value, 0, ',', '.');
+        return currency_symbol().' ' . number_format($this->contract_value, 0, ',', '.');
     }
 
     public function getFormattedDateAttribute()

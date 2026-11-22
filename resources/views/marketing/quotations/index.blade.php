@@ -2300,19 +2300,19 @@ function openViewModal(id) {
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div class="bg-gray-50 p-4 rounded-lg">
                                 <div class="text-sm font-medium text-gray-600 mb-1">Total Amount</div>
-                                <div class="text-gray-900">${data.total_amount ? 'Rp ' + parseFloat(data.total_amount).toLocaleString('id-ID') : 'N/A'}</div>
+                                <div class="text-gray-900">${data.total_amount ? '{{ currency_symbol() }} ' + parseFloat(data.total_amount).toLocaleString('id-ID') : 'N/A'}</div>
                             </div>
                             <div class="bg-gray-50 p-4 rounded-lg">
                                 <div class="text-sm font-medium text-gray-600 mb-1">Discount Amount</div>
-                                <div class="text-gray-900">${data.discount_amount ? 'Rp ' + parseFloat(data.discount_amount).toLocaleString('id-ID') : 'N/A'}</div>
+                                <div class="text-gray-900">${data.discount_amount ? '{{ currency_symbol() }} ' + parseFloat(data.discount_amount).toLocaleString('id-ID') : 'N/A'}</div>
                             </div>
                             <div class="bg-gray-50 p-4 rounded-lg">
                                 <div class="text-sm font-medium text-gray-600 mb-1">Tax Amount</div>
-                                <div class="text-gray-900">${data.tax_amount ? 'Rp ' + parseFloat(data.tax_amount).toLocaleString('id-ID') : 'N/A'}</div>
+                                <div class="text-gray-900">${data.tax_amount ? '{{ currency_symbol() }} ' + parseFloat(data.tax_amount).toLocaleString('id-ID') : 'N/A'}</div>
                             </div>
                             <div class="bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
                                 <div class="text-sm font-medium text-blue-600 mb-1">Grand Total</div>
-                                <div class="text-blue-900 font-bold text-lg">${data.grand_total ? 'Rp ' + parseFloat(data.grand_total).toLocaleString('id-ID') : 'N/A'}</div>
+                                <div class="text-blue-900 font-bold text-lg">${data.grand_total ? '{{ currency_symbol() }} ' + parseFloat(data.grand_total).toLocaleString('id-ID') : 'N/A'}</div>
                             </div>
                         </div>
                     </div>
