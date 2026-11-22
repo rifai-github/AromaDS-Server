@@ -276,6 +276,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::resource('surveys', SurveyController::class);
         Route::post('surveys/{survey}/approve', [SurveyController::class, 'approve'])->name('surveys.approve');
         Route::post('surveys/{survey}/reject', [SurveyController::class, 'reject'])->name('surveys.reject');
+        Route::post('surveys/{survey}/revise', [SurveyController::class, 'revise'])->name('surveys.revise');
         Route::post('surveys/{survey}/unpost', [SurveyController::class, 'unpost'])->name('surveys.unpost');
         Route::post('surveys/{survey}/finalize', [SurveyController::class, 'finalize'])->name('surveys.finalize');
         Route::post('surveys/{survey}/update-location-detail', [SurveyController::class, 'updateLocationDetail'])->name('surveys.update-location-detail');

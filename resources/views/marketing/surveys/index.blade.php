@@ -1489,7 +1489,7 @@
                                 <input type="checkbox" disabled class="w-4 h-4 bg-gray-100 border border-gray-300 rounded cursor-not-allowed" title="Approved surveys cannot be deleted">
                             @endif
                         </td>
-                        <td>{{ $survey->survey_number ?? 'N/A' }}</td>
+                        <td>{{ $survey->survey_number ?? 'N/A' }}@if((int) ($survey->revision_number ?? 0) > 0) <span class="px-1 text-xs rounded bg-yellow-100 text-yellow-800">R.{{ $survey->revision_number }}</span>@endif</td>
                         <td>
                             @if($survey->survey_date)
                                 {{ $survey->survey_date->format('d/M/Y') }}

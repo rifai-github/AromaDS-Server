@@ -42,6 +42,7 @@ class Survey extends Model
         'survey_result',
         'recommendations',
         'status',
+        'revision_number',
         'created_by',
         'updated_by'
     ];
@@ -104,6 +105,20 @@ class Survey extends Model
     public function surveyDetails()
     {
         return $this->hasMany(SurveyDetail::class);
+    }
+
+    /** Arsip versi yang ditolak (jawaban klien #17: survey ditolak -> revisi). */
+    public function revisions()
+    {
+        return $this->hasMany(SurveyRevision::class)->orderByDesc('revision_number');
+    }
+
+    /** Label nomor survey + revisi, mis. "JKT-SV/26-11/0001 R.1". */
+    public function getSurveyNumberWithRevisionAttribute(): string
+    {
+        $revision = (int) ($this->revision_number ?? 0);
+
+        return trim((string) $this->survey_number).($revision > 0 ? ' R.'.$revision : '');
     }
 
     public function quotations()

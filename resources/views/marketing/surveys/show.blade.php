@@ -87,6 +87,9 @@
                         <div>
                             <h3 class="card-title mb-0" style="color: white; font-size: 1.5rem; font-weight: bold;">
                                  {{ $survey->survey_number }}
+                                 @if((int) ($survey->revision_number ?? 0) > 0)
+                                     <span class="badge bg-light text-dark ms-2" style="font-size: 0.8rem;">Revisi ke-{{ $survey->revision_number }}</span>
+                                 @endif
                             </h3>
                         </div>
                         <div>
@@ -118,11 +121,59 @@
                                         <i class="fas fa-undo"></i> UNPOST
                                     </button>
                                 @endif
+                                {{-- Jawaban klien 22 Nov 2026 (#17): survey ditolak -> revisi, bukan survey baru. --}}
+                                @if($survey->status === 'rejected')
+                                    <button class="btn btn-warning btn-sm ms-2" id="revise-survey-btn" onclick="reviseSurvey({{ $survey->id }})">
+                                        <i class="fas fa-redo"></i> BUAT REVISI
+                                    </button>
+                                @endif
                             @endif
                         </div>
                     </div>
                 </div>
             </div>
+
+            {{-- Jawaban klien 22 Nov 2026 (#17): alasan tolak & arsip revisi. --}}
+            @if($survey->status === 'rejected' && filled($survey->recommendations))
+                <div class="alert alert-danger mb-3">
+                    <strong><i class="fas fa-times-circle me-1"></i> Survey ditolak:</strong> {{ $survey->recommendations }}
+                    <div class="small mt-1">Klik <strong>BUAT REVISI</strong> untuk memperbaiki survey ini tanpa membuat survey baru.</div>
+                </div>
+            @endif
+            @php
+                $surveyRevisionArchive = \Illuminate\Support\Facades\Schema::hasTable('survey_revisions')
+                    ? $survey->revisions()->with('createdBy:id,name')->get()
+                    : collect();
+            @endphp
+            @if($surveyRevisionArchive->isNotEmpty())
+                <div class="card mb-3">
+                    <div class="card-body py-2">
+                        <strong style="color: #1e3a8a;"><i class="fas fa-history me-1"></i> Arsip Revisi</strong>
+                        <div class="table-responsive mt-2">
+                            <table class="table table-sm table-bordered mb-0" id="surveyRevisionArchiveTable">
+                                <thead>
+                                    <tr>
+                                        <th data-no-filter>Versi</th>
+                                        <th data-no-filter>Alasan Ditolak</th>
+                                        <th data-no-filter>Dibuka ulang oleh</th>
+                                        <th data-no-filter>Waktu</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($surveyRevisionArchive as $archivedRevision)
+                                        <tr>
+                                            <td>{{ $archivedRevision->revision_number > 0 ? 'Revisi ke-'.$archivedRevision->revision_number : 'Versi awal' }}</td>
+                                            <td>{{ $archivedRevision->rejection_reason ?: '-' }}</td>
+                                            <td>{{ $archivedRevision->createdBy->name ?? '-' }}</td>
+                                            <td>{{ $archivedRevision->created_at?->format('d/m/Y H:i') ?? '-' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            @endif
 
             <!-- Navigation Tabs - HORIZONTAL LAYOUT -->
             <div class="card mb-3">
@@ -2441,6 +2492,33 @@ function approveSurvey(id) {
                     title: 'Gagal',
                     text: xhr.responseJSON?.message || 'Gagal approve survey.'
                 });
+            }
+        });
+    });
+}
+
+// Jawaban klien 22 Nov 2026 (#17): survey ditolak dibuka lagi sebagai revisi (nomor sama).
+function reviseSurvey(id) {
+    Swal.fire({
+        title: 'Buat revisi survey?',
+        text: 'Versi yang ditolak disimpan sebagai arsip, lalu survey ini kembali Draft dan bisa diedit sebagai revisi berikutnya.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, buat revisi',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+
+        $.ajax({
+            url: '{{ route("marketing.surveys.revise", ":id") }}'.replace(':id', id),
+            type: 'POST',
+            data: { _token: '{{ csrf_token() }}' },
+            headers: { 'Accept': 'application/json' },
+            success: function (response) {
+                Swal.fire({ icon: 'success', title: 'Berhasil', text: response.message }).then(() => location.reload());
+            },
+            error: function (xhr) {
+                Swal.fire({ icon: 'error', title: 'Gagal', text: (xhr.responseJSON && xhr.responseJSON.message) || 'Gagal membuat revisi survey.' });
             }
         });
     });

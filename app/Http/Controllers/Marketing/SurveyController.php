@@ -780,6 +780,61 @@ class SurveyController extends Controller
         ]);
     }
 
+    /**
+     * Jawaban klien 22 Nov 2026 (#17): survey yang ditolak dijadikan REVISI. Versi yang ditolak
+     * diarsipkan (data + ruangan + alasan), lalu survey yang SAMA dibuka lagi sebagai draft dengan
+     * nomor revisi naik. Dulu survey ditolak terkunci sehingga user membuat survey baru (duplikat).
+     */
+    public function revise(Survey $survey)
+    {
+        $user = Auth::user();
+        $canRevise = $user->hasRole('Admin') || $user->hasRole('super_admin') || $user->hasRoleStartingWith('Management')
+            || $user->hasPermission('marketing.surveys.edit')
+            || $user->hasPermission('marketing.surveys.update')
+            || $user->hasPermission('marketing.surveys.create');
+        if (!$canRevise) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Anda tidak memiliki akses untuk merevisi Survey.'
+            ], 403);
+        }
+
+        if ($survey->status !== 'rejected') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Hanya survey berstatus Rejected yang bisa dibuat revisinya.'
+            ], 422);
+        }
+
+        \DB::transaction(function () use ($survey) {
+            $survey->loadMissing('surveyDetails');
+
+            \App\Models\SurveyRevision::create([
+                'survey_id' => $survey->id,
+                'revision_number' => (int) ($survey->revision_number ?? 0),
+                'status_before' => $survey->status,
+                'rejection_reason' => $survey->recommendations,
+                'snapshot' => [
+                    'survey' => \Illuminate\Support\Arr::except($survey->getAttributes(), ['created_at', 'updated_at', 'deleted_at']),
+                    'details' => $survey->surveyDetails->map(fn ($detail) => \Illuminate\Support\Arr::except($detail->getAttributes(), ['created_at', 'updated_at', 'deleted_at']))->values()->all(),
+                ],
+                'created_by' => Auth::id(),
+            ]);
+
+            $survey->update([
+                'status' => 'draft',
+                'revision_number' => (int) ($survey->revision_number ?? 0) + 1,
+                'recommendations' => null,
+                'updated_by' => Auth::id(),
+            ]);
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Revisi ke-'.$survey->fresh()->revision_number.' dibuat. Survey kembali Draft dan bisa diedit; versi yang ditolak tersimpan sebagai arsip.',
+        ]);
+    }
+
     public function unpost(Survey $survey)
     {
         if (!Auth::user()->canApprove('surveys')) {
