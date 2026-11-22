@@ -1078,6 +1078,8 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('commissions/{commission}/mark-paid', [App\Http\Controllers\Finance\CommissionController::class, 'markAsPaid'])->name('commissions.mark-paid');
         Route::post('commissions/{commission}/cancel', [App\Http\Controllers\Finance\CommissionController::class, 'cancel'])->name('commissions.cancel');
         Route::post('commissions/{commission}/override-amount', [App\Http\Controllers\Finance\CommissionController::class, 'overrideAmount'])->name('commissions.override-amount');
+        // MOM 17 Nov 2026 p4: admin memajukan/memundurkan komisi kontrak antar periode
+        Route::post('commissions/{commission}/move-period', [App\Http\Controllers\Finance\CommissionController::class, 'movePeriod'])->name('commissions.move-period');
 
         // Achievement System Routes
         Route::get('achievements/statistics', [App\Http\Controllers\Finance\AchievementController::class, 'statistics'])->name('achievements.statistics');
@@ -1086,8 +1088,13 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
 
         // Achievement Period Routes
         Route::resource('achievement-periods', App\Http\Controllers\Finance\AchievementPeriodController::class);
+        // MOM 17 Nov 2026 p5: Lock Commission per periode
+        Route::post('achievement-periods/{achievementPeriod}/lock-commission', [App\Http\Controllers\Finance\AchievementPeriodController::class, 'lockCommission'])->name('achievement-periods.lock-commission');
+        Route::post('achievement-periods/{achievementPeriod}/unlock-commission', [App\Http\Controllers\Finance\AchievementPeriodController::class, 'unlockCommission'])->name('achievement-periods.unlock-commission');
 
         // Commission Payment Routes
+        // MOM 17 Nov 2026 p1: proses pencairan per marketing + email ke Finance (sebelum resource agar tak tertangkap {commission_payment})
+        Route::post('commission-payments/bulk-process', [App\Http\Controllers\Finance\CommissionPaymentController::class, 'bulkProcess'])->name('commission-payments.bulk-process');
         Route::resource('commission-payments', App\Http\Controllers\Finance\CommissionPaymentController::class);
         Route::post('commission-payments/{commissionPayment}/mark-processing', [App\Http\Controllers\Finance\CommissionPaymentController::class, 'markAsProcessing'])->name('commission-payments.mark-processing');
         Route::post('commission-payments/{commissionPayment}/mark-completed', [App\Http\Controllers\Finance\CommissionPaymentController::class, 'markAsCompleted'])->name('commission-payments.mark-completed');

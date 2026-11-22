@@ -302,7 +302,9 @@ class CommissionCalculation extends Model
      */
     public function isLocked(): bool
     {
-        return (bool) $this->marketingTarget?->is_locked;
+        // Lock per Marketing Target (lama) atau per periode (MOM 17 Nov 2026 p5).
+        return (bool) $this->marketingTarget?->is_locked
+            || (bool) $this->achievementPeriod?->isCommissionLocked();
     }
 
     /**

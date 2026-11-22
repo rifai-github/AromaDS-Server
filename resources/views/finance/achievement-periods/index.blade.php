@@ -677,6 +677,9 @@
                             <span class="badge {{ $period->status_badge }}">
                                 {{ $period->status }}
                             </span>
+                            @if($period->isCommissionLocked())
+                                <br><span class="badge badge-dark" title="Komisi periode ini di-LOCK"><i class="fas fa-lock"></i> Komisi LOCK</span>
+                            @endif
                         </td>
                         <td>{{ $period->createdBy->name ?? 'Unknown' }}</td>
                         <td>
@@ -704,6 +707,21 @@
                                 <a href="{{ route('finance.achievement-periods.edit', $period) }}" onclick="event.stopPropagation();" class="btn btn-sm btn-warning" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>
+                                @if($period->isCommissionLocked())
+                                    <form method="POST" action="{{ route('finance.achievement-periods.unlock-commission', $period) }}" class="d-inline" onsubmit="return confirm('Buka LOCK komisi periode {{ addslashes($period->period_name) }}? Komisi & pencapaian periode ini bisa berubah/dipindah lagi.');">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-secondary" title="Unlock Komisi">
+                                            <i class="fas fa-lock-open"></i>
+                                        </button>
+                                    </form>
+                                @else
+                                    <form method="POST" action="{{ route('finance.achievement-periods.lock-commission', $period) }}" class="d-inline" onsubmit="return confirm('LOCK komisi periode {{ addslashes($period->period_name) }}? Setelah di-LOCK komisi tidak bisa diubah dan kontrak tidak bisa dipindah ke marketing/periode lain.');">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-dark" title="Lock Komisi">
+                                            <i class="fas fa-lock"></i>
+                                        </button>
+                                    </form>
+                                @endif
                                 <form method="POST" action="{{ route('finance.achievement-periods.destroy', $period) }}" class="d-inline" onsubmit="return confirmDeletePeriod(event);">
                                     @csrf
                                     @method('DELETE')

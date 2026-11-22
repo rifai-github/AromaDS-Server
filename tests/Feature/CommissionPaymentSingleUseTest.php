@@ -240,4 +240,50 @@ class CommissionPaymentSingleUseTest extends TestCase
         $this->assertStringContainsString("route('finance.commission-payments.mark-processing'", $source);
         $this->assertStringContainsString("route('finance.commission-payments.mark-completed'", $source);
     }
+
+    // MOM 17 Nov 2026 p1: admin mencentang marketing lalu memproses pencairan; Finance dapat email.
+    private function bulkRequest(array $userIds): Request
+    {
+        $request = Request::create('/finance/commission-payments/bulk-process', 'POST', [
+            'user_ids' => $userIds,
+            'payment_method' => 'bank_transfer',
+            'payment_date' => '2026-11-22',
+        ]);
+        $request->setLaravelSession(app('session.store'));
+
+        return $request;
+    }
+
+    public function test_bulk_process_pays_every_open_commission_of_the_selected_marketing_and_emails_finance(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        config(['commission.finance_notification_emails' => ['tiff@example.test']]);
+
+        $response = app(CommissionPaymentController::class)->bulkProcess($this->bulkRequest([1]));
+
+        // 1 sudah punya payment aktif -> dilewati; 2 dan 3 dibuatkan payment Pending.
+        $this->assertSame(302, $response->getStatusCode());
+        $this->assertSame(1, CommissionPayment::where('commission_calculation_id', 2)->where('status', 'pending')->count());
+        $this->assertSame(1, CommissionPayment::where('commission_calculation_id', 3)->where('status', 'pending')->count());
+        $this->assertSame(1, CommissionPayment::where('commission_calculation_id', 1)->count());
+
+        \Illuminate\Support\Facades\Mail::assertSent(\App\Mail\CommissionPayoutProcessedMail::class, function ($mail) {
+            return $mail->hasTo('tiff@example.test')
+                && $mail->adminName === 'Wahyu'
+                && $mail->marketingCount === 1
+                && abs($mail->totalAmount - 34000) < 0.01;
+        });
+    }
+
+    public function test_bulk_process_without_finance_address_still_pays_but_warns(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        config(['commission.finance_notification_emails' => []]);
+
+        app(CommissionPaymentController::class)->bulkProcess($this->bulkRequest([1]));
+
+        $this->assertSame(1, CommissionPayment::where('commission_calculation_id', 2)->count());
+        \Illuminate\Support\Facades\Mail::assertNothingSent();
+        $this->assertStringContainsString('COMMISSION_FINANCE_EMAILS', (string) session('success'));
+    }
 }

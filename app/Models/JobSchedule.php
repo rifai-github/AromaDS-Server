@@ -11,6 +11,41 @@ class JobSchedule extends Model
 {
     use HasFactory, SoftDeletes, AutoFilterable;
 
+    /**
+     * MOM 17 Nov 2026 p3: komisi berbasis kontrak EFEKTIF menurut BA Date. Setiap kali BA Date
+     * job install/service diisi atau diubah (Job Operation, done job web/APK), komisi kontraknya
+     * dihitung atau dipindah ke periode BA Date. Tidak boleh menggagalkan penyimpanan job.
+     */
+    protected static function booted(): void
+    {
+        static::updated(function (self $jobSchedule) {
+            if (! $jobSchedule->wasChanged('ba_date') || ! $jobSchedule->ba_date) {
+                return;
+            }
+
+            if (! in_array($jobSchedule->type, Contract::START_DATE_JOB_TYPES, true)) {
+                return;
+            }
+
+            $jobScheduleId = $jobSchedule->id;
+
+            \Illuminate\Support\Facades\DB::afterCommit(function () use ($jobScheduleId) {
+                try {
+                    if (! \Illuminate\Support\Facades\Schema::hasTable('commission_calculations')) {
+                        return;
+                    }
+
+                    $contract = static::query()->find($jobScheduleId)?->jobAdvice?->contract;
+                    if ($contract) {
+                        app(\App\Services\Finance\CommissionPeriodService::class)->syncContractToBaDate($contract);
+                    }
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning("Sinkron komisi dari BA Date job #{$jobScheduleId} gagal: ".$e->getMessage());
+                }
+            });
+        });
+    }
+
     protected $appends = [
         'completed_rooms_count',
         'total_rooms_count',

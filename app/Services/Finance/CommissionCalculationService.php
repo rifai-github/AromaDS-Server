@@ -41,8 +41,11 @@ class CommissionCalculationService
                 throw new \Exception("Contract does not have marketing user");
             }
 
-            // Check if contract is installed
-            if (!$contract->is_installed) {
+            $periods = app(CommissionPeriodService::class);
+
+            // MOM 17 Nov 2026 p3: komisi dari kontrak EFEKTIF. Kontrak sudah efektif bila sudah
+            // punya BA Date (job install/service selesai) atau Tanggal Install sudah diisi.
+            if (!$contract->is_installed && !$periods->baDate($contract)) {
                 DB::rollBack();
 
                 return [
@@ -73,10 +76,11 @@ class CommissionCalculationService
             $isRenewal = $this->isRenewalContract($contract);
             $targetType = $isRenewal ? 'renewal' : 'new';
 
-            // Get current achievement period
-            $achievementPeriod = $this->getCurrentAchievementPeriod();
+            // Periode = periode yang memuat BA Date kontrak (MOM 17 Nov 2026 p3); periode yang
+            // sudah di-LOCK dilewati ke periode berjalan.
+            $achievementPeriod = $periods->periodForContract($contract);
             if (!$achievementPeriod) {
-                throw new \Exception("No active achievement period found");
+                throw new \Exception("No active achievement period found (atau periode BA Date & periode berjalan sudah di-LOCK)");
             }
 
             // Get marketing target for this user and period
@@ -198,6 +202,17 @@ class CommissionCalculationService
                 'created_by' => auth()->id() ?? 1,
                 'updated_by' => auth()->id() ?? 1
             ]);
+
+            // MOM 17 Nov 2026 p4: level komisi per periode. Pencapaian total periode berubah,
+            // jadi level & nominal SEMUA kontrak marketing ini di periode itu ikut dihitung ulang.
+            $rebalance = $periods->rebalanceTarget($marketingTarget->fresh());
+            $commissionCalculation->refresh();
+            if ($rebalance['level']) {
+                $commissionRate = (float) $commissionCalculation->commission_rate;
+                $commissionAmount = (float) $commissionCalculation->commission_amount;
+                $commissionLevel = $rebalance['level'];
+                $achievementPercentage = $rebalance['percentage'];
+            }
 
             DB::commit();
 
@@ -368,66 +383,36 @@ class CommissionCalculationService
             DB::beginTransaction();
 
             // Hitung ulang di record yang sama: periode, target, dan penerima tetap milik
-            // perhitungan awal. Target hanya digeser sebesar selisih nilai — dulu record lama
-            // dihapus lalu nilai baru ditambahkan tanpa mengurangi nilai lama, sehingga
-            // achieved_amount terhitung dobel.
+            // perhitungan awal. Pencapaian target dihitung ulang dari semua kontraknya, lalu
+            // level per periode (MOM 17 Nov 2026 p4) diterapkan ke semua kontrak di periode itu.
             $calculation = CommissionCalculation::whereKey($calculation->id)->lockForUpdate()->first();
             $oldValue = (float) ($calculation->net_value ?? $calculation->base_amount);
             $newValue = (float) ($contract->net_value ?? $contract->contract_value);
-            $delta = $newValue - $oldValue;
-
-            $marketingTarget = $calculation->marketing_target_id
-                ? MarketingTarget::whereKey($calculation->marketing_target_id)->lockForUpdate()->first()
-                : null;
-            if ($marketingTarget) {
-                $marketingTarget->achieved_amount += $delta;
-                $marketingTarget->save();
-            }
-
-            $achievement = Achievement::where('contract_id', $contract->id)
-                ->where('achievement_period_id', $calculation->achievement_period_id)
-                ->where('achievement_type', $calculation->calculation_type)
-                ->latest('id')
-                ->first();
-
-            // Tier dievaluasi ulang pada posisi pencapaian saat kontrak ini dihitung
-            // (snapshot Achievement), bukan pencapaian hari ini yang sudah memuat kontrak lain.
-            $commissionRate = (float) $calculation->commission_rate;
-            $commissionLevelId = $calculation->commission_level_id;
-            $snapshotAchieved = null;
-            if ($achievement && (float) $achievement->target_amount > 0) {
-                $snapshotAchieved = (float) $achievement->achieved_amount + $delta;
-                $percentage = ($snapshotAchieved / (float) $achievement->target_amount) * 100;
-                $commissionLevel = CommissionLevel::getLevelByPercentage($percentage, $calculation->calculation_type);
-                if ($commissionLevel) {
-                    $commissionRate = (float) $commissionLevel->commission_rate;
-                    $commissionLevelId = $commissionLevel->id;
-                }
-            }
-
-            $commissionAmount = $newValue * ($commissionRate / 100);
 
             $calculation->update([
                 'base_amount' => $contract->contract_value,
                 'net_value' => $newValue,
-                'commission_rate' => $commissionRate,
-                'commission_level_id' => $commissionLevelId,
-                'commission_amount' => $commissionAmount,
-                'final_amount' => $commissionAmount + (float) $calculation->bonus_amount - (float) $calculation->penalty_amount,
                 'calculation_notes' => trim(($calculation->calculation_notes ?? '')."\nRecalculated ".now()->toDateString().": net value {$oldValue} -> {$newValue}"),
                 'updated_by' => auth()->id() ?? $calculation->updated_by
             ]);
 
-            if ($achievement) {
-                $achievement->update([
-                    'status' => self::achievementStatus((float) ($snapshotAchieved ?? $achievement->achieved_amount), (float) $achievement->target_amount),
-                    'achieved_amount' => $snapshotAchieved ?? $achievement->achieved_amount,
-                    'commission_rate' => $commissionRate,
-                    'commission_level_id' => $commissionLevelId,
-                    'commission_amount' => $commissionAmount,
-                    'updated_by' => auth()->id() ?? $achievement->updated_by
+            $marketingTarget = $calculation->marketing_target_id
+                ? MarketingTarget::whereKey($calculation->marketing_target_id)->lockForUpdate()->first()
+                : null;
+
+            if ($marketingTarget) {
+                app(CommissionPeriodService::class)->rebalanceTarget($marketingTarget);
+            } else {
+                $rate = (float) $calculation->commission_rate;
+                $amount = $newValue * ($rate / 100);
+                $calculation->update([
+                    'commission_amount' => $amount,
+                    'final_amount' => $amount + (float) $calculation->bonus_amount - (float) $calculation->penalty_amount,
                 ]);
             }
+
+            $calculation->refresh();
+            $commissionAmount = (float) $calculation->commission_amount;
 
             DB::commit();
 

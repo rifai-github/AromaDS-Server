@@ -43,7 +43,7 @@ class CommissionController extends Controller
     public function index(Request $request)
     {
         $query = CommissionCalculation::filter($request->all())
-            ->with(['user', 'achievementPeriod', 'contract', 'approvedBy', 'createdBy', 'updatedBy'])
+            ->with(['user', 'achievementPeriod', 'marketingTarget', 'contract', 'approvedBy', 'createdBy', 'updatedBy'])
             ->orderBy('calculation_date', 'desc');
 
         // Apply access control filter (hierarchical data)
@@ -386,6 +386,29 @@ class CommissionController extends Controller
      * Edit nominal komisi Over Period (kebijakan management). Maksimal sebesar komisi aslinya,
      * alasan wajib, dan tercatat di audit log.
      */
+    /**
+     * MOM 17 Nov 2026 p4: admin memajukan/memundurkan pencapaian kontrak ke periode lain
+     * ("tabungan komisi"). Ditolak bila periode asal/tujuan sudah di-LOCK.
+     */
+    public function movePeriod(Request $request, CommissionCalculation $commission)
+    {
+        $validated = $request->validate([
+            'achievement_period_id' => 'required|exists:achievement_periods,id',
+        ]);
+
+        $commission = $this->accessibleCommissionQuery()->whereKey($commission->id)->firstOrFail();
+        $destination = AchievementPeriod::findOrFail($validated['achievement_period_id']);
+
+        try {
+            app(\App\Services\Finance\CommissionPeriodService::class)->moveToPeriod($commission, $destination);
+        } catch (\RuntimeException $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->back()->with('success',
+            'Komisi kontrak '.($commission->contract->contract_number ?? '#'.$commission->contract_id).' dipindah ke periode '.$destination->period_name.'. Level komisi kedua periode sudah dihitung ulang.');
+    }
+
     public function overrideAmount(Request $request, CommissionCalculation $commission)
     {
         $validated = $request->validate([

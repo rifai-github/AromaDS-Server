@@ -940,6 +940,13 @@
                                         </button>
                                     @endif
 
+                                    @if(in_array($commission->calculation_type, ['new', 'renewal'], true) && !in_array($commission->status, ['paid', 'cancelled'], true) && !$commission->isLocked())
+                                        <button type="button" class="btn btn-sm btn-secondary" title="Pindah Periode (maju/mundur)"
+                                                onclick="openMovePeriodModal({{ $commission->id }}, @js($commission->contract->contract_number ?? '-'), @js($commission->achievementPeriod->period_name ?? '-'), {{ (int) $commission->achievement_period_id }})">
+                                            <i class="fas fa-exchange-alt"></i>
+                                        </button>
+                                    @endif
+
                                     @if($commission->status === 'approved')
                                         <form method="POST" action="{{ route('finance.commissions.mark-paid', $commission) }}" class="d-inline">
                                             @csrf
@@ -1008,6 +1015,41 @@
     </div>
 </div>
 
+<!-- MOM 17 Nov 2026 p4: Pindah Periode (tabungan komisi) -->
+<div id="movePeriodModalOverlay" class="modal-overlay" onclick="closeMovePeriodModal()">
+    <div class="modal-container" onclick="event.stopPropagation()" style="max-width: 480px;">
+        <form id="movePeriodForm" method="POST" action="">
+            @csrf
+            <div class="modal-header">
+                <h2 class="modal-title">Pindah Periode Komisi</h2>
+                <button type="button" class="modal-close" onclick="closeMovePeriodModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="text-sm text-gray-600" style="margin-bottom: 12px;">
+                    Kontrak: <strong id="movePeriodContract">-</strong><br>
+                    Periode sekarang: <strong id="movePeriodCurrent">-</strong>
+                </p>
+                <label for="movePeriodTarget">Pindah ke periode</label>
+                <select name="achievement_period_id" id="movePeriodTarget" class="form-control" required>
+                    <option value="">- Pilih periode -</option>
+                    @foreach($periods as $periodOption)
+                        @if(! $periodOption->isCommissionLocked())
+                            <option value="{{ $periodOption->id }}">{{ $periodOption->period_name }} ({{ $periodOption->start_date?->format('d/M/Y') }} - {{ $periodOption->end_date?->format('d/M/Y') }})</option>
+                        @endif
+                    @endforeach
+                </select>
+                <small class="text-muted">Pencapaian kontrak ikut pindah dan level komisi kedua periode dihitung ulang. Marketing harus sudah punya Marketing Target di periode tujuan. Periode yang di-LOCK tidak ditampilkan.</small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeMovePeriodModal()">Batal</button>
+                <button type="submit" class="btn btn-primary">Pindahkan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- Edit Nominal Over Period -->
 <div id="overrideModalOverlay" class="modal-overlay" onclick="closeOverrideModal()">
     <div class="modal-container" onclick="event.stopPropagation()" style="max-width: 480px;">
@@ -1056,6 +1098,26 @@
 
     function closeOverrideModal() {
         document.getElementById('overrideModalOverlay').classList.remove('show');
+    }
+
+    function openMovePeriodModal(id, contractNumber, currentPeriodName, currentPeriodId) {
+        const form = document.getElementById('movePeriodForm');
+        form.action = @js(route('finance.commissions.move-period', '__ID__')).replace('__ID__', id);
+        document.getElementById('movePeriodContract').textContent = contractNumber;
+        document.getElementById('movePeriodCurrent').textContent = currentPeriodName;
+        const select = document.getElementById('movePeriodTarget');
+        Array.from(select.options).forEach(function (option) {
+            option.disabled = option.value !== '' && Number(option.value) === Number(currentPeriodId);
+        });
+        select.value = '';
+        if (window.jQuery && jQuery(select).hasClass('select2-hidden-accessible')) {
+            jQuery(select).trigger('change.select2');
+        }
+        document.getElementById('movePeriodModalOverlay').classList.add('show');
+    }
+
+    function closeMovePeriodModal() {
+        document.getElementById('movePeriodModalOverlay').classList.remove('show');
     }
 </script>
 <script>

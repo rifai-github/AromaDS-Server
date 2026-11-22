@@ -18,6 +18,9 @@ class AchievementPeriod extends Model
         'start_date',
         'end_date',
         'status',
+        'is_commission_locked',
+        'commission_locked_at',
+        'commission_locked_by',
         'description',
         'created_by',
         'updated_by'
@@ -25,8 +28,19 @@ class AchievementPeriod extends Model
 
     protected $casts = [
         'start_date' => 'date',
-        'end_date' => 'date'
+        'end_date' => 'date',
+        'is_commission_locked' => 'boolean',
+        'commission_locked_at' => 'datetime',
     ];
+
+    /**
+     * MOM 17 Nov 2026 p5: periode yang di-LOCK membekukan komisi, pencapaian, dan pemindahan
+     * kontrak (antar marketing maupun antar periode).
+     */
+    public function isCommissionLocked(): bool
+    {
+        return (bool) ($this->is_commission_locked ?? false);
+    }
 
     // Relationships
     public function createdBy()

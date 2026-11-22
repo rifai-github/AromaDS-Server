@@ -111,6 +111,9 @@ class CommissionCalculationDuplicateTest extends TestCase
             $t->date('start_date');
             $t->date('end_date');
             $t->string('status');
+            $t->boolean('is_commission_locked')->default(false);
+            $t->timestamp('commission_locked_at')->nullable();
+            $t->foreignId('commission_locked_by')->nullable();
             $t->text('description')->nullable();
             $t->foreignId('created_by')->nullable();
             $t->foreignId('updated_by')->nullable();
@@ -346,6 +349,119 @@ class CommissionCalculationDuplicateTest extends TestCase
     private function achieved(): float
     {
         return (float) MarketingTarget::find(1)->achieved_amount;
+    }
+
+    // ---------------------------------------------------------------------
+    // MOM 17 Nov 2026: periode dari tanggal efektif, Switch Marketing, pindah periode, LOCK.
+    // ---------------------------------------------------------------------
+
+    private function addOctoberPeriodWithTarget(int $userId = 1): void
+    {
+        DB::table('achievement_periods')->insert([
+            'id' => 2, 'period_name' => 'Okt 2026', 'start_date' => '2026-10-01',
+            'end_date' => '2026-10-31', 'status' => 'active', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('marketing_targets')->insert([
+            'id' => 10, 'user_id' => $userId, 'achievement_period_id' => 2, 'target_type' => 'new',
+            'target_amount' => 100_000_000, 'achieved_amount' => 0, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+    }
+
+    private function periods(): \App\Services\Finance\CommissionPeriodService
+    {
+        return app(\App\Services\Finance\CommissionPeriodService::class);
+    }
+
+    public function test_commission_period_follows_the_contract_effective_date_not_today(): void
+    {
+        // Hari ini 20 Sep (periode Sep), tapi kontrak efektif 5 Okt -> masuk periode Okt.
+        $this->addOctoberPeriodWithTarget();
+        $contract = $this->contract(1, 101, 40_000_000);
+        DB::table('contracts')->where('id', 1)->update(['installed_date' => '2026-10-05']);
+
+        $result = $this->service->calculateCommissionForContract($contract->fresh());
+
+        $this->assertTrue($result['success'], $result['message']);
+        $this->assertSame(2, (int) CommissionCalculation::where('contract_id', 1)->value('achievement_period_id'));
+        $this->assertEquals(40_000_000, (float) MarketingTarget::find(10)->achieved_amount);
+        $this->assertEquals(0, $this->achieved());
+    }
+
+    public function test_switch_marketing_moves_achievement_to_the_new_marketing_and_retiers_both(): void
+    {
+        // Contoh MOM: Elly memberi 1 kontrak ke Budi lewat Switch Marketing.
+        DB::table('marketing_targets')->insert([
+            'id' => 20, 'user_id' => 2, 'achievement_period_id' => 1, 'target_type' => 'new',
+            'target_amount' => 100_000_000, 'achieved_amount' => 0, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000));
+        $contractB = $this->contract(2, 102, 70_000_000);
+        $this->service->calculateCommissionForContract($contractB);
+        $this->assertEquals(110_000_000, $this->achieved());
+
+        $this->periods()->reassignMarketing($contractB, 2);
+
+        // User 1 tinggal 40 jt (40% -> L1 0,5%), user 2 70 jt (70% -> L2 1%).
+        $this->assertEquals(40_000_000, $this->achieved());
+        $this->assertEquals(200_000, (float) CommissionCalculation::where('contract_id', 1)->value('final_amount'));
+        $this->assertEquals(70_000_000, (float) MarketingTarget::find(20)->achieved_amount);
+        $calcB = CommissionCalculation::where('contract_id', 2)->sole();
+        $this->assertSame(2, (int) $calcB->user_id);
+        $this->assertSame(20, (int) $calcB->marketing_target_id);
+        $this->assertEquals(700_000, (float) $calcB->final_amount);
+        $this->assertSame(2, (int) DB::table('achievements')->where('contract_id', 2)->value('user_id'));
+    }
+
+    public function test_switch_marketing_is_refused_when_the_new_marketing_has_no_target(): void
+    {
+        $contract = $this->contract(1, 101, 40_000_000);
+        $this->service->calculateCommissionForContract($contract);
+
+        $this->expectException(\RuntimeException::class);
+        $this->periods()->reassignMarketing($contract, 2);
+    }
+
+    public function test_admin_can_move_a_contract_to_another_period_and_both_periods_retier(): void
+    {
+        // Contoh MOM: "tabungan komisi" - kontrak dipindah ke periode berikutnya.
+        $this->addOctoberPeriodWithTarget();
+        $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000));
+        $this->service->calculateCommissionForContract($this->contract(2, 102, 70_000_000));
+
+        $calcB = CommissionCalculation::where('contract_id', 2)->sole();
+        $this->periods()->moveToPeriod($calcB, \App\Models\Finance\AchievementPeriod::findOrFail(2));
+
+        $this->assertEquals(40_000_000, $this->achieved());
+        $this->assertEquals(0.5, (float) CommissionCalculation::where('contract_id', 1)->value('commission_rate'));
+        $this->assertEquals(70_000_000, (float) MarketingTarget::find(10)->achieved_amount);
+        $calcB->refresh();
+        $this->assertSame(2, (int) $calcB->achievement_period_id);
+        $this->assertSame(10, (int) $calcB->marketing_target_id);
+        $this->assertEquals(1.0, (float) $calcB->commission_rate);
+        $this->assertSame(2, (int) DB::table('achievements')->where('contract_id', 2)->value('achievement_period_id'));
+    }
+
+    public function test_locked_period_freezes_commission_and_blocks_moves(): void
+    {
+        $this->addOctoberPeriodWithTarget();
+        $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000));
+        DB::table('achievement_periods')->where('id', 1)->update(['is_commission_locked' => true]);
+
+        $calc = CommissionCalculation::where('contract_id', 1)->sole();
+        $this->assertTrue($calc->isLocked());
+
+        try {
+            $this->periods()->moveToPeriod($calc, \App\Models\Finance\AchievementPeriod::findOrFail(2));
+            $this->fail('Pindah dari periode yang di-LOCK harus ditolak.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('LOCK', $e->getMessage());
+        }
+
+        // Kontrak baru dengan tanggal efektif di periode yang di-LOCK tidak mengubah pencapaiannya.
+        $before = $this->achieved();
+        $result = $this->service->calculateCommissionForContract($this->contract(2, 102, 70_000_000));
+        $this->assertEquals($before, $this->achieved());
+        $this->assertFalse($result['success']);
     }
 
     public function test_three_new_contracts_climb_tiers(): void
@@ -801,12 +917,32 @@ class CommissionCalculationDuplicateTest extends TestCase
 
     public function test_automatic_achievement_status_follows_target_progress(): void
     {
-        // Target 100 jt: 40 jt -> pending, +60 jt = 100 jt -> achieved, +50 jt -> exceeded.
+        // MOM 17 Nov 2026 p4: status & level mengikuti pencapaian TOTAL periode, jadi semua
+        // kontrak periode itu ikut berubah. Target 100 jt: 40 jt -> pending, +60 jt -> achieved.
         $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000));
-        $this->service->calculateCommissionForContract($this->contract(2, 102, 60_000_000));
-        $this->service->calculateCommissionForContract($this->contract(3, 103, 50_000_000));
+        $this->assertSame(['pending'], DB::table('achievements')->orderBy('id')->pluck('status')->all());
 
-        $this->assertSame(['pending', 'achieved', 'exceeded'], DB::table('achievements')->orderBy('id')->pluck('status')->all());
+        $this->service->calculateCommissionForContract($this->contract(2, 102, 60_000_000));
+        $this->assertSame(['achieved', 'achieved'], DB::table('achievements')->orderBy('id')->pluck('status')->all());
+
+        // +50 jt = 150 jt -> exceeded untuk ketiganya.
+        $this->service->calculateCommissionForContract($this->contract(3, 103, 50_000_000));
+        $this->assertSame(['exceeded', 'exceeded', 'exceeded'], DB::table('achievements')->orderBy('id')->pluck('status')->all());
+    }
+
+    public function test_tier_is_decided_by_the_period_total_and_applies_to_every_contract(): void
+    {
+        // MOM 17 Nov 2026 p4: kontrak pertama 40 jt (40% -> L1 0,5%). Setelah kontrak kedua
+        // 70 jt, total 110 jt = 110% -> L3 1,5% untuk KEDUA kontrak, bukan hanya yang baru.
+        $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000));
+        $this->assertEquals(0.5, (float) CommissionCalculation::where('contract_id', 1)->value('commission_rate'));
+
+        $this->service->calculateCommissionForContract($this->contract(2, 102, 70_000_000));
+
+        $this->assertEquals(110_000_000, $this->achieved());
+        $this->assertEquals(1.5, (float) CommissionCalculation::where('contract_id', 1)->value('commission_rate'));
+        $this->assertEquals(600_000, (float) CommissionCalculation::where('contract_id', 1)->value('final_amount'));
+        $this->assertEquals(1_050_000, (float) CommissionCalculation::where('contract_id', 2)->value('final_amount'));
     }
 
     public function test_calculating_same_contract_twice_keeps_one_record_and_one_target_increment(): void
@@ -836,7 +972,7 @@ class CommissionCalculationDuplicateTest extends TestCase
         $this->assertEquals(40_000_000, $this->achieved());
     }
 
-    public function test_net_value_edit_shifts_target_by_delta_and_retiers_at_original_position(): void
+    public function test_net_value_edit_recomputes_target_and_retiers_the_whole_period(): void
     {
         $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000));
         $contractB = $this->contract(2, 102, 30_000_000, 25_000_000);
@@ -846,17 +982,17 @@ class CommissionCalculationDuplicateTest extends TestCase
         DB::table('contracts')->where('id', 2)->update(['net_value' => 28_000_000]);
         $result = $this->service->recalculateCommissionForContract($contractB->fresh());
 
-        // B dihitung pada posisi 40 jt + 28 jt = 68% (L2 1%), bukan 143%.
+        // MOM 17 Nov 2026 p4: total periode 40 + 28 + 50 = 118 jt = 118% -> L3 1,5% untuk semua.
         $this->assertTrue($result['success']);
-        $this->assertEquals(280_000, $result['amount']);
+        $this->assertEquals(420_000, $result['amount']);
         $this->assertEquals(118_000_000, $this->achieved());
         $this->assertSame(3, CommissionCalculation::count());
 
         $calc = CommissionCalculation::where('contract_id', 2)->sole();
         $this->assertEquals(28_000_000, (float) $calc->net_value);
-        $this->assertEquals(1.0, (float) $calc->commission_rate);
-        $this->assertEquals(280_000, (float) $calc->final_amount);
-        $this->assertEquals(68_000_000, (float) DB::table('achievements')->where('contract_id', 2)->value('achieved_amount'));
+        $this->assertEquals(1.5, (float) $calc->commission_rate);
+        $this->assertEquals(420_000, (float) $calc->final_amount);
+        $this->assertEquals(118_000_000, (float) DB::table('achievements')->where('contract_id', 2)->value('achieved_amount'));
         $this->assertSame(0, DB::transactionLevel());
     }
 

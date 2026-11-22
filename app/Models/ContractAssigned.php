@@ -227,14 +227,15 @@ class ContractAssigned extends Model
             throw new \Exception('Switching must be approved before execution');
         }
 
-        // Kontrak yang komisinya sudah masuk Marketing Target yang di-LOCK tidak boleh
+        // Kontrak yang komisinya sudah masuk Marketing Target / periode yang di-LOCK tidak boleh
         // dipindah ke marketing lain lagi (meeting 17 Nov 2026).
         $lockedCommission = \App\Models\Finance\CommissionCalculation::where('contract_id', $this->old_contract_id)
             ->whereIn('calculation_type', ['new', 'renewal'])
-            ->whereHas('marketingTarget', fn ($target) => $target->where('is_locked', true))
-            ->first();
+            ->where('status', '!=', 'cancelled')
+            ->get()
+            ->first(fn ($calculation) => $calculation->isLocked());
         if ($lockedCommission) {
-            throw new \Exception('Komisi kontrak ini sudah masuk Marketing Target yang di-LOCK; kontrak tidak bisa dipindah ke marketing lain. Unlock target dulu bila memang perlu.');
+            throw new \Exception('Komisi kontrak ini sudah masuk Marketing Target / periode yang di-LOCK; kontrak tidak bisa dipindah ke marketing lain. Unlock dulu bila memang perlu.');
         }
 
         try {
@@ -263,6 +264,11 @@ class ContractAssigned extends Model
                 'marketing_id' => $this->new_marketing_id,
                 'notes' => ($contract->notes ?? '') . "\n\nMarketing transferred from {$oldMarketingName} to {$newMarketingName} on " . now()->format('Y-m-d H:i:s') . " (Switching: {$this->switching_number})"
             ]);
+
+            // MOM 17 Nov 2026 p4: pencapaian (achievement) kontrak ikut pindah ke marketing baru,
+            // dan level komisi kedua marketing dihitung ulang. Gagal -> seluruh switch dibatalkan.
+            app(\App\Services\Finance\CommissionPeriodService::class)
+                ->reassignMarketing($contract, (int) $this->new_marketing_id);
 
             // Complete switching
             $this->update([

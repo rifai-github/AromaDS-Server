@@ -72,24 +72,114 @@ class CommissionPaymentController extends Controller
 
         $users = User::all();
 
-        // Permintaan pencairan dari dashboard marketing yang belum dibuatkan pembayaran.
+        // Komisi siap cair per marketing (MOM 17 Nov 2026 p1-2): admin mencentang marketing lalu
+        // memproses pencairan. Yang sudah mengajukan Request dari dashboard tampil paling atas.
         $payoutRequests = CommissionCalculation::with('user:id,name')
-            ->whereNotNull('payout_requested_at')
             ->payable()
             ->withoutActivePayment()
             ->get()
             ->groupBy('user_id')
             ->map(fn ($rows) => [
                 'user' => $rows->first()->user,
+                'user_id' => (int) $rows->first()->user_id,
                 'count' => $rows->count(),
                 'amount' => (float) $rows->sum('final_amount'),
                 'requested_at' => $rows->max('payout_requested_at'),
                 'calculation_ids' => $rows->pluck('id')->all(),
             ])
-            ->sortByDesc('requested_at')
+            ->sortBy(fn ($row) => [$row['requested_at'] ? 0 : 1, $row['requested_at'] ? -strtotime((string) $row['requested_at']) : 0, $row['user']->name ?? ''])
             ->values();
 
         return view('finance.commission-payments.index', compact('payments', 'users', 'payoutRequests'))->with('commissionPayments', $payments);
+    }
+
+    /**
+     * MOM 17 Nov 2026 p1: admin mencentang marketing di Commission Payment lalu memproses
+     * pencairan. Semua komisi siap cair milik marketing itu dibuatkan pembayaran (Pending),
+     * lalu Finance menerima email: nama admin, total nominal, jumlah marketing.
+     */
+    public function bulkProcess(Request $request)
+    {
+        $validated = $request->validate([
+            'user_ids' => 'required|array|min:1',
+            'user_ids.*' => 'integer|exists:users,id',
+            'payment_method' => 'required|in:bank_transfer,cash,check,other',
+            'payment_date' => 'required|date',
+            'payment_reference' => 'nullable|string|max:255',
+            'payment_notes' => 'nullable|string|max:1000',
+        ]);
+
+        $created = collect();
+
+        DB::transaction(function () use ($validated, &$created) {
+            $calculations = CommissionCalculation::with('user:id,name')
+                ->whereIn('user_id', $validated['user_ids'])
+                ->payable()
+                ->withoutActivePayment()
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($calculations as $calculation) {
+                if ($this->paymentBlockReason($calculation, $calculation->final_amount)) {
+                    continue;
+                }
+
+                $created->push(CommissionPayment::create([
+                    'commission_calculation_id' => $calculation->id,
+                    'user_id' => $calculation->user_id,
+                    'amount' => $calculation->final_amount,
+                    'payment_method' => $validated['payment_method'],
+                    'payment_reference' => $validated['payment_reference'] ?? null,
+                    'payment_date' => $validated['payment_date'],
+                    'status' => 'pending',
+                    'payment_notes' => $validated['payment_notes'] ?? 'Proses pencairan massal',
+                    'created_by' => Auth::id(),
+                ])->setRelation('user', $calculation->user));
+            }
+        });
+
+        if ($created->isEmpty()) {
+            return redirect()->back()->with('error', 'Tidak ada komisi siap cair untuk marketing yang dipilih.');
+        }
+
+        $marketingRows = $created->groupBy('user_id')->map(fn ($rows) => [
+            'name' => $rows->first()->user?->name ?? '#'.$rows->first()->user_id,
+            'count' => $rows->count(),
+            'amount' => (float) $rows->sum('amount'),
+        ])->values()->all();
+        $total = (float) $created->sum('amount');
+        $summary = count($marketingRows).' marketing, '.$created->count().' komisi, total Rp '.number_format($total, 0, ',', '.');
+
+        $emailNote = $this->notifyFinanceOfPayout($total, $marketingRows, $validated['payment_date']);
+
+        return redirect()->route('finance.commission-payments.index')
+            ->with('success', "Pencairan diproses: {$summary}.".($emailNote ? ' '.$emailNote : ''));
+    }
+
+    /** @return string|null catatan untuk admin bila email tidak terkirim */
+    private function notifyFinanceOfPayout(float $total, array $marketingRows, string $paymentDate): ?string
+    {
+        $recipients = config('commission.finance_notification_emails', []);
+
+        if (empty($recipients)) {
+            return 'Email ke Finance TIDAK dikirim: alamat belum diatur (COMMISSION_FINANCE_EMAILS).';
+        }
+
+        try {
+            \Illuminate\Support\Facades\Mail::to($recipients)->send(new \App\Mail\CommissionPayoutProcessedMail(
+                Auth::user()?->name ?? 'Admin',
+                $total,
+                count($marketingRows),
+                $marketingRows,
+                \Illuminate\Support\Carbon::parse($paymentDate)->format('d/m/Y'),
+            ));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Email pencairan komisi ke Finance gagal: '.$e->getMessage());
+
+            return 'Email ke Finance gagal dikirim ('.$e->getMessage().').';
+        }
+
+        return 'Email ringkasan sudah dikirim ke Finance.';
     }
 
     /**

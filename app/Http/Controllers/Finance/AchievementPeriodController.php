@@ -137,6 +137,34 @@ class AchievementPeriodController extends Controller
     /**
      * Remove the specified achievement period
      */
+    /**
+     * MOM 17 Nov 2026 p5: Lock Commission per periode. Setelah di-LOCK komisi periode ini tidak
+     * berubah lagi dan kontraknya tidak bisa dipindah ke marketing/periode lain.
+     */
+    public function lockCommission(AchievementPeriod $achievementPeriod)
+    {
+        $achievementPeriod->update([
+            'is_commission_locked' => true,
+            'commission_locked_at' => now(),
+            'commission_locked_by' => Auth::id(),
+            'updated_by' => Auth::id(),
+        ]);
+
+        return redirect()->back()->with('success', "Komisi periode {$achievementPeriod->period_name} di-LOCK. Komisi dan pencapaiannya tidak bisa diubah/dipindah lagi.");
+    }
+
+    public function unlockCommission(AchievementPeriod $achievementPeriod)
+    {
+        $achievementPeriod->update([
+            'is_commission_locked' => false,
+            'commission_locked_at' => null,
+            'commission_locked_by' => null,
+            'updated_by' => Auth::id(),
+        ]);
+
+        return redirect()->back()->with('success', "Komisi periode {$achievementPeriod->period_name} dibuka kembali (UNLOCK).");
+    }
+
     public function destroy(AchievementPeriod $achievementPeriod)
     {
         try {

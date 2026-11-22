@@ -370,19 +370,35 @@
 
 <div class="container-fluid">
     @if(isset($payoutRequests) && $payoutRequests->isNotEmpty())
-    <!-- Request Pencairan dari dashboard marketing -->
+    <!-- MOM 17 Nov 2026 p1-2: komisi siap cair per marketing; yang sudah Request tampil di atas -->
     <div class="alert alert-info" style="border-radius: 10px; margin-bottom: 20px;">
-        <strong><i class="fas fa-hand-holding-usd"></i> Request Pencairan Komisi ({{ $payoutRequests->count() }} marketing)</strong>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+            <strong><i class="fas fa-hand-holding-usd"></i> Komisi Siap Dicairkan ({{ $payoutRequests->count() }} marketing, {{ $payoutRequests->whereNotNull('requested_at')->count() }} sudah Request)</strong>
+            <button type="button" class="btn btn-sm btn-primary" id="openPayoutProcessBtn" onclick="openPayoutProcessModal()" disabled>
+                <i class="fas fa-paper-plane"></i> Proses Pencairan
+            </button>
+        </div>
         <div class="table-responsive" style="margin-top: 10px;">
             <table class="table table-sm" style="margin: 0; background: transparent;">
                 <thead>
-                    <tr><th>Marketing</th><th>Diminta</th><th>Jumlah Komisi</th><th>Total</th><th>Buat Pembayaran</th></tr>
+                    <tr>
+                        <th style="width:32px;"><input type="checkbox" id="payoutSelectAll" title="Pilih semua"></th>
+                        <th>Marketing</th><th>Request</th><th>Jumlah Komisi</th><th>Total</th><th>Buat Pembayaran Satuan</th>
+                    </tr>
                 </thead>
                 <tbody>
                     @foreach($payoutRequests as $payoutRequest)
                     <tr>
+                        <td><input type="checkbox" class="payout-user-checkbox" value="{{ $payoutRequest['user_id'] }}" data-amount="{{ $payoutRequest['amount'] }}"></td>
                         <td>{{ $payoutRequest['user']->name ?? '-' }}</td>
-                        <td>{{ \Illuminate\Support\Carbon::parse($payoutRequest['requested_at'])->format('d/M/Y H.i') }}</td>
+                        <td>
+                            @if($payoutRequest['requested_at'])
+                                <span class="badge badge-warning">Request</span>
+                                {{ \Illuminate\Support\Carbon::parse($payoutRequest['requested_at'])->format('d/M/Y H.i') }}
+                            @else
+                                -
+                            @endif
+                        </td>
                         <td>{{ $payoutRequest['count'] }}</td>
                         <td><strong>Rp {{ number_format($payoutRequest['amount'], 0, ',', '.') }}</strong></td>
                         <td>
@@ -396,6 +412,90 @@
             </table>
         </div>
     </div>
+
+    <div id="payoutProcessModal" class="modal-overlay" onclick="closePayoutProcessModal()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1050; align-items:center; justify-content:center;">
+        <div onclick="event.stopPropagation()" style="background:#fff; border-radius:10px; width:100%; max-width:480px; padding:20px; margin:16px;">
+            <form id="payoutProcessForm" method="POST" action="{{ route('finance.commission-payments.bulk-process') }}">
+                @csrf
+                <h3 style="font-size:18px; font-weight:600; margin-bottom:8px;">Proses Pencairan Komisi</h3>
+                <p class="text-muted" style="margin-bottom:12px;">
+                    <span id="payoutSelectedCount">0</span> marketing, total <strong id="payoutSelectedTotal">Rp 0</strong>.
+                    Finance akan menerima email ringkasan.
+                </p>
+                <div id="payoutUserInputs"></div>
+                <div class="form-group" style="margin-bottom:10px;">
+                    <label>Metode Pembayaran</label>
+                    <select name="payment_method" class="form-control" required>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="cash">Cash</option>
+                        <option value="check">Check</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom:10px;">
+                    <label>Tanggal Pembayaran</label>
+                    <input type="date" name="payment_date" class="form-control" value="{{ now()->toDateString() }}" required>
+                </div>
+                <div class="form-group" style="margin-bottom:10px;">
+                    <label>Referensi (opsional)</label>
+                    <input type="text" name="payment_reference" class="form-control" maxlength="255">
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+                    <button type="button" class="btn btn-secondary" onclick="closePayoutProcessModal()">Batal</button>
+                    <button type="submit" class="btn btn-primary">Proses</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            function selectedPayoutBoxes() {
+                return Array.from(document.querySelectorAll('.payout-user-checkbox:checked'));
+            }
+
+            function refreshPayoutButton() {
+                const button = document.getElementById('openPayoutProcessBtn');
+                if (button) {
+                    button.disabled = selectedPayoutBoxes().length === 0;
+                }
+            }
+
+            document.addEventListener('change', function (event) {
+                if (event.target.id === 'payoutSelectAll') {
+                    document.querySelectorAll('.payout-user-checkbox').forEach(function (box) {
+                        box.checked = event.target.checked;
+                    });
+                }
+                if (event.target.id === 'payoutSelectAll' || event.target.classList.contains('payout-user-checkbox')) {
+                    refreshPayoutButton();
+                }
+            });
+
+            window.openPayoutProcessModal = function () {
+                const boxes = selectedPayoutBoxes();
+                if (!boxes.length) return;
+                const holder = document.getElementById('payoutUserInputs');
+                holder.innerHTML = '';
+                let total = 0;
+                boxes.forEach(function (box) {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'user_ids[]';
+                    input.value = box.value;
+                    holder.appendChild(input);
+                    total += Number(box.dataset.amount || 0);
+                });
+                document.getElementById('payoutSelectedCount').textContent = boxes.length;
+                document.getElementById('payoutSelectedTotal').textContent = 'Rp ' + total.toLocaleString('id-ID', { maximumFractionDigits: 0 });
+                document.getElementById('payoutProcessModal').style.display = 'flex';
+            };
+
+            window.closePayoutProcessModal = function () {
+                document.getElementById('payoutProcessModal').style.display = 'none';
+            };
+        })();
+    </script>
     @endif
 
     <!-- Statistics Cards -->
