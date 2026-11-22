@@ -336,7 +336,7 @@ class StockAdjustment extends Model
                             .($item->notes ? " - {$item->notes}" : ''));
 
                         $serialNumber->update([
-                            'status' => 'retired',
+                            'status' => $this->decreaseSerialStatus(),
                             'location_type' => null,
                             'location_id' => null,
                             'notes' => $notes,
@@ -575,12 +575,27 @@ class StockAdjustment extends Model
             });
     }
 
+    /**
+     * Jawaban klien 22 Nov 2026 (#8): selisih Stock Opname (sistem 10, fisik 9) berarti barang
+     * hilang, jadi SN yang tak ditemukan saat opname berstatus HILANG (lost), bukan retired.
+     * Pengurangan manual biasa tetap retired.
+     */
+    public function isFromStockOpname(): bool
+    {
+        return str_starts_with((string) $this->reason, 'Adjustment from Stock Opname');
+    }
+
+    private function decreaseSerialStatus(): string
+    {
+        return $this->isFromStockOpname() ? SerialNumber::STATUS_LOST : 'retired';
+    }
+
     private function retiredDecreaseSerialNumbersQuery(StockAdjustmentItem $item, array $serialNumbers)
     {
         return SerialNumber::query()
             ->where('master_product_id', $item->master_product_id)
             ->whereIn('serial_number', $serialNumbers)
-            ->where('status', 'retired')
+            ->whereIn('status', ['retired', SerialNumber::STATUS_LOST])
             ->where('notes', 'like', "%Adjusted out via Stock Adjustment {$this->adjustment_no}.%");
     }
 

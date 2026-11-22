@@ -561,4 +561,56 @@ class StockAdjustmentSerialNumberTest extends TestCase
 
         return [$warehouse, $product];
     }
+
+    // Jawaban klien 22 Nov 2026 (#8): selisih Stock Opname (sistem 2, fisik 1) -> SN yang tak
+    // ditemukan berstatus HILANG dan stok gudang berkurang; rollback mengembalikannya.
+    public function test_stock_opname_shortfall_marks_the_missing_serial_lost_and_rollback_restores_it(): void
+    {
+        [$warehouse, $product] = $this->createWarehouseAndSerialProduct();
+
+        WarehouseProduct::create([
+            'warehouse_id' => $warehouse->id,
+            'master_product_id' => $product->id,
+            'quantity' => 2,
+        ]);
+
+        foreach (['W300-SO-001', 'W300-SO-002'] as $serialNumber) {
+            SerialNumber::create([
+                'serial_number' => $serialNumber,
+                'status' => 'ready',
+                'condition_status' => SerialNumber::CONDITION_NEW,
+                'location_type' => 'warehouse',
+                'location_id' => $warehouse->id,
+                'warehouse_id' => $warehouse->id,
+                'master_product_id' => $product->id,
+            ]);
+        }
+
+        $adjustment = StockAdjustment::create([
+            'adjustment_no' => 'ADJ-SO-001',
+            'warehouse_id' => $warehouse->id,
+            'reason' => 'Adjustment from Stock Opname SO-2026-0001',
+            'adjustment_date' => now()->toDateString(),
+            'status' => 'waiting for approval',
+        ]);
+
+        StockAdjustmentItem::create([
+            'stock_adjustment_id' => $adjustment->id,
+            'master_product_id' => $product->id,
+            'adjustment_qty' => 1,
+            'adjustment_type' => 'decrease',
+            'serial_numbers' => ['W300-SO-002'],
+        ]);
+
+        $adjustment->approve(1);
+
+        $this->assertSame(SerialNumber::STATUS_LOST, SerialNumber::where('serial_number', 'W300-SO-002')->value('status'));
+        $this->assertSame(1, WarehouseProduct::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->value('quantity'));
+        $this->assertSame('ready', SerialNumber::where('serial_number', 'W300-SO-001')->value('status'));
+
+        $adjustment->fresh()->rollback(1);
+
+        $this->assertSame('ready', SerialNumber::where('serial_number', 'W300-SO-002')->value('status'));
+        $this->assertSame(2, WarehouseProduct::where('warehouse_id', $warehouse->id)->where('master_product_id', $product->id)->value('quantity'));
+    }
 }
