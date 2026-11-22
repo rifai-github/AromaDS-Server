@@ -200,6 +200,11 @@ class CustomerTaxController extends Controller
         } elseif ($taxName === 'NPWP') {
             $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'min:15', 'max:16'];
             $rules['nitku'] = ['nullable', 'string', 'regex:/^[0-9]+$/', 'size:6'];
+            // MOM 19 Nov 2026 p5: satu NPWP bisa punya beberapa NITKU (alamat berbeda); tiap
+            // NITKU tambahan wajib beralamat sendiri walau alamat NPWP sudah diisi.
+            $rules['additional_nitkus'] = ['nullable', 'array'];
+            $rules['additional_nitkus.*.nitku'] = ['required', 'string', 'regex:/^[0-9]{6}$/'];
+            $rules['additional_nitkus.*.address'] = ['required', 'string'];
         } elseif ($taxName === 'NITKU') {
             // NITKU stores the full 22-digit identifier: 16-digit parent NPWP + 6-digit branch code.
             $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'size:22'];
@@ -291,12 +296,14 @@ class CustomerTaxController extends Controller
                 'created_by' => Auth::id(),
             ]);
 
+            $additionalCount = $this->storeAdditionalNitkus($request, $customerTax);
+
             DB::commit();
 
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Customer tax settings created successfully.',
+                    'message' => 'Customer tax settings created successfully.'.($additionalCount ? " {$additionalCount} NITKU tambahan ikut disimpan." : ''),
                     'data' => $customerTax->load(['customer', 'createdBy']),
                 ]);
             }
@@ -380,6 +387,11 @@ class CustomerTaxController extends Controller
         } elseif ($taxName === 'NPWP') {
             $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'min:15', 'max:16'];
             $rules['nitku'] = ['nullable', 'string', 'regex:/^[0-9]+$/', 'size:6'];
+            // MOM 19 Nov 2026 p5: satu NPWP bisa punya beberapa NITKU (alamat berbeda); tiap
+            // NITKU tambahan wajib beralamat sendiri walau alamat NPWP sudah diisi.
+            $rules['additional_nitkus'] = ['nullable', 'array'];
+            $rules['additional_nitkus.*.nitku'] = ['required', 'string', 'regex:/^[0-9]{6}$/'];
+            $rules['additional_nitkus.*.address'] = ['required', 'string'];
         } elseif ($taxName === 'NITKU') {
             $rules['tax_number'] = ['required', 'string', 'regex:/^[0-9]+$/', 'size:22'];
         } else {
@@ -468,12 +480,14 @@ class CustomerTaxController extends Controller
                 'updated_by' => Auth::id(),
             ]);
 
+            $additionalCount = $this->storeAdditionalNitkus($request, $customerTax->fresh());
+
             DB::commit();
 
             if ($request->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Customer tax settings updated successfully.',
+                    'message' => 'Customer tax settings updated successfully.'.($additionalCount ? " {$additionalCount} NITKU tambahan ikut disimpan." : ''),
                     'data' => $customerTax->load(['customer', 'createdBy', 'updatedBy']),
                 ]);
             }
@@ -489,6 +503,65 @@ class CustomerTaxController extends Controller
 
             return back()->withInput()->with('error', $e->getMessage());
         }
+    }
+
+    /**
+     * MOM 19 Nov 2026 p5: NITKU tambahan untuk NPWP yang sama disimpan sebagai baris Customer Tax
+     * tersendiri (kunci unik tetap NPWP + NITKU), mewarisi kode PPN/tanggal/status baris utama.
+     *
+     * @return int jumlah NITKU tambahan yang dibuat
+     */
+    private function storeAdditionalNitkus(Request $request, CustomerTax $base): int
+    {
+        if ($base->tax_name !== 'NPWP') {
+            return 0;
+        }
+
+        $rows = collect($request->input('additional_nitkus', []))
+            ->map(fn ($row) => [
+                'nitku' => preg_replace('/\D/', '', (string) ($row['nitku'] ?? '')),
+                'address' => trim((string) ($row['address'] ?? '')),
+            ])
+            ->filter(fn ($row) => $row['nitku'] !== '');
+
+        $seen = [(string) $base->nitku];
+
+        foreach ($rows as $row) {
+            if (in_array($row['nitku'], $seen, true)) {
+                throw new \Exception("NITKU {$row['nitku']} dimasukkan lebih dari sekali untuk NPWP {$base->tax_number}.");
+            }
+            $seen[] = $row['nitku'];
+
+            $owner = CustomerTax::with('customer')
+                ->where('tax_number', $base->tax_number)
+                ->where('nitku', $row['nitku'])
+                ->whereNull('deleted_at')
+                ->first();
+
+            if ($owner) {
+                throw new \Exception("NPWP {$base->tax_number} NITKU {$row['nitku']} sudah ada atas nama customer: ".($owner->customer->name ?? 'Unknown').'.');
+            }
+
+            CustomerTax::create([
+                'customer_id' => $base->customer_id,
+                'label' => $base->label,
+                'tax_number' => $base->tax_number,
+                'nitku' => $row['nitku'],
+                'tax_name' => $base->tax_name,
+                'tax_address' => $row['address'],
+                'tax_type' => $base->tax_type,
+                'ppn_code' => $base->ppn_code,
+                'tax_rate' => $base->tax_rate,
+                'effective_date' => $base->effective_date,
+                'expiry_date' => $base->expiry_date,
+                'description' => $base->description,
+                'status' => $base->status,
+                'is_active' => $base->status === 'active',
+                'created_by' => Auth::id(),
+            ]);
+        }
+
+        return count($seen) - 1;
     }
 
     public function destroy(CustomerTax $customerTax)

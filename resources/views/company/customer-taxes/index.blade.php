@@ -1069,7 +1069,11 @@ function openCreateModal() {
                     <div class="form-group" id="create_nitku_group" style="display:none;">
                         <label class="form-label">NITKU (6 Digit)</label>
                         <input type="text" id="create_nitku" name="nitku" class="form-input" placeholder="000000" maxlength="6" oninput="this.value = this.value.replace(/[^0-9]/g, '');">
-                        <small class="text-gray-600 mt-1">Default 000000 if empty (NPWP)</small>
+                        <small class="text-gray-600 mt-1">Default 000000 if empty (NPWP). Alamatnya = Tax Address di bawah.</small>
+                        <div id="create_additional_nitkus" class="additional-nitku-list"></div>
+                        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:6px;" onclick="addAdditionalNitkuRow('create')">
+                            <i class="fas fa-plus"></i> Tambah NITKU
+                        </button>
                     </div>
 
                     <div class="form-group">
@@ -1296,7 +1300,11 @@ function openEditModal(id) {
                             <div class="form-group" id="edit_nitku_group" style="display:none;">
                                 <label class="form-label">NITKU (6 Digit)</label>
                                 <input type="text" id="edit_nitku" name="nitku" class="form-input" value="${data.data.nitku || ''}" placeholder="000000" maxlength="6" oninput="this.value = this.value.replace(/[^0-9]/g, '');">
-                                <small class="text-gray-600 mt-1">Default 000000 if empty (NPWP)</small>
+                                <small class="text-gray-600 mt-1">Default 000000 if empty (NPWP). Alamatnya = Tax Address di bawah.</small>
+                                <div id="edit_additional_nitkus" class="additional-nitku-list"></div>
+                                <button type="button" class="btn btn-secondary btn-sm" style="margin-top:6px;" onclick="addAdditionalNitkuRow('edit')">
+                                    <i class="fas fa-plus"></i> Tambah NITKU (NPWP sama, alamat lain)
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -1367,7 +1375,7 @@ function submitEditForm(event, id = null) {
     event.preventDefault();
     
     const formData = new FormData(event.target);
-    const data = Object.fromEntries(formData.entries());
+    const data = collectNitkuAwareFormData(formData);
     
     const url = id ? `/company/customer-taxes/${id}` : '/company/customer-taxes';
     const method = id ? 'PUT' : 'POST';
@@ -1495,7 +1503,7 @@ function submitForm(event) {
     
     const form = event.target;
     const formData = new FormData(form);
-    const data = Object.fromEntries(formData.entries());
+    const data = collectNitkuAwareFormData(formData);
     
     // Convert boolean values
     if (data.status) {
@@ -1761,6 +1769,50 @@ function updateTaxNumberCounter(mode) {
     }
 }
 
+// Form dikirim sebagai JSON datar; nama "additional_nitkus[0][nitku]" tak akan dibaca Laravel
+// sebagai array, jadi baris NITKU tambahan dirakit jadi array objek di sini.
+function collectNitkuAwareFormData(formData) {
+    const data = {};
+    const extra = {};
+    for (const [key, value] of formData.entries()) {
+        const match = key.match(/^additional_nitkus\[(\d+)\]\[(nitku|address)\]$/);
+        if (match) {
+            extra[match[1]] = extra[match[1]] || {};
+            extra[match[1]][match[2]] = value;
+        } else {
+            data[key] = value;
+        }
+    }
+    const rows = Object.values(extra);
+    if (rows.length) {
+        data.additional_nitkus = rows;
+    }
+    return data;
+}
+
+// MOM 19 Nov 2026 p5: NPWP dengan beberapa NITKU (alamat berbeda). Tiap baris tambahan
+// menjadi Customer Tax tersendiri saat disimpan; alamatnya wajib.
+let additionalNitkuSeq = 0;
+function addAdditionalNitkuRow(mode) {
+    const list = document.getElementById(mode === 'create' ? 'create_additional_nitkus' : 'edit_additional_nitkus');
+    if (!list) return;
+    const index = additionalNitkuSeq++;
+    const row = document.createElement('div');
+    row.className = 'additional-nitku-row';
+    row.style.cssText = 'border:1px dashed #cbd5e1; border-radius:6px; padding:8px; margin-top:8px;';
+    row.innerHTML = `
+        <div style="display:flex; gap:8px; align-items:center;">
+            <input type="text" name="additional_nitkus[${index}][nitku]" class="form-input" placeholder="NITKU 6 digit" maxlength="6" required
+                   style="max-width:140px;" oninput="this.value = this.value.replace(/[^0-9]/g, '');">
+            <button type="button" class="btn btn-danger btn-sm" title="Hapus NITKU ini" onclick="this.closest('.additional-nitku-row').remove()">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+        <textarea name="additional_nitkus[${index}][address]" class="form-input form-textarea" placeholder="Alamat NITKU (wajib)" required style="margin-top:6px; min-height:60px;"></textarea>
+    `;
+    list.appendChild(row);
+}
+
 // Update Tax Number maxlength based on Tax Name selection
 function updateTaxNumberMaxLength(mode) {
     const taxNameId = mode === 'create' ? 'create_tax_name' : 'edit_tax_name';
@@ -1815,6 +1867,9 @@ function updateTaxNumberMaxLength(mode) {
                 }
                 if (!showNitku) {
                     nitkuInput.value = ''; // Clear if hidden (e.g. NIK)
+                    // NITKU tambahan hanya untuk NPWP; dibuang supaya field wajibnya tak menahan submit.
+                    const extraList = document.getElementById(mode === 'create' ? 'create_additional_nitkus' : 'edit_additional_nitkus');
+                    if (extraList) extraList.innerHTML = '';
                 }
             }
         }
