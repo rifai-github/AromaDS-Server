@@ -77,6 +77,22 @@ class CommissionPeriodService
             if ($period && ! $period->isCommissionLocked()) {
                 return $period;
             }
+
+            // Jawaban klien 22 Nov (#5): periode BA Date sudah di-LOCK -> kontrak (yang sudah ada
+            // pembayarannya) masuk PERIODE SELANJUTNYA: periode aktif pertama yang belum di-LOCK
+            // dan dimulai setelah periode itu.
+            if ($period) {
+                $next = AchievementPeriod::query()
+                    ->where('status', 'active')
+                    ->whereDate('start_date', '>', $period->end_date->toDateString())
+                    ->orderBy('start_date')
+                    ->get()
+                    ->first(fn (AchievementPeriod $candidate) => ! $candidate->isCommissionLocked());
+
+                if ($next) {
+                    return $next;
+                }
+            }
         }
 
         $current = AchievementPeriod::current()->first();

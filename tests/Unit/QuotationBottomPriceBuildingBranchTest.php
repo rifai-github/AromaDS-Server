@@ -10,15 +10,18 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * MOM 18 Nov 2026 p3d: bottom price diambil dari branch building (lokasi pasang), harga terbesar
- * yang dipakai; harga sama tetap dari branch building. Contoh: marketing + customer Jakarta,
- * pasang di Bandung.
+ * MOM 18 Nov 2026 p3d + jawaban klien 22 Nov #18: bottom price ikut branch MASTER BUILDING (lokasi
+ * pasang), bukan branch customer/marketing. SQ yang gedungnya di beberapa cabang memakai bottom
+ * price tertinggi di antara cabang gedung itu. Contoh: marketing + customer Jakarta, pasang di
+ * Bandung.
  */
 class QuotationBottomPriceBuildingBranchTest extends TestCase
 {
     private const JAKARTA = 1;
 
     private const BANDUNG = 2;
+
+    private const SURABAYA = 3;
 
     protected function setUp(): void
     {
@@ -119,6 +122,7 @@ class QuotationBottomPriceBuildingBranchTest extends TestCase
         DB::table('branches')->insert([
             ['id' => self::JAKARTA, 'name' => 'Jakarta', 'city_id' => 100, 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
             ['id' => self::BANDUNG, 'name' => 'Bandung', 'city_id' => 200, 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
+            ['id' => self::SURABAYA, 'name' => 'Surabaya', 'city_id' => 300, 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
         ]);
 
         DB::table('master_rentals')->insert(['id' => 10, 'rental_name' => 'ADS 106 - 150ml', 'created_at' => now(), 'updated_at' => now()]);
@@ -138,7 +142,7 @@ class QuotationBottomPriceBuildingBranchTest extends TestCase
         $this->assertSame(self::BANDUNG, (int) $result['issues'][0]['bottom_price_branch_id']);
     }
 
-    public function test_quotation_branch_price_is_used_when_it_is_higher_than_the_building_branch(): void
+    public function test_the_customer_or_marketing_branch_is_ignored_even_when_higher(): void
     {
         $quotation = $this->quotationInJakartaInstalledIn(buildingBranchId: self::BANDUNG, unitPrice: 1_100_000);
         $this->bottomPrice(self::JAKARTA, 1_500_000);
@@ -146,9 +150,24 @@ class QuotationBottomPriceBuildingBranchTest extends TestCase
 
         $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
 
+        // Hanya Bandung (cabang gedung) yang dihitung: 1.100.000 >= 1.000.000 -> lolos.
+        $this->assertFalse($result['requires_approval']);
+    }
+
+    public function test_multi_branch_quotation_uses_the_highest_building_branch_bottom_price_for_every_line(): void
+    {
+        $quotation = $this->quotationInJakartaInstalledIn(buildingBranchId: self::BANDUNG, unitPrice: 1_200_000);
+        DB::table('buildings')->insert(['id' => 6, 'name' => 'Gedung Surabaya', 'branch_id' => self::SURABAYA, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('surveys')->insert(['id' => 8, 'building_id' => 6, 'created_at' => now(), 'updated_at' => now()]);
+        $this->detail(1, 8, 1_200_000);
+        $this->bottomPrice(self::BANDUNG, 1_000_000);
+        $this->bottomPrice(self::SURABAYA, 1_500_000);
+
+        $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation->fresh());
+
+        // Kedua baris (Bandung & Surabaya) dinilai dengan 1.500.000.
         $this->assertTrue($result['requires_approval']);
-        $this->assertSame(1_500_000.0, $result['issues'][0]['bottom_price']);
-        $this->assertSame(self::JAKARTA, (int) $result['issues'][0]['bottom_price_branch_id']);
+        $this->assertSame([1_500_000.0, 1_500_000.0], array_column($result['issues'], 'bottom_price'));
     }
 
     public function test_equal_prices_are_attributed_to_the_building_branch(): void
@@ -162,14 +181,15 @@ class QuotationBottomPriceBuildingBranchTest extends TestCase
         $this->assertSame(self::BANDUNG, (int) $result['issues'][0]['bottom_price_branch_id']);
     }
 
-    public function test_building_branch_without_bottom_price_falls_back_to_quotation_branch(): void
+    public function test_building_branch_without_bottom_price_is_missing_not_borrowed_from_the_quotation_branch(): void
     {
         $quotation = $this->quotationInJakartaInstalledIn(buildingBranchId: self::BANDUNG, unitPrice: 1_100_000);
         $this->bottomPrice(self::JAKARTA, 1_000_000);
 
         $result = app(QuotationBottomPriceEvaluator::class)->evaluate($quotation);
 
-        $this->assertFalse($result['requires_approval']);
+        $this->assertTrue($result['requires_approval']);
+        $this->assertSame('missing_bottom_price', $result['issues'][0]['type']);
     }
 
     public function test_building_without_branch_id_uses_the_branch_serving_its_city(): void

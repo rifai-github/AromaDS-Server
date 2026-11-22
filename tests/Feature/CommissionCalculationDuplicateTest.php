@@ -457,11 +457,24 @@ class CommissionCalculationDuplicateTest extends TestCase
             $this->assertStringContainsString('LOCK', $e->getMessage());
         }
 
-        // Kontrak baru dengan tanggal efektif di periode yang di-LOCK tidak mengubah pencapaiannya.
+        // Jawaban klien 22 Nov (#5): kontrak baru dengan tanggal efektif di periode yang di-LOCK
+        // masuk PERIODE SELANJUTNYA (Okt), pencapaian periode Sep tetap.
         $before = $this->achieved();
         $result = $this->service->calculateCommissionForContract($this->contract(2, 102, 70_000_000));
+        $this->assertTrue($result['success'], $result['message']);
         $this->assertEquals($before, $this->achieved());
+        $this->assertSame(2, (int) CommissionCalculation::where('contract_id', 2)->value('achievement_period_id'));
+        $this->assertEquals(70_000_000, (float) MarketingTarget::find(10)->achieved_amount);
+    }
+
+    public function test_locked_period_without_a_next_period_refuses_the_commission(): void
+    {
+        DB::table('achievement_periods')->where('id', 1)->update(['is_commission_locked' => true]);
+
+        $result = $this->service->calculateCommissionForContract($this->contract(1, 101, 40_000_000));
+
         $this->assertFalse($result['success']);
+        $this->assertEquals(0, $this->achieved());
     }
 
     public function test_three_new_contracts_climb_tiers(): void

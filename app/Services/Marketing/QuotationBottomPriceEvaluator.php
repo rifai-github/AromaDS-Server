@@ -34,6 +34,16 @@ class QuotationBottomPriceEvaluator
         $missingBottomPriceIssues = [];
         $lines = [];
 
+        // Klien 22 Nov 2026 (jawaban #18): bottom price ikut branch MASTER BUILDING, bukan branch
+        // customer/marketing. SQ yang gedungnya tersebar di beberapa cabang memakai bottom price
+        // TERTINGGI di antara cabang-cabang gedung itu.
+        $buildingBranchIds = $details
+            ->map(fn ($detail) => $this->buildingBranchId($detail))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
         foreach ($details as $detail) {
             // UAT 18 Nov: free qty ikut dihitung ke total bottom price (qty + qty free), jadi
             // baris free tidak lagi dilewati. Hanya baris tanpa unit sama sekali yang diabaikan.
@@ -41,11 +51,8 @@ class QuotationBottomPriceEvaluator
                 continue;
             }
 
-            // MOM 18 Nov 2026 p3d: bottom price diambil dari branch building (lokasi pasang), dan
-            // yang terbesar dipakai. Pembanding = branch quotation (marketing/customer). Harga sama
-            // -> tetap tercatat dari branch building. Tanpa building (renewal tanpa survey) atau
-            // branch building belum punya bottom price -> branch quotation saja seperti dulu.
-            $bottomPrice = $this->resolveBottomPrice($detail, $branchId, $offerType);
+            // Tanpa branch gedung sama sekali (renewal tanpa survey) -> branch quotation seperti dulu.
+            $bottomPrice = $this->resolveBottomPrice($detail, $buildingBranchIds ?: array_filter([$branchId]), $offerType);
 
             // A missing or zero floor means this line's contribution to the
             // total floor cannot be computed at all, so the whole quotation
@@ -142,16 +149,18 @@ class QuotationBottomPriceEvaluator
     /** @var array<int, int|null> branch building per survey_id, supaya tiap survey dicari sekali */
     private array $buildingBranchCache = [];
 
-    private function resolveBottomPrice($detail, $quotationBranchId, string $offerType): ?RentalBottomPrice
+    /**
+     * Bottom price tertinggi rental baris ini di antara $branchIds (cabang gedung SQ). Cabang
+     * gedung baris ini sendiri dicoba dulu, jadi bila harganya sama yang tercatat cabang itu.
+     */
+    private function resolveBottomPrice($detail, array $branchIds, string $offerType): ?RentalBottomPrice
     {
-        if (! $detail->master_rental_id) {
+        if (! $detail->master_rental_id || empty($branchIds)) {
             return null;
         }
 
-        $buildingBranchId = $this->buildingBranchId($detail);
-
-        // Urutan penting: branch building dulu, sehingga bila harga sama yang dipakai tetap dia.
-        $branchIds = array_values(array_unique(array_filter([$buildingBranchId, $quotationBranchId])));
+        $ownBranchId = $this->buildingBranchId($detail);
+        $branchIds = array_values(array_unique(array_filter(array_merge([$ownBranchId], $branchIds))));
 
         $best = null;
 
