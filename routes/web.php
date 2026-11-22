@@ -1140,6 +1140,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('inventory-issuings/{id}/finalize', [InventoryIssuingController::class, 'finalize'])->name('inventory-issuings.finalize')->middleware('permission:warehouse.inventory-issuings.update');
         Route::post('inventory-issuings/{id}/unpost', [InventoryIssuingController::class, 'unpost'])->name('inventory-issuings.unpost')->middleware('permission:warehouse.inventory-issuings.update');
         Route::post('inventory-issuings/{id}/scan-serial-number', [InventoryIssuingController::class, 'scanSerialNumber'])->name('inventory-issuings.scan-serial-number')->middleware('permission:warehouse.inventory-issuings.update');
+        Route::post('inventory-issuings/{id}/serial-links/{link}/quantity', [InventoryIssuingController::class, 'updateSerialLinkQuantity'])->name('inventory-issuings.serial-link-quantity')->middleware('permission:warehouse.inventory-issuings.update');
 
         // Change Aroma shortcut (Top Management only) — bypasses the Marketing > Aroma
         // Switching approval workflow, so it's gated by a dedicated permission rather than

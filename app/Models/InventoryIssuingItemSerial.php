@@ -17,11 +17,13 @@ class InventoryIssuingItemSerial extends Model
         'inventory_issuing_item_id',
         'serial_number_id',
         'unit_index',
+        'quantity',
         'created_by',
     ];
 
     protected $casts = [
         'unit_index' => 'integer',
+        'quantity' => 'integer',
     ];
 
     public function inventoryIssuingItem()

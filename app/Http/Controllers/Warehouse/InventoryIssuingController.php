@@ -549,6 +549,13 @@ class InventoryIssuingController extends Controller
             $missingSNItems = [];
             foreach ($issuing->items as $item) {
                 if (!$item->hasAllRequiredSerials()) {
+                    if ($item->usesBatchSerial()) {
+                        // Jawaban klien #7: batch rows are complete once their linked
+                        // batches cover the whole quantity.
+                        $missingSNItems[] = ($item->product->name ?? 'Unknown Product') . " ({$item->coveredBatchQuantity()}/{$item->serialQuantity()} pcs)";
+                        continue;
+                    }
+
                     $required = $item->requiredSerialCount();
                     $linked = $item->linkedSerialCount();
                     $missingSNItems[] = ($item->product->name ?? 'Unknown Product') . " ({$linked}/{$required})";
@@ -1097,7 +1104,7 @@ class InventoryIssuingController extends Controller
     private function linkScannedSerialToIssuingItem(InventoryIssuing $issuing, \App\Models\InventoryIssuingItem $issuingItem, string $serialNumber, ?int $targetUnitIndex): array
     {
         $issuingItem->loadMissing(['product.productCategory', 'product.productType']);
-        $issuingItem->load('serialLinks');
+        $issuingItem->load('serialLinks.serialNumber');
 
         // QA "1 Rental banyak Qty": unit products with quantity_requested > 1 need one
         // distinct SN per unit. A full row can still be corrected, but only by naming
@@ -1105,9 +1112,25 @@ class InventoryIssuingController extends Controller
         $requiredSerialCount = $issuingItem->requiredSerialCount();
         $linkedSerialCount = $issuingItem->linkedSerialCount();
         $replaceUnitIndex = null;
+        $isBatch = $issuingItem->usesBatchSerial();
 
         if ($targetUnitIndex !== null) {
             $replaceUnitIndex = $targetUnitIndex;
+        } elseif ($isBatch) {
+            // Jawaban klien #7: a batch row takes further batches until its quantity is
+            // covered. Once covered, a single batch can still be swapped by scanning again
+            // (old "Ubah SN"); with several batches the slot to replace must be named.
+            if ($issuingItem->hasAllRequiredSerials()) {
+                if ($linkedSerialCount <= 1) {
+                    $replaceUnitIndex = (int) ($issuingItem->serialLinks->min('unit_index') ?? 1);
+                } else {
+                    return [
+                        'status'  => 'error',
+                        'code'    => 422,
+                        'message' => "Serial Number batch untuk item ini sudah menutup seluruh qty ({$issuingItem->coveredBatchQuantity()}/{$issuingItem->serialQuantity()} pcs). Ubah qty atau ganti salah satu batch.",
+                    ];
+                }
+            }
         } elseif ($requiredSerialCount > 0 && $linkedSerialCount >= $requiredSerialCount) {
             if ($requiredSerialCount <= 1) {
                 // Pre-existing "Ubah SN" flow: a row that only ever needs 1 SN (qty 1
@@ -1227,6 +1250,15 @@ class InventoryIssuingController extends Controller
             }
         }
 
+        $batchQuantity = null;
+        if ($isBatch) {
+            $batchPlan = $this->planBatchLinkQuantity($issuing, $issuingItem, $sn, $replaceUnitIndex);
+            if ($batchPlan['status'] !== 'ok') {
+                return ['status' => 'error', 'code' => 422, 'message' => $batchPlan['message']];
+            }
+            $batchQuantity = $batchPlan['quantity'];
+        }
+
         // Guard the (item, serial) unique index: one SN cannot hold two slots of the
         // same row. Re-scanning into the slot it already occupies stays a no-op.
         $existingLink = $issuingItem->serialLinks->firstWhere('serial_number_id', $sn->id);
@@ -1252,10 +1284,11 @@ class InventoryIssuingController extends Controller
             'inventory_issuing_item_id' => $issuingItem->id,
             'serial_number_id' => $sn->id,
             'unit_index' => $nextUnitIndex,
+            'quantity' => $batchQuantity,
             'created_by' => Auth::id(),
         ]);
 
-        $issuingItem->load('serialLinks');
+        $issuingItem->load('serialLinks.serialNumber');
         $primarySerialId = $issuingItem->serialLinks->sortBy('unit_index')->first()?->serial_number_id;
 
         $issuingItem->update([
@@ -1265,6 +1298,11 @@ class InventoryIssuingController extends Controller
         ]);
 
         $linkedSerialCount = $issuingItem->serialLinks->count();
+        if ($isBatch) {
+            // Batch rows count bottles covered, not SN codes linked.
+            $linkedSerialCount = $issuingItem->coveredBatchQuantity();
+            $requiredSerialCount = $issuingItem->serialQuantity();
+        }
 
         // Update SN status to in_use (optional, bisa juga tetap available sampai benar-benar terpasang)
         // $sn->update(['status' => 'in_use']);
@@ -1282,8 +1320,175 @@ class InventoryIssuingController extends Controller
                 'unit_index' => (int) $nextUnitIndex,
                 'room_name' => $issuingItem->room_name,
                 'replaced' => $replaceUnitIndex !== null,
+                'batch_quantity' => $isBatch
+                    ? (int) ($issuingItem->batchSerialAllocations()->firstWhere('unit_index', $nextUnitIndex)['quantity'] ?? 0)
+                    : null,
             ],
         ];
+    }
+
+    /**
+     * Jawaban klien #7 (UAT 18 Nov 2026): how many bottles a newly scanned batch code
+     * covers on a batch row. The other batches keep what they already cover (their
+     * counts are written down first, so the "rest" link cannot silently shift), and the
+     * new code takes the remainder - or only as many bottles as that code still has free
+     * in this warehouse, leaving the rest of the row waiting for the next batch.
+     *
+     * NULL is stored for a lone batch that covers everything: that is the old single-batch
+     * meaning, so later qty edits keep working as before.
+     */
+    private function planBatchLinkQuantity(InventoryIssuing $issuing, \App\Models\InventoryIssuingItem $issuingItem, \App\Models\SerialNumber $sn, ?int $replaceUnitIndex): array
+    {
+        $issuingItem->loadMissing('serialLinks.serialNumber');
+
+        $sameCodeLink = $issuingItem->serialLinks->first(function ($link) use ($sn, $replaceUnitIndex) {
+            return $link->serialNumber?->serial_number === $sn->serial_number
+                && ($replaceUnitIndex === null || (int) $link->unit_index !== (int) $replaceUnitIndex);
+        });
+        if ($sameCodeLink) {
+            return [
+                'status' => 'error',
+                'message' => "Serial Number batch {$sn->serial_number} sudah dipakai di item ini (slot {$sameCodeLink->unit_index}). Ubah qty batch itu bila perlu.",
+            ];
+        }
+
+        $others = $issuingItem->batchSerialAllocations()
+            ->reject(fn ($allocation) => $replaceUnitIndex !== null && $allocation['unit_index'] === (int) $replaceUnitIndex);
+
+        foreach ($others as $allocation) {
+            if (! $allocation['explicit'] && $allocation['link_id']) {
+                \App\Models\InventoryIssuingItemSerial::whereKey($allocation['link_id'])->update(['quantity' => $allocation['quantity']]);
+            }
+        }
+
+        $quantity = $issuingItem->serialQuantity();
+        $remaining = $quantity - (int) $others->sum('quantity');
+
+        if ($remaining <= 0) {
+            return [
+                'status' => 'error',
+                'message' => "Serial Number batch untuk item ini sudah menutup seluruh qty ({$quantity} pcs). Kurangi qty salah satu batch dulu.",
+            ];
+        }
+
+        $available = app(\App\Services\Warehouse\InventoryIssuingService::class)
+            ->countAvailableBatchSerials($issuing, $issuingItem, $sn->serial_number);
+
+        // No free bottle left under this code: keep the pre-#7 behaviour (the code covers
+        // the rest of the row) and let the Ready to Issue stock guard judge it, as before.
+        $covered = $available > 0 ? min($remaining, $available) : $remaining;
+
+        return [
+            'status' => 'ok',
+            'quantity' => ($others->isEmpty() && $covered === $quantity) ? null : $covered,
+        ];
+    }
+
+    /**
+     * Jawaban klien #7: change how many bottles one linked batch covers on a batch row,
+     * or drop the batch (quantity 0). Used when the operator physically takes, say, 2
+     * bottles from batch A and 2 from batch B although batch A alone has enough.
+     */
+    public function updateSerialLinkQuantity(Request $request, $id, $linkId)
+    {
+        $request->validate([
+            'quantity' => 'required|integer|min:0',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $issuing = InventoryIssuing::findOrFail($id);
+
+            if ($issuing->status !== 'pending') {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Qty batch hanya bisa diubah selama issuing berstatus pending (Un Prepare).',
+                ], 422);
+            }
+
+            $link = \App\Models\InventoryIssuingItemSerial::with('serialNumber')->findOrFail($linkId);
+            $issuingItem = \App\Models\InventoryIssuingItem::with(['product.productCategory', 'product.productType', 'serialLinks.serialNumber'])
+                ->findOrFail($link->inventory_issuing_item_id);
+
+            if ((int) $issuingItem->inventory_issuing_id !== (int) $issuing->id || ! $issuingItem->usesBatchSerial()) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Qty hanya bisa diatur untuk SN batch (refill/aroma) pada issuing ini.',
+                ], 422);
+            }
+
+            $newQuantity = (int) $request->quantity;
+            $others = $issuingItem->batchSerialAllocations()->reject(fn ($allocation) => $allocation['link_id'] === (int) $link->id);
+
+            if ($newQuantity > 0) {
+                $room = $issuingItem->serialQuantity() - (int) $others->sum('quantity');
+                if ($newQuantity > $room) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "Qty batch maksimal {$room} pcs (qty item {$issuingItem->serialQuantity()} dikurangi batch lain).",
+                    ], 422);
+                }
+
+                $available = app(\App\Services\Warehouse\InventoryIssuingService::class)
+                    ->countAvailableBatchSerials($issuing, $issuingItem, (string) $link->serialNumber?->serial_number);
+                if ($newQuantity > $available) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "Stok SN batch {$link->serialNumber?->serial_number} di gudang ini hanya {$available} pcs.",
+                    ], 422);
+                }
+            }
+
+            // Freeze the other batches' counts so the "rest" link does not absorb the change.
+            foreach ($others as $allocation) {
+                if (! $allocation['explicit'] && $allocation['link_id']) {
+                    \App\Models\InventoryIssuingItemSerial::whereKey($allocation['link_id'])->update(['quantity' => $allocation['quantity']]);
+                }
+            }
+
+            if ($newQuantity === 0) {
+                $link->delete();
+            } else {
+                $link->update(['quantity' => $newQuantity]);
+            }
+
+            $primarySerialId = \App\Models\InventoryIssuingItemSerial::where('inventory_issuing_item_id', $issuingItem->id)
+                ->orderBy('unit_index')
+                ->value('serial_number_id');
+            $issuingItem->update([
+                'serial_number_id' => $primarySerialId,
+                'updated_by' => Auth::id(),
+            ]);
+
+            DB::commit();
+
+            $issuingItem->load('serialLinks.serialNumber');
+
+            return response()->json([
+                'status' => 'success',
+                'message' => $newQuantity === 0
+                    ? "Batch {$link->serialNumber?->serial_number} dilepas dari item."
+                    : "Qty batch {$link->serialNumber?->serial_number} menjadi {$newQuantity} pcs ({$issuingItem->coveredBatchQuantity()}/{$issuingItem->serialQuantity()} pcs ber-SN).",
+                'checklist' => $this->buildSerialChecklist($issuing),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Failed to update batch serial quantity: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal mengubah qty batch: ' . $e->getMessage(),
+            ], 500);
+        }
     }
     
     /**
@@ -1763,7 +1968,7 @@ public function getUserTeams($userId)
         // Rows that still owe a mandatory SN win; optional-SN rows only take the scan
         // when nothing mandatory is waiting for it.
         $pool = $candidates
-            ->filter(fn ($item) => $item->requiredSerialCount() > 0 && $item->linkedSerialCount() < $item->requiredSerialCount())
+            ->filter(fn ($item) => $item->isAwaitingSerial())
             ->values();
 
         if ($pool->isEmpty()) {
@@ -1820,6 +2025,62 @@ public function getUserTeams($userId)
 
             $required = $item->requiredSerialCount();
             $links = $item->serialLinks->sortBy('unit_index')->values();
+
+            if ($item->usesBatchSerial()) {
+                // Jawaban klien #7: one slot per linked batch with its bottle count, and
+                // one empty slot while the batches do not yet cover the quantity.
+                $quantity = $item->serialQuantity();
+                $allocations = $item->batchSerialAllocations();
+                $covered = (int) $allocations->sum('quantity');
+
+                $slots = $allocations->map(fn ($allocation) => [
+                    'unit_index' => $allocation['unit_index'],
+                    'filled' => true,
+                    'serial_number' => $allocation['serial_number']?->serial_number,
+                    'sn_status' => $allocation['serial_number']?->status,
+                    'batch_quantity' => $allocation['quantity'],
+                    'link_id' => $allocation['link_id'],
+                ])->all();
+
+                if ($covered < $quantity) {
+                    $slots[] = [
+                        'unit_index' => $slots ? (max(array_column($slots, 'unit_index')) + 1) : 1,
+                        'filled' => false,
+                        'serial_number' => null,
+                        'sn_status' => null,
+                        'batch_quantity' => $quantity - $covered,
+                        'link_id' => null,
+                    ];
+                    $allComplete = false;
+                }
+
+                $totalRequired += $quantity;
+                $totalFilled += min($covered, $quantity);
+
+                $productId = (int) $item->product_id;
+                if (! isset($groups[$productId])) {
+                    $groups[$productId] = [
+                        'product_id' => $productId,
+                        'product_name' => $item->product->name ?? 'Unknown Product',
+                        'category_name' => $item->product?->productCategory?->name,
+                        'quantity' => 0.0,
+                        'required' => 0,
+                        'filled' => 0,
+                        'slots' => [],
+                        'batch' => true,
+                    ];
+                }
+
+                $groups[$productId]['quantity'] += (float) ($item->quantity_requested ?? 1);
+                $groups[$productId]['required'] += $quantity;
+                $groups[$productId]['filled'] += min($covered, $quantity);
+
+                foreach ($slots as $slot) {
+                    $groups[$productId]['slots'][] = array_merge($slot, ['item_id' => (int) $item->id]);
+                }
+
+                continue;
+            }
 
             if ($links->isEmpty() && $item->serial_number_id && $item->serialNumber) {
                 // Legacy row written before the pivot table existed.

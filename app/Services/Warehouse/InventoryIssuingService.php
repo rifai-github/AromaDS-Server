@@ -130,9 +130,10 @@ class InventoryIssuingService
 
     public function assertBatchSerialStockIsSufficient(InventoryIssuing $issuing): void
     {
-        $issuing->loadMissing(['items.product.productCategory', 'items.product.productType', 'items.serialNumber']);
+        $issuing->loadMissing(['items.product.productCategory', 'items.product.productType', 'items.serialNumber', 'items.serialLinks.serialNumber']);
 
         $shortages = [];
+        $uncovered = [];
 
         foreach ($issuing->items as $item) {
             $product = $item->product;
@@ -143,22 +144,40 @@ class InventoryIssuingService
                 continue;
             }
 
-            $quantity = $this->resolveSerialQuantity($item);
-            if ($quantity <= 1) {
-                continue;
-            }
-
-            $serialCode = $item->serialNumber?->serial_number;
-            if (!$serialCode) {
+            $allocations = $item->batchSerialAllocations();
+            if ($allocations->isEmpty()) {
                 continue; // Missing SN entirely is reported by the completeness check.
             }
 
-            $available = $this->countAvailableBatchSerials($issuing, $item, $serialCode);
+            $productName = $product->name ?? "Product ID: {$item->product_id}";
 
-            if ($available < $quantity) {
-                $productName = $product->name ?? "Product ID: {$item->product_id}";
-                $shortages[] = "{$productName} SN {$serialCode} (butuh {$quantity}, tersedia {$available})";
+            // Jawaban klien #7: several batches may share one row; together they must
+            // cover the whole quantity, or stock would drop by more than the SNs moved.
+            $quantity = $item->serialQuantity();
+            $covered = (int) $allocations->sum('quantity');
+            if ($covered < $quantity) {
+                $uncovered[] = "{$productName} ({$covered}/{$quantity} pcs ber-SN)";
             }
+
+            foreach ($allocations as $allocation) {
+                $serialCode = $allocation['serial_number']?->serial_number;
+                if (!$serialCode || $allocation['quantity'] <= 1) {
+                    continue; // A single bottle was validated as ready when it was scanned.
+                }
+
+                $available = $this->countAvailableBatchSerials($issuing, $item, $serialCode);
+
+                if ($available < $allocation['quantity']) {
+                    $shortages[] = "{$productName} SN {$serialCode} (butuh {$allocation['quantity']}, tersedia {$available})";
+                }
+            }
+        }
+
+        if (!empty($uncovered)) {
+            throw new Exception(
+                'Serial Number belum menutup seluruh qty: ' . implode(', ', array_unique($uncovered))
+                . '. Scan SN batch berikutnya di tab Serial Number atau turunkan qty item.'
+            );
         }
 
         if (!empty($shortages)) {
@@ -175,7 +194,7 @@ class InventoryIssuingService
      * Only pending/processed issuings are subtracted: once an issuing is finalized
      * its SNs have already left the ready pool via updateSerialNumberLifecycle().
      */
-    private function countAvailableBatchSerials(InventoryIssuing $issuing, $item, string $serialCode): int
+    public function countAvailableBatchSerials(InventoryIssuing $issuing, $item, string $serialCode): int
     {
         $poolIds = SerialNumber::query()
             ->where('master_product_id', $item->product_id)
@@ -190,17 +209,54 @@ class InventoryIssuingService
             return 0;
         }
 
-        $claimedByOtherItems = \App\Models\InventoryIssuingItem::query()
-            ->where('id', '!=', $item->id)
-            ->where('product_id', $item->product_id)
-            ->whereIn('serial_number_id', $poolIds)
-            ->whereHas('inventoryIssuing', function ($query) {
-                $query->whereIn('status', ['pending', 'processed']);
-            })
-            ->get()
-            ->sum(fn ($otherItem) => $this->resolveSerialQuantity($otherItem));
+        $claimedByOtherItems = $this->batchItemsClaimingPool($item->product_id, $poolIds, ['pending', 'processed'])
+            ->reject(fn ($otherItem) => (int) $otherItem->id === (int) $item->id)
+            ->sum(fn ($otherItem) => $this->batchQuantityForCode($otherItem, $serialCode, $poolIds));
 
         return max(0, count($poolIds) - (int) $claimedByOtherItems);
+    }
+
+    /**
+     * Issuing items of $productId (in an issuing of one of $statuses) that point at a row
+     * of $poolIds, either through serial_number_id or one of their linked batches.
+     */
+    private function batchItemsClaimingPool($productId, array $poolIds, array $statuses, ?int $beforeItemId = null): Collection
+    {
+        $hasPivot = \Illuminate\Support\Facades\Schema::hasTable('inventory_issuing_item_serials');
+
+        $query = \App\Models\InventoryIssuingItem::query()
+            ->with(['product.productCategory', 'product.productType', 'serialNumber'])
+            ->where('product_id', $productId)
+            ->where(function ($query) use ($poolIds, $hasPivot) {
+                $query->whereIn('serial_number_id', $poolIds);
+                if ($hasPivot) {
+                    $query->orWhereHas('serialLinks', fn ($linkQuery) => $linkQuery->whereIn('serial_number_id', $poolIds));
+                }
+            })
+            ->whereHas('inventoryIssuing', fn ($query) => $query->whereIn('status', $statuses))
+            ->when($beforeItemId, fn ($query) => $query->where('id', '<', $beforeItemId));
+
+        if ($hasPivot) {
+            $query->with('serialLinks.serialNumber');
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * Bottles $item draws from batch code $serialCode. A row without linked batches keeps
+     * the old meaning: its pointer code covers its whole quantity.
+     */
+    private function batchQuantityForCode($item, string $serialCode, array $poolIds): int
+    {
+        $poolSet = array_flip($poolIds);
+
+        return (int) $item->batchSerialAllocations()
+            ->filter(function ($allocation) use ($serialCode, $poolSet) {
+                return isset($poolSet[$allocation['serial_number_id']])
+                    || $allocation['serial_number']?->serial_number === $serialCode;
+            })
+            ->sum('quantity');
     }
 
     public function postReadyStockIfMissing(InventoryIssuing $issuing): bool
@@ -423,8 +479,9 @@ class InventoryIssuingService
 
             $quantity = $this->resolveSerialQuantity($item);
             $isUniqueSerial = $item->product?->requiresUniqueSerialNumber() ?? true;
+            $linkCount = $item->relationLoaded('serialLinks') ? $item->serialLinks->count() : 0;
 
-            if ($isUniqueSerial || $quantity <= 1) {
+            if ($isUniqueSerial || ($quantity <= 1 && $linkCount <= 1)) {
                 // QA "1 Rental banyak Qty": a unit row with quantity > 1 has N distinct SNs
                 // linked via the pivot table; serial_number_id alone only holds the first.
                 $linkedIds = $item->relationLoaded('serialLinks')
@@ -436,17 +493,31 @@ class InventoryIssuingService
                 continue;
             }
 
-            $batchIds = $this->resolveBatchSerialNumberIdsForItem($item, $quantity, $allowedStatuses, $resolvedIds);
+            // Jawaban klien #7: one row may draw from several batch codes, each with its
+            // own bottle count. A row with a single batch keeps the old behaviour.
+            foreach ($item->batchSerialAllocations() as $allocation) {
+                if ($allocation['quantity'] <= 0 || !$allocation['serial_number']) {
+                    continue;
+                }
 
-            $resolvedIds = array_merge($resolvedIds, $batchIds);
+                $batchIds = $this->resolveBatchSerialNumberIdsForItem(
+                    $item,
+                    $allocation['serial_number'],
+                    $allocation['quantity'],
+                    $allowedStatuses,
+                    $resolvedIds
+                );
+
+                $resolvedIds = array_merge($resolvedIds, $batchIds);
+            }
         }
 
         return array_values(array_unique($resolvedIds));
     }
 
-    private function resolveBatchSerialNumberIdsForItem($item, int $quantity, array $allowedStatuses, array $excludedIds): array
+    private function resolveBatchSerialNumberIdsForItem($item, SerialNumber $pointer, int $quantity, array $allowedStatuses, array $excludedIds): array
     {
-        $serialNumber = $item->serialNumber?->serial_number;
+        $serialNumber = $pointer->serial_number;
         if (!$serialNumber || !$item->product_id) {
             return [];
         }
@@ -455,7 +526,7 @@ class InventoryIssuingService
         // dan Semarang). Pool dibatasi ke gudang baris pointer, yang dipilih scan issuing dari
         // gudang issuing itu sendiri. Tanpa ini baris id terkecil (gudang lain) yang dipindah
         // ke teknisi/customer, sedangkan stok gudang issuing tetap Ready.
-        $warehouseId = $item->serialNumber?->warehouse_id;
+        $warehouseId = $pointer->warehouse_id;
 
         $candidateIds = SerialNumber::query()
             ->where('master_product_id', $item->product_id)
@@ -510,20 +581,15 @@ class InventoryIssuingService
             return 0;
         }
 
-        $previousItems = \App\Models\InventoryIssuingItem::query()
-            ->where('id', '<', $item->id)
-            ->where('product_id', $item->product_id)
-            ->whereNotNull('serial_number_id')
-            ->whereIn('serial_number_id', $candidateIds)
-            ->whereHas('serialNumber', function ($query) use ($serialNumber) {
-                $query->where('serial_number', $serialNumber);
-            })
-            ->whereHas('inventoryIssuing', function ($query) {
-                $query->whereIn('status', ['pending', 'processed', 'sent', 'received']);
-            })
-            ->get();
-
-        return $previousItems->sum(fn ($previousItem) => $this->resolveSerialQuantity($previousItem));
+        // Earlier rows claim this code either via serial_number_id (single batch) or via
+        // one of their linked batches (jawaban klien #7); count only the bottles each
+        // takes from THIS code, not the row's whole quantity.
+        return (int) $this->batchItemsClaimingPool(
+            $item->product_id,
+            $candidateIds,
+            ['pending', 'processed', 'sent', 'received'],
+            (int) $item->id
+        )->sum(fn ($previousItem) => $this->batchQuantityForCode($previousItem, $serialNumber, $candidateIds));
     }
 
     private function resolveSerialQuantity($item): int

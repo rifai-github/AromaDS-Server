@@ -89,6 +89,7 @@ class RefillBatchSerialOffsetTest extends TestCase
             $table->foreignId('inventory_issuing_item_id');
             $table->foreignId('serial_number_id');
             $table->integer('unit_index')->default(1);
+            $table->unsignedInteger('quantity')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->timestamps();
         });

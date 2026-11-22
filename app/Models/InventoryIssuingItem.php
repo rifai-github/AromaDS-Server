@@ -101,7 +101,105 @@ class InventoryIssuingItem extends Model
 
     public function hasAllRequiredSerials(): bool
     {
+        if ($this->usesBatchSerial()) {
+            return $this->linkedSerialCount() > 0 && $this->coveredBatchQuantity() >= $this->serialQuantity();
+        }
+
         return $this->linkedSerialCount() >= $this->requiredSerialCount();
+    }
+
+    /**
+     * Still waiting for a mandatory serial: a unit row short of one SN per unit, or a
+     * batch row whose linked batches do not yet cover its whole quantity.
+     */
+    public function isAwaitingSerial(): bool
+    {
+        return $this->requiredSerialCount() > 0 && ! $this->hasAllRequiredSerials();
+    }
+
+    /**
+     * Aroma/refill product: SN wajib tapi tidak unik (satu kode batch = banyak botol).
+     */
+    public function usesBatchSerial(): bool
+    {
+        $product = $this->product;
+
+        return $product && $product->requiresSerialNumber() && ! $product->requiresUniqueSerialNumber();
+    }
+
+    /**
+     * Physical units this row hands over, as the serial allocation counts them.
+     */
+    public function serialQuantity(): int
+    {
+        foreach (['quantity_received', 'quantity_issued', 'quantity_requested'] as $field) {
+            $quantity = (float) ($this->{$field} ?? 0);
+            if ($quantity > 0) {
+                return max(1, (int) ceil($quantity));
+            }
+        }
+
+        return 1;
+    }
+
+    /**
+     * Jawaban klien #7 (UAT 18 Nov 2026): a batch row may draw its quantity from several
+     * batch codes (batch 1 sisa 1 botol, batch 2 sisa 1, ...). Each linked batch carries
+     * its own bottle count; a NULL count means "whatever the other batches leave", which
+     * is exactly the old single-batch behaviour (one code covers the whole quantity).
+     *
+     * @return \Illuminate\Support\Collection<int, array{link_id: ?int, unit_index: int, serial_number_id: int, serial_number: ?SerialNumber, quantity: int, explicit: bool}>
+     */
+    public function batchSerialAllocations(): \Illuminate\Support\Collection
+    {
+        $total = $this->serialQuantity();
+        $links = $this->relationLoaded('serialLinks') ? $this->serialLinks : $this->serialLinks()->with('serialNumber')->get();
+        $links = $links->sortBy('unit_index')->values();
+
+        if ($links->isEmpty()) {
+            if (! $this->serial_number_id) {
+                return collect();
+            }
+
+            return collect([[
+                'link_id' => null,
+                'unit_index' => 1,
+                'serial_number_id' => (int) $this->serial_number_id,
+                'serial_number' => $this->serialNumber,
+                'quantity' => $total,
+                'explicit' => false,
+            ]]);
+        }
+
+        $explicitSum = (int) $links->whereNotNull('quantity')->sum('quantity');
+        $remainder = max(0, $total - $explicitSum);
+        $left = $total;
+
+        return $links->map(function ($link) use (&$left, &$remainder) {
+            $explicit = $link->quantity !== null;
+            $quantity = $explicit ? (int) $link->quantity : $remainder;
+            if (! $explicit) {
+                $remainder = 0; // Only one link can take the remainder.
+            }
+
+            // Never hand over more than the row's quantity, even if counts were edited.
+            $quantity = max(0, min($quantity, $left));
+            $left -= $quantity;
+
+            return [
+                'link_id' => (int) $link->id,
+                'unit_index' => (int) $link->unit_index,
+                'serial_number_id' => (int) $link->serial_number_id,
+                'serial_number' => $link->relationLoaded('serialNumber') ? $link->serialNumber : $link->serialNumber()->first(),
+                'quantity' => $quantity,
+                'explicit' => $explicit,
+            ];
+        })->values();
+    }
+
+    public function coveredBatchQuantity(): int
+    {
+        return (int) $this->batchSerialAllocations()->sum('quantity');
     }
 
     public function createdBy()

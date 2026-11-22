@@ -211,7 +211,9 @@
                                     foreach($issuing->items as $item) {
                                         if (!$item->hasAllRequiredSerials()) {
                                             $missingSN = true;
-                                            $missingItems[] = $item->product->name . " ({$item->linkedSerialCount()}/{$item->requiredSerialCount()})";
+                                            $missingItems[] = $item->usesBatchSerial()
+                                                ? $item->product->name . " ({$item->coveredBatchQuantity()}/{$item->serialQuantity()} pcs)"
+                                                : $item->product->name . " ({$item->linkedSerialCount()}/{$item->requiredSerialCount()})";
                                         }
                                     }
                                 @endphp
@@ -533,6 +535,25 @@
                                             })->values();
 
                                             $linkedCount = $serialSlots->count();
+                                            $countUnit = 'SN';
+
+                                            // Jawaban klien #7: SN batch (refill/aroma) dihitung per botol; satu
+                                            // baris boleh memakai beberapa batch, masing-masing dengan qty sendiri.
+                                            $isBatchProduct = $firstItem->usesBatchSerial();
+                                            if ($isBatchProduct) {
+                                                $serialSlots = $productItems->flatMap(fn ($item) => $item->batchSerialAllocations()
+                                                    ->filter(fn ($allocation) => $allocation['serial_number'] !== null)
+                                                    ->map(fn ($allocation) => [
+                                                        'item_id' => $item->id,
+                                                        'unit_index' => $allocation['unit_index'],
+                                                        'serial' => $allocation['serial_number'],
+                                                        'batch_quantity' => $allocation['quantity'],
+                                                    ]))->values();
+                                                $requiredSerialCount = $productItems->sum(fn ($item) => $item->serialQuantity());
+                                                $linkedCount = (int) $serialSlots->sum('batch_quantity');
+                                                $countUnit = 'pcs';
+                                            }
+
                                             $serialsComplete = $requiredSerialCount === 0 || $linkedCount >= $requiredSerialCount;
                                         @endphp
                                         <tr>
@@ -546,7 +567,7 @@
                                                 <span class="badge bg-info" style="font-size: 0.9rem; padding: 6px 12px;">{{ rtrim(rtrim(number_format($totalQuantity, 2, '.', ''), '0'), '.') }}</span>
                                                 @if($canScanSerialNumber && $requiredSerialCount > 0)
                                                 <div style="margin-top: 6px;">
-                                                    <span class="badge bg-{{ $serialsComplete ? 'success' : 'warning' }}" style="font-size: 0.75rem; padding: 4px 8px;">{{ $linkedCount }}/{{ $requiredSerialCount }} SN</span>
+                                                    <span class="badge bg-{{ $serialsComplete ? 'success' : 'warning' }}" style="font-size: 0.75rem; padding: 4px 8px;">{{ $linkedCount }}/{{ $requiredSerialCount }} {{ $countUnit }}</span>
                                                 </div>
                                                 @endif
                                             </td>
@@ -558,6 +579,9 @@
                                                     <div style="display: flex; align-items: center; gap: 8px; padding: 2px 0;">
                                                         <span class="text-muted" style="font-size: 0.75rem; min-width: 22px;">{{ $loop->iteration }}.</span>
                                                         <span style="font-family: monospace; font-size: 0.95rem; color: #1e3a8a;">{{ $slot['serial']->serial_number }}</span>
+                                                        @isset($slot['batch_quantity'])
+                                                        <span class="badge bg-light text-dark" style="font-size: 0.75rem;">&times; {{ $slot['batch_quantity'] }} pcs</span>
+                                                        @endisset
                                                         @if($issuing->status === 'pending')
                                                         <button class="btn btn-sm btn-warning" style="padding: 0 6px; font-size: 0.75rem;" onclick="openScanSNModalForItem({{ $slot['item_id'] }}, {{ $slot['unit_index'] }})" title="Ubah SN">
                                                             <i class="fas fa-edit"></i>
@@ -566,7 +590,7 @@
                                                     </div>
                                                     @endforeach
                                                     @if(!$serialsComplete)
-                                                    <div class="text-muted" style="font-style: italic; font-size: 0.85rem; padding-top: 4px;">sisa {{ $requiredSerialCount - $linkedCount }} menunggu scan</div>
+                                                    <div class="text-muted" style="font-style: italic; font-size: 0.85rem; padding-top: 4px;">sisa {{ $requiredSerialCount - $linkedCount }}{{ $isBatchProduct ? ' pcs menunggu scan batch berikutnya' : ' menunggu scan' }}</div>
                                                     @endif
                                                 @elseif($isOptionalSerialNumber)
                                                 <span class="text-muted" style="font-style: italic;">Opsional - belum ada SN</span>
@@ -1312,7 +1336,7 @@ function renderScanSNChecklist() {
         const left = Math.max(0, (checklist.total_required || 0) - (checklist.total_filled || 0));
         counter.innerHTML = checklist.total_required === 0
             ? 'Tidak ada item yang wajib SN'
-            : `<i class="fas fa-barcode me-1"></i>${checklist.total_filled}/${checklist.total_required} SN terisi`
+            : `<i class="fas fa-barcode me-1"></i>${checklist.total_filled}/${checklist.total_required} terisi`
                 + (left > 0 ? ` &middot; sisa ${left}` : ' &middot; lengkap');
     }
 
@@ -1344,10 +1368,24 @@ function renderScanSNChecklist() {
         const slots = row.slots.map((slot, index) => {
             const targeted = scanSNState.targetItemId === slot.item_id
                 && scanSNState.targetUnitIndex === slot.unit_index;
+            // Jawaban klien #7: a batch (refill/aroma) slot covers several bottles; a row
+            // may take several batches, each with its own count.
+            const isBatchSlot = slot.batch_quantity !== undefined && slot.batch_quantity !== null;
+            const batchQty = isBatchSlot
+                ? (slot.filled
+                    ? ` <span class="badge bg-light text-dark" style="font-size: 0.7rem;">&times; ${slot.batch_quantity} pcs</span>`
+                    : ` <span class="text-muted" style="font-size: 0.75rem;">(sisa ${slot.batch_quantity} pcs, scan batch lain)</span>`)
+                : '';
             const label = slot.filled
-                ? `<span style="font-family: monospace; color: #1e3a8a;">${escapeScanSNText(slot.serial_number || '-')}</span>`
-                : '<span class="text-muted" style="font-style: italic;">menunggu scan</span>';
+                ? `<span style="font-family: monospace; color: #1e3a8a;">${escapeScanSNText(slot.serial_number || '-')}</span>${batchQty}`
+                : `<span class="text-muted" style="font-style: italic;">menunggu scan</span>${batchQty}`;
             const action = slot.filled ? 'Ganti' : 'Pilih';
+            const batchActions = isBatchSlot && slot.filled && slot.link_id
+                ? `<button type="button" class="btn btn-sm btn-outline-primary" style="padding: 1px 8px; font-size: 0.75rem;"
+                        onclick="editScanSNBatchQty(${slot.link_id}, ${slot.batch_quantity}, '${escapeScanSNText(slot.serial_number || '')}')">Qty</button>
+                   <button type="button" class="btn btn-sm btn-outline-danger" style="padding: 1px 8px; font-size: 0.75rem;"
+                        onclick="saveScanSNBatchQty(${slot.link_id}, 0)">Lepas</button>`
+                : '';
 
             return `
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0 5px 14px; font-size: 0.85rem; ${targeted ? 'background-color: #dbeafe; border-radius: 6px; padding-left: 8px;' : ''}">
@@ -1355,8 +1393,11 @@ function renderScanSNChecklist() {
                         <span class="text-muted" style="font-size: 0.75rem; margin-right: 8px;">${index + 1}.</span>
                         ${label}
                     </div>
-                    <button type="button" class="btn btn-sm ${targeted ? 'btn-primary' : 'btn-outline-secondary'}" style="padding: 1px 10px; font-size: 0.75rem;"
-                        onclick="setScanSNTarget(${slot.item_id}, ${slot.unit_index})">${targeted ? 'Dipilih' : action}</button>
+                    <div style="white-space: nowrap; display: flex; gap: 4px;">
+                        ${batchActions}
+                        <button type="button" class="btn btn-sm ${targeted ? 'btn-primary' : 'btn-outline-secondary'}" style="padding: 1px 10px; font-size: 0.75rem;"
+                            onclick="setScanSNTarget(${slot.item_id}, ${slot.unit_index})">${targeted ? 'Dipilih' : action}</button>
+                    </div>
                 </div>
             `;
         }).join('');
@@ -1379,6 +1420,56 @@ function renderScanSNChecklist() {
             </div>
         `;
     }).join('');
+}
+
+// Jawaban klien #7: set how many bottles one batch covers (e.g. 2 from batch A, 2 from
+// batch B although batch A alone has enough). The rest of the row then waits for the
+// next batch scan.
+function editScanSNBatchQty(linkId, currentQty, serialNumber) {
+    const input = window.prompt(`Qty botol dari batch ${serialNumber} (0 = lepas batch):`, String(currentQty));
+    if (input === null) return;
+
+    const quantity = parseInt(String(input).trim(), 10);
+    if (Number.isNaN(quantity) || quantity < 0) {
+        showScanSNToast('Qty harus angka 0 atau lebih.', 'error');
+        return;
+    }
+
+    saveScanSNBatchQty(linkId, quantity);
+}
+
+function saveScanSNBatchQty(linkId, quantity) {
+    const url = '{{ route("warehouse.inventory-issuings.serial-link-quantity", [$issuing->id, "__LINK__"]) }}'.replace('__LINK__', linkId);
+    const formData = new FormData();
+    formData.append('quantity', quantity);
+
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.checklist) {
+            scanSNState.checklist = result.checklist;
+            renderScanSNChecklist();
+        }
+
+        if (result.status === 'success') {
+            scanSNState.dirty = true;
+            showScanSNToast(result.message || 'Qty batch disimpan.', 'success');
+        } else {
+            showScanSNToast(result.message || 'Gagal mengubah qty batch.', 'error');
+        }
+
+        const serialInput = document.getElementById('scanSNSerial');
+        if (serialInput) serialInput.focus();
+    })
+    .catch(() => showScanSNToast('Terjadi kesalahan saat mengubah qty batch.', 'error'));
 }
 
 function escapeScanSNText(value) {
@@ -1675,7 +1766,7 @@ function submitScanSN() {
             // counter (1/7, 2/7, ...), not off the per-row one.
             const totals = scanSNState.checklist || {};
             const progress = totals.total_required
-                ? ` · ${totals.total_filled}/${totals.total_required} SN terisi`
+                ? ` · ${totals.total_filled}/${totals.total_required} terisi`
                 : '';
             showScanSNToast(`${info.serial_number || serialNumber} → ${info.product_name || 'item'} ✓${progress}`, 'success');
 

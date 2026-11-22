@@ -626,7 +626,15 @@ class MaterialVerificationController extends Controller
         }
 
         if (!$product->requiresUniqueSerialNumber()) {
-            return 1;
+            // Jawaban klien #7: rows may draw from several batch codes; the technician
+            // scans each prepared code once (still 1 when everything is one batch).
+            $codes = $this->linkedSerialNumbersForItems($items)
+                ->pluck('serial_number')
+                ->map(fn ($sn) => trim((string) $sn))
+                ->filter()
+                ->unique();
+
+            return max(1, $codes->count());
         }
 
         return $items->sum(fn ($item) => $item->requiredSerialCount());
