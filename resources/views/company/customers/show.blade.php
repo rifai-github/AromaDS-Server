@@ -368,6 +368,10 @@
                             <div class="info-label">NIB (Nomor Induk Berusaha)</div>
                             <div class="info-value-text">{{ $customer->nib ?? '-' }}</div>
                         </div>
+                        <div style="grid-column: span 2;">
+                            <div class="info-label">Grace Period</div>
+                            <div class="info-value-text">{{ (int) ($customer->grace_period_days ?? 0) }} hari</div>
+                        </div>
                     </div>
 
                     {{-- UAT 17 Nov: blok "Multi PIC" di sini dihapus karena dobel dengan tabel
@@ -830,6 +834,12 @@
                     </h3>
                     <div class="form-section-body" style="padding: 1.5rem;">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {{-- MOM 19 Nov 2026 p3: grace period milik customer, jadi acuan semua kontrak & invoice-nya. --}}
+                            <div class="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                <label for="edit_grace_period_days" class="font-bold text-slate-700">Grace Period (hari)</label>
+                                <input type="number" id="edit_grace_period_days" name="grace_period_days" min="0" step="1" value="{{ (int) ($customer->grace_period_days ?? 0) }}" class="form-control mt-1">
+                                <small class="text-slate-500">Masa tenggang pembayaran invoice; lewat dari ini kontrak bisa di-suspend.</small>
+                            </div>
                             <div class="flex items-center p-4 bg-slate-50 rounded-lg border border-slate-200">
                                 <div class="form-check form-switch m-0" style="padding-left: 3.5rem;">
                                     <input class="form-check-input" type="checkbox" id="edit_is_pkp" name="is_pkp" {{ $customer->is_pkp ? 'checked' : '' }} style="width: 3rem; height: 1.5rem; margin-left: -3.5rem; cursor: pointer;">

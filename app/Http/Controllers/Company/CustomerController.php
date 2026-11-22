@@ -927,7 +927,11 @@ class CustomerController extends Controller
                 'nib_number' => $request->nib_number,
                 'is_pkp' => $request->boolean('is_pkp'),
                 'is_active' => $request->boolean('is_active'),
-                'grace_period_days' => $request->grace_period_days ?? 0, // Default to 0 if not provided
+                // MOM 19 Nov 2026 p3: grace period milik customer. Dulu form tak punya field ini, jadi
+                // setiap edit customer mereset nilai hasil import Catalyst ke 0.
+                'grace_period_days' => $request->exists('grace_period_days')
+                    ? (int) ($request->grace_period_days ?? 0)
+                    : $customer->grace_period_days,
                 'default_payment' => $request->default_payment ?? 'cash', // Default to cash if not provided
                 'member_since' => $request->member_since,
                 'balance' => $request->balance ?? 0,

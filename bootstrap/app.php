@@ -81,5 +81,13 @@ return Application::configure(basePath: dirname(__DIR__))
             ->daily()
             ->at('01:00')
             ->description('Auto-generate invoices for rental periods where all jobs are completed');
+
+        // MOM 19 Nov 2026 p3: suspend kontrak yang invoice-nya lewat grace period customer.
+        // Hanya aktif bila GRACE_AUTO_SUSPEND=true.
+        $schedule->command('contracts:suspend-past-grace --apply')
+            ->daily()
+            ->at('02:00')
+            ->when(fn () => (bool) config('contract.grace_auto_suspend'))
+            ->description('Suspend contract rooms with invoices past the customer grace period');
     })
     ->create();

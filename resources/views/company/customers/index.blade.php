@@ -1294,6 +1294,11 @@
                         Settings
                     </h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+                        <div class="p-3 bg-gray-50 rounded-lg">
+                            <label for="create_grace_period_days" class="text-sm font-medium text-gray-700">Grace Period (hari)</label>
+                            <input type="number" id="create_grace_period_days" name="grace_period_days" min="0" step="1" value="0" class="w-full px-3 py-2 mt-1 border border-gray-300 rounded-lg">
+                            <small class="text-gray-500">Masa tenggang pembayaran invoice; berlaku untuk semua kontrak &amp; invoice customer ini.</small>
+                        </div>
                         <div class="flex items-center p-3 bg-gray-50 rounded-lg">
                             <input type="checkbox" id="create_is_pkp" name="is_pkp" value="1" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-3">
                             <label for="create_is_pkp" class="text-sm font-medium text-gray-700 cursor-pointer">
@@ -1728,6 +1733,11 @@
                         Settings
                     </h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+                        <div class="p-3 bg-gray-50 rounded-lg">
+                            <label for="edit_grace_period_days" class="text-sm font-medium text-gray-700">Grace Period (hari)</label>
+                            <input type="number" id="edit_grace_period_days" name="grace_period_days" min="0" step="1" value="0" class="w-full px-3 py-2 mt-1 border border-gray-300 rounded-lg">
+                            <small class="text-gray-500">Masa tenggang pembayaran invoice; berlaku untuk semua kontrak &amp; invoice customer ini.</small>
+                        </div>
                         <div class="flex items-center p-3 bg-gray-50 rounded-lg">
                             <input type="checkbox" id="edit_is_pkp" name="is_pkp" class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-3">
                             <label for="edit_is_pkp" class="text-sm font-medium text-gray-700 cursor-pointer">
@@ -2549,6 +2559,8 @@ function populateEditModal(customer, contacts, provinces, cities, districts, sub
     // Populate checkboxes
     document.getElementById('edit_is_pkp').checked = customer.is_pkp == 1;
     document.getElementById('edit_is_active').checked = customer.is_active == 1;
+    const graceInput = document.getElementById('edit_grace_period_days');
+    if (graceInput) graceInput.value = customer.grace_period_days ?? 0;
     
     // Populate assigned contact (customer contact person in charge)
     // Populate assigned contact removed (replaced by Multi PIC)
