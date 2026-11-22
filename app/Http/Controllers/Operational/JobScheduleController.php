@@ -5342,6 +5342,16 @@ class JobScheduleController extends Controller
                 ], 422);
             }
 
+            // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan dari web.
+            $suspensions = app(\App\Services\Operational\ContractRoomSuspensionService::class);
+            if ($suspensions->isJobScheduleRoomSuspended($jobScheduleRoom, $jobSchedule)) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $suspensions->roomBlockMessage($jobScheduleRoom->room?->room_name),
+                ], 423);
+            }
+
             $webCompletion = app(\App\Services\Operational\JobWebCompletionService::class);
             $deviceSnapshot = json_decode((string) $request->input('device_snapshot', ''), true);
             $deviceSnapshot = is_array($deviceSnapshot) && $this->webJobRequiresDeviceSettings($jobSchedule)
@@ -5590,6 +5600,11 @@ class JobScheduleController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Job belum memiliki Nomor JS (belum di-Assign Team). Tidak dapat mencatat Tiba di Lokasi.'], 422);
         }
 
+        // MOM 19 Nov 2026 p6
+        if ($suspendReason = app(\App\Services\Operational\ContractRoomSuspensionService::class)->jobBlockReason($jobSchedule, true)) {
+            return response()->json(['status' => 'error', 'message' => $suspendReason], 423);
+        }
+
         try {
             DB::beginTransaction();
             $res = app(\App\Services\Operational\JobWebCompletionService::class)
@@ -5615,6 +5630,11 @@ class JobScheduleController extends Controller
     {
         if ($jobSchedule->status === 'undone') {
             return response()->json(['status' => 'error', 'message' => 'Job sedang dalam proses koreksi BA Date dan tidak dapat diubah.'], 423);
+        }
+
+        // MOM 19 Nov 2026 p6
+        if ($suspendReason = app(\App\Services\Operational\ContractRoomSuspensionService::class)->jobBlockReason($jobSchedule, true)) {
+            return response()->json(['status' => 'error', 'message' => $suspendReason], 423);
         }
 
         try {
@@ -5714,6 +5734,16 @@ class JobScheduleController extends Controller
         $snapshot = $validated['device_snapshot'] ?? [];
         if (empty($snapshot['schedule']) && !empty($validated['schedule'])) {
             $snapshot['schedule'] = $validated['schedule'];
+        }
+
+        // MOM 19 Nov 2026 p6: room_id = job_advice_rooms.id
+        $suspensions = app(\App\Services\Operational\ContractRoomSuspensionService::class);
+        $suspendRoom = \App\Models\JobAdviceRoom::find((int) $validated['room_id']);
+        if ($suspendRoom && $suspensions->isJobAdviceRoomSuspended($suspendRoom)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $suspensions->roomBlockMessage($suspendRoom->contractRoom?->room?->room_name),
+            ], 423);
         }
 
         $res = app(\App\Services\Operational\JobWebCompletionService::class)->saveScannedUnit(
@@ -12535,6 +12565,20 @@ class JobScheduleController extends Controller
         $completionTargets = ['completed', 'done_job'];
         if (!in_array($targetStatus, $completionTargets, true)) {
             return true;
+        }
+
+        // MOM 19 Nov 2026 p6: Done Job dari web menutup semua room sekaligus, jadi ditolak bila
+        // ada room kontrak yang sedang di-SUSPEND.
+        if (!in_array($jobSchedule->status, $completionTargets, true)
+            && ($suspendReason = app(\App\Services\Operational\ContractRoomSuspensionService::class)->jobBlockReason($jobSchedule, false))) {
+            return [
+                'status' => 'error',
+                'message' => $suspendReason,
+                'job_number' => $jobSchedule->job_number ?? 'No Job Number',
+                'job_id' => $jobSchedule->id,
+                'current_status' => $jobSchedule->status,
+                'target_status' => $targetStatus,
+            ];
         }
 
         $allowedCurrentStatuses = [

@@ -23,6 +23,13 @@
         || auth()->user()->hasRoleStartingWith('Management')
         || auth()->user()->hasPermission('marketing.contract-pic-info.view')
     );
+    // MOM 19 Nov 2026 p6: Suspend/Unsuspend room kontrak.
+    $canSuspendRooms = auth()->check() && (
+        auth()->user()->hasRole('super_admin')
+        || auth()->user()->hasRole('Admin')
+        || auth()->user()->hasRoleStartingWith('Management')
+        || auth()->user()->hasPermission('marketing.contract-room-suspend.update')
+    );
 @endphp
 <style>
     .contract-layout-fix {
@@ -1206,6 +1213,16 @@
                                     <i class="fas fa-list-alt me-2"></i>
                                     Room &amp; Rental
                                 </h5>
+                                @if($canSuspendRooms && collect($contract->contractRooms ?? [])->isNotEmpty())
+                                    <div class="d-flex gap-2">
+                                        <button type="button" class="btn btn-sm btn-warning" id="btnSuspendRooms" onclick="openSuspendRoomsDialog({{ $contract->id }})" disabled>
+                                            <i class="fas fa-pause-circle me-1"></i> Suspend
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-success" id="btnUnsuspendRooms" onclick="unsuspendSelectedRooms({{ $contract->id }})" disabled>
+                                            <i class="fas fa-play-circle me-1"></i> Unsuspend
+                                        </button>
+                                    </div>
+                                @endif
                             </div>
                         </div>
                         <div class="card-body p-0">
@@ -1256,11 +1273,26 @@
                                 }
 
                                 $roomRentalTotal = $roomRentalRows->sum(fn ($row) => (float) ($row['rental']->total_price ?? 0));
+
+                                // MOM 19 Nov 2026 p6: status & log suspend room.
+                                $roomSuspensionLogs = \Illuminate\Support\Facades\Schema::hasTable('contract_room_suspensions')
+                                    ? \App\Models\ContractRoomSuspension::with(['suspendedBy:id,name', 'unsuspendedBy:id,name', 'contractRoom.room'])
+                                        ->where('contract_id', $contract->id)
+                                        ->orderByDesc('id')
+                                        ->get()
+                                    : collect();
+                                $openRoomSuspensions = $roomSuspensionLogs->whereNull('unsuspended_at')->keyBy('contract_room_id');
+                                $roomCheckboxShown = [];
                             @endphp
                             <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
                                 <table class="table table-bordered table-striped" id="roomRentalTable" style="min-width: 1200px; white-space: nowrap;">
                                     <thead>
                                         <tr>
+                                            <th data-no-filter style="width: 32px;">
+                                                @if($canSuspendRooms)
+                                                    <input type="checkbox" id="suspendRoomSelectAll" title="Pilih semua room">
+                                                @endif
+                                            </th>
                                             <th data-no-filter>No</th>
                                             <th data-column="building.nama_gedung|building.name">Building</th>
                                             <th data-column="room.room_name">Room</th>
@@ -1280,7 +1312,19 @@
                                             $rowRoom = $row['room'];
                                             $rowRental = $row['rental'];
                                         @endphp
-                                        <tr @if($rowRental) id="rental-row-{{ $rowRental->id }}" @endif>
+                                        @php
+                                            $rowSuspension = $rowRoom ? $openRoomSuspensions->get($rowRoom->id) : null;
+                                            $showRoomCheckbox = $canSuspendRooms && $rowRoom && !isset($roomCheckboxShown[$rowRoom->id]);
+                                            if ($rowRoom) { $roomCheckboxShown[$rowRoom->id] = true; }
+                                        @endphp
+                                        <tr @if($rowRental) id="rental-row-{{ $rowRental->id }}" @endif @if($rowSuspension) style="background-color: #fff7ed;" @endif>
+                                            <td>
+                                                @if($showRoomCheckbox)
+                                                    <input type="checkbox" class="suspend-room-checkbox" value="{{ $rowRoom->id }}"
+                                                           data-suspended="{{ $rowSuspension ? '1' : '0' }}"
+                                                           data-room-name="{{ $rowRoom->room?->room_name ?? 'Room #'.$rowRoom->id }}">
+                                                @endif
+                                            </td>
                                             <td>{{ $index + 1 }}</td>
                                             <td>
                                                 @if($rowRoom && $rowRoom->building)
@@ -1289,7 +1333,17 @@
                                                     -
                                                 @endif
                                             </td>
-                                            <td>{{ $rowRoom?->room?->room_name ?? ($rowRental?->room?->room_name ?? '-') }}</td>
+                                            <td>
+                                                {{ $rowRoom?->room?->room_name ?? ($rowRental?->room?->room_name ?? '-') }}
+                                                @if($rowSuspension)
+                                                    <br>
+                                                    @if($rowSuspension->suspend_date && $rowSuspension->suspend_date->isFuture())
+                                                        <span class="badge bg-warning text-dark" title="Suspend terjadwal">SUSPEND mulai {{ $rowSuspension->suspend_date->format('d/m/Y') }}</span>
+                                                    @else
+                                                        <span class="badge bg-danger" title="Job room ini tidak bisa dikerjakan">SUSPEND sejak {{ $rowSuspension->suspend_date?->format('d/m/Y') }}</span>
+                                                    @endif
+                                                @endif
+                                            </td>
                                             <td>{{ $rowRoom?->room?->room_type ?? '-' }}</td>
                                             <td>{{ $rowRoom?->room?->room_floor ?? '-' }}</td>
                                             <td>
@@ -1307,7 +1361,7 @@
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="11" class="text-center text-muted">
+                                            <td colspan="12" class="text-center text-muted">
                                                 <i class="fas fa-info-circle me-2"></i>
                                                 No rooms or rentals found.
                                             </td>
@@ -1317,7 +1371,7 @@
                                     @if($roomRentalRows->isNotEmpty())
                                     <tfoot>
                                         <tr>
-                                            <td colspan="9"><strong>Total</strong></td>
+                                            <td colspan="10"><strong>Total</strong></td>
                                             <td><strong>Rp {{ number_format($roomRentalTotal, 0, ',', '.') }}</strong></td>
                                             <td></td>
                                         </tr>
@@ -1325,6 +1379,39 @@
                                     @endif
                                 </table>
                             </div>
+                            @if($roomSuspensionLogs->isNotEmpty())
+                                <div class="p-3">
+                                    <h6 style="color: #1e3a8a;"><i class="fas fa-history me-1"></i> Log Suspend Room</h6>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-bordered mb-0" id="roomSuspensionLogTable">
+                                            <thead>
+                                                <tr>
+                                                    <th data-no-filter>Room</th>
+                                                    <th data-no-filter>Tanggal Suspend</th>
+                                                    <th data-no-filter>Di-suspend oleh</th>
+                                                    <th data-no-filter>Waktu Suspend</th>
+                                                    <th data-no-filter>Di-unsuspend oleh</th>
+                                                    <th data-no-filter>Waktu Unsuspend</th>
+                                                    <th data-no-filter>Catatan</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach($roomSuspensionLogs as $suspensionLog)
+                                                    <tr>
+                                                        <td>{{ $suspensionLog->contractRoom?->room?->room_name ?? 'Room #'.$suspensionLog->contract_room_id }}</td>
+                                                        <td>{{ $suspensionLog->suspend_date?->format('d/m/Y') ?? '-' }}</td>
+                                                        <td>{{ $suspensionLog->suspendedBy->name ?? '-' }}</td>
+                                                        <td>{{ $suspensionLog->suspended_at?->format('d/m/Y H:i') ?? '-' }}</td>
+                                                        <td>{{ $suspensionLog->unsuspendedBy->name ?? '-' }}</td>
+                                                        <td>{{ $suspensionLog->unsuspended_at?->format('d/m/Y H:i') ?? '-' }}</td>
+                                                        <td>{{ $suspensionLog->notes ?? '-' }}</td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -4923,6 +5010,118 @@ function updateBaFilesSupported(contractId, supported) {
                 btnNo.disabled = false;
             });
         }
+    });
+}
+
+// MOM 19 Nov 2026 p6: Suspend/Unsuspend room. Centang room -> Suspend -> pilih tanggal ->
+// konfirmasi "Anda yakin mau suspend room ini pada tanggal xxx?".
+function selectedSuspendRooms() {
+    return Array.from(document.querySelectorAll('.suspend-room-checkbox:checked'));
+}
+
+function refreshSuspendRoomButtons() {
+    const selected = selectedSuspendRooms();
+    const suspendBtn = document.getElementById('btnSuspendRooms');
+    const unsuspendBtn = document.getElementById('btnUnsuspendRooms');
+    if (suspendBtn) suspendBtn.disabled = !selected.some(box => box.dataset.suspended !== '1');
+    if (unsuspendBtn) unsuspendBtn.disabled = !selected.some(box => box.dataset.suspended === '1');
+}
+
+document.addEventListener('change', function (event) {
+    if (event.target && event.target.id === 'suspendRoomSelectAll') {
+        document.querySelectorAll('.suspend-room-checkbox').forEach(box => { box.checked = event.target.checked; });
+    }
+    if (event.target && (event.target.id === 'suspendRoomSelectAll' || event.target.classList.contains('suspend-room-checkbox'))) {
+        refreshSuspendRoomButtons();
+    }
+});
+
+function postRoomSuspension(url, payload) {
+    return fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    }).then(async response => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) {
+            const firstError = data.errors ? Object.values(data.errors).flat()[0] : null;
+            throw new Error(firstError || data.message || 'Gagal memproses suspend room');
+        }
+        return data;
+    });
+}
+
+function openSuspendRoomsDialog(contractId) {
+    const boxes = selectedSuspendRooms().filter(box => box.dataset.suspended !== '1');
+    if (!boxes.length) return;
+    const names = boxes.map(box => box.dataset.roomName).join(', ');
+    const today = new Date().toISOString().slice(0, 10);
+
+    Swal.fire({
+        title: 'Kapan Anda ingin suspend job room ini?',
+        html: `<div style="text-align:left; font-size:14px; margin-bottom:8px;">Room: <strong>${names.replace(/</g, '&lt;')}</strong></div>
+               <input type="date" id="suspendRoomDate" class="swal2-input" value="${today}" style="width:auto;">
+               <textarea id="suspendRoomNotes" class="swal2-textarea" placeholder="Catatan (opsional)" style="margin-top:8px;"></textarea>`,
+        showCancelButton: true,
+        confirmButtonText: 'Proses',
+        cancelButtonText: 'Batal',
+        preConfirm: () => {
+            const date = document.getElementById('suspendRoomDate').value;
+            if (!date) {
+                Swal.showValidationMessage('Pilih tanggal suspend');
+                return false;
+            }
+            return { date, notes: document.getElementById('suspendRoomNotes').value };
+        }
+    }).then(first => {
+        if (!first.isConfirmed) return;
+        const label = first.value.date.split('-').reverse().join('/');
+
+        Swal.fire({
+            icon: 'warning',
+            title: 'Konfirmasi',
+            text: `Anda yakin mau suspend room ini pada tanggal ${label}?`,
+            showCancelButton: true,
+            confirmButtonText: 'Ya',
+            cancelButtonText: 'Batal'
+        }).then(second => {
+            // Batal: suspend dibatalkan, tanggal yang dipilih dibuang.
+            if (!second.isConfirmed) return;
+
+            postRoomSuspension(`/marketing/contracts/${contractId}/rooms/suspend`, {
+                contract_room_ids: boxes.map(box => box.value),
+                suspend_date: first.value.date,
+                notes: first.value.notes || null
+            })
+            .then(data => Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message }).then(() => location.reload()))
+            .catch(error => Swal.fire({ icon: 'error', title: 'Error', text: error.message }));
+        });
+    });
+}
+
+function unsuspendSelectedRooms(contractId) {
+    const boxes = selectedSuspendRooms().filter(box => box.dataset.suspended === '1');
+    if (!boxes.length) return;
+    const names = boxes.map(box => box.dataset.roomName).join(', ');
+
+    Swal.fire({
+        icon: 'question',
+        title: 'Unsuspend room?',
+        text: `Cabut suspend untuk: ${names}. Job room ini bisa dikerjakan lagi.`,
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Unsuspend',
+        cancelButtonText: 'Batal'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        postRoomSuspension(`/marketing/contracts/${contractId}/rooms/unsuspend`, {
+            contract_room_ids: boxes.map(box => box.value)
+        })
+        .then(data => Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message }).then(() => location.reload()))
+        .catch(error => Swal.fire({ icon: 'error', title: 'Error', text: error.message }));
     });
 }
 

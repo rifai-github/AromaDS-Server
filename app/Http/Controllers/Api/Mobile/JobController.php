@@ -2353,6 +2353,12 @@ class JobController extends Controller
                 'status_label' => $this->getJobStatusLabel($roomStatus),
                 'is_blocked_by_ir' => $isBlockedByIr,
                 'blocked_by_ir_message' => $blockedByIrMessage,
+                // MOM 19 Nov 2026 p6: field tambahan (bentuk JSON lain tak berubah); aksi room
+                // yang di-suspend ditolak server dengan HTTP 423.
+                'is_suspended' => $roomIsSuspended = app(\App\Services\Operational\ContractRoomSuspensionService::class)->isJobAdviceRoomSuspended($room),
+                'suspended_message' => $roomIsSuspended
+                    ? app(\App\Services\Operational\ContractRoomSuspensionService::class)->roomBlockMessage($roomName)
+                    : null,
                 'notes' => $displayRoom->notes ?? '',
                 'job_schedule_id' => $specificJobScheduleId,
                 // Detailed Room Info from MasterRoom
@@ -2497,6 +2503,11 @@ class JobController extends Controller
             ], 423);
         }
         
+        // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
+        if ($suspendReason = app(\App\Services\Operational\ContractRoomSuspensionService::class)->jobBlockReason($job, true)) {
+            return response()->json(['status' => 'error', 'message' => $suspendReason], 423);
+        }
+
         // Update status to in_progress (pekerjaan dimulai)
         // Status: teknisi_tiba_dilokasi → in_progress (ketika mulai pekerjaan diklik via apps, setelah tiba di lokasi)
         // Also allow from barang_diambil (backward compatibility if tiba di lokasi was skipped)
@@ -2606,6 +2617,15 @@ class JobController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat dikerjakan ulang dari aplikasi teknisi.'
+            ], 423);
+        }
+
+        // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
+        $suspendRoom = $room;
+        if ($suspendRoom && app(\App\Services\Operational\ContractRoomSuspensionService::class)->isJobAdviceRoomSuspended($suspendRoom)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => app(\App\Services\Operational\ContractRoomSuspensionService::class)->roomBlockMessage($suspendRoom->contractRoom?->room?->room_name ?? $suspendRoom->room_name ?? null),
             ], 423);
         }
 
@@ -2876,6 +2896,15 @@ class JobController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat diselesaikan ulang dari aplikasi teknisi.'
+                ], 423);
+            }
+
+            // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
+            $suspendRoom = $room;
+            if ($suspendRoom && app(\App\Services\Operational\ContractRoomSuspensionService::class)->isJobAdviceRoomSuspended($suspendRoom)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => app(\App\Services\Operational\ContractRoomSuspensionService::class)->roomBlockMessage($suspendRoom->contractRoom?->room?->room_name ?? $suspendRoom->room_name ?? null),
                 ], 423);
             }
 
@@ -5436,6 +5465,15 @@ class JobController extends Controller
                     'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat dikerjakan ulang dari aplikasi teknisi.'
                 ], 423);
             }
+            // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
+            $suspendRoom = $request->filled('room_id') ? \App\Models\JobAdviceRoom::find((int) $request->room_id) : null;
+            if ($suspendRoom && app(\App\Services\Operational\ContractRoomSuspensionService::class)->isJobAdviceRoomSuspended($suspendRoom)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => app(\App\Services\Operational\ContractRoomSuspensionService::class)->roomBlockMessage($suspendRoom->contractRoom?->room?->room_name ?? $suspendRoom->room_name ?? null),
+                ], 423);
+            }
+
             $isRemoveJob = $jobSchedule && in_array(strtolower($jobSchedule->type), ['remove', 'remove_free', 'remove free']);
             
             // Build validation rules
@@ -5776,6 +5814,13 @@ class JobController extends Controller
                     'status' => 'error',
                     'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat diselesaikan ulang dari aplikasi teknisi.'
                 ], 423);
+            }
+
+            // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
+            if ($suspendReason = app(\App\Services\Operational\ContractRoomSuspensionService::class)->jobBlockReason($job, true)) {
+                \DB::rollBack();
+
+                return response()->json(['status' => 'error', 'message' => $suspendReason], 423);
             }
 
             if (!$cannotCompleteAllRooms) {
@@ -6654,6 +6699,11 @@ class JobController extends Controller
             ], 423);
         }
         
+        // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
+        if ($suspendReason = app(\App\Services\Operational\ContractRoomSuspensionService::class)->jobBlockReason($job, true)) {
+            return response()->json(['status' => 'error', 'message' => $suspendReason], 423);
+        }
+
         // IR-CSR Dependency Check
         $dependencyCheck = $this->checkJobDependency($job);
         if ($dependencyCheck['is_blocked']) {

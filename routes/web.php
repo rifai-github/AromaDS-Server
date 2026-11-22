@@ -520,6 +520,9 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('contracts/{contract}/toggle-hold-invoice', [ContractController::class, 'toggleHoldInvoice'])->name('contracts.toggle-hold-invoice');
         Route::post('contracts/{contract}/update-po-number', [ContractController::class, 'updatePoNumber'])->name('contracts.update-po-number');
         Route::post('contracts/{contract}/update-price-basis', [ContractController::class, 'updatePriceBasis'])->name('contracts.update-price-basis');
+        // MOM 19 Nov 2026 p6: Suspend/Unsuspend room kontrak
+        Route::post('contracts/{contract}/rooms/suspend', [ContractController::class, 'suspendRooms'])->name('contracts.rooms.suspend')->middleware('permission:marketing.contract-room-suspend.update');
+        Route::post('contracts/{contract}/rooms/unsuspend', [ContractController::class, 'unsuspendRooms'])->name('contracts.rooms.unsuspend')->middleware('permission:marketing.contract-room-suspend.update');
         Route::post('contracts/{contract}/toggle-contract-target', [ContractController::class, 'toggleContractTarget'])->name('contracts.toggle-contract-target');
 
         Route::post('contracts/{contract}/update-achiever', [ContractController::class, 'updateAchiever'])->name('contracts.update-achiever');

@@ -3608,6 +3608,61 @@ class ContractController extends Controller
      * masih memakai PO lama (atau kosong) ikut diperbarui supaya cetakannya benar.
      */
     /**
+     * MOM 19 Nov 2026 p6: Suspend room kontrak mulai tanggal tertentu. Room yang di-suspend
+     * terkunci: job-nya tidak bisa dikerjakan di aplikasi teknisi maupun web.
+     */
+    public function suspendRooms(Request $request, Contract $contract)
+    {
+        $validated = $request->validate([
+            'contract_room_ids' => 'required|array|min:1',
+            'contract_room_ids.*' => 'integer',
+            'suspend_date' => 'required|date',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        try {
+            $count = app(\App\Services\Operational\ContractRoomSuspensionService::class)->suspend(
+                $contract,
+                $validated['contract_room_ids'],
+                $validated['suspend_date'],
+                Auth::id(),
+                $validated['notes'] ?? null
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $count
+                ? "{$count} room di-suspend mulai ".\Illuminate\Support\Carbon::parse($validated['suspend_date'])->format('d/m/Y').'.'
+                : 'Room yang dipilih sudah dalam status suspend.',
+            'count' => $count,
+        ]);
+    }
+
+    public function unsuspendRooms(Request $request, Contract $contract)
+    {
+        $validated = $request->validate([
+            'contract_room_ids' => 'required|array|min:1',
+            'contract_room_ids.*' => 'integer',
+        ]);
+
+        try {
+            $count = app(\App\Services\Operational\ContractRoomSuspensionService::class)
+                ->unsuspend($contract, $validated['contract_room_ids'], Auth::id());
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $count ? "{$count} room di-unsuspend; job-nya bisa dikerjakan lagi." : 'Room yang dipilih tidak sedang di-suspend.',
+            'count' => $count,
+        ]);
+    }
+
+    /**
      * MOM 19 Nov 2026 p4: Basis SQ (rental / ruangan) di Contract Information, boleh diubah walau
      * kontrak sudah aktif karena memengaruhi printout.
      */
