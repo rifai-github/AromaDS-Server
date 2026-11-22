@@ -148,7 +148,8 @@ class RenewalQuotationExistingRoomScriptTest extends TestCase
         $this->assertStringContainsString('$sanitizeRenewalRoomName', $view);
         $this->assertStringContainsString('$displayRoomName = $sanitizeRenewalRoomName', $view);
         $this->assertStringContainsString('$resolveContractRoom', $view);
-        $this->assertStringContainsString('$masterRoomSpecs($contractRoom->room)', $view);
+        // MOM 18 Nov 2026: ruangan kontrak tetap jadi sumber spesifikasi live (setelah survey & quotation room).
+        $this->assertStringContainsString('collect([$detail->room?->room, $quotationRoom?->room, $contractRoom?->room])', $view);
         $this->assertStringContainsString('$contractRoomRental = $contractRental?->masterRental ?: $contractRoom?->rentalProduct', $view);
         $this->assertStringContainsString('{{ $displayRentalName }}', $view);
     }

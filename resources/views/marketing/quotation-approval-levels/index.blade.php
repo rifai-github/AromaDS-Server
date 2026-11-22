@@ -206,7 +206,7 @@
                                     <th>Level</th>
                                     <th>Maks Diskon</th>
                                     <th>Contoh (bottom price Rp 1.000.000)</th>
-                                    <th>Role Berwenang</th>
+                                    <th>User Berwenang</th>
                                     <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
@@ -216,7 +216,7 @@
                                     @php
                                         $maxDiscount = (float) $level->max_discount_percentage;
                                         $minPrice = 1000000 * (1 - ($maxDiscount / 100));
-                                        $levelRoles = $roles->whereIn('id', $levelRoleIds[$level->id] ?? []);
+                                        $levelUsers = $users->whereIn('id', $levelUserIds[$level->id] ?? []);
                                     @endphp
                                     <tr>
                                         <td>
@@ -232,10 +232,10 @@
                                             <span class="hint">harga terendah yang bisa disetujui level ini</span>
                                         </td>
                                         <td>
-                                            @forelse($levelRoles as $role)
-                                                <span class="badge badge-primary">{{ $role->name }}</span>
+                                            @forelse($levelUsers as $levelUser)
+                                                <span class="badge badge-primary">{{ $levelUser->name }}</span>
                                             @empty
-                                                <span class="badge badge-muted">Belum ada role</span>
+                                                <span class="badge badge-muted">Belum ada user (toleransi 0%)</span>
                                             @endforelse
                                         </td>
                                         <td>
@@ -302,16 +302,17 @@
                     <input type="text" class="form-control" id="description" name="description">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Role Berwenang</label>
-                    <div class="role-picker" id="rolePicker">
-                        @foreach($roles as $role)
-                            <label>
-                                <input type="checkbox" class="role-checkbox" value="{{ $role->id }}">
-                                {{ $role->name }}
+                    <label class="form-label">User Berwenang</label>
+                    <input type="text" class="form-control" id="userPickerSearch" placeholder="Cari nama / email..." autocomplete="off" style="margin-bottom:6px;">
+                    <div class="role-picker" id="userPicker">
+                        @foreach($users as $pickerUser)
+                            <label data-search="{{ strtolower($pickerUser->name.' '.$pickerUser->email) }}">
+                                <input type="checkbox" class="user-checkbox" value="{{ $pickerUser->id }}">
+                                {{ $pickerUser->name }} <span class="hint" style="display:inline;">{{ $pickerUser->email }}</span>
                             </label>
                         @endforeach
                     </div>
-                    <span class="hint">Tersimpan sebagai permission, jadi tetap terlihat dan bisa diubah dari menu Role &amp; Permission.</span>
+                    <span class="hint">Hanya user yang dicentang yang boleh menyetujui diskon sampai batas level ini (sesama jabatan belum tentu berwenang). Level tanpa user = tidak ada yang boleh approve.</span>
                 </div>
                 <div>
                     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -354,18 +355,36 @@
             + minPrice.toLocaleString('id-ID', { maximumFractionDigits: 0 }) + '.';
     }
 
-    function setRoleCheckboxes(roleIds) {
-        const selected = (roleIds || []).map(String);
-        document.querySelectorAll('.role-checkbox').forEach(function (checkbox) {
+    function setUserCheckboxes(userIds) {
+        const selected = (userIds || []).map(String);
+        document.querySelectorAll('.user-checkbox').forEach(function (checkbox) {
             checkbox.checked = selected.includes(String(checkbox.value));
         });
+        const search = document.getElementById('userPickerSearch');
+        if (search) {
+            search.value = '';
+            filterUserPicker('');
+        }
     }
 
-    function selectedRoleIds() {
-        return Array.from(document.querySelectorAll('.role-checkbox:checked')).map(function (checkbox) {
+    function selectedUserIds() {
+        return Array.from(document.querySelectorAll('.user-checkbox:checked')).map(function (checkbox) {
             return checkbox.value;
         });
     }
+
+    function filterUserPicker(term) {
+        const needle = String(term || '').trim().toLowerCase();
+        document.querySelectorAll('#userPicker label').forEach(function (label) {
+            label.style.display = !needle || (label.dataset.search || '').includes(needle) ? '' : 'none';
+        });
+    }
+
+    document.addEventListener('input', function (event) {
+        if (event.target && event.target.id === 'userPickerSearch') {
+            filterUserPicker(event.target.value);
+        }
+    });
 
     function openAddModal() {
         editingLevelId = null;
@@ -374,7 +393,7 @@
         document.getElementById('level_code').disabled = false;
         document.getElementById('sort_order').value = 0;
         document.getElementById('is_active').checked = true;
-        setRoleCheckboxes([]);
+        setUserCheckboxes([]);
         updateDiscountPreview();
         document.getElementById('levelModalTitle').textContent = 'Tambah Level';
         document.getElementById('levelSubmitBtn').innerHTML = '<i class="fas fa-save me-1"></i>Save';
@@ -398,7 +417,7 @@
         document.getElementById('sort_order').value = level.sort_order ?? 0;
         document.getElementById('description').value = level.description ?? '';
         document.getElementById('is_active').checked = level.is_active;
-        setRoleCheckboxes(level.role_ids);
+        setUserCheckboxes(level.user_ids);
         updateDiscountPreview();
 
         document.getElementById('levelModalTitle').textContent = 'Edit Level';
@@ -458,8 +477,8 @@
         formData.append('sort_order', document.getElementById('sort_order').value || 0);
         formData.append('description', document.getElementById('description').value || '');
         formData.append('is_active', document.getElementById('is_active').checked ? '1' : '0');
-        selectedRoleIds().forEach(function (roleId) {
-            formData.append('role_ids[]', roleId);
+        selectedUserIds().forEach(function (userId) {
+            formData.append('user_ids[]', userId);
         });
 
         let url = '/marketing/quotation-approval-levels';
@@ -497,7 +516,7 @@
     }
 
     function deleteLevel(id) {
-        if (!confirm('Hapus level approval ini? Role yang sudah ditugaskan tetap tersimpan bila level dipulihkan.')) return;
+        if (!confirm('Hapus level approval ini? User yang sudah ditunjuk tetap tersimpan bila level dipulihkan.')) return;
 
         fetch(`/marketing/quotation-approval-levels/${id}`, {
             method: 'DELETE',

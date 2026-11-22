@@ -23,7 +23,7 @@ class QuotationApprovalAuthorizerTest extends TestCase
         $tables = [
             'users', 'roles', 'permissions', 'user_roles', 'role_permissions', 'user_permission',
             'quotations', 'quotation_details', 'master_rentals', 'rental_bottom_prices',
-            'quotation_approval_levels',
+            'quotation_approval_levels', 'quotation_approval_level_users',
         ];
 
         foreach ($tables as $table) {
@@ -135,6 +135,14 @@ class QuotationApprovalAuthorizerTest extends TestCase
             $table->softDeletes();
         });
 
+        Schema::create('quotation_approval_level_users', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('quotation_approval_level_id');
+            $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->timestamps();
+        });
+
         Permission::create(['name' => self::LEGACY_PERMISSION, 'is_active' => true]);
 
         foreach ([['manager', 'Manager', 20], ['gm', 'General Manager', 50], ['director', 'Director', 100]] as [$code, $name, $max]) {
@@ -175,35 +183,43 @@ class QuotationApprovalAuthorizerTest extends TestCase
         $this->assertTrue($this->authorizer()->canApprove($user, $quotation));
     }
 
-    public function test_a_user_on_the_ladder_is_not_rescued_by_the_legacy_fallback(): void
+    // MOM 18 Nov 2026 p4: tanpa user ditunjuk -> toleransi 0%. Flag legacy tak lagi menyelamatkan.
+    public function test_an_approver_without_any_designated_level_cannot_approve_below_the_floor(): void
     {
         config(['quotation.legacy_approve_is_highest' => true]);
 
-        $quotation = $this->quotationWithDiscount(60);
+        $quotation = $this->quotationWithDiscount(5);
+        $user = $this->userWithLevels();
+
+        $this->assertFalse($this->authorizer()->canApprove($user, $quotation));
+    }
+
+    // MOM 18 Nov 2026 p4: wewenang per user, bukan role. Role yang masih memegang permission
+    // level lama tidak membuat anggotanya berwenang.
+    public function test_a_role_holding_the_level_permission_does_not_grant_authority(): void
+    {
+        $quotation = $this->quotationWithDiscount(10);
+        $user = $this->userWithRolePermissionOnly('director');
+
+        $this->assertFalse($this->authorizer()->canApprove($user, $quotation));
+    }
+
+    public function test_no_level_covering_the_discount_means_nobody_can_approve(): void
+    {
+        QuotationApprovalLevel::where('level_code', 'director')->delete();
+
+        $quotation = $this->quotationWithDiscount(60); // GM 50% max, Director gone
+        $user = $this->userWithLevels('gm');
+
+        $this->assertFalse($this->authorizer()->canApprove($user, $quotation));
+    }
+
+    public function test_an_inactive_level_assignment_gives_no_authority(): void
+    {
+        $quotation = $this->quotationWithDiscount(10);
         $user = $this->userWithLevels('manager');
-
-        $this->assertFalse(
-            $this->authorizer()->canApprove($user, $quotation),
-            'Holding any level means the ladder decides, not the legacy flag'
-        );
-    }
-
-    public function test_a_legacy_approver_without_any_level_keeps_working_while_the_flag_is_on(): void
-    {
-        config(['quotation.legacy_approve_is_highest' => true]);
-
-        $quotation = $this->quotationWithDiscount(60);
-        $user = $this->userWithLevels();
-
-        $this->assertTrue($this->authorizer()->canApprove($user, $quotation));
-    }
-
-    public function test_a_legacy_approver_is_blocked_once_the_flag_is_off(): void
-    {
-        config(['quotation.legacy_approve_is_highest' => false]);
-
-        $quotation = $this->quotationWithDiscount(60);
-        $user = $this->userWithLevels();
+        QuotationApprovalLevel::where('level_code', 'manager')->update(['is_active' => false]);
+        // GM (50%) masih aktif dan menutup diskon 10%, tapi user hanya ditunjuk di Manager.
 
         $this->assertFalse($this->authorizer()->canApprove($user, $quotation));
     }
@@ -289,7 +305,13 @@ class QuotationApprovalAuthorizerTest extends TestCase
         return $this->buildUser($levelCodes, false);
     }
 
-    private function buildUser(array $levelCodes, bool $withLegacyPermission): User
+    /** Pola lama: level dipegang lewat permission di role, tanpa penunjukan user. */
+    private function userWithRolePermissionOnly(string ...$levelCodes): User
+    {
+        return $this->buildUser($levelCodes, true, designate: false);
+    }
+
+    private function buildUser(array $levelCodes, bool $withLegacyPermission, bool $designate = true): User
     {
         static $sequence = 0;
         $sequence++;
@@ -323,7 +345,18 @@ class QuotationApprovalAuthorizerTest extends TestCase
         }
 
         foreach ($levelCodes as $code) {
-            $permissionNames[] = QuotationApprovalLevel::where('level_code', $code)->firstOrFail()->permission_name;
+            $level = QuotationApprovalLevel::where('level_code', $code)->firstOrFail();
+
+            if ($designate) {
+                DB::table('quotation_approval_level_users')->insert([
+                    'quotation_approval_level_id' => $level->id,
+                    'user_id' => $userId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            } else {
+                $permissionNames[] = $level->permission_name;
+            }
         }
 
         foreach ($permissionNames as $permissionName) {

@@ -2,6 +2,7 @@
 
 namespace App\Services\Marketing;
 
+use App\Models\Branch;
 use App\Models\Quotation;
 use App\Models\QuotationApprovalLevel;
 use App\Models\RentalBottomPrice;
@@ -40,15 +41,11 @@ class QuotationBottomPriceEvaluator
                 continue;
             }
 
-            $bottomPrice = null;
-
-            if ($branchId && $detail->master_rental_id) {
-                $bottomPrice = RentalBottomPrice::active()
-                    ->where('master_rental_id', $detail->master_rental_id)
-                    ->where('branch_id', $branchId)
-                    ->where('offer_type', $offerType)
-                    ->first();
-            }
+            // MOM 18 Nov 2026 p3d: bottom price diambil dari branch building (lokasi pasang), dan
+            // yang terbesar dipakai. Pembanding = branch quotation (marketing/customer). Harga sama
+            // -> tetap tercatat dari branch building. Tanpa building (renewal tanpa survey) atau
+            // branch building belum punya bottom price -> branch quotation saja seperti dulu.
+            $bottomPrice = $this->resolveBottomPrice($detail, $branchId, $offerType);
 
             // A missing or zero floor means this line's contribution to the
             // total floor cannot be computed at all, so the whole quotation
@@ -69,7 +66,11 @@ class QuotationBottomPriceEvaluator
                 continue;
             }
 
-            $lines[] = ['detail' => $detail, 'bottom_price' => (float) $bottomPrice->bottom_price];
+            $lines[] = [
+                'detail' => $detail,
+                'bottom_price' => (float) $bottomPrice->bottom_price,
+                'bottom_price_branch_id' => $bottomPrice->branch_id,
+            ];
         }
 
         if (! empty($missingBottomPriceIssues)) {
@@ -125,6 +126,7 @@ class QuotationBottomPriceEvaluator
             'room_name' => $line['detail']->room_name,
             'unit_price' => (float) $line['detail']->unit_price,
             'bottom_price' => $line['bottom_price'],
+            'bottom_price_branch_id' => $line['bottom_price_branch_id'],
             'discount_percentage' => $discount,
             'message' => 'Total quotation price is below total bottom price.',
         ], $requiredLevel), $lines);
@@ -135,6 +137,71 @@ class QuotationBottomPriceEvaluator
             'required_level' => $requiredLevel ? $this->levelPayload($requiredLevel) : null,
             'required_permission' => $requiredLevel?->permission_name,
         ];
+    }
+
+    /** @var array<int, int|null> branch building per survey_id, supaya tiap survey dicari sekali */
+    private array $buildingBranchCache = [];
+
+    private function resolveBottomPrice($detail, $quotationBranchId, string $offerType): ?RentalBottomPrice
+    {
+        if (! $detail->master_rental_id) {
+            return null;
+        }
+
+        $buildingBranchId = $this->buildingBranchId($detail);
+
+        // Urutan penting: branch building dulu, sehingga bila harga sama yang dipakai tetap dia.
+        $branchIds = array_values(array_unique(array_filter([$buildingBranchId, $quotationBranchId])));
+
+        $best = null;
+
+        foreach ($branchIds as $candidateBranchId) {
+            $candidate = RentalBottomPrice::active()
+                ->where('master_rental_id', $detail->master_rental_id)
+                ->where('branch_id', $candidateBranchId)
+                ->where('offer_type', $offerType)
+                ->first();
+
+            if (! $candidate || (float) $candidate->bottom_price <= 0) {
+                continue;
+            }
+
+            if (! $best || (float) $candidate->bottom_price > (float) $best->bottom_price) {
+                $best = $candidate;
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * Branch tempat building baris ini berada: kolom buildings.branch_id, atau bila kosong branch
+     * aktif yang melayani kota building (aturan sama dengan pencarian harga di wizard).
+     */
+    private function buildingBranchId($detail): ?int
+    {
+        $surveyId = $detail->survey_id ?? null;
+
+        if (! $surveyId) {
+            return null;
+        }
+
+        if (array_key_exists($surveyId, $this->buildingBranchCache)) {
+            return $this->buildingBranchCache[$surveyId];
+        }
+
+        $building = $detail->survey?->building;
+        $branchId = $building?->branch_id ? (int) $building->branch_id : null;
+
+        if (! $branchId && $building?->city_id) {
+            $branchId = Branch::query()
+                ->where('city_id', $building->city_id)
+                ->where('is_active', true)
+                ->value('id');
+            $branchId = $branchId ? (int) $branchId : null;
+        }
+
+        return $this->buildingBranchCache[$surveyId] = $branchId;
     }
 
     /**

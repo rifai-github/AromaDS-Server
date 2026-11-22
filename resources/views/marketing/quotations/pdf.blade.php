@@ -589,10 +589,13 @@ $qrFooterSrc = $qrPng($companyWebsite !== '' ? $companyWebsite : 'https://www.ad
                         $aliasIsRentalCode = $rawAlias !== '' && $rentalCode !== ''
                             && strcasecmp($rawAlias, $rentalCode) === 0;
 
+                        /* MOM 18 Nov 2026 p3c: "category" master rental salah tarik data (isinya
+                         * "Rental" untuk semua rental hasil Excel) dan diganti Rental Alias. Alias
+                         * baris sudah terisi default dari alias master rental di step 4; bila user
+                         * mengosongkannya yang tampil nama rental asli, bukan category. */
                         $itemLabel =
                             ($aliasIsRentalCode ? '' : $rawAlias)
-                            ?: (trim((string) ($detail->masterRental->category ?? '')) ?:
-                                ($detail->masterRental->rental_name ?? '-'));
+                            ?: ($detail->masterRental->rental_name ?? '-');
                     @endphp
                     <tr>
                         <td>{{ $itemLabel }}</td>

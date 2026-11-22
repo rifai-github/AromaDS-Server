@@ -8,7 +8,9 @@ use App\Models\User;
 
 /**
  * Answers "may THIS user approve THIS quotation?" for the tiered bottom-price
- * ladder. Lives outside the User model because it needs the evaluator, and the
+ * ladder. Sejak MOM 18 Nov 2026 wewenang = user yang ditunjuk per level
+ * (quotation_approval_level_users), bukan role/permission level. Lives
+ * outside the User model because it needs the evaluator, and the
  * codebase has no policy layer.
  */
 class QuotationApprovalAuthorizer
@@ -53,19 +55,16 @@ class QuotationApprovalAuthorizer
 
         $required = $this->requiredLevel($quotation, $evaluation);
 
+        // MOM 18 Nov 2026 p4: tanpa price slab yang menutup diskon ini -> toleransi 0%.
+        // Dulu flag legacy membuat pemegang izin approve lama tetap lolos (fail open).
         if (! $required) {
-            // No active level covers this discount - fail closed unless the
-            // legacy fallback is still carrying un-migrated approvers.
-            return $this->qualifiesAsLegacyApprover($user);
+            return false;
         }
 
-        foreach ($this->permissionsSatisfying($required) as $permissionName) {
-            if ($user->hasPermission($permissionName)) {
-                return true;
-            }
-        }
-
-        return $this->qualifiesAsLegacyApprover($user);
+        // Wewenang = user yang DITUNJUK di level itu atau level yang lebih tinggi, bukan role.
+        return $this->assignedLevelsQuery($user)
+            ->where('max_discount_percentage', '>=', $required->max_discount_percentage)
+            ->exists();
     }
 
     /** Highest level the user personally holds, for UI messaging. */
@@ -75,53 +74,26 @@ class QuotationApprovalAuthorizer
             return null;
         }
 
-        return QuotationApprovalLevel::query()
-            ->active()
+        return $this->assignedLevelsQuery($user)
             ->orderByDesc('max_discount_percentage')
-            ->get()
-            ->first(fn (QuotationApprovalLevel $level) => $user->hasPermission($level->permission_name));
+            ->first();
     }
 
-    /**
-     * Every level senior enough to approve what $required demands.
-     * Authority ordering comes from max_discount_percentage only.
-     */
-    private function permissionsSatisfying(QuotationApprovalLevel $required): array
+    private function assignedLevelsQuery(User $user)
     {
         return QuotationApprovalLevel::query()
             ->active()
-            ->where('max_discount_percentage', '>=', $required->max_discount_percentage)
-            ->pluck('permission_name')
-            ->all();
+            ->whereHas('users', fn ($query) => $query->where('users.id', $user->id));
     }
 
     /**
-     * A holder of the legacy blanket permission who has not been given any
-     * level yet keeps their old power while the config flag is on.
+     * Admin sistem tetap bisa meng-approve (mengikuti short-circuit CheckPermission). Role
+     * Management TIDAK lagi otomatis lolos: MOM 18 Nov meminta wewenang per user yang ditunjuk,
+     * bukan per jabatan.
      */
-    private function qualifiesAsLegacyApprover(User $user): bool
-    {
-        if (! config('quotation.legacy_approve_is_highest', true)) {
-            return false;
-        }
-
-        $levelPermissions = QuotationApprovalLevel::query()->pluck('permission_name');
-
-        foreach ($levelPermissions as $permissionName) {
-            if ($user->hasPermission($permissionName)) {
-                // They have been migrated onto the ladder, so judge them by it.
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /** Mirrors the Admin/Management short-circuit in CheckPermission. */
     private function bypassesLevelCheck(User $user): bool
     {
         return $user->hasRole('Admin')
-            || $user->hasRole('super_admin')
-            || $user->hasRoleStartingWith('Management');
+            || $user->hasRole('super_admin');
     }
 }

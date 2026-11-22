@@ -477,9 +477,13 @@
                     </div>
                 </div>
                 <div class="info-item">
-                    <div class="info-label">Category</div>
+                    <div class="info-label">Rental Alias</div>
                     <div class="info-value">
-                        <span class="badge badge-info">{{ strtoupper($masterRental->category) }}</span>
+                        @if(filled($masterRental->alias))
+                            <span class="badge badge-info">{{ $masterRental->alias }}</span>
+                        @else
+                            -
+                        @endif
                     </div>
                 </div>
                 <div class="info-item">
@@ -921,11 +925,11 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Category <span class="text-red-500">*</span></label>
-                    <select class="form-select" id="edit_category" name="category" required>
-                        <option value="">Select Category</option>
-                        @foreach($masterRentalCategories as $category)
-                            <option value="{{ $category->name }}">{{ $category->name }}</option>
+                    <label class="form-label">Rental Alias</label>
+                    <select class="form-select" id="edit_alias" name="alias">
+                        <option value="">- Tanpa alias (pakai nama rental) -</option>
+                        @foreach($rentalAliasOptions as $aliasOption)
+                            <option value="{{ $aliasOption }}">{{ $aliasOption }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -2106,9 +2110,9 @@ function openEditModal() {
                     allowClear: true
                 }).trigger('change');
                 
-                $('#edit_category').val(rental.category || '').select2({
+                $('#edit_alias').val(rental.alias || '').select2({
                     dropdownParent: $('#editMasterRentalModal'),
-                    placeholder: 'Select Category',
+                    placeholder: 'Pilih Rental Alias',
                     allowClear: true
                 }).trigger('change');
             }
@@ -2130,7 +2134,7 @@ function closeEditModal() {
     if (typeof $ !== 'undefined' && $.fn.select2) {
         $('#edit_rental_type').select2('destroy');
         $('#edit_service_frequency_id').select2('destroy');
-        $('#edit_category').select2('destroy');
+        $('#edit_alias').select2('destroy');
     }
 }
 

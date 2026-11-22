@@ -4371,6 +4371,33 @@ $(document).ready(function() {
         updateNextButtonState();
     });
 
+    // MOM 18 Nov 2026 p3c: Rental Alias di step 4 otomatis terisi alias master rental saat produk
+    // dipilih. Bila user mengosongkannya, summary memakai nama rental asli (tak diisi ulang).
+    $(document).on('select2:select', '.rental-product-select', function(e) {
+        const product = (e.params && e.params.data) || {};
+        const aliasSelect = $(this).closest('.rental-configuration').find('select[name*="[rental_alias]"]');
+        const defaultAlias = String(product.alias || '').trim();
+
+        if (!aliasSelect.length) {
+            return;
+        }
+
+        if (!defaultAlias) {
+            aliasSelect.val('').trigger('change');
+            return;
+        }
+
+        const exists = aliasSelect.find('option').filter(function() {
+            return $(this).val() === defaultAlias;
+        }).length > 0;
+
+        if (!exists) {
+            aliasSelect.append($('<option>').val(defaultAlias).text(defaultAlias));
+        }
+
+        aliasSelect.val(defaultAlias).trigger('change');
+    });
+
     // Update Next button state when rental product changes
     $(document).on('change select2:select', '.rental-product-select', function() {
         const productSelect = $(this);
@@ -5373,7 +5400,13 @@ $(document).ready(function() {
                         targetForm.find('input[name*="quantity"]').val(config.formData.quantity);
                         targetForm.find('input[name*="qty_free"]').val(config.formData.qty_free || 0);
                         targetForm.find('input[name*="remark"]').val(config.formData.remark || '');
-                        targetForm.find('[name*="rental_alias"]').val(config.formData.rental_alias || '');
+                        const restoredAlias = String(config.formData.rental_alias || '');
+                        const restoredAliasSelect = targetForm.find('[name*="rental_alias"]');
+                        if (restoredAlias && restoredAliasSelect.is('select')
+                            && restoredAliasSelect.find('option').filter(function() { return $(this).val() === restoredAlias; }).length === 0) {
+                            restoredAliasSelect.append($('<option>').val(restoredAlias).text(restoredAlias));
+                        }
+                        restoredAliasSelect.val(restoredAlias);
 
                         console.log('Filled form values:', config.formData);
 
@@ -5660,6 +5693,7 @@ $(document).ready(function() {
                                 id: product.id,
                                 text: product.text,
                                 name: product.name,
+                                alias: product.alias || '',
                                 code: product.code,
                                 daily_price: product.daily_price,
                                 monthly_price: product.monthly_price,

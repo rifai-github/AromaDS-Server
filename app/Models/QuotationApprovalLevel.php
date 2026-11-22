@@ -243,6 +243,37 @@ class QuotationApprovalLevel extends Model
         $permission?->update(['is_active' => $isActive]);
     }
 
+    /**
+     * MOM 18 Nov 2026: user yang DITUNJUK memegang level ini. Ini satu-satunya sumber wewenang
+     * approval di bawah bottom price; permission/role level lama tak lagi dipakai untuk itu.
+     */
+    public function users()
+    {
+        return $this->belongsToMany(User::class, 'quotation_approval_level_users', 'quotation_approval_level_id', 'user_id')
+            ->withTimestamps();
+    }
+
+    public function userIds(): array
+    {
+        return $this->users()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    public function syncUsers(array $userIds): void
+    {
+        $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds))));
+
+        $current = $this->userIds();
+
+        // Hanya baris baru yang dicap created_by; penunjukan lama tak ditimpa.
+        if ($toDetach = array_diff($current, $userIds)) {
+            $this->users()->detach($toDetach);
+        }
+
+        foreach (array_diff($userIds, $current) as $userId) {
+            $this->users()->attach($userId, ['created_by' => auth()->id()]);
+        }
+    }
+
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by');

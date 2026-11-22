@@ -120,7 +120,7 @@ class MasterRentalController extends Controller
         $sortOrder = strtolower((string) $request->get('direction', $request->get('sort_order', 'desc'))) === 'asc' ? 'asc' : 'desc';
 
         $allowedSortFields = [
-            'rental_code', 'rental_name', 'category', 'is_active', 'daily_price', 'monthly_price',
+            'rental_code', 'rental_name', 'category', 'alias', 'is_active', 'daily_price', 'monthly_price',
             'install_duration', 'service_duration', 'created_at', 'updated_at',
         ];
         // Kolom relasi dari header: diurutkan lewat subquery agar select master_rentals.* tak terganggu join.
@@ -178,7 +178,9 @@ class MasterRentalController extends Controller
             ->with('optionDetails')
             ->first();
 
-        return view('warehouse.master-rentals.index', compact('rentals', 'serviceFrequencies', 'productCategories', 'unitOptions'));
+        $rentalAliasOptions = MasterRental::rentalAliasOptions();
+
+        return view('warehouse.master-rentals.index', compact('rentals', 'serviceFrequencies', 'productCategories', 'unitOptions', 'rentalAliasOptions'));
     }
 
     public function create()
@@ -207,6 +209,7 @@ class MasterRentalController extends Controller
             'serviceFrequencies' => $serviceFrequencies,
             'productCategories' => $productCategories,
             'unitOptions' => $unitOptions,
+            'rentalAliasOptions' => MasterRental::rentalAliasOptions($masterRental->alias),
         ]);
     }
 
@@ -216,7 +219,10 @@ class MasterRentalController extends Controller
             'rental_code' => 'nullable|string|max:50|unique:master_rentals',
             'rental_name' => 'required|string|max:255',
             'service_frequency_id' => 'required|exists:rental_service_frequencies,id',
-            'category' => 'required|string|max:100',
+            // MOM 18 Nov 2026 p3c: field "Category" di form diganti Rental Alias; kolom category
+            // dibiarkan (dipakai filter lama) dan hanya ditulis bila memang dikirim.
+            'category' => 'nullable|string|max:100',
+            'alias' => 'nullable|string|max:255',
             'rental_type' => 'required|in:unit_only,refill_only,unit_refill',
             'daily_price' => 'nullable|numeric|min:0',
             'monthly_price' => 'nullable|numeric|min:0',
@@ -244,6 +250,7 @@ class MasterRentalController extends Controller
                         'description' => null,
                         'service_frequency_id' => $request->service_frequency_id,
                         'category' => $request->category,
+                        'alias' => $request->filled('alias') ? trim((string) $request->alias) : null,
                         'rental_type' => $request->rental_type,
                         'daily_price' => $request->daily_price ?? 0,
                         'monthly_price' => $request->monthly_price ?? 0,
@@ -340,8 +347,11 @@ class MasterRentalController extends Controller
             ->orderBy('name')
             ->get();
 
+        $rentalAliasOptions = MasterRental::rentalAliasOptions($masterRental->alias);
+
         // Return view for web requests
         return view('warehouse.master-rentals.show', compact(
+            'rentalAliasOptions',
             'masterRental',
             'serviceFrequencies',
             'productTypes',
@@ -389,7 +399,10 @@ class MasterRentalController extends Controller
             'rental_code' => 'required|string|max:50|unique:master_rentals,rental_code,'.$masterRental->id,
             'rental_name' => 'required|string|max:255',
             'service_frequency_id' => 'required|exists:rental_service_frequencies,id',
-            'category' => 'required|string|max:100',
+            // MOM 18 Nov 2026 p3c: field "Category" di form diganti Rental Alias; kolom category
+            // dibiarkan (dipakai filter lama) dan hanya ditulis bila memang dikirim.
+            'category' => 'nullable|string|max:100',
+            'alias' => 'nullable|string|max:255',
             'rental_type' => 'required|in:unit_only,refill_only,unit_refill',
             'daily_price' => 'nullable|numeric|min:0',
             'monthly_price' => 'nullable|numeric|min:0',
@@ -402,12 +415,11 @@ class MasterRentalController extends Controller
         try {
             DB::beginTransaction();
 
-            $masterRental->update([
+            $payload = [
                 'rental_code' => $request->rental_code,
                 'rental_name' => $request->rental_name,
                 'description' => null,
                 'service_frequency_id' => $request->service_frequency_id,
-                'category' => $request->category,
                 'rental_type' => $request->rental_type,
                 'daily_price' => $request->daily_price ?? 0,
                 'monthly_price' => $request->monthly_price ?? 0,
@@ -417,7 +429,17 @@ class MasterRentalController extends Controller
                 'unit' => null,
                 'is_active' => $request->is_active ?? true,
                 'updated_by' => Auth::id(),
-            ]);
+            ];
+
+            if ($request->exists('category')) {
+                $payload['category'] = $request->category;
+            }
+
+            if ($request->exists('alias')) {
+                $payload['alias'] = $request->filled('alias') ? trim((string) $request->alias) : null;
+            }
+
+            $masterRental->update($payload);
 
             DB::commit();
 

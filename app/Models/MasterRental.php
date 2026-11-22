@@ -119,6 +119,32 @@ class MasterRental extends Model
         return $query->where('is_active', true);
     }
 
+    /**
+     * MOM 18 Nov 2026 p3c: Rental Alias master rental diambil dari Master Option "rental_alias"
+     * (diisi import Catalyst MsProductCategoryInfo.CategoryName). Disimpan di kolom `alias`.
+     *
+     * @return \Illuminate\Support\Collection<int, string>
+     */
+    public static function rentalAliasOptions(?string $keep = null)
+    {
+        $options = OptionDetail::query()
+            ->whereHas('masterOption', fn ($query) => $query->where('name', 'rental_alias'))
+            ->where('is_active', true)
+            ->orderBy('option_name')
+            ->pluck('option_name')
+            ->map(fn ($name) => trim((string) $name))
+            ->filter()
+            ->unique()
+            ->values();
+
+        // Nilai lama yang tak ada lagi di master option tetap bisa dipilih ulang, bukan hilang diam-diam.
+        if (filled($keep) && ! $options->contains($keep)) {
+            $options->prepend($keep);
+        }
+
+        return $options;
+    }
+
     public function scopeByCategory($query, $category)
     {
         return $query->where('category', $category);

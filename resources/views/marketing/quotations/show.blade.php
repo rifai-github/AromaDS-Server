@@ -613,15 +613,22 @@
                                                 }
                                                 $contractRoomRental = $contractRental?->masterRental ?: $contractRoom?->rentalProduct;
 
+                                                // MOM 18 Nov 2026: spesifikasi harus ikut data TERBARU Master Room,
+                                                // bukan snapshot saat quotation dibuat. Snapshot (baris quotation /
+                                                // survey detail) jadi dasar, lalu setiap field yang terisi di Master
+                                                // Room menimpanya; field yang kosong di master tetap pakai snapshot.
                                                 $specs = $decodeSpecs($detail->specifications ?? '{}');
                                                 if (!$hasMeaningfulSpecs($specs) && $detail->room) {
                                                     $specs = $decodeSpecs($detail->room->specifications ?? '{}');
                                                 }
-                                                if (!$hasMeaningfulSpecs($specs) && $quotationRoom?->room) {
-                                                    $specs = $masterRoomSpecs($quotationRoom->room);
-                                                }
-                                                if (!$hasMeaningfulSpecs($specs) && $contractRoom?->room) {
-                                                    $specs = $masterRoomSpecs($contractRoom->room);
+                                                $liveMasterRoom = collect([$detail->room?->room, $quotationRoom?->room, $contractRoom?->room])
+                                                    ->first(fn ($room) => $room && $hasMeaningfulSpecs($masterRoomSpecs($room)));
+                                                if ($liveMasterRoom) {
+                                                    foreach ($masterRoomSpecs($liveMasterRoom) as $specKey => $specValue) {
+                                                        if (trim((string) $specValue) !== '' && trim((string) $specValue) !== '-') {
+                                                            $specs[$specKey] = $specValue;
+                                                        }
+                                                    }
                                                 }
 
                                                 // The line's own rental outranks anything carried over from the

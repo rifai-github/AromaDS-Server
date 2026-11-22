@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Marketing;
 use App\Http\Controllers\Controller;
 use App\Models\Quotation;
 use App\Models\QuotationApprovalLevel;
-use App\Models\Role;
+use App\Models\User;
 use App\Services\Marketing\QuotationBottomPriceEvaluator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,16 +24,15 @@ class QuotationApprovalLevelController extends Controller
     {
         $levels = QuotationApprovalLevel::query()->ordered()->get();
 
-        $roles = Role::query()
+        // MOM 18 Nov 2026 p4: wewenang ditunjuk per user, bukan role.
+        $users = User::query()
             ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'name']);
+            ->get(['id', 'name', 'email']);
 
-        // Read role membership straight from role_permissions so that assignments
-        // made in the Role & Permission screen show up here too.
-        $levelRoleIds = [];
+        $levelUserIds = [];
         foreach ($levels as $level) {
-            $levelRoleIds[$level->id] = $level->roleIds();
+            $levelUserIds[$level->id] = $level->userIds();
         }
 
         $highest = $levels->where('is_active', true)->max('max_discount_percentage');
@@ -47,13 +46,13 @@ class QuotationApprovalLevelController extends Controller
             'sort_order' => (int) $level->sort_order,
             'description' => $level->description,
             'is_active' => (bool) $level->is_active,
-            'role_ids' => $levelRoleIds[$level->id] ?? [],
+            'user_ids' => $levelUserIds[$level->id] ?? [],
         ])->values();
 
         return view('marketing.quotation-approval-levels.index', [
             'levels' => $levels,
-            'roles' => $roles,
-            'levelRoleIds' => $levelRoleIds,
+            'users' => $users,
+            'levelUserIds' => $levelUserIds,
             'levelsPayload' => $levelsPayload,
             // Without a rung reaching 100% the deepest discounts cannot be approved by anyone.
             'hasFullCoverage' => $highest !== null && (float) $highest >= 100,
@@ -69,8 +68,8 @@ class QuotationApprovalLevelController extends Controller
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'description' => ['nullable', 'string'],
             'is_active' => ['nullable', 'boolean'],
-            'role_ids' => ['nullable', 'array'],
-            'role_ids.*' => ['integer'],
+            'user_ids' => ['nullable', 'array'],
+            'user_ids.*' => ['integer', 'exists:users,id'],
         ]);
 
         $level = DB::transaction(function () use ($validated, $request) {
@@ -85,7 +84,7 @@ class QuotationApprovalLevelController extends Controller
                 'updated_by' => Auth::id(),
             ]);
 
-            $level->syncRoles($validated['role_ids'] ?? []);
+            $level->syncUsers($validated['user_ids'] ?? []);
 
             return $level;
         });
@@ -106,8 +105,8 @@ class QuotationApprovalLevelController extends Controller
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'description' => ['nullable', 'string'],
             'is_active' => ['nullable', 'boolean'],
-            'role_ids' => ['nullable', 'array'],
-            'role_ids.*' => ['integer'],
+            'user_ids' => ['nullable', 'array'],
+            'user_ids.*' => ['integer', 'exists:users,id'],
         ]);
 
         DB::transaction(function () use ($validated, $request, $quotationApprovalLevel) {
@@ -120,7 +119,7 @@ class QuotationApprovalLevelController extends Controller
                 'updated_by' => Auth::id(),
             ]);
 
-            $quotationApprovalLevel->syncRoles($validated['role_ids'] ?? []);
+            $quotationApprovalLevel->syncUsers($validated['user_ids'] ?? []);
         });
 
         return response()->json([

@@ -868,7 +868,7 @@
                         <th data-column="rental_code">Rental Code</th>
                         <th data-column="rental_name">Rental Name</th>
                         <th data-column="serviceFrequency__name">Service Frequency</th>
-                        <th data-column="category">Category</th>
+                        <th data-column="alias">Rental Alias</th>
                         <th data-column="is_active">Is Active</th>
                         <th data-column="daily_price" data-type="numeric">Daily Price</th>
                         <th data-column="monthly_price" data-type="numeric">Monthly Price</th>
@@ -895,9 +895,11 @@
                         <td>{{ $rental->rental_name ?? '-' }}</td>
                         <td>{{ $rental->serviceFrequency ? $rental->serviceFrequency->name . ' (' . $rental->serviceFrequency->frequency_months . ' months, ' . $rental->serviceFrequency->frequency_times_per_month . ' times)' : '-' }}</td>
                         <td>
-                            <span class="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
-                                {{ strtoupper($rental->category ?? '-') }}
-                            </span>
+                            @if(filled($rental->alias))
+                                <span class="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">{{ $rental->alias }}</span>
+                            @else
+                                -
+                            @endif
                         </td>
                         <td>
                             <span class="px-2 py-1 text-xs rounded-full {{ $rental->is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
@@ -1233,12 +1235,12 @@ function openCreateModal() {
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Category *</label>
-                        <select name="category" class="form-input" required>
-                            <option value="">Select Category</option>
-                            <option value="unit-refill">Unit + Refill</option>
-                            <option value="unit-only">Unit Only</option>
-                            <option value="refill-only">Refill Only</option>
+                        <label class="form-label">Rental Alias</label>
+                        <select name="alias" class="form-input">
+                            <option value="">- Tanpa alias (pakai nama rental) -</option>
+                            @foreach($rentalAliasOptions as $aliasOption)
+                                <option value="{{ $aliasOption }}">{{ $aliasOption }}</option>
+                            @endforeach
                         </select>
                     </div>
                 </div>
@@ -1363,10 +1365,10 @@ function openViewModal(id) {
                             <p class="detail-value">${data.data.service_frequency ? data.data.service_frequency.name + ' (' + data.data.service_frequency.frequency_months + ' months, ' + data.data.service_frequency.frequency_times_per_month + ' times)' : '-'}</p>
                         </div>
                         <div class="detail-item">
-                            <label class="form-label">Category</label>
+                            <label class="form-label">Rental Alias</label>
                             <p class="detail-value">
                                 <span class="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
-                                    ${data.data.category ? data.data.category.toUpperCase() : '-'}
+                                    ${data.data.alias ? data.data.alias : '-'}
                                 </span>
                             </p>
                         </div>
@@ -1518,12 +1520,10 @@ function openEditModal(id) {
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Category *</label>
-                                <select name="category" class="form-input" required>
-                                    <option value="">Select Category</option>
-                                    <option value="unit-refill" ${data.data.category === 'unit-refill' ? 'selected' : ''}>Unit + Refill</option>
-                                    <option value="unit-only" ${data.data.category === 'unit-only' ? 'selected' : ''}>Unit Only</option>
-                                    <option value="refill-only" ${data.data.category === 'refill-only' ? 'selected' : ''}>Refill Only</option>
+                                <label class="form-label">Rental Alias</label>
+                                <select name="alias" class="form-input">
+                                    <option value="">- Tanpa alias (pakai nama rental) -</option>
+                                    ${(data.rentalAliasOptions || []).map(opt => `<option value="${String(opt).replace(/"/g, '&quot;')}" ${data.data.alias === opt ? 'selected' : ''}>${opt}</option>`).join('')}
                                 </select>
                             </div>
                         </div>
@@ -2093,8 +2093,8 @@ function showRental(id) {
                         </div>
                         <div class="col-md-6">
                             <div class="form-group">
-                                <label class="form-label">Category</label>
-                                <p class="form-control-plaintext">${rental.category}</p>
+                                <label class="form-label">Rental Alias</label>
+                                <p class="form-control-plaintext">${rental.alias || '-'}</p>
                             </div>
                         </div>
                     </div>
@@ -2187,18 +2187,21 @@ function editRental(id) {
                     serviceFrequencySelect.appendChild(option);
                 });
 
-                // Update category dropdown
-                const categorySelect = document.getElementById('category');
-                categorySelect.innerHTML = '<option value="">Select Category</option>';
-                productCategories.forEach(category => {
+                // MOM 18 Nov 2026: field Category diganti Rental Alias (Master Option rental_alias)
+                const aliasSelect = document.getElementById('alias');
+                aliasSelect.innerHTML = '<option value="">- Tanpa alias (pakai nama rental) -</option>';
+                (data.rentalAliasOptions || []).forEach(aliasName => {
                     const option = document.createElement('option');
-                    option.value = category.name;
-                    option.textContent = category.name;
-                    if (category.name === rental.category) {
+                    option.value = aliasName;
+                    option.textContent = aliasName;
+                    if (aliasName === rental.alias) {
                         option.selected = true;
                     }
-                    categorySelect.appendChild(option);
+                    aliasSelect.appendChild(option);
                 });
+                if (window.jQuery && jQuery(aliasSelect).hasClass('select2-hidden-accessible')) {
+                    jQuery(aliasSelect).trigger('change.select2');
+                }
 
                 // Update modal title and submit button
                 document.getElementById('rentalModalTitle').textContent = 'Edit Master Rental';
@@ -2302,11 +2305,11 @@ function closeShowRentalModal() {
                     </div>
                     <div class="col-md-6">
                         <div class="mb-3">
-                            <label for="category" class="form-label">Category <span class="text-danger">*</span></label>
-                            <select class="form-control" id="category" name="category" required>
-                                <option value="">Select Category</option>
-                                @foreach($productCategories as $category)
-                                    <option value="{{ $category->name }}">{{ $category->name }}</option>
+                            <label for="alias" class="form-label">Rental Alias</label>
+                            <select class="form-control" id="alias" name="alias">
+                                <option value="">- Tanpa alias (pakai nama rental) -</option>
+                                @foreach($rentalAliasOptions as $aliasOption)
+                                    <option value="{{ $aliasOption }}">{{ $aliasOption }}</option>
                                 @endforeach
                             </select>
                         </div>

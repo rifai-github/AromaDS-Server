@@ -476,7 +476,7 @@ class QuotationWizardController extends Controller
             }
 
             $products = $productsQuery->with('serviceFrequency:id,frequency_months')
-                ->select('id', 'rental_code', 'rental_name', 'daily_price', 'monthly_price', 'unit', 'service_frequency_id')
+                ->select('id', 'rental_code', 'rental_name', 'alias', 'daily_price', 'monthly_price', 'unit', 'service_frequency_id')
                 ->orderBy('rental_name')
                 ->limit(50)
                 ->get();
@@ -524,6 +524,8 @@ class QuotationWizardController extends Controller
                     'id' => $product->id,
                     'text' => $product->rental_name . ' (' . $product->rental_code . ')',
                     'name' => $product->rental_name,
+                    // MOM 18 Nov 2026 p3c: Rental Alias default step 4 = alias di master rental.
+                    'alias' => $product->alias,
                     'code' => $product->rental_code,
                     'daily_price' => $dailyPrice,
                     'monthly_price' => $monthlyPrice,
