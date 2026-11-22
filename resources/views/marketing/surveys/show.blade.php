@@ -263,7 +263,7 @@
                                     </div>
                                     <div class="survey-field">
                                         <div class="survey-field-label">PIC</div>
-                                        <div class="survey-field-value">{{ $survey->contact_person ?? '-' }}</div>
+                                        <div class="survey-field-value">{{ $survey->display_contact_person }}</div>
                                     </div>
                                     <div class="survey-field">
                                         <div class="survey-field-label">E-mail</div>
@@ -275,7 +275,7 @@
                                     </div>
                                     <div class="survey-field">
                                         <div class="survey-field-label">Jabatan / Posisi</div>
-                                        <div class="survey-field-value">{{ $survey->position ?? '-' }}</div>
+                                        <div class="survey-field-value">{{ $survey->display_position }}</div>
                                     </div>
                                     <div class="survey-field">
                                         <div class="survey-field-label">Nama Gedung</div>
@@ -302,8 +302,9 @@
                                     <div class="survey-field">
                                         <div class="survey-field-label">Lokasi Detail</div>
                                         <div class="survey-field-value">
-                                            @if($survey->status === 'draft')
-                                                <span class="inline-edit-trigger text-primary cursor-pointer border-bottom border-primary border-dotted" 
+                                            {{-- MOM 18 Nov 2026: lokasi detail tetap bisa diubah setelah approve (dicatat di audit log). --}}
+                                            @if($survey->status !== 'cancelled')
+                                                <span class="inline-edit-trigger text-primary cursor-pointer border-bottom border-primary border-dotted"
                                                       data-id="{{ $survey->id }}" 
                                                       id="lokasi-detail-display" 
                                                       title="Klik untuk edit"

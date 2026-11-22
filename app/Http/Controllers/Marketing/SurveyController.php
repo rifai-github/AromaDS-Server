@@ -1172,11 +1172,13 @@ class SurveyController extends Controller
     
     public function updateLocationDetail(Request $request, Survey $survey)
     {
-        // MOM29: Only allow editing if status is draft
-        if ($survey->status !== 'draft') {
+        // MOM 18 Nov 2026: banyak permintaan ganti lokasi detail SETELAH approve, dan KGI diminta
+        // menentukan tempat editnya. Tempatnya tetap di sini (Basic Info Detail Survey), untuk
+        // semua status kecuali cancelled; perubahan setelah draft dicatat di audit log.
+        if ($survey->status === 'cancelled') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Hanya survey dengan status Draft yang dapat diubah lokasi detailnya.'
+                'message' => 'Survey yang sudah dibatalkan tidak dapat diubah lokasi detailnya.'
             ], 422);
         }
 
@@ -1192,10 +1194,22 @@ class SurveyController extends Controller
         }
 
         try {
+            $oldValue = $survey->building_location_detail;
+
             $survey->update([
                 'building_location_detail' => $request->building_location_detail,
                 'updated_by' => Auth::id()
             ]);
+
+            if ($survey->status !== 'draft' && $oldValue !== $request->building_location_detail) {
+                \App\Models\AuditLog::log(
+                    'survey_location_detail_updated_after_draft',
+                    $survey,
+                    ['building_location_detail' => $oldValue, 'status' => $survey->status],
+                    ['building_location_detail' => $request->building_location_detail],
+                    Auth::id()
+                );
+            }
 
             return response()->json([
                 'status' => 'success',

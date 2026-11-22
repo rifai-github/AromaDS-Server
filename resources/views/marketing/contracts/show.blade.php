@@ -637,6 +637,23 @@
                                             </div>
                                         </div>
                                     </div>
+                                    {{-- MOM 19 Nov 2026 p4: Basis SQ boleh diubah walau kontrak sudah aktif (memengaruhi printout). --}}
+                                    @php
+                                        $contractPriceBasis = $contract->price_basis ?: ($contract->quotation->price_basis ?? 'rental');
+                                    @endphp
+                                    <div class="contract-field">
+                                        <div class="contract-field-label">Basis SQ</div>
+                                        <div class="contract-field-value">
+                                            <div class="input-group input-group-sm" style="max-width: 320px;">
+                                                <select id="contractPriceBasis" class="form-control" data-no-select2>
+                                                    <option value="rental" @selected($contractPriceBasis !== 'room')>Basis Rental</option>
+                                                    <option value="room" @selected($contractPriceBasis === 'room')>Basis Ruangan</option>
+                                                </select>
+                                                <button type="button" class="btn btn-primary" id="btnSavePriceBasis"
+                                                        onclick="saveContractPriceBasis({{ $contract->id }})">Simpan</button>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div class="contract-field">
                                         <div class="contract-field-label">Contract</div>
                                         <div class="contract-field-value">
@@ -4906,6 +4923,36 @@ function updateBaFilesSupported(contractId, supported) {
                 btnNo.disabled = false;
             });
         }
+    });
+}
+
+function saveContractPriceBasis(contractId) {
+    const select = document.getElementById('contractPriceBasis');
+    const button = document.getElementById('btnSavePriceBasis');
+    button.disabled = true;
+
+    fetch(`/marketing/contracts/${contractId}/update-price-basis`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({ price_basis: select.value })
+    })
+    .then(async response => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) {
+            const firstError = data.errors ? Object.values(data.errors).flat()[0] : null;
+            throw new Error(firstError || data.message || 'Gagal menyimpan Basis SQ');
+        }
+        Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message, timer: 1800, showConfirmButton: false });
+    })
+    .catch(error => {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    })
+    .finally(() => {
+        button.disabled = false;
     });
 }
 

@@ -519,6 +519,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('contracts/{contract}/toggle-ba-supported', [ContractController::class, 'toggleBaFilesSupported'])->name('contracts.toggle-ba-supported');
         Route::post('contracts/{contract}/toggle-hold-invoice', [ContractController::class, 'toggleHoldInvoice'])->name('contracts.toggle-hold-invoice');
         Route::post('contracts/{contract}/update-po-number', [ContractController::class, 'updatePoNumber'])->name('contracts.update-po-number');
+        Route::post('contracts/{contract}/update-price-basis', [ContractController::class, 'updatePriceBasis'])->name('contracts.update-price-basis');
         Route::post('contracts/{contract}/toggle-contract-target', [ContractController::class, 'toggleContractTarget'])->name('contracts.toggle-contract-target');
 
         Route::post('contracts/{contract}/update-achiever', [ContractController::class, 'updateAchiever'])->name('contracts.update-achiever');

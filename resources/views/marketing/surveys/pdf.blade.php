@@ -399,8 +399,8 @@
                 <div class="lbl">Survey Untuk :</div>
                 <div class="party-name">{{ strtoupper($surveyForName) }}</div>
                 <div class="party-addr">{{ $surveyForAddress ?: '-' }}</div>
-                @if ($survey->contact_person || $survey->display_phone_one !== '-')
-                    <div class="party-addr">{{ trim(($survey->contact_person ?? '') . ($survey->display_phone_one !== '-' ? ' - ' . $survey->display_phone_one : '')) }}</div>
+                @if ($survey->display_contact_person !== '-' || $survey->display_phone_one !== '-')
+                    <div class="party-addr">{{ trim(($survey->display_contact_person !== '-' ? $survey->display_contact_person : '') . ($survey->display_phone_one !== '-' ? ' - ' . $survey->display_phone_one : '')) }}</div>
                 @endif
             </td>
             <td class="info-right">
@@ -464,13 +464,13 @@
                 <td class="detail-label">Tipe Pelanggan</td>
                 <td style="width: 25%;">{{ $survey->customer_type ?? $survey->customer->company_type ?? '-' }}</td>
                 <td class="detail-label">Kontak Person</td>
-                <td style="width: 25%;">{{ $survey->contact_person ?? '-' }}</td>
+                <td style="width: 25%;">{{ $survey->display_contact_person }}</td>
             </tr>
             <tr>
                 <td class="detail-label">Email</td>
                 <td>{{ $survey->display_email }}</td>
                 <td class="detail-label">Jabatan</td>
-                <td>{{ $survey->position ?? '-' }}</td>
+                <td>{{ $survey->display_position }}</td>
             </tr>
             <tr>
                 <td class="detail-label">Telepon 1</td>
@@ -493,7 +493,7 @@
             </tr>
             <tr>
                 <td class="detail-label">Alamat 1</td>
-                <td>{{ $survey->building->building_address ?? $survey->address_1 ?? '-' }}</td>
+                <td>{{ $survey->building?->building_address ?: ($survey->display_address_one ?? '-') }}</td>
                 <td class="detail-label">Alamat 2</td>
                 <td>{{ $survey->building->alamat_2 ?? $survey->address_2 ?? '-' }}</td>
             </tr>

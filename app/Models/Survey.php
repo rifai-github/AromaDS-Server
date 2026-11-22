@@ -173,20 +173,90 @@ class Survey extends Model
             ?? '-';
     }
 
-    // PIC = kontak yang dipilih di wizard (tersimpan di surveys.email / phone_1). Email/telepon
-    // customer hanya cadangan; dulu urutannya terbalik sehingga Basic Info menampilkan data
-    // master customer, bukan master contact (UAT 18 Nov).
+    private bool $masterContactResolved = false;
+
+    private ?CustomerContact $resolvedMasterContact = null;
+
+    /**
+     * MOM 18 Nov 2026: Basic Info survey harus terhubung ke Master Contact, bukan salinan saat
+     * survey dibuat. Survey hanya menyimpan teks PIC (nama/email/telepon/jabatan), jadi kontak
+     * master dicari di customer yang sama lewat nama atau email. Tidak ketemu -> null, tampilan
+     * jatuh ke salinan survey.
+     */
+    public function getMasterContactAttribute(): ?CustomerContact
+    {
+        if ($this->masterContactResolved) {
+            return $this->resolvedMasterContact;
+        }
+
+        $this->masterContactResolved = true;
+
+        $name = $this->normalizeDisplayValue($this->contact_person);
+        $email = $this->normalizeDisplayValue($this->email);
+
+        if (! $this->customer_id || (! $name && ! $email)) {
+            return null;
+        }
+
+        try {
+            $customerId = $this->customer_id;
+            $candidates = CustomerContact::query()
+                ->where(function ($query) use ($customerId) {
+                    $query->where('customer_id', $customerId)
+                        ->orWhereHas('customers', fn ($customers) => $customers->where('customers.id', $customerId));
+                })
+                ->where(function ($query) use ($name, $email) {
+                    if ($name) {
+                        $query->orWhereRaw('LOWER(TRIM(name)) = ?', [Str::lower($name)]);
+                    }
+                    if ($email) {
+                        $query->orWhereRaw('LOWER(TRIM(email)) = ?', [Str::lower($email)]);
+                    }
+                })
+                ->orderByDesc('is_active')
+                ->orderBy('id')
+                ->get();
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        $sameName = fn ($contact) => $name && Str::lower(trim((string) $contact->name)) === Str::lower($name);
+        $sameEmail = fn ($contact) => $email && Str::lower(trim((string) $contact->email)) === Str::lower($email);
+
+        return $this->resolvedMasterContact = $candidates->first(fn ($contact) => $sameName($contact) && $sameEmail($contact))
+            ?? $candidates->first($sameName)
+            ?? $candidates->first($sameEmail);
+    }
+
+    // PIC = kontak master yang cocok (MOM 18 Nov 2026: harus linked), lalu salinan di survey,
+    // lalu email/telepon customer sebagai cadangan terakhir.
+    public function getDisplayContactPersonAttribute()
+    {
+        return $this->normalizeDisplayValue($this->master_contact?->name)
+            ?? $this->normalizeDisplayValue($this->contact_person)
+            ?? '-';
+    }
+
     public function getDisplayEmailAttribute()
     {
-        return $this->normalizeDisplayValue($this->email)
+        return $this->normalizeDisplayValue($this->master_contact?->email)
+            ?? $this->normalizeDisplayValue($this->email)
             ?? $this->normalizeDisplayValue($this->customer?->email)
             ?? '-';
     }
 
     public function getDisplayPhoneOneAttribute()
     {
-        return $this->normalizeDisplayValue($this->phone_1)
+        return $this->normalizeDisplayValue($this->master_contact?->phone)
+            ?? $this->normalizeDisplayValue($this->phone_1)
             ?? $this->normalizeDisplayValue($this->customer?->phone)
+            ?? '-';
+    }
+
+    public function getDisplayPositionAttribute()
+    {
+        return $this->normalizeDisplayValue($this->master_contact?->position)
+            ?? $this->normalizeDisplayValue($this->position)
             ?? '-';
     }
 
@@ -197,17 +267,23 @@ class Survey extends Model
             ?? '-';
     }
 
+    // MOM 18 Nov 2026: alamat di Basic Info ikut Master Building terbaru; salinan survey hanya
+    // cadangan untuk survey tanpa gedung.
     public function getDisplayAddressOneAttribute()
     {
-        return $this->normalizeDisplayValue($this->address_1)
-            ?? $this->normalizeDisplayValue($this->building?->alamat_1)
-            ?? $this->normalizeDisplayValue($this->building?->address);
+        return $this->normalizeDisplayValue($this->building?->alamat_1)
+            ?? $this->normalizeDisplayValue($this->building?->address)
+            ?? $this->normalizeDisplayValue($this->address_1);
     }
 
     public function getDisplayAddressTwoAttribute()
     {
-        return $this->normalizeDisplayValue($this->address_2)
-            ?? $this->normalizeDisplayValue($this->building?->alamat_2);
+        $second = ($this->building && $this->normalizeDisplayValue($this->building->alamat_1 ?? $this->building->address))
+            ? $this->normalizeDisplayValue($this->building->alamat_2)
+            : $this->normalizeDisplayValue($this->address_2);
+
+        // Banyak gedung menyimpan alamat yang sama di alamat_1 dan alamat_2; jangan dicetak dua kali.
+        return $second !== null && Str::lower($second) === Str::lower((string) $this->display_address_one) ? null : $second;
     }
 
     public function getDisplayProvinceAttribute()

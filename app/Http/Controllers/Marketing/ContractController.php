@@ -3607,6 +3607,28 @@ class ContractController extends Controller
      * (UAT 19 Nov). Invoice menyalin PO saat dibuat, jadi invoice yang belum lunas/batal dan
      * masih memakai PO lama (atau kosong) ikut diperbarui supaya cetakannya benar.
      */
+    /**
+     * MOM 19 Nov 2026 p4: Basis SQ (rental / ruangan) di Contract Information, boleh diubah walau
+     * kontrak sudah aktif karena memengaruhi printout.
+     */
+    public function updatePriceBasis(Request $request, Contract $contract)
+    {
+        $validated = $request->validate([
+            'price_basis' => 'required|in:rental,room',
+        ]);
+
+        $contract->update([
+            'price_basis' => $validated['price_basis'],
+            'updated_by' => Auth::id(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Basis SQ disimpan: '.($validated['price_basis'] === 'room' ? 'Basis Ruangan' : 'Basis Rental').'.',
+            'price_basis' => $validated['price_basis'],
+        ]);
+    }
+
     public function updatePoNumber(Request $request, Contract $contract)
     {
         $validated = $request->validate([

@@ -162,4 +162,33 @@ class Uat19NovContractAndAuditTest extends TestCase
         $print = file_get_contents(View::getFinder()->find('finance.invoices.print_template'));
         $this->assertStringContainsString('Customer PO', $print);
     }
+
+    // MOM 19 Nov 2026 p4: Basis SQ di Contract Information, boleh diubah walau kontrak aktif.
+    public function test_contract_price_basis_can_be_changed_on_an_active_contract(): void
+    {
+        $this->createUsersAndAudit();
+        Schema::create('contracts', function (Blueprint $t) {
+            $t->id();
+            $t->string('contract_number')->nullable();
+            $t->string('contract_status')->nullable();
+            $t->string('status')->nullable();
+            $t->string('price_basis', 20)->nullable();
+            $t->unsignedBigInteger('updated_by')->nullable();
+            $t->timestamps();
+            $t->softDeletes();
+        });
+        DB::table('contracts')->insert(['id' => 1, 'contract_number' => 'JKT-CA/26-11/0001', 'contract_status' => 'active', 'status' => 'active', 'price_basis' => 'rental']);
+
+        $this->actingAs(User::findOrFail(1));
+        $request = \Illuminate\Http\Request::create('/marketing/contracts/1/update-price-basis', 'POST', ['price_basis' => 'room']);
+        $response = app(\App\Http\Controllers\Marketing\ContractController::class)
+            ->updatePriceBasis($request, \App\Models\Contract::findOrFail(1));
+
+        $this->assertTrue($response->getData(true)['success']);
+        $this->assertSame('room', DB::table('contracts')->where('id', 1)->value('price_basis'));
+
+        $view = file_get_contents(View::getFinder()->find('marketing.contracts.show'));
+        $this->assertStringContainsString('id="contractPriceBasis"', $view);
+        $this->assertStringContainsString('update-price-basis', $view);
+    }
 }
