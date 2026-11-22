@@ -6,16 +6,18 @@ use Tests\TestCase;
 
 class CustomerTaxFormScriptTest extends TestCase
 {
-    public function test_customer_tax_create_form_submits_tax_type_as_finance_tax_code(): void
+    // Jawaban klien 22 Nov 2026 (#20): kode PPN tidak diisi di Customer Tax, tapi per kontrak.
+    public function test_customer_tax_form_no_longer_asks_for_a_ppn_code(): void
     {
         $view = file_get_contents(resource_path('views/company/customer-taxes/index.blade.php'));
 
-        $this->assertStringContainsString('const customerTaxCodes = @json', $view);
-        $this->assertStringContainsString('function buildCustomerTaxCodeOptions(selectedCode = \'\')', $view);
-        $this->assertStringContainsString('name="tax_type" id="create_tax_type"', $view);
-        $this->assertStringContainsString('name="ppn_code" id="create_ppn_code"', $view);
-        $this->assertStringNotContainsString('placeholder="e.g. PPN 11%, PPh 23"', $view);
-        $this->assertStringNotContainsString('value="PPN 11%"', $view);
+        $this->assertStringNotContainsString('name="tax_type" id="create_tax_type"', $view);
+        $this->assertStringNotContainsString('name="ppn_code" id="create_ppn_code"', $view);
+        $this->assertStringNotContainsString('name="tax_type" id="edit_tax_type"', $view);
+        $this->assertStringContainsString('Kode PPN ditentukan per kontrak', $view);
+
+        $controller = file_get_contents(app_path('Http/Controllers/Company/CustomerTaxController.php'));
+        $this->assertStringContainsString("\$request->merge(['tax_type' => null, 'ppn_code' => null]);", $controller);
     }
 
     public function test_customer_tax_form_clamps_tax_number_to_active_maxlength(): void

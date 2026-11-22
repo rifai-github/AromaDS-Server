@@ -177,13 +177,10 @@ class CustomerTaxController extends Controller
             'customer_id' => 'required|exists:customers,id',
             'label' => 'nullable|string|max:255',
             'tax_name' => 'required|in:NPWP,NIK,NITKU,KITAS/PASSPORT/KTP WNA,OTHER',
-            'tax_type' => [
-                'required',
-                'string',
-                'max:50',
-                Rule::exists('finance_tax_codes', 'code')->where('is_active', true),
-            ],
-            'ppn_code' => 'nullable|string|max:10', // New field
+            // Jawaban klien 22 Nov 2026 (#20) / MOM 19 Nov p5: kode PPN TIDAK diisi di Customer Tax;
+            // ditentukan per kontrak (satu customer bisa banyak kode PPN). Input lama diabaikan.
+            'tax_type' => 'nullable|string|max:50',
+            'ppn_code' => 'nullable|string|max:10',
             'tax_rate' => 'nullable|numeric|min:0|max:100',
             'effective_date' => 'required|date',
             'expiry_date' => 'nullable|date|after:effective_date',
@@ -224,7 +221,9 @@ class CustomerTaxController extends Controller
             DB::beginTransaction();
 
             $taxNumber = $request->tax_number;
-            $taxRate = $this->resolveTaxRateForCode($request->tax_type);
+            // Kode PPN & tarif tidak disimpan di Customer Tax (jawaban klien #20).
+            $request->merge(['tax_type' => null, 'ppn_code' => null]);
+            $taxRate = null;
 
             $nitku = $this->resolveNitkuBranchCode($taxName, $taxNumber, $request->nitku);
 
@@ -285,8 +284,8 @@ class CustomerTaxController extends Controller
                 'nitku' => $nitku,
                 'tax_name' => $taxName,
                 'tax_address' => $request->tax_address,
-                'tax_type' => $request->tax_type,
-                'ppn_code' => $request->ppn_code ?: $request->tax_type,
+                'tax_type' => null,
+                'ppn_code' => null,
                 'tax_rate' => $taxRate,
                 'effective_date' => $request->effective_date,
                 'expiry_date' => $request->expiry_date,
@@ -367,12 +366,8 @@ class CustomerTaxController extends Controller
         $rules = [
             'customer_id' => 'required|exists:customers,id',
             'tax_name' => 'required|in:NPWP,NIK,NITKU,KITAS/PASSPORT/KTP WNA,OTHER',
-            'tax_type' => [
-                'required',
-                'string',
-                'max:50',
-                Rule::exists('finance_tax_codes', 'code')->where('is_active', true),
-            ],
+            // Kode PPN tidak lagi milik Customer Tax (lihat store()).
+            'tax_type' => 'nullable|string|max:50',
             'ppn_code' => 'nullable|string|max:10',
             'tax_rate' => 'nullable|numeric|min:0|max:100',
             'effective_date' => 'required|date',
@@ -405,7 +400,9 @@ class CustomerTaxController extends Controller
             DB::beginTransaction();
 
             $taxNumber = $request->tax_number;
-            $taxRate = $this->resolveTaxRateForCode($request->tax_type);
+            // Kode PPN & tarif tidak disimpan di Customer Tax (jawaban klien #20).
+            $request->merge(['tax_type' => null, 'ppn_code' => null]);
+            $taxRate = null;
             $nitku = $this->resolveNitkuBranchCode($taxName, $taxNumber, $request->nitku);
 
             if ($taxName === 'NPWP') {
@@ -469,8 +466,8 @@ class CustomerTaxController extends Controller
                 'nitku' => $nitku,
                 'tax_name' => $taxName,
                 'tax_address' => $request->tax_address,
-                'tax_type' => $request->tax_type,
-                'ppn_code' => $request->ppn_code ?: $request->tax_type,
+                'tax_type' => null,
+                'ppn_code' => null,
                 'tax_rate' => $taxRate,
                 'effective_date' => $request->effective_date,
                 'expiry_date' => $request->expiry_date,

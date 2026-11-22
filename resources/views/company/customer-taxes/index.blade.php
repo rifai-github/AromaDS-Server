@@ -741,9 +741,6 @@
                         <th data-column="tax_name">Tax Name</th>
                         <th data-column="tax_number">Tax Number</th>
                         <th data-column="nitku">NITKU</th>
-                        <th data-column="tax_type">Tax Type</th>
-                        <th data-column="ppn_code">PPN Code</th>
-                        <th data-column="tax_rate" data-type="numeric">Tax Rate (%)</th>
                         <th data-column="effective_date" data-type="date">Effective Date</th>
                         <th data-column="is_active">Status</th>
                         <th data-column="createdBy__name">Created By</th>
@@ -764,13 +761,6 @@
                         <td>{{ $tax->tax_name ?? '-' }}</td>
                         <td>{{ $tax->tax_number ?? '-' }}</td>
                         <td>{{ $tax->nitku ?? '-' }}</td>
-                        <td>
-                            <span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
-                                {{ strtoupper($tax->tax_type ?? '-') }}
-                            </span>
-                        </td>
-                        <td>{{ $tax->ppn_code ?? '-' }}</td>
-                        <td>{{ $tax->tax_rate ? number_format($tax->tax_rate, 2) . '%' : '-' }}</td>
                         <td>{{ $tax->effective_date ? $tax->effective_date->format('d/M/Y') : '-' }}</td>
                         <td>
                             <span class="px-2 py-1 text-xs rounded-full {{ $tax->status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
@@ -798,7 +788,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="11" class="p-8 text-center">
+                        <td colspan="12" class="p-8 text-center">
                             <div class="text-gray-600">
                                 <i class="fas fa-receipt text-4xl mb-3"></i>
                                 <p class="text-lg">No customer tax settings found</p>
@@ -1077,17 +1067,8 @@ function openCreateModal() {
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label">Kode Transaksi PPN *</label>
-                        <select name="tax_type" id="create_tax_type" class="form-input" required onchange="syncCustomerTaxCodeFields('create')">
-                            ${buildCustomerTaxCodeOptions()}
-                        </select>
-                        <div id="create_tax_code_description" class="text-gray-600 mt-2" style="font-size: 12px; line-height: 1.45; white-space: normal; overflow-wrap: anywhere;"></div>
-                        <input type="hidden" name="ppn_code" id="create_ppn_code">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Tax Rate (%) *</label>
-                        <input type="text" id="create_tax_rate_display" class="form-input bg-gray-100 cursor-not-allowed" readonly tabindex="-1" value="${formatCustomerTaxRate(customerTaxDefaultVatRate)}%">
-                        <input type="hidden" name="tax_rate" id="create_tax_rate" value="${formatCustomerTaxRate(customerTaxDefaultVatRate)}">
+                        <label class="form-label">Kode Transaksi PPN</label>
+                        <p class="text-gray-600" style="font-size: 12px; line-height: 1.45;">Tidak diisi di Customer Tax. Kode PPN ditentukan per kontrak (Contract Wizard / Billing Group), sehingga satu customer bisa memakai beberapa kode PPN.</p>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Effective Date *</label>
@@ -1166,10 +1147,6 @@ function openViewModal(id) {
                         <div class="detail-item">
                             <label class="form-label">NITKU</label>
                             <p class="detail-value">${data.data.nitku || '-'}</p>
-                        </div>
-                        <div class="detail-item">
-                            <label class="form-label">Kode Transaksi PPN</label>
-                            <p class="detail-value">${data.data.ppn_code || '-'}</p>
                         </div>
                     </div>
                 </div>
@@ -1313,17 +1290,8 @@ function openEditModal(id) {
                         <div class="modal-section-title">Tax Information</div>
                         <div class="grid grid-cols-1 gap-6">
                             <div class="form-group">
-                                <label class="form-label">Kode Transaksi PPN *</label>
-                                <select name="tax_type" id="edit_tax_type" class="form-input" required onchange="syncCustomerTaxCodeFields('edit')">
-                                    ${buildCustomerTaxCodeOptions(data.data.tax_type || data.data.ppn_code || '')}
-                                </select>
-                                <div id="edit_tax_code_description" class="text-gray-600 mt-2" style="font-size: 12px; line-height: 1.45; white-space: normal; overflow-wrap: anywhere;"></div>
-                                <input type="hidden" name="ppn_code" id="edit_ppn_code" value="${data.data.ppn_code || data.data.tax_type || ''}">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Tax Rate (%) *</label>
-                                <input type="text" id="edit_tax_rate_display" class="form-input bg-gray-100 cursor-not-allowed" readonly tabindex="-1" value="${formatCustomerTaxRate(data.data.tax_rate)}%">
-                                <input type="hidden" name="tax_rate" id="edit_tax_rate" value="${formatCustomerTaxRate(data.data.tax_rate)}">
+                                <label class="form-label">Kode Transaksi PPN</label>
+                                <p class="text-gray-600" style="font-size: 12px; line-height: 1.45;">Tidak diisi di Customer Tax. Kode PPN ditentukan per kontrak (Contract Wizard / Billing Group).</p>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Effective Date *</label>

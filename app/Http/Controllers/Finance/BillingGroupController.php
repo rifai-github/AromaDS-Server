@@ -1254,7 +1254,8 @@ class BillingGroupController extends Controller
                             $settingId = str_replace('tax_setting_', '', $taxId);
                             $taxSetting = \App\Models\CustomerTax::find($settingId);
                             if ($taxSetting) {
-                                $taxTypes[] = strtoupper($taxSetting->tax_type);
+                                // tax_type Customer Tax dulu berisi kode PPN; label jenis pajak = tax_name (NPWP/NIK/...).
+                                $taxTypes[] = strtoupper($taxSetting->tax_name ?: (string) $taxSetting->tax_type);
                                 $taxNumbers[] = $taxSetting->tax_number;
                                 if ($taxSetting->ppn_code && !isset($taxPpnCode)) {
                                     $taxPpnCode = $taxSetting->ppn_code;
