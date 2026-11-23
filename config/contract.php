@@ -16,4 +16,16 @@ return [
 
     'grace_auto_suspend' => (bool) env('GRACE_AUTO_SUSPEND', false),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Masa berlaku link tanda tangan digital kontrak (hari)
+    |--------------------------------------------------------------------------
+    |
+    | MOM 19 Nov 2026 p4 no 8. Link publik untuk penandatangan Pink & customer. Setelah lewat,
+    | admin membuat link baru (selama belum ada yang tanda tangan).
+    |
+    */
+
+    'signature_link_days' => (int) env('CONTRACT_SIGNATURE_LINK_DAYS', 14),
+
 ];

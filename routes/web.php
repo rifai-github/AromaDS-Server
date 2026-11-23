@@ -150,6 +150,13 @@ Route::get('/csrf-token', function () {
 
 // Public API Routes (no authentication required)
 Route::get('/email/verify/{token}', [App\Http\Controllers\Company\CustomerContactController::class, 'verifyEmail'])->name('email.verify');
+
+// MOM 19 Nov 2026 p4 no 8: Digital Sign kontrak - halaman publik penandatangan (tanpa login, akses via token).
+Route::middleware('throttle:30,1')->group(function () {
+    Route::get('/sign/contract/{token}', [App\Http\Controllers\PublicContractSignatureController::class, 'show'])->name('contract-signatures.public.show');
+    Route::get('/sign/contract/{token}/document', [App\Http\Controllers\PublicContractSignatureController::class, 'document'])->name('contract-signatures.public.document');
+    Route::post('/sign/contract/{token}', [App\Http\Controllers\PublicContractSignatureController::class, 'sign'])->name('contract-signatures.public.sign');
+});
 Route::get('/api/contracts/dropdown', [ContractController::class, 'getForDropdown'])->name('api.contracts.dropdown');
 Route::get('/api/contracts/on-wall-units-for-job-advice', [ContractController::class, 'getOnWallUnitsForJobAdvice'])->name('api.contracts.on-wall-units-for-job-advice');
 Route::get('/api/quotations/dropdown', [App\Http\Controllers\Marketing\QuotationController::class, 'getForDropdown'])->name('api.quotations.dropdown');
@@ -521,6 +528,9 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('contracts/{contract}/toggle-hold-invoice', [ContractController::class, 'toggleHoldInvoice'])->name('contracts.toggle-hold-invoice');
         Route::post('contracts/{contract}/update-po-number', [ContractController::class, 'updatePoNumber'])->name('contracts.update-po-number');
         Route::post('contracts/{contract}/update-price-basis', [ContractController::class, 'updatePriceBasis'])->name('contracts.update-price-basis');
+        // MOM 19 Nov 2026 p4 no 8: Digital Sign kontrak (link tanda tangan + unduh PDF bertanda tangan)
+        Route::post('contracts/{contract}/signature-links', [\App\Http\Controllers\Marketing\ContractSignatureController::class, 'store'])->name('contracts.signature-links.store')->middleware('permission:marketing.contracts.update');
+        Route::get('contracts/{contract}/signature-document', [\App\Http\Controllers\Marketing\ContractSignatureController::class, 'download'])->name('contracts.signature-document')->middleware('permission:marketing.contracts.view');
         // MOM 19 Nov 2026 p6: Suspend/Unsuspend room kontrak
         Route::post('contracts/{contract}/rooms/suspend', [ContractController::class, 'suspendRooms'])->name('contracts.rooms.suspend')->middleware('permission:marketing.contract-room-suspend.update');
         Route::post('contracts/{contract}/rooms/unsuspend', [ContractController::class, 'unsuspendRooms'])->name('contracts.rooms.unsuspend')->middleware('permission:marketing.contract-room-suspend.update');

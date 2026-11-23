@@ -1866,6 +1866,110 @@
 
                 <!-- Files Tab -->
                 <div class="tab-pane fade" id="files" role="tabpanel" aria-labelledby="files-tab">
+                    {{-- MOM 19 Nov 2026 p4 no 8: Digital Sign kontrak --}}
+                    @php
+                        $signatureService = app(\App\Services\Marketing\ContractSignatureService::class);
+                        $signatureRows = $signatureService->activeBatch($contract);
+                        $signatureIsPosted = $signatureService->isPosted($contract);
+                        $signatureHasAny = $signatureRows->contains(fn ($row) => $row->isSigned());
+                        $signatureFinalPath = $signatureRows->pluck('final_document_path')->filter()->first();
+                        $canCreateSignatureLinks = auth()->user()->hasPermission('marketing.contracts.update')
+                            || auth()->user()->hasRole('Admin') || auth()->user()->hasRole('Management');
+                    @endphp
+                    <div class="card mb-3" style="width: 100%;" id="contractSignatureCard">
+                        <div class="card-header" style="background-color: #f8f9fa; border-bottom: 2px solid #1e3a8a;">
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <h5 class="card-title mb-0" style="color: #1e3a8a;">
+                                    <i class="fas fa-signature me-2"></i>
+                                    Tanda Tangan Digital
+                                    @if($signatureFinalPath)
+                                        <span class="badge bg-success ms-2">Ditandatangani semua pihak</span>
+                                    @elseif($signatureHasAny)
+                                        <span class="badge bg-warning text-dark ms-2">Sebagian sudah tanda tangan</span>
+                                    @elseif($signatureRows->isNotEmpty())
+                                        <span class="badge bg-secondary ms-2">Menunggu tanda tangan</span>
+                                    @endif
+                                </h5>
+                                <div class="d-flex gap-2 flex-wrap">
+                                    @if($signatureFinalPath)
+                                        <a class="btn btn-success btn-sm" href="{{ route('marketing.contracts.signature-document', $contract) }}">
+                                            <i class="fas fa-download me-1"></i> UNDUH KONTRAK BERTANDA TANGAN
+                                        </a>
+                                    @endif
+                                    @if($signatureRows->isNotEmpty())
+                                        <a class="btn btn-outline-secondary btn-sm" href="{{ route('marketing.contracts.signature-document', [$contract, 'type' => 'original']) }}">
+                                            <i class="fas fa-file-pdf me-1"></i> Dokumen yang dikirim
+                                        </a>
+                                    @endif
+                                    @if($canCreateSignatureLinks && $signatureIsPosted && ! $signatureHasAny)
+                                        <button type="button" class="btn btn-primary btn-sm" onclick="createContractSignatureLinks({{ $contract->id }}, {{ $signatureRows->isNotEmpty() ? 'true' : 'false' }})">
+                                            <i class="fas fa-link me-1"></i> {{ $signatureRows->isNotEmpty() ? 'BUAT ULANG LINK' : 'BUAT LINK TANDA TANGAN' }}
+                                        </button>
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            @if($signatureRows->isEmpty())
+                                <p class="text-muted mb-0" style="font-size: 0.9rem;">
+                                    @if($signatureIsPosted)
+                                        Belum ada link tanda tangan. Klik <b>Buat Link Tanda Tangan</b>, lalu kirim link ke penandatangan Pihak Pink dan Pihak Customer yang dipilih di kontrak.
+                                    @else
+                                        Link tanda tangan bisa dibuat setelah kontrak di-post (Active).
+                                    @endif
+                                </p>
+                            @else
+                                <div class="table-responsive">
+                                    <table class="table table-bordered table-sm mb-2" style="font-size: 0.9rem;">
+                                        <thead style="background-color: #e3f2fd;">
+                                            <tr>
+                                                <th>Pihak</th>
+                                                <th>Penandatangan</th>
+                                                <th>Status</th>
+                                                <th style="width: 40%;">Link</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach($signatureRows as $signatureRow)
+                                                <tr>
+                                                    <td>{{ $signatureRow->roleLabel() }}</td>
+                                                    <td>{{ $signatureRow->signer_name }}@if($signatureRow->signer_position)<br><small class="text-muted">{{ $signatureRow->signer_position }}</small>@endif</td>
+                                                    <td>
+                                                        @if($signatureRow->isSigned())
+                                                            <span class="badge bg-success">Sudah tanda tangan</span><br>
+                                                            <small class="text-muted">{{ $signatureRow->signed_at->timezone('Asia/Jakarta')->format('d/m/Y H:i') }} WIB</small>
+                                                        @elseif($signatureRow->isExpired())
+                                                            <span class="badge bg-danger">Link kedaluwarsa</span>
+                                                        @else
+                                                            <span class="badge bg-secondary">Belum</span><br>
+                                                            <small class="text-muted">Berlaku s/d {{ $signatureRow->expires_at?->timezone('Asia/Jakarta')->format('d/m/Y') }}</small>
+                                                        @endif
+                                                    </td>
+                                                    <td>
+                                                        @if(! $signatureRow->isSigned())
+                                                            <div class="input-group input-group-sm">
+                                                                <input type="text" class="form-control" readonly value="{{ $signatureRow->publicUrl() }}" id="signatureLink{{ $signatureRow->id }}">
+                                                                <button type="button" class="btn btn-outline-primary" onclick="copyContractSignatureLink('signatureLink{{ $signatureRow->id }}')">Salin</button>
+                                                            </div>
+                                                        @else
+                                                            <small class="text-muted">Nama diketik: {{ $signatureRow->signed_name }}</small>
+                                                        @endif
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <small class="text-muted">
+                                    Dokumen dibekukan saat link dibuat ({{ $signatureRows->first()->created_at?->timezone('Asia/Jakarta')->format('d/m/Y H:i') }} WIB).
+                                    @if($signatureHasAny)
+                                        Kontrak sudah ditandatangani sehingga link tidak bisa dibuat ulang dan kontrak tidak bisa di-unpost.
+                                    @endif
+                                </small>
+                            @endif
+                        </div>
+                    </div>
+
                     <div class="card" style="width: 100%; min-height: 500px;">
                         <div class="card-header" style="background-color: #f8f9fa; border-bottom: 2px solid #1e3a8a;">
                             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -4828,6 +4932,69 @@ function approveContract(contractId) {
 }
 
 // Unpost Contract function
+// MOM 19 Nov 2026 p4 no 8: Digital Sign kontrak
+function createContractSignatureLinks(contractId, isRegenerate) {
+    Swal.fire({
+        title: isRegenerate ? 'Buat ulang link tanda tangan?' : 'Buat link tanda tangan?',
+        html: (isRegenerate ? 'Link lama tidak berlaku lagi.<br>' : '')
+            + 'Isi kontrak saat ini akan dibekukan sebagai dokumen yang ditandatangani.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#1e3a8a',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Ya, buat link',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+
+        Swal.fire({ title: 'Memproses...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+        fetch(@json(route('marketing.contracts.signature-links.store', $contract)), {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json().then(data => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok || data.status !== 'success') {
+                Swal.fire('Gagal', data.message || 'Gagal membuat link tanda tangan.', 'error');
+                return;
+            }
+            Swal.fire('Berhasil', data.message, 'success').then(() => {
+                window.location.hash = 'files';
+                window.location.reload();
+            });
+        })
+        .catch(() => Swal.fire('Gagal', 'Terjadi kesalahan saat membuat link tanda tangan.', 'error'));
+    });
+}
+
+// Setelah membuat link, halaman dimuat ulang ke tab Files (#files).
+document.addEventListener('DOMContentLoaded', () => {
+    if (window.location.hash !== '#files') return;
+    const filesTab = document.getElementById('files-tab');
+    if (filesTab && window.bootstrap?.Tab) {
+        window.bootstrap.Tab.getOrCreateInstance(filesTab).show();
+    }
+});
+
+function copyContractSignatureLink(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    const done = () => Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Link disalin', showConfirmButton: false, timer: 1500 });
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(input.value).then(done).catch(() => { input.select(); document.execCommand('copy'); done(); });
+    } else {
+        input.select();
+        document.execCommand('copy');
+        done();
+    }
+}
+
 function unpostContract(contractId) {
     Swal.fire({
         title: 'Unpost Contract?',

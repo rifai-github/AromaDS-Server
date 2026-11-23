@@ -821,12 +821,13 @@
         </tr>
         <tr>
             <td>
-                <div class="signature-line"></div>
+                {{-- Penanda SIG:* diganti gambar tanda tangan oleh ContractSignatureService (Digital Sign). --}}
+                <!--SIG:internal--><div class="signature-line"></div><!--/SIG:internal-->
                 <div class="signature-name">{{ $companySignatoryName ?: '-' }}</div>
                 <div class="signature-position">( {{ $companySignatoryPosition ?: '-' }} )</div>
             </td>
             <td>
-                <div class="signature-line"></div>
+                <!--SIG:customer--><div class="signature-line"></div><!--/SIG:customer-->
                 <div class="signature-name">{{ $customerSignatoryName ?: '-' }}</div>
                 <div class="signature-position">( {{ $customerSignatoryPosition ?: '-' }} )</div>
             </td>

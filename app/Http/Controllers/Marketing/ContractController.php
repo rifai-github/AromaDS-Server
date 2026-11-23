@@ -2163,6 +2163,15 @@ class ContractController extends Controller
                 ], 400);
             }
 
+            // Digital Sign (jawaban klien 23 Nov 2026): kontrak yang sudah ditandatangani = final.
+            if (\Illuminate\Support\Facades\Schema::hasTable('contract_signature_requests')
+                && app(\App\Services\Marketing\ContractSignatureService::class)->hasAnySignature($contract)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Gagal unpost: kontrak ini sudah ditandatangani secara digital sehingga tidak bisa diubah.',
+                ], 400);
+            }
+
             // Check for existing Job Advices that are NOT cancelled
             // We use jobAdvices relationship and filter where status is NOT cancelled
             // Note: soft deleted records are already excluded by default
