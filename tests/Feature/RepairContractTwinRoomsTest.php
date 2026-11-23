@@ -16,7 +16,7 @@ class RepairContractTwinRoomsTest extends TestCase
     private const TABLES = [
         'contracts', 'quotation_rooms', 'master_rooms', 'contract_rooms', 'contract_rentals', 'job_advices',
         'job_advice_rooms', 'job_schedules', 'job_schedule_rooms', 'unit_on_walls', 'contract_room_suspensions',
-        'survey_details',
+        'survey_details', 'quotation_details',
     ];
 
     protected function setUp(): void
@@ -102,6 +102,11 @@ class RepairContractTwinRoomsTest extends TestCase
             $t->id();
             $t->unsignedBigInteger('room_id')->nullable();
         });
+        Schema::create('quotation_details', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('quotation_id');
+            $t->unsignedBigInteger('room_id')->nullable();
+        });
 
         // Kontrak 1: room asli #10 di-rename RT-W01A; wizard membuat kembar #90 "RT-W01" (kode RT--501).
         DB::table('contracts')->insert([
@@ -112,6 +117,7 @@ class RepairContractTwinRoomsTest extends TestCase
             ['id' => 501, 'quotation_id' => 5, 'room_id' => 10, 'room_name' => 'RT-W01'],
             ['id' => 601, 'quotation_id' => 6, 'room_id' => 20, 'room_name' => 'RT-X01'],
             ['id' => 602, 'quotation_id' => 6, 'room_id' => 21, 'room_name' => 'RT-Y02'],
+            ['id' => 603, 'quotation_id' => 6, 'room_id' => 22, 'room_name' => 'RT-Y01'],
         ]);
         DB::table('master_rooms')->insert([
             ['id' => 10, 'room_name' => 'RT-W01A', 'room_code' => 'R10', 'building_id' => 3, 'customer_id' => 7],
@@ -120,16 +126,21 @@ class RepairContractTwinRoomsTest extends TestCase
             ['id' => 21, 'room_name' => 'RT-Y02', 'room_code' => 'R21', 'building_id' => 3, 'customer_id' => 7],
             // Kembar RT-Y02 (gedung + nama sama) yang dipakai rental kontrak 2.
             ['id' => 91, 'room_name' => 'RT-Y02', 'room_code' => 'RTY-9', 'building_id' => 3, 'customer_id' => null],
+            // Kembar RT-Y01 tanpa gedung, customer sama (kasus box #45018).
+            ['id' => 92, 'room_name' => 'RT-Y01', 'room_code' => 'RM023006', 'building_id' => null, 'customer_id' => 7],
+            ['id' => 22, 'room_name' => 'RT-Y01', 'room_code' => 'R22', 'building_id' => 3, 'customer_id' => 7],
         ]);
         DB::table('contract_rooms')->insert([
             ['id' => 1, 'contract_id' => 1, 'room_id' => 90],
             ['id' => 2, 'contract_id' => 2, 'room_id' => 20],
             ['id' => 3, 'contract_id' => 2, 'room_id' => 21],
+            ['id' => 4, 'contract_id' => 2, 'room_id' => 22],
         ]);
         DB::table('contract_rentals')->insert([
             ['id' => 1, 'contract_id' => 1, 'room_id' => 10, 'master_rental_id' => 55, 'quantity' => 1, 'qty_free' => 0],
             ['id' => 2, 'contract_id' => 2, 'room_id' => 20, 'master_rental_id' => 55, 'quantity' => 1, 'qty_free' => 1],
             ['id' => 3, 'contract_id' => 2, 'room_id' => 91, 'master_rental_id' => 55, 'quantity' => 0, 'qty_free' => 1],
+            ['id' => 4, 'contract_id' => 2, 'room_id' => 92, 'master_rental_id' => 55, 'quantity' => 0, 'qty_free' => 1],
         ]);
         DB::table('job_advices')->insert(['id' => 1, 'contract_id' => 1]);
         // Fallback lama: rental #1 (MasterRental::first()) yang bukan rental kontrak.
@@ -137,6 +148,8 @@ class RepairContractTwinRoomsTest extends TestCase
         DB::table('job_schedules')->insert(['id' => 1, 'job_advice_id' => 1]);
         DB::table('job_schedule_rooms')->insert(['id' => 1, 'job_schedule_id' => 1, 'room_id' => 90]);
         DB::table('contract_room_suspensions')->insert(['id' => 1, 'contract_id' => 1, 'room_id' => 90]);
+        DB::table('survey_details')->insert(['id' => 74672, 'room_id' => 92]);
+        DB::table('quotation_details')->insert(['id' => 1, 'quotation_id' => 6, 'room_id' => 74672]);
     }
 
     protected function tearDown(): void
@@ -177,6 +190,11 @@ class RepairContractTwinRoomsTest extends TestCase
         // Kontrak 2: rental free di room kembar #91 kembali ke RT-Y02 asli (#21).
         $this->assertSame(21, (int) DB::table('contract_rentals')->where('id', 3)->value('room_id'));
         $this->assertSame(20, (int) DB::table('contract_rentals')->where('id', 2)->value('room_id'));
+
+        // Kembar tanpa gedung (#92): rental & detail survey ke RT-Y01 asli (#22), room kembar dihapus.
+        $this->assertSame(22, (int) DB::table('contract_rentals')->where('id', 4)->value('room_id'));
+        $this->assertSame(22, (int) DB::table('survey_details')->where('id', 74672)->value('room_id'));
+        $this->assertNotNull(DB::table('master_rooms')->where('id', 92)->value('deleted_at'));
 
         // Room kembar tanpa customer yang tak dipakai lagi di-soft-delete.
         $this->assertNotNull(DB::table('master_rooms')->where('id', 90)->value('deleted_at'));

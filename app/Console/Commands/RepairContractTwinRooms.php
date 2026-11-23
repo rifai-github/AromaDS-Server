@@ -179,6 +179,15 @@ class RepairContractTwinRooms extends Command
             $this->repoint('contract_room_suspensions', 'contract_id', [$contract->id], $twinId, $realId, $apply);
         }
 
+        // Detail survey yang dipakai quotation kontrak ini (quotation_details.room_id = survey_details.id).
+        if ($contract->quotation_id && Schema::hasTable('quotation_details') && Schema::hasTable('survey_details')) {
+            $surveyDetailIds = DB::table('quotation_details')->where('quotation_id', $contract->quotation_id)
+                ->pluck('room_id')->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+            foreach ($twinMap as $twinId => $realId) {
+                $this->repoint('survey_details', 'id', $surveyDetailIds, $twinId, $realId, $apply);
+            }
+        }
+
         // 4. JA rooms dengan rental yang bukan milik kontrak (fallback lama MasterRental::first())
         $this->repairJobAdviceRentals($contract, $jobAdviceIds, $apply);
 
@@ -200,6 +209,15 @@ class RepairContractTwinRooms extends Command
         $key = $this->roomKey($twin);
         $matches = $candidateRooms->filter(fn ($room) => $this->roomKey($room) === $key && (int) $room->id !== (int) $twin->id)
             ->reject(fn ($room) => in_array((int) $room->id, $exclude, true));
+
+        // QA 23 Nov (kontrak 21131, room #45018): kembar TANPA gedung, nama & customer sama.
+        if ($matches->isEmpty() && empty($twin->building_id)) {
+            $name = $this->roomName($twin);
+            $matches = $candidateRooms->filter(fn ($room) => (int) $room->id !== (int) $twin->id
+                    && $this->roomName($room) === $name
+                    && (empty($twin->customer_id) || empty($room->customer_id) || (int) $twin->customer_id === (int) $room->customer_id))
+                ->reject(fn ($room) => in_array((int) $room->id, $exclude, true));
+        }
 
         return $matches->count() === 1 ? (int) $matches->first()->id : null;
     }
@@ -298,8 +316,9 @@ class RepairContractTwinRooms extends Command
                 continue;
             }
 
-            if ($room->customer_id) {
-                $this->say('KEEP', "room #{$room->id} {$this->roomLabel($room)} tak dipakai tapi punya customer - tidak dihapus otomatis");
+            // Kembar auto-create (tanpa customer) atau tanpa gedung boleh dihapus; room lengkap tidak.
+            if ($room->customer_id && $room->building_id) {
+                $this->say('KEEP', "room #{$room->id} {$this->roomLabel($room)} tak dipakai tapi lengkap (customer & gedung) - tidak dihapus otomatis");
 
                 continue;
             }
@@ -317,7 +336,12 @@ class RepairContractTwinRooms extends Command
             return null;
         }
 
-        return ((int) $room->building_id).'|'.preg_replace('/\s+/', ' ', mb_strtolower(trim((string) $room->room_name)));
+        return ((int) $room->building_id).'|'.$this->roomName($room);
+    }
+
+    private function roomName(object $room): string
+    {
+        return preg_replace('/\s+/', ' ', mb_strtolower(trim((string) $room->room_name)));
     }
 
     private function roomLabel(?object $room): string
@@ -326,7 +350,7 @@ class RepairContractTwinRooms extends Command
             return '(room tak ada)';
         }
 
-        return '"'.$room->room_name.'" gedung #'.($room->building_id ?? '-').($room->customer_id ? '' : ' tanpa customer');
+        return '"'.$room->room_name.'" gedung #'.($room->building_id ?? '-').($room->customer_id ? '' : ' tanpa customer').($room->building_id ? '' : ' tanpa gedung');
     }
 
     private function say(string $status, string $message): void
