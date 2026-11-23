@@ -26,6 +26,7 @@ class RentalAutoExpandMaterialSyncTest extends TestCase
 
         Schema::create('product_categories', function (Blueprint $t) {
             $t->id();
+            $t->unsignedBigInteger('parent_id')->nullable();
             $t->string('name');
             $t->timestamps();
             $t->softDeletes();
@@ -141,6 +142,31 @@ class RentalAutoExpandMaterialSyncTest extends TestCase
         // Baris yang sudah punya material dan baris non auto_expand tidak berubah.
         $this->assertSame([21], DB::table('rental_detail_materials')->where('rental_detail_id', 2)->pluck('master_product_id')->map(fn ($id) => (int) $id)->all());
         $this->assertSame(0, DB::table('rental_detail_materials')->where('rental_detail_id', 3)->count());
+    }
+
+    public function test_parent_category_without_own_products_uses_its_sub_categories(): void
+    {
+        // QA 23 Nov: BOM "Refill Hand Sanitizer" (induk) - produknya ada di sub-kategori.
+        DB::table('product_categories')->insert([
+            ['id' => 44, 'parent_id' => null, 'name' => 'Refill Hand Sanitizer'],
+            ['id' => 45, 'parent_id' => 44, 'name' => 'Hand Sanitizer Gel'],
+            ['id' => 46, 'parent_id' => 45, 'name' => 'Hand Sanitizer Gel 1L'],
+        ]);
+        DB::table('master_products')->insert([
+            ['id' => 31, 'name' => 'HS Gel 500 ml', 'product_category_id' => 45, 'is_active' => true],
+            ['id' => 32, 'name' => 'HS Gel 1000 ml', 'product_category_id' => 46, 'is_active' => true],
+            ['id' => 33, 'name' => 'HS Lama', 'product_category_id' => 45, 'is_active' => false],
+        ]);
+        DB::table('rental_details')->insert(['id' => 4, 'master_rental_id' => 1, 'product_category_id' => 44, 'auto_expand' => true]);
+
+        $this->artisan('master-rentals:sync-auto-expand-materials', ['--apply' => true])->assertSuccessful();
+
+        $this->assertEqualsCanonicalizing(
+            [31, 32],
+            DB::table('rental_detail_materials')->where('rental_detail_id', 4)->pluck('master_product_id')->map(fn ($id) => (int) $id)->all()
+        );
+        // Kategori yang punya produk sendiri tetap hanya memakai produknya sendiri.
+        $this->assertEqualsCanonicalizing([11, 12], app(RentalDetailMaterialSync::class)->productsForScope(1)->pluck('id')->map(fn ($id) => (int) $id)->all());
     }
 
     public function test_needs_sync_only_for_empty_auto_expand_rows(): void

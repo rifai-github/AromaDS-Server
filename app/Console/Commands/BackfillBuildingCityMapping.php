@@ -46,6 +46,20 @@ class BackfillBuildingCityMapping extends Command
         $validDistrictIds = DB::table('districts')->whereNull('deleted_at')->pluck('id')->all();
         $validDistrictIdSet = array_flip($validDistrictIds);
 
+        // QA 23 Nov: import Catalyst sering memetakan "Bandung" ke KABUPATEN BANDUNG padahal
+        // kecamatannya (Coblong, Bojongloa Kidul, ...) milik KOTA BANDUNG. Kota kembar = kota
+        // dengan nama dasar sama (tanpa Kota/Kabupaten), dipakai bila kecamatan tak ada di kota
+        // hasil import.
+        $cityRows = DB::table('cities')->whereNull('deleted_at')->get(['id', 'name', 'province_id']);
+        $cityById = $cityRows->keyBy('id');
+        $twinCityIds = [];
+        foreach ($cityRows as $cityRow) {
+            $base = $this->normalizePlace($cityRow->name);
+            if ($base) {
+                $twinCityIds[$base][] = (int) $cityRow->id;
+            }
+        }
+
         $nameFilter = trim((string) $this->option('name'));
 
         $buildingsQuery = DB::table('buildings');
@@ -144,9 +158,38 @@ class BackfillBuildingCityMapping extends Command
                     $key = $effectiveCityId . '|' . $this->normalizePlace($areaServiceName);
                     $match = $districtLookup[$key] ?? null;
 
+                    // Kecamatan tak ada di kota hasil import: coba kota kembarnya (Kota <-> Kabupaten).
+                    $twinCity = null;
+                    if (!$match) {
+                        $currentCity = $cityById->get($effectiveCityId);
+                        $base = $currentCity ? $this->normalizePlace($currentCity->name) : null;
+                        $twinMatches = [];
+                        foreach ($twinCityIds[$base] ?? [] as $twinCityId) {
+                            if ($twinCityId === $effectiveCityId) {
+                                continue;
+                            }
+                            $twinKey = $twinCityId . '|' . $this->normalizePlace($areaServiceName);
+                            if (isset($districtLookup[$twinKey])) {
+                                $twinMatches[] = [$twinCityId, $districtLookup[$twinKey]];
+                            }
+                        }
+                        if (count($twinMatches) === 1) {
+                            [$twinCityId, $match] = $twinMatches[0];
+                            $twinCity = $cityById->get($twinCityId);
+                        }
+                    }
+
                     if (!$match) {
                         $districtSkipped++;
                         $districtLabel = "SKIP ($priorState; \"$areaServiceName\" no match under matched city)";
+                    } elseif ($twinCity) {
+                        $districtPlans++;
+                        $cityPlans++;
+                        $districtLabel = ($apply ? 'FIX ' : 'PLAN ') . "\"$areaServiceName\" -> \"{$match['name']}\" (kota dikoreksi ke {$twinCity->name})";
+                        $cityLabel = ($apply ? 'FIX ' : 'PLAN ') . ($cityById->get($effectiveCityId)->name ?? '?') . " -> {$twinCity->name}";
+                        $updates[$building->id]['city_id'] = (int) $twinCity->id;
+                        $updates[$building->id]['province_id'] = $twinCity->province_id;
+                        $updates[$building->id]['district_id'] = $match['id'];
                     } else {
                         $districtPlans++;
                         $districtLabel = ($apply ? 'FIX ' : 'PLAN ') . "\"$areaServiceName\" -> \"{$match['name']}\"";

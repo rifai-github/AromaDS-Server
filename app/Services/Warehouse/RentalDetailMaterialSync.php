@@ -20,14 +20,48 @@ class RentalDetailMaterialSync
 {
     public function productsForScope(int $productCategoryId, ?int $productTypeId = null): Collection
     {
-        return MasterProduct::with(['packagingSize', 'productCategory', 'productType'])
+        $query = fn (array $categoryIds) => MasterProduct::with(['packagingSize', 'productCategory', 'productType'])
             ->where('is_active', true)
-            ->where('product_category_id', $productCategoryId)
+            ->whereIn('product_category_id', $categoryIds)
             ->when($productTypeId, fn ($query) => $query->where(function ($sub) use ($productTypeId) {
                 $sub->where('product_type_id', $productTypeId)->orWhereNull('product_type_id');
             }))
             ->orderBy('name')
             ->get();
+
+        $products = $query([$productCategoryId]);
+        if ($products->isNotEmpty()) {
+            return $products;
+        }
+
+        // QA 23 Nov (box: 10 dari 24 baris kosong): BOM rental menunjuk kategori INDUK (mis.
+        // "Refill Hand Sanitizer", "Dispenser") sedangkan produknya ada di sub-kategori. Bila
+        // kategori itu sendiri tak punya produk, pakai produk aktif di seluruh sub-kategorinya.
+        $descendantIds = $this->descendantCategoryIds($productCategoryId);
+
+        return empty($descendantIds) ? $products : $query($descendantIds);
+    }
+
+    /** @return int[] id seluruh sub-kategori (rekursif) dari satu kategori produk. */
+    private function descendantCategoryIds(int $productCategoryId): array
+    {
+        $found = [];
+        $frontier = [$productCategoryId];
+
+        while (! empty($frontier)) {
+            $children = \App\Models\ProductCategory::query()
+                ->whereIn('parent_id', $frontier)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->reject(fn ($id) => in_array($id, $found, true) || $id === $productCategoryId)
+                ->values()
+                ->all();
+
+            $found = array_merge($found, $children);
+            $frontier = $children;
+        }
+
+        return $found;
     }
 
     /** Baris auto_expand berkategori yang material list-nya masih kosong. */
