@@ -381,6 +381,28 @@ class InventoryIssuingMultiBatchSerialTest extends TestCase
         $this->assertSame(2, $method->invoke(app(MaterialVerificationController::class), $items));
     }
 
+    public function test_mobile_verification_counts_distinct_batches_across_two_rows_of_one_product(): void
+    {
+        // Prod JKT-WI/26-11/0001 (23 Nov 2026): ADS Cleaner jadi 2 baris qty 1, tiap baris
+        // kode batch berbeda. Kode lama mewajibkan tepat 1 SN, padahal 2 kode disiapkan:
+        // scan 1 = kurang, scan 2 = "Terdeteksi 2 dari 1". Teknisi buntu.
+        $this->seedRefillProduct(11, 110, 'Liquid ADS Cleaner (Alkohol) - 100 ml');
+        $this->seedItem(200, 110, quantity: 1, roomName: 'Test Ruang 261116-2');
+        $this->seedItem(201, 110, quantity: 1, roomName: 'Test Ruang 261116-2');
+        $this->seedSerial(501, 'TEST2611188', 110);
+        $this->seedSerial(502, 'TEST2611189', 110);
+        $this->linkBatch(200, 501, 1, null);
+        $this->linkBatch(201, 502, 1, null);
+
+        $items = InventoryIssuingItem::with(['product.productCategory', 'product.productType', 'serialNumber', 'serialLinks.serialNumber'])
+            ->whereIn('id', [200, 201])->get();
+
+        $method = new \ReflectionMethod(MaterialVerificationController::class, 'requiredSerialCountForGroup');
+        $method->setAccessible(true);
+
+        $this->assertSame(2, $method->invoke(app(MaterialVerificationController::class), $items));
+    }
+
     private function setQuantity(int $linkId, int $quantity, int $expectedStatus = 200): array
     {
         $response = app(InventoryIssuingController::class)->updateSerialLinkQuantity(
