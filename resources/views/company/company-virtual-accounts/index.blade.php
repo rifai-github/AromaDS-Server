@@ -719,11 +719,14 @@
             </div>
             
             <div class="flex flex-row justify-end items-center gap-2">
-                <button class="btn btn-secondary" onclick="openSetCompanyCodeModal()">
+                {{-- UAT 17 Nov #18 + keputusan user 23 Nov: tombol "Set VA Company" disembunyikan.
+                     VA otomatis kini memakai prefix Bank Payment billing group (e1ae513/000cd99);
+                     kode perusahaan 88997 hanya cadangan untuk bank tanpa prefix. --}}
+                {{-- <button class="btn btn-secondary" onclick="openSetCompanyCodeModal()">
                     <i class="fas fa-cog"></i>
                     <span class="hidden md:inline">Set VA Company</span>
                     <span class="md:hidden">Set</span>
-                </button>
+                </button> --}}
                 <button class="btn btn-primary" onclick="openCreateModal()">
                     <i class="fas fa-plus"></i>
                     <span class="hidden md:inline">Add New Virtual Account</span>
