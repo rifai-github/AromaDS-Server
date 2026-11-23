@@ -244,6 +244,17 @@ class QuotationApprovalAuthorizerTest extends TestCase
         $this->assertTrue($this->authorizer()->canApprove($user->fresh(), $quotation));
     }
 
+    public function test_a_management_role_approves_without_designation(): void
+    {
+        // Keputusan user 23 Nov 2026: Management boleh approve di bawah bottom price tanpa dicentang.
+        $quotation = $this->quotationWithDiscount(90);
+        $user = $this->userWithoutBasePermission();
+        $roleId = DB::table('roles')->insertGetId(['name' => 'Management Manager', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('user_roles')->insert(['user_id' => $user->id, 'role_id' => $roleId, 'created_at' => now(), 'updated_at' => now()]);
+
+        $this->assertTrue($this->authorizer()->canApprove($user->fresh(), $quotation));
+    }
+
     public function test_a_quotation_that_needs_no_approval_only_needs_the_base_permission(): void
     {
         config(['quotation.legacy_approve_is_highest' => false]);

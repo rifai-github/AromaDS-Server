@@ -740,8 +740,8 @@ class User extends Authenticatable
      */
     public function canApprove($module)
     {
-        // Admin sistem selalu boleh approve (sama seperti short-circuit CheckPermission).
-        if ($this->hasRole('Admin') || $this->hasRole('super_admin')) {
+        // Admin sistem & Management selalu boleh approve (sama seperti short-circuit CheckPermission).
+        if ($this->hasRole('Admin') || $this->hasRole('super_admin') || $this->hasRoleStartingWith('Management')) {
             return true;
         }
 

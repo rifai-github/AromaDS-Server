@@ -89,13 +89,14 @@ class QuotationApprovalAuthorizer
     }
 
     /**
-     * Admin sistem tetap bisa meng-approve (mengikuti short-circuit CheckPermission). Role
-     * Management TIDAK lagi otomatis lolos: MOM 18 Nov meminta wewenang per user yang ditunjuk,
-     * bukan per jabatan.
+     * Admin sistem dan role Management* boleh meng-approve tanpa dicentang di Master Price Slab
+     * (keputusan user 23 Nov 2026, membatalkan penghapusan bypass Management dari MOM 18 Nov).
+     * Role lain tetap harus ditunjuk per level.
      */
     private function bypassesLevelCheck(User $user): bool
     {
         return $user->hasRole('Admin')
-            || $user->hasRole('super_admin');
+            || $user->hasRole('super_admin')
+            || $user->hasRoleStartingWith('Management');
     }
 }
