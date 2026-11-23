@@ -240,6 +240,121 @@ class InventoryRequestImportController extends Controller
      * @param  array<int, array<string, string>>  $rows
      * @return array<string, array{first_row_no:int, rows:array<int, array{row_no:int, data:array<string, string>}>}>
      */
+    private const ITEM_TEMPLATE_HEADERS = ['product_sku', 'product_name', 'quantity'];
+
+    /**
+     * QA 23 Nov 2026: template import item untuk SATU Inventory Request (detail request), bukan
+     * import request baru. Kolom: product_sku atau product_name, quantity.
+     */
+    public function itemTemplate(Request $request, InventoryRequest $inventoryRequest)
+    {
+        return SpreadsheetImportHelper::downloadTemplate(
+            self::ITEM_TEMPLATE_HEADERS,
+            [
+                ['REF-001', '', '10'],
+                ['', 'Dispenser Aroma X', '2'],
+            ],
+            'template-import-item-'.str_replace('/', '-', (string) $inventoryRequest->request_number),
+            $request->query('format', 'xlsx')
+        );
+    }
+
+    /**
+     * Tambahkan banyak item sekaligus ke request draft. Semua baris divalidasi dulu; satu baris
+     * error membatalkan seluruh import (sama seperti import request). Produk yang sudah ada di
+     * request atau muncul berkali-kali di file dijumlahkan qty-nya (sama seperti Add Item).
+     */
+    public function importItems(Request $request, InventoryRequest $inventoryRequest)
+    {
+        if ($inventoryRequest->status !== 'draft') {
+            return response()->json(['status' => 'error', 'message' => 'Hanya request berstatus draft yang bisa ditambah item.'], 422);
+        }
+
+        $request->validate(SpreadsheetImportHelper::validationRules());
+
+        try {
+            $rows = SpreadsheetImportHelper::parse($request->file('file'));
+        } catch (\Throwable $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        $errors = [];
+        $quantities = [];
+        $names = [];
+
+        foreach ($rows as $index => $row) {
+            $line = $index + 2; // baris 1 = header
+            $sku = trim((string) ($row['product_sku'] ?? ''));
+            $name = trim((string) ($row['product_name'] ?? ''));
+            $rawQty = trim((string) ($row['quantity'] ?? ''));
+
+            if ($sku === '' && $name === '' && $rawQty === '') {
+                continue; // baris kosong
+            }
+
+            $product = $this->resolveProduct($row);
+            if (! $product) {
+                $errors[] = "Baris {$line}: produk ".($sku !== '' ? "SKU \"{$sku}\"" : "\"{$name}\"").' tidak ditemukan / tidak aktif.';
+
+                continue;
+            }
+
+            if (! MasterProduct::query()->whereKey($product->id)->stockableGoods()->exists()) {
+                $errors[] = "Baris {$line}: {$product->name} bukan barang gudang (paket sewa/biaya/aset) sehingga tidak bisa diminta.";
+
+                continue;
+            }
+
+            $qty = is_numeric(str_replace(',', '.', $rawQty)) ? (float) str_replace(',', '.', $rawQty) : null;
+            if ($qty === null || $qty <= 0) {
+                $errors[] = "Baris {$line}: quantity \"{$rawQty}\" harus angka lebih dari 0.";
+
+                continue;
+            }
+
+            $quantities[$product->id] = ($quantities[$product->id] ?? 0) + $qty;
+            $names[$product->id] = $product->name;
+        }
+
+        if (! empty($errors)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Import dibatalkan. Perbaiki baris berikut lalu upload ulang.',
+                'errors' => $errors,
+            ], 422);
+        }
+
+        if (empty($quantities)) {
+            return response()->json(['status' => 'error', 'message' => 'File tidak berisi item.'], 422);
+        }
+
+        DB::transaction(function () use ($inventoryRequest, $quantities) {
+            foreach ($quantities as $productId => $qty) {
+                $item = $inventoryRequest->items()->where('master_product_id', $productId)->first();
+
+                if ($item) {
+                    $item->update([
+                        'quantity' => (float) $item->quantity + $qty,
+                        'updated_by' => Auth::id(),
+                    ]);
+                } else {
+                    $inventoryRequest->items()->create([
+                        'master_product_id' => $productId,
+                        'quantity' => $qty,
+                        'created_by' => Auth::id(),
+                        'updated_by' => Auth::id(),
+                    ]);
+                }
+            }
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'message' => count($quantities).' produk ditambahkan ke request.',
+            'products' => array_values($names),
+        ]);
+    }
+
     private function groupRows(array $rows): array
     {
         $groups = [];

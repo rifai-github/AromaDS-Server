@@ -356,9 +356,15 @@
                             @endif
                         </div>
                         @if($requestData->status === 'draft')
-                        <button class="btn btn-primary btn-sm" onclick="openAddItemModal()">
-                            <i class="fas fa-plus"></i> Add Item
-                        </button>
+                        <div style="display: flex; gap: 8px;">
+                            {{-- QA 23 Nov: import banyak item sekaligus dari Excel/CSV. --}}
+                            <button class="btn btn-outline-primary btn-sm" onclick="openImportItemsModal()">
+                                <i class="fas fa-file-import"></i> Import
+                            </button>
+                            <button class="btn btn-primary btn-sm" onclick="openAddItemModal()">
+                                <i class="fas fa-plus"></i> Add Item
+                            </button>
+                        </div>
                         @endif
                     </div>
                 </div>
@@ -1123,6 +1129,87 @@ function bulkIssue() {
 }
 
 // Item Management
+// QA 23 Nov: import item (product_sku / product_name, quantity) ke request draft ini.
+function openImportItemsModal() {
+    const existing = document.getElementById('importItemsModal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'importItemsModal';
+    modal.className = 'modal fade show';
+    modal.style.cssText = 'display: flex !important; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;';
+    modal.innerHTML = `
+        <div class="modal-dialog" style="width: 100%; max-width: 520px;">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">Import Item</h5>
+                    <button type="button" class="btn-close btn-close-white" onclick="document.getElementById('importItemsModal').remove()"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted mb-2">
+                        Kolom: <code>product_sku</code> atau <code>product_name</code>, dan <code>quantity</code>.
+                        Produk yang sudah ada di request akan dijumlahkan qty-nya.
+                    </p>
+                    <p class="small mb-3">
+                        Template:
+                        <a href="{{ route('warehouse.inventory-requests.items.import-template', $requestData->id) }}?format=xlsx">Excel</a> |
+                        <a href="{{ route('warehouse.inventory-requests.items.import-template', $requestData->id) }}?format=csv">CSV</a>
+                    </p>
+                    <input type="file" id="import-items-file" class="form-control" accept=".xlsx,.xls,.csv,.txt">
+                    <div id="import-items-errors" class="alert alert-danger mt-3 small" style="display:none; max-height: 220px; overflow-y: auto;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="document.getElementById('importItemsModal').remove()">Batal</button>
+                    <button class="btn btn-primary" id="import-items-submit" onclick="submitImportItems()">Import</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function submitImportItems() {
+    const fileInput = document.getElementById('import-items-file');
+    const errorBox = document.getElementById('import-items-errors');
+    const button = document.getElementById('import-items-submit');
+    errorBox.style.display = 'none';
+
+    if (!fileInput.files.length) {
+        errorBox.textContent = 'Pilih file Excel/CSV terlebih dahulu.';
+        errorBox.style.display = 'block';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    button.disabled = true;
+
+    fetch("{{ route('warehouse.inventory-requests.items.import', $requestData->id) }}", {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+    })
+    .then(async r => ({ ok: r.ok, body: await r.json().catch(() => ({})) }))
+    .then(({ ok, body }) => {
+        if (ok && body.status === 'success') {
+            showToast(body.message || 'Import berhasil', 'success');
+            setTimeout(() => location.reload(), 600);
+            return;
+        }
+        const lines = Array.isArray(body.errors) ? body.errors
+            : (body.errors && typeof body.errors === 'object' ? Object.values(body.errors).flat() : []);
+        errorBox.innerHTML = '<strong>' + (body.message || 'Import gagal') + '</strong>'
+            + (lines.length ? '<ul class="mb-0 mt-1">' + lines.map(l => '<li>' + String(l).replace(/</g, '&lt;') + '</li>').join('') + '</ul>' : '');
+        errorBox.style.display = 'block';
+        button.disabled = false;
+    })
+    .catch(() => {
+        errorBox.textContent = 'Gagal mengunggah file. Coba lagi.';
+        errorBox.style.display = 'block';
+        button.disabled = false;
+    });
+}
+
 function openAddItemModal() {
     fetch("{{ route('warehouse.inventory-requests.available-products', $requestData->id) }}")
         .then(response => response.json())

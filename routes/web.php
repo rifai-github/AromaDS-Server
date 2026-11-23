@@ -1201,6 +1201,9 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('inventory-requests/{inventoryRequest}/back-to-pending', [InventoryRequestController::class, 'backToPending'])->name('inventory-requests.back-to-pending')->middleware('permission:warehouse.inventory-requests.update');
         Route::get('inventory-requests/{inventoryRequest}/available-products', [InventoryRequestController::class, 'getAvailableProducts'])->name('inventory-requests.available-products')->middleware('permission:warehouse.inventory-requests.view');
         Route::post('inventory-requests/{inventoryRequest}/add-item', [InventoryRequestController::class, 'addItem'])->name('inventory-requests.add-item')->middleware('permission:warehouse.inventory-requests.update');
+        // QA 23 Nov: import banyak item sekaligus ke detail request draft.
+        Route::get('inventory-requests/{inventoryRequest}/items/import-template', [InventoryRequestImportController::class, 'itemTemplate'])->name('inventory-requests.items.import-template')->middleware('permission:warehouse.inventory-requests.update');
+        Route::post('inventory-requests/{inventoryRequest}/items/import', [InventoryRequestImportController::class, 'importItems'])->name('inventory-requests.items.import')->middleware('permission:warehouse.inventory-requests.update');
         Route::delete('inventory-requests/{inventoryRequest}/remove-item/{itemId}', [InventoryRequestController::class, 'removeItem'])->name('inventory-requests.remove-item')->middleware('permission:warehouse.inventory-requests.update');
 
         // Inventory Transfer API routes (must be before main route to avoid conflicts)
