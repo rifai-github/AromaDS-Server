@@ -82,7 +82,8 @@ class ContractWizardController extends Controller
             $rows->push([
                 'building' => $masterRoom?->building?->building_name,
                 'floor' => $masterRoom?->room_floor,
-                'room' => $quotationRoom->room_name ?: $masterRoom?->room_name,
+                // QA 23 Nov: nama ruangan ikut Master Room terbaru; salinan quotation cadangan.
+                'room' => $masterRoom?->room_name ?: $quotationRoom->room_name,
             ]);
         }
 
@@ -851,35 +852,15 @@ class ContractWizardController extends Controller
                         // Check if MasterRoom exists
                         $masterRoom = \App\Models\MasterRoom::find($quotationRoom->room_id);
                         
-                        // Verify that the MasterRoom found matches the room_name from quotation room
+                        // QA 23 Nov: quotation_rooms.room_id dipercaya walau nama Master Room sudah
+                        // di-rename sesudah quotation dibuat. Dulu nama yang berbeda membuat room asli
+                        // ditolak lalu sistem membuat MasterRoom BARU bernama lama (tanpa customer),
+                        // sehingga kontrak/JA menampilkan nama lama dan Master Room jadi dobel.
                         if ($masterRoom && $masterRoom->room_name !== $quotationRoom->room_name) {
-                            \Log::warning("MasterRoom ID {$masterRoom->id} found but room_name mismatch: MasterRoom='{$masterRoom->room_name}' vs QuotationRoom='{$quotationRoom->room_name}'. Trying to find by name.");
-                            
-                            // Try to find MasterRoom by room_name and building_id from quotation's survey
-                            $masterRoom = null;
-                            if ($quotation->survey_id) {
-                                $survey = \App\Models\Survey::with('building')->find($quotation->survey_id);
-                                if ($survey && $survey->building_id) {
-                                    $masterRoom = \App\Models\MasterRoom::where('building_id', $survey->building_id)
-                                        ->where('room_name', $quotationRoom->room_name)
-                                        ->first();
-                                }
-                            }
-                            
-                            if ($masterRoom) {
-                                \Log::info("Found MasterRoom by name: {$masterRoom->room_name} (Room ID: {$masterRoom->id})");
-                            } else {
-                                \Log::error("Cannot find MasterRoom for quotation room: {$quotationRoom->room_name} (QuotationRoom ID: {$quotationRoom->id}, room_id: {$quotationRoom->room_id})");
-                            }
+                            \Log::info("MasterRoom ID {$masterRoom->id} sudah di-rename ('{$quotationRoom->room_name}' -> '{$masterRoom->room_name}'); tetap dipakai untuk kontrak.");
                         }
-                        
+
                         if ($masterRoom) {
-                            // Verify room_name matches before creating contract room
-                            if ($masterRoom->room_name !== $quotationRoom->room_name) {
-                                \Log::error("MasterRoom room_name mismatch: MasterRoom='{$masterRoom->room_name}' vs QuotationRoom='{$quotationRoom->room_name}'. Skipping contract room creation.");
-                                continue;
-                            }
-                            
                             // Check if contract room already exists for this room_id
                             $existingContractRoom = \App\Models\ContractRoom::where('contract_id', $contract->id)
                                 ->where('room_id', $masterRoom->id)
@@ -917,6 +898,8 @@ class ContractWizardController extends Controller
                                             'room_name' => $quotationRoom->room_name,
                                             'room_code' => strtoupper(substr($quotationRoom->room_name, 0, 3)) . '-' . $quotationRoom->id,
                                             'building_id' => $survey->building_id,
+                                            // QA 23 Nov: room auto-create dulu tanpa customer (kolom Customer "-").
+                                            'customer_id' => $quotation->customer_id,
                                             'created_by' => Auth::id(),
                                             'updated_by' => Auth::id()
                                         ]);

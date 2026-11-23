@@ -37,13 +37,15 @@ class QuotationApprovalAuthorizer
             return false;
         }
 
-        // The pre-existing base gate still applies to everyone.
-        if (! $user->canApprove('quotations')) {
-            return false;
-        }
-
+        // QA 23 Nov: Admin dicek SEBELUM gate izin. Role Admin di bootstrap tak punya
+        // izin *.quotations.approve, jadi dulu Admin pun harus dicentang di Master Price Slab.
         if ($this->bypassesLevelCheck($user)) {
             return true;
+        }
+
+        // The pre-existing base gate still applies to everyone else.
+        if (! $user->canApprove('quotations')) {
+            return false;
         }
 
         $evaluation ??= $this->evaluate($quotation);

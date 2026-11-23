@@ -913,6 +913,9 @@ class JobAssignScheduleController extends Controller
     private function autoCreateMaterialIssuesFromRental(JobAssignSchedule $jobAssignSchedule)
     {
         try {
+            // QA 23 Nov: material list rental hasil seed/import dihubungkan dulu (MOM 18 Nov p7).
+            app(\App\Services\Warehouse\RentalDetailMaterialSync::class)
+                ->ensureLinkedForJobAdvice($jobAssignSchedule->jobSchedule?->job_advice_id);
             
             // Load relationships
             // MOM9: Load quotation relationship if job advice is from quotation

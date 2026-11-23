@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Auth;
 
 class MarketingTargetController extends Controller
 {
+    use \App\Http\Traits\AccessControlFilterTrait;
+
     protected $marketingTargetService;
 
     public function __construct(MarketingTargetService $marketingTargetService)
@@ -24,7 +26,9 @@ class MarketingTargetController extends Controller
      */
     public function index()
     {
-        $marketingTargets = MarketingTarget::with(['user', 'achievementPeriod', 'createdBy', 'updatedBy'])
+        // QA 23 Nov: ikut Hirarki Data seperti Commission System (dulu semua target tampil).
+        $marketingTargets = $this->applyAccessibleUserFilter(MarketingTarget::query(), null, 'user_id')
+            ->with(['user', 'achievementPeriod', 'createdBy', 'updatedBy'])
             ->orderBy('created_at', 'desc')
             ->paginateStd(25);
 

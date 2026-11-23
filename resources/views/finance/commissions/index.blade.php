@@ -675,11 +675,14 @@
                     </a>
                 </div>
             </div>
+            {{-- QA 23 Nov: tombol aksi ikut izin role (role "Lihat" saja tak melihat tombol). --}}
+            @if(auth()->user()->canPerform('finance.commissions.create'))
             <div>
                 <a href="{{ route('finance.commissions.create') }}" class="btn btn-primary">
                     <i class="fas fa-plus"></i> New Commission
                 </a>
             </div>
+            @endif
         </div>
     </div>
 </div>
@@ -921,10 +924,15 @@
                                 @endif
                             </td>
                             <td>
+                                @php
+                                    $canApproveCommission = auth()->user()->canPerform('finance.commissions.approve');
+                                    $canUpdateCommission = auth()->user()->canPerform('finance.commissions.update');
+                                    $canDeleteCommission = auth()->user()->canPerform('finance.commissions.delete');
+                                @endphp
                                 <div class="btn-group" role="group" onclick="event.stopPropagation();">
                                     @if($commission->isAwaitingCashReceipt())
                                         <span class="badge badge-warning" title="Otomatis Approved setelah ada penerimaan kas (cash receipt) atas invoice kontrak">Menunggu penerimaan kas</span>
-                                    @elseif($commission->status === 'calculated')
+                                    @elseif($commission->status === 'calculated' && $canApproveCommission)
                                         <form method="POST" action="{{ route('finance.commissions.approve', $commission) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-sm btn-success" title="Approve">
@@ -933,21 +941,21 @@
                                         </form>
                                     @endif
                                     
-                                    @if($commission->status === 'over_period')
+                                    @if($commission->status === 'over_period' && $canUpdateCommission)
                                         <button type="button" class="btn btn-sm btn-warning" title="Edit Nominal (maks komisi asli)"
                                                 onclick="openOverrideModal({{ $commission->id }}, @js($commission->user->name ?? 'N/A'), {{ (float) $commission->final_amount }}, {{ $commission->overPeriodCap() }})">
                                             <i class="fas fa-pen"></i>
                                         </button>
                                     @endif
 
-                                    @if(in_array($commission->calculation_type, ['new', 'renewal'], true) && !in_array($commission->status, ['paid', 'cancelled'], true) && !$commission->isLocked())
+                                    @if($canUpdateCommission && in_array($commission->calculation_type, ['new', 'renewal'], true) && !in_array($commission->status, ['paid', 'cancelled'], true) && !$commission->isLocked())
                                         <button type="button" class="btn btn-sm btn-secondary" title="Pindah Periode (maju/mundur)"
                                                 onclick="openMovePeriodModal({{ $commission->id }}, @js($commission->contract->contract_number ?? '-'), @js($commission->achievementPeriod->period_name ?? '-'), {{ (int) $commission->achievement_period_id }})">
                                             <i class="fas fa-exchange-alt"></i>
                                         </button>
                                     @endif
 
-                                    @if($commission->status === 'approved')
+                                    @if($commission->status === 'approved' && $canUpdateCommission)
                                         <form method="POST" action="{{ route('finance.commissions.mark-paid', $commission) }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="btn btn-sm btn-primary" title="Mark as Paid">
@@ -956,9 +964,11 @@
                                         </form>
                                     @endif
                                     
+                                    @if($canDeleteCommission)
                                     <button type="button" class="btn btn-sm btn-danger" onclick="openDeleteModal({{ $commission->id }}, '{{ $commission->user->name ?? 'N/A' }}')" title="Hide">
                                         <i class="fas fa-eye-slash"></i>
                                     </button>
+                                    @endif
                                 </div>
                             </td>
                         </tr>

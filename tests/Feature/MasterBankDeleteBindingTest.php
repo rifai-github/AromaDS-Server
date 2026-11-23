@@ -137,7 +137,7 @@ class MasterBankDeleteBindingTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_destroy_actually_soft_deletes_the_selected_bank(): void
+    public function test_destroy_deactivates_only_the_selected_bank(): void
     {
         $user = $this->createUserWithPermission('company.master-banks.view');
         $bankId = $this->createBank('BCA', 'PT. Bank Central Asia');
@@ -150,11 +150,13 @@ class MasterBankDeleteBindingTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonPath('status', 'success');
 
-        $this->assertNotNull(DB::table('banks')->where('id', $bankId)->value('deleted_at'));
-        $this->assertNull(DB::table('banks')->where('id', $otherBankId)->value('deleted_at'));
+        // QA 23 Nov (MOM 18 Nov #18): hapus = nonaktifkan, baris tetap ada berstatus Inactive.
+        $this->assertNull(DB::table('banks')->where('id', $bankId)->value('deleted_at'));
+        $this->assertFalse((bool) DB::table('banks')->where('id', $bankId)->value('is_active'));
+        $this->assertTrue((bool) DB::table('banks')->where('id', $otherBankId)->value('is_active'));
     }
 
-    public function test_destroy_refuses_a_bank_still_used_by_a_bank_payment(): void
+    public function test_destroy_deactivates_a_bank_still_used_by_a_bank_payment_without_removing_it(): void
     {
         $user = $this->createUserWithPermission('company.master-banks.view');
         $bankId = $this->createBank('BCA', 'PT. Bank Central Asia');
@@ -171,10 +173,11 @@ class MasterBankDeleteBindingTest extends TestCase
             ->withHeaders(['X-Requested-With' => 'XMLHttpRequest'])
             ->deleteJson(route('company.master-banks.destroy', $bankId));
 
-        $response->assertStatus(422);
-        $response->assertJsonPath('status', 'error');
+        $response->assertStatus(200);
 
         $this->assertNull(DB::table('banks')->where('id', $bankId)->value('deleted_at'));
+        $this->assertFalse((bool) DB::table('banks')->where('id', $bankId)->value('is_active'));
+        $this->assertSame(1, DB::table('bank_payments')->where('bank_id', $bankId)->count());
     }
 
     private function createBank(string $code, string $name): int

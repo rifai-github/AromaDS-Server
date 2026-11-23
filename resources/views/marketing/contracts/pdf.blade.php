@@ -1135,7 +1135,8 @@
                 @foreach ($rooms as $contractRoom)
                     @php
                         $matchedRental = ($rentalsByRoom->get($contractRoom->room_id) ?? collect())->first();
-                        $rentalName = trim((string) ($matchedRental->rental_alias ?: ($matchedRental->masterRental->rental_name ?? '-')));
+                        // QA 23 Nov: kontrak 21130 print 500 - ruangan tanpa baris rental dengan room_id sama.
+                        $rentalName = trim((string) ($matchedRental?->rental_alias ?: ($matchedRental?->masterRental?->rental_name ?? '-')));
                         $roomName = $contractRoom->room->room_name ?? '-';
                     @endphp
                     <tr>

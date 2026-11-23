@@ -1128,6 +1128,27 @@ class InventoryIssuingController extends Controller
             // Jawaban klien #7: a batch row takes further batches until its quantity is
             // covered. Once covered, a single batch can still be swapped by scanning again
             // (old "Ubah SN"); with several batches the slot to replace must be named.
+            // QA 23 Nov (WI JKT-WI/26-11/0002): link batch dari sebelum #7 (quantity NULL)
+            // menutup SELURUH qty walau stok bebas kode itu kurang, sehingga scan kode kedua
+            // malah MENGGANTI batch lama dan Ready to Issue gagal "butuh 2, tersedia 1".
+            // Bila kode yang discan berbeda, bekukan link lama ke stok bebasnya lalu tambahkan.
+            if ($issuingItem->hasAllRequiredSerials() && $linkedSerialCount === 1) {
+                $onlyLink = $issuingItem->serialLinks->first();
+                $onlyCode = $onlyLink?->serialNumber?->serial_number;
+
+                if ($onlyLink && $onlyLink->quantity === null && $onlyCode !== null && $onlyCode !== $serialNumber) {
+                    $freeForOnlyCode = app(\App\Services\Warehouse\InventoryIssuingService::class)
+                        ->countAvailableBatchSerials($issuing, $issuingItem, $onlyCode);
+
+                    if ($freeForOnlyCode > 0 && $freeForOnlyCode < $issuingItem->serialQuantity()) {
+                        $onlyLink->update(['quantity' => $freeForOnlyCode]);
+                        $issuingItem->unsetRelation('serialLinks');
+                        $issuingItem->load('serialLinks.serialNumber');
+                        $linkedSerialCount = $issuingItem->linkedSerialCount();
+                    }
+                }
+            }
+
             if ($issuingItem->hasAllRequiredSerials()) {
                 if ($linkedSerialCount <= 1) {
                     $replaceUnitIndex = (int) ($issuingItem->serialLinks->min('unit_index') ?? 1);

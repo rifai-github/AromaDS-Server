@@ -262,6 +262,28 @@
         width: 800px;
         overflow: hidden;
         position: relative;
+        /* QA 23 Nov: header+footer (~150px) melebihi jatah 140px di .modal-body sehingga
+           bagian bawah form terpotong & tak bisa di-scroll. Pakai kolom flex. */
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-container > form {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .modal-container .modal-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
+    }
+
+    .modal-container .modal-header,
+    .modal-container .modal-footer {
+        flex-shrink: 0;
     }
     
     .modal-header {

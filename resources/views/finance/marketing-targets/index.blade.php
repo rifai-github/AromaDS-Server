@@ -42,11 +42,14 @@
     </div>
 
     <div class="container-fluid">
+        {{-- QA 23 Nov: tombol aksi ikut izin role (dulu tampil untuk semua, termasuk role "Lihat" saja). --}}
+        @if(auth()->user()->canPerform('finance.marketing-targets.create'))
         <div class="mb-4">
             <a href="{{ route('finance.marketing-targets.create') }}" class="btn btn-primary">
                 <i class="fas fa-plus"></i> Add New Target
             </a>
         </div>
+        @endif
 
         <div class="table-container">
             <div class="table-header">
@@ -108,6 +111,7 @@
                                     <a href="{{ route('finance.marketing-targets.show', $target) }}" class="btn btn-info btn-sm">
                                         <i class="fas fa-eye"></i>
                                     </a>
+                                    @if(auth()->user()->canPerform('finance.marketing-targets.update'))
                                     <a href="{{ route('finance.marketing-targets.edit', $target) }}" class="btn btn-warning btn-sm">
                                         <i class="fas fa-edit"></i>
                                     </a>
@@ -126,6 +130,8 @@
                                         </button>
                                     </form>
                                     @endif
+                                    @endif
+                                    @if(auth()->user()->canPerform('finance.marketing-targets.delete'))
                                     <form action="{{ route('finance.marketing-targets.destroy', $target) }}" method="POST" style="display: inline;" onsubmit="return confirm('Apakah kamu yakin?');">
                                         @csrf
                                         @method('DELETE')
@@ -133,6 +139,7 @@
                                             <i class="fas fa-trash"></i>
                                         </button>
                                     </form>
+                                    @endif
                                 </div>
                             </td>
                         </tr>

@@ -777,10 +777,13 @@ class JobScheduleController extends Controller
             return;
         }
 
+        $suspensions = app(\App\Services\Operational\ContractRoomSuspensionService::class);
         $rooms = \App\Models\JobScheduleRoom::with(['jobSchedule.jobAdvice'])
             ->whereIn('id', $roomIds)
             ->get()
-            ->filter(fn ($room) => $room->jobSchedule);
+            ->filter(fn ($room) => $room->jobSchedule)
+            // QA 23 Nov: ruangan yang di-SUSPEND dari kontrak tidak ikut Material Assign.
+            ->reject(fn ($room) => $suspensions->isJobScheduleRoomSuspended($room, $room->jobSchedule));
 
         if ($rooms->isEmpty()) {
             return;
@@ -1872,6 +1875,7 @@ class JobScheduleController extends Controller
             $successCount = 0;
             $skippedCount = 0;
             $skippedNoMaterialFlowCount = 0;
+            $skippedSuspendedCount = 0;
             // Job yang materialnya tidak terbentuk (mis. rental belum punya produk di Master
             // Rental). Job ini dikembalikan ke keadaan semula, bukan dibiarkan bernomor JS +
             // berstatus Material Assign tanpa material (ruangannya tampil NEW JOB).
@@ -1937,6 +1941,13 @@ class JobScheduleController extends Controller
                 if ($this->jobScheduleSkipsMaterialAssignment($job)) {
                     $skippedCount++;
                     $skippedNoMaterialFlowCount++;
+                    continue;
+                }
+
+                // QA 23 Nov: ruangan yang di-SUSPEND dari kontrak tidak boleh di-Material Assign.
+                if (app(\App\Services\Operational\ContractRoomSuspensionService::class)->jobBlockReason($job, true)) {
+                    $skippedCount++;
+                    $skippedSuspendedCount++;
                     continue;
                 }
 
@@ -2053,7 +2064,8 @@ class JobScheduleController extends Controller
                 'status' => 'success',
                 'message' => "Berhasil memproses {$successCount} job. "
                     . ($skippedNoMaterialFlowCount > 0 ? "({$skippedNoMaterialFlowCount} job tanpa alur material dilewati karena tidak perlu material assign) " : "")
-                    . (($skippedCount - $skippedNoMaterialFlowCount) > 0 ? "(" . ($skippedCount - $skippedNoMaterialFlowCount) . " job dilewati karena status tidak sesuai) " : "")
+                    . ($skippedSuspendedCount > 0 ? "({$skippedSuspendedCount} job dilewati karena ruangannya di-SUSPEND dari kontrak) " : "")
+                    . (($skippedCount - $skippedNoMaterialFlowCount - $skippedSuspendedCount) > 0 ? "(" . ($skippedCount - $skippedNoMaterialFlowCount - $skippedSuspendedCount) . " job dilewati karena status tidak sesuai) " : "")
                     . $noMaterialMessage,
                 'success' => true
             ]);
@@ -11011,6 +11023,9 @@ class JobScheduleController extends Controller
     {
         $jobSchedule = $jobAssignSchedule->jobSchedule;
         $jobAdvice = $jobSchedule->jobAdvice;
+
+        // QA 23 Nov: material list rental hasil seed/import dihubungkan dulu (MOM 18 Nov p7).
+        app(\App\Services\Warehouse\RentalDetailMaterialSync::class)->ensureLinkedForJobAdvice($jobAdvice?->id);
         
         // MOM: Check if material issue already exists for this assignment (idempotency)
         // If it is still editable, continue below and fill any missing rental components.
@@ -12716,12 +12731,22 @@ class JobScheduleController extends Controller
             ];
         }
 
+        // QA 23 Nov: job yang seluruh ruangannya di-SUSPEND dari kontrak tidak boleh diberi tim.
+        if ($suspendReason = app(\App\Services\Operational\ContractRoomSuspensionService::class)->jobBlockReason($jobSchedule, true)) {
+            return [
+                'status' => 'error',
+                'message' => $suspendReason,
+                'job_number' => $jobSchedule->job_number ?? 'No Job Number',
+                'job_id' => $jobSchedule->id,
+            ];
+        }
+
         // Jobs without material flow can be assigned directly.
         if ($this->jobScheduleSkipsMaterialAssignment($jobSchedule)) {
             return true;
         }
 
-        // MOM: Status assign_material or barang_dipersiapkan must reach barang_siap_diambil first
+        // MOM: Status assign_materialor barang_dipersiapkan must reach barang_siap_diambil first
         if (in_array($jobSchedule->status, ['assign_material', 'barang_dipersiapkan'])) {
             return [
                 'status' => 'error',

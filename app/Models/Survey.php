@@ -181,10 +181,12 @@ class Survey extends Model
         return $statuses[$this->status] ?? $this->status;
     }
 
+    // QA 23 Nov (MOM 18 Nov): nama customer ikut Master Customer terbaru; salinan survey
+    // hanya cadangan untuk survey tanpa customer tertaut.
     public function getDisplayCompanyNameAttribute()
     {
-        return $this->normalizeDisplayValue($this->company_name)
-            ?? $this->normalizeDisplayValue($this->customer?->name)
+        return $this->normalizeDisplayValue($this->customer?->name)
+            ?? $this->normalizeDisplayValue($this->company_name)
             ?? '-';
     }
 

@@ -108,7 +108,8 @@ class BranchController extends Controller
             'company_id' => 'required|exists:companies,id',
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:50|unique:branches,code',
-            'address_type' => 'required|in:office,warehouse,both',
+            // MOM 17-18 Nov: Address Type tak lagi diisi dari form; nilai lama dipertahankan.
+            'address_type' => 'nullable|in:office,warehouse,both',
             'address_1' => 'required|string|max:255',
             'address_2' => 'nullable|string|max:255',
             'phone_1' => 'required|string|max:20',
@@ -134,7 +135,8 @@ class BranchController extends Controller
         // A head office (Branch Pusat) is also exempt: it may share a city with a regular
         // branch cabang, since a head office legitimately co-locates with a local branch.
         // Two regular (non-head-office) branches still cannot share the same city.
-        if (! $isHeadOffice && $request->address_type !== 'warehouse') {
+        $addressType = $request->input('address_type') ?: 'both';
+        if (! $isHeadOffice && $addressType !== 'warehouse') {
             $existingBranch = Branch::where('city_id', $request->city_id)
                 ->where('address_type', '!=', 'warehouse')
                 ->where('is_head_office', false)
@@ -155,7 +157,7 @@ class BranchController extends Controller
                 'company_id' => $request->company_id,
                 'name' => $request->name,
                 'code' => strtoupper($request->code),
-                'address_type' => $request->address_type,
+                'address_type' => $addressType,
                 'address_1' => $request->address_1,
                 'address_2' => $request->address_2,
                 'phone_1' => $request->phone_1,
@@ -291,7 +293,8 @@ class BranchController extends Controller
             'company_id' => 'required|exists:companies,id',
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:50|unique:branches,code,' . $branch->id,
-            'address_type' => 'required|in:office,warehouse,both',
+            // MOM 17-18 Nov: Address Type tak lagi diisi dari form; nilai lama dipertahankan.
+            'address_type' => 'nullable|in:office,warehouse,both',
             'address_1' => 'required|string|max:255',
             'address_2' => 'nullable|string|max:255',
             'phone_1' => 'required|string|max:20',
@@ -315,7 +318,8 @@ class BranchController extends Controller
         // office/both branch, and a head office (Branch Pusat) may share a city with a
         // regular branch cabang; duplicates are only blocked between two regular
         // (non-warehouse, non-head-office) branches.
-        if ($request->city_id != $branch->city_id && ! $isHeadOffice && $request->address_type !== 'warehouse') {
+        $addressType = $request->input('address_type') ?: ($branch->address_type ?: 'both');
+        if ($request->city_id != $branch->city_id && ! $isHeadOffice && $addressType !== 'warehouse') {
             $existingBranch = Branch::where('city_id', $request->city_id)
                 ->where('id', '!=', $branch->id)
                 ->where('address_type', '!=', 'warehouse')
@@ -337,7 +341,7 @@ class BranchController extends Controller
                 'company_id' => $request->company_id,
                 'name' => $request->name,
                 'code' => strtoupper($request->code),
-                'address_type' => $request->address_type,
+                'address_type' => $addressType,
                 'address_1' => $request->address_1,
                 'address_2' => $request->address_2,
                 'phone_1' => $request->phone_1,
@@ -718,10 +722,14 @@ class BranchController extends Controller
             ->toArray();
         
         // Get city IDs assigned to OTHER branches (to disable them)
-        $assignedToOtherBranches = OperationalArea::where('branch_id', '!=', $branch->id)
+        // QA 23 Nov: badge "Assigned" kini menyebut cabang pemilik kota (city_id => nama branch).
+        $assignedOtherBranchNames = OperationalArea::with('branch:id,name')
+            ->where('branch_id', '!=', $branch->id)
             ->whereNotNull('city_id')
-            ->pluck('city_id')
-            ->toArray();
+            ->get(['city_id', 'branch_id'])
+            ->mapWithKeys(fn ($area) => [(int) $area->city_id => $area->branch?->name ?? '-'])
+            ->all();
+        $assignedToOtherBranches = array_keys($assignedOtherBranchNames);
         
         // Get all provinces except branch's province (for Card 2 dropdown)
         $otherProvinces = Province::when($branch->province_id, function($query) use ($branch) {
@@ -746,6 +754,7 @@ class BranchController extends Controller
             'citiesInProvince',
             'assignedCityIds',
             'assignedToOtherBranches',
+            'assignedOtherBranchNames',
             'otherProvinces',
             'citiesOutsideProvince',
             'branchDescription'
@@ -851,19 +860,24 @@ class BranchController extends Controller
             ->toArray();
         
         // Get city IDs assigned to OTHER branches
-        $assignedToOtherBranches = OperationalArea::where('branch_id', '!=', $branch->id)
+        // QA 23 Nov: badge "Assigned" kini menyebut cabang pemilik kota (city_id => nama branch).
+        $assignedOtherBranchNames = OperationalArea::with('branch:id,name')
+            ->where('branch_id', '!=', $branch->id)
             ->whereNotNull('city_id')
-            ->pluck('city_id')
-            ->toArray();
+            ->get(['city_id', 'branch_id'])
+            ->mapWithKeys(fn ($area) => [(int) $area->city_id => $area->branch?->name ?? '-'])
+            ->all();
+        $assignedToOtherBranches = array_keys($assignedOtherBranchNames);
         
         // Mark each city's status
-        $citiesWithStatus = $cities->map(function($city) use ($assignedCityIds, $assignedToOtherBranches) {
+        $citiesWithStatus = $cities->map(function($city) use ($assignedCityIds, $assignedToOtherBranches, $assignedOtherBranchNames) {
             return [
                 'id' => $city->id,
                 'name' => $city->name,
                 'checked' => in_array($city->id, $assignedCityIds),
                 'disabled' => in_array($city->id, $assignedToOtherBranches),
-                'assigned_to_other' => in_array($city->id, $assignedToOtherBranches)
+                'assigned_to_other' => in_array($city->id, $assignedToOtherBranches),
+                'assigned_branch' => $assignedOtherBranchNames[(int) $city->id] ?? null,
             ];
         });
         

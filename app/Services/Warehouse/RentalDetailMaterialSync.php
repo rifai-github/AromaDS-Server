@@ -31,6 +31,58 @@ class RentalDetailMaterialSync
     }
 
     /** Baris auto_expand berkategori yang material list-nya masih kosong. */
+    /**
+     * QA 23 Nov (MOM 18 Nov p7): Material Assign membaca material list rental detail secara
+     * langsung; baris seed/import yang belum pernah dibuka di Master Rental masih kosong sehingga
+     * MA Issue gagal sampai detail itu di-Simpan ulang. Hubungkan dulu semua baris auto_expand
+     * kosong milik rental-rental job advice ini.
+     *
+     * @return int jumlah rental detail yang baru dihubungkan
+     */
+    public function ensureLinkedForJobAdvice($jobAdviceId): int
+    {
+        if (! $jobAdviceId) {
+            return 0;
+        }
+
+        $rentalIds = \App\Models\JobAdviceRoom::query()
+            ->where('job_advice_id', $jobAdviceId)
+            ->whereNotNull('rental_product_id')
+            ->pluck('rental_product_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        return $this->ensureLinkedForRentals($rentalIds);
+    }
+
+    public function ensureLinkedForRentals(array $masterRentalIds): int
+    {
+        if (empty($masterRentalIds)) {
+            return 0;
+        }
+
+        $details = RentalDetail::query()
+            ->whereIn('master_rental_id', $masterRentalIds)
+            ->where('auto_expand', true)
+            ->whereNotNull('product_category_id')
+            ->whereDoesntHave('allowedProducts')
+            ->get();
+
+        $linked = 0;
+        foreach ($details as $detail) {
+            try {
+                if ($this->syncAutoExpanded($detail) > 0) {
+                    $linked++;
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("Auto-link material rental detail #{$detail->id} gagal: ".$e->getMessage());
+            }
+        }
+
+        return $linked;
+    }
+
     public function needsSync(RentalDetail $detail): bool
     {
         if (! $detail->auto_expand || ! $detail->product_category_id) {

@@ -522,6 +522,18 @@ class User extends Authenticatable
         return ! empty(array_intersect($roles, $this->getResolvedRoleNames()));
     }
 
+    /**
+     * Izin aksi (tombol/route) dengan bypass Admin/Management seperti middleware CheckPermission.
+     */
+    public function canPerform(string $permission): bool
+    {
+        if ($this->hasRole('Admin') || $this->hasRole('super_admin') || $this->hasRoleStartingWith('Management')) {
+            return true;
+        }
+
+        return $this->hasPermission($permission);
+    }
+
     public function hasPermission($permission)
     {
         $permissionLookup = $this->getResolvedPermissionLookup();
@@ -728,6 +740,11 @@ class User extends Authenticatable
      */
     public function canApprove($module)
     {
+        // Admin sistem selalu boleh approve (sama seperti short-circuit CheckPermission).
+        if ($this->hasRole('Admin') || $this->hasRole('super_admin')) {
+            return true;
+        }
+
         // Check for specific permission
         // Try prefixed format first (e.g. marketing.surveys.approve)
         $possiblePermissions = [

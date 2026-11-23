@@ -3756,6 +3756,26 @@ class JobAdviceController extends Controller
                             ->where('room_id', $contractRoom->room_id)
                             ->get();
 
+                        // QA 23 Nov: rental kontrak bisa menunjuk Master Room dobel (gedung + nama
+                        // sama, id beda; lihat kontrak 21131). Cocokkan juga lewat gedung + nama.
+                        if ($contractRentals->isEmpty()) {
+                            $contractMasterRoom = \App\Models\MasterRoom::find($contractRoom->room_id);
+                            if ($contractMasterRoom) {
+                                $twinRoomIds = \App\Models\MasterRoom::where('building_id', $contractMasterRoom->building_id)
+                                    ->whereRaw('LOWER(TRIM(room_name)) = ?', [mb_strtolower(trim((string) $contractMasterRoom->room_name))])
+                                    ->pluck('id');
+                                $contractRentals = \App\Models\ContractRental::where('contract_id', $contractRoom->contract_id)
+                                    ->whereIn('room_id', $twinRoomIds)
+                                    ->get();
+                            }
+                        }
+
+                        // Kontrak satu ruangan: rental tanpa ruangan pasti milik ruangan itu.
+                        if ($contractRentals->isEmpty()
+                            && \App\Models\ContractRoom::where('contract_id', $contractRoom->contract_id)->count() === 1) {
+                            $contractRentals = \App\Models\ContractRental::where('contract_id', $contractRoom->contract_id)->get();
+                        }
+
                         foreach ($contractRentals as $cr) {
                             $rentalProductDetails[] = [
                                 'rental_product_id' => $cr->master_rental_id,
@@ -3798,18 +3818,8 @@ class JobAdviceController extends Controller
                     }
                 }
 
-                // If still no rentals found, get first available master_rental as fallback
-                if (empty($rentalProductDetails)) {
-                    $defaultRental = \App\Models\MasterRental::first();
-                    if ($defaultRental) {
-                        $rentalProductDetails[] = [
-                            'rental_product_id' => $defaultRental->id,
-                            'contract_rental_id' => null,
-                            'quotation_rental_id' => null,
-                            'quantity' => 1 // Default
-                        ];
-                    }
-                }
+                // QA 23 Nov: dulu fallback MasterRental::first() menempelkan rental acak
+                // ("Dispenser Hand Sanitizer 7100 SB3--") ke JA/JS. Ruangan tanpa rental dilewati.
 
                 // Skip if still no rental found
                 if (empty($rentalProductDetails)) {

@@ -232,6 +232,18 @@ class QuotationApprovalAuthorizerTest extends TestCase
         $this->assertFalse($this->authorizer()->canApprove($user, $quotation));
     }
 
+    public function test_an_admin_approves_without_base_permission_or_designation(): void
+    {
+        // QA 23 Nov: role Admin di bootstrap tak punya izin *.quotations.approve; dulu Admin
+        // tertahan di gate izin sebelum bypass-nya sempat dicek.
+        $quotation = $this->quotationWithDiscount(90);
+        $user = $this->userWithoutBasePermission();
+        $adminRoleId = DB::table('roles')->insertGetId(['name' => 'Admin', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('user_roles')->insert(['user_id' => $user->id, 'role_id' => $adminRoleId, 'created_at' => now(), 'updated_at' => now()]);
+
+        $this->assertTrue($this->authorizer()->canApprove($user->fresh(), $quotation));
+    }
+
     public function test_a_quotation_that_needs_no_approval_only_needs_the_base_permission(): void
     {
         config(['quotation.legacy_approve_is_highest' => false]);

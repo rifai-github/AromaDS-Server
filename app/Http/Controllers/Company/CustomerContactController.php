@@ -582,7 +582,11 @@ class CustomerContactController extends Controller
     protected function forgetCustomerContactLookupCache(?int ...$customerIds): void
     {
         foreach (array_unique(array_filter($customerIds)) as $customerId) {
-            Cache::forget("customer:{$customerId}:api-contacts:v1");
+            // CustomerController::getContacts menyimpan di kunci :v3; dulu hanya :v1 yang dihapus
+            // sehingga kontak baru tak muncul di dropdown PIC selama cache masih hidup.
+            foreach (['v1', 'v2', 'v3'] as $version) {
+                Cache::forget("customer:{$customerId}:api-contacts:{$version}");
+            }
         }
     }
 

@@ -480,7 +480,9 @@ class CommissionController extends Controller
             $periodId = $request->get('period_id');
             $userId = $request->get('user_id');
 
-            $query = CommissionCalculation::query();
+            // QA 23 Nov: kartu ringkasan dulu menghitung komisi SEMUA marketing (tanpa Hirarki
+            // Data) dan memakai satu builder berantai sehingga approved/paid/cancelled selalu 0.
+            $query = $this->accessibleCommissionQuery();
 
             if ($periodId) {
                 $query->where('achievement_period_id', $periodId);
@@ -491,12 +493,12 @@ class CommissionController extends Controller
             }
 
             $stats = [
-                'total_commissions' => $query->count(),
-                'total_amount' => $query->sum('final_amount') ?: 0,
-                'pending_approval' => $query->where('status', 'calculated')->count(),
-                'approved' => $query->where('status', 'approved')->count(),
-                'paid' => $query->where('status', 'paid')->count(),
-                'cancelled' => $query->where('status', 'cancelled')->count()
+                'total_commissions' => (clone $query)->count(),
+                'total_amount' => (clone $query)->sum('final_amount') ?: 0,
+                'pending_approval' => (clone $query)->where('status', 'calculated')->count(),
+                'approved' => (clone $query)->where('status', 'approved')->count(),
+                'paid' => (clone $query)->where('status', 'paid')->count(),
+                'cancelled' => (clone $query)->where('status', 'cancelled')->count()
             ];
 
             return response()->json($stats, 200, [

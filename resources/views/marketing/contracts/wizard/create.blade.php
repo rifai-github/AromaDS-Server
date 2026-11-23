@@ -763,9 +763,9 @@
                             <option value="NPWP">NPWP</option>
                             <option value="NIK">NIK</option>
                             <option value="KITAS/PASSPORT/KTP WNA">KITAS/PASSPORT/KTP WNA</option>
-                            <option value="NITKU">NITKU</option>
+                            {{-- QA 23 Nov (MOM 19 Nov): NITKU bukan Tax Name tersendiri; diisi di bawah NPWP lewat Customer Tax. --}}
                         </select>
-                        <small class="text-gray-600 mt-1 block">NPWP/NIK: 16 digit, NITKU: 22 digit, Other: 25 digit</small>
+                        <small class="text-gray-600 mt-1 block">NPWP/NIK: 16 digit, Other: 25 digit</small>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Tax Number *</label>
@@ -774,17 +774,8 @@
                             Length: <span id="modal_tax_number_counter" class="font-semibold text-blue-600">0</span> / <span id="modal_tax_number_max" class="font-semibold">25</span> characters
                         </small>
                     </div>
-                    {{-- Kode transaksi PPN sengaja tidak ditampilkan di sini: kodenya milik kontrak
-                         (dipilih di Step 3) supaya tiap kontrak bisa beda, bukan properti data pajak
-                         customer. Nilainya tetap dikirim karena endpoint customer-taxes mewajibkannya. --}}
-                    <input type="hidden" name="tax_type" id="modal_tax_type">
-                    <input type="hidden" name="ppn_code" id="modal_ppn_code">
-                    <div class="form-group">
-                        <label class="form-label">Tax Rate (%) *</label>
-                        <input type="text" id="modal_tax_rate_display" class="form-control bg-gray-100 cursor-not-allowed" readonly tabindex="-1" value="{{ number_format((float) ($defaultVatSetting->tax_rate ?? 0), 2, '.', '') }}%">
-                        <input type="hidden" name="tax_rate" id="modal_tax_rate" value="{{ number_format((float) ($defaultVatSetting->tax_rate ?? 0), 2, '.', '') }}">
-                        <small class="text-gray-600 mt-1 block">Tax rate otomatis mengikuti Master Tax default.</small>
-                    </div>
+                    {{-- QA 23 Nov (jawaban klien #20, 48abbac): Customer Tax tak lagi menyimpan Kode PPN
+                         maupun Tax Rate (server memaksa null), jadi field Tax Rate dibuang dari modal ini. --}}
                     <div class="form-group">
                         <label class="form-label">Effective Date *</label>
                         <input type="date" name="effective_date" class="form-control" required value="{{ date('Y-m-d') }}">
@@ -4214,12 +4205,6 @@ function openAddTaxModal(addressIndex) {
         return;
     }
 
-    // tax_type dikirim dari Kode PPN Step 3, jadi kodenya harus sudah dipilih.
-    if (!document.getElementById('ppnCode')?.value) {
-        alert('Kode PPN belum dipilih. Silakan pilih Kode PPN di Step 3 terlebih dahulu.');
-        return;
-    }
-
     document.getElementById('addTaxForm').reset();
     document.getElementById('taxModalCustomerId').value = quotationData.customer.id;
 
@@ -4339,6 +4324,8 @@ function applyPpnCodeFromCustomer(rawCode) {
 // dikirim diam-diam karena kolom tax_type wajib, dan tax rate mengikuti
 // aturan kode tersebut (kode fasilitas 07/08 dicetak nol).
 function syncModalTaxRateFromCode() {
+    // QA 23 Nov: field Kode PPN/Tax Rate sudah dibuang dari modal; fungsi tetap ada
+    // supaya pemanggil lama aman (semua elemen di bawah kini null).
     const taxTypeInput = document.getElementById('modal_tax_type');
     const ppnCodeInput = document.getElementById('modal_ppn_code');
     const taxRateInput = document.getElementById('modal_tax_rate');
@@ -4423,9 +4410,6 @@ function updateTaxNumberMaxLength(mode) {
             case 'NPWP':
             case 'NIK':
                 maxLength = 16;
-                break;
-            case 'NITKU':
-                maxLength = 22;
                 break;
             default:
                 maxLength = 25;

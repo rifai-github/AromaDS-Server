@@ -233,6 +233,47 @@ class CompanyVirtualAccount extends Model
     }
 
     /**
+     * QA 23 Nov: nomor VA otomatis untuk satu Bank Payment = prefix bank_va_number + suffix
+     * berurutan sepanjang `length` dalam rentang start_number..end_number (aturan yang sama
+     * dengan VA manual). Bank tanpa prefix memakai format lama (kode perusahaan 5 digit + 6 digit).
+     */
+    public static function generateAccountNumberForBank(BankPayment $bankPayment, $companyId = null): string
+    {
+        $prefix = preg_replace('/\D/', '', (string) ($bankPayment->bank_va_number ?? ''));
+        if ($prefix === '') {
+            return self::generateAccountNumber($companyId, $bankPayment->id);
+        }
+
+        $length = (int) ($bankPayment->length ?? 0);
+        if ($length <= 0) {
+            $length = 6;
+        }
+
+        $start = max(1, (int) preg_replace('/\D/', '', (string) ($bankPayment->start_number ?? '')));
+        $endDigits = preg_replace('/\D/', '', (string) ($bankPayment->end_number ?? ''));
+        $end = $endDigits !== '' ? (int) $endDigits : (int) str_repeat('9', min($length, 18));
+
+        $used = self::withTrashed()
+            ->where('account_number', 'like', $prefix.'%')
+            ->pluck('account_number')
+            ->map(fn ($number) => preg_replace('/\D/', '', (string) $number))
+            ->filter(fn ($number) => strlen($number) === strlen($prefix) + $length && str_starts_with($number, $prefix))
+            ->map(fn ($number) => (int) substr($number, strlen($prefix)))
+            ->all();
+
+        $next = $start;
+        if (! empty($used)) {
+            $next = max($start, max($used) + 1);
+        }
+
+        if ($next > $end) {
+            throw new \RuntimeException("Rentang nomor VA Bank Payment {$bankPayment->account_name} sudah habis ({$start}-{$end}).");
+        }
+
+        return $prefix.str_pad((string) $next, $length, '0', STR_PAD_LEFT);
+    }
+
+    /**
      * Get company code from setting or return default
      */
     public static function getCompanyCode()

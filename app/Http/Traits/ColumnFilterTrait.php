@@ -62,6 +62,12 @@ trait ColumnFilterTrait
                 if ($columnConfig) {
                     $hasMatchedFilter = true;
                     $processedKeys[] = $filterKey;
+
+                    // Filter khusus per halaman (mis. status teks active/inactive).
+                    if (isset($columnConfig['callback']) && is_callable($columnConfig['callback'])) {
+                        ($columnConfig['callback'])($query, $term);
+                        continue;
+                    }
                     
                     // Handle boolean columns with smarter text detection
                     if (isset($columnConfig['boolean']) && $columnConfig['boolean']) {

@@ -82,8 +82,8 @@ class QuotationController extends Controller
 
         // Apply access control filter (hierarchical data)
         // Default: Jika tidak set hirarki, hanya bisa lihat data sendiri
-        // NOTE: Pass null for branchField and warehouseField since quotations table doesn't have these columns
-        $query = $this->applyAccessControlFilter($query, null, 'created_by', 'marketing_id', null, null, null);
+        // Hirarki Data Branch berlaku lewat quotations.branch_id (kolom Branch di list).
+        $query = $this->applyAccessControlFilter($query, null, 'created_by', 'marketing_id', $this->explicitBranchAccessField('branch_id'), null, null);
 
         // ENABLE AUTO FILTERABLE
         // This handles generic columns, relations, and robust logic via trait

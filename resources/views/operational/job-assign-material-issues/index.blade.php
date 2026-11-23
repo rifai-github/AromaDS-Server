@@ -1091,8 +1091,8 @@
                             $productBomQty = 0;
                             if ($item->product) {
                                 $packagingName = optional($item->product->packagingSize)->name;
-                                if ($packagingName && preg_match('/(\d+(?:\.\d+)?)\s*ml/i', $packagingName, $matches)) {
-                                    $productBomQty = (float) $matches[1];
+                                if ($packagingName && \App\Http\Controllers\Operational\JobAssignMaterialIssueController::packagingSizeToMl($packagingName) > 0) {
+                                    $productBomQty = \App\Http\Controllers\Operational\JobAssignMaterialIssueController::packagingSizeToMl($packagingName);
                                 } else {
                                     $productBomQty = (float) ($item->product->bom_quantity ?? 0);
                                 }
@@ -1157,8 +1157,8 @@
                                 $groupTotalVolume = $items->sum(function($it) use ($rentalDetailId) {
                                     if ($it->notes && preg_match('/(?:RentalDetailID|ComponentID):\s*' . $rentalDetailId . '/', $it->notes)) {
                                         $packagingName = optional($it->product->packagingSize)->name;
-                                        if ($packagingName && preg_match('/(\d+(?:\.\d+)?)\s*ml/i', $packagingName, $matches)) {
-                                            return ($it->quantity ?? 0) * (float) $matches[1];
+                                        if ($packagingName && \App\Http\Controllers\Operational\JobAssignMaterialIssueController::packagingSizeToMl($packagingName) > 0) {
+                                            return ($it->quantity ?? 0) * \App\Http\Controllers\Operational\JobAssignMaterialIssueController::packagingSizeToMl($packagingName);
                                         }
 
                                         return ($it->quantity ?? 0) * (float) ($it->product->bom_quantity ?? 0);
@@ -1208,6 +1208,7 @@
                             data-job-type="{{ $jobSchedule ? strtolower($jobSchedule->type) : '' }}"
                             data-product-bom-qty="{{ $productBomQty }}"
                             data-rental-detail-id="{{ $rentalDetailId ?? '' }}"
+                            data-material-issue-id="{{ $materialIssue->id ?? '' }}"
                             data-product-type="{{ $productType }}"
                             data-material-name="{{ $materialName }}"
                             data-warehouse-stock="{{ $warehouseStock ?? 0 }}">
@@ -1594,10 +1595,10 @@
                                                 $statusClass = 'status-rejected'; 
                                                 $displayStatus = 'OUT OF STOCK';
                                             } else {
-                                                if ($checkStatus === 'out_of_stock' || $checkStatus === 'out of stock') {
-                                                    $statusClass = 'status-pending';
-                                                    $displayStatus = 'Pending';
-                                                }
+                                                // QA 23 Nov: belum di-Submit Issue tapi stok gudang cukup -> "STOCK ADA"
+                                                // (label saja; status DB tetap pending supaya Submit Issue berjalan).
+                                                $statusClass = 'status-approved';
+                                                $displayStatus = 'STOCK ADA';
                                             }
                                         }
                                     }
@@ -1867,12 +1868,33 @@ function getProductBomPerUnit(product) {
         product.packaging_size_name ||
         product.packaging_size ||
         '';
-    const packagingMatch = String(packagingName).match(/(\d+(?:\.\d+)?)\s*ml/i);
-    if (packagingMatch) {
-        return parseFloat(packagingMatch[1]) || 0;
+    const packagingMl = packagingSizeToMl(packagingName);
+    if (packagingMl > 0) {
+        return packagingMl;
     }
 
     return parseFloat(product.bom_quantity || 0);
+}
+
+// QA 23 Nov: sama dengan JobAssignMaterialIssueController::packagingSizeToMl
+// ("250 ml", "1000mili", "1.000 ml", "1 L", "1,5 liter").
+function packagingSizeToMl(name) {
+    const match = String(name || '').match(/(\d+(?:[.,]\d+)*)\s*(ml|mili\w*|millilit\w*|l|lt|ltr|liter|litre)\b/i);
+    if (!match) {
+        return 0;
+    }
+    let number = match[1];
+    const unit = match[2].toLowerCase();
+    const isLitre = ['l', 'lt', 'ltr', 'liter', 'litre'].includes(unit);
+    if (/^\d{1,3}(\.\d{3})+$/.test(number)) {
+        number = number.replace(/\./g, '');
+    } else if (/^\d{1,3}(,\d{3})+$/.test(number) && !isLitre) {
+        number = number.replace(/,/g, '');
+    } else {
+        number = number.replace(',', '.');
+    }
+    const value = parseFloat(number) || 0;
+    return isLitre ? value * 1000 : value;
 }
 
 function getProductPackagingSizeId(product) {
@@ -4365,7 +4387,22 @@ function updateQtyIssue(itemId, inputElement) {
             }
 
             refreshMaterialRowStatus(row, data);
-            
+
+            // QA 23 Nov: status (approved/pending) milik material issue, bukan baris. Baris lain
+            // dari issue yang sama ikut diperbarui supaya badge tak tertinggal sampai reload.
+            const materialIssueId = row.getAttribute('data-material-issue-id');
+            if (materialIssueId && data.material_issue_status) {
+                document.querySelectorAll(`tr[data-material-issue-id="${materialIssueId}"]`).forEach(otherRow => {
+                    if (otherRow === row) return;
+                    const isApproved = data.material_issue_status === 'approved';
+                    refreshMaterialRowStatus(otherRow, {
+                        material_issue_status: data.material_issue_status,
+                        display_status: isApproved ? 'Approved' : undefined,
+                        status_class: isApproved ? 'status-approved' : undefined,
+                    });
+                });
+            }
+
             // Show subtle success feedback
             inputElement.style.backgroundColor = '#d4edda';
             setTimeout(() => {
@@ -4549,6 +4586,10 @@ function refreshMaterialRowStatus(row, data = {}) {
         if (qty > 0 && stock < qty) {
             displayStatus = 'OUT OF STOCK';
             statusClass = 'status-rejected';
+        } else if (qty > 0) {
+            // QA 23 Nov: sama dengan render server - stok cukup sebelum Submit Issue = STOCK ADA.
+            displayStatus = 'STOCK ADA';
+            statusClass = 'status-approved';
         } else {
             displayStatus = 'Pending';
             statusClass = 'status-pending';

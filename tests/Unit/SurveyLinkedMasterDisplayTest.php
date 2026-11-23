@@ -101,6 +101,18 @@ class SurveyLinkedMasterDisplayTest extends TestCase
         $this->assertSame('Lt. 3', $survey->display_address_two);
     }
 
+    public function test_company_name_follows_the_renamed_master_customer(): void
+    {
+        // QA 23 Nov (survey 33446): nama customer di Basic Info/PDF ikut Master Customer.
+        if (! Schema::hasColumn('surveys', 'company_name')) {
+            Schema::table('surveys', fn (Blueprint $t) => $t->string('company_name')->nullable());
+        }
+        $survey = $this->survey(['company_name' => "PT Contoh 'Lama'"]);
+        DB::table('customers')->where('id', 1)->update(['name' => "PT Contoh 'Baru'"]);
+
+        $this->assertSame("PT Contoh 'Baru'", $survey->fresh()->display_company_name);
+    }
+
     public function test_contact_renamed_in_master_is_still_found_by_email(): void
     {
         DB::table('customer_contacts')->where('id', 9)->update(['name' => 'Andi W.', 'email' => 'andi.lama@example.test']);

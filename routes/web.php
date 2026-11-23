@@ -1088,13 +1088,17 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
 
         // Commission System Routes
         Route::get('commissions/statistics', [App\Http\Controllers\Finance\CommissionController::class, 'statistics'])->name('commissions.statistics');
-        Route::resource('commissions', App\Http\Controllers\Finance\CommissionController::class);
-        Route::post('commissions/{commission}/approve', [App\Http\Controllers\Finance\CommissionController::class, 'approve'])->name('commissions.approve');
-        Route::post('commissions/{commission}/mark-paid', [App\Http\Controllers\Finance\CommissionController::class, 'markAsPaid'])->name('commissions.mark-paid');
-        Route::post('commissions/{commission}/cancel', [App\Http\Controllers\Finance\CommissionController::class, 'cancel'])->name('commissions.cancel');
-        Route::post('commissions/{commission}/override-amount', [App\Http\Controllers\Finance\CommissionController::class, 'overrideAmount'])->name('commissions.override-amount');
+        // QA 23 Nov: aksi ubah dijaga izin role (Admin/Management tetap lolos lewat CheckPermission).
+        Route::resource('commissions', App\Http\Controllers\Finance\CommissionController::class)->only(['index', 'show']);
+        Route::resource('commissions', App\Http\Controllers\Finance\CommissionController::class)->only(['create', 'store'])->middleware('permission:finance.commissions.create');
+        Route::resource('commissions', App\Http\Controllers\Finance\CommissionController::class)->only(['edit', 'update'])->middleware('permission:finance.commissions.update');
+        Route::resource('commissions', App\Http\Controllers\Finance\CommissionController::class)->only(['destroy'])->middleware('permission:finance.commissions.delete');
+        Route::post('commissions/{commission}/approve', [App\Http\Controllers\Finance\CommissionController::class, 'approve'])->name('commissions.approve')->middleware('permission:finance.commissions.approve');
+        Route::post('commissions/{commission}/mark-paid', [App\Http\Controllers\Finance\CommissionController::class, 'markAsPaid'])->name('commissions.mark-paid')->middleware('permission:finance.commissions.update');
+        Route::post('commissions/{commission}/cancel', [App\Http\Controllers\Finance\CommissionController::class, 'cancel'])->name('commissions.cancel')->middleware('permission:finance.commissions.update');
+        Route::post('commissions/{commission}/override-amount', [App\Http\Controllers\Finance\CommissionController::class, 'overrideAmount'])->name('commissions.override-amount')->middleware('permission:finance.commissions.update');
         // MOM 17 Nov 2026 p4: admin memajukan/memundurkan komisi kontrak antar periode
-        Route::post('commissions/{commission}/move-period', [App\Http\Controllers\Finance\CommissionController::class, 'movePeriod'])->name('commissions.move-period');
+        Route::post('commissions/{commission}/move-period', [App\Http\Controllers\Finance\CommissionController::class, 'movePeriod'])->name('commissions.move-period')->middleware('permission:finance.commissions.update');
 
         // Achievement System Routes
         Route::get('achievements/statistics', [App\Http\Controllers\Finance\AchievementController::class, 'statistics'])->name('achievements.statistics');
@@ -1122,9 +1126,12 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::resource('cr-variables', App\Http\Controllers\Finance\CrVariableController::class);
         Route::post('cr-variables/{crVariable}/set-default', [App\Http\Controllers\Finance\CrVariableController::class, 'setDefault'])->name('cr-variables.set-default');
 
-        Route::resource('marketing-targets', App\Http\Controllers\Finance\MarketingTargetController::class);
-        Route::post('marketing-targets/{marketingTarget}/lock', [App\Http\Controllers\Finance\MarketingTargetController::class, 'lock'])->name('marketing-targets.lock');
-        Route::post('marketing-targets/{marketingTarget}/unlock', [App\Http\Controllers\Finance\MarketingTargetController::class, 'unlock'])->name('marketing-targets.unlock');
+        Route::resource('marketing-targets', App\Http\Controllers\Finance\MarketingTargetController::class)->only(['index', 'show']);
+        Route::resource('marketing-targets', App\Http\Controllers\Finance\MarketingTargetController::class)->only(['create', 'store'])->middleware('permission:finance.marketing-targets.create');
+        Route::resource('marketing-targets', App\Http\Controllers\Finance\MarketingTargetController::class)->only(['edit', 'update'])->middleware('permission:finance.marketing-targets.update');
+        Route::resource('marketing-targets', App\Http\Controllers\Finance\MarketingTargetController::class)->only(['destroy'])->middleware('permission:finance.marketing-targets.delete');
+        Route::post('marketing-targets/{marketingTarget}/lock', [App\Http\Controllers\Finance\MarketingTargetController::class, 'lock'])->name('marketing-targets.lock')->middleware('permission:finance.marketing-targets.update');
+        Route::post('marketing-targets/{marketingTarget}/unlock', [App\Http\Controllers\Finance\MarketingTargetController::class, 'unlock'])->name('marketing-targets.unlock')->middleware('permission:finance.marketing-targets.update');
 
         Route::resource('renewal-contract-assignments', App\Http\Controllers\Finance\RenewalContractAssignmentController::class);
         Route::post('renewal-contract-assignments/{renewalContractAssignment}/lock', [App\Http\Controllers\Finance\RenewalContractAssignmentController::class, 'lock'])->name('renewal-contract-assignments.lock');

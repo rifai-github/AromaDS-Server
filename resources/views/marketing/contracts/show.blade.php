@@ -1242,6 +1242,29 @@
                                     ->reject(fn ($rental) => $rental->room_id && in_array((int) $rental->room_id, $contractRoomIds, true))
                                     ->values();
 
+                                // QA 23 Nov (kontrak 21131 RT-Y02 dobel): rental yang room_id-nya menunjuk
+                                // Master Room LAIN dengan gedung + nama ruangan sama (room dobel hasil
+                                // auto-create) ditempelkan ke ruangan kontrak itu, bukan jadi baris terpisah.
+                                $roomKey = fn ($masterRoom) => $masterRoom
+                                    ? ((int) $masterRoom->building_id).'|'.mb_strtolower(trim((string) $masterRoom->room_name))
+                                    : null;
+                                $contractRoomIdByKey = $contractRoomsList
+                                    ->filter(fn ($cr) => $cr->room)
+                                    ->mapWithKeys(fn ($cr) => [$roomKey($cr->room) => (int) $cr->room_id]);
+                                $looseRentals = $looseRentals->reject(function ($rental) use (&$rentalsByRoom, $contractRoomIdByKey, $roomKey) {
+                                    $key = $rental->room_id ? $roomKey($rental->room) : null;
+                                    $targetRoomId = $key ? $contractRoomIdByKey->get($key) : null;
+                                    if (! $targetRoomId) {
+                                        return false;
+                                    }
+                                    $rentalsByRoom = $rentalsByRoom->put(
+                                        $targetRoomId,
+                                        collect($rentalsByRoom->get($targetRoomId, collect()))->push($rental)
+                                    );
+
+                                    return true;
+                                })->values();
+
                                 // Same fallback as ContractRoom::getRentalProductAttribute(): on a single-room
                                 // contract the unassigned rentals can only belong to that room.
                                 if ($contractRoomsList->count() === 1 && $looseRentals->isNotEmpty()) {

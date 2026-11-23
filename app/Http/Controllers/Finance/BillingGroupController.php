@@ -1153,8 +1153,11 @@ class BillingGroupController extends Controller
                 'npwp_name' => 'nullable|string|max:255',
                 'npwp_address' => 'nullable|string',
                 // Tax Information
-                'tax_type' => 'nullable|in:NPWP,NIK,NITKU',
-                'tax_number' => 'nullable|string|max:50',
+                // QA 23 Nov: form Add Billing Group mengirim gabungan ("NPWP, NITKU") karena tiap
+                // NPWP membawa NITKU; aturan in:NPWP,NIK,NITKU menolaknya diam-diam sehingga
+                // billing group baru tak pernah tersimpan (sama dengan aturan update).
+                'tax_type' => 'nullable|string|max:100',
+                'tax_number' => 'nullable|string|max:255',
                 // Invoice Type
                 'invoice_type' => 'nullable|in:hard_copy,soft_copy,both,manual',
                 // Payment Method
@@ -1309,8 +1312,9 @@ class BillingGroupController extends Controller
                     'tax_type' => $taxType,
                     'tax_number' => $taxNumber,
                     'npwp' => !empty($taxNumbers) ? ($taxNumbers[0] ?? null) : null, // Simple fallback for first number
-                    'nitku' => (isset($taxMap['NITKU'])) ? $taxMap['NITKU'] : null,
-                    'nik' => (isset($taxMap['NIK'])) ? $taxMap['NIK'] : null,
+                    // $taxMap tak pernah didefinisikan; form addbg mengirim npwp/nitku/nik terpisah.
+                    'nitku' => $request->input('nitku') ?: null,
+                    'nik' => $request->input('nik') ?: null,
                     'ppn_code' => $ppnCode,
                     // Invoice Type
                     'invoice_type' => $request->invoice_type ?? 'soft_copy',

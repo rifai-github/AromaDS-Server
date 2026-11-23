@@ -16,6 +16,8 @@ use Illuminate\Support\Facades\Log;
 
 class ContractTerminationController extends Controller
 {
+    use \App\Http\Traits\AccessControlFilterTrait;
+
     protected $documentNumberService;
 
     public function __construct(DocumentNumberService $documentNumberService)
@@ -103,7 +105,8 @@ class ContractTerminationController extends Controller
      */
     public function index(Request $request)
     {
-        $query = ContractTermination::with([
+        // QA 23 Nov: ikut Hirarki Data (dulu semua terminasi tampil ke semua user).
+        $query = $this->applyContractRelatedAccessControlFilter(ContractTermination::query(), null, 'contract', 'requested_by', true)->with([
             'contract.customer',
             'requestedBy',
             'approvedBy',
@@ -165,11 +168,11 @@ class ContractTerminationController extends Controller
 
         // Statistics
         $statistics = [
-            'total' => ContractTermination::count(),
-            'draft' => ContractTermination::where('status', 'draft')->count(),
-            'pending_approval' => ContractTermination::where('status', 'pending_approval')->count(),
-            'approved' => ContractTermination::where('status', 'approved')->count(),
-            'rejected' => ContractTermination::where('status', 'rejected')->count(),
+            'total' => $this->applyContractRelatedAccessControlFilter(ContractTermination::query(), null, 'contract', 'requested_by', true)->count(),
+            'draft' => $this->applyContractRelatedAccessControlFilter(ContractTermination::query(), null, 'contract', 'requested_by', true)->where('status', 'draft')->count(),
+            'pending_approval' => $this->applyContractRelatedAccessControlFilter(ContractTermination::query(), null, 'contract', 'requested_by', true)->where('status', 'pending_approval')->count(),
+            'approved' => $this->applyContractRelatedAccessControlFilter(ContractTermination::query(), null, 'contract', 'requested_by', true)->where('status', 'approved')->count(),
+            'rejected' => $this->applyContractRelatedAccessControlFilter(ContractTermination::query(), null, 'contract', 'requested_by', true)->where('status', 'rejected')->count(),
         ];
 
         return view('marketing.contract-terminations.index', compact('terminations', 'statistics'));

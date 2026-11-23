@@ -505,7 +505,7 @@
                                        onchange="updateCityItemStyle(this)">
                                 <label for="city_{{ $city->id }}">{{ $city->name }}</label>
                                 @if($isAssignedToOther)
-                                    <span class="assigned-badge">Assigned</span>
+                                    <span class="assigned-badge" title="Sudah dipakai branch {{ $assignedOtherBranchNames[$city->id] ?? '-' }}">Assigned: {{ $assignedOtherBranchNames[$city->id] ?? '-' }}</span>
                                 @endif
                             </div>
                         @endforeach
@@ -733,7 +733,7 @@ function completeProvinceSection(section, provinceId) {
                                ${disabledAttr}
                                onchange="updateCityItemStyle(this)">
                         <label for="city_card2_${city.id}">${city.name}</label>
-                        ${city.assigned_to_other ? '<span class="assigned-badge">Assigned</span>' : ''}
+                        ${city.assigned_to_other ? `<span class="assigned-badge" title="Sudah dipakai branch ${city.assigned_branch || '-'}">Assigned: ${city.assigned_branch || '-'}</span>` : ''}
                     </div>
                 `);
             });
@@ -807,7 +807,7 @@ function loadCitiesForCard2(provinceId) {
                                    ${disabledAttr}
                                    onchange="updateCityItemStyle(this)">
                             <label for="city_card2_${city.id}">${city.name}</label>
-                            ${city.assigned_to_other ? '<span class="assigned-badge">Assigned</span>' : ''}
+                            ${city.assigned_to_other ? `<span class="assigned-badge" title="Sudah dipakai branch ${city.assigned_branch || '-'}">Assigned: ${city.assigned_branch || '-'}</span>` : ''}
                         </div>
                     `;
                 });

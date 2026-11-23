@@ -4189,7 +4189,10 @@ class JobController extends Controller
             return [];
         }
 
-        $roomQuantity = max((int) ($room->quantity ?? 1), 1);
+        // QA 23 Nov: unit yang diterbitkan Material Assign = qty + qty free (operational_quantity).
+        // Dulu hanya quantity, jadi rental qty 1 + free 1 dianggap selesai setelah 1 unit
+        // di-scan dan APK sudah menawarkan Verifikasi padahal unit ke-2 belum terpasang.
+        $roomQuantity = max((int) round((float) ($room->operational_quantity ?? $room->quantity ?? 1)), 1);
         $requiredByCategoryId = [];
 
         foreach ($rentalDetails as $detail) {

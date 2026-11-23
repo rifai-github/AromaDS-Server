@@ -1188,15 +1188,7 @@ function openCreateModal() {
                             <label class="form-label">Branch Name *</label>
                             <input type="text" name="name" class="form-input" required>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">Address Type *</label>
-                            <select name="address_type" class="form-input" required>
-                                <option value="">Select Address Type</option>
-                                <option value="office">Office</option>
-                                <option value="warehouse">Warehouse</option>
-                                <option value="both">Both</option>
-                            </select>
-                        </div>
+                        {{-- MOM 17-18 Nov: field Address Type dikeluarkan dari form (nilai lama tetap tersimpan). --}}
                         <div class="form-group">
                             <label class="form-label">Penanda Tangan Invoice</label>
                             <select name="invoice_authorized_by_user_id" class="form-input">
@@ -1604,15 +1596,6 @@ function openEditModal(id) {
                                     <div class="form-group">
                                         <label class="form-label">Branch Name *</label>
                                         <input type="text" name="name" class="form-input" value="${branch.name || ''}" required>
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label">Address Type *</label>
-                                        <select name="address_type" class="form-input" required>
-                                            <option value="">Select Address Type</option>
-                                            <option value="office" ${branch.address_type === 'office' ? 'selected' : ''}>Office</option>
-                                            <option value="warehouse" ${branch.address_type === 'warehouse' ? 'selected' : ''}>Warehouse</option>
-                                            <option value="both" ${branch.address_type === 'both' ? 'selected' : ''}>Both</option>
-                                        </select>
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">Penanda Tangan Invoice</label>

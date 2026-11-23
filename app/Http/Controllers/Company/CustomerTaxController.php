@@ -58,17 +58,29 @@ class CustomerTaxController extends Controller
         $query = CustomerTax::with(['customer', 'createdBy', 'updatedBy']);
 
         // Apply column filters via global filter row (table id: customerTaxesTable)
+        // QA 23 Nov: peta dulu berkunci nomor kolom lama (1-9) sementara filter row mengirim
+        // data-column (customer__name, is_active, ...), jadi filter Status "Inactive" jatuh ke
+        // LIKE pada kolom boolean dan tak menemukan apa pun. Kunci sekarang = data-column.
         $this->applyColumnFilters($query, 'customerTaxesTable', [
-            // 0 => Checkbox (skip)
-            1 => ['relation' => 'customer', 'column' => 'name'],
-            2 => ['column' => 'tax_number'],
-            3 => ['column' => 'tax_name'],
-            4 => ['column' => 'tax_type'],
-            5 => ['column' => 'tax_rate'],
-            6 => ['column' => 'effective_date'],
-            7 => ['column' => 'is_active', 'boolean' => true],
-            8 => ['relation' => 'createdBy', 'column' => 'name'],
-            9 => ['column' => 'updated_at'],
+            'customer.name' => ['relation' => 'customer', 'column' => 'name'],
+            'label' => ['column' => 'label'],
+            'tax_name' => ['column' => 'tax_name'],
+            'tax_number' => ['column' => 'tax_number'],
+            'nitku' => ['column' => 'nitku'],
+            'effective_date' => ['column' => 'effective_date', 'type' => 'date'],
+            // Badge Status di list membaca kolom `status` (active/inactive).
+            'is_active' => ['callback' => function ($q, string $term) {
+                $term = strtolower(trim($term));
+                if (str_starts_with($term, 'inact') || str_starts_with($term, 'non') || $term === '0') {
+                    $q->where('status', 'inactive');
+                } elseif (str_starts_with($term, 'act') || str_starts_with($term, 'aktif') || $term === '1') {
+                    $q->where('status', 'active');
+                }
+            }],
+            'createdBy.name' => ['relation' => 'createdBy', 'column' => 'name'],
+            'created_at' => ['column' => 'created_at', 'type' => 'date'],
+            'updatedBy.name' => ['relation' => 'updatedBy', 'column' => 'name'],
+            'updated_at' => ['column' => 'updated_at', 'type' => 'date'],
         ]);
 
         // Filter by customer (legacy or specific usage)
@@ -815,7 +827,7 @@ class CustomerTaxController extends Controller
         try {
             $newStatus = $customerTax->status === 'active' ? 'inactive' : 'active';
 
-            $customerTax->update(['status' => $newStatus]);
+            $customerTax->update(['status' => $newStatus, 'is_active' => $newStatus === 'active']);
 
             return back()->with('success', "Status pengaturan pajak berhasil diubah menjadi {$newStatus}.");
         } catch (\Exception $e) {

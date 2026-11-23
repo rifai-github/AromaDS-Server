@@ -42,6 +42,28 @@ trait AccessControlFilterTrait
     }
 
     /**
+     * Kolom branch hanya dipakai bila user punya Hirarki Data tipe Branch yang AKTIF.
+     *
+     * QA 23 Nov: Quotation/Contract dulu memanggil filter dengan branchField null, jadi user
+     * ber-Hirarki "Branch: Balikpapan, MANADO" hanya melihat datanya sendiri. Fallback
+     * users.branch_id di applyAccessControlFilter sengaja TIDAK dipakai untuk halaman ini
+     * (tanpa hirarki tetap "hanya data sendiri").
+     */
+    protected function explicitBranchAccessField(?string $branchField, $user = null): ?string
+    {
+        $user = $user ?: Auth::user();
+
+        if (! $user || ! $branchField || ! \Illuminate\Support\Facades\Schema::hasTable('user_access_levels')) {
+            return null;
+        }
+
+        return $user->accessLevels()
+            ->where('access_type', 'branch')
+            ->where('is_active', true)
+            ->exists() ? $branchField : null;
+    }
+
+    /**
      * Apply access control filter to query
      * Default: Jika tidak set hirarki, hanya bisa lihat data sendiri
      */
@@ -204,7 +226,7 @@ trait AccessControlFilterTrait
     /**
      * Apply hierarchy to records that belong to a contract.
      */
-    protected function applyContractRelatedAccessControlFilter($query, $user = null, $contractRelation = 'contract', $createdByField = 'created_by')
+    protected function applyContractRelatedAccessControlFilter($query, $user = null, $contractRelation = 'contract', $createdByField = 'created_by', bool $withBranchAccess = false)
     {
         if (!$user) {
             $user = Auth::user();
@@ -216,7 +238,10 @@ trait AccessControlFilterTrait
 
         $accessibleUserIds = $this->getAccessibleUserIds($user);
 
-        return $query->where(function ($q) use ($accessibleUserIds, $contractRelation, $createdByField) {
+        // Hirarki Data tipe Branch (eksplisit): kontrak yang quotation-nya di cabang itu ikut terlihat.
+        $branchIds = $withBranchAccess ? $this->explicitAccessBranchIds($user) : [];
+
+        return $query->where(function ($q) use ($accessibleUserIds, $contractRelation, $createdByField, $branchIds) {
             if ($createdByField) {
                 $q->whereIn($createdByField, $accessibleUserIds);
             }
@@ -226,7 +251,41 @@ trait AccessControlFilterTrait
                 $contractQuery->whereIn('created_by', $accessibleUserIds)
                     ->orWhereIn('marketing_id', $accessibleUserIds);
             });
+
+            if (! empty($branchIds)) {
+                $q->orWhereHas($contractRelation.'.quotation', function ($quotationQuery) use ($branchIds) {
+                    $quotationQuery->whereIn('branch_id', $branchIds);
+                });
+            }
         });
+    }
+
+    /**
+     * Cabang dari Hirarki Data tipe Branch yang aktif (kosong bila user tak punya baris itu).
+     */
+    protected function explicitAccessBranchIds($user = null): array
+    {
+        $user = $user ?: Auth::user();
+
+        if (! $user || ! \Illuminate\Support\Facades\Schema::hasTable('user_access_levels')) {
+            return [];
+        }
+
+        $branchAccess = $user->accessLevels()
+            ->where('access_type', 'branch')
+            ->where('is_active', true)
+            ->first();
+
+        if (! $branchAccess) {
+            return [];
+        }
+
+        $ids = ($branchAccess->access_config ?? [])['allowed_branches'] ?? [];
+        if (empty($ids) && $user->branch_id) {
+            $ids = [$user->branch_id];
+        }
+
+        return array_values(array_filter(array_map('intval', (array) $ids)));
     }
 
     /**

@@ -73,15 +73,25 @@
                         <div class="col-span-12 md:col-span-3">
                             <label class="block text-xs font-semibold text-gray-600 mb-1.5 uppercase">Badan Hukum <span class="text-red-500">*</span></label>
                             <select id="create_company_type_input" name="company_type" class="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all h-[42px] select2" required>
-                                <option value="">Select Type</option>
-                                <option value="pt">PT</option>
-                                <option value="cv">CV</option>
-                                <option value="firma">Firma</option>
-                                <option value="koperasi">Koperasi</option>
-                                <option value="perorangan">Perorangan</option>
-                                <option value="persero">Persero</option>
-                                <option value="yayasan">Yayasan</option>
-                                <option value="ud">UD</option>
+                                <option value="">Pilih Badan Hukum</option>
+                                {{-- QA 23 Nov: ikut Master Option 14 (Badan Hukum) seperti form Customer; dulu daftar ditulis tetap. --}}
+                                @php
+                                    $badanHukumOptions = isset($companyTypeOptions) && count($companyTypeOptions)
+                                        ? $companyTypeOptions
+                                        : \App\Models\OptionDetail::where('master_option_id', 14)->where('is_active', true)->orderBy('option_name')->get();
+                                @endphp
+                                @forelse($badanHukumOptions as $badanHukum)
+                                    <option value="{{ mb_strtolower($badanHukum->option_name) }}">{{ mb_strtoupper($badanHukum->option_name) }}</option>
+                                @empty
+                                    <option value="pt">PT</option>
+                                    <option value="cv">CV</option>
+                                    <option value="firma">Firma</option>
+                                    <option value="koperasi">Koperasi</option>
+                                    <option value="perorangan">Perorangan</option>
+                                    <option value="persero">Persero</option>
+                                    <option value="yayasan">Yayasan</option>
+                                    <option value="ud">UD</option>
+                                @endforelse
                             </select>
                             <input type="text" id="create_other_company_type" name="other_company_type" class="form-input-styled w-full px-3 py-2.5 mt-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hidden" placeholder="Specify Type">
                         </div>

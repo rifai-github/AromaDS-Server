@@ -1743,7 +1743,7 @@ function openCreateModal() {
             <!-- Document Lists Section -->
             <div class="form-group">
                 <label class="form-label" style="font-size: 16px; font-weight: 600; color: #214589; margin-bottom: 8px;">📄 Related Documents (Optional)</label>
-                <small class="text-gray-500" style="display: block; margin-bottom: 16px;">⚠️ Silakan pilih customer terlebih dahulu sebelum menambahkan dokumen</small>
+                <small class="text-gray-500 pipeline-doc-customer-hint" style="display: block; margin-bottom: 16px;">⚠️ Silakan pilih customer terlebih dahulu sebelum menambahkan dokumen</small>
                 
                 <!-- Quotation List -->
                 <div class="document-section" style="margin-bottom: 16px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; background-color: #f9fafb;">
@@ -1927,7 +1927,10 @@ function openCreateModal() {
             // Update hidden company_name when customer is selected
             $('#customer_id').on('change', function() {
                 const selectedOption = $(this).find('option:selected');
-                const customerName = selectedOption.data('name') || selectedOption.text() || '';
+                // select2 memicu 'change' SEBELUM 'select2:select', jadi data-name belum ada di
+                // <option> saat ini dibaca; ambil dari data select2 lebih dulu.
+                const customerData = ($(this).hasClass('select2-hidden-accessible') && $(this).select2('data')[0]) || {};
+                const customerName = selectedOption.attr('data-name') || customerData.name || selectedOption.text() || '';
                 const customerId = $(this).val();
                 
                 if (customerName && customerName !== 'Pilih atau ketik disini..') {
@@ -1958,8 +1961,11 @@ function openCreateModal() {
             // Update company_address textarea when building is selected
             $('#building_id').on('change', function() {
                 const selectedOption = $(this).find('option:selected');
-                const addr1 = selectedOption.attr('data-address') || '';
-                const addr2 = selectedOption.attr('data-address2') || '';
+                // select2 memicu 'change' sebelum 'select2:select' (yang menulis data-address ke <option>),
+                // jadi alamat building hasil pencarian AJAX diambil dari data select2.
+                const buildingData = ($(this).hasClass('select2-hidden-accessible') && $(this).select2('data')[0]) || {};
+                const addr1 = selectedOption.attr('data-address') || buildingData.address1 || '';
+                const addr2 = selectedOption.attr('data-address2') || buildingData.address2 || '';
                 
                 let fullAddress = addr1;
                 if (addr2) {
@@ -2283,8 +2289,11 @@ function openEditModal(id) {
                     // Event listener for building change in edit modal
                     $('#building_id_edit').on('change', function() {
                         const selectedOption = $(this).find('option:selected');
-                        const addr1 = selectedOption.attr('data-address') || '';
-                        const addr2 = selectedOption.attr('data-address2') || '';
+                        // select2 memicu 'change' sebelum 'select2:select' (yang menulis data-address ke <option>),
+                        // jadi alamat building hasil pencarian AJAX diambil dari data select2.
+                        const buildingData = ($(this).hasClass('select2-hidden-accessible') && $(this).select2('data')[0]) || {};
+                        const addr1 = selectedOption.attr('data-address') || buildingData.address1 || '';
+                        const addr2 = selectedOption.attr('data-address2') || buildingData.address2 || '';
 
                         let fullAddress = addr1;
                         if (addr2) {
@@ -3092,9 +3101,26 @@ function currentPipelineCustomerId() {
 }
 
 function refreshPipelineDocumentSelect(select) {
-    if (typeof jQuery !== 'undefined' && jQuery(select).hasClass('select2-hidden-accessible')) {
-        jQuery(select).trigger('change.select2');
+    if (typeof jQuery === 'undefined') {
+        return;
     }
+    const $select = jQuery(select);
+    if (!$select.hasClass('select2-hidden-accessible')) {
+        return;
+    }
+    // QA 23 Nov: select2 auto-init layout membekukan placeholder dari opsi pertama saat modal
+    // dibuka ("Select customer first"). Hanya trigger change.select2 tidak mengganti placeholder
+    // itu, jadi setelah dokumen customer dimuat dropdown tetap terlihat "Select customer first".
+    // Bangun ulang select2 dengan teks opsi pertama yang baru.
+    const dropdownParent = $select.closest('.modal, .modal-overlay, .modal-container');
+    $select.select2('destroy');
+    $select.select2({
+        placeholder: $select.find('option:first').text() || 'Pilih dokumen',
+        allowClear: true,
+        dropdownParent: dropdownParent.length ? dropdownParent : jQuery('body'),
+        width: '100%',
+        minimumResultsForSearch: 10
+    });
 }
 
 function loadPipelineDocuments(customerId) {
@@ -3135,6 +3161,9 @@ function loadPipelineDocuments(customerId) {
 function filterDocumentsByCustomer(customerId) {
     console.log('Loading related documents for customer ID:', customerId);
     const customerIdStr = customerId ? String(customerId) : null;
+    document.querySelectorAll('.pipeline-doc-customer-hint').forEach(hint => {
+        hint.style.display = customerIdStr ? 'none' : 'block';
+    });
 
     if (!customerIdStr) {
         PIPELINE_DOCUMENT_TYPES.forEach(docType => {
@@ -3196,6 +3225,8 @@ function filterContactsByCustomer(customerId, isEdit = false) {
     // Preserve the currently selected PIC (e.g. pre-filled when opening the edit
     // modal) so it can be re-selected once this customer's contacts have loaded.
     const previousPicName = $(hiddenId).val() || '';
+    const previousPhone = $(phoneId).val() || '';
+    const previousEmail = $(emailId).val() || '';
 
     selects.forEach(select => {
         if (!customerIdStr) {
@@ -3209,6 +3240,7 @@ function filterContactsByCustomer(customerId, isEdit = false) {
         select.innerHTML = '<option value="">Memuat kontak...</option>';
 
         fetch(`/api/customers/${customerIdStr}/contacts`, {
+            cache: 'no-store',
             headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
         })
             .then(response => response.json())
@@ -3218,16 +3250,30 @@ function filterContactsByCustomer(customerId, isEdit = false) {
                 select.innerHTML = '';
                 select.appendChild(new Option(contacts.length ? 'Pilih kontak..' : 'No contacts for this customer', ''));
 
+                let previousFound = false;
                 contacts.forEach(contact => {
                     const displayName = (contact.salutation ? contact.salutation + ' ' : '') + contact.name;
-                    const option = new Option(displayName, displayName, false, displayName === previousPicName);
+                    const isPrevious = previousPicName !== '' && (displayName === previousPicName || contact.name === previousPicName);
+                    previousFound = previousFound || isPrevious;
+                    const option = new Option(displayName, displayName, false, isPrevious);
                     option.setAttribute('data-customer-id', customerIdStr);
-                    option.setAttribute('data-phone', contact.phone || '');
-                    option.setAttribute('data-email', contact.email || '');
+                    option.setAttribute('data-phone', contact.phone || (isPrevious ? previousPhone : ''));
+                    option.setAttribute('data-email', contact.email || (isPrevious ? previousEmail : ''));
                     select.appendChild(option);
                 });
 
-                select.disabled = contacts.length === 0;
+                // QA 23 Nov: Edit Pipeline membuka PIC kosong karena PIC tersimpan tidak cocok persis
+                // dengan daftar kontak (beda salutation, kontak dihapus/diganti). Lalu 'change' di
+                // bawah menimpa nama/telepon/email tersimpan dengan nilai kosong. Pertahankan PIC lama.
+                if (isEdit && previousPicName && !previousFound) {
+                    const keep = new Option(previousPicName, previousPicName, true, true);
+                    keep.setAttribute('data-customer-id', customerIdStr);
+                    keep.setAttribute('data-phone', previousPhone);
+                    keep.setAttribute('data-email', previousEmail);
+                    select.appendChild(keep);
+                }
+
+                select.disabled = contacts.length === 0 && !(isEdit && previousPicName);
                 $(select).trigger('change');
             })
             .catch(error => {

@@ -1500,8 +1500,14 @@
                         <td>{{ $survey->display_company_name }}</td>
                         <td>{{ $survey->display_building_name }}</td>
                         <td>
-                            <div class="font-medium">{{ $survey->survey_location ?? 'N/A' }}</div>
-                            @if($survey->display_address_one && $survey->display_address_one !== $survey->survey_location)
+                            {{-- QA 23 Nov: survey bergedung menampilkan alamat Master Building terbaru saja;
+                                 salinan lama survey_location dulu ikut tercetak di atasnya. --}}
+                            @php
+                                $liveBuildingAddress = $survey->building && $survey->display_address_one;
+                                $locationMain = $liveBuildingAddress ? $survey->display_address_one : ($survey->survey_location ?: $survey->display_address_one);
+                            @endphp
+                            <div class="font-medium">{{ $locationMain ?: 'N/A' }}</div>
+                            @if(! $liveBuildingAddress && $survey->display_address_one && $survey->display_address_one !== $locationMain)
                                 <div class="text-xs text-gray-500 mt-0.5">{{ $survey->display_address_one }}</div>
                             @endif
                             @if($survey->display_address_two)

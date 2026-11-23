@@ -452,7 +452,7 @@ function openViewModal(id) {
                         </div>
                         <div>
                             <label class="block text-xs text-gray-500">Created At</label>
-                            <p class="text-sm font-medium">${b.created_at || '-'}</p>
+                            <p class="text-sm font-medium">${formatBankDateTimeWib(b.created_at)}</p>
                         </div>
                     </div>
                 </div>
@@ -507,8 +507,24 @@ function submitBank(id = null) {
     });
 }
 
+// QA 23 Nov: created_at dari JSON berformat UTC ISO (2026-11-22T23:39:04.000000Z); tampilkan WIB.
+function formatBankDateTimeWib(value) {
+    if (!value) {
+        return '-';
+    }
+    const date = new Date(value);
+    if (isNaN(date.getTime())) {
+        return value;
+    }
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(date).reduce((acc, part) => { acc[part.type] = part.value; return acc; }, {});
+    return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}.${parts.minute} WIB`;
+}
+
 function initiateDelete(id) {
-    if (confirm('Apakah Anda yakin ingin menghapus bank ini?')) {
+    if (confirm('Nonaktifkan bank ini? Data tetap tampil dengan status Inactive.')) {
         fetch(`/company/master-banks/${id}`, {
             method: 'DELETE',
             headers: {
@@ -528,7 +544,7 @@ function deleteSelected() {
     const ids = Array.from(document.querySelectorAll('.bank-checkbox:checked')).map(cb => cb.value);
     if (ids.length === 0) return alert('Pilih bank yang ingin dihapus terlebih dahulu');
 
-    if (confirm(`Apakah Anda yakin ingin menghapus ${ids.length} bank yang terpilih?`)) {
+    if (confirm(`Nonaktifkan ${ids.length} bank yang terpilih? Data tetap tampil dengan status Inactive.`)) {
         fetch('/company/master-banks/bulk-delete', {
             method: 'POST',
             headers: {

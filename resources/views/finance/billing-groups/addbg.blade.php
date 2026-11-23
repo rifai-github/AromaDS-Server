@@ -22,6 +22,18 @@
                 </div>
             @endif
 
+            {{-- QA 23 Nov: kegagalan validasi dulu tak terlihat (form hanya kembali tanpa pesan). --}}
+            @if($errors->any())
+                <div class="alert alert-danger" role="alert">
+                    <i class="fas fa-exclamation-circle me-2"></i>Billing group belum tersimpan:
+                    <ul class="mb-0 mt-1">
+                        @foreach($errors->all() as $message)
+                            <li>{{ $message }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
             <!-- Header -->
             <div class="card mb-4 shadow-sm" style="background-color: #1e3a8a; color: white; border: none; border-radius: 10px;">
                 <div class="card-header" style="background-color: #1e3a8a; border: none; padding: 1.5rem;">

@@ -1041,11 +1041,11 @@ function openCreateModal() {
                             <option value="">Pilih Tax Name</option>
                             <option value="NPWP">NPWP</option>
                             <option value="NIK">NIK</option>
-                            <option value="NITKU">NITKU</option>
+                            {{-- MOM 19 Nov: NITKU diisi lewat "Tambah NITKU" di bawah NPWP, bukan Tax Name tersendiri. --}}
                             <option value="KITAS/PASSPORT/KTP WNA">KITAS/PASSPORT/KTP WNA</option>
                             <option value="OTHER">OTHER</option>
                         </select>
-                        <small class="text-gray-600 mt-1">NPWP/NIK: 16 digit, NITKU: 22 digit</small>
+                        <small class="text-gray-600 mt-1">NPWP/NIK: 16 digit</small>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Tax Number *</label>
@@ -1259,11 +1259,11 @@ function openEditModal(id) {
                                 <select id="edit_tax_name" name="tax_name" class="form-input" required onchange="updateTaxNumberMaxLength('edit')">
                                     <option value="NPWP" ${data.data.tax_name === 'NPWP' ? 'selected' : ''}>NPWP</option>
                                     <option value="NIK" ${data.data.tax_name === 'NIK' ? 'selected' : ''}>NIK</option>
-                                    <option value="NITKU" ${data.data.tax_name === 'NITKU' ? 'selected' : ''}>NITKU</option>
+                                    ${data.data.tax_name === 'NITKU' ? '<option value="NITKU" selected>NITKU (data lama)</option>' : ''}
                                     <option value="KITAS/PASSPORT/KTP WNA" ${data.data.tax_name === 'KITAS/PASSPORT/KTP WNA' ? 'selected' : ''}>KITAS/PASSPORT/KTP WNA</option>
                                     <option value="OTHER" ${data.data.tax_name === 'OTHER' ? 'selected' : ''}>OTHER</option>
                                 </select>
-                                <small class="text-gray-600 mt-1">NPWP/NIK: 16 digit, NITKU: 22 digit</small>
+                                <small class="text-gray-600 mt-1">NPWP/NIK: 16 digit</small>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Tax Number *</label>

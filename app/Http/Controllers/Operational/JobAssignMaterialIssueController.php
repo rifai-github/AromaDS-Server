@@ -1312,6 +1312,10 @@ class JobAssignMaterialIssueController extends Controller
     public function getJobAssignScheduleDetails($id)
     {
         try {
+            // QA 23 Nov: material list rental hasil seed/import dihubungkan dulu (MOM 18 Nov p7).
+            app(\App\Services\Warehouse\RentalDetailMaterialSync::class)
+                ->ensureLinkedForJobAdvice(JobAssignSchedule::find($id)?->jobSchedule?->job_advice_id);
+
             $jobAssignSchedule = JobAssignSchedule::with([
                 'team', 
                 'jobSchedule.jobAdvice.customer',
@@ -4644,7 +4648,11 @@ class JobAssignMaterialIssueController extends Controller
     {
         // Delete existing items first
         $materialIssue->items()->delete();
-        
+
+        // QA 23 Nov: material list rental hasil seed/import dihubungkan dulu (MOM 18 Nov p7).
+        app(\App\Services\Warehouse\RentalDetailMaterialSync::class)
+            ->ensureLinkedForJobAdvice($jobAssignMaterialIssue->jobAssignSchedule?->jobSchedule?->job_advice_id);
+
         $jobAssignMaterialIssue->load([
             'jobAssignSchedule.jobSchedule.jobAdvice.rooms.rentalProduct.rentalDetails.masterProduct.packagingSize',
             'jobAssignSchedule.jobSchedule.jobAdvice.rooms.rentalProduct.rentalDetails.masterProduct.productCategory',
@@ -5605,19 +5613,47 @@ class JobAssignMaterialIssueController extends Controller
     /**
      * Helper to calculate BOM quantity robustly
      */
+    /**
+     * Isi ml dari teks Package Size: "250 ml", "250ml", "1000 mili", "1.000 ml", "1 L", "1,5 liter".
+     * Mengembalikan 0 bila tak ada satuan volume yang dikenali.
+     */
+    public static function packagingSizeToMl(string $name): float
+    {
+        if (! preg_match('/(\d+(?:[.,]\d+)*)\s*(ml|mili\w*|millilit\w*|l|lt|ltr|liter|litre)\b/i', $name, $matches)) {
+            return 0.0;
+        }
+
+        $number = $matches[1];
+        $unit = strtolower($matches[2]);
+        $isLitre = in_array($unit, ['l', 'lt', 'ltr', 'liter', 'litre'], true);
+
+        if (preg_match('/^\d{1,3}(\.\d{3})+$/', $number)) {
+            // "1.000" = ribuan gaya Indonesia
+            $number = str_replace('.', '', $number);
+        } elseif (preg_match('/^\d{1,3}(,\d{3})+$/', $number) && ! $isLitre) {
+            // "1,000 ml" = ribuan gaya Inggris
+            $number = str_replace(',', '', $number);
+        } else {
+            // "1,5 L" / "1.5 L" = desimal
+            $number = str_replace(',', '.', $number);
+        }
+
+        $value = (float) $number;
+
+        return $isLitre ? $value * 1000 : $value;
+    }
+
     private function calculateBomQuantity($product, $quantity)
     {
         if (!$product || $quantity <= 0) return 0;
 
         // Priority 1: Try to parse from Packaging Size (e.g., "250ml" -> 250)
         // This fixes the issue where database bom_quantity might be 1 but it should be 250
+        // QA 23 Nov: dulu hanya "N ml"; "1000mili", "1.000 ml", "1 L" jatuh ke bom_quantity.
         if ($product->packagingSize) {
-            preg_match('/(\d+)\s*ml/i', $product->packagingSize->name, $matches);
-            if (isset($matches[1])) {
-                $ml = (float)$matches[1];
-                if ($ml > 0) {
-                    return $quantity * $ml;
-                }
+            $ml = self::packagingSizeToMl((string) $product->packagingSize->name);
+            if ($ml > 0) {
+                return $quantity * $ml;
             }
         }
 
@@ -5771,6 +5807,10 @@ class JobAssignMaterialIssueController extends Controller
                 if ((float) $request->quantity > 0 && (float) $stock < (float) $request->quantity) {
                     $statusClass = 'status-rejected';
                     $displayStatus = 'OUT OF STOCK';
+                } elseif ((float) $request->quantity > 0) {
+                    // QA 23 Nov: belum Submit Issue tapi stok cukup = STOCK ADA (label saja).
+                    $statusClass = 'status-approved';
+                    $displayStatus = 'STOCK ADA';
                 } else {
                     $statusClass = 'status-pending';
                     $displayStatus = 'Pending';

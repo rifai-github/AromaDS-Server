@@ -19,12 +19,24 @@ use Illuminate\Support\Facades\Schema;
 
 class AromaChangeController extends Controller
 {
+    use \App\Http\Traits\AccessControlFilterTrait;
+
+    /**
+     * QA 23 Nov: list & statistik Aroma Switching dulu tanpa filter Hirarki Data, jadi user
+     * "hanya data sendiri" melihat permintaan semua marketing. Sekarang: permintaan yang ia
+     * ajukan, atau atas kontrak yang ia buat/pegang (plus cabang bila Hirarki Branch).
+     */
+    private function accessibleAromaChangeQuery()
+    {
+        return $this->applyContractRelatedAccessControlFilter(AromaChange::query(), null, 'contract', 'requested_by', true);
+    }
+
     /**
      * Display a listing of aroma changes
      */
     public function index(Request $request)
     {
-        $query = AromaChange::with([
+        $query = $this->accessibleAromaChangeQuery()->with([
             'contract',
             'contract.customer',
             'building',
@@ -72,11 +84,11 @@ class AromaChangeController extends Controller
 
         // Stats for view
         $stats = [
-            'draft' => AromaChange::draft()->count(),
-            'pending' => AromaChange::pending()->count(),
-            'approved' => AromaChange::approved()->count(),
-            'completed' => AromaChange::completed()->count(),
-            'total' => AromaChange::count()
+            'draft' => $this->accessibleAromaChangeQuery()->draft()->count(),
+            'pending' => $this->accessibleAromaChangeQuery()->pending()->count(),
+            'approved' => $this->accessibleAromaChangeQuery()->approved()->count(),
+            'completed' => $this->accessibleAromaChangeQuery()->completed()->count(),
+            'total' => $this->accessibleAromaChangeQuery()->count()
         ];
 
         // If AJAX request, return JSON

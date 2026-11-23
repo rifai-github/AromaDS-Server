@@ -55,8 +55,8 @@ class ContractController extends Controller
 
         // Apply access control filter (hierarchical data)
         // Default: Jika tidak set hirarki, hanya bisa lihat data sendiri
-        // NOTE: Pass null for branchField and warehouseField since contracts table doesn't have these columns
-        $query = $this->applyAccessControlFilter($query, null, 'created_by', 'marketing_id', null, null, null);
+        // Kontrak tak punya branch_id; Hirarki Data Branch berlaku lewat cabang quotation-nya.
+        $query = $this->applyAccessControlFilter($query, null, 'created_by', 'marketing_id', $this->explicitBranchAccessField('quotation.branch_id'), null, null);
 
         // Handle column filters manually for status and updated_at
         $filters = $request->input('filter', []);
@@ -3131,33 +3131,10 @@ class ContractController extends Controller
             // %name%` substring match here: two different customers whose names share a
             // substring (e.g. "Agustina" vs "Agustina Rahayu") would false-positive
             // against each other's VA and silently block generation for one of them.
-            $existingVA = \App\Models\CompanyVirtualAccount::where('customer_id', $customer->id)
-                ->orWhere('account_name', $customer->name)
-                ->get()
-                ->first(fn ($va) => filled($va->account_number) && ctype_digit($va->account_number));
-
-            if ($existingVA) {
-                // Rows matched only via the name/description fallback (pre-dating the
-                // customer_id fix) are otherwise invisible to Contract::collectCustomerVirtualAccounts(),
-                // which looks up by customer_id only — self-heal them here instead of
-                // requiring a separate backfill pass.
-                if (empty($existingVA->customer_id)) {
-                    $existingVA->update(['customer_id' => $customer->id]);
-                }
-
-                Log::info("Virtual Account already exists for customer {$customer->name} (ID: {$customer->id}, VA ID: {$existingVA->id})");
-
-                return;
-            }
-
-            // Get bank payment from billing group or use default
-            $bankPayment = null;
-
-            // Try to get from billing group
-            $billingGroup = $contract->billingGroup;
-            if ($billingGroup && isset($billingGroup->bank_payment_id)) {
-                $bankPayment = \App\Models\BankPayment::find($billingGroup->bank_payment_id);
-            }
+            // QA 23 Nov: VA otomatis mengikuti Bank Payment billing group kontrak. Dulu kolom
+            // billing_groups.bank_payment_id dibaca padahal tak ada, jadi selalu jatuh ke bank
+            // default (BCA) walau billing group memakai mis. PSI BII.
+            $bankPayment = $this->resolveBillingGroupBankPayment($contract);
 
             // If not found, try to get default bank payment
             if (! $bankPayment) {
@@ -3177,14 +3154,51 @@ class ContractController extends Controller
                 return;
             }
 
+            // Check if a *usable* VA already exists for this customer AT THIS BANK.
+            // Legacy Catalyst imports stuffed free text like "Bank Name - Holder (12345)"
+            // into account_number, which matches an account_name filter but is not a
+            // real generated VA (real ones are digits-only) — filtering to ctype_digit
+            // stops that legacy junk from permanently blocking auto-generation of a
+            // proper VA number for the customer.
+            //
+            // Matching is customer_id-exact, or account_name-exact as a fallback for
+            // legacy rows that predate customer_id being recorded (importer always set
+            // account_name to the customer's full name verbatim). Do NOT use a `LIKE
+            // %name%` substring match here: two different customers whose names share a
+            // substring (e.g. "Agustina" vs "Agustina Rahayu") would false-positive
+            // against each other's VA and silently block generation for one of them.
+            // VA di bank lain tidak menghalangi (customer bisa punya VA per bank).
+            $existingVA = \App\Models\CompanyVirtualAccount::where(function ($query) use ($customer) {
+                $query->where('customer_id', $customer->id)
+                    ->orWhere('account_name', $customer->name);
+            })
+                ->get()
+                ->first(fn ($va) => filled($va->account_number) && ctype_digit($va->account_number)
+                    && (empty($va->bank_payment_id) || (int) $va->bank_payment_id === (int) $bankPayment->id));
+
+            if ($existingVA) {
+                // Rows matched only via the name/description fallback (pre-dating the
+                // customer_id fix) are otherwise invisible to Contract::collectCustomerVirtualAccounts(),
+                // which looks up by customer_id only — self-heal them here instead of
+                // requiring a separate backfill pass.
+                if (empty($existingVA->customer_id)) {
+                    $existingVA->update(['customer_id' => $customer->id]);
+                }
+
+                Log::info("Virtual Account already exists for customer {$customer->name} (ID: {$customer->id}, VA ID: {$existingVA->id})");
+
+                return;
+            }
+
             // Get company (default to company_id = 7 or customer's company if exists)
             $companyId = 7; // Default company ID
             if ($customer->company_id) {
                 $companyId = $customer->company_id;
             }
 
-            // Generate account number using CompanyVirtualAccount::generateAccountNumber
-            $accountNumber = \App\Models\CompanyVirtualAccount::generateAccountNumber($companyId, $bankPayment->id);
+            // Nomor = prefix VA Bank Payment + suffix berurutan (aturan sama dgn VA manual);
+            // bank tanpa prefix tetap memakai kode perusahaan (88997...).
+            $accountNumber = \App\Models\CompanyVirtualAccount::generateAccountNumberForBank($bankPayment, $companyId);
 
             // Create Virtual Account
             $virtualAccount = \App\Models\CompanyVirtualAccount::create([
@@ -3209,6 +3223,54 @@ class ContractController extends Controller
             // Don't throw exception, just log the error
             return null;
         }
+    }
+
+    /**
+     * Bank Payment yang dipilih di billing group kontrak. billing_groups tidak menyimpan
+     * bank_payment_id; form menyimpan teks "Bank - Nama Akun (No Rekening)" di
+     * virtual_account_number dan nama bank di bank_name.
+     */
+    private function resolveBillingGroupBankPayment(Contract $contract): ?\App\Models\BankPayment
+    {
+        $groups = collect();
+        if (method_exists($contract, 'billingGroups')) {
+            $groups = $contract->billingGroups()->orderBy('id')->get();
+        }
+        if ($groups->isEmpty() && $contract->billingGroup) {
+            $groups = collect([$contract->billingGroup]);
+        }
+
+        foreach ($groups as $group) {
+            if (! empty($group->bank_payment_id)) {
+                $byId = \App\Models\BankPayment::find($group->bank_payment_id);
+                if ($byId) {
+                    return $byId;
+                }
+            }
+
+            $text = (string) ($group->virtual_account_number ?? '');
+            if (preg_match('/\(([^()]+)\)\s*$/', $text, $match)) {
+                $accountNumber = trim($match[1]);
+                $byAccount = \App\Models\BankPayment::where('account_number', $accountNumber)
+                    ->orderByDesc('is_active')
+                    ->first();
+                if ($byAccount) {
+                    return $byAccount;
+                }
+            }
+
+            $bankName = trim((string) ($group->bank_name ?? ''));
+            if ($bankName !== '') {
+                $matches = \App\Models\BankPayment::where('is_active', true)
+                    ->whereHas('bank', fn ($bank) => $bank->where('bank_name', $bankName)->orWhere('name', $bankName))
+                    ->get();
+                if ($matches->count() === 1) {
+                    return $matches->first();
+                }
+            }
+        }
+
+        return null;
     }
 
     // ================================================

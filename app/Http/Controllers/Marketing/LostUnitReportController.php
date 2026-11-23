@@ -32,7 +32,8 @@ class LostUnitReportController extends Controller
     {
         $this->mergeTableHeaderFilters($request);
 
-        $query = LostUnitReport::with(['contract', 'contract.customer', 'masterRental', 'room', 'items', 'items.room', 'items.masterRental', 'reporter', 'approver', 'updater', 'creator', 'invoice', 'jobAdvice.jobSchedules']);
+        // QA 23 Nov: ikut Hirarki Data (dulu semua laporan tampil ke semua user).
+        $query = $this->applyContractRelatedAccessControlFilter(LostUnitReport::query(), null, 'contract', 'created_by', true)->with(['contract', 'contract.customer', 'masterRental', 'room', 'items', 'items.room', 'items.masterRental', 'reporter', 'approver', 'updater', 'creator', 'invoice', 'jobAdvice.jobSchedules']);
 
         // Filter by report number
         if ($request->filled('report_number')) {
@@ -191,8 +192,8 @@ class LostUnitReportController extends Controller
         // Apply Access Control (Hierarchy)
         // We filter by marketing_id matching accessible users
         // For contracts, usually created_by is admin/sales_admin, but marketing_id is the owner
-        // NOTE: Pass null for branchField and warehouseField since contracts table doesn't have these columns
-        $query = $this->applyAccessControlFilter($query, $user, 'created_by', 'marketing_id', null, null, null);
+        // Kontrak tak punya branch_id; Hirarki Data Branch berlaku lewat cabang quotation-nya.
+        $query = $this->applyAccessControlFilter($query, $user, 'created_by', 'marketing_id', $this->explicitBranchAccessField('quotation.branch_id', $user), null, null);
         
         // Filter: Must have BA Date (at least one job started)
         $query->whereHas('jobSchedules', function($q) {

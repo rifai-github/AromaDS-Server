@@ -1020,7 +1020,7 @@
                                                     <option value="rental">Basis Rental</option>
                                                 </select>
                                                 <small class="text-muted">
-                                                    <strong>Basis Ruangan:</strong> Summary menampilkan nama ruangan & total (tanpa qty)<br>
+                                                    <strong>Basis Ruangan:</strong> Summary menampilkan nama ruangan beserta rental, qty & total<br>
                                                     <strong>Basis Rental:</strong> Summary menampilkan detail rental (tanpa nama ruangan)
                                                 </small>
                                             </div>
@@ -4684,8 +4684,22 @@ $(document).ready(function() {
         }
         
         // UAT 18 Nov: summary step 7 selalu menampilkan qty, free, harga, dan rental untuk kedua
-        // basis harga; perbedaan basis Ruangan vs Rental hanya berlaku di printout. Ringkasan
-        // per ruangan (tanpa qty) di bawah sengaja dimatikan.
+        // basis harga. Ringkasan per ruangan (tanpa qty) di bawah sengaja dimatikan.
+        // QA 23 Nov: Basis Ruangan = baris tetap per rental (qty tetap ada) tetapi diberi judul
+        // nama ruangan; Basis Rental = nama rental saja.
+        const summaryRoomLabel = (roomId, domText) => {
+            const fromDom = (domText || '').trim();
+            if (fromDom && !/^pilih/i.test(fromDom)) {
+                return fromDom;
+            }
+            if (typeof globalRoomSelections !== 'undefined' && Array.isArray(globalRoomSelections)) {
+                const match = globalRoomSelections.find(r => String(r.room_id) === String(roomId));
+                if (match && match.room_name) {
+                    return match.room_name;
+                }
+            }
+            return '';
+        };
         const summaryGroupsByRoom = false;
         if (summaryGroupsByRoom && priceBasis === 'room') {
             // ROOM BASIS: Show room name + aroma + total (no qty, no rental details)
@@ -4833,6 +4847,9 @@ $(document).ready(function() {
                 const remark = config.find('textarea[name*="remark"]').val() || config.find('input[name*="remark"]').val() || '';
                 const roomId = config.data('room-id') || config.find('input[name*="room_id"]').val() || 'unknown';
                 const surveyId = config.data('survey-id') || '';
+                const roomLabel = priceBasis === 'room'
+                    ? summaryRoomLabel(roomId, config.find('select[name*="room_id"] option:selected').text() || config.find('.room-display-container input[type="text"]').val() || '')
+                    : '';
                 
                 // Find aroma for this room
                 let aromaText = '';
@@ -4861,7 +4878,7 @@ $(document).ready(function() {
                             return `
                                 <tr>
                                     <td>
-                                        <strong>${displayName}</strong>
+                                        ${roomLabel ? `<strong>${roomLabel}</strong><br><small>${displayName}</small>` : `<strong>${displayName}</strong>`}
                                         ${rentalAlias ? `<br><small class="text-muted">(${productName})</small>` : ''}
                                         ${aromaText}
                                         ${remark ? `<br><small class="text-info">Remark: ${remark}</small>` : ''}
@@ -4890,6 +4907,7 @@ $(document).ready(function() {
                     const remark = config.remark || '';
                     const roomId = config.roomId || '';
                     const surveyId = config.surveyId || '';
+                    const roomLabel = priceBasis === 'room' ? summaryRoomLabel(roomId, config.roomName || '') : '';
                     
                     // Find aroma for this room
                     let aromaText = '';
@@ -4917,7 +4935,7 @@ $(document).ready(function() {
                                 return `
                                     <tr>
                                         <td>
-                                            <strong>${displayName}</strong>
+                                            ${roomLabel ? `<strong>${roomLabel}</strong><br><small>${displayName}</small>` : `<strong>${displayName}</strong>`}
                                             ${rentalAlias ? `<br><small class="text-muted">(${productName})</small>` : ''}
                                             ${aromaText}
                                             ${remark ? `<br><small class="text-info">Remark: ${remark}</small>` : ''}

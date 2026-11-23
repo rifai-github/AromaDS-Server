@@ -362,9 +362,10 @@
         $qrFooterSrc = $qrPng($companyWebsite !== '' ? $companyWebsite : 'https://www.adsscent.com', 56);
 
         /* ===== Survey Untuk block ===== */
-        $surveyForName = trim((string) (\App\Models\Survey::decodeStoredHtmlEntities($survey->company_name) ?? $survey->customer->name ?? '-'));
-        $address1 = $survey->survey_location ?? $survey->building->building_address ?? '';
-        $address2 = $survey->building->alamat_2 ?? '';
+        // QA 23 Nov: nama & alamat ikut master terbaru (sama dengan Basic Info), salinan survey cadangan.
+        $surveyForName = trim((string) (\App\Models\Survey::decodeStoredHtmlEntities($survey->display_company_name) ?: '-'));
+        $address1 = $survey->display_address_one ?? $survey->survey_location ?? $survey->building->building_address ?? '';
+        $address2 = $survey->display_address_two ?? '';
         $surveyForAddress = trim($address1);
         if (!empty($address2)) {
             $surveyForAddress .= '. ' . $address2;

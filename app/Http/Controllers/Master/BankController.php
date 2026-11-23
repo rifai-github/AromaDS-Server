@@ -184,22 +184,19 @@ class BankController extends Controller
         try {
             DB::beginTransaction();
 
-            // Check if bank is being used in bank payments
-            $bankPaymentsCount = $master_bank->bankPayments()->count();
-            if ($bankPaymentsCount > 0) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "Cannot delete bank. It is being used in {$bankPaymentsCount} bank payment(s)."
-                ], 422);
-            }
-
-            $master_bank->delete();
+            // QA 23 Nov (MOM 18 Nov #18): hapus = nonaktifkan, data tetap tampil berstatus
+            // Inactive (sama seperti Bank Payment/VA/Customer Tax). Karena tak ada baris yang
+            // hilang, bank yang dipakai Bank Payment pun aman dinonaktifkan.
+            $master_bank->update([
+                'is_active' => false,
+                'updated_by' => Auth::id(),
+            ]);
 
             DB::commit();
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Bank deleted successfully'
+                'message' => 'Bank dinonaktifkan (status Inactive).'
             ]);
         } catch (\Exception $e) {
             DB::rollback();
@@ -233,21 +230,21 @@ class BankController extends Controller
 
             foreach ($request->ids as $id) {
                 $bank = Bank::find($id);
-                
-                // Check if bank is being used
-                $bankPaymentsCount = $bank->bankPayments()->count();
-                if ($bankPaymentsCount > 0) {
-                    $errors[] = "Bank '{$bank->bank_name}' cannot be deleted. It is being used in {$bankPaymentsCount} bank payment(s).";
+                if (! $bank) {
                     continue;
                 }
 
-                $bank->delete();
+                // QA 23 Nov: hapus massal = nonaktifkan.
+                $bank->update([
+                    'is_active' => false,
+                    'updated_by' => Auth::id(),
+                ]);
                 $deletedCount++;
             }
 
             DB::commit();
 
-            $message = "Successfully deleted {$deletedCount} bank(s).";
+            $message = "{$deletedCount} bank dinonaktifkan (status Inactive).";
             if (!empty($errors)) {
                 $message .= " " . implode(' ', $errors);
             }

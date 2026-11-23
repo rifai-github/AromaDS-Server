@@ -1397,7 +1397,13 @@
             @endif
 
             <!-- Operational - Check by permission -->
-            @if(auth()->user()->canAccessModule('operational'))
+            {{-- QA 23 Nov: grup tampil hanya bila ada item yang boleh dibuka. canAccessModule('operational')
+                 lolos oleh izin apa pun berawalan operational. (mis. master-buildings yang di Master Roles
+                 tercantum di tab Marketing), sehingga grup tetap muncul walau semua item di-uncheck. --}}
+            @if(auth()->user()->canAccessMenuItem('operational.job-schedules')
+                || auth()->user()->canAccessMenuItem('operational.job-assign-material-issues')
+                || auth()->user()->canAccessMenuItem('operational.master-team')
+                || auth()->user()->canAccessMenuItem('operational.master-rooms'))
             @php
                 // Routes that are actually in Operational menu (exclude buildings which moved to Marketing)
                 $operationalMenuRoutes = [
@@ -1719,7 +1725,19 @@
             @endif
 
             <!-- System - Check by permission -->
-            @if(auth()->user()->canAccessModule('system'))
+            @php
+                $canSystemSettings = auth()->user()->canAccessMenuItem('system.settings')
+                    || auth()->user()->canAccessMenuItem('settings.system');
+                $hasSystemMenuAccess = $canSystemSettings
+                    || auth()->user()->canAccessMenuItem('system.users')
+                    || auth()->user()->canAccessMenuItem('system.roles')
+                    || auth()->user()->canAccessMenuItem('system.access-control')
+                    || auth()->user()->canAccessMenuItem('system.provinces')
+                    || auth()->user()->canAccessMenuItem('system.audit-trails')
+                    || auth()->user()->canAccessMenuItem('system.backup-restore');
+            @endphp
+            {{-- QA 23 Nov: sama seperti Operational, grup System ikut item yang terlihat. --}}
+            @if($hasSystemMenuAccess)
             @php
                 // Explicit list of routes shown in the System menu.
                 // Do NOT use a bare 'system.*' wildcard here: some system.* routes
@@ -1774,11 +1792,17 @@
                 @if(auth()->user()->canAccessMenuItem('system.backup-restore'))
                 <li data-tooltip="Backup (Import/Export)" class="{{ request()->routeIs('system.backup-restore.*') || request()->routeIs('system.catalyst-import.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.backup-restore.index') }}')">Backup (Import/Export)</li>
                 @endif
+                @if($canSystemSettings)
                 <li data-tooltip="System Settings" class="{{ request()->routeIs('settings.system.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('settings.system.index') }}')">System Settings</li>
+                @endif
             </ul>
             @endif
 
-            <!-- Report - Available for all roles -->
+            <!-- Report: tampil bila minimal satu laporan diizinkan (QA 23 Nov; dulu selalu tampil kosong) -->
+            @if(auth()->user()->hasPermission('reports.warehouse')
+                || auth()->user()->hasPermission('reports.operational')
+                || auth()->user()->hasPermission('reports.finance')
+                || auth()->user()->hasPermission('reports.marketing'))
             <div class="menu-item has-submenu {{ request()->routeIs('report.*') ? 'active' : '' }}" onclick="toggleSubmenu(this)">
                 <div class="left">
                     <i class="fas fa-chart-line"></i>
@@ -1801,6 +1825,7 @@
                 <li data-tooltip="Marketing Report" class="{{ request()->routeIs('report.marketing.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('report.marketing.index') }}')">Marketing Report</li>
                 @endif
             </ul>
+            @endif
 
             <!-- Settings -->
            <!-- <div class="menu-item has-submenu {{ request()->routeIs('setting.*') ? 'active' : '' }}" onclick="toggleSubmenu(this)">
