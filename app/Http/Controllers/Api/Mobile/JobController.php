@@ -6686,9 +6686,11 @@ class JobController extends Controller
      */
     public function arrivedAtLocation(Request $request, $id)
     {
+        // QA 23 Nov (lihat memori GPS hardcoded): APK dulu selalu mengirim -6.2088/106.8456 (Monas)
+        // saat GPS tak terbaca. Kini koordinat boleh kosong: status tetap tercatat, lokasi palsu tidak.
         $request->validate([
-            'latitude' => 'required|numeric|between:-90,90',
-            'longitude' => 'required|numeric|between:-180,180',
+            'latitude' => 'nullable|numeric|between:-90,90|required_with:longitude',
+            'longitude' => 'nullable|numeric|between:-180,180|required_with:latitude',
             'device_info' => 'nullable|string',
         ]);
 
@@ -6728,17 +6730,20 @@ class JobController extends Controller
             ->where('user_id', Auth::id())
             ->value('team_id');
         
-        // Save location to job_team_locations
-        $location = \App\Models\JobTeamLocation::create([
-            'job_schedule_id' => $job->id,
-            'user_id' => Auth::id(),
-            'team_id' => $userTeamId,
-            'latitude' => $request->latitude,
-            'longitude' => $request->longitude,
-            'device_info' => $request->device_info,
-            'action' => 'arrived',
-            'recorded_at' => now()
-        ]);
+        // Save location to job_team_locations (hanya bila APK benar-benar membaca GPS)
+        $location = null;
+        if ($request->filled('latitude') && $request->filled('longitude')) {
+            $location = \App\Models\JobTeamLocation::create([
+                'job_schedule_id' => $job->id,
+                'user_id' => Auth::id(),
+                'team_id' => $userTeamId,
+                'latitude' => $request->latitude,
+                'longitude' => $request->longitude,
+                'device_info' => $request->device_info,
+                'action' => 'arrived',
+                'recorded_at' => now()
+            ]);
+        }
         
         // Update job status to 'teknisi_tiba_dilokasi' when technician arrives at location
         // Status: barang_diambil → teknisi_tiba_dilokasi (setelah cek material, sebelum mulai pekerjaan)
@@ -6770,12 +6775,12 @@ class JobController extends Controller
         
         return response()->json([
             'status' => 'success',
-            'message' => 'Lokasi berhasil dicatat',
+            'message' => $location ? 'Lokasi berhasil dicatat' : 'Tiba di lokasi dicatat tanpa koordinat GPS',
             'data' => [
-                'id' => $location->id,
-                'latitude' => $location->latitude,
-                'longitude' => $location->longitude,
-                'recorded_at' => $location->recorded_at->format('Y-m-d H:i:s'),
+                'id' => $location?->id,
+                'latitude' => $location?->latitude,
+                'longitude' => $location?->longitude,
+                'recorded_at' => ($location?->recorded_at ?? now())->format('Y-m-d H:i:s'),
             ]
         ]);
     }
