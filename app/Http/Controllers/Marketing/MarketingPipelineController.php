@@ -36,8 +36,8 @@ class MarketingPipelineController extends Controller
 
         // Apply access control filter (hierarchical data)
         // Default: Jika tidak set hirarki, hanya bisa lihat data sendiri
-        // NOTE: Pass null for branchField and warehouseField since marketing_pipelines table doesn't have these columns
-        $query = $this->applyAccessControlFilter($query, null, 'created_by', 'assigned_to', null, null, null);
+        // QA 23 Nov: Hirarki Data Branch berlaku lewat cabang gedung pipeline (buildings.branch_id).
+        $query = $this->applyAccessControlFilter($query, null, 'created_by', 'assigned_to', $this->explicitBranchAccessField('building.branch_id'), null, null);
 
         $columnMap = [
             'follow_up_date' => ['column' => 'marketing_pipelines.follow_up_date', 'type' => 'date'],

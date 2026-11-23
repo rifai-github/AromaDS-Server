@@ -48,8 +48,8 @@ class SurveyController extends Controller
 
         // Apply access control filter (hierarchical data)
         // Default: Jika tidak set hirarki, hanya bisa lihat data sendiri
-        // NOTE: Pass null for branchField and warehouseField since surveys table doesn't have these columns
-        $query = $this->applyAccessControlFilter($query, null, 'created_by', 'marketing_id', null, null, null);
+        // QA 23 Nov: Hirarki Data Branch berlaku lewat cabang gedung survey (buildings.branch_id).
+        $query = $this->applyAccessControlFilter($query, null, 'created_by', 'marketing_id', $this->explicitBranchAccessField('building.branch_id'), null, null);
 
         // Apply column filters - handle updated_at filter manually to avoid relation issues
         $filters = $request->input('filter', []);

@@ -146,8 +146,13 @@ class JobAdviceController extends Controller
 
         // Apply access control filter (hierarchical data)
         // Default: Jika tidak set hirarki, hanya bisa lihat data sendiri
-        // NOTE: Pass null for branchField and warehouseField since job_advices table doesn't have these columns
-        $query = $this->applyAccessControlFilter($query, null, 'created_by', 'request_by', null, null, null);
+        // QA 23 Nov: Hirarki Data Branch berlaku lewat cabang quotation JA (langsung atau lewat kontrak).
+        $jaBranchIds = $this->explicitAccessBranchIds();
+        $jaBranchLogic = empty($jaBranchIds) ? null : function ($containerQuery) use ($jaBranchIds) {
+            $containerQuery->orWhereHas('quotation', fn ($q) => $q->whereIn('branch_id', $jaBranchIds))
+                ->orWhereHas('contract.quotation', fn ($q) => $q->whereIn('branch_id', $jaBranchIds));
+        };
+        $query = $this->applyAccessControlFilter($query, null, 'created_by', 'request_by', null, $jaBranchLogic, null);
 
         // Handle submittedBy.name filter (relation filter)
         if ($hasSubmittedByFilter && !empty($submittedByFilterValue)) {
