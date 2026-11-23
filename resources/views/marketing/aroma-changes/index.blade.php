@@ -1094,8 +1094,8 @@ function normalizeAromaName(value) {
 }
 
 // Grade order client-confirmed (MoM correction): Signature (1, lowest) < Artisan (2) < Luxo (3, highest).
-// Keep in sync with AromaChange::BRAND_LINE_GRADE on the backend.
-const BRAND_LINE_GRADE = { signature: 1, artisan: 2, luxo: 3 };
+// Diambil dari AromaChange::brandLineGradeMap() supaya tetap benar setelah Brand Line di-rename.
+const BRAND_LINE_GRADE = @json((object) \App\Models\AromaChange::brandLineGradeMap());
 
 function brandLineGrade(brandLine) {
     const key = normalizeBrandLine(brandLine);

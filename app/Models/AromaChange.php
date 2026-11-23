@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use App\Traits\HasComprehensiveAuditTrail;
 
 class AromaChange extends Model
@@ -90,9 +92,54 @@ class AromaChange extends Model
      */
     public static function brandLineGrade(?string $brandLine): ?int
     {
-        $key = strtolower(trim((string) $brandLine));
+        $key = mb_strtolower(trim((string) $brandLine));
 
-        return self::BRAND_LINE_GRADE[$key] ?? null;
+        return self::brandLineGradeMap()[$key] ?? null;
+    }
+
+    /**
+     * Grade per nama brand line (lowercase) => 1..3.
+     *
+     * Brand Line bisa di-rename di Master Option (BrandLineRenameSync ikut mengganti
+     * master_products.brand_line), jadi grade tidak boleh bergantung pada nama. Sumber utama:
+     * kolom option_details.brand_line_grade di master option "Brand Lines" (menempel pada
+     * barisnya, tetap walau namanya diganti). BRAND_LINE_GRADE hanya cadangan bila kolom/baris
+     * itu belum ada (sebelum migrate, atau DB tanpa master option Brand Lines).
+     *
+     * @return array<string, int>
+     */
+    public static function brandLineGradeMap(): array
+    {
+        return once(function () {
+            try {
+                if (! Schema::hasTable('option_details')
+                    || ! Schema::hasTable('master_options')
+                    || ! Schema::hasColumn('option_details', 'brand_line_grade')) {
+                    return self::BRAND_LINE_GRADE;
+                }
+
+                $query = DB::table('option_details')
+                    ->join('master_options', 'master_options.id', '=', 'option_details.master_option_id')
+                    ->where('master_options.name', 'Brand Lines')
+                    ->whereNotNull('option_details.brand_line_grade');
+
+                if (Schema::hasColumn('option_details', 'deleted_at')) {
+                    $query->whereNull('option_details.deleted_at');
+                }
+
+                $map = [];
+                foreach ($query->get(['option_details.option_name', 'option_details.brand_line_grade']) as $row) {
+                    $key = mb_strtolower(trim((string) $row->option_name));
+                    if ($key !== '') {
+                        $map[$key] = (int) $row->brand_line_grade;
+                    }
+                }
+
+                return $map !== [] ? $map : self::BRAND_LINE_GRADE;
+            } catch (\Throwable $e) {
+                return self::BRAND_LINE_GRADE;
+            }
+        });
     }
 
     // Relationships

@@ -57,6 +57,9 @@ class BrandLineRenameSync
                     'updated_at' => now(),
                 ]);
 
+            // Peta grade Aroma Switching (AromaChange::brandLineGradeMap) dikunci per nama.
+            \Illuminate\Support\Once::flush();
+
             Log::info('Brand Line rename disinkronkan ke master_products', [
                 'option_detail_id' => $detail->id,
                 'old_name' => $oldName,
