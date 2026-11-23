@@ -939,7 +939,9 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
 
     public function test_non_unit_batch_serial_can_be_reused_in_return_receiving_from_issuing(): void
     {
-        $this->seedNonSerialProduct();
+        // Batch SN (Has SN = Yes, Is Unit = No). Sejak 23 Nov 2026 produk Has SN = No tidak
+        // menerima SN sama sekali di Receiving.
+        $this->seedNonSerialProduct(hasSerialNumber: true);
 
         DB::table('inventory_issuings')->insert([
             'id' => 80,
@@ -1124,12 +1126,12 @@ class InventoryReceivingReturnedSerialStatusTest extends TestCase
         return InventoryReceiving::findOrFail(50);
     }
 
-    private function seedNonSerialProduct(): void
+    private function seedNonSerialProduct(bool $hasSerialNumber = false): void
     {
         DB::table('product_categories')->insert([
             'id' => 11,
             'name' => 'Consumable',
-            'has_serial_number' => false,
+            'has_serial_number' => $hasSerialNumber,
             'is_unit' => false,
             'created_at' => now(),
             'updated_at' => now(),

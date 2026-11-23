@@ -29,6 +29,13 @@ class InventoryReceivingController extends Controller
             ?? false);
     }
 
+    private function serialNotUsedMessage($product): string
+    {
+        $productName = $product->name ?? 'Produk ini';
+
+        return "{$productName} tidak memakai Serial Number (setting Has Serial Number = No di Category / Product Type). Terima barangnya lewat Update Qty Received.";
+    }
+
     private function productIsUnit($product): bool
     {
         if ($product?->productCategory && $product->productCategory->is_unit !== null) {
@@ -201,6 +208,18 @@ class InventoryReceivingController extends Controller
                 'message' => "Serial Number {$serialNumber} terdaftar sebagai {$productName}, dan produk itu tidak ada di receiving ini.",
             ];
         }
+
+        // SN lama milik produk yang setting-nya kini Has SN = No tidak lagi diterima.
+        $serialCandidates = $candidates->filter(fn ($items) => $this->productRequiresSerialNumber($items->first()?->product));
+
+        if ($serialCandidates->isEmpty()) {
+            return [
+                'status' => 'error',
+                'message' => $this->serialNotUsedMessage($candidates->first()->first()?->product),
+            ];
+        }
+
+        $candidates = $serialCandidates;
 
         if ($candidates->count() > 1) {
             // A batch code shared by several products in the same receiving: the remaining
@@ -1337,6 +1356,19 @@ class InventoryReceivingController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Produk tidak ditemukan di inventory receiving ini.',
+                ], 422);
+            }
+
+            // Klien 23 Nov 2026: SN hanya untuk produk yang setting-nya Has SN = Yes.
+            // Dulu SN "opsional" boleh diisi di sini dan membuat produk itu wajib SN
+            // selamanya di Issuing s/d APK, apa pun setting kategorinya.
+            if (! $this->productRequiresSerialNumber($selectedProduct)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $this->serialNotUsedMessage($selectedProduct),
+                    'checklist' => $this->buildReceivingSerialChecklist($inventoryReceiving),
                 ], 422);
             }
 

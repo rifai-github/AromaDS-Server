@@ -378,10 +378,11 @@ class InventoryReceivingScanSerialAutoResolveTest extends TestCase
         $this->assertTrue($row['is_unit']);
     }
 
-    public function test_new_batch_code_for_refill_without_sn_flag_is_created_once_targeted(): void
+    public function test_refill_without_sn_flag_refuses_serial_at_receiving(): void
     {
-        // UAT 18 Nov: refill yang kategorinya tak ber-flag SN dulu cuma "tanpa SN" di checklist
-        // scan global, jadi kode batch baru balik 'unknown' tanpa produk yang bisa dipilih.
+        // Klien 23 Nov 2026 (membalik UAT 18 Nov): SN hanya untuk produk yang setting-nya
+        // Has SN = Yes. SN "opsional" untuk refill tanpa flag dulu membuat produk itu wajib SN
+        // selamanya di Issuing s/d APK walau kategorinya No.
         DB::table('product_categories')->insert([
             'id' => 12, 'name' => 'Refill Tanpa Flag', 'has_serial_number' => false, 'is_unit' => false,
             'created_at' => now(), 'updated_at' => now(),
@@ -399,25 +400,43 @@ class InventoryReceivingScanSerialAutoResolveTest extends TestCase
 
         $row = collect($unknown['checklist']['rows'])->firstWhere('product_id', 300);
         $this->assertFalse($row['requires_serial']);
-        $this->assertFalse($row['is_unit']);
 
-        $payload = $this->scan(['serial_number' => 'BATCH-NEW-01', 'master_product_id' => 300]);
-        $this->assertSame('success', $payload['status']);
-        $this->assertDatabaseHas('serial_numbers', [
-            'serial_number' => 'BATCH-NEW-01',
-            'master_product_id' => 300,
-            'inventory_receiving_id' => 1,
-            'status' => 'pending',
+        $payload = $this->scan(['serial_number' => 'BATCH-NEW-01', 'master_product_id' => 300], expectedStatus: 422);
+        $this->assertSame('error', $payload['status']);
+        $this->assertStringContainsString('tidak memakai Serial Number', $payload['message']);
+        $this->assertDatabaseMissing('serial_numbers', ['serial_number' => 'BATCH-NEW-01']);
+
+        // Checklist UI: hanya baris wajib SN yang bisa jadi target scan.
+        $view = file_get_contents(resource_path('views/warehouse/inventory-receivings/show.blade.php'));
+        $this->assertStringContainsString('const action = row.requires_serial', $view);
+        $this->assertStringNotContainsString('SN opsional', $view);
+        $this->assertStringNotContainsString('Input Batch SN (Optional)', $view);
+    }
+
+    public function test_old_serial_of_product_now_without_sn_flag_is_refused_on_auto_resolve(): void
+    {
+        // Produk yang dulu sempat diberi SN lalu setting-nya No: scan SN lamanya tidak lagi
+        // diterima walau kodenya terdaftar untuk produk di receiving ini.
+        DB::table('product_categories')->insert([
+            'id' => 12, 'name' => 'Refill Tanpa Flag', 'has_serial_number' => false, 'is_unit' => false,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('master_products')->insert([
+            'id' => 300, 'product_category_id' => 12, 'name' => 'Refill Vanilla', 'sku' => 'RFL-VAN',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('serial_numbers')->insert([
+            'id' => 900, 'serial_number' => 'OLD-BATCH-01', 'master_product_id' => 300, 'warehouse_id' => 1,
+            'status' => 'ready', 'location_type' => 'warehouse', 'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        // Batch SN non-unit boleh berulang untuk produk yang sama.
-        $again = $this->scan(['serial_number' => 'BATCH-NEW-01', 'master_product_id' => 300]);
-        $this->assertSame('success', $again['status']);
-        $this->assertSame(2, DB::table('serial_numbers')->where('serial_number', 'BATCH-NEW-01')->count());
+        $this->seedFreshReceiving();
+        $this->seedItem(300, quantity: 2);
 
-        // Checklist UI: baris non-unit selalu bisa dipilih sebagai target dari scan global.
-        $view = file_get_contents(resource_path('views/warehouse/inventory-receivings/show.blade.php'));
-        $this->assertStringContainsString('const targetable = row.requires_serial || !row.is_unit;', $view);
+        $payload = $this->scan(['serial_number' => 'OLD-BATCH-01'], expectedStatus: 422);
+        $this->assertSame('error', $payload['status']);
+        $this->assertStringContainsString('tidak memakai Serial Number', $payload['message']);
+        $this->assertSame(1, DB::table('serial_numbers')->where('serial_number', 'OLD-BATCH-01')->count());
     }
 
     public function test_scan_is_refused_when_receiving_is_not_pending(): void

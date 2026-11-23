@@ -335,26 +335,18 @@ class MasterProduct extends Model
         return $this->productType ? $this->productType->is_unit : false;
     }
 
+    /**
+     * Klien (Pak Hengky, 23 Nov 2026): wajib SN HANYA mengikuti setting Category /
+     * Product Type. Dulu produk yang sudah punya baris serial_numbers (mis. dari SN
+     * opsional di Receiving) ikut dianggap wajib SN untuk seterusnya, sehingga
+     * setting kategori Has SN = No tidak berlaku lagi untuknya.
+     */
     public function requiresSerialNumber(): bool
     {
-        $configuredForSerialNumber = (bool) (
+        return (bool) (
             optional($this->productCategory)->requiresSerialNumber()
             || optional($this->productType)->has_serial_number
         );
-
-        if ($configuredForSerialNumber) {
-            return true;
-        }
-
-        if (array_key_exists('serial_numbers_count', $this->attributes)) {
-            return (int) $this->attributes['serial_numbers_count'] > 0;
-        }
-
-        if ($this->relationLoaded('serialNumbers')) {
-            return $this->serialNumbers->isNotEmpty();
-        }
-
-        return $this->exists && $this->serialNumbers()->exists();
     }
 
     public function requiresUniqueSerialNumber(): bool

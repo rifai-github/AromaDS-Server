@@ -1052,21 +1052,6 @@ class StockOpnameController extends Controller
 
         $canViewSystemStock = $this->userCanViewSystemStock();
 
-        // MasterProduct::requiresSerialNumber() falls back to an existence query per
-        // product, which on an opname covering a whole warehouse is one query per row.
-        // Resolve that fallback once for every product here instead.
-        $productIds = $stockOpname->stockOpnameDetails
-            ->pluck('master_product_id')
-            ->filter()
-            ->unique()
-            ->values();
-
-        $productIdsHoldingSerials = \App\Models\SerialNumber::whereIn('master_product_id', $productIds)
-            ->distinct()
-            ->pluck('master_product_id')
-            ->map(fn ($productId) => (int) $productId)
-            ->all();
-
         $rows = [];
         $totalScanned = 0;
 
@@ -1074,11 +1059,7 @@ class StockOpnameController extends Controller
             $serials = $this->normalizeOpnameScanList($detail->scanned_serial_numbers ?? []);
             $product = $detail->masterProduct;
 
-            $requiresSerial = (bool) (
-                optional($product?->productCategory)->requiresSerialNumber()
-                || optional($product?->productType)->has_serial_number
-                || in_array((int) $detail->master_product_id, $productIdsHoldingSerials, true)
-            );
+            $requiresSerial = (bool) $product?->requiresSerialNumber();
 
             if (! $requiresSerial && empty($serials)) {
                 continue;

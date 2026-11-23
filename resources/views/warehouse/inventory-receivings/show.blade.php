@@ -403,11 +403,14 @@
                                                     <i class="fas fa-edit"></i>
                                                 </button>
                                                 @endif
+                                                {{-- Klien 23 Nov 2026: SN hanya untuk produk dengan setting Has SN = Yes. --}}
+                                                @if($hasSerial)
                                                 <button type="button" class="btn btn-sm btn-primary"
                                                     onclick="openScanSNModal('{{ $item->master_product_id }}')"
-                                                    title="{{ $hasSerial ? 'Scan QR / Input SN' : 'Input Batch SN (Optional)' }}">
+                                                    title="Scan QR / Input SN">
                                                     <i class="fas fa-qrcode"></i>
                                                 </button>
+                                                @endif
                                             </td>
                                             @endif
                                         </tr>
@@ -1051,14 +1054,11 @@ function renderReceivingChecklist() {
             ? row.serials.map(sn => `<span style="display: inline-block; font-family: monospace; font-size: 0.78rem; background: #e0e7ff; color: #1e3a8a; border-radius: 999px; padding: 2px 10px; margin: 2px 4px 2px 0;">${escapeReceivingText(sn)}</span>`).join('')
             : '<span class="text-muted" style="font-style: italic; font-size: 0.8rem;">belum ada SN</span>';
 
-        // UAT 18 Nov: refill/non-unit yang kategorinya tak ber-flag SN tetap boleh diberi batch SN
-        // (sama seperti tombol "Input Batch SN (Optional)" di tab Products). Dulu barisnya cuma
-        // "tanpa SN" sehingga kode batch baru hasil scan global balik 'unknown' tanpa produk yang
-        // bisa dipilih. Sekarang non-unit selalu bisa jadi target; SN tetap opsional untuknya.
-        const targetable = row.requires_serial || !row.is_unit;
-        const action = targetable
-            ? (row.requires_serial ? '' : '<span class="text-muted" style="font-size: 0.7rem; font-style: italic;">SN opsional</span>')
-                + `<button type="button" class="btn btn-sm ${isTarget ? 'btn-primary' : 'btn-outline-secondary'}" style="padding: 1px 10px; font-size: 0.75rem;"
+        // Klien 23 Nov 2026: hanya produk dengan setting Has SN = Yes yang bisa jadi target scan.
+        // SN "opsional" untuk non-unit (UAT 18 Nov) dicabut: sekali diisi, produk itu dulu jadi
+        // wajib SN selamanya walau kategorinya No.
+        const action = row.requires_serial
+            ? `<button type="button" class="btn btn-sm ${isTarget ? 'btn-primary' : 'btn-outline-secondary'}" style="padding: 1px 10px; font-size: 0.75rem;"
                    onclick="setReceivingScanTarget(${row.product_id})">${isTarget ? 'Dipilih' : 'Pilih'}</button>`
             : '<span class="text-muted" style="font-size: 0.7rem; font-style: italic;">tanpa SN</span>';
 

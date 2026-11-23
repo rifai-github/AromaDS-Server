@@ -82,8 +82,7 @@ class ProductStructureController extends Controller
             ->withCount('masterProducts')
             ->withExists([
                 'masterProducts as serial_required_products_exists' => function ($query) {
-                    $query->whereHas('serialNumbers')
-                        ->orWhereHas('productType', fn ($typeQuery) => $typeQuery->where('has_serial_number', true));
+                    $query->whereHas('productType', fn ($typeQuery) => $typeQuery->where('has_serial_number', true));
                 },
             ])
             ->whereIn('id', $categoryIds);
@@ -228,8 +227,7 @@ class ProductStructureController extends Controller
                 ->loadCount('masterProducts')
                 ->loadExists([
                     'masterProducts as serial_required_products_exists' => function ($query) {
-                        $query->whereHas('serialNumbers')
-                            ->orWhereHas('productType', fn ($typeQuery) => $typeQuery->where('has_serial_number', true));
+                        $query->whereHas('productType', fn ($typeQuery) => $typeQuery->where('has_serial_number', true));
                     },
                 ]);
             

@@ -191,11 +191,10 @@ class ProductCategory extends Model
             return (bool) $this->attributes['serial_required_products_exists'];
         }
 
+        // Klien 23 Nov 2026: produk yang sekadar punya data SN tidak lagi dianggap wajib SN,
+        // jadi hanya Product Type ber-flag SN yang ikut membuat kategori tampil "Yes".
         return $this->masterProducts()
-            ->where(function ($query) {
-                $query->whereHas('serialNumbers')
-                    ->orWhereHas('productType', fn ($typeQuery) => $typeQuery->where('has_serial_number', true));
-            })
+            ->whereHas('productType', fn ($typeQuery) => $typeQuery->where('has_serial_number', true))
             ->exists();
     }
 

@@ -742,7 +742,7 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             'job_advice_id' => $jobAdvice->id,
         ]);
 
-        $unitCategory = ProductCategory::create(['code' => 'UNIT', 'name' => 'Diffuser', 'is_unit' => true]);
+        $unitCategory = ProductCategory::create(['code' => 'UNIT', 'name' => 'Diffuser', 'is_unit' => true, 'has_serial_number' => true]);
         $unitProduct = MasterProduct::create([
             'product_category_id' => $unitCategory->id,
             'name' => 'Diffuser W300 White',
@@ -1277,7 +1277,7 @@ class CompleteRoomMissingUnitSerialNumberTest extends TestCase
             'job_advice_id' => $jobAdvice->id,
         ]);
 
-        $refillCategory = ProductCategory::create(['code' => 'REF', 'name' => 'Refill', 'is_unit' => false]);
+        $refillCategory = ProductCategory::create(['code' => 'REF', 'name' => 'Refill', 'is_unit' => false, 'has_serial_number' => true]);
         $refillProduct = MasterProduct::create([
             'product_category_id' => $refillCategory->id,
             'name' => 'All Purpose Cleaner 100 ml',

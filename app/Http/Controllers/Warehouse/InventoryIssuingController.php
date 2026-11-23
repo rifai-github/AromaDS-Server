@@ -1038,6 +1038,14 @@ class InventoryIssuingController extends Controller
                         'message' => 'Item tidak sesuai dengan issuing ini.'
                     ], 422);
                 }
+
+                if (! ($issuingItem->product?->requiresSerialNumber() ?? false)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => ($issuingItem->product?->name ?? 'Produk ini').' tidak memakai Serial Number (setting Has Serial Number = No di Category / Product Type).',
+                    ], 422);
+                }
             } else {
                 // Continuous scanning: the SN finds its own row in this issuing, so the
                 // operator picks neither a product nor a room - the scan simply lands on
@@ -1878,37 +1886,16 @@ public function getUserTeams($userId)
     }
 
     /**
-     * Product ids in this issuing whose rows can carry an SN: either the product demands
-     * one, or the warehouse happens to hold ready serials for it (optional SN rows).
+     * Product ids in this issuing whose rows can carry an SN. Klien 23 Nov 2026: hanya
+     * produk dengan setting Has SN = Yes. Dulu produk yang kebetulan punya SN ready di
+     * gudang (SN opsional dari Receiving) juga ikut bisa/harus di-scan.
      */
     private function resolveScanSerialProductIds(InventoryIssuing $issuing): array
     {
         $issuing->loadMissing(['items.product.productCategory', 'items.product.productType']);
 
-        $itemProductIds = $issuing->items
-            ->pluck('product_id')
-            ->filter()
-            ->unique()
-            ->values();
-
-        $productsWithAvailableSerials = \App\Models\SerialNumber::whereIn('master_product_id', $itemProductIds)
-            ->whereIn('status', ['ready', 'available'])
-            ->where(function ($query) {
-                $query->whereNull('location_type')
-                    ->orWhere('location_type', 'warehouse');
-            })
-            ->when($issuing->warehouse_id, fn ($query) => $query->where('warehouse_id', $issuing->warehouse_id))
-            ->pluck('master_product_id')
-            ->map(fn ($productId) => (int) $productId)
-            ->unique()
-            ->values()
-            ->all();
-
         return $issuing->items
-            ->filter(function ($item) use ($productsWithAvailableSerials) {
-                return ($item->product?->requiresSerialNumber() ?? false)
-                    || in_array((int) $item->product_id, $productsWithAvailableSerials, true);
-            })
+            ->filter(fn ($item) => $item->product?->requiresSerialNumber() ?? false)
             ->pluck('product_id')
             ->map(fn ($productId) => (int) $productId)
             ->unique()

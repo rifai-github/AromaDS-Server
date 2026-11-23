@@ -191,8 +191,11 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
         ]);
     }
 
-    public function test_optional_product_serial_can_be_linked_when_serial_exists_in_receiving(): void
+    public function test_product_without_sn_setting_rejects_serial_link_even_when_serial_exists(): void
     {
+        // Klien 23 Nov 2026: wajib/boleh SN hanya mengikuti setting Category / Product Type.
+        // SN lama di gudang (mis. dari SN opsional Receiving) tidak membuat produk Has SN = No
+        // bisa diberi SN lagi di Issuing.
         $this->seedProduct(12, 102, 'Fragrance Lemongrass Mix 100ml', hasSerialNumber: false, isUnit: false);
         $this->seedIssuingPair(productId: 102, serialNumberId: 502, serialNumber: 'RLG100001');
         $this->actingAs(User::findOrFail(1));
@@ -205,17 +208,18 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
 
         $payload = $response->getData(true);
 
-        $this->assertSame(200, $response->getStatusCode());
-        $this->assertSame('success', $payload['status']);
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertSame('error', $payload['status']);
+        $this->assertStringContainsString('tidak memakai Serial Number', $payload['message']);
         $this->assertDatabaseHas('inventory_issuing_items', [
             'id' => 200,
-            'serial_number_id' => 502,
+            'serial_number_id' => null,
         ]);
     }
 
     public function test_batch_scan_uses_ready_warehouse_record_when_same_serial_has_customer_record(): void
     {
-        $this->seedProduct(12, 102, 'Fragrance Lemongrass Mix 100ml', hasSerialNumber: false, isUnit: false);
+        $this->seedProduct(12, 102, 'Fragrance Lemongrass Mix 100ml', hasSerialNumber: true, isUnit: false);
         $this->actingAs(User::findOrFail(1));
 
         DB::table('serial_numbers')->insert([
@@ -329,7 +333,7 @@ class InventoryIssuingRefillSerialReuseTest extends TestCase
         // selesai sudah memegang baris id terkecil; scan berikutnya memilih baris itu lagi
         // (bahkan untuk dua ruangan di satu WI). Begitu job WI pertama selesai, baris itu
         // In Use dan verifikasi material APK untuk WI kedua menolak SN-nya.
-        $this->seedProduct(13, 103, 'Liquid ADS Cleaner (Alkohol) - 100 ml', hasSerialNumber: false, isUnit: false);
+        $this->seedProduct(13, 103, 'Liquid ADS Cleaner (Alkohol) - 100 ml', hasSerialNumber: true, isUnit: false);
         $this->actingAs(User::findOrFail(1));
 
         foreach ([601, 602, 603] as $id) {
