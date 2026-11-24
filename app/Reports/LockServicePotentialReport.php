@@ -50,12 +50,6 @@ class LockServicePotentialReport extends BusinessReport
         return 'Lock Per';
     }
 
-    /** Laporan ke depan: hari ini s/d 30 hari ke depan. */
-    public function defaultRange(): array
-    {
-        return [now()->startOfDay(), now()->addDays(30)->startOfDay()];
-    }
-
     public function columns(): array
     {
         return [

@@ -35,10 +35,13 @@ abstract class BusinessReport
         return 'reports.'.$this->key();
     }
 
-    /** Default range: 30 hari ke belakang s/d hari ini. */
+    /**
+     * Default range: hari ini s/d 30 hari ke depan. Klien 24 Nov 2026 (chat implementasi):
+     * "secara default adalah otomatis 30 hari ke depan". User tetap bisa mengubah range.
+     */
     public function defaultRange(): array
     {
-        return [now()->subDays(30)->startOfDay(), now()->startOfDay()];
+        return [now()->startOfDay(), now()->addDays(30)->startOfDay()];
     }
 
     /**

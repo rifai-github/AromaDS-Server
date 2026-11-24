@@ -90,6 +90,17 @@ class BusinessReportSupportTest extends TestCase
         $this->assertNull($data->jobStatusCode('new_job', null));
     }
 
+    public function test_default_range_is_today_to_thirty_days_ahead_as_the_client_asked(): void
+    {
+        Carbon::setTestNow('2026-11-24 10:00:00');
+
+        foreach (['contract-list', 'suspend', 'lock-service', 'agreement-sign', 'rental-service', 'generate-invoice'] as $key) {
+            $filters = ReportFilters::fromRequest(Request::create('/x'), ReportRegistry::find($key));
+            $this->assertSame('2026-11-24', $filters->dateFrom->toDateString(), $key);
+            $this->assertSame('2026-12-24', $filters->dateTo->toDateString(), $key);
+        }
+    }
+
     public function test_registry_has_the_six_reports_with_unique_keys(): void
     {
         $keys = array_map(fn (BusinessReport $report) => $report->key(), ReportRegistry::all());
