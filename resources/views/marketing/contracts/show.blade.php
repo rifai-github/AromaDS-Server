@@ -2054,7 +2054,7 @@
                                                 <strong>{{ $file->file_name ?? '-' }}</strong>
                                             </td>
                                             <td>
-                                                <span class="badge bg-secondary">{{ ucfirst($file->file_type ?? 'other') }}</span>
+                                                <span class="badge bg-secondary">{{ optional(collect($fileTypes ?? [])->firstWhere('code', $file->file_type))->option_name ?? ucfirst(str_replace('_', ' ', $file->file_type ?? 'other')) }}</span>
                                             </td>
                                             <td class="text-end">
                                                 {{ $file->file_size ? number_format($file->file_size / 1024, 2) . ' KB' : '-' }}

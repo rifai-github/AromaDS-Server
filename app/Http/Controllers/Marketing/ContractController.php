@@ -2862,7 +2862,7 @@ class ContractController extends Controller
 
         // Fallback to default types if MasterOption not found or empty
         if (empty($allowedTypes)) {
-            $allowedTypes = ['contract_scan', 'tax_scan', 'npwp_scan', 'invoice', 'payment_proof', 'other'];
+            $allowedTypes = ['contract_scan', 'tax_scan', 'npwp_scan', 'invoice', 'payment_proof', \App\Models\ContractFile::TYPE_CONTRACT_BALIK, 'other'];
         }
 
         // Check permission for uploading files

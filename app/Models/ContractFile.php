@@ -11,6 +11,9 @@ class ContractFile extends Model
 {
     use HasFactory, SoftDeletes;
 
+    /** Kontrak bertanda tangan semua pihak + e-Materai yang diunggah kembali (spec Report 24 Nov 2026). */
+    public const TYPE_CONTRACT_BALIK = 'contract_balik';
+
     protected $fillable = [
         'contract_id',
         'file_type',
