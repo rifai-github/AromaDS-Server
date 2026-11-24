@@ -2,6 +2,9 @@
 
 namespace App\Reports;
 
+use App\Models\JobSchedule;
+use App\Services\Finance\InvoiceGenerationService;
+use App\Services\Operational\ExtraJobInvoiceService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -10,9 +13,18 @@ use Illuminate\Support\Facades\DB;
  * seharusnya sudah punya nomor invoice. Job selesai tanpa invoice disorot supaya diperiksa.
  *
  * Job selesai = status completed / done_job / dpf dengan BA date (status yang ditagih
- * InvoiceGenerationService). Job gratis (Install Free / Remove Free) tidak ditagih, jadi tidak
- * ditampilkan. Satu nomor job bisa punya beberapa baris job_schedules (per ruangan/gedung);
- * laporan ini satu baris per nomor job. Nomor invoice dari invoice_rental_details.job_no.
+ * InvoiceGenerationService). Satu nomor job bisa punya beberapa baris job_schedules (per
+ * ruangan/gedung); laporan ini satu baris per nomor job. Nomor invoice dari
+ * invoice_rental_details.job_no.
+ *
+ * Aturan klien 24 Nov 2026: job yang memang tidak ditagih tidak ditampilkan bila belum ber-invoice:
+ *  - compliment (Install Free / Remove Free, atau job yang rental-nya hanya unit free);
+ *  - job yang menurut aturan rental tidak memicu invoice, mis. IR Unit + Refill (After Service)
+ *    yang tagihannya ikut CSR. IR Unit Only tetap harus ber-invoice. Penentuannya memakai
+ *    InvoiceGenerationService::jobShouldTriggerInvoice (aturan yang sama dengan pembuat invoice);
+ *  - job Extra yang job advice-nya tanpa invoice (With Invoice = No), lihat
+ *    ExtraJobInvoiceService::isBillableExtraJob.
+ * Job yang sudah punya nomor invoice selalu ditampilkan.
  */
 class GenerateInvoiceReport extends BusinessReport
 {
@@ -20,7 +32,7 @@ class GenerateInvoiceReport extends BusinessReport
 
     private const FREE_TYPES = ['install_free', 'remove_free'];
 
-    public function __construct(private ReportData $data) {}
+    public function __construct(private ReportData $data, private InvoiceGenerationService $invoices) {}
 
     public function key(): string
     {
@@ -35,7 +47,8 @@ class GenerateInvoiceReport extends BusinessReport
     public function description(): string
     {
         return 'Job yang sudah selesai (ada BA date) dan seharusnya sudah punya nomor invoice. Baris kuning = job selesai '
-            .'tetapi belum ada nomor invoice. Qty Free = jumlah unit free rental di job itu (- bila job tak punya data rental).';
+            .'tetapi belum ada nomor invoice. Job yang memang tidak ditagih (compliment, atau IR Unit + Refill yang tagihannya '
+            .'ikut CSR) tidak ditampilkan. Qty Free = jumlah unit free rental di job itu (- bila job tak punya data rental).';
     }
 
     public function dateLabel(): string
@@ -99,15 +112,20 @@ class GenerateInvoiceReport extends BusinessReport
             return collect();
         }
 
-        $qtyFree = $this->qtyFreePerJob($jobs->pluck('id')->all());
+        $quantities = $this->quantitiesPerJob($jobs->pluck('id')->all());
         $invoices = $this->invoiceNumbers($jobs->pluck('job_number')->unique()->values()->all());
+        $expected = $this->jobsExpectedToBeInvoiced($jobs, $invoices, $quantities);
 
-        return $jobs->groupBy('job_number')->map(function (Collection $rows, string $jobNumber) use ($qtyFree, $invoices) {
+        return $jobs->groupBy('job_number')->map(function (Collection $rows, string $jobNumber) use ($quantities, $invoices, $expected) {
+            if (! $invoices->get($jobNumber) && ! isset($expected[$jobNumber])) {
+                return null; // tidak ditagih (compliment / tagihan ikut job lain) dan memang tanpa invoice
+            }
+
             $job = $rows->first();
             $branch = $this->data->branch(null, $jobNumber) ?? $this->data->branch($job->quotation_branch_id, $job->contract_number);
 
-            $hasRentalData = $rows->contains(fn ($row) => $qtyFree->has((int) $row->id));
-            $free = $rows->sum(fn ($row) => (int) $qtyFree->get((int) $row->id, 0));
+            $hasRentalData = $rows->contains(fn ($row) => $quantities->has((int) $row->id));
+            $free = $rows->sum(fn ($row) => (int) ($quantities->get((int) $row->id)['qty_free'] ?? 0));
 
             return [
                 '_branch_id' => $branch?->id,
@@ -120,7 +138,7 @@ class GenerateInvoiceReport extends BusinessReport
                 'ba_date' => $this->date($rows->min('ba_date')),
                 'invoice_number' => $invoices->get($jobNumber) ?: '-',
             ];
-        })->filter(function (array $row) use ($filters) {
+        })->filter()->filter(function (array $row) use ($filters) {
             if ($filters->branchId && $row['_branch_id'] !== $filters->branchId) {
                 return false;
             }
@@ -136,12 +154,60 @@ class GenerateInvoiceReport extends BusinessReport
     }
 
     /**
-     * Jumlah qty_free rental per job_schedules.id (hanya job yang punya data rental).
+     * Nomor job (tanpa invoice) yang menurut aturan rental seharusnya ditagih.
+     *
+     * @param  Collection<string, array{quantity:int, qty_free:int}>  $quantities
+     * @return array<string, true>
+     */
+    private function jobsExpectedToBeInvoiced(Collection $jobs, Collection $invoices, Collection $quantities): array
+    {
+        $candidates = $jobs->groupBy('job_number')->reject(fn ($rows, $jobNumber) => (bool) $invoices->get($jobNumber));
+        if ($candidates->isEmpty()) {
+            return [];
+        }
+
+        $models = JobSchedule::query()
+            ->with(['jobAdvice.contract.contractRooms', 'jobAdvice.contract.contractRentals.masterRental', 'jobAdvice.rooms.rentalProduct', 'jobAdvice.rooms.contractRoom'])
+            ->whereIn('id', $candidates->map(fn ($rows) => (int) $rows->first()->id)->values()->all())
+            ->get()
+            ->keyBy('id');
+
+        $expected = [];
+        foreach ($candidates as $jobNumber => $rows) {
+            // Compliment: semua rental di job ini unit free (qty berbayar 0, qty free > 0).
+            $paid = $rows->sum(fn ($row) => (int) ($quantities->get((int) $row->id)['quantity'] ?? 0));
+            $free = $rows->sum(fn ($row) => (int) ($quantities->get((int) $row->id)['qty_free'] ?? 0));
+            if ($paid === 0 && $free > 0) {
+                continue;
+            }
+
+            $model = $models->get((int) $rows->first()->id);
+            if (! $model) {
+                continue;
+            }
+
+            // Extra: ditagih atau tidak tergantung isi job advice-nya (With Invoice), invoice
+            // tersendiri dari ExtraJobInvoiceService. Tipe lain: aturan rental mesin invoice.
+            $shouldInvoice = strtolower((string) $model->type) === 'extra'
+                ? ExtraJobInvoiceService::isBillableExtraJob($model)
+                : $this->invoices->jobShouldTriggerInvoice($model);
+
+            if ($shouldInvoice) {
+                $expected[$jobNumber] = true;
+            }
+        }
+
+        return $expected;
+    }
+
+    /**
+     * Jumlah quantity (berbayar) dan qty_free rental per job_schedules.id (hanya job yang punya
+     * data rental).
      *
      * @param  array<int, int>  $jobIds
-     * @return Collection<int, int>
+     * @return Collection<int, array{quantity:int, qty_free:int}>
      */
-    private function qtyFreePerJob(array $jobIds): Collection
+    private function quantitiesPerJob(array $jobIds): Collection
     {
         $primary = DB::table('job_schedule_rooms as jsr')
             ->whereIn('jsr.job_schedule_id', $jobIds)
@@ -158,9 +224,9 @@ class GenerateInvoiceReport extends BusinessReport
             ->fromSub($primary->union($extra), 'l')
             ->leftJoin('job_advice_rooms as jar', 'jar.id', '=', 'l.job_advice_room_id')
             ->groupBy('l.job_schedule_id')
-            ->select('l.job_schedule_id', DB::raw('COALESCE(SUM(jar.qty_free), 0) as qty_free'))
-            ->pluck('qty_free', 'job_schedule_id')
-            ->mapWithKeys(fn ($qty, $jobId) => [(int) $jobId => (int) $qty]);
+            ->select('l.job_schedule_id', DB::raw('COALESCE(SUM(jar.quantity), 0) as quantity'), DB::raw('COALESCE(SUM(jar.qty_free), 0) as qty_free'))
+            ->get()
+            ->mapWithKeys(fn ($row) => [(int) $row->job_schedule_id => ['quantity' => (int) $row->quantity, 'qty_free' => (int) $row->qty_free]]);
     }
 
     /**

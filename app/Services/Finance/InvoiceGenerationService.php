@@ -477,6 +477,26 @@ class InvoiceGenerationService
         );
     }
 
+    /**
+     * Report Generate Invoice (spec 24 Nov 2026): apakah job selesai ini menurut aturan rental-nya
+     * memang memicu invoice. Contoh: IR Unit Only menagih; IR Unit + Refill (After Service) tidak,
+     * tagihannya ikut CSR; job free (Install/Remove Free) tidak pernah ditagih. Memakai aturan yang
+     * sama dengan pembuatan invoice (jobMatchesRentalInvoiceTrigger).
+     */
+    public function jobShouldTriggerInvoice(JobSchedule $jobSchedule): bool
+    {
+        if (in_array($this->normalizeJobType($jobSchedule->type), self::NON_BILLABLE_JOB_TYPES, true)) {
+            return false;
+        }
+
+        $contract = $jobSchedule->jobAdvice?->contract;
+        if (! $contract) {
+            return false;
+        }
+
+        return $this->jobMatchesRentalInvoiceTrigger($contract, $jobSchedule);
+    }
+
     private function jobMatchesRentalInvoiceTrigger(Contract $contract, JobSchedule $jobSchedule, bool $periodHasInstallTrigger = true): bool
     {
         $jobType = $this->normalizeJobType($jobSchedule->type);
