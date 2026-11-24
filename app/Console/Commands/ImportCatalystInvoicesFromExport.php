@@ -639,9 +639,10 @@ class ImportCatalystInvoicesFromExport extends Command
     {
         $value = Str::upper($this->cleanString($value) ?? 'D');
 
+        // Klien 24 Nov 2026: semua invoice hasil import Catalyst bersifat draft (dulu P/G/H
+        // jadi approved). Hanya yang dibatalkan di Catalyst yang tetap cancelled.
         return match ($value) {
             'C' => 'cancelled',
-            'P', 'G', 'H' => 'approved',
             default => 'draft',
         };
     }
