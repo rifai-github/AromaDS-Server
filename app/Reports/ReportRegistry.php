@@ -15,6 +15,8 @@ class ReportRegistry
         AgreementSignReport::class,
         RentalServiceReport::class,
         GenerateInvoiceReport::class,
+        // Klien 24 Nov 2026 (implementasi): SQ yang aroma ruangannya masih kosong.
+        SqAromaEmptyReport::class,
     ];
 
     /** @return array<int, BusinessReport> */

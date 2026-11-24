@@ -1021,6 +1021,8 @@ class JobAssignMaterialIssueController extends Controller
         });
 
         $indexLookups = $this->buildIndexLookups($materialIssues);
+        $indexLookups['emptyQuotationAromaItemIds'] = app(\App\Services\Operational\QuotationAromaGapService::class)
+            ->emptyAromaItemIds($materialIssues);
         $user = Auth::user();
         $canPrepareMaterial = $user?->hasPermission('operational.job-assign-material-issues.update') ?? false;
         $canDeleteMaterialIssue = $user?->hasPermission('operational.job-assign-material-issues.delete') ?? false;
@@ -4222,6 +4224,10 @@ class JobAssignMaterialIssueController extends Controller
                 }
             }
 
+            // Klien 24 Nov 2026: aroma ruangan SQ yang masih kosong (SQ import Catalyst) diisi
+            // dari aroma yang dipilih di Material Assign begitu inventory issuing terbit.
+            app(\App\Services\Operational\QuotationAromaGapService::class)->fillFromMaterialIssue($jobAssignMaterialIssue);
+
             return $issuing;
         } catch (\Throwable $e) {
             \Log::error('Failed to create Inventory Issuing from MaterialIssue '.$jobAssignMaterialIssue->materialIssue->issue_number.': '.$e->getMessage());
@@ -5851,7 +5857,18 @@ class JobAssignMaterialIssueController extends Controller
             $rentalDetailId = $this->extractSavedItemComponentId($item->notes);
             $isAllowedProductForRentalDetail = false;
 
-            if ($rentalDetailId && $productChanged) {
+            // Klien 24 Nov 2026: ruangan yang aroma SQ-nya kosong (SQ import Catalyst) boleh
+            // memilih aroma apa pun di kategori yang sama, lepas dari daftar material rental
+            // detail dan brand line. Lihat QuotationAromaGapService.
+            $aromaGap = app(\App\Services\Operational\QuotationAromaGapService::class);
+            if ($productChanged
+                && $aromaGap->itemHasEmptyQuotationAroma($item)
+                && $aromaGap->isAllowedFreeAromaSwap($item->product, $newProduct)
+            ) {
+                $isAllowedProductForRentalDetail = true;
+            }
+
+            if ($rentalDetailId && $productChanged && ! $isAllowedProductForRentalDetail) {
                 $isAllowedProductForRentalDetail = DB::table('rental_detail_materials')
                     ->where('rental_detail_id', $rentalDetailId)
                     ->where('master_product_id', $request->product_id)

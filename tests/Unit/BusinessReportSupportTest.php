@@ -94,7 +94,7 @@ class BusinessReportSupportTest extends TestCase
     {
         $keys = array_map(fn (BusinessReport $report) => $report->key(), ReportRegistry::all());
 
-        $this->assertSame(['contract-list', 'suspend', 'lock-service', 'agreement-sign', 'rental-service', 'generate-invoice'], $keys);
+        $this->assertSame(['contract-list', 'suspend', 'lock-service', 'agreement-sign', 'rental-service', 'generate-invoice', 'sq-aroma-empty'], $keys);
         $this->assertSame('reports.lock-service', ReportRegistry::find('lock-service')->permission());
         $this->assertNull(ReportRegistry::find('tidak-ada'));
     }

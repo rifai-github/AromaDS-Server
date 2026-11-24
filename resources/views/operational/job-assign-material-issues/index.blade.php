@@ -1361,11 +1361,25 @@
                                         // the family-expansion branches below, not the narrow allowed-ids path.
                                         $hasSpecificVariant = $hasSpecificVariant || $hasBrandFamilyScope || $hasCategoryFamilyScope;
 
+                                        // Klien 24 Nov 2026: ruangan yang aroma SQ-nya kosong (SQ import
+                                        // Catalyst) -> semua aroma sekategori, lintas brand line. SQ yang
+                                        // sudah punya aroma tetap memakai aturan brand line di bawah.
+                                        // Lihat App\Services\Operational\QuotationAromaGapService.
+                                        $sqAromaEmpty = $isAromaType && $currentCategoryId
+                                            && !empty(($emptyQuotationAromaItemIds ?? [])[(int) $item->id] ?? false);
+
                                         // Filter products list to the checked Material List for this rental detail.
                                         // Aroma/refill rows are expanded to the whole BRAND LINE within the
                                         // same product category (all aromas, all packaging sizes). Rows with
                                         // no brand_line fall back to the per-aroma base-name grouping.
-                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBaseName, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $hasBrandFamilyScope, $hasCategoryFamilyScope, $currentCategoryId, $currentProductIsUnit, $item, $allowedProductIds, $rentalDetailId) {
+                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBaseName, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $hasBrandFamilyScope, $hasCategoryFamilyScope, $currentCategoryId, $currentProductIsUnit, $item, $allowedProductIds, $rentalDetailId, $sqAromaEmpty) {
+                                            if ($sqAromaEmpty) {
+                                                $isUnitProduct = (bool) ($p->productCategory->is_unit ?? false) || (bool) ($p->productType->is_unit ?? false);
+
+                                                return (int) $p->id === (int) $item->product_id
+                                                    || (!$isUnitProduct && (int) $p->product_category_id === $currentCategoryId);
+                                            }
+
                                             $productBrandLine = $p->brand_line
                                                 ? strtolower(trim(preg_replace('/\s+/', ' ', $p->brand_line)))
                                                 : null;
