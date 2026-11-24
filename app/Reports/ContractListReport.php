@@ -133,7 +133,7 @@ class ContractListReport extends BusinessReport
                 'upload' => $this->yesNo((bool) $file?->uploaded),
                 'confirm' => $this->yesNo((bool) $file?->verified),
                 'confirm_date' => $this->date($file?->verified_at),
-                'status_ops' => $job ? ($this->data->jobStatusCode($job->status, $job->job_number) ?? '-') : '-',
+                'status_ops' => $job ? ($this->data->jobStatusCode($job->status, $job->job_number, $job->type) ?? '-') : '-',
                 'contract_note' => $this->data->limit($contract->notes, 120),
                 'internal_memo' => $this->data->limit($contract->internal_remark, 120),
             ];

@@ -83,18 +83,27 @@ class RentalServiceReport extends BusinessReport
             ->join('job_advices as ja', 'ja.id', '=', 'js.job_advice_id')
             ->leftJoin('job_advice_rooms as jar', 'jar.id', '=', 'l.job_advice_room_id')
             ->leftJoin('buildings as b', 'b.id', '=', 'js.building_id')
+            ->leftJoin('contracts as c', 'c.id', '=', 'ja.contract_id')
+            ->leftJoin('quotations as q', 'q.id', '=', 'c.quotation_id')
             ->whereIn('ja.contract_id', $this->data->contracts()->select('contracts.id'))
             ->whereIn('js.type', self::SERVICE_TYPES)
             ->whereIn('js.status', self::DONE_STATUSES)
             ->whereNull('js.deleted_at')
             ->whereNull('ja.deleted_at')
             ->whereBetween('js.ba_date', [$filters->dateFrom->toDateString(), $filters->dateTo->toDateString()])
-            ->get(['js.id as job_id', 'js.job_number', 'js.ba_date', 'b.branch_id as building_branch_id', 'l.job_advice_room_id', 'jar.quantity']);
+            ->get([
+                'js.id as job_id', 'js.job_number', 'js.ba_date', 'b.branch_id as building_branch_id',
+                'c.contract_number', 'q.branch_id as quotation_branch_id', 'l.job_advice_room_id', 'jar.quantity',
+            ]);
 
         $rows = collect();
         foreach ($lines as $line) {
             // Branch job = prefix nomor job (cabang operasional), fallback cabang gedung.
-            $branch = $this->data->branch(null, $line->job_number) ?? $this->data->branch($line->building_branch_id, null);
+            // Job tanpa nomor (job historis hasil generate jadwal Catalyst) memakai cabang
+            // gedung, lalu cabang kontraknya (quotation / prefix nomor kontrak).
+            $branch = $this->data->branch(null, $line->job_number)
+                ?? $this->data->branch($line->building_branch_id, null)
+                ?? $this->data->branch($line->quotation_branch_id, $line->contract_number);
             if ($filters->branchId && $branch?->id !== $filters->branchId) {
                 continue;
             }

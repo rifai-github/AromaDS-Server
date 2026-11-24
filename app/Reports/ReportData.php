@@ -72,13 +72,30 @@ class ReportData
      * Status ops sebuah job (spec List Kontrak): status suspend/dpf/cancelled menang atas kode
      * di nomor job karena nomor job tidak berubah saat job di-suspend.
      */
-    public function jobStatusCode(?string $status, ?string $jobNumber): ?string
+    public function jobStatusCode(?string $status, ?string $jobNumber, ?string $type = null): ?string
     {
         return match ($status) {
             'suspend' => 'SUS',
             'dpf' => 'DPF',
             'cancelled' => 'RMC',
-            default => $this->jobCode($jobNumber),
+            // Job baru (New Job) dan job historis hasil generate jadwal Catalyst belum punya
+            // nomor job (nomor dibuat saat assign team): kodenya diambil dari tipe job.
+            default => $this->jobCode($jobNumber) ?? $this->jobTypeCode($type),
+        };
+    }
+
+    /** Kode dokumen dari tipe job (sama dengan peta DocumentNumberService). */
+    public function jobTypeCode(?string $type): ?string
+    {
+        return match (strtolower(trim((string) $type))) {
+            'install' => 'IR',
+            'install_free' => 'IF',
+            'service', 'service_first', 'service_routine' => 'CSR',
+            'remove' => 'RV',
+            'remove_free' => 'RF',
+            'extra', 'change' => 'EXT',
+            'complain' => 'NR',
+            default => null,
         };
     }
 
@@ -149,7 +166,7 @@ class ReportData
             ->where('js.schedule_date', '<=', $untilDate)
             ->orderBy('js.schedule_date')
             ->orderBy('js.id')
-            ->get(['ja.contract_id', 'js.job_number', 'js.status', 'js.schedule_date'])
+            ->get(['ja.contract_id', 'js.job_number', 'js.status', 'js.type', 'js.schedule_date'])
             ->keyBy('contract_id'); // baris terakhir per kontrak menang
     }
 

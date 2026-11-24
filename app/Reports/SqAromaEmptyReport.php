@@ -29,7 +29,7 @@ class SqAromaEmptyReport extends BusinessReport
 
     public function description(): string
     {
-        return 'Ruangan SQ (kontrak aktif) yang aromanya masih kosong. Di Material Assign ruangan ini boleh memilih semua aroma '
+        return 'Ruangan SQ (kontrak aktif yang belum berakhir) yang aromanya masih kosong. Di Material Assign ruangan ini boleh memilih semua aroma '
             .'sekategori; aroma SQ terisi otomatis setelah inventory issuing terbit.';
     }
 
@@ -51,6 +51,7 @@ class SqAromaEmptyReport extends BusinessReport
             'contract_number' => 'Nomor Kontrak',
             'customer' => 'Customer',
             'branch' => 'Branch',
+            'building' => 'Gedung',
             'room' => 'Ruangan',
             'start_date' => 'Mulai Kontrak',
             'end_date' => 'Akhir Kontrak',
@@ -63,7 +64,11 @@ class SqAromaEmptyReport extends BusinessReport
             ->join('quotations as q', 'q.id', '=', 'contracts.quotation_id')
             ->join('quotation_rooms as qr', 'qr.quotation_id', '=', 'q.id')
             ->leftJoin('customers as cu', 'cu.id', '=', 'contracts.customer_id')
+            ->leftJoin('master_rooms as mr', 'mr.id', '=', 'qr.room_id')
+            ->leftJoin('buildings as b', 'b.id', '=', 'mr.building_id')
             ->whereIn('contracts.contract_status', ['active', 'running'])
+            // Status kontrak import sering masih "active" walau masa kontraknya sudah habis.
+            ->where('contracts.end_date', '>=', now()->toDateString())
             ->whereNull('q.deleted_at')
             ->whereNull('qr.deleted_at')
             ->whereNull('qr.aroma_product_id')
@@ -71,10 +76,12 @@ class SqAromaEmptyReport extends BusinessReport
             ->whereBetween('contracts.start_date', [$filters->dateFrom->toDateString(), $filters->dateTo->toDateString()])
             ->orderBy('q.quotation_number')
             ->orderBy('qr.room_name')
+            // Satu ruangan bisa punya beberapa baris quotation_rooms (per rental): tampil sekali.
+            ->distinct()
             ->get([
                 'q.quotation_number', 'q.branch_id as quotation_branch_id',
                 'contracts.contract_number', 'contracts.start_date', 'contracts.end_date',
-                'cu.name as customer_name', 'qr.room_name',
+                'cu.name as customer_name', 'qr.room_name', 'b.nama_gedung', 'b.name as building_raw_name',
             ]);
 
         return $rows->map(function ($row) {
@@ -86,6 +93,7 @@ class SqAromaEmptyReport extends BusinessReport
                 'contract_number' => $row->contract_number,
                 'customer' => $row->customer_name ?: '-',
                 'branch' => $branch?->name ?? '-',
+                'building' => $row->nama_gedung ?: ($row->building_raw_name ?: '-'),
                 'room' => $row->room_name ?: '-',
                 'start_date' => $this->date($row->start_date),
                 'end_date' => $this->date($row->end_date),
