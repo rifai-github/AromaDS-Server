@@ -292,6 +292,14 @@ class ComplainSerialNumberUnitOnWallTest extends TestCase
             $table->string('building_name')->nullable();
             $table->string('product_name')->nullable();
             $table->string('status')->nullable();
+            // Kolom skema asli yang dipakai saat SN unit lama dicatat dari input teknisi.
+            $table->foreignId('contract_room_id')->nullable();
+            $table->foreignId('rental_id')->nullable();
+            $table->string('company_name')->nullable();
+            $table->string('rental_name')->nullable();
+            $table->text('notes')->nullable();
+            $table->foreignId('created_by')->nullable();
+            $table->foreignId('updated_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -620,6 +628,72 @@ class ComplainSerialNumberUnitOnWallTest extends TestCase
 
         $this->assertSame(404, $status);
         $this->assertSame('error', $payload['status']);
+    }
+
+    /**
+     * Klien 24 Nov 2026: unit lama (mis. kontrak import Catalyst) belum punya SN di sistem.
+     * SN yang diinput teknisi di ruangan tanpa SN langsung dicatat; setelah itu SN tersebut
+     * divalidasi seperti biasa dan SN lain untuk ruangan yang sama ditolak.
+     */
+    public function test_service_job_records_a_new_serial_for_a_room_without_any_unit(): void
+    {
+        $job = $this->seedNoMaterialFixture('service');
+        UnitOnWall::query()->delete();
+        SerialNumber::query()->delete();
+
+        [$status, $payload] = $this->validate($job, 'NEW-SN-0001');
+
+        $this->assertSame(200, $status, json_encode($payload));
+        $this->assertTrue($payload['recorded_new_serial']);
+        $unit = UnitOnWall::where('serial_number', 'NEW-SN-0001')->first();
+        $this->assertNotNull($unit);
+        $this->assertSame('active', $unit->status);
+        $this->assertSame(self::ROOM_ID, (int) $unit->room_id);
+        $this->assertSame($unit->id, $payload['data']['unit_on_wall_id']);
+
+        [$status, $payload] = $this->validate($job, 'NEW-SN-0001');
+        $this->assertSame(200, $status);
+        $this->assertArrayNotHasKey('recorded_new_serial', $payload, 'Scan kedua = validasi biasa');
+
+        [$status] = $this->validate($job, 'NEW-SN-0002');
+        $this->assertSame(404, $status, 'Ruangan sudah ber-SN: SN lain ditolak');
+        $this->assertSame(1, UnitOnWall::count());
+    }
+
+    public function test_service_job_fills_the_serial_of_an_existing_unit_without_serial(): void
+    {
+        $job = $this->seedNoMaterialFixture('service');
+        $unitId = UnitOnWall::value('id');
+        UnitOnWall::query()->update(['serial_number' => null, 'serial_number_id' => null]);
+        SerialNumber::query()->delete();
+
+        [$status, $payload] = $this->validate($job, 'NEW-SN-0003');
+
+        $this->assertSame(200, $status, json_encode($payload));
+        $this->assertSame($unitId, $payload['data']['unit_on_wall_id']);
+        $this->assertSame('NEW-SN-0003', UnitOnWall::find($unitId)->serial_number);
+        $this->assertSame(1, UnitOnWall::count());
+    }
+
+    public function test_room_lookup_scan_and_install_jobs_never_record_a_serial(): void
+    {
+        $job = $this->seedNoMaterialFixture('service');
+        UnitOnWall::query()->delete();
+        SerialNumber::query()->delete();
+
+        $response = app(JobController::class)->validateSerialNumber(
+            Request::create("/api/v1/mobile/jobs/{$job->id}/validate-serial-number", 'POST', [
+                'serial_number' => 'NEW-SN-0004', 'resolve_only' => true,
+            ]),
+            $job->id
+        );
+        $this->assertSame(404, $response->getStatusCode());
+
+        $job->update(['type' => 'install']);
+        [$status] = $this->validate($job, 'NEW-SN-0005');
+        $this->assertSame(404, $status);
+
+        $this->assertSame(0, UnitOnWall::count());
     }
 
     public function test_service_job_still_rejects_a_unit_from_a_room_outside_this_job_advice(): void

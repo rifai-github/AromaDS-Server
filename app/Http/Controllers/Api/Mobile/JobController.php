@@ -7648,6 +7648,42 @@ class JobController extends Controller
             ]);
         }
         
+        // Klien 24 Nov 2026: unit lama di lapangan (mis. kontrak hasil import Catalyst) belum
+        // punya SN di sistem. Untuk job service/complain, bila ruangan yang dikerjakan belum
+        // punya SN tercatat, SN yang diinput teknisi langsung dicatat dan pekerjaan bisa
+        // dimulai. Bila ruangan itu sudah punya SN, atau SN-nya sudah terdaftar di tempat lain,
+        // validasi tetap berlaku seperti biasa.
+        if (! $request->boolean('resolve_only') && ($this->isServiceLikeJob($job) || $this->isComplainJobType($job))) {
+            $recorded = $this->recordSerialForUnitWithoutSn($job, $serialNumberInput, $selectedRoomName);
+            if ($recorded instanceof \Illuminate\Http\JsonResponse) {
+                return $recorded;
+            }
+            if ($recorded instanceof \App\Models\UnitOnWall) {
+                $recordedRoomName = $recorded->room->room_name ?? $recorded->room_name;
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Serial number dicatat (unit ini belum punya SN di sistem)',
+                    'source' => 'unit_on_wall',
+                    'recorded_new_serial' => true,
+                    'data' => array_merge([
+                        'serial_number' => $recorded->serial_number,
+                        'product_id' => $recorded->product_id,
+                        'product_name' => $recorded->product_name ?? '-',
+                        'product_type' => '-',
+                        'warehouse' => '-',
+                        'status' => $recorded->status,
+                        'unit_on_wall_id' => $recorded->id,
+                        'room_name' => $recordedRoomName,
+                        'location' => [
+                            'building' => $recorded->building->nama_gedung ?? $job->building_name ?? '-',
+                            'room' => $recordedRoomName ?? '-',
+                        ],
+                    ], $this->serialConditionPayload(null)),
+                ]);
+            }
+        }
+
         // Not found in either materials or unit on wall
         \Log::warning("❌ Serial number not found for job", [
             'serial_number' => $serialNumberInput,
@@ -7669,6 +7705,120 @@ class JobController extends Controller
      * room/job has more than one SN-requiring product we refuse to guess and let the
      * normal "not found" rejection stand.
      */
+    /**
+     * Klien 24 Nov 2026 (SN unit lama belum tercatat): catat SN yang diinput teknisi untuk unit
+     * di ruangan job service/complain yang belum punya SN di sistem.
+     *
+     * - SN itu sudah terdaftar di sistem (serial_numbers / Unit On Wall mana pun) -> ditolak,
+     *   validasi biasa berlaku;
+     * - ruangan itu sudah punya Unit On Wall aktif ber-SN -> ditolak (SN harus cocok);
+     * - ruangan punya Unit On Wall aktif tanpa SN -> SN diisikan ke unit itu;
+     * - ruangan belum punya Unit On Wall -> dibuat satu (produk unit dari BOM rental bila ada).
+     * SN hanya dicatat di unit_on_walls.serial_number: serial_numbers wajib produk + gudang,
+     * yang tak diketahui untuk unit lama. Pencarian SN berikutnya membaca kolom ini juga.
+     *
+     * @return \App\Models\UnitOnWall|\Illuminate\Http\JsonResponse|null null = tak bisa dicatat
+     *                                                                    (ruangan tak diketahui)
+     */
+    private function recordSerialForUnitWithoutSn(JobSchedule $job, string $serialNumberInput, ?string $selectedRoomName)
+    {
+        $serial = trim($serialNumberInput);
+        $jobAdvice = $job->jobAdvice;
+        $customerId = $jobAdvice?->customer_id;
+        if ($serial === '' || ! $customerId || ! $job->building_id) {
+            return null;
+        }
+
+        $jobAdvice->loadMissing(['rooms.contractRoom.room']);
+        $roomName = $selectedRoomName ? trim($selectedRoomName) : null;
+        $jaRoom = $jobAdvice->rooms->first(function ($room) use ($roomName, $job) {
+            $names = array_filter([
+                $room->room_name,
+                $room->contractRoom?->room?->room_name,
+            ]);
+            if ($roomName !== null) {
+                return collect($names)->contains(fn ($name) => strtolower(trim($name)) === strtolower($roomName));
+            }
+
+            return $job->room_id && (int) ($room->contractRoom?->room_id ?? $room->room_id) === (int) $job->room_id;
+        });
+        if (! $jaRoom) {
+            return null;
+        }
+        $roomId = $jaRoom->contractRoom?->room_id ?? $jaRoom->room_id;
+
+        $knownSerial = \App\Models\SerialNumber::whereRaw('TRIM(serial_number) = ?', [$serial])->exists()
+            || \App\Models\UnitOnWall::whereRaw('TRIM(serial_number) = ?', [$serial])->exists();
+        if ($knownSerial) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Serial Number {$serial} sudah terdaftar di sistem untuk unit lain. Scan SN unit yang ada di ruangan ini.",
+            ], 404); // 404 sama dengan "tidak terdaftar untuk job ini" sebelumnya; APK tak berubah perilaku
+        }
+
+        $roomUnits = \App\Models\UnitOnWall::where('customer_id', $customerId)
+            ->where('building_id', $job->building_id)
+            ->where('status', 'active')
+            ->when($roomId, fn ($query) => $query->where('room_id', $roomId), fn ($query) => $query->whereRaw('LOWER(TRIM(room_name)) = ?', [strtolower((string) $roomName)]))
+            ->get();
+
+        $withSerial = $roomUnits->first(fn ($unit) => trim((string) $unit->serial_number) !== '' || $unit->serial_number_id);
+        if ($withSerial) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ruangan ini sudah punya unit dengan SN tercatat ('.($withSerial->serial_number ?: $withSerial->serialNumber?->serial_number).'). Scan SN unit tersebut.',
+            ], 404);
+        }
+
+        $note = 'SN dicatat dari input teknisi job '.($job->job_number ?: '#'.$job->id).' (unit belum punya SN di sistem)';
+        $unit = $roomUnits->first();
+        if ($unit) {
+            $unit->update([
+                'serial_number' => $serial,
+                'notes' => trim(($unit->notes ? $unit->notes."\n" : '').$note),
+                'updated_by' => Auth::id(),
+            ]);
+        } else {
+            $rental = $jaRoom->rental_product_id ? \App\Models\MasterRental::find($jaRoom->rental_product_id) : null;
+            $unitProduct = $rental ? \Illuminate\Support\Facades\DB::table('rental_details as rd')
+                ->join('master_products as p', 'p.id', '=', 'rd.master_product_id')
+                ->leftJoin('product_categories as pc', 'pc.id', '=', 'p.product_category_id')
+                ->leftJoin('product_types as pt', 'pt.id', '=', 'p.product_type_id')
+                ->where('rd.master_rental_id', $rental->id)
+                ->whereNull('rd.deleted_at')
+                ->whereRaw('COALESCE(pc.is_unit, pt.is_unit, 0) = 1')
+                ->select('p.id', 'p.name')
+                ->first() : null;
+
+            $unit = \App\Models\UnitOnWall::create([
+                'customer_id' => $customerId,
+                'contract_id' => $jobAdvice->contract_id,
+                'contract_room_id' => $jaRoom->contract_room_id,
+                'building_id' => $job->building_id,
+                'room_id' => $roomId,
+                'rental_id' => $rental?->id,
+                'product_id' => $unitProduct?->id,
+                'serial_number' => $serial,
+                'status' => 'active',
+                'company_name' => $job->company_name,
+                'room_name' => $jaRoom->contractRoom?->room?->room_name ?? $jaRoom->room_name ?? $roomName,
+                'rental_name' => $rental?->rental_name,
+                'product_name' => $unitProduct?->name,
+                'notes' => $note,
+                'created_by' => Auth::id(),
+                'updated_by' => Auth::id(),
+            ]);
+        }
+
+        \Log::warning('SN baru dicatat dari input teknisi (unit belum punya SN)', [
+            'serial_number' => $serial,
+            'job_id' => $job->id,
+            'unit_on_wall_id' => $unit->id,
+        ]);
+
+        return $unit->fresh(['room', 'building']);
+    }
+
     private function resolveBypassIssuingItemForInstall(array $inventoryIssuingIds, ?string $selectedRoomName): ?\App\Models\InventoryIssuingItem
     {
         if (empty($inventoryIssuingIds)) {
