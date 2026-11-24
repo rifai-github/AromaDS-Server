@@ -1884,6 +1884,13 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('operational', [OperationalReportController::class, 'index'])->name('operational.index');
         Route::get('finance', [FinancialReportController::class, 'index'])->name('finance.index');
         Route::get('marketing', [MarketingReportController::class, 'index'])->name('marketing.index');
+
+        // Spec Halaman Report 24 Nov 2026: List Kontrak, Report Suspend, Potensi Lock Service,
+        // Agreement Sign, Rental Report, Report Generate Invoice (izin reports.{key} dicek di controller).
+        Route::get('business/{report}', [\App\Http\Controllers\Reports\BusinessReportController::class, 'show'])
+            ->where('report', '[a-z0-9-]+')->name('business.show');
+        Route::get('business/{report}/export/{format}', [\App\Http\Controllers\Reports\BusinessReportController::class, 'export'])
+            ->where(['report' => '[a-z0-9-]+', 'format' => 'xlsx|pdf'])->name('business.export');
     });
 
     // New Report Module Web Routes

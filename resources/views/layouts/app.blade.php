@@ -1799,10 +1799,14 @@
             @endif
 
             <!-- Report: tampil bila minimal satu laporan diizinkan (QA 23 Nov; dulu selalu tampil kosong) -->
+            @php
+                $visibleBusinessReports = \App\Reports\ReportRegistry::visibleFor(auth()->user());
+            @endphp
             @if(auth()->user()->hasPermission('reports.warehouse')
                 || auth()->user()->hasPermission('reports.operational')
                 || auth()->user()->hasPermission('reports.finance')
-                || auth()->user()->hasPermission('reports.marketing'))
+                || auth()->user()->hasPermission('reports.marketing')
+                || count($visibleBusinessReports) > 0)
             <div class="menu-item has-submenu {{ request()->routeIs('report.*') ? 'active' : '' }}" onclick="toggleSubmenu(this)">
                 <div class="left">
                     <i class="fas fa-chart-line"></i>
@@ -1812,6 +1816,10 @@
                 <div class="tooltip">Report</div>
             </div>
             <ul class="submenu {{ request()->routeIs('report.*') ? 'show' : '' }}">
+                {{-- Spec Halaman Report 24 Nov 2026 --}}
+                @foreach($visibleBusinessReports as $businessReport)
+                <li data-tooltip="{{ $businessReport->title() }}" class="{{ request()->routeIs('report.business.*') && request()->route('report') === $businessReport->key() ? 'active' : '' }}" onclick="navigateTo('{{ route('report.business.show', $businessReport->key()) }}')">{{ $businessReport->title() }}</li>
+                @endforeach
                 @if(auth()->user()->hasPermission('reports.warehouse'))
                 <li data-tooltip="Warehouse Report" class="{{ request()->routeIs('report.warehouse.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('report.warehouse.index') }}')">Warehouse Report</li>
                 @endif
