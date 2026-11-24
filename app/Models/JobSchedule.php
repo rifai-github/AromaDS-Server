@@ -904,6 +904,45 @@ class JobSchedule extends Model
     private function resolveRentalFlowType($jobAdviceRoom): ?string
     {
         $rental = $jobAdviceRoom?->rentalProduct;
+        if (! $rental) {
+            return $this->computeRentalFlowType(null);
+        }
+
+        // Daftar Job Schedule memanggil ini untuk setiap ruangan setiap job, dan tiap ruangan
+        // membawa instance master_rentals sendiri: tanpa cache, BOM rental (termasuk semua
+        // allowedProducts + kategori/tipe) dimuat ulang per ruangan. Prod 25 Nov 2026: kontrak
+        // ADS-AG/25-06/0002 (221 ruangan, 1 rental) -> 2.434 query, 805MB, 500 OOM.
+        // Cache hanya hidup selama satu request/proses CLI pendek; queue worker tidak memakainya
+        // supaya perubahan BOM rental tetap terbaca.
+        $key = (int) $rental->getKey();
+        $cache = $key > 0 ? self::rentalFlowTypeCache() : null;
+        if ($cache === null) {
+            return $this->computeRentalFlowType($rental);
+        }
+
+        if (! $cache->offsetExists($key)) {
+            $cache[$key] = $this->computeRentalFlowType($rental);
+        }
+
+        return $cache[$key];
+    }
+
+    private static function rentalFlowTypeCache(): ?\ArrayObject
+    {
+        $app = app();
+        if ($app->runningInConsole() && in_array($_SERVER['argv'][1] ?? '', ['queue:work', 'queue:listen', 'horizon:work'], true)) {
+            return null;
+        }
+
+        if (! $app->bound('job_schedule.rental_flow_type_cache')) {
+            $app->instance('job_schedule.rental_flow_type_cache', new \ArrayObject);
+        }
+
+        return $app->make('job_schedule.rental_flow_type_cache');
+    }
+
+    private function computeRentalFlowType($rental): ?string
+    {
         $rentalType = strtolower(trim((string) ($rental?->rental_type ?? '')));
 
         if (in_array($rentalType, ['unit_only', 'refill_only'], true)) {
