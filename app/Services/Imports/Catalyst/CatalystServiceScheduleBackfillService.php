@@ -120,6 +120,177 @@ class CatalystServiceScheduleBackfillService
         return $query->get();
     }
 
+    /**
+     * Kontrak import Catalyst (ada peta MKTContractHd) yang aktif tapi TIDAK punya job advice sama
+     * sekali. Step importer `job_advices` hanya membuat JA-CATALYST-* dari tabel Catalyst
+     * MKTContractJobOut, jadi kontrak yang tak punya baris JobOut (cek prod 25 Nov 2026: 465
+     * kontrak aktif) tidak pernah dapat JA dan dilewati candidates().
+     *
+     * Bentuknya sama dengan candidates() tapi job_advice_id = null: plan() lalu membaca rental
+     * langsung dari contract_rentals, dan createJobAdvice() membuat JA-nya saat --apply.
+     *
+     * @return Collection<int, object>
+     */
+    public function contractsWithoutJobAdvice(?string $contractNumber = null, bool $includeExpired = false, ?int $limit = null): Collection
+    {
+        $query = DB::table('contracts as c')
+            ->leftJoin('customers as cu', 'cu.id', '=', 'c.customer_id')
+            ->whereNull('c.deleted_at')
+            ->whereIn('c.contract_status', ['active', 'running'])
+            ->whereNotNull('c.start_date')
+            ->whereNotNull('c.end_date')
+            ->whereExists(fn ($q) => $q->select(DB::raw(1))->from('source_import_maps as m')
+                ->where('m.source_system', 'catalyst')
+                ->where('m.source_table', 'MKTContractHd')
+                ->where('m.target_table', 'contracts')
+                ->whereColumn('m.target_id', 'c.id'))
+            ->whereNotExists(fn ($q) => $q->select(DB::raw(1))->from('job_advices as ja')
+                ->whereColumn('ja.contract_id', 'c.id')
+                ->whereNull('ja.deleted_at'))
+            ->orderBy('c.contract_number')
+            ->select(
+                DB::raw('NULL as job_advice_id'), 'cu.name as company_name',
+                'c.id as contract_id', 'c.contract_number', 'c.start_date', 'c.end_date',
+                'c.quotation_id', 'c.customer_id', 'c.marketing_id'
+            );
+
+        if ($contractNumber) {
+            $query->where('c.contract_number', $contractNumber);
+        }
+        if (! $includeExpired) {
+            $query->where('c.end_date', '>=', now()->toDateString());
+        }
+        if ($limit) {
+            $query->limit($limit);
+        }
+
+        return $query->get()->each(function ($candidate) {
+            $candidate->job_advice_number = self::JA_PREFIX.$candidate->contract_number;
+        });
+    }
+
+    /**
+     * Buat JA-CATALYST-* + job_advice_rooms dari rental kontrak, dengan isi yang sama dengan step
+     * importer `job_advices` / `job_advice_rooms`. Mengembalikan candidate yang sudah punya
+     * job_advice_id, siap untuk plan() + apply().
+     */
+    public function createJobAdvice(object $candidate, ?int $userId = null): object
+    {
+        $now = now();
+        $actorId = $candidate->marketing_id ?: $userId;
+
+        $jobAdviceId = DB::table('job_advices')->insertGetId([
+            'job_advice_number' => $candidate->job_advice_number,
+            'type' => 'install',
+            'reference_number' => $candidate->contract_number,
+            'company_name' => $candidate->company_name,
+            'contract_id' => $candidate->contract_id,
+            'quotation_id' => $candidate->quotation_id,
+            'customer_id' => $candidate->customer_id,
+            'request_by' => $actorId,
+            'submitted_by' => $actorId,
+            'submitted_at' => $now,
+            'expected_date' => substr((string) $candidate->start_date, 0, 10),
+            'status' => 'approved',
+            'date_approval' => $now,
+            'approved_by' => $actorId,
+            'with_invoicing' => false,
+            'with_materials' => true,
+            'notes' => "ImportedFrom: Catalyst MKTContractHd (tanpa MKTContractJobOut)\nContractNo: {$candidate->contract_number}",
+            'created_by' => $actorId,
+            'updated_by' => $actorId,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        foreach ($this->contractRentalRooms($candidate->contract_id) as $rental) {
+            DB::table('job_advice_rooms')->insert([
+                'job_advice_id' => $jobAdviceId,
+                'contract_room_id' => $rental->contract_room_id,
+                'contract_rental_id' => $rental->contract_rental_id,
+                'rental_product_id' => $rental->rental_product_id,
+                'room_name' => $rental->room_name,
+                'rental_name' => $rental->rental_name,
+                'quantity' => $rental->quantity,
+                'qty_free' => $rental->qty_free,
+                'rental_has_installation' => true,
+                'rental_has_service' => true,
+                'status' => 'pending',
+                'is_trial' => false,
+                'unit_already_installed' => false,
+                'notes' => "ImportedFrom: Catalyst MKTContractHd\nContractRentalId: {$rental->contract_rental_id}",
+                'created_by' => $userId,
+                'updated_by' => $userId,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        $created = clone $candidate;
+        $created->job_advice_id = $jobAdviceId;
+
+        return $created;
+    }
+
+    /**
+     * Rental kontrak dalam bentuk baris job_advice_rooms (belum tersimpan). Ruangan kontrak dicari
+     * seperti CatalystMasterDataImporter::findContractRoomForRental: contract_rooms dengan room_id
+     * yang sama, fallback ruangan kontrak pertama.
+     *
+     * @return Collection<int, object>
+     */
+    public function contractRentalRooms(int $contractId): Collection
+    {
+        $contractRooms = DB::table('contract_rooms')->where('contract_id', $contractId)->orderBy('id')->get(['id', 'room_id']);
+
+        $rentals = DB::table('contract_rentals as r')
+            ->leftJoin('master_rentals as mrt', 'mrt.id', '=', 'r.master_rental_id')
+            ->leftJoin('rental_service_frequencies as f', 'f.id', '=', 'mrt.service_frequency_id')
+            ->where('r.contract_id', $contractId)
+            ->orderBy('r.id')
+            ->get([
+                'r.id', 'r.room_id as rental_room_id', 'r.master_rental_id', 'r.rental_alias', 'r.quantity', 'r.qty_free',
+                'mrt.rental_name as master_rental_name', 'mrt.rental_type',
+                'f.id as frequency_id', 'f.name as frequency_name', 'f.frequency_months', 'f.frequency_times_per_month',
+            ]);
+
+        $roomIds = $contractRooms->pluck('room_id')->filter()->unique()->values();
+        $masterRooms = DB::table('master_rooms as mr')
+            ->leftJoin('buildings as b', 'b.id', '=', 'mr.building_id')
+            ->whereIn('mr.id', $roomIds)
+            ->get(['mr.id', 'mr.room_name', 'mr.building_id', 'b.nama_gedung', 'b.name as building_raw_name', 'b.postal_code'])
+            ->keyBy('id');
+
+        return $rentals->map(function ($rental) use ($contractRooms, $masterRooms) {
+            $contractRoom = ($rental->rental_room_id ? $contractRooms->firstWhere('room_id', $rental->rental_room_id) : null)
+                ?? $contractRooms->first();
+            $masterRoom = $contractRoom?->room_id ? $masterRooms->get($contractRoom->room_id) : null;
+            $name = fn (?string $value) => trim((string) $value) !== '' ? trim((string) $value) : null;
+
+            return (object) [
+                // Kunci sementara (belum ada job_advice_rooms.id); hanya dipakai saat dry-run.
+                'id' => 'cr'.$rental->id,
+                'contract_rental_id' => (int) $rental->id,
+                'contract_room_id' => $contractRoom?->id,
+                'room_id' => $contractRoom?->room_id,
+                'room_name' => $name($masterRoom?->room_name) ?? 'General',
+                'rental_product_id' => $rental->master_rental_id,
+                'rental_name' => $name($rental->rental_alias) ?? $name($rental->master_rental_name) ?? 'Rental',
+                'quantity' => (int) max(1, ceil((float) ($rental->quantity ?? 0))),
+                'qty_free' => (int) max(0, ceil((float) ($rental->qty_free ?? 0))),
+                'building_id' => $masterRoom?->building_id,
+                'nama_gedung' => $masterRoom?->nama_gedung,
+                'building_raw_name' => $masterRoom?->building_raw_name,
+                'postal_code' => $masterRoom?->postal_code,
+                'rental_type' => $rental->rental_type,
+                'frequency_id' => $rental->frequency_id,
+                'frequency_name' => $rental->frequency_name,
+                'frequency_months' => $rental->frequency_months,
+                'frequency_times_per_month' => $rental->frequency_times_per_month,
+            ];
+        });
+    }
+
     /** @return array{0: ?string, 1: string} [Y-m-d, sumber] */
     public function anchorFor(object $candidate): array
     {
@@ -148,7 +319,8 @@ class CatalystServiceScheduleBackfillService
         $today = ($today ?? now())->copy()->startOfDay();
         [$anchor, $source] = $this->anchorFor($candidate);
 
-        $rooms = DB::table('job_advice_rooms as jar')
+        // Kontrak tanpa JA (dry-run --create-missing-job-advice): rental dibaca dari kontrak.
+        $rooms = $candidate->job_advice_id === null ? $this->contractRentalRooms((int) $candidate->contract_id) : DB::table('job_advice_rooms as jar')
             ->leftJoin('contract_rooms as cr', 'cr.id', '=', 'jar.contract_room_id')
             ->leftJoin('master_rooms as mr', 'mr.id', '=', 'cr.room_id')
             ->leftJoin('buildings as b', 'b.id', '=', 'mr.building_id')

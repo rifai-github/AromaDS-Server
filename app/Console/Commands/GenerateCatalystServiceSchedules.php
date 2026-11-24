@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\Imports\Catalyst\CatalystServiceScheduleBackfillService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Permintaan klien 24 Nov 2026: buat jadwal service kontrak hasil import Catalyst dari BA date
@@ -18,6 +19,7 @@ class GenerateCatalystServiceSchedules extends Command
         {--apply : Tulis job ke database}
         {--contract= : Hanya satu nomor kontrak}
         {--include-expired : Ikutkan kontrak yang end_date-nya sudah lewat}
+        {--create-missing-job-advice : Ikutkan kontrak import Catalyst yang tak punya job advice (dibuatkan JA-CATALYST-* saat --apply)}
         {--limit= : Batasi jumlah kontrak}
         {--invoice-details=storage/app/catalyst/invoices/invoice_details_export.csv : Export FINCustInvDt (BASDate, CSR)}
         {--contract-details=storage/app/catalyst/contracts/contract_details_export.csv : Export MKTContractDt (InspectedInstall)}
@@ -42,12 +44,25 @@ class GenerateCatalystServiceSchedules extends Command
             $this->option('limit') ? (int) $this->option('limit') : null
         );
 
-        $this->info('Kontrak Catalyst tanpa jadwal service: '.$candidates->count().' - mode '.($apply ? 'APPLY' : 'dry-run').'.');
+        $missingJobAdvice = 0;
+        if ($this->option('create-missing-job-advice')) {
+            $withoutJobAdvice = $service->contractsWithoutJobAdvice(
+                $this->option('contract') ?: null,
+                (bool) $this->option('include-expired'),
+                $this->option('limit') ? (int) $this->option('limit') : null
+            );
+            $missingJobAdvice = $withoutJobAdvice->count();
+            $candidates = $candidates->concat($withoutJobAdvice);
+        }
+
+        $this->info('Kontrak Catalyst tanpa jadwal service: '.$candidates->count()
+            .($missingJobAdvice ? " (termasuk {$missingJobAdvice} tanpa job advice)" : '')
+            .' - mode '.($apply ? 'APPLY' : 'dry-run').'.');
         if ($candidates->isEmpty()) {
             return self::SUCCESS;
         }
 
-        $stats = ['contracts' => 0, 'no_group' => 0, 'jobs_done' => 0, 'jobs_outstanding' => 0, 'skipped_rooms' => 0];
+        $stats = ['contracts' => 0, 'no_group' => 0, 'jobs_done' => 0, 'jobs_outstanding' => 0, 'skipped_rooms' => 0, 'job_advices' => 0];
         $anchorSources = [];
         $rows = [];
         $show = max(0, (int) $this->option('show'));
@@ -68,7 +83,16 @@ class GenerateCatalystServiceSchedules extends Command
             $total = array_sum(array_map(fn ($group) => count($group['dates']), $plan['groups']));
 
             if ($apply) {
-                $counts = $service->apply($candidate, $plan, $userId);
+                // JA + jobnya satu transaksi: kontrak yang tak bisa dijadwalkan tidak dibuatkan JA.
+                $counts = DB::transaction(function () use ($service, &$candidate, &$plan, $userId, &$stats) {
+                    if ($candidate->job_advice_id === null) {
+                        $candidate = $service->createJobAdvice($candidate, $userId);
+                        $plan = $service->plan($candidate);
+                        $stats['job_advices']++;
+                    }
+
+                    return $service->apply($candidate, $plan, $userId);
+                });
                 $done = $counts['done'];
                 $total = $counts['done'] + $counts['outstanding'];
             }
@@ -94,6 +118,9 @@ class GenerateCatalystServiceSchedules extends Command
         $this->table(['Kontrak', 'Anchor (sumber)', 'Grup', 'Selesai', 'Outstanding', 'Service berikutnya'], $rows);
         $this->line('Sumber anchor: '.collect($anchorSources)->map(fn ($n, $source) => "{$source}={$n}")->implode(', '));
         $this->line("Kontrak dijadwalkan: {$stats['contracts']}; job selesai: {$stats['jobs_done']}; job outstanding: {$stats['jobs_outstanding']}.");
+        if ($apply && $stats['job_advices']) {
+            $this->line("Job advice JA-CATALYST-* baru: {$stats['job_advices']}.");
+        }
         if ($stats['no_group'] || $stats['skipped_rooms']) {
             $this->warn("Dilewati: {$stats['no_group']} kontrak tanpa rental yang bisa dijadwalkan; {$stats['skipped_rooms']} rental tanpa frekuensi service atau tanpa gedung.");
         }
