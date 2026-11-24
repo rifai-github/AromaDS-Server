@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Contract;
 use App\Models\ContractSignatureRequest;
+use App\Models\User;
 use App\Services\Marketing\ContractSignatureService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
@@ -31,7 +32,7 @@ class ContractDigitalSignatureTest extends TestCase
         Carbon::setTestNow('2026-11-23 10:00:00');
         Storage::fake('local');
 
-        foreach (['contract_signature_requests', 'customer_contacts', 'contracts'] as $table) {
+        foreach (['contract_signature_requests', 'customer_contacts', 'contracts', 'users'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -70,6 +71,7 @@ class ContractDigitalSignatureTest extends TestCase
             $t->timestamp('signed_at')->nullable();
             $t->string('signed_name')->nullable();
             $t->string('signature_path')->nullable();
+            $t->string('signature_method', 10)->nullable();
             $t->string('signer_ip', 45)->nullable();
             $t->text('signer_user_agent')->nullable();
             $t->string('final_document_path')->nullable();
@@ -103,7 +105,7 @@ class ContractDigitalSignatureTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['contract_signature_requests', 'customer_contacts', 'contracts'] as $table) {
+        foreach (['contract_signature_requests', 'customer_contacts', 'contracts', 'users'] as $table) {
             Schema::dropIfExists($table);
         }
         Carbon::setTestNow();
@@ -114,6 +116,22 @@ class ContractDigitalSignatureTest extends TestCase
     public static function markedHtml(): string
     {
         return self::MARKED_HTML;
+    }
+
+    /** User belum disimpan: cukup untuk Auth::check()/Auth::id() di halaman tanda tangan. */
+    private function pinkUser(int $id = 77, string $name = 'Furton'): User
+    {
+        $user = new User(['name' => $name]);
+        $user->id = $id;
+        // Middleware global membaca role/akun user; tabel-tabelnya tidak ada di test ini.
+        $user->setRelation('roles', collect());
+        $this->withoutMiddleware([
+            \App\Http\Middleware\CheckFrozenAccount::class,
+            \App\Http\Middleware\CheckMultiLogin::class,
+            \App\Http\Middleware\CheckLoginRestriction::class,
+        ]);
+
+        return $user;
     }
 
     private function service(): ContractSignatureService
@@ -151,6 +169,18 @@ class ContractDigitalSignatureTest extends TestCase
 
         [$internal, $customer] = [$rows[0], $rows[1]];
 
+        // Link Pihak Pink wajib login; link customer publik.
+        $this->get(route('contract-signatures.public.show', $internal->token))
+            ->assertRedirect(route('login'))
+            ->assertSessionHas('contract_signature.intended', route('contract-signatures.public.show', $internal->token));
+        $this->get(route('contract-signatures.public.document', $internal->token))->assertForbidden();
+        $this->postJson(route('contract-signatures.public.sign', $internal->token), $this->signPayload())->assertStatus(401);
+        $this->assertNull($internal->fresh()->signed_at);
+        $this->get(route('contract-signatures.public.show', $customer->token))->assertOk()->assertSee('Tanda Tangani Kontrak');
+        $this->get(route('contract-signatures.public.document', $customer->token))->assertOk();
+
+        $this->actingAs($this->pinkUser());
+
         $this->get(route('contract-signatures.public.show', $internal->token))
             ->assertOk()
             ->assertSee('SBY-CA/26-11/0001')
@@ -185,6 +215,59 @@ class ContractDigitalSignatureTest extends TestCase
             ->assertStatus(422);
     }
 
+    public function test_uploaded_signature_is_recorded_and_named_on_the_audit_page(): void
+    {
+        $this->actingAs($this->pinkUser());
+        $rows = $this->service()->createBatch(Contract::find(1));
+        [$internal, $customer] = [$rows[0], $rows[1]];
+
+        $this->get(route('contract-signatures.public.show', $customer->token))
+            ->assertOk()->assertSee('Unggah gambar')->assertSee('Gores di layar');
+
+        $this->postJson(route('contract-signatures.public.sign', $internal->token), $this->signPayload())
+            ->assertOk();
+        $this->postJson(route('contract-signatures.public.sign', $customer->token), $this->signPayload(['signature_method' => 'upload']))
+            ->assertOk()->assertJson(['status' => 'success']);
+
+        $this->assertSame('draw', $internal->fresh()->signature_method, 'Tanpa signature_method = digores (perilaku lama).');
+        $this->assertSame('upload', $customer->fresh()->signature_method);
+
+        $html = Storage::disk('local')->get($customer->fresh()->final_document_path);
+        $this->assertStringContainsString('Unggah gambar', $html);
+        $this->assertStringContainsString('Digores di layar', $html);
+
+        $this->postJson(route('contract-signatures.public.sign', $rows[0]->token), $this->signPayload(['signature_method' => 'fax']))
+            ->assertStatus(422)->assertJsonValidationErrors('signature_method');
+    }
+
+    public function test_pink_link_only_works_for_the_internal_signer_chosen_on_the_contract(): void
+    {
+        Schema::create('users', function (Blueprint $t) {
+            $t->id();
+            $t->string('name')->nullable();
+            $t->string('position_name')->nullable();
+            $t->timestamps();
+            $t->softDeletes();
+        });
+        DB::table('users')->insert(['id' => 77, 'name' => 'Furton']);
+        DB::table('contracts')->where('id', 1)->update(['internal_signing_id' => 77]);
+        $internal = $this->service()->createBatch(Contract::find(1))[0];
+        $this->assertSame(77, (int) $internal->signer_user_id);
+
+        $this->actingAs($this->pinkUser(78, 'Budi'));
+        $this->get(route('contract-signatures.public.show', $internal->token))
+            ->assertOk()->assertSee('Link ini khusus untuk')->assertSee('Budi')
+            ->assertDontSee('Tanda Tangani Kontrak')->assertDontSee('Dokumen Kontrak');
+        $this->get(route('contract-signatures.public.document', $internal->token))->assertForbidden();
+        $this->postJson(route('contract-signatures.public.sign', $internal->token), $this->signPayload())->assertForbidden();
+        $this->assertNull($internal->fresh()->signed_at);
+
+        $this->actingAs($this->pinkUser(77));
+        $this->get(route('contract-signatures.public.show', $internal->token))->assertOk()->assertSee('Tanda Tangani Kontrak');
+        $this->postJson(route('contract-signatures.public.sign', $internal->token), $this->signPayload())->assertOk();
+        $this->assertNotNull($internal->fresh()->signed_at);
+    }
+
     public function test_signed_contract_is_final_and_links_cannot_be_recreated(): void
     {
         $rows = $this->service()->createBatch(Contract::find(1));
@@ -199,6 +282,7 @@ class ContractDigitalSignatureTest extends TestCase
 
     public function test_recreating_links_before_anyone_signs_revokes_the_old_links(): void
     {
+        $this->actingAs($this->pinkUser());
         $old = $this->service()->createBatch(Contract::find(1));
         $new = $this->service()->createBatch(Contract::find(1));
 
@@ -215,6 +299,7 @@ class ContractDigitalSignatureTest extends TestCase
 
     public function test_expired_link_cannot_be_signed(): void
     {
+        $this->actingAs($this->pinkUser());
         $rows = $this->service()->createBatch(Contract::find(1));
 
         Carbon::setTestNow(now()->addDays((int) config('contract.signature_link_days', 14) + 1));
@@ -227,6 +312,7 @@ class ContractDigitalSignatureTest extends TestCase
 
     public function test_invalid_signature_or_missing_consent_is_rejected(): void
     {
+        $this->actingAs($this->pinkUser());
         $rows = $this->service()->createBatch(Contract::find(1));
         $url = route('contract-signatures.public.sign', $rows[0]->token);
 

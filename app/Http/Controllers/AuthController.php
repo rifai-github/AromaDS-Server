@@ -132,8 +132,12 @@ class AuthController extends Controller
             // Log successful login
             $this->logLoginAttempt($request, $user->id, true, null);
 
-            // Determine redirect URL based on user role
-            $redirectUrl = $this->getRedirectUrlByRole($user);
+            // Determine redirect URL based on user role. Link tanda tangan Pihak Pink yang dibuka
+            // sebelum login (PublicContractSignatureController) dikembalikan ke link itu.
+            $redirectUrl = $request->hasSession()
+                ? $request->session()->pull(\App\Http\Controllers\PublicContractSignatureController::INTENDED_SESSION_KEY)
+                : null;
+            $redirectUrl = $redirectUrl ?: $this->getRedirectUrlByRole($user);
 
             return response()->json([
                 'status' => 'success',

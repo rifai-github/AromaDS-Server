@@ -41,6 +41,10 @@ class ContractSignatureService
 
     private const MAX_SIGNATURE_BYTES = 1048576;
 
+    public const METHOD_DRAW = 'draw';
+
+    public const METHOD_UPLOAD = 'upload';
+
     /** @return Collection<int, ContractSignatureRequest> rows of the latest non-revoked batch */
     public function activeBatch(Contract $contract): Collection
     {
@@ -217,8 +221,12 @@ class ContractSignatureService
      * Simpan tanda tangan satu penandatangan. Bila semua penandatangan batch sudah tanda tangan,
      * PDF final langsung dibuat.
      */
-    public function sign(ContractSignatureRequest $request, string $signatureDataUrl, string $signedName, ?string $ip, ?string $userAgent): ContractSignatureRequest
+    public function sign(ContractSignatureRequest $request, string $signatureDataUrl, string $signedName, ?string $ip, ?string $userAgent, string $method = self::METHOD_DRAW): ContractSignatureRequest
     {
+        if (! in_array($method, [self::METHOD_DRAW, self::METHOD_UPLOAD], true)) {
+            throw new RuntimeException('Cara tanda tangan tidak dikenal.');
+        }
+
         $reason = $this->unavailableReason($request);
         if ($reason !== null) {
             throw new RuntimeException($reason);
@@ -230,7 +238,7 @@ class ContractSignatureService
         $png = $this->decodeSignaturePng($signatureDataUrl);
         $signaturePath = dirname($request->document_path).'/signature-'.$request->signer_role.'.png';
 
-        DB::transaction(function () use ($request, $png, $signaturePath, $signedName, $ip, $userAgent) {
+        DB::transaction(function () use ($request, $png, $signaturePath, $signedName, $ip, $userAgent, $method) {
             // Kunci baris supaya dua submit bersamaan tidak sama-sama lolos.
             $fresh = ContractSignatureRequest::query()->whereKey($request->id)->lockForUpdate()->first();
             if (! $fresh || $fresh->isSigned() || $fresh->isRevoked()) {
@@ -243,6 +251,7 @@ class ContractSignatureService
                 'signed_at' => now(),
                 'signed_name' => Str::limit(trim($signedName), 250, ''),
                 'signature_path' => $signaturePath,
+                'signature_method' => $method,
                 'signer_ip' => $ip,
                 'signer_user_agent' => $userAgent !== null ? Str::limit($userAgent, 1000, '') : null,
             ]);
@@ -256,6 +265,7 @@ class ContractSignatureService
             'signer_role' => $request->signer_role,
             'signer_name' => $request->signer_name,
             'signed_name' => $request->signed_name,
+            'signature_method' => $method,
             'ip' => $ip,
         ], null);
 
@@ -378,6 +388,7 @@ class ContractSignatureService
                 .'<td>'.e($row->signer_name).($row->signer_position ? '<br><span style="color:#555;">'.e($row->signer_position).'</span>' : '').'</td>'
                 .'<td>'.e($row->signed_name ?: '-').'</td>'
                 .'<td>'.e($row->signed_at?->timezone('Asia/Jakarta')->format('d/m/Y H:i:s')).' WIB</td>'
+                .'<td>'.($row->signature_method === self::METHOD_UPLOAD ? 'Unggah gambar' : 'Digores di layar').'</td>'
                 .'<td>'.e($row->signer_ip ?: '-').'</td>'
                 .'</tr>';
         }
@@ -388,10 +399,10 @@ class ContractSignatureService
             .'<div style="margin-bottom: 4px;">Dokumen dibekukan: '.e($frozenAt).' WIB</div>'
             .'<div style="margin-bottom: 12px;">SHA-256 dokumen yang ditandatangani: <span style="font-family: monospace;">'.e($first->document_hash).'</span></div>'
             .'<table style="width: 100%; border-collapse: collapse;" border="1" cellpadding="5">'
-            .'<tr style="background: #eef2f7; font-weight: bold;"><td>Pihak</td><td>Penandatangan</td><td>Nama yang diketik</td><td>Waktu tanda tangan</td><td>Alamat IP</td></tr>'
+            .'<tr style="background: #eef2f7; font-weight: bold;"><td>Pihak</td><td>Penandatangan</td><td>Nama yang diketik</td><td>Waktu tanda tangan</td><td>Cara</td><td>Alamat IP</td></tr>'
             .$rowsHtml
             .'</table>'
-            .'<div style="margin-top: 12px; line-height: 1.5;">Tanda tangan di atas digoreskan langsung oleh masing-masing pihak '
+            .'<div style="margin-top: 12px; line-height: 1.5;">Tanda tangan di atas digoreskan atau diunggah sendiri oleh masing-masing pihak '
             .'melalui tautan tanda tangan kontrak yang dikirim oleh PT Pink Services Indonesia. Isi kontrak dibekukan saat tautan dibuat '
             .'dan tidak berubah sesudahnya.</div>'
             .'</div>';

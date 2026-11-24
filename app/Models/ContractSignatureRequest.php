@@ -32,6 +32,7 @@ class ContractSignatureRequest extends Model
         'signed_at',
         'signed_name',
         'signature_path',
+        'signature_method',
         'signer_ip',
         'signer_user_agent',
         'final_document_path',

@@ -151,7 +151,8 @@ Route::get('/csrf-token', function () {
 // Public API Routes (no authentication required)
 Route::get('/email/verify/{token}', [App\Http\Controllers\Company\CustomerContactController::class, 'verifyEmail'])->name('email.verify');
 
-// MOM 19 Nov 2026 p4 no 8: Digital Sign kontrak - halaman publik penandatangan (tanpa login, akses via token).
+// MOM 19 Nov 2026 p4 no 8: Digital Sign kontrak - halaman penandatangan (akses via token).
+// Link Pihak Customer publik; link Pihak Pink wajib login (dicek di PublicContractSignatureController).
 Route::middleware('throttle:30,1')->group(function () {
     Route::get('/sign/contract/{token}', [App\Http\Controllers\PublicContractSignatureController::class, 'show'])->name('contract-signatures.public.show');
     Route::get('/sign/contract/{token}/document', [App\Http\Controllers\PublicContractSignatureController::class, 'document'])->name('contract-signatures.public.document');

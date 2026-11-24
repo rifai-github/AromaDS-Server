@@ -1955,7 +1955,7 @@
                                         <tbody>
                                             @foreach($signatureRows as $signatureRow)
                                                 <tr>
-                                                    <td>{{ $signatureRow->roleLabel() }}</td>
+                                                    <td>{{ $signatureRow->roleLabel() }}<br><small class="text-muted">{{ $signatureRow->signer_role === 'internal' ? 'Wajib login' : 'Publik, tanpa login' }}</small></td>
                                                     <td>{{ $signatureRow->signer_name }}@if($signatureRow->signer_position)<br><small class="text-muted">{{ $signatureRow->signer_position }}</small>@endif</td>
                                                     <td>
                                                         @if($signatureRow->isSigned())
@@ -1975,7 +1975,7 @@
                                                                 <button type="button" class="btn btn-outline-primary" onclick="copyContractSignatureLink('signatureLink{{ $signatureRow->id }}')">Salin</button>
                                                             </div>
                                                         @else
-                                                            <small class="text-muted">Nama diketik: {{ $signatureRow->signed_name }}</small>
+                                                            <small class="text-muted">Nama diketik: {{ $signatureRow->signed_name }}@if($signatureRow->signature_method === 'upload') · tanda tangan diunggah @endif</small>
                                                         @endif
                                                     </td>
                                                 </tr>
@@ -2404,6 +2404,13 @@ $(document).ready(function() {
             updateBuildingCoverage();
         }
     });
+
+    // Buka tab dari hash URL (mis. #files sesudah membuat link tanda tangan). Harus lewat
+    // handler klik di atas: Tab.show() Bootstrap tak menghapus display:none inline sehingga
+    // tombol tab aktif tapi isinya kosong sampai halaman di-refresh manual.
+    if (/^#[A-Za-z0-9_-]+$/.test(window.location.hash)) {
+        $('#contractTabs button[data-bs-target="' + window.location.hash + '"]').first().trigger('click');
+    }
     
     // Room actions
     $(document).on('click', '.edit-room', function() {
@@ -4994,15 +5001,6 @@ function createContractSignatureLinks(contractId, isRegenerate) {
         .catch(() => Swal.fire('Gagal', 'Terjadi kesalahan saat membuat link tanda tangan.', 'error'));
     });
 }
-
-// Setelah membuat link, halaman dimuat ulang ke tab Files (#files).
-document.addEventListener('DOMContentLoaded', () => {
-    if (window.location.hash !== '#files') return;
-    const filesTab = document.getElementById('files-tab');
-    if (filesTab && window.bootstrap?.Tab) {
-        window.bootstrap.Tab.getOrCreateInstance(filesTab).show();
-    }
-});
 
 function copyContractSignatureLink(inputId) {
     const input = document.getElementById(inputId);

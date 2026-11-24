@@ -342,6 +342,9 @@
                 <p>Please Sign In</p>
             </div>
 
+            @if(session('info'))
+                <div id="login-info" style="padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; background: #e7f0fd; color: #1e3a8a; border: 1px solid #b6cdf5;">{{ session('info') }}</div>
+            @endif
             <div class="alert alert-danger" id="error-alert"></div>
             <div class="alert alert-success" id="success-alert"></div>
 
