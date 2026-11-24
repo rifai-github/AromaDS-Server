@@ -737,6 +737,7 @@ class InvoiceController extends Controller
         if ($invoice->contract) {
             $contractFiles = \App\Models\ContractFile::where('contract_id', $invoice->contract->id)
                 ->where('verification_status', 'verified')
+                ->where('is_invoice_attachment', true)
                 ->with('uploader')
                 ->get();
 

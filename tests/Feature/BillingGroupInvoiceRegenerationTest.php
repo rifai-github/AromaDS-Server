@@ -273,6 +273,7 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
             $table->string('file_path')->nullable();
             $table->string('file_type')->nullable();
             $table->string('verification_status')->nullable();
+            $table->boolean('is_invoice_attachment')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });

@@ -2941,6 +2941,10 @@ class ContractController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'verification_notes' => 'nullable|string',
+            // Spec Report 24 Nov 2026 poin 1: Ya/Tidak jadi pelengkap invoice.
+            'is_invoice_attachment' => 'required|boolean',
+        ], [
+            'is_invoice_attachment.required' => 'Pilih apakah file ini menjadi pelengkap invoice (Ya/Tidak).',
         ]);
 
         if ($validator->fails()) {
@@ -2968,8 +2972,9 @@ class ContractController extends Controller
                 $request->verification_notes ?? 'File verified'
             );
 
-            // Link to existing invoices for this contract
-            $this->linkContractFileToExistingInvoices($contractFile);
+            // Pelengkap invoice = Ya: salin ke lampiran invoice kontrak yang sudah ada.
+            app(\App\Services\Marketing\ContractFileInvoiceAttachmentService::class)
+                ->setAttachment($contractFile->fresh(), $request->boolean('is_invoice_attachment'));
 
             return response()->json([
                 'status' => 'success',
@@ -3527,6 +3532,9 @@ class ContractController extends Controller
         $validator = Validator::make($request->all(), [
             'file_ids' => 'required|array|min:1',
             'file_ids.*' => 'required|integer|exists:contract_files,id',
+            'is_invoice_attachment' => 'required|boolean',
+        ], [
+            'is_invoice_attachment.required' => 'Pilih apakah file menjadi pelengkap invoice (Ya/Tidak).',
         ]);
 
         if ($validator->fails()) {
@@ -3568,6 +3576,8 @@ class ContractController extends Controller
                     Auth::id(),
                     'Bulk approved'
                 );
+                app(\App\Services\Marketing\ContractFileInvoiceAttachmentService::class)
+                    ->setAttachment($contractFile->fresh(), $request->boolean('is_invoice_attachment'));
                 $approvedCount++;
             }
 
@@ -3595,43 +3605,48 @@ class ContractController extends Controller
     }
 
     /**
-     * Link verified contract file to existing invoices for that contract
+     * Spec Report 24 Nov 2026 poin 1: ubah Ya/Tidak pelengkap invoice untuk file yang sudah verified.
      */
-    private function linkContractFileToExistingInvoices($contractFile)
+    public function updateFileInvoiceAttachment(Request $request, Contract $contract, $fileId)
     {
-        $contract = $contractFile->contract;
-        if (! $contract) {
-            return;
+        $validator = Validator::make($request->all(), [
+            'is_invoice_attachment' => 'required|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $validator->errors(),
+            ], 422);
         }
 
-        // Find all active/sent/draft invoices for this contract
-        $invoices = \App\Models\Invoice::where('contract_number', $contract->contract_number)
-            ->where('invoice_status', '!=', 'cancelled')
-            ->get();
-
-        foreach ($invoices as $invoice) {
-            $cleanPath = str_replace('uploads/', '', $contractFile->file_path);
-
-            // Ensure no double attachment
-            $exists = \App\Models\InvoiceFile::where('invoice_id', $invoice->id)
-                ->where('file_path', $cleanPath)
-                ->exists();
-
-            if (! $exists) {
-                \App\Models\InvoiceFile::create([
-                    'invoice_id' => $invoice->id,
-                    'file_type' => 'attachment',
-                    'file_name' => 'Contract File - '.$contractFile->file_name,
-                    'file_path' => $cleanPath,
-                    'file_size' => $contractFile->file_size,
-                    'mime_type' => $contractFile->mime_type,
-                    'description' => "File Kontrak #{$contract->contract_number}: {$contractFile->file_type}",
-                    'uploaded_by' => $contractFile->uploaded_by,
-                    'uploaded_at' => $contractFile->uploaded_at,
-                ]);
-                Log::info("Contract File #{$contractFile->id} linked to existing Invoice #{$invoice->id}");
-            }
+        if (! Auth::user()->hasPermission('marketing.contract_files.approve') && ! Auth::user()->canApprove('contract_files')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Anda tidak memiliki akses untuk mengubah pelengkap invoice.',
+            ], 403);
         }
+
+        $contractFile = \App\Models\ContractFile::where('contract_id', $contract->id)
+            ->where('id', $fileId)
+            ->firstOrFail();
+
+        if ($contractFile->verification_status !== 'verified') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Pelengkap invoice hanya bisa diatur untuk file yang sudah diverifikasi.',
+            ], 422);
+        }
+
+        $attach = $request->boolean('is_invoice_attachment');
+        app(\App\Services\Marketing\ContractFileInvoiceAttachmentService::class)->setAttachment($contractFile, $attach);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $attach
+                ? 'File dijadikan pelengkap invoice.'
+                : 'File tidak lagi menjadi pelengkap invoice.',
+        ]);
     }
 
     /**

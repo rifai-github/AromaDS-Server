@@ -2035,6 +2035,7 @@
                                             <th style="width: 110px;">Upload Date</th>
                                             <th style="width: 100px;">Uploaded By</th>
                                             <th style="width: 80px;">Status</th>
+                                            <th style="width: 120px;">Pelengkap Invoice</th>
                                             <th style="width: 100px;">Approved By</th>
                                             <th style="width: 110px;">Approved At</th>
                                             <th style="width: 120px;">Actions</th>
@@ -2078,6 +2079,26 @@
                                                     </span>
                                                 @endif
                                             </td>
+                                            <td class="text-center">
+                                                {{-- Spec Report 24 Nov 2026 poin 1: hanya file verified + "Ya" yang ikut invoice --}}
+                                                @if($file->verification_status === 'verified')
+                                                    @if($file->is_invoice_attachment === true)
+                                                        <span class="badge bg-success">Ya</span>
+                                                    @elseif($file->is_invoice_attachment === false)
+                                                        <span class="badge bg-secondary">Tidak</span>
+                                                    @else
+                                                        <span class="badge bg-warning text-dark">Belum dipilih</span>
+                                                    @endif
+                                                    @if(auth()->user()->hasPermission('marketing.contract_files.approve') || auth()->user()->canApprove('contract_files'))
+                                                        <button type="button" class="btn btn-link btn-sm p-0 ms-1" title="Ubah pelengkap invoice"
+                                                            onclick="setFileInvoiceAttachment({{ $contract->id }}, {{ $file->id }}, {{ $file->is_invoice_attachment === true ? 'false' : 'true' }})">
+                                                            {{ $file->is_invoice_attachment === true ? 'Jadikan Tidak' : 'Jadikan Ya' }}
+                                                        </button>
+                                                    @endif
+                                                @else
+                                                    <span class="text-muted">-</span>
+                                                @endif
+                                            </td>
                                             <td>{{ $file->verifier->name ?? '-' }}</td>
                                             <td class="text-center">
                                                 {{ $file->verified_at ? $file->verified_at->format('d/M/Y H:i') : '-' }}
@@ -2110,7 +2131,7 @@
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="11" class="text-center text-muted py-5">
+                                            <td colspan="12" class="text-center text-muted py-5">
                                                 <i class="fas fa-folder-open fa-3x mb-3 d-block" style="color: #ccc;"></i>
                                                 <p class="mb-0">No files uploaded yet.</p>
                                                 <small>Click "ADD FILE" button above to upload files</small>
@@ -5732,6 +5753,9 @@ async function verifyFile(contractId, fileId) {
 
     if (noteResult.dismiss === Swal.DismissReason.cancel) return;
 
+    const attachment = await askInvoiceAttachment('Jadikan file ini pelengkap invoice?');
+    if (attachment === null) return;
+
     fetch(`/marketing/contracts/${contractId}/files/${fileId}/verify`, {
         method: 'POST',
         headers: {
@@ -5739,7 +5763,7 @@ async function verifyFile(contractId, fileId) {
             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
             'Accept': 'application/json'
         },
-        body: JSON.stringify({ verification_notes: noteResult.value || 'File verified' })
+        body: JSON.stringify({ verification_notes: noteResult.value || 'File verified', is_invoice_attachment: attachment })
     })
     .then(response => response.json())
     .then(data => {
@@ -5752,6 +5776,57 @@ async function verifyFile(contractId, fileId) {
     .catch(error => {
         console.error('Error verifying file:', error);
         showErrorDialog('Gagal memverifikasi file: ' + error.message);
+    });
+}
+
+// Spec Report 24 Nov 2026 poin 1: file verified dipilih Ya/Tidak sebagai pelengkap invoice.
+// Mengembalikan true/false, atau null bila dibatalkan.
+async function askInvoiceAttachment(title) {
+    const result = await Swal.fire({
+        title: title,
+        text: 'Hanya file yang dipilih "Ya" yang ikut menjadi lampiran invoice.',
+        input: 'radio',
+        // Kunci teks (bukan '1'/'0') supaya urutan tampil tetap Ya lalu Tidak.
+        inputOptions: { ya: 'Ya', tidak: 'Tidak' },
+        inputValidator: (value) => (value === null || value === undefined || value === '') ? 'Pilih Ya atau Tidak.' : undefined,
+        showCancelButton: true,
+        confirmButtonText: 'Simpan',
+        cancelButtonText: 'Batal'
+    });
+    if (!result.isConfirmed) return null;
+    return result.value === 'ya';
+}
+
+function setFileInvoiceAttachment(contractId, fileId, attach) {
+    showConfirmDialog({
+        title: attach ? 'Jadikan pelengkap invoice?' : 'Keluarkan dari pelengkap invoice?',
+        text: attach
+            ? 'File akan ikut menjadi lampiran invoice kontrak ini.'
+            : 'File tidak lagi ikut menjadi lampiran invoice kontrak ini.',
+        icon: 'question',
+        confirmButtonText: 'Ya, simpan',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+
+        fetch(`/marketing/contracts/${contractId}/files/${fileId}/invoice-attachment`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({ is_invoice_attachment: attach })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showSuccessDialog(data.message).then(() => { window.location.hash = 'files'; window.location.reload(); });
+            } else {
+                throw new Error(data.message || 'Gagal menyimpan pelengkap invoice');
+            }
+        })
+        .catch(error => showErrorDialog('Gagal menyimpan: ' + error.message));
     });
 }
 
@@ -5845,6 +5920,9 @@ async function bulkApproveFiles() {
 
     const fileIds = Array.from(checkedBoxes).map(cb => parseInt(cb.value));
 
+    const attachment = await askInvoiceAttachment(`Jadikan ${fileIds.length} file ini pelengkap invoice?`);
+    if (attachment === null) return;
+
     showConfirmDialog({
         title: 'Approve File?',
         text: `Apakah Anda yakin ingin approve ${fileIds.length} file?`,
@@ -5866,7 +5944,7 @@ async function bulkApproveFiles() {
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
                 'Accept': 'application/json'
             },
-            body: JSON.stringify({ file_ids: fileIds })
+            body: JSON.stringify({ file_ids: fileIds, is_invoice_attachment: attachment })
         })
         .then(response => response.json())
         .then(data => {

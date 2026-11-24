@@ -507,6 +507,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('contracts/{contract}/files', [ContractController::class, 'getFiles'])->name('contracts.files');
         Route::post('contracts/{contract}/files/{file}/verify', [ContractController::class, 'verifyFile'])->name('contracts.files.verify');
         Route::post('contracts/{contract}/files/{file}/reject', [ContractController::class, 'rejectFile'])->name('contracts.files.reject');
+        Route::post('contracts/{contract}/files/{file}/invoice-attachment', [ContractController::class, 'updateFileInvoiceAttachment'])->name('contracts.files.invoice-attachment');
         Route::delete('contracts/{contract}/files/{file}', [ContractController::class, 'deleteFile'])->name('contracts.files.delete');
         Route::post('contracts/{contract}/files/bulk-approve', [ContractController::class, 'bulkApproveFiles'])->name('contracts.files.bulk-approve');
 

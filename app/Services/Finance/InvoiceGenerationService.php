@@ -1545,8 +1545,10 @@ class InvoiceGenerationService
      */
     private function attachVerifiedContractFiles(Invoice $invoice, Contract $contract): void
     {
+        // Spec Report 24 Nov 2026 poin 1: hanya file yang dipilih "Ya" sebagai pelengkap invoice.
         $contractFiles = ContractFile::where('contract_id', $contract->id)
             ->where('verification_status', 'verified')
+            ->where('is_invoice_attachment', true)
             ->get();
 
         foreach ($contractFiles as $contractFile) {

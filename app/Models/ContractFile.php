@@ -27,11 +27,13 @@ class ContractFile extends Model
         'verified_by',
         'verified_at',
         'verification_notes',
+        'is_invoice_attachment',
     ];
 
     protected $casts = [
         'uploaded_at' => 'datetime',
         'verified_at' => 'datetime',
+        'is_invoice_attachment' => 'boolean',
     ];
 
     // Relationships
