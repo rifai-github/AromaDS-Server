@@ -80,12 +80,14 @@
         <div class="alert alert-ok">
             Dokumen ini sudah Anda tandatangani pada
             <b>{{ $signatureRequest->signed_at->timezone('Asia/Jakarta')->format('d/m/Y H:i') }} WIB</b>. Terima kasih.
+            Link ini sudah tidak aktif.
         </div>
     @elseif($unavailableReason)
         <div class="alert alert-warn">{{ $unavailableReason }}</div>
     @endif
 
-    @if(! $signatureRequest->isRevoked() && empty($accessDenied))
+    {{-- Link yang sudah dipakai tanda tangan tidak aktif lagi: dokumen tak ditampilkan. --}}
+    @if(! $signatureRequest->isRevoked() && ! $signatureRequest->isSigned() && empty($accessDenied))
         <div class="card">
             <h2>Dokumen Kontrak</h2>
             <iframe class="doc-frame" src="{{ route('contract-signatures.public.document', $signatureRequest->token) }}" title="Dokumen kontrak"></iframe>

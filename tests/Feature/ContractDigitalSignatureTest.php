@@ -208,9 +208,12 @@ class ContractDigitalSignatureTest extends TestCase
         $this->assertStringContainsString($internal->document_hash, $html);
         $this->assertLessThan(strpos($html, '</body>'), strpos($html, 'Lembar Pengesahan'));
 
-        // Link yang sudah dipakai menampilkan status, tidak bisa tanda tangan lagi.
+        // Link yang sudah dipakai tidak aktif lagi: hanya status, tanpa dokumen, tak bisa tanda tangan.
         $this->get(route('contract-signatures.public.show', $internal->token))
-            ->assertOk()->assertSee('sudah Anda tandatangani')->assertDontSee('Tanda Tangani Kontrak');
+            ->assertOk()->assertSee('sudah Anda tandatangani')->assertSee('Link ini sudah tidak aktif')
+            ->assertDontSee('Tanda Tangani Kontrak')->assertDontSee('Dokumen Kontrak');
+        $this->get(route('contract-signatures.public.document', $internal->token))->assertNotFound();
+        $this->get(route('contract-signatures.public.document', $customer->token))->assertNotFound();
         $this->postJson(route('contract-signatures.public.sign', $internal->token), $this->signPayload())
             ->assertStatus(422);
     }

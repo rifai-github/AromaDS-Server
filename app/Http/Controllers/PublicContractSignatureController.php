@@ -55,7 +55,9 @@ class PublicContractSignatureController extends Controller
     public function document(string $token)
     {
         $signatureRequest = $this->signatures->findByToken($token);
-        if (! $signatureRequest || $signatureRequest->isRevoked()) {
+        // Spec 24 Nov 2026: link yang sudah dipakai tanda tangan tidak aktif lagi. Dokumen
+        // bertanda tangan diunduh admin dari tab Files kontrak, bukan lewat link ini.
+        if (! $signatureRequest || $signatureRequest->isRevoked() || $signatureRequest->isSigned()) {
             abort(404);
         }
         if ($this->needsLogin($signatureRequest) || $this->wrongUserMessage($signatureRequest) !== null) {
