@@ -1297,6 +1297,7 @@
                         <div class="p-3 bg-gray-50 rounded-lg">
                             <label for="create_grace_period_days" class="text-sm font-medium text-gray-700">Grace Period (hari)</label>
                             <input type="number" id="create_grace_period_days" name="grace_period_days" min="0" step="1" value="0" class="w-full px-3 py-2 mt-1 border border-gray-300 rounded-lg">
+                            <p class="mt-1 text-xs text-gray-500">Dihitung dari tanggal invoice. Kosong/0 = default {{ config('contract.grace_default_days', 60) }} hari.</p>
                             <small class="text-gray-500">Masa tenggang pembayaran invoice; berlaku untuk semua kontrak &amp; invoice customer ini.</small>
                         </div>
                         <div class="flex items-center p-3 bg-gray-50 rounded-lg">
@@ -1736,6 +1737,7 @@
                         <div class="p-3 bg-gray-50 rounded-lg">
                             <label for="edit_grace_period_days" class="text-sm font-medium text-gray-700">Grace Period (hari)</label>
                             <input type="number" id="edit_grace_period_days" name="grace_period_days" min="0" step="1" value="0" class="w-full px-3 py-2 mt-1 border border-gray-300 rounded-lg">
+                            <p class="mt-1 text-xs text-gray-500">Dihitung dari tanggal invoice. Kosong/0 = default {{ config('contract.grace_default_days', 60) }} hari.</p>
                             <small class="text-gray-500">Masa tenggang pembayaran invoice; berlaku untuk semua kontrak &amp; invoice customer ini.</small>
                         </div>
                         <div class="flex items-center p-3 bg-gray-50 rounded-lg">

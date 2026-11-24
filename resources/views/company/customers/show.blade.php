@@ -370,7 +370,7 @@
                         </div>
                         <div style="grid-column: span 2;">
                             <div class="info-label">Grace Period</div>
-                            <div class="info-value-text">{{ (int) ($customer->grace_period_days ?? 0) }} hari</div>
+                            <div class="info-value-text">@if((int) ($customer->grace_period_days ?? 0) > 0){{ (int) $customer->grace_period_days }} hari @else{{ config('contract.grace_default_days', 60) }} hari (default) @endif</div>
                         </div>
                     </div>
 
@@ -838,6 +838,7 @@
                             <div class="p-4 bg-slate-50 rounded-lg border border-slate-200">
                                 <label for="edit_grace_period_days" class="font-bold text-slate-700">Grace Period (hari)</label>
                                 <input type="number" id="edit_grace_period_days" name="grace_period_days" min="0" step="1" value="{{ (int) ($customer->grace_period_days ?? 0) }}" class="form-control mt-1">
+                                <small class="text-muted">Dihitung dari tanggal invoice. Kosong/0 = default {{ config('contract.grace_default_days', 60) }} hari.</small>
                                 <small class="text-slate-500">Masa tenggang pembayaran invoice; lewat dari ini kontrak bisa di-suspend.</small>
                             </div>
                             <div class="flex items-center p-4 bg-slate-50 rounded-lg border border-slate-200">

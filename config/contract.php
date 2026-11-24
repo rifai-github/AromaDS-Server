@@ -18,6 +18,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Aturan grace period (jawaban klien 24 Nov 2026)
+    |--------------------------------------------------------------------------
+    |
+    | Grace dihitung dari tanggal invoice terbit. Customer yang grace_period_days-nya kosong/0
+    | memakai grace_default_days. Suspend otomatis hanya untuk invoice yang terbit mulai
+    | grace_auto_suspend_from (kosongkan env untuk tanpa batas).
+    |
+    */
+
+    'grace_default_days' => (int) env('GRACE_DEFAULT_DAYS', 60),
+
+    'grace_auto_suspend_from' => env('GRACE_AUTO_SUSPEND_FROM', '2027-01-01'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Masa berlaku link tanda tangan digital kontrak (hari)
     |--------------------------------------------------------------------------
     |

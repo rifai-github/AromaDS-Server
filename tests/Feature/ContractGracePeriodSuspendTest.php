@@ -8,14 +8,19 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * MOM 19 Nov 2026 p3: grace period di level customer. Invoice yang lewat jatuh tempo + grace
- * period dan belum lunas membuat semua room kontraknya di-suspend (job off sampai di-unsuspend).
+ * MOM 19 Nov 2026 p3: grace period di level customer. Invoice belum lunas yang lewat grace period
+ * membuat semua room kontraknya di-suspend (job off sampai di-unsuspend).
+ *
+ * Jawaban klien 24 Nov 2026: grace dihitung dari tanggal invoice, grace kosong/0 = 60 hari, dan
+ * hanya invoice terbit mulai 1 Jan 2027 yang memicu suspend.
  */
 class ContractGracePeriodSuspendTest extends TestCase
 {
     protected function setUp(): void
     {
         parent::setUp();
+
+        config(['contract.grace_default_days' => 60, 'contract.grace_auto_suspend_from' => '2027-01-01']);
 
         foreach (['contract_room_suspensions', 'audit_logs', 'invoices', 'contract_rooms', 'master_rooms', 'contracts', 'customers'] as $table) {
             Schema::dropIfExists($table);
@@ -52,7 +57,10 @@ class ContractGracePeriodSuspendTest extends TestCase
             $t->string('invoice_number')->nullable();
             $t->unsignedBigInteger('customer_id')->nullable();
             $t->unsignedBigInteger('contract_id')->nullable();
+            $t->date('invoice_date')->nullable();
             $t->date('due_date')->nullable();
+            $t->decimal('grand_total', 15, 2)->nullable();
+            $t->decimal('total_amount', 15, 2)->nullable();
             $t->string('status')->default('draft');
             $t->string('invoice_status')->default('draft');
             $t->timestamps();
@@ -83,6 +91,7 @@ class ContractGracePeriodSuspendTest extends TestCase
             ['id' => 1, 'contract_number' => 'CT-1'],
             ['id' => 2, 'contract_number' => 'CT-2'],
             ['id' => 3, 'contract_number' => 'CT-3'],
+            ['id' => 4, 'contract_number' => 'CT-4'],
         ]);
         DB::table('master_rooms')->insert([['id' => 1, 'room_name' => 'Lobby'], ['id' => 2, 'room_name' => 'Meeting']]);
         DB::table('contract_rooms')->insert([
@@ -90,20 +99,26 @@ class ContractGracePeriodSuspendTest extends TestCase
             ['id' => 12, 'contract_id' => 1, 'room_id' => 2],
             ['id' => 21, 'contract_id' => 2, 'room_id' => 1],
             ['id' => 31, 'contract_id' => 3, 'room_id' => 1],
+            ['id' => 41, 'contract_id' => 4, 'room_id' => 1],
         ]);
         DB::table('invoices')->insert([
-            // Jatuh tempo 10 Nov + grace 7 = 17 Nov -> per 22 Nov lewat.
-            ['invoice_number' => 'INV-1', 'customer_id' => 1, 'contract_id' => 1, 'due_date' => '2026-11-10', 'status' => 'sent', 'invoice_status' => 'sent'],
-            // Jatuh tempo 18 Nov + grace 7 = 25 Nov -> masih dalam tenggang.
-            ['invoice_number' => 'INV-2', 'customer_id' => 1, 'contract_id' => 2, 'due_date' => '2026-11-18', 'status' => 'sent', 'invoice_status' => 'sent'],
+            // Tgl invoice 5 Jan + grace 7 = 12 Jan -> per 20 Jan lewat. Jatuh tempo (yang lebih
+            // lambat) sengaja diabaikan: grace dihitung dari tanggal invoice.
+            ['invoice_number' => 'INV-1', 'customer_id' => 1, 'contract_id' => 1, 'invoice_date' => '2027-01-05', 'due_date' => '2027-02-05', 'status' => 'sent', 'invoice_status' => 'sent'],
+            // Tgl invoice 15 Jan + grace 7 = 22 Jan -> per 20 Jan masih dalam tenggang.
+            ['invoice_number' => 'INV-2', 'customer_id' => 1, 'contract_id' => 2, 'invoice_date' => '2027-01-15', 'due_date' => '2027-02-15', 'status' => 'sent', 'invoice_status' => 'sent'],
+            // Customer grace 0 -> default 60 hari: 2 Jan + 60 = 3 Mar.
+            ['invoice_number' => 'INV-3', 'customer_id' => 2, 'contract_id' => 3, 'invoice_date' => '2027-01-02', 'due_date' => '2027-01-16', 'status' => 'sent', 'invoice_status' => 'sent'],
             // Sudah lunas -> tak dihitung walau lewat.
-            ['invoice_number' => 'INV-3', 'customer_id' => 2, 'contract_id' => 3, 'due_date' => '2026-10-01', 'status' => 'paid', 'invoice_status' => 'paid'],
+            ['invoice_number' => 'INV-4', 'customer_id' => 2, 'contract_id' => 3, 'invoice_date' => '2027-01-01', 'due_date' => '2027-01-02', 'status' => 'paid', 'invoice_status' => 'paid'],
+            // Terbit sebelum 1 Jan 2027 -> tidak pernah memicu suspend otomatis.
+            ['invoice_number' => 'INV-OLD', 'customer_id' => 1, 'contract_id' => 4, 'invoice_date' => '2026-10-01', 'due_date' => '2026-10-15', 'status' => 'sent', 'invoice_status' => 'sent'],
         ]);
     }
 
     public function test_dry_run_lists_but_does_not_suspend(): void
     {
-        $this->artisan('contracts:suspend-past-grace', ['--date' => '2026-11-22'])
+        $this->artisan('contracts:suspend-past-grace', ['--date' => '2027-01-20'])
             ->expectsOutputToContain('CT-1')
             ->assertSuccessful();
 
@@ -112,15 +127,33 @@ class ContractGracePeriodSuspendTest extends TestCase
 
     public function test_apply_suspends_every_room_of_the_contract_past_grace_only(): void
     {
-        $this->artisan('contracts:suspend-past-grace', ['--date' => '2026-11-22', '--apply' => true])->assertSuccessful();
+        $this->artisan('contracts:suspend-past-grace', ['--date' => '2027-01-20', '--apply' => true])->assertSuccessful();
 
         $this->assertEqualsCanonicalizing([11, 12], DB::table('contract_room_suspensions')->pluck('contract_room_id')->map(fn ($id) => (int) $id)->all());
         $this->assertStringContainsString('INV-1', (string) DB::table('contract_room_suspensions')->value('notes'));
-        $this->assertSame(0, DB::table('contract_room_suspensions')->whereIn('contract_id', [2, 3])->count());
+        $this->assertSame(0, DB::table('contract_room_suspensions')->whereIn('contract_id', [2, 3, 4])->count());
 
         // Dijalankan lagi tidak menggandakan suspend.
-        $this->artisan('contracts:suspend-past-grace', ['--date' => '2026-11-23', '--apply' => true])->assertSuccessful();
+        $this->artisan('contracts:suspend-past-grace', ['--date' => '2027-01-21', '--apply' => true])->assertSuccessful();
         $this->assertSame(2, DB::table('contract_room_suspensions')->count());
+    }
+
+    public function test_empty_grace_uses_sixty_days_from_the_invoice_date(): void
+    {
+        // 2 Jan + 60 hari = 3 Mar: tanggal 3 Mar masih tenggang, 4 Mar lewat.
+        $this->artisan('contracts:suspend-past-grace', ['--date' => '2027-03-03', '--apply' => true])->assertSuccessful();
+        $this->assertSame(0, DB::table('contract_room_suspensions')->where('contract_id', 3)->count());
+
+        $this->artisan('contracts:suspend-past-grace', ['--date' => '2027-03-04', '--apply' => true])->assertSuccessful();
+        $this->assertSame([31], DB::table('contract_room_suspensions')->where('contract_id', 3)->pluck('contract_room_id')->map(fn ($id) => (int) $id)->all());
+    }
+
+    public function test_invoices_issued_before_the_cut_off_never_trigger_suspend(): void
+    {
+        $this->artisan('contracts:suspend-past-grace', ['--date' => '2027-12-31', '--apply' => true])->assertSuccessful();
+
+        $this->assertSame(0, DB::table('contract_room_suspensions')->where('contract_id', 4)->count());
+        $this->assertGreaterThan(0, DB::table('contract_room_suspensions')->where('contract_id', 1)->count());
     }
 
     public function test_customer_edit_without_the_field_keeps_the_grace_period(): void

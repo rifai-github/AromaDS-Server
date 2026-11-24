@@ -4,16 +4,20 @@ namespace App\Console\Commands;
 
 use App\Models\Contract;
 use App\Models\ContractRoom;
+use App\Services\Finance\GracePeriodService;
 use App\Services\Operational\ContractRoomSuspensionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 
 /**
  * MOM 19 Nov 2026 p3: grace period ada di level customer (customers.grace_period_days). Bila
- * invoice lewat jatuh tempo + grace period dan belum lunas, kontraknya di-suspend: semua room
- * kontrak itu dikunci (ContractRoomSuspensionService) sehingga job-nya off sampai di-unsuspend
- * admin di tab Room & Rental.
+ * invoice belum lunas melewati grace period, kontraknya di-suspend: semua room kontrak itu
+ * dikunci (ContractRoomSuspensionService) sehingga job-nya off sampai di-unsuspend admin di
+ * tab Room & Rental.
+ *
+ * Jawaban klien 24 Nov 2026: grace dihitung dari TANGGAL INVOICE (bukan jatuh tempo), grace
+ * kosong/0 = 60 hari, dan hanya invoice terbit mulai 1 Jan 2027 yang memicu suspend. Aturannya
+ * ada di GracePeriodService.
  *
  * Default dry-run. Tulis ke database hanya dengan --apply. Penjadwalan harian hanya aktif bila
  * GRACE_AUTO_SUSPEND=true (lihat config/contract.php) supaya invoice lama hasil import tak
@@ -26,38 +30,19 @@ class SuspendContractsPastGracePeriod extends Command
         {--date= : Tanggal acuan (default hari ini)}
         {--limit=30 : Jumlah baris yang ditampilkan}';
 
-    protected $description = 'Suspend semua room kontrak yang punya invoice belum lunas melewati jatuh tempo + grace period customer';
+    protected $description = 'Suspend semua room kontrak yang punya invoice belum lunas melewati tanggal invoice + grace period customer';
 
-    private const ISSUED_STATUSES = ['approved', 'tax_approved', 'sent', 'overdue'];
-
-    private const CLOSED_STATUSES = ['paid', 'cancelled', 'Paid', 'Cancelled', 'void'];
-
-    public function handle(ContractRoomSuspensionService $suspensions): int
+    public function handle(ContractRoomSuspensionService $suspensions, GracePeriodService $grace): int
     {
         $apply = (bool) $this->option('apply');
         $today = $this->option('date') ? Carbon::parse($this->option('date'))->startOfDay() : now()->startOfDay();
 
-        $invoices = DB::table('invoices as i')
-            ->join('customers as c', 'c.id', '=', 'i.customer_id')
-            ->whereNull('i.deleted_at')
-            ->whereNotNull('i.contract_id')
-            ->whereNotNull('i.due_date')
-            ->whereNotIn('i.status', self::CLOSED_STATUSES)
-            ->whereNotIn('i.invoice_status', self::CLOSED_STATUSES)
-            ->where(function ($query) {
-                $query->whereIn('i.status', self::ISSUED_STATUSES)
-                    ->orWhereIn('i.invoice_status', self::ISSUED_STATUSES);
-            })
-            ->select('i.id', 'i.invoice_number', 'i.contract_id', 'i.due_date', 'c.name as customer_name', 'c.grace_period_days')
-            ->orderBy('i.due_date')
-            ->get()
-            ->filter(function ($invoice) use ($today) {
-                $limit = Carbon::parse($invoice->due_date)->startOfDay()->addDays((int) ($invoice->grace_period_days ?? 0));
-
-                return $today->gt($limit);
-            });
+        $invoices = $grace->invoicesPastGrace($today);
 
         $this->info('Kontrak dengan invoice lewat grace period per '.$today->format('d/m/Y').' - mode '.($apply ? 'apply' : 'dry-run').'.');
+        $from = $grace->autoSuspendFrom();
+        $this->line('Grace = tanggal invoice + grace customer (kosong/0 = '.$grace->defaultGraceDays().' hari)'
+            .($from ? '; hanya invoice terbit mulai '.$from->format('d/m/Y').'.' : '.'));
 
         if ($invoices->isEmpty()) {
             $this->info('Tidak ada invoice yang melewati grace period.');
@@ -85,11 +70,11 @@ class SuspendContractsPastGracePeriod extends Command
                 ->all();
 
             $oldest = $contractInvoices->first();
-            $grace = (int) ($oldest->grace_period_days ?? 0);
+            $graceDays = $oldest->grace_days;
 
             if ($apply && $roomIds) {
-                $note = "Otomatis: invoice {$oldest->invoice_number} jatuh tempo ".Carbon::parse($oldest->due_date)->format('d/m/Y')
-                    ." lewat grace period {$grace} hari.";
+                $note = "Otomatis: invoice {$oldest->invoice_number} tanggal ".Carbon::parse($oldest->effective_invoice_date)->format('d/m/Y')
+                    ." lewat grace period {$graceDays} hari (batas ".$oldest->grace_ends_on->format('d/m/Y').').';
                 $roomsSuspended += $suspensions->suspend($contract, $roomIds, $today->toDateString(), null, $note);
                 $contractsSuspended++;
             } elseif ($roomIds) {
@@ -102,15 +87,16 @@ class SuspendContractsPastGracePeriod extends Command
                     $contract->contract_number,
                     $oldest->customer_name,
                     $oldest->invoice_number,
-                    Carbon::parse($oldest->due_date)->format('d/m/Y'),
-                    $grace,
+                    Carbon::parse($oldest->effective_invoice_date)->format('d/m/Y'),
+                    $graceDays,
+                    $oldest->grace_ends_on->format('d/m/Y'),
                     $contractInvoices->count(),
                     $roomIds ? count($roomIds) : 'sudah suspend',
                 ];
             }
         }
 
-        $this->table(['Kontrak', 'Customer', 'Invoice tertua', 'Jatuh tempo', 'Grace (hari)', 'Invoice lewat', 'Room di-suspend'], $rows);
+        $this->table(['Kontrak', 'Customer', 'Invoice tertua', 'Tgl invoice', 'Grace (hari)', 'Batas grace', 'Invoice lewat', 'Room di-suspend'], $rows);
 
         $this->line("Kontrak: {$contractsSuspended}; room: {$roomsSuspended}.");
 
