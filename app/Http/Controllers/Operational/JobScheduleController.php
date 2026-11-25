@@ -5496,6 +5496,9 @@ class JobScheduleController extends Controller
 
             DB::commit();
 
+            // UAT 24 Nov 2026: room yang complete langsung tercatat di Unit On Wall.
+            $this->createUnitOnWallForCompletedRooms($jobSchedule);
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Room status updated to Completed'
@@ -7603,8 +7606,39 @@ class JobScheduleController extends Controller
     }
 
     /**
+     * UAT 24 Nov 2026: menu Serial Number & Unit On Wall baru terisi setelah SELURUH job
+     * selesai (BA date). Room yang sudah complete kini langsung tercatat: dipanggil setiap
+     * kali satu room selesai (APK maupun web). autoCreateUnitOnWall() hanya memproses room
+     * berstatus completed dan melewati SN yang sudah ada di room itu, jadi aman diulang - saat
+     * job selesai nanti, pemanggilan yang lama tidak membuat unit dobel.
+     *
+     * Hanya job pemasangan (Install/IR, Install Free/IF, Ganti Rental); service tidak
+     * memasang unit baru.
+     */
+    public function createUnitOnWallForCompletedRooms(JobSchedule $job): bool
+    {
+        $type = strtolower(trim((string) $job->type));
+        if (! in_array($type, ['install', 'ir', 'install_free', 'install free', 'if', 'change', 'change_rental', 'change rental'], true)) {
+            return false;
+        }
+
+        $jobAdvice = $job->jobAdvice;
+        if (! $jobAdvice) {
+            return false;
+        }
+
+        try {
+            return (bool) $this->autoCreateUnitOnWall($job, $jobAdvice);
+        } catch (\Throwable $e) {
+            \Log::warning('Unit On Wall per room gagal dibuat', ['job_schedule_id' => $job->id, 'error' => $e->getMessage()]);
+
+            return false;
+        }
+    }
+
+    /**
      * Auto-create Unit On Wall when install job is completed
-     * 
+     *
      * "untuk unit yang sudah terpasang akan otomatis terdata di unit-on-walls"
      */
     private function autoCreateUnitOnWall(JobSchedule $installJob, $jobAdvice)

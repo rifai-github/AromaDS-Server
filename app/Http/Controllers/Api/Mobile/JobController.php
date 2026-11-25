@@ -3266,7 +3266,13 @@ class JobController extends Controller
             \DB::commit();
 
             $this->recordMobileSync($request, 'complete_room', $jobSchedule?->id, $jobScheduleRoom?->id);
-            
+
+            // UAT 24 Nov 2026: menu Serial Number & Unit On Wall tak lagi menunggu seluruh job
+            // selesai - room yang complete langsung tercatat (aman diulang saat job selesai).
+            if ($jobSchedule && $jobScheduleRoom?->fresh()?->status === \App\Models\JobScheduleRoom::STATUS_COMPLETED) {
+                app(\App\Http\Controllers\Operational\JobScheduleController::class)->createUnitOnWallForCompletedRooms($jobSchedule);
+            }
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Room completed successfully',

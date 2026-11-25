@@ -814,4 +814,58 @@ class MobileCompleteRoomDuplicateTest extends TestCase
         $this->assertSame('Unit dipasang di dinding kiri', $room->completion_notes);
         $this->assertSame('Customer minta aroma lebih lembut', $room->rental_notes);
     }
+
+    /**
+     * UAT 24 Nov 2026: menu Serial Number & Unit On Wall baru terisi setelah seluruh job
+     * selesai. Room yang complete kini langsung diproses ke Unit On Wall.
+     */
+    public function test_completing_a_room_records_its_unit_on_wall_right_away(): void
+    {
+        DB::table('job_advices')->insert(['id' => 72, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('job_advice_rooms')->insert([
+            ['id' => 86, 'job_advice_id' => 72, 'room_name' => 'Room 103', 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 87, 'job_advice_id' => 72, 'room_name' => 'Room 301', 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('job_schedules')->insert([
+            'id' => 16, 'job_advice_id' => 72, 'job_number' => 'BDG-IR/26-06/0010', 'type' => 'install',
+            'status' => 'barang_diambil', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            ['id' => 96, 'job_schedule_id' => 16, 'job_advice_room_id' => 86, 'room_name' => 'Room 103', 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 97, 'job_schedule_id' => 16, 'job_advice_room_id' => 87, 'room_name' => 'Room 301', 'status' => 'pending', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        $this->seedMaterialReadyForJob(16, 26);
+
+        $calls = [];
+        $this->mock(\App\Http\Controllers\Operational\JobScheduleController::class, function ($mock) use (&$calls) {
+            $mock->shouldReceive('createUnitOnWallForCompletedRooms')->andReturnUsing(function ($job) use (&$calls) {
+                $calls[] = $job->id;
+
+                return true;
+            });
+        });
+
+        $response = app(JobController::class)->completeRoom(Request::create('/api/v1/mobile/rooms/86/complete', 'POST', [
+            'job_schedule_id' => 16,
+        ], [], [
+            'before_photos' => [UploadedFile::fake()->image('before.jpg')],
+            'after_photos' => [UploadedFile::fake()->image('after.jpg')],
+        ]), 86);
+
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+        // Room 301 is still open, so the job is not done - yet Room 103 is already processed.
+        $this->assertSame('pending', DB::table('job_schedule_rooms')->where('id', 97)->value('status'));
+        $this->assertSame([16], $calls);
+    }
+
+    public function test_per_room_unit_on_wall_only_runs_for_installation_jobs(): void
+    {
+        $controller = app(\App\Http\Controllers\Operational\JobScheduleController::class);
+
+        foreach (['service', 'service_routine', 'remove', 'complain'] as $type) {
+            $this->assertFalse($controller->createUnitOnWallForCompletedRooms(new \App\Models\JobSchedule(['type' => $type])), $type);
+        }
+        // Install without a job advice has nothing to create either.
+        $this->assertFalse($controller->createUnitOnWallForCompletedRooms(new \App\Models\JobSchedule(['type' => 'install'])));
+    }
 }
