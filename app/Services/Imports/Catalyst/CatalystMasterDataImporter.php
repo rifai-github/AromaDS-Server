@@ -1546,6 +1546,12 @@ class CatalystMasterDataImporter
         return false;
     }
 
+    /** Koneksi baca ke database Catalyst (dipakai perintah repair yang membaca sumber langsung). */
+    public function sourceConnection()
+    {
+        return $this->source();
+    }
+
     protected function source()
     {
         $name = config('catalyst-import.connection_name', 'catalyst_import');
