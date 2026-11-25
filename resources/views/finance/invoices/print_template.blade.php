@@ -716,7 +716,8 @@ if (file_exists($sealPath)) {
                         <td>{{ $invoice->contract_number ?: $invoice->contract?->contract_number ?? '-' }}</td>
                     </tr>
                     {{-- UAT 19 Nov: Customer PO Number dari kontrak (salinan di invoice menang bila ada). --}}
-                    @php($customerPoNumber = trim((string) ($invoice->po_number ?: $invoice->contract?->po_number)))
+                    {{-- Blok @php (bukan inline @php(...)): inline ditelan sampai @endphp berikutnya dan merusak template. --}}
+                    @php $customerPoNumber = trim((string) ($invoice->po_number ?: $invoice->contract?->po_number)); @endphp
                     @if($customerPoNumber !== '')
                     <tr>
                         <td class="meta-label">Customer PO</td>
