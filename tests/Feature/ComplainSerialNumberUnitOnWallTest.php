@@ -172,6 +172,7 @@ class ComplainSerialNumberUnitOnWallTest extends TestCase
             $table->foreignId('job_advice_id')->nullable();
             $table->foreignId('building_id')->nullable();
             $table->foreignId('room_id')->nullable();
+            $table->date('schedule_date')->nullable();
             $table->boolean('material_checked')->default(false);
             $table->timestamps();
             $table->softDeletes();
@@ -708,5 +709,101 @@ class ComplainSerialNumberUnitOnWallTest extends TestCase
 
         $this->assertSame(404, $status);
         $this->assertSame('error', $payload['status']);
+    }
+
+    /**
+     * UAT 24 Nov 2026 (FATAL): "SN yang terdaftar di room A bisa di buka di room B".
+     * Unit On Wall baru dibuat saat job selesai, jadi SN yang baru di-scan di room A pada
+     * kunjungan ini belum punya Unit On Wall - bukti room-nya adalah scan job_schedule_units.
+     */
+    private function seedEmptySiblingRoom(JobSchedule $job): int
+    {
+        DB::table('master_rooms')->insert([
+            'id' => self::SIBLING_ROOM_ID,
+            'building_id' => self::BUILDING_ID,
+            'room_name' => 'Ruang Lobby',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return DB::table('job_advice_rooms')->insertGetId([
+            'job_advice_id' => $job->job_advice_id,
+            'room_id' => self::SIBLING_ROOM_ID,
+            'room_name' => 'Ruang Lobby',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function extraAdviceRoomId(JobSchedule $job): int
+    {
+        return (int) DB::table('job_advice_rooms')
+            ->where('job_advice_id', $job->job_advice_id)
+            ->where('room_id', self::ROOM_ID)
+            ->value('id');
+    }
+
+    public function test_serial_scanned_in_another_room_this_visit_is_rejected_in_a_new_room(): void
+    {
+        $job = $this->seedNoMaterialFixture('service');
+        $this->seedEmptySiblingRoom($job);
+
+        // Sibling schedule of the same visit already scanned this SN in Ruang Extra.
+        $sibling = JobSchedule::create([
+            'type' => 'service',
+            'status' => 'teknisi_sedang_pengerjaan',
+            'job_advice_id' => $job->job_advice_id,
+            'building_id' => self::BUILDING_ID,
+            'room_id' => self::ROOM_ID,
+        ]);
+        DB::table('job_schedule_units')->insert([
+            'job_schedule_id' => $sibling->id,
+            'job_advice_room_id' => $this->extraAdviceRoomId($job),
+            'mac' => 'OLDUNIT-0001',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        [$status, $payload] = $this->validate($job, 'OLDUNIT-0001', 'Ruang Lobby');
+
+        $this->assertSame(400, $status, json_encode($payload));
+        $this->assertTrue($payload['room_mismatch'] ?? false);
+        $this->assertSame('Ruang Extra', $payload['expected_room']);
+        // Nothing may have been recorded for the wrong room.
+        $this->assertSame(0, UnitOnWall::where('serial_number', 'OLDUNIT-0001')->count());
+    }
+
+    public function test_serial_scanned_in_the_same_room_this_visit_still_passes(): void
+    {
+        $job = $this->seedNoMaterialFixture('service');
+
+        DB::table('job_schedule_units')->insert([
+            'job_schedule_id' => $job->id,
+            'job_advice_room_id' => $this->extraAdviceRoomId($job),
+            'mac' => self::SERIAL,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        [$status, $payload] = $this->validate($job, self::SERIAL, 'Ruang Extra');
+
+        $this->assertSame(200, $status, json_encode($payload));
+    }
+
+    public function test_save_scanned_unit_rejects_a_unit_on_the_wall_of_another_room(): void
+    {
+        $job = $this->seedNoMaterialFixture('service');
+        $lobbyAdviceRoomId = $this->seedEmptySiblingRoom($job);
+
+        $response = app(JobController::class)->saveScannedUnit(Request::create('/api/v1/mobile/units/save-scanned', 'POST', [
+            'job_schedule_id' => $job->id,
+            'room_id' => $lobbyAdviceRoomId,
+            'mac' => self::SERIAL,
+            'device_type' => 'Diffuser',
+        ]));
+
+        $this->assertSame(409, $response->getStatusCode(), json_encode($response->getData(true)));
+        $this->assertSame('Ruang Extra', $response->getData(true)['expected_room']);
+        $this->assertSame(0, DB::table('job_schedule_units')->count());
     }
 }

@@ -5510,6 +5510,21 @@ class JobController extends Controller
                 'unit_on_wall_id.exists' => 'The selected unit on wall does not exist',
             ]);
 
+            // UAT 24 Nov 2026 (FATAL): penjagaan room yang sama dengan validateSerialNumber,
+            // di titik tulis yang otoritatif - berlaku untuk semua jenis job.
+            $scanAdviceRoom = \App\Models\JobAdviceRoom::with(['contractRoom.room', 'quotationRoom'])->find((int) $request->room_id);
+            if ($jobSchedule && $scanAdviceRoom) {
+                $conflictRoom = $this->serialRegisteredInOtherRoom($jobSchedule, (string) $request->mac, $scanAdviceRoom, null);
+                if ($conflictRoom !== null) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "Serial Number {$request->mac} terdaftar di room lain ({$conflictRoom}). Scan SN sesuai room yang dikerjakan.",
+                        'room_mismatch' => true,
+                        'expected_room' => $conflictRoom,
+                    ], 409);
+                }
+            }
+
             // Requirement 2: Status SN On Hand Remove when scanned for removal
             if ($isRemoveJob && $request->filled('unit_on_wall_id')) {
                 $unitOnWall = \App\Models\UnitOnWall::find($request->unit_on_wall_id);
@@ -7071,7 +7086,23 @@ class JobController extends Controller
         $selectedRoomName = $request->room_name ? trim($request->room_name) : null;
         $source = 'materials'; // Default source
         $snRoomName = null; // Room name dari SN yang ditemukan
-        
+
+        // UAT 24 Nov 2026 (FATAL): SN yang sudah terdaftar di room A tidak boleh diterima saat
+        // teknisi membuka room B - apa pun jenis job-nya, dan sebelum penulisan apa pun
+        // (SN bypass / pencatatan SN unit lama) terjadi.
+        if ($selectedRoomName && ! $request->boolean('resolve_only')) {
+            $conflictRoom = $this->serialRegisteredInOtherRoom($job, $serialNumberInput, null, $selectedRoomName);
+            if ($conflictRoom !== null) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Serial Number {$serialNumberInput} terdaftar untuk Room: {$conflictRoom}, bukan Room: {$selectedRoomName}",
+                    'room_mismatch' => true,
+                    'expected_room' => $conflictRoom,
+                    'selected_room' => $selectedRoomName,
+                ], 400);
+            }
+        }
+
         // STEP 1: PRIORITY - Check in inventory_issuing_items first (SN yang sudah terdaftar saat verifikasi material)
         // Ini adalah SN yang sudah di-scan dan terverifikasi saat verifikasi material via apps
         
@@ -7204,25 +7235,19 @@ class JobController extends Controller
                     if ($inventoryIssuing && $inventoryIssuing->reference_no) {
                         $materialIssue = $materialIssues->firstWhere('issue_number', $inventoryIssuing->reference_no);
                         if ($materialIssue) {
-                            // Priority 1: If we have multiple rooms, find item matching selected room name
-                            if ($selectedRoomName) {
-                                $materialIssueItem = $materialIssue->items
-                                    ->where('product_id', $serialNumber->master_product_id)
-                                    ->filter(function($m) use ($selectedRoomName) {
-                                        return trim(strtolower($m->room_name)) === trim(strtolower($selectedRoomName));
-                                    })->first();
-                                
-                                if ($materialIssueItem) {
-                                    $snRoomName = trim($materialIssueItem->room_name);
-                                }
-                            }
-                            
-                            // Priority 2: Fallback to first item for this product
-                            if (!$snRoomName) {
-                                 $materialIssueItem = $materialIssue->items->firstWhere('product_id', $serialNumber->master_product_id);
-                                 if ($materialIssueItem && $materialIssueItem->room_name) {
-                                     $snRoomName = trim($materialIssueItem->room_name);
-                                 }
+                            // UAT 24 Nov 2026: dulu baris MI yang cocok dengan room YANG DIPILIH
+                            // dipakai sebagai room SN - jadi pengecekan selalu lolos. Room SN kini
+                            // hanya diambil bila produk ini di MI cuma untuk satu room; bila
+                            // tersebar di beberapa room, room SN dianggap tidak diketahui.
+                            $productRooms = $materialIssue->items
+                                ->where('product_id', $serialNumber->master_product_id)
+                                ->pluck('room_name')
+                                ->map(fn ($name) => trim((string) $name))
+                                ->filter()
+                                ->unique(fn ($name) => strtolower($name))
+                                ->values();
+                            if ($productRooms->count() === 1) {
+                                $snRoomName = $productRooms->first();
                             }
                         }
                     }
@@ -7817,6 +7842,118 @@ class JobController extends Controller
         ]);
 
         return $unit->fresh(['room', 'building']);
+    }
+
+    /**
+     * UAT 24 Nov 2026 (FATAL): "SN yang terdaftar di room A bisa dibuka di room B".
+     *
+     * Mengembalikan nama room tempat SN ini sudah terdaftar bila itu room FISIK lain dari
+     * room yang sedang dikerjakan; null bila tak ada konflik atau tak ada bukti. Bukti:
+     *  1. Unit On Wall aktif ber-SN ini di customer job ini;
+     *  2. SN ini sudah di-scan di kunjungan yang sama (job ini atau saudara satu job advice
+     *     dengan tanggal jadwal sama) untuk room lain - Unit On Wall baru dibuat saat job
+     *     selesai, jadi tanpa bukti ini SN room A yang baru dipasang masih lolos di room B.
+     * Room dibandingkan lewat master room id; nama hanya dipakai bila id tak diketahui.
+     * Satu room fisik bisa punya beberapa job advice room (1 ruangan 2 rental) - itu bukan konflik.
+     */
+    private function serialRegisteredInOtherRoom(JobSchedule $job, string $serial, ?\App\Models\JobAdviceRoom $selectedAdviceRoom, ?string $selectedRoomName): ?string
+    {
+        $serial = trim($serial);
+        if ($serial === '') {
+            return null;
+        }
+
+        $jobAdvice = $job->jobAdvice;
+        $adviceRooms = $jobAdvice ? $jobAdvice->rooms()->with(['contractRoom.room', 'quotationRoom'])->get() : collect();
+        $masterRoomIdOf = fn ($adviceRoom) => $adviceRoom
+            ? ($adviceRoom->room_id ?? $adviceRoom->contractRoom?->room_id ?? $adviceRoom->quotationRoom?->room_id)
+            : null;
+
+        $selectedMasterRoomId = null;
+        if ($selectedAdviceRoom) {
+            $selectedMasterRoomId = $masterRoomIdOf($selectedAdviceRoom);
+            $selectedRoomName = $selectedRoomName ?: ($selectedAdviceRoom->contractRoom?->room?->room_name ?? $selectedAdviceRoom->room_name);
+        } elseif ($selectedRoomName) {
+            $ids = $adviceRooms
+                ->filter(fn ($room) => collect([$room->room_name, $room->contractRoom?->room?->room_name])
+                    ->filter()
+                    ->contains(fn ($name) => strtolower(trim($name)) === strtolower(trim($selectedRoomName))))
+                ->map($masterRoomIdOf)
+                ->filter()
+                ->unique();
+            if ($ids->count() === 1) {
+                $selectedMasterRoomId = (int) $ids->first();
+            }
+        }
+        if (! $selectedMasterRoomId && ! $selectedRoomName) {
+            return null;
+        }
+
+        $isOtherRoom = function ($roomId, ?string $roomName) use ($selectedMasterRoomId, $selectedRoomName): bool {
+            if ($selectedMasterRoomId && $roomId) {
+                return (int) $roomId !== (int) $selectedMasterRoomId;
+            }
+            if ($selectedRoomName && $roomName) {
+                return ! $this->serialRoomNamesMatch($selectedRoomName, $roomName);
+            }
+
+            return false;
+        };
+
+        $customerId = $jobAdvice?->customer_id;
+        $serialIds = \App\Models\SerialNumber::whereRaw('TRIM(serial_number) = ?', [$serial])->pluck('id');
+        $units = \App\Models\UnitOnWall::with('room')
+            ->where('status', 'active')
+            ->where(function ($query) use ($serial, $serialIds) {
+                $query->whereRaw('TRIM(serial_number) = ?', [$serial]);
+                if ($serialIds->isNotEmpty()) {
+                    $query->orWhereIn('serial_number_id', $serialIds);
+                }
+            })
+            ->when($customerId, fn ($query) => $query->where('customer_id', $customerId))
+            ->get();
+        foreach ($units as $unit) {
+            $name = $unit->room?->room_name ?? $unit->room_name;
+            if ($isOtherRoom($unit->room_id, $name)) {
+                return $name ?: '-';
+            }
+        }
+
+        $visitJobIds = collect([$job->id]);
+        if ($job->job_advice_id) {
+            $visitJobIds = $visitJobIds->merge(
+                JobSchedule::where('job_advice_id', $job->job_advice_id)
+                    ->when($job->schedule_date, fn ($query) => $query->whereDate('schedule_date', $job->schedule_date))
+                    ->where('status', '!=', 'cancelled')
+                    ->pluck('id')
+            )->unique();
+        }
+        $scans = \DB::table('job_schedule_units')
+            ->whereIn('job_schedule_id', $visitJobIds)
+            ->whereRaw('TRIM(mac) = ?', [$serial])
+            ->whereNotNull('job_advice_room_id')
+            ->pluck('job_advice_room_id')
+            ->unique();
+        if ($scans->isNotEmpty()) {
+            $scannedRooms = \App\Models\JobAdviceRoom::with(['contractRoom.room', 'quotationRoom'])->whereIn('id', $scans)->get();
+            foreach ($scannedRooms as $room) {
+                $name = $room->contractRoom?->room?->room_name ?? $room->room_name;
+                if ($isOtherRoom($masterRoomIdOf($room), $name)) {
+                    return $name ?: '-';
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /** Sama longgarnya dengan pencocokan room validateSerialNumber (dan RoomModel.matchesRoomName di APK). */
+    private function serialRoomNamesMatch(string $a, string $b): bool
+    {
+        $a = strtolower(trim($a));
+        $b = strtolower(trim($b));
+
+        return $a === $b || str_starts_with($a, $b.' ') || str_starts_with($b, $a.' ');
     }
 
     private function resolveBypassIssuingItemForInstall(array $inventoryIssuingIds, ?string $selectedRoomName): ?\App\Models\InventoryIssuingItem
