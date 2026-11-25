@@ -6132,7 +6132,12 @@ class JobController extends Controller
             
             // Also update job internal_notes if notes provided
             if ($request->notes) {
-                $job->internal_notes = $request->notes;
+                // UAT 24 Nov 2026: catatan teknisi menggantikan catatan lama, tapi baris log
+                // sistem (mis. [BA_DATE_EDIT] siapa mengubah BA date) jangan ikut terhapus.
+                $systemLogLines = collect(preg_split('/\R/', (string) $job->internal_notes))
+                    ->filter(fn ($line) => preg_match('/^\s*\[[A-Z_]+\]/', $line))
+                    ->implode("\n");
+                $job->internal_notes = trim($request->notes."\n".$systemLogLines);
             }
             
             // Handle checkbox "Tidak dapat menyelesaikan semua ruangan"

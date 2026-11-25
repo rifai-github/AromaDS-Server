@@ -722,6 +722,27 @@ class JobSchedule extends Model
      * Get display type label for human-readable display
      * Maps internal type values to user-friendly labels
      */
+    /**
+     * UAT 24 Nov 2026: log di internal_notes (mis. "[BA_DATE_EDIT] ... by User ID: 918")
+     * ditampilkan dengan nama user, juga untuk log lama yang sudah tersimpan. Data asli
+     * tidak diubah.
+     */
+    public function getInternalNotesDisplayAttribute(): ?string
+    {
+        $notes = $this->internal_notes;
+        if ($notes === null || ! preg_match_all('/User ID:\s*(\d+)/', $notes, $matches)) {
+            return $notes;
+        }
+
+        $names = User::whereIn('id', array_unique(array_map('intval', $matches[1])))->pluck('name', 'id');
+
+        return preg_replace_callback('/User ID:\s*(\d+)/', function ($match) use ($names) {
+            $name = $names[(int) $match[1]] ?? null;
+
+            return $name ? $name : $match[0];
+        }, $notes);
+    }
+
     public function getDisplayTypeAttribute()
     {
         // Unit-only follow-up jobs are stored as service enum values, but the

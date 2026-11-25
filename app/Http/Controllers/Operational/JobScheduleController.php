@@ -4606,7 +4606,7 @@ class JobScheduleController extends Controller
             
             $updatePayload = [
                 'ba_date' => $newBaDate,
-                'internal_notes' => ($jobSchedule->internal_notes ?? '') . "\n[BA_DATE_EDIT] BA Date changed from " . ($oldBaDate ? \Carbon\Carbon::parse($oldBaDate)->format('Y-m-d') : 'N/A') . " to " . \Carbon\Carbon::parse($newBaDate)->format('Y-m-d') . " by User ID: " . Auth::id() . " at " . now()->format('Y-m-d H:i:s'),
+                'internal_notes' => ($jobSchedule->internal_notes ?? '') . "\n[BA_DATE_EDIT] BA Date changed from " . ($oldBaDate ? \Carbon\Carbon::parse($oldBaDate)->format('Y-m-d') : 'N/A') . " to " . \Carbon\Carbon::parse($newBaDate)->format('Y-m-d') . " by " . (Auth::user()?->name ?: 'User ID: ' . Auth::id()) . " at " . now()->format('Y-m-d H:i:s'),
                 'updated_by' => Auth::id()
             ];
 

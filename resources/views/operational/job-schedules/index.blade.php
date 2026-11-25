@@ -1373,7 +1373,7 @@
                         <td>{{ $job->jobAdvice?->contract?->notes_operation ?? '-' }}</td>
                         
                         <!-- 23. Remark -->
-                        <td>{{ \Illuminate\Support\Str::limit($job->internal_notes, 30) ?? '-' }}</td>
+                        <td>{{ \Illuminate\Support\Str::limit($job->internal_notes_display, 30) ?? '-' }}</td>
                         
                         <!-- Audit Columns (Moved to end) -->
                         <td>{{ $job->createdBy->name ?? '-' }}</td>

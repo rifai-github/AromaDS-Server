@@ -955,7 +955,7 @@
                                             <div id="internalNotesWrapper" class="inline-edit-wrapper">
                                                 <div id="internalNotesDisplay" class="cursor-pointer" onclick="editInternalNotes()" 
                                                     style="word-wrap: break-word; word-break: break-word; white-space: normal; max-width: 100%; min-height: 20px; border-bottom: 1px dashed #007bff;">
-                                                    {{ $jobSchedule->internal_notes ?? 'Klik untuk tambah catatan...' }}
+                                                    {{ $jobSchedule->internal_notes_display ?? 'Klik untuk tambah catatan...' }}
                                                 </div>
                                                 <textarea id="internalNotesInput" class="form-control" rows="3" 
                                                     style="display: none;"
