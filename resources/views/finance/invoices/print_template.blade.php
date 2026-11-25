@@ -504,37 +504,8 @@ $shipmentAddress = trim(
     $billToAddress),
 );
 
-/* ===== Periode: "N of Total ( start - end )" derived from contract rental periods ===== */
-$periodeText = trim((string) ($invoice->period_invoice ?? ''));
-try {
-    $periodContract = $invoice->contract ?: $invoice->contractById;
-    if ($periodContract && $invoice->period_invoice) {
-        $allPeriods = collect(
-            app(\App\Services\Finance\InvoiceGenerationService::class)->getRentalPeriodsForContract(
-                $periodContract->id,
-            ),
-        );
-        $totalPeriods = $allPeriods->count();
-        $matchedIndex = $allPeriods->search(
-            fn($p) => ($p['rental_period'] ?? null) === $invoice->period_invoice,
-        );
-        $matched = $matchedIndex !== false ? $allPeriods[$matchedIndex] : null;
-
-        if ($matched) {
-            $seq = $matchedIndex + 1;
-            $startTxt = !empty($matched['period_start'])
-                ? \Carbon\Carbon::parse($matched['period_start'])->format('d M Y')
-                : null;
-            $endTxt = !empty($matched['period_end'])
-                ? \Carbon\Carbon::parse($matched['period_end'])->format('d M Y')
-                : null;
-            $rangeTxt = $startTxt && $endTxt ? " ( {$startTxt} - {$endTxt} )" : '';
-            $periodeText = "{$seq} of {$totalPeriods}{$rangeTxt}";
-        }
-    }
-} catch (\Throwable $e) {
-    // Keep raw period_invoice string on any failure.
-}
+/* ===== Periode: "N dari Total (range start - end)" (UAT 24 Nov 2026) ===== */
+$periodeText = $invoice->periodRangeText();
 $periodeText = $periodeText !== '' ? $periodeText : '-';
 
 /* ===== Terbilang (spell amount in Indonesian) ===== */
@@ -663,7 +634,7 @@ if (file_exists($sealPath)) {
             + ($buildingGroupCount * 28)
             + ($itemRowCount * 38)
             + ($extraTotalsRowCount * 22)
-            + 230; // totals + terbilang + payment-info + generated-note + footer block itself
+            + 250; // totals + terbilang + payment-info + period line + generated-note + footer block itself
         $bottomSpacerHeight = max(0, 900 - $estimatedContentHeight);
     @endphp
 
@@ -706,9 +677,9 @@ if (file_exists($sealPath)) {
                         <td>{{ $invoice->invoice_number }}</td>
                     </tr>
                     <tr>
-                        <td class="meta-label">Date</td>
+                        <td class="meta-label">Invoice Date</td>
                         <td class="meta-sep">:</td>
-                        <td>{{ $invoice->invoice_date ? $invoice->invoice_date->format('d M Y') : '-' }}</td>
+                        <td>{{ $invoice->invoice_date ? $invoice->invoice_date->format('j F Y') : '-' }}</td>
                     </tr>
                     <tr>
                         <td class="meta-label">Contract Number</td>
@@ -734,11 +705,6 @@ if (file_exists($sealPath)) {
                         <td class="meta-label">NIK</td>
                         <td class="meta-sep">:</td>
                         <td>{{ $nikNumber !== '' ? $nikNumber : '-' }}</td>
-                    </tr>
-                    <tr>
-                        <td class="meta-label">Periode</td>
-                        <td class="meta-sep">:</td>
-                        <td>{{ $periodeText }}</td>
                     </tr>
                 </table>
             </td>
@@ -874,6 +840,11 @@ if (file_exists($sealPath)) {
             @endif
         </div>
     @endif
+
+    {{-- UAT 24 Nov 2026: periode di bagian bawah, "Period: 5 dari 10 (range ...)". --}}
+    <div class="invoice-period-line" style="margin-top: 10px; font-size: 11px;">
+        <strong>Period:</strong> {{ $periodeText }}
+    </div>
 
     <div class="generated-note">
         This Invoice Report was generated on {{ now()->format('d M Y H:i:s') }} and is valid without the signature and

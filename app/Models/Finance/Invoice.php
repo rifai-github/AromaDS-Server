@@ -509,6 +509,55 @@ class Invoice extends Model
         return $this->invoice_date ? $this->invoice_date->format('d M Y') : '-';
     }
 
+    /**
+     * UAT 24 Nov 2026: posisi invoice di periode kontrak untuk printout ("Period: 5 dari 10
+     * (range 1 November 2026 - 30 November 2026)") dan detail invoice.
+     *
+     * @return array{seq: int, total: int, start: ?\Illuminate\Support\Carbon, end: ?\Illuminate\Support\Carbon}|null
+     */
+    public function periodSummary(): ?array
+    {
+        $contract = $this->contract ?: $this->contractById;
+        if (! $contract || ! $this->period_invoice) {
+            return null;
+        }
+
+        try {
+            $periods = collect(app(\App\Services\Finance\InvoiceGenerationService::class)->getRentalPeriodsForContract($contract->id))->values();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $index = $periods->search(fn ($period) => ($period['rental_period'] ?? null) === $this->period_invoice);
+        if ($index === false) {
+            return null;
+        }
+
+        $period = $periods[$index];
+
+        return [
+            'seq' => $index + 1,
+            'total' => $periods->count(),
+            'start' => ! empty($period['period_start']) ? \Illuminate\Support\Carbon::parse($period['period_start']) : null,
+            'end' => ! empty($period['period_end']) ? \Illuminate\Support\Carbon::parse($period['period_end']) : null,
+        ];
+    }
+
+    /** "5 dari 10 (range 1 November 2026 - 30 November 2026)"; fallback period_invoice mentah. */
+    public function periodRangeText(): string
+    {
+        $summary = $this->periodSummary();
+        if (! $summary) {
+            return trim((string) $this->period_invoice) ?: '-';
+        }
+
+        $range = $summary['start'] && $summary['end']
+            ? ' (range '.$summary['start']->format('j F Y').' - '.$summary['end']->format('j F Y').')'
+            : '';
+
+        return $summary['seq'].' dari '.$summary['total'].$range;
+    }
+
     public function getFormattedInvoiceDateWithMonthAttribute()
     {
         return $this->invoice_date ? $this->invoice_date->format('d M Y') : '-';

@@ -314,16 +314,30 @@
                                     </div>
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Invoice Period</div>
-                                        <div class="invoice-field-value">{{ $invoice->period_invoice ?? '-' }}</div>
+                                        <div class="invoice-field-value">{{ $invoice->periodRangeText() }}</div>
                                     </div>
+                                    {{-- UAT 24 Nov 2026: dua isian - Invoice Date (tanggal terbit) dan Invoice Range
+                                         (aturan tanggal). Tidak ada yang tersimpan otomatis: semua lewat tombol SAVE. --}}
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Invoice Date</div>
                                         <div class="invoice-field-value">
                                             @if($invoice->invoice_status === 'draft')
-                                                <div class="row g-2 align-items-center">
-                                                    <div class="col-auto">
-                                                        <select id="invoiceDatePreference" class="form-select form-select-sm" style="min-width: 250px;">
-                                                            <option value="" disabled selected>Select Date Rule</option>
+                                                <input type="date" id="invoiceDateInput" class="form-control form-control-sm" style="max-width: 200px;"
+                                                       value="{{ $invoice->invoice_date ? $invoice->invoice_date->format('Y-m-d') : '' }}"
+                                                       data-saved="{{ $invoice->invoice_date ? $invoice->invoice_date->format('Y-m-d') : '' }}">
+                                                <small class="text-muted d-block">Tanggal terbit invoice. Bisa diubah bila Invoice Range = Manual Input.</small>
+                                            @else
+                                                <span class="fw-bold text-dark">{{ $invoice->invoice_date ? $invoice->invoice_date->format('j F Y') : '-' }}</span>
+                                            @endif
+                                        </div>
+                                    </div>
+                                    <div class="invoice-field">
+                                        <div class="invoice-field-label">Invoice Range</div>
+                                        <div class="invoice-field-value">
+                                            @if($invoice->invoice_status === 'draft')
+                                                <select id="invoiceDatePreference" class="form-select form-select-sm" style="min-width: 250px;"
+                                                        data-saved="{{ $invoice->contract->invoice_date_preference ?? 'manual' }}">
+                                                    <option value="" disabled>Pilih aturan tanggal</option>
                                                             
                                                             @if(isset($dateOptions['first_service']))
                                                                 <option value="first_service" data-date="{{ $dateOptions['first_service']['date'] }}" {{ ($invoice->contract->invoice_date_preference ?? '') === 'first_service' ? 'selected' : '' }}>
@@ -344,19 +358,13 @@
                                                             @endif
 
                                                             <option value="manual" {{ ($invoice->contract->invoice_date_preference ?? 'manual') === 'manual' ? 'selected' : '' }}>Manual Input</option>
-                                                        </select>
-                                                    </div>
-                                                    <div class="col-auto {{ ($invoice->contract->invoice_date_preference ?? 'manual') !== 'manual' ? 'd-none' : '' }}" id="manualDateInputContainer">
-                                                        <input type="date" id="invoiceDateInput" class="form-control form-control-sm" value="{{ $invoice->invoice_date ? $invoice->invoice_date->format('Y-m-d') : '' }}">
-                                                    </div>
-                                                    <div class="col-auto">
-                                                        <button class="btn btn-sm btn-primary" type="button" id="btnUpdateDate" title="Update Date & Preference">
-                                                            <i class="fas fa-check"></i>
-                                                        </button>
-                                                    </div>
-                                                </div>
+                                                </select>
+                                                <small id="invoiceDateUnsaved" class="text-warning d-none">Belum disimpan - tekan SAVE.</small>
                                             @else
-                                                <span class="fw-bold text-dark">{{ $invoice->formatted_invoice_date }}</span>
+                                                @php
+                                                    $rangeRuleLabels = ['first_service' => 'First Service', 'contract_date' => 'Contract Date', 'end_of_month' => 'Monthly Range', 'manual' => 'Manual Input'];
+                                                @endphp
+                                                {{ $rangeRuleLabels[$invoice->contract->invoice_date_preference ?? 'manual'] ?? '-' }}
                                             @endif
                                         </div>
                                     </div>
