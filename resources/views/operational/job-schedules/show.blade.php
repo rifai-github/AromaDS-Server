@@ -1117,6 +1117,7 @@
                                             <th>Material Return</th>
                                             <th>Rental</th>
                                             <th>Rental Remark</th>
+                                            <th>Catatan Teknisi</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1357,11 +1358,13 @@
                                                 </div>
                                             </td>
                                             <td>{{ $displayRentalName ?? '-' }}</td>
-                                            <td>{{ $jaRoom?->notes ?? $jobScheduleRoom->notes ?? '-' }}</td>
+                                            {{-- UAT 24 Nov 2026: catatan penyewaan dari APK (job_schedule_rooms.rental_notes) didahulukan. --}}
+                                            <td style="white-space: normal; min-width: 180px;">{{ $jobScheduleRoom->rental_notes ?: ($jaRoom?->notes ?? $jobScheduleRoom->notes ?? '-') }}</td>
+                                            <td style="white-space: normal; min-width: 180px;">{{ $jobScheduleRoom->completion_notes ?: '-' }}</td>
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="9" class="text-center text-muted">
+                                            <td colspan="13" class="text-center text-muted">
                                                 <i class="fas fa-info-circle me-2"></i>No rooms found for this job advice.
                                             </td>
                                         </tr>

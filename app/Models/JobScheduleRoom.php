@@ -28,6 +28,7 @@ class JobScheduleRoom extends Model
         'material_return_id',
         'notes',
         'completion_notes',
+        'rental_notes',
         'material_return_notes',
         'created_by',
         'updated_by'

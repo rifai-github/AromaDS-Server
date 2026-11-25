@@ -2710,6 +2710,7 @@ class JobController extends Controller
                 'after_photos' => 'nullable|array',
                 'after_photos.*' => 'image|max:5120', // 5MB max per photo
                 'notes' => 'nullable|string',
+                'rental_notes' => 'nullable|string',
                 'job_schedule_id' => 'nullable|integer', // Optional: specify which job schedule this room completion belongs to
             ]);
             
@@ -3011,6 +3012,13 @@ class JobController extends Controller
                     'status' => 'error',
                     'message' => 'Room ini tidak terdaftar pada job schedule yang sedang dikerjakan.'
                 ], 422);
+            }
+
+            // UAT 24 Nov 2026: catatan penyewaan dari APK disimpan terpisah (dulu dibuang bila
+            // catatan pemasangan juga diisi). Disimpan di setiap kiriman, juga untuk unit
+            // perantara di room multi-unit, supaya tidak hilang bila hanya diisi sekali.
+            if ($request->filled('rental_notes') && \Illuminate\Support\Facades\Schema::hasColumn('job_schedule_rooms', 'rental_notes')) {
+                $jobScheduleRoom->forceFill(['rental_notes' => trim((string) $request->rental_notes)])->save();
             }
 
             $hasNewBeforePhoto = $this->requestHasAnyFile($request, 'before_photos');

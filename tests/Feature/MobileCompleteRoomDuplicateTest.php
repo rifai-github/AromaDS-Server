@@ -86,6 +86,7 @@ class MobileCompleteRoomDuplicateTest extends TestCase
             $table->timestamp('completed_at')->nullable();
             $table->foreignId('completed_by')->nullable();
             $table->text('completion_notes')->nullable();
+            $table->text('rental_notes')->nullable();
             $table->text('notes')->nullable();
             $table->foreignId('created_by')->nullable();
             $table->foreignId('updated_by')->nullable();
@@ -777,5 +778,40 @@ class MobileCompleteRoomDuplicateTest extends TestCase
 
         $this->assertSame(1, DB::table('job_photos')->where('job_schedule_unit_id', $unit1Id)->where('photo_type', 'Before Work')->count());
         $this->assertSame(1, DB::table('job_photos')->where('job_schedule_unit_id', $unit2Id)->where('photo_type', 'Before Work')->count());
+    }
+
+    /**
+     * UAT 24 Nov 2026: APK mengisi catatan pemasangan DAN catatan penyewaan - dulu hanya
+     * catatan pemasangan yang tersimpan.
+     */
+    public function test_rental_notes_are_saved_next_to_the_technician_notes(): void
+    {
+        DB::table('job_advices')->insert(['id' => 71, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('job_advice_rooms')->insert([
+            'id' => 85, 'job_advice_id' => 71, 'room_name' => 'Room 103', 'status' => 'pending', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('job_schedules')->insert([
+            'id' => 15, 'job_advice_id' => 71, 'job_number' => 'BDG-IR/26-06/0009', 'type' => 'install',
+            'status' => 'barang_diambil', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 95, 'job_schedule_id' => 15, 'job_advice_room_id' => 85, 'room_name' => 'Room 103',
+            'status' => 'pending', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $this->seedMaterialReadyForJob(15, 25);
+
+        $response = app(JobController::class)->completeRoom(Request::create('/api/v1/mobile/rooms/85/complete', 'POST', [
+            'job_schedule_id' => 15,
+            'notes' => 'Unit dipasang di dinding kiri',
+            'rental_notes' => 'Customer minta aroma lebih lembut',
+        ], [], [
+            'before_photos' => [UploadedFile::fake()->image('before.jpg')],
+            'after_photos' => [UploadedFile::fake()->image('after.jpg')],
+        ]), 85);
+
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+        $room = DB::table('job_schedule_rooms')->where('id', 95)->first();
+        $this->assertSame('Unit dipasang di dinding kiri', $room->completion_notes);
+        $this->assertSame('Customer minta aroma lebih lembut', $room->rental_notes);
     }
 }
