@@ -1126,7 +1126,7 @@ class JobScheduleController extends Controller
                     'room_id' => $this->getJobAdviceRoomPhysicalRoomId($primaryJaRoom),
                     'status' => 'pending',
                     'material_return_status' => 'not_required',
-                    'notes' => $roomGroup->count() > 1 ? 'Rentals in this room: ' . $roomGroup->count() : null,
+                    'notes' => null, // UAT 24 Nov 2026: jumlah rental tak lagi ditulis (tampil sebagai Rental Remark)
                     'created_by' => $userId,
                     'updated_by' => $userId,
                 ]

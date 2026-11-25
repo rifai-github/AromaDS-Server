@@ -174,6 +174,26 @@ class JobScheduleRoom extends Model
     /**
      * Mark room as completed
      */
+    /**
+     * UAT 24 Nov 2026: jumlah rental per room dulu ditulis sistem ke kolom notes
+     * ("Rentals in this room: 2", "Auto CSR for active Unit On Wall rentals: 1") dan tampil
+     * sebagai Rental Remark seolah diisi teknisi/admin. Teks itu kini tak ditulis lagi dan
+     * yang sudah tersimpan disembunyikan dari tampilan.
+     */
+    public static function isSystemNote(?string $notes): bool
+    {
+        return $notes !== null
+            && preg_match('/^\s*(Rentals in this room|Auto CSR for active Unit On Wall rentals):\s*\d+\s*$/i', $notes) === 1;
+    }
+
+    /** notes tanpa teks sistem jumlah rental. */
+    public function getRemarkNotesAttribute(): ?string
+    {
+        $notes = $this->notes;
+
+        return self::isSystemNote($notes) || trim((string) $notes) === '' ? null : $notes;
+    }
+
     public function markAsCompleted($userId = null, $notes = null)
     {
         $updateData = [

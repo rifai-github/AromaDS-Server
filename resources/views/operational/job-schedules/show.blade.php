@@ -1359,7 +1359,7 @@
                                             </td>
                                             <td>{{ $displayRentalName ?? '-' }}</td>
                                             {{-- UAT 24 Nov 2026: catatan penyewaan dari APK (job_schedule_rooms.rental_notes) didahulukan. --}}
-                                            <td style="white-space: normal; min-width: 180px;">{{ $jobScheduleRoom->rental_notes ?: ($jaRoom?->notes ?? $jobScheduleRoom->notes ?? '-') }}</td>
+                                            <td style="white-space: normal; min-width: 180px;">{{ $jobScheduleRoom->rental_notes ?: ($jaRoom?->notes ?: ($jobScheduleRoom->remark_notes ?: '-')) }}</td>
                                             <td style="white-space: normal; min-width: 180px;">{{ $jobScheduleRoom->completion_notes ?: '-' }}</td>
                                         </tr>
                                         @empty

@@ -626,7 +626,7 @@ Artisan::command('operational:repair-job-schedule-rentals {job_number? : Optiona
                     'room_id' => $physicalRoomId($primaryJaRoom),
                     'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
                     'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
-                    'notes' => $roomGroup->count() > 1 ? 'Rentals in this room: '.$roomGroup->count() : null,
+                    'notes' => null,
                     'created_by' => auth()->id() ?? null,
                     'updated_by' => auth()->id() ?? null,
                 ]);
@@ -943,7 +943,7 @@ Artisan::command('marketing:repair-ja-room-materials
                         'room_id' => $roomIdOf($primary),
                         'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
                         'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
-                        'notes' => $roomGroup->count() > 1 ? 'Rentals in this room: '.$roomGroup->count() : null,
+                        'notes' => null,
                         'created_by' => auth()->id(),
                         'updated_by' => auth()->id(),
                     ]);
@@ -952,7 +952,7 @@ Artisan::command('marketing:repair-ja-room-materials
                         'job_advice_room_id' => $primary->id,
                         'room_name' => $primary->room_name,
                         'room_id' => $roomIdOf($primary),
-                        'notes' => $roomGroup->count() > 1 ? 'Rentals in this room: '.$roomGroup->count() : $scheduleRoom->notes,
+                        'notes' => \App\Models\JobScheduleRoom::isSystemNote($scheduleRoom->notes) ? null : $scheduleRoom->notes,
                         'updated_by' => auth()->id(),
                     ]);
                 }

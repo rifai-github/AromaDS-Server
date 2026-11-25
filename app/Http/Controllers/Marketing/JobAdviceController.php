@@ -3429,7 +3429,7 @@ class JobAdviceController extends Controller
                 'room_id' => $roomId,
                 'status' => \App\Models\JobScheduleRoom::STATUS_PENDING,
                 'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
-                'notes' => "Rentals in this room: " . $roomGroup->count(),
+                'notes' => null, // UAT 24 Nov 2026: jumlah rental tak lagi ditulis (tampil sebagai Rental Remark)
                 'created_by' => Auth::id(),
                 'updated_by' => Auth::id()
             ]);

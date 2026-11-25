@@ -473,7 +473,7 @@ class ContractOnWallCsrService
             'room_id' => $contractRoom->room_id,
             'status' => JobScheduleRoom::STATUS_PENDING,
             'material_return_status' => JobScheduleRoom::MATERIAL_RETURN_NOT_REQUIRED,
-            'notes' => 'Auto CSR for active Unit On Wall rentals: '.$jobAdviceRooms->count(),
+            'notes' => null, // UAT 24 Nov 2026: jumlah rental tak lagi ditulis (tampil sebagai Rental Remark)
             'created_by' => $userId,
             'updated_by' => $userId,
         ]);

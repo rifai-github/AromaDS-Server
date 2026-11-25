@@ -437,7 +437,7 @@ class CatalystServiceScheduleBackfillService
                             'status' => $isDone ? 'completed' : 'pending',
                             'completed_at' => $isDone ? $date.' 00:00:00' : null,
                             'material_return_status' => 'not_required',
-                            'notes' => 'Rentals in this room: '.count($roomRentals),
+                            'notes' => null, // UAT 24 Nov 2026: jumlah rental tak lagi ditulis (tampil sebagai Rental Remark)
                             'created_by' => $userId,
                             'updated_by' => $userId,
                             'created_at' => $now,
