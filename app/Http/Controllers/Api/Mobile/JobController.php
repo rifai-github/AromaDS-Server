@@ -5398,7 +5398,8 @@ class JobController extends Controller
             $responseData = array_merge([
                 'serial_number' => $serialNumber->serial_number,
                 'mac' => $macAddress ?? '-',
-                'device_type' => $deviceData['deviceType'] ?? '-',
+                // UAT 24 Nov 2026: tanpa data SmartScent (unit baru) "Jenis perangkat" dulu "-".
+                'device_type' => $deviceData['deviceType'] ?? ($productType?->name ?: '-'),
                 'device_name' => $masterProduct ? ($masterProduct->name ?? 'Unit ' . substr($serialNumber->serial_number, -4)) : 'Unit ' . substr($serialNumber->serial_number, -4),
                 'product_name' => $masterProduct ? ($masterProduct->name ?? '-') : '-',
                 'product_type' => $productType ? ($productType->name ?? '-') : '-',
