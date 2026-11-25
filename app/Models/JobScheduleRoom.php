@@ -22,6 +22,7 @@ class JobScheduleRoom extends Model
         'start_longitude',
         'completed_at',
         'completed_by',
+        'completion_source',
         'material_return_status',
         'material_return_at',
         'material_return_by',
@@ -194,7 +195,20 @@ class JobScheduleRoom extends Model
         return self::isSystemNote($notes) || trim((string) $notes) === '' ? null : $notes;
     }
 
-    public function markAsCompleted($userId = null, $notes = null)
+    public const SOURCE_WEB = 'web';
+
+    public const SOURCE_APP = 'app';
+
+    /** Kolom completion_source ada (migration 2026_11_25_000002); fixture test lama tanpa kolom ini. */
+    public static function supportsCompletionSource(): bool
+    {
+        return once(fn () => \Illuminate\Support\Facades\Schema::hasColumn('job_schedule_rooms', 'completion_source'));
+    }
+
+    /**
+     * @param  string|null  $source  self::SOURCE_WEB / self::SOURCE_APP (UAT 24 Nov 2026: kolom "Done")
+     */
+    public function markAsCompleted($userId = null, $notes = null, ?string $source = null)
     {
         $updateData = [
             'status' => self::STATUS_COMPLETED,
@@ -206,7 +220,38 @@ class JobScheduleRoom extends Model
             $updateData['completion_notes'] = trim($notes);
         }
 
+        if ($source && self::supportsCompletionSource()) {
+            $updateData['completion_source'] = $source;
+        }
+
         $this->update($updateData);
+    }
+
+    /**
+     * UAT 24 Nov 2026: label kolom "Done" di tab Rental & Team - "Done by Web" / "Done by App",
+     * atau null bila room belum selesai. Room yang selesai sebelum kolom completion_source ada
+     * ditebak dari catatan penyelesaiannya; baris backfill Catalyst (tanpa user, jam 00:00) =
+     * "Import".
+     */
+    public function getCompletionSourceLabelAttribute(): ?string
+    {
+        if ($this->status !== self::STATUS_COMPLETED) {
+            return null;
+        }
+
+        $source = $this->attributes['completion_source'] ?? null;
+        if (! $source) {
+            $notes = strtolower((string) $this->completion_notes);
+            if (str_contains($notes, 'via web') || str_contains($notes, 'web admin')) {
+                $source = self::SOURCE_WEB;
+            } elseif (! $this->completed_by && $this->completed_at && $this->completed_at->format('H:i:s') === '00:00:00') {
+                return 'Import';
+            } else {
+                $source = self::SOURCE_APP;
+            }
+        }
+
+        return $source === self::SOURCE_WEB ? 'Done by Web' : 'Done by App';
     }
 
     /**

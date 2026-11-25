@@ -3159,7 +3159,7 @@ class JobController extends Controller
                      $completionNote = $request->notes;
                 }
                 
-                $jobScheduleRoom->markAsCompleted(Auth::id(), $completionNote);
+                $jobScheduleRoom->markAsCompleted(Auth::id(), $completionNote, \App\Models\JobScheduleRoom::SOURCE_APP);
 
                 if ($this->jobAdviceRoomRequiresUnit($room)) {
                     $this->closePhysicalRoomSiblingsForCompletedUnitRoom(
@@ -4348,7 +4348,7 @@ class JobController extends Controller
             ->where('status', '!=', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
             ->get()
             ->each(function ($siblingRoom) use ($userId, $completionNote) {
-                $siblingRoom->markAsCompleted($userId, $completionNote ?: 'Completed with unit package via mobile app');
+                $siblingRoom->markAsCompleted($userId, $completionNote ?: 'Completed with unit package via mobile app', \App\Models\JobScheduleRoom::SOURCE_APP);
             });
     }
 
@@ -5035,7 +5035,7 @@ class JobController extends Controller
                 ->exists();
 
             if ($activeUnitExists) {
-                $room->markAsCompleted(Auth::id(), 'Auto-synced from active Unit On Wall during mobile verification retry');
+                $room->markAsCompleted(Auth::id(), 'Auto-synced from active Unit On Wall during mobile verification retry', \App\Models\JobScheduleRoom::SOURCE_APP);
             }
         }
 

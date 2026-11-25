@@ -5482,7 +5482,7 @@ class JobScheduleController extends Controller
             );
 
             // Mark as completed using existing model method
-            $jobScheduleRoom->markAsCompleted(Auth::id(), $request->input('notes') ?: 'Completed manually via web admin');
+            $jobScheduleRoom->markAsCompleted(Auth::id(), $request->input('notes') ?: 'Completed manually via web admin', \App\Models\JobScheduleRoom::SOURCE_WEB);
 
             // Optional: Check if all rooms are now completed and update job schedule status
             if ($jobSchedule->areAllRoomsCompleted()) {
@@ -12689,14 +12689,17 @@ class JobScheduleController extends Controller
 
         $jobSchedule->jobScheduleRooms()
             ->where('status', '!=', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
-            ->update([
+            ->update(array_merge([
                 'status' => \App\Models\JobScheduleRoom::STATUS_COMPLETED,
                 'completed_at' => $now,
                 'completed_by' => $userId,
                 'completion_notes' => \DB::raw("CASE WHEN completion_notes IS NULL OR completion_notes = '' THEN 'Completed via web Done Job' ELSE completion_notes END"),
                 'updated_by' => $userId,
                 'updated_at' => $now,
-            ]);
+            ], \App\Models\JobScheduleRoom::supportsCompletionSource()
+                // UAT 24 Nov 2026: kolom "Done" di tab Rental & Team.
+                ? ['completion_source' => \App\Models\JobScheduleRoom::SOURCE_WEB]
+                : []));
     }
 
     /**

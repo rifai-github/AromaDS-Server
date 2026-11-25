@@ -1110,6 +1110,7 @@
                                             <th>Nama Ruangan</th>
                                             <th>Remark Ruangan</th>
                                             <th>Status Room</th>
+                                            <th>Done</th>
                                             <th>Team Assignment</th>
                                             <th>User Team</th>
                                             <th>Start Job (Loc & Time)</th>
@@ -1208,6 +1209,15 @@
                                                     <span class="badge badge-secondary ms-1" title="Room baru bisa di-Done setelah job masuk On Progress Teknisi">
                                                         Done locked
                                                     </span>
+                                                @endif
+                                            </td>
+                                            {{-- UAT 24 Nov 2026: room diselesaikan dari web atau dari aplikasi teknisi --}}
+                                            <td>
+                                                @php $doneLabel = $jobScheduleRoom->completion_source_label; @endphp
+                                                @if($doneLabel)
+                                                    <span class="badge {{ $doneLabel === 'Done by Web' ? 'badge-warning' : ($doneLabel === 'Done by App' ? 'badge-success' : 'badge-secondary') }}">{{ $doneLabel }}</span>
+                                                @else
+                                                    -
                                                 @endif
                                             </td>
                                             <td>
@@ -1364,7 +1374,7 @@
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="13" class="text-center text-muted">
+                                            <td colspan="14" class="text-center text-muted">
                                                 <i class="fas fa-info-circle me-2"></i>No rooms found for this job advice.
                                             </td>
                                         </tr>
