@@ -792,6 +792,11 @@
                                             <span class="status-badge status-{{ str_replace('_', '-', $jobSchedule->status) }}">
                                                 {{ $jobSchedule->status_text }}
                                             </span>
+                                            @if(!empty($suspensionBadge))
+                                                <span class="status-badge" style="background:#fee2e2;color:#991b1b;" title="Room di-suspend di kontrak; unsuspend dari tab Room &amp; Rental kontrak">
+                                                    SUSPEND{{ $suspensionBadge['since'] ? ' sejak '.\Illuminate\Support\Carbon::parse($suspensionBadge['since'])->format('d M Y') : '' }}{{ $suspensionBadge['rooms'] ? ' ('.$suspensionBadge['rooms'].')' : '' }}
+                                                </span>
+                                            @endif
                                         </div>
                                     </div>
                                     <div class="info-field">

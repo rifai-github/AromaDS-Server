@@ -2355,7 +2355,7 @@ class JobController extends Controller
                 'blocked_by_ir_message' => $blockedByIrMessage,
                 // MOM 19 Nov 2026 p6: field tambahan (bentuk JSON lain tak berubah); aksi room
                 // yang di-suspend ditolak server dengan HTTP 423.
-                'is_suspended' => $roomIsSuspended = app(\App\Services\Operational\ContractRoomSuspensionService::class)->isJobAdviceRoomSuspended($room),
+                'is_suspended' => $roomIsSuspended = app(\App\Services\Operational\ContractRoomSuspensionService::class)->isJobAdviceRoomSuspended($room, $job),
                 'suspended_message' => $roomIsSuspended
                     ? app(\App\Services\Operational\ContractRoomSuspensionService::class)->roomBlockMessage($roomName)
                     : null,
@@ -2622,7 +2622,7 @@ class JobController extends Controller
 
         // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
         $suspendRoom = $room;
-        if ($suspendRoom && app(\App\Services\Operational\ContractRoomSuspensionService::class)->isJobAdviceRoomSuspended($suspendRoom)) {
+        if ($suspendRoom && app(\App\Services\Operational\ContractRoomSuspensionService::class)->isJobAdviceRoomSuspended($suspendRoom, $jobSchedule ?? null)) {
             return response()->json([
                 'status' => 'error',
                 'message' => app(\App\Services\Operational\ContractRoomSuspensionService::class)->roomBlockMessage($suspendRoom->contractRoom?->room?->room_name ?? $suspendRoom->room_name ?? null),
@@ -2901,7 +2901,7 @@ class JobController extends Controller
 
             // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
             $suspendRoom = $room;
-            if ($suspendRoom && app(\App\Services\Operational\ContractRoomSuspensionService::class)->isJobAdviceRoomSuspended($suspendRoom)) {
+            if ($suspendRoom && app(\App\Services\Operational\ContractRoomSuspensionService::class)->isJobAdviceRoomSuspended($suspendRoom, $jobSchedule ?? null)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => app(\App\Services\Operational\ContractRoomSuspensionService::class)->roomBlockMessage($suspendRoom->contractRoom?->room?->room_name ?? $suspendRoom->room_name ?? null),
@@ -5470,7 +5470,7 @@ class JobController extends Controller
             }
             // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
             $suspendRoom = $request->filled('room_id') ? \App\Models\JobAdviceRoom::find((int) $request->room_id) : null;
-            if ($suspendRoom && app(\App\Services\Operational\ContractRoomSuspensionService::class)->isJobAdviceRoomSuspended($suspendRoom)) {
+            if ($suspendRoom && app(\App\Services\Operational\ContractRoomSuspensionService::class)->isJobAdviceRoomSuspended($suspendRoom, $jobSchedule ?? null)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => app(\App\Services\Operational\ContractRoomSuspensionService::class)->roomBlockMessage($suspendRoom->contractRoom?->room?->room_name ?? $suspendRoom->room_name ?? null),

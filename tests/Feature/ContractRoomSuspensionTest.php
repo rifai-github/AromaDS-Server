@@ -67,6 +67,8 @@ class ContractRoomSuspensionTest extends TestCase
             $t->string('status')->nullable();
             $t->unsignedBigInteger('job_advice_id')->nullable();
             $t->unsignedBigInteger('room_id')->nullable();
+            $t->date('schedule_date')->nullable();
+            $t->date('reschedule_date')->nullable();
             $t->timestamps();
             $t->softDeletes();
         });
@@ -181,12 +183,58 @@ class ContractRoomSuspensionTest extends TestCase
     public function test_suspending_twice_does_not_duplicate_and_foreign_rooms_are_rejected(): void
     {
         $this->service()->suspend(Contract::findOrFail(1), [11], '2026-11-22', 7);
-        $this->assertSame(0, $this->service()->suspend(Contract::findOrFail(1), [11], '2026-11-23', 7));
+        $this->assertSame(0, $this->service()->suspend(Contract::findOrFail(1), [11], '2026-11-22', 7));
         $this->assertSame(1, DB::table('contract_room_suspensions')->count());
+
+        // UAT 24 Nov 2026: tanggal lain memperbarui suspensi yang masih terbuka (dulu diabaikan).
+        $this->assertSame(1, $this->service()->suspend(Contract::findOrFail(1), [11], '2026-11-23', 7));
+        $this->assertSame(1, DB::table('contract_room_suspensions')->count());
+        $this->assertSame('2026-11-23', substr((string) DB::table('contract_room_suspensions')->value('suspend_date'), 0, 10));
+        $this->assertSame(1, DB::table('audit_logs')->where('action', 'contract_room_suspend_date_changed')->count());
 
         DB::table('contracts')->insert(['id' => 2, 'contract_number' => 'X']);
         $this->expectException(\InvalidArgumentException::class);
         $this->service()->suspend(Contract::findOrFail(2), [11], '2026-11-22', 7);
+    }
+
+    /**
+     * UAT 24 Nov 2026, kontrak BLP-CA/26-11/0002: job service 23 Feb, admin suspend per 2 Feb
+     * -> job 23 Feb dan sesudahnya terkunci SEKARANG (bukan baru saat 2 Feb tiba), job
+     * sebelum 2 Feb tetap boleh dikerjakan bahkan setelah 2 Feb lewat.
+     */
+    public function test_suspension_follows_the_job_date_not_today(): void
+    {
+        DB::table('job_schedules')->where('id', 2)->update(['schedule_date' => '2027-02-23']);
+        DB::table('job_schedules')->insert(['id' => 4, 'type' => 'service', 'status' => 'new_job', 'job_advice_id' => 1, 'schedule_date' => '2027-01-23']);
+        DB::table('job_schedule_rooms')->insert(['job_schedule_id' => 4, 'job_advice_room_id' => 21, 'room_id' => 101]);
+
+        $this->service()->suspend(Contract::findOrFail(1), [11], '2027-02-02', 7);
+
+        $feb = JobSchedule::findOrFail(2);
+        $jan = JobSchedule::findOrFail(4);
+        $this->assertNotNull($this->service()->jobBlockReason($feb, true), 'Job 23 Feb harus terkunci walau hari ini masih Nov 2026');
+        $this->assertTrue($this->service()->isJobAdviceRoomSuspended(JobAdviceRoom::findOrFail(21), $feb));
+        $this->assertNull($this->service()->jobBlockReason($jan, true));
+
+        Carbon::setTestNow('2027-03-01 09:00:00');
+        $this->assertNull($this->service()->jobBlockReason(JobSchedule::findOrFail(4), true), 'Job sebelum tanggal suspend tetap jalan');
+        $this->assertNotNull($this->service()->jobBlockReason(JobSchedule::findOrFail(2), true));
+
+        // Reschedule ke sebelum tanggal suspend melepas job itu.
+        DB::table('job_schedules')->where('id', 2)->update(['reschedule_date' => '2027-01-30']);
+        $this->assertNull($this->service()->jobBlockReason(JobSchedule::findOrFail(2), true));
+    }
+
+    public function test_suspension_badge_reports_room_and_start_date(): void
+    {
+        DB::table('job_schedules')->where('id', 2)->update(['schedule_date' => '2027-02-23']);
+        $this->service()->suspend(Contract::findOrFail(1), [11], '2027-02-02', 7);
+
+        $badge = $this->service()->jobSuspensionBadge(JobSchedule::findOrFail(2));
+
+        $this->assertSame('Lobby', $badge['rooms']);
+        $this->assertSame('2027-02-02', $badge['since']);
+        $this->assertNull($this->service()->jobSuspensionBadge(JobSchedule::findOrFail(1)->setAttribute('schedule_date', '2027-01-10')));
     }
 
     public function test_legacy_job_without_schedule_rooms_falls_back_to_contract_and_master_room(): void

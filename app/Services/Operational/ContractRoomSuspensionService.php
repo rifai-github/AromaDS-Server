@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Schema;
  */
 class ContractRoomSuspensionService
 {
-    /** @var array<int, ?bool> cache per request: contract_room_id => suspended */
+    /** @var array<string, bool> cache per request: "contract_room_id|tanggal" => suspended */
     private array $roomCache = [];
 
     private ?bool $tableExists = null;
@@ -40,12 +40,26 @@ class ContractRoomSuspensionService
 
         DB::transaction(function () use ($rooms, $contract, $date, $userId, $notes, &$created) {
             foreach ($rooms as $room) {
-                $alreadyOpen = ContractRoomSuspension::query()
+                $open = ContractRoomSuspension::query()
                     ->where('contract_room_id', $room->id)
                     ->open()
-                    ->exists();
+                    ->first();
 
-                if ($alreadyOpen) {
+                if ($open) {
+                    // UAT 24 Nov 2026: suspend ulang dengan tanggal lain dulu diam-diam
+                    // diabaikan; kini tanggal suspensi yang masih terbuka diperbarui.
+                    $oldDate = $open->suspend_date?->toDateString();
+                    if ($oldDate !== $date) {
+                        $open->update(['suspend_date' => $date, 'notes' => $notes ?? $open->notes]);
+                        AuditLog::log('contract_room_suspend_date_changed', $open, ['suspend_date' => $oldDate], [
+                            'contract_number' => $contract->contract_number,
+                            'contract_room_id' => $room->id,
+                            'room' => $room->room?->room_name,
+                            'suspend_date' => $date,
+                        ], $userId);
+                        $created++;
+                    }
+
                     continue;
                 }
 
@@ -132,8 +146,8 @@ class ContractRoomSuspensionService
             return false;
         }
 
-        $cacheKey = $date ? null : $contractRoomId;
-        if ($cacheKey !== null && array_key_exists($cacheKey, $this->roomCache)) {
+        $cacheKey = $contractRoomId.'|'.$this->dateKey($date);
+        if (array_key_exists($cacheKey, $this->roomCache)) {
             return (bool) $this->roomCache[$cacheKey];
         }
 
@@ -142,9 +156,7 @@ class ContractRoomSuspensionService
             ->inEffect($date)
             ->exists();
 
-        if ($cacheKey !== null) {
-            $this->roomCache[$cacheKey] = $suspended;
-        }
+        $this->roomCache[$cacheKey] = $suspended;
 
         return $suspended;
     }
@@ -163,20 +175,28 @@ class ContractRoomSuspensionService
             ->exists();
     }
 
-    public function isJobAdviceRoomSuspended(?JobAdviceRoom $room): bool
+    /**
+     * UAT 24 Nov 2026: suspensi berlaku untuk job yang TANGGAL JOB-nya >= tanggal suspend,
+     * bukan dibandingkan dengan hari ini. Kasus klien: suspend per 2 Feb -> job 23 Feb,
+     * 23 Mar, dst langsung terkunci walau sekarang masih November; job sebelum 2 Feb tetap
+     * jalan. $job (atau $date) menentukan tanggalnya; tanpa keduanya dipakai hari ini.
+     */
+    public function isJobAdviceRoomSuspended(?JobAdviceRoom $room, ?JobSchedule $job = null, $date = null): bool
     {
         if (! $room || ! $this->available()) {
             return false;
         }
 
+        $date ??= $this->jobEffectiveDate($job);
+
         if ($room->contract_room_id) {
-            return $this->isContractRoomSuspended((int) $room->contract_room_id);
+            return $this->isContractRoomSuspended((int) $room->contract_room_id, $date);
         }
 
         $contractId = $room->jobAdvice?->contract_id;
         $masterRoomId = $room->contractRoom?->room_id ?? $room->quotationRoom?->room_id ?? null;
 
-        return $this->isMasterRoomSuspended($contractId ? (int) $contractId : null, $masterRoomId ? (int) $masterRoomId : null);
+        return $this->isMasterRoomSuspended($contractId ? (int) $contractId : null, $masterRoomId ? (int) $masterRoomId : null, $date);
     }
 
     public function isJobScheduleRoomSuspended(?JobScheduleRoom $room, ?JobSchedule $job = null): bool
@@ -185,14 +205,67 @@ class ContractRoomSuspensionService
             return false;
         }
 
-        if ($room->jobAdviceRoom && $this->isJobAdviceRoomSuspended($room->jobAdviceRoom)) {
+        $job ??= $room->jobSchedule;
+        $date = $this->jobEffectiveDate($job);
+
+        if ($room->jobAdviceRoom && $this->isJobAdviceRoomSuspended($room->jobAdviceRoom, null, $date)) {
             return true;
         }
 
-        $job ??= $room->jobSchedule;
         $contractId = $job?->jobAdvice?->contract_id;
 
-        return $this->isMasterRoomSuspended($contractId ? (int) $contractId : null, $room->room_id ? (int) $room->room_id : null);
+        return $this->isMasterRoomSuspended($contractId ? (int) $contractId : null, $room->room_id ? (int) $room->room_id : null, $date);
+    }
+
+    /** Tanggal yang menentukan apakah suspensi mengenai job: reschedule, lalu jadwal. */
+    public function jobEffectiveDate(?JobSchedule $job): ?string
+    {
+        $date = $job?->reschedule_date ?? $job?->schedule_date;
+
+        return $date ? Carbon::parse($date)->toDateString() : null;
+    }
+
+    /**
+     * Suspensi room yang mengenai job ini, untuk badge di daftar/detail Job Schedule.
+     *
+     * @return array{rooms: string, since: string}|null
+     */
+    public function jobSuspensionBadge(?JobSchedule $job): ?array
+    {
+        if (! $job || ! $this->available()) {
+            return null;
+        }
+
+        $suspended = $this->jobRoomStates($job)->filter(fn ($state) => $state['suspended']);
+        if ($suspended->isEmpty()) {
+            return null;
+        }
+
+        return [
+            'rooms' => $suspended->pluck('name')->filter()->unique()->implode(', '),
+            'since' => (string) ($suspended->pluck('since')->filter()->sort()->first() ?? ''),
+        ];
+    }
+
+    private function dateKey($date): string
+    {
+        return ($date ? Carbon::parse($date) : now())->toDateString();
+    }
+
+    private function suspendSince(?int $contractId, $contractRoomId, $masterRoomId): ?string
+    {
+        $query = ContractRoomSuspension::query()->open();
+        if ($contractRoomId) {
+            $query->where('contract_room_id', $contractRoomId);
+        } elseif ($contractId && $masterRoomId) {
+            $query->where('contract_id', $contractId)->where('room_id', $masterRoomId);
+        } else {
+            return null;
+        }
+
+        $min = $query->min('suspend_date');
+
+        return $min ? Carbon::parse($min)->toDateString() : null;
     }
 
     public function roomBlockMessage(?string $roomName = null): string
@@ -243,17 +316,27 @@ class ContractRoomSuspensionService
         if ($job->jobScheduleRooms->isNotEmpty()) {
             return $job->jobScheduleRooms
                 ->reject(fn ($room) => $room->status === 'cancelled')
-                ->map(fn ($room) => [
-                    'name' => $room->jobAdviceRoom?->contractRoom?->room?->room_name ?? $room->room?->room_name ?? null,
-                    'suspended' => $this->isJobScheduleRoomSuspended($room, $job),
-                ])
+                ->map(function ($room) use ($job, $contractId) {
+                    $suspended = $this->isJobScheduleRoomSuspended($room, $job);
+
+                    return [
+                        'name' => $room->jobAdviceRoom?->contractRoom?->room?->room_name ?? $room->room?->room_name ?? null,
+                        'suspended' => $suspended,
+                        'since' => $suspended
+                            ? $this->suspendSince($contractId, $room->jobAdviceRoom?->contract_room_id, $room->jobAdviceRoom?->contractRoom?->room_id ?? $room->room_id)
+                            : null,
+                    ];
+                })
                 ->values();
         }
 
         if ($job->room_id) {
+            $suspended = $this->isMasterRoomSuspended($contractId, (int) $job->room_id, $this->jobEffectiveDate($job));
+
             return collect([[
                 'name' => $job->room?->room_name,
-                'suspended' => $this->isMasterRoomSuspended($contractId, (int) $job->room_id),
+                'suspended' => $suspended,
+                'since' => $suspended ? $this->suspendSince($contractId, null, (int) $job->room_id) : null,
             ]]);
         }
 

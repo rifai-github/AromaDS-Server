@@ -1290,6 +1290,14 @@
                                     {{ $job->status_text }}
                                 </span>
                             @endif
+                            @php $rowSuspension = ($suspensionBadges ?? [])[$job->id] ?? null; @endphp
+                            @if($rowSuspension)
+                                <div class="mt-1">
+                                    <span class="status-badge" style="background:#fee2e2;color:#991b1b;" title="Room {{ $rowSuspension['rooms'] }} di-suspend di kontrak">
+                                        SUSPEND{{ $rowSuspension['since'] ? ' sejak '.\Illuminate\Support\Carbon::parse($rowSuspension['since'])->format('d M Y') : '' }}
+                                    </span>
+                                </div>
+                            @endif
                         </td>
                         
                         <!-- 5. Nama Team -->

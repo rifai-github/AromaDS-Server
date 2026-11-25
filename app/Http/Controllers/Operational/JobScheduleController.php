@@ -622,12 +622,49 @@ class JobScheduleController extends Controller
             || $user->hasPermission('operational.job-schedules-print.view');
         $canAssignTeam = $canUseJobScheduleActions || $user->hasPermission('operational.job-schedules-assign-team.update');
 
+        // UAT 24 Nov 2026: badge SUSPEND per job. Hanya job di kontrak yang punya suspensi
+        // room terbuka yang dihitung, supaya halaman daftar tidak menambah query per baris.
+        $suspensionBadges = $this->suspensionBadgesFor(collect($jobSchedules->items()));
+
         return view('operational.job-schedules.index', compact(
             'jobSchedules', 'technicians', 'teams', 'viewMode',
-            'canSuspend', 'canDPF', 'canUnpostBA', 'canUnpostIssue', 
-            'canUnassignTeam', 'canMaterialAssign', 'canUnassignMaterial', 
-            'canPrint', 'canAssignTeam'
+            'canSuspend', 'canDPF', 'canUnpostBA', 'canUnpostIssue',
+            'canUnassignTeam', 'canMaterialAssign', 'canUnassignMaterial',
+            'canPrint', 'canAssignTeam', 'suspensionBadges'
         ));
+    }
+
+    /**
+     * @return array<int, array{rooms: string, since: string}> job_schedules.id => badge
+     */
+    private function suspensionBadgesFor(\Illuminate\Support\Collection $jobs): array
+    {
+        if ($jobs->isEmpty() || ! \Illuminate\Support\Facades\Schema::hasTable('contract_room_suspensions')) {
+            return [];
+        }
+
+        $contractIds = \App\Models\JobAdvice::whereIn('id', $jobs->pluck('job_advice_id')->filter()->unique())
+            ->pluck('contract_id', 'id');
+        $suspendedContracts = \App\Models\ContractRoomSuspension::query()
+            ->open()
+            ->whereIn('contract_id', $contractIds->filter()->unique())
+            ->pluck('contract_id')
+            ->unique()
+            ->flip();
+        if ($suspendedContracts->isEmpty()) {
+            return [];
+        }
+
+        $service = app(\App\Services\Operational\ContractRoomSuspensionService::class);
+        $badges = [];
+        foreach ($jobs as $job) {
+            $contractId = $contractIds[$job->job_advice_id] ?? null;
+            if ($contractId && $suspendedContracts->has($contractId) && ($badge = $service->jobSuspensionBadge($job))) {
+                $badges[$job->id] = $badge;
+            }
+        }
+
+        return $badges;
     }
 
     private function attachGroupedRoomsToJobs($jobSchedules): void
@@ -1573,6 +1610,28 @@ class JobScheduleController extends Controller
                 'status' => 'error',
                 'message' => 'Room yang sudah completed tidak bisa di-suspend.',
             ], 422);
+        }
+
+        // UAT 24 Nov 2026: "Suspend Room" di daftar Job Schedule dulu hanya menandai job
+        // (tanpa tanggal, tak tercatat di log suspend kontrak). Room yang punya room kontrak
+        // kini di-suspend lewat ContractRoomSuspensionService - sama dengan tab Room & Rental
+        // kontrak - mulai tanggal job ini, jadi job room itu di tanggal tsb dan sesudahnya
+        // terkunci sampai di-unsuspend dari kontrak.
+        $room->loadMissing(['jobSchedule.jobAdvice.contract', 'jobAdviceRoom']);
+        $contract = $room->jobSchedule?->jobAdvice?->contract;
+        $contractRoomId = $room->jobAdviceRoom?->contract_room_id
+            ?? ($contract && $room->room_id
+                ? \App\Models\ContractRoom::where('contract_id', $contract->id)->where('room_id', $room->room_id)->value('id')
+                : null);
+        if ($contract && $contractRoomId) {
+            $suspensions = app(\App\Services\Operational\ContractRoomSuspensionService::class);
+            $suspendDate = $suspensions->jobEffectiveDate($room->jobSchedule) ?? now()->toDateString();
+            $suspensions->suspend($contract, [(int) $contractRoomId], $suspendDate, Auth::id(), 'Dari Job Schedule '.($room->jobSchedule->job_number ?: '#'.$room->job_schedule_id));
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Room di-suspend di kontrak '.$contract->contract_number.' mulai '.\Illuminate\Support\Carbon::parse($suspendDate)->format('d M Y').'. Unsuspend dari tab Room & Rental kontrak.',
+            ]);
         }
 
         $room->update([
@@ -3236,8 +3295,11 @@ class JobScheduleController extends Controller
             $jobScheduleQuotationFallback = \App\Models\Quotation::where('quotation_number', $jobSchedule->quotation_number)->first();
         }
 
+        $suspensionBadge = app(\App\Services\Operational\ContractRoomSuspensionService::class)->jobSuspensionBadge($jobSchedule);
+
         return view('operational.job-schedules.show', compact(
             'jobSchedule',
+            'suspensionBadge',
             'jobScheduleQuotationFallback',
             'materialIssues',
             'materialIssueItems',
@@ -5751,7 +5813,7 @@ class JobScheduleController extends Controller
         // MOM 19 Nov 2026 p6: room_id = job_advice_rooms.id
         $suspensions = app(\App\Services\Operational\ContractRoomSuspensionService::class);
         $suspendRoom = \App\Models\JobAdviceRoom::find((int) $validated['room_id']);
-        if ($suspendRoom && $suspensions->isJobAdviceRoomSuspended($suspendRoom)) {
+        if ($suspendRoom && $suspensions->isJobAdviceRoomSuspended($suspendRoom, $jobSchedule)) {
             return response()->json([
                 'status' => 'error',
                 'message' => $suspensions->roomBlockMessage($suspendRoom->contractRoom?->room?->room_name),
