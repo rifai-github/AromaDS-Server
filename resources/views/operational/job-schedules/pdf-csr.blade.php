@@ -93,10 +93,53 @@
             $mainJob = $schedules->first();
             $customerName = $mainJob->jobAdvice->customer->name ?? $mainJob->company_name ?? '-';
             $contractNo = $mainJob->jobAdvice->contract->contract_number ?? '-';
-            
+
+            // UAT 24 Nov 2026: Install Free (IF) dikenali dari tipe job ATAU nomor dokumen IF /
+            // job advice Install Free - job IF bisa tersimpan bertipe 'install' dengan nomor IF.
+            $mainTypeKey = strtolower(str_replace([' ', '-'], '_', (string) ($mainJob->type ?? '')));
+            $jobAdviceTypeKey = strtolower(str_replace([' ', '-'], '_', (string) ($mainJob->jobAdvice->type ?? '')));
+            $isInstallFreeReport = $mainTypeKey === 'install_free'
+                || (in_array($mainTypeKey, ['install', 'installation'], true)
+                    && (preg_match('#-IF/#i', (string) $jobNumber) || $jobAdviceTypeKey === 'install_free'));
+            $isInstallReport = ! $isInstallFreeReport && in_array($mainTypeKey, ['install', 'installation'], true);
+            // UAT 24 Nov 2026: header IF menyebut SQ No (Install Free tak punya kontrak), Install = Contract No.
+            $headerRefLabel = $isInstallFreeReport ? 'SQ No' : 'Contract No';
+            $headerRefValue = $isInstallFreeReport
+                ? ($mainJob->quotation_number ?: ($mainJob->jobAdvice->quotation->quotation_number ?? '-'))
+                : $contractNo;
+            // UAT 24 Nov 2026: Item = rental alias SQ, QTY = jumlah room bila SQ/kontrak berbasis room.
+            $priceBasis = strtolower((string) ($mainJob->jobAdvice->contract->price_basis
+                ?? $mainJob->jobAdvice->quotation->price_basis
+                ?? 'rental'));
+            $rentalAliasOf = function ($jobAdviceRoom): ?string {
+                $alias = trim((string) ($jobAdviceRoom?->contractRental?->rental_alias ?? ''));
+                if ($alias === '') {
+                    $alias = trim((string) ($jobAdviceRoom?->quotationDetail?->rental_alias ?? ''));
+                }
+
+                return $alias !== '' ? $alias : null;
+            };
+
+            // UAT 24 Nov 2026: kotak tanda tangan customer = PIC yang diinput di aplikasi beserta
+            // tanda tangan verifikasinya, bukan nama perusahaan customer.
+            $picReport = $schedules
+                ->flatMap(fn ($sch) => $sch->jobReports ?? collect())
+                ->filter(fn ($report) => filled($report->pic_name) || filled($report->signature_file) || filled($report->signature_data))
+                ->sortByDesc(fn ($report) => $report->signature_at ?? $report->updated_at)
+                ->first();
+            $picName = trim((string) ($picReport?->pic_name ?? ''));
+            $picSignatureSrc = null;
+            if ($picReport && filled($picReport->signature_file) && is_file(public_path('uploads/' . ltrim($picReport->signature_file, '/')))) {
+                $signaturePath = public_path('uploads/' . ltrim($picReport->signature_file, '/'));
+                $picSignatureSrc = 'data:image/' . (pathinfo($signaturePath, PATHINFO_EXTENSION) ?: 'png') . ';base64,' . base64_encode(file_get_contents($signaturePath));
+            } elseif ($picReport && str_starts_with((string) $picReport->signature_data, 'data:image')) {
+                $picSignatureSrc = $picReport->signature_data;
+            }
+
             // Collect all technicians and team names from all schedules in this group
             $technicians = collect();
             $teamNames = collect();
+            $teamMemberNames = collect();
             foreach($schedules as $sch) {
                 // If selective room printing, ONLY include technicians from schedules 
                 // that actually contain the selected rooms.
@@ -111,10 +154,16 @@
                 foreach($sch->jobAssignSchedules as $assign) {
                     if ($assign->team) {
                         $teamNames->push($assign->team->team_name);
+                        foreach (($assign->team->users ?? collect()) as $member) {
+                            $teamMemberNames->push($member->name);
+                        }
                     }
                 }
             }
             $techName = $technicians->merge($teamNames)->unique()->filter()->implode(', ') ?: '-';
+            // UAT 24 Nov 2026: kotak tanda tangan teknisi = nama petugas, bukan nama team.
+            $technicianSignName = $technicians->unique()->filter()->implode(', ')
+                ?: ($teamMemberNames->unique()->filter()->implode(', ') ?: $techName);
 
             $building = $mainJob->building;
             $buildingName = $building?->building_name
@@ -150,7 +199,8 @@
 
                 return match (true) {
                     in_array($normalized, ['service', 'service_first', 'service_routine', 'csr', 'maintenance'], true) => 'Service/Refill',
-                    in_array($normalized, ['install', 'installation', 'install_free'], true) => 'Install',
+                    $normalized === 'install_free' => 'Install Free',
+                    in_array($normalized, ['install', 'installation'], true) => 'Install',
                     in_array($normalized, ['check', 'cek'], true) => 'Cek',
                     str_contains($normalized, 'complain') || str_contains($normalized, 'extra') => 'No Regular',
                     str_contains($normalized, 'remove') => 'Remove',
@@ -375,6 +425,11 @@
                                 continue;
                             }
 
+                            // UAT 24 Nov 2026: laporan instalasi (IR/IF) memakai rental alias dari SQ.
+                            if (($isInstallReport || $isInstallFreeReport) && ($alias = $rentalAliasOf($jobAdviceRoom))) {
+                                $itemName = $alias;
+                            }
+
                             $roomName = $roomPivot->room->room_name ?? $roomPivot->room_name ?? 'Unknown Room';
                             $rentalKey = implode('|', [
                                 $sch->id ?? $sch->job_number ?? $jobNumber,
@@ -392,9 +447,10 @@
                             $rooms->push([
                                 'reference' => $sch->job_number ?? $jobNumber,
                                 'item' => $itemName,
-                                'qty' => $jobAdviceRoom?->quantity ?? 1,
+                                // Berbasis room: satu baris = satu room. Berbasis rental: qty rental.
+                                'qty' => $priceBasis === 'room' ? 1 : ($jobAdviceRoom?->quantity ?? 1),
                                 'name' => $roomName,
-                                'type' => $formatJobType($sch->type ?? $mainJob->type ?? null),
+                                'type' => $isInstallFreeReport ? 'Install Free' : $formatJobType($sch->type ?? $mainJob->type ?? null),
                                 'period' => $sch->period ?? '-'
                             ]);
                         }
@@ -428,13 +484,16 @@
             // Default untuk CSR / Service
             $reportTitle = 'CUSTOMER SERVICE REPORT';
             
-            if ($jobTypeLower === 'install') {
+            if ($isInstallFreeReport) {
+                // UAT 24 Nov 2026: judul mengikuti jenis job yang sebenarnya (IF vs IR).
+                $reportTitle = 'INSTALL FREE REPORT';
+            } elseif ($isInstallReport) {
                 $reportTitle = 'INSTALLATION REPORT';
             } elseif ($jobTypeLower === 'check') {
                 $reportTitle = 'CHECK REPORT';
             } elseif (str_contains($jobTypeLower, 'remove')) {
                 $reportTitle = 'REMOVE REPORT';
-            } elseif (!empty($jobTypeLower) && !in_array($jobTypeLower, ['service', 'maintenance', 'complain', 'csr'])) {
+            } elseif (!empty($jobTypeLower) && !in_array($jobTypeLower, ['service', 'service_first', 'service_routine', 'maintenance', 'complain', 'csr'])) {
                 $reportTitle = strtoupper($mainJob->type) . ' REPORT';
             }
         @endphp
@@ -484,9 +543,9 @@
                             <td>{{ $jobNumber }}</td>
                         </tr>
                         <tr>
-                            <td class="meta-label">Contract No</td>
+                            <td class="meta-label">{{ $headerRefLabel }}</td>
                             <td class="meta-separator">:</td>
-                            <td>{{ $contractNo }}</td>
+                            <td>{{ $headerRefValue }}</td>
                         </tr>
                         <tr>
                             <td class="meta-label">Schedule Date</td>
@@ -532,13 +591,19 @@
             <tr>
                 <td>
                     <p>Customer Signature</p>
+                    @if ($picSignatureSrc)
+                        <img src="{{ $picSignatureSrc }}" alt="Tanda tangan PIC" style="height: 50px; margin-bottom: -50px;">
+                    @endif
                     <div class="signature-line"></div>
-                    <p>{{ $customerName }}</p>
+                    <p>{{ $picName !== '' ? $picName : '(PIC)' }}</p>
                 </td>
                 <td>
                     <p>Technician Signature</p>
+                    @if ($picSignatureSrc)
+                        <div style="height: 50px; margin-bottom: -50px;"></div>
+                    @endif
                     <div class="signature-line"></div>
-                    <p>{{ $techName }}</p>
+                    <p>{{ $technicianSignName }}</p>
                 </td>
             </tr>
         </table>

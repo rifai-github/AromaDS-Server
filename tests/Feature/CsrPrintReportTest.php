@@ -66,6 +66,48 @@ class CsrPrintReportTest extends TestCase
             $table->timestamps();
         });
 
+        // UAT 24 Nov 2026: printCsr memuat TTD PIC, anggota team, SQ dan rental alias.
+        Schema::create('team_members', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('team_id')->nullable();
+            $table->foreignId('user_id')->nullable();
+            $table->string('role')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->date('joined_date')->nullable();
+            $table->date('left_date')->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+        });
+        Schema::create('job_reports', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('job_schedule_id')->nullable();
+            $table->string('pic_name')->nullable();
+            $table->string('signature_file')->nullable();
+            $table->text('signature_data')->nullable();
+            $table->timestamp('signature_at')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+        Schema::create('quotations', function (Blueprint $table) {
+            $table->id();
+            $table->string('quotation_number')->nullable();
+            $table->string('price_basis')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+        Schema::create('contract_rentals', function (Blueprint $table) {
+            $table->id();
+            $table->string('rental_alias')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+        Schema::create('quotation_details', function (Blueprint $table) {
+            $table->id();
+            $table->string('rental_alias')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('job_schedules', function (Blueprint $table) {
             $table->id();
             $table->string('job_number')->nullable();
@@ -176,6 +218,11 @@ class CsrPrintReportTest extends TestCase
     protected function tearDown(): void
     {
         foreach ([
+            'quotation_details',
+            'contract_rentals',
+            'quotations',
+            'job_reports',
+            'team_members',
             'job_schedule_room_rentals',
             'job_schedule_rooms',
             'job_advice_rooms',
@@ -406,5 +453,85 @@ class CsrPrintReportTest extends TestCase
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertStringContainsString('application/pdf', $response->headers->get('content-type'));
+    }
+
+    /**
+     * UAT 24 Nov 2026 (printout): Install Free -> judul & tipe IF, header SQ No, Item = rental
+     * alias SQ, QTY per room bila berbasis room, TTD customer = PIC aplikasi, TTD teknisi =
+     * nama petugas (bukan nama team).
+     */
+    public function test_install_free_report_uses_sq_alias_room_qty_and_signers(): void
+    {
+        $job = (object) [
+            'id' => 7,
+            'type' => 'install',
+            'quotation_number' => 'JKT-SQ/26-06/0005',
+            'period' => null,
+            'schedule_date' => '2026-06-15',
+            'completed_at' => null,
+            'company_name' => 'Cahaya Mandiri Utama',
+            'building_name' => 'Cafe',
+            'jobAdvice' => (object) [
+                'type' => 'install_free',
+                'customer' => (object) ['name' => 'Cahaya Mandiri Utama'],
+                'contract' => null,
+                'quotation' => (object) ['quotation_number' => 'JKT-SQ/26-06/0005', 'price_basis' => 'room'],
+            ],
+            'building' => (object) ['address' => 'Jalan Raya'],
+            'assignedTechnician' => null,
+            'jobReports' => collect([(object) ['pic_name' => 'Budi PIC', 'signature_file' => null, 'signature_data' => null, 'signature_at' => '2026-06-15 10:00:00', 'updated_at' => null]]),
+            'jobAssignSchedules' => collect([(object) ['team' => (object) [
+                'team_name' => 'Tim Service Jakarta Timur',
+                'users' => collect([(object) ['name' => 'Andi Teknisi']]),
+            ]]]),
+            'jobScheduleRooms' => collect([
+                (object) [
+                    'id' => 1,
+                    'room' => (object) ['room_name' => 'Lobby'],
+                    'jobAdviceRoom' => (object) [
+                        'quantity' => 2,
+                        'rental_name' => 'Rental Diffuser',
+                        'contractRental' => null,
+                        'quotationDetail' => (object) ['rental_alias' => 'Diffuser Signature 300ml'],
+                        'rentalProduct' => (object) ['rental_name' => 'Diffuser W300'],
+                    ],
+                ],
+            ]),
+        ];
+
+        $html = view('operational.job-schedules.pdf-csr', [
+            'groupedJobs' => collect(['JKT-IF/26-06/0099' => collect([$job])]),
+            'selectedRoomIds' => null,
+        ])->render();
+
+        $this->assertStringContainsString('INSTALL FREE REPORT', $html);
+        $this->assertStringContainsString('SQ No', $html);
+        $this->assertStringContainsString('JKT-SQ/26-06/0005', $html);
+        $this->assertStringNotContainsString('Contract No', $html);
+        $this->assertStringContainsString('Diffuser Signature 300ml', $html);
+        $this->assertStringContainsString('Install Free', $html);
+        $this->assertMatchesRegularExpression('/Lobby<\/td>\s*<td[^>]*>\s*1\s*</', $html);
+        $this->assertStringContainsString('<p>Budi PIC</p>', $html);
+        $this->assertStringContainsString('<p>Andi Teknisi</p>', $html);
+        $this->assertStringNotContainsString('<p>Cahaya Mandiri Utama</p>', $html);
+    }
+
+    public function test_service_first_report_is_titled_customer_service_report(): void
+    {
+        $job = (object) [
+            'id' => 8, 'type' => 'service_first', 'period' => 1, 'schedule_date' => '2026-06-15', 'completed_at' => null,
+            'company_name' => 'X', 'building_name' => 'Y',
+            'jobAdvice' => (object) ['customer' => (object) ['name' => 'X'], 'contract' => (object) ['contract_number' => 'JKT-CA/26-06/0002']],
+            'building' => null, 'room' => null, 'assignedTechnician' => null, 'jobAssignSchedules' => collect([]), 'jobScheduleRooms' => collect([]),
+        ];
+
+        $html = view('operational.job-schedules.pdf-csr', [
+            'groupedJobs' => collect(['JKT-CSR/26-06/0002' => collect([$job])]),
+            'selectedRoomIds' => null,
+        ])->render();
+
+        $this->assertStringContainsString('CUSTOMER SERVICE REPORT', $html);
+        $this->assertStringNotContainsString('SERVICE_FIRST REPORT', $html);
+        $this->assertStringContainsString('Contract No', $html);
     }
 }
