@@ -21,7 +21,8 @@ class JobScheduleRemoveDetailFallbackScriptTest extends TestCase
 
         $this->assertStringContainsString('$roomData = $jaRoom?->contractRoom?->room', $view);
         $this->assertStringContainsString('$jobScheduleRoom->fallback_rental_name', $view);
-        $this->assertStringContainsString('$jaRoom?->notes ?? $jobScheduleRoom->notes', $view);
+        // UAT 24 Nov 2026: catatan penyewaan APK lebih dulu, teks sistem jumlah rental disaring.
+        $this->assertStringContainsString('$jobScheduleRoom->rental_notes ?: ($jaRoom?->notes ?: ($jobScheduleRoom->remark_notes', $view);
     }
 
     public function test_renewal_remove_uses_source_contract_install_serial_numbers_without_room_fallback(): void
