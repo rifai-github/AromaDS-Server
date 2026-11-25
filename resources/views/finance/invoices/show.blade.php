@@ -1513,14 +1513,47 @@ $(document).ready(function() {
 
     // --- Header Buttons Handlers ---
     
-    // Header SAVE -> Triggers Delivery Save AND Notes Save
-    $('#btnHeaderSave').on('click', function() {
-        // Trigger all save actions
-        saveDeliveryInfo(); // This shows its own feedback on the Save Delivery button if visible
-        saveInternalNotes('#internal-notes-input', true);
-        saveAdditionalNotes('#additional-notes-input', true);
-        
-        showNotification('info', 'Sedang menyimpan perubahan...');
+    // UAT 24 Nov 2026: tidak ada autosave di detail invoice. Tanggal/range, diskon rental
+    // dan catatan hanya tersimpan saat tombol SAVE ditekan.
+    $('#btnHeaderSave').on('click', async function() {
+        const $btn = $(this);
+        const originalHtml = $btn.html();
+        $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> SAVING...');
+
+        let reloadAfter = false;
+        let failed = false;
+        try {
+            await saveDeliveryInfo();
+            await saveInternalNotes('#internal-notes-input', true);
+            await saveAdditionalNotes('#additional-notes-input', true);
+            if (typeof window.invoiceSavePendingDiscounts === 'function') {
+                await window.invoiceSavePendingDiscounts();
+            }
+            if (typeof window.invoiceSavePendingDate === 'function') {
+                reloadAfter = await window.invoiceSavePendingDate();
+            }
+        } catch (error) {
+            failed = true;
+        }
+
+        $btn.prop('disabled', false).html(originalHtml);
+        if (failed) {
+            showNotification('error', 'Sebagian perubahan gagal disimpan. Periksa isian lalu tekan SAVE lagi.');
+            return;
+        }
+
+        window.invoiceHasUnsavedChanges = false;
+        showNotification('success', 'Perubahan invoice tersimpan.');
+        if (reloadAfter) {
+            location.reload();
+        }
+    });
+
+    window.addEventListener('beforeunload', function(event) {
+        if (window.invoiceHasUnsavedChanges) {
+            event.preventDefault();
+            event.returnValue = '';
+        }
     });
 
     // Header PRINT -> Window Print
@@ -1561,30 +1594,17 @@ $(document).ready(function() {
         window.open("{{ route('finance.invoices.delivery-receipt', $invoice->id) }}", '_blank');
     });
 
-    // --- Smart Invoice Date Logic (Re-implemented) ---
+    // --- Invoice Date + Invoice Range (UAT 24 Nov 2026: disimpan lewat tombol SAVE) ---
     const datePrefSelect = $('#invoiceDatePreference');
     const dateInput = $('#invoiceDateInput');
-    const manualContainer = $('#manualDateInputContainer');
-    const btnUpdateDate = $('#btnUpdateDate'); // Still used for Manual check triggering if needed
-    
-    if(datePrefSelect.length) {
-        function toggleManualInput() {
-            const selectedOpt = datePrefSelect.find('option:selected');
-            const pref = datePrefSelect.val();
-            
-            if(pref === 'manual') {
-                manualContainer.removeClass('d-none');
-                dateInput.prop('readonly', false).focus();
-                // Show update check button only for manual? 
-                // User wants auto-save. For manual, we can hide button and auto-save on date change?
-                // Let's keep button hidden for auto modes, show for manual.
-                btnUpdateDate.removeClass('d-none');
-            } else {
-                manualContainer.addClass('d-none');
-                btnUpdateDate.addClass('d-none'); // Hide check button for auto modes
 
-                // Auto-fill date from data-date
-                const dateVal = selectedOpt.data('date');
+    if (datePrefSelect.length) {
+        function syncDateInputWithRange() {
+            const pref = datePrefSelect.val();
+            const dateVal = datePrefSelect.find('option:selected').data('date');
+            if (pref === 'manual') {
+                dateInput.prop('readonly', false);
+            } else {
                 if (dateVal) {
                     dateInput.val(dateVal);
                 }
@@ -1592,96 +1612,67 @@ $(document).ready(function() {
             }
         }
 
-        // Function to save preference
-        function saveDatePreference() {
-            const preference = datePrefSelect.val();
-            const manualDate = dateInput.val();
-            const btn = btnUpdateDate;
-            const originalHtml = btn.html();
-
-            if (!preference) return;
-            if (preference === 'manual' && !manualDate) return; // Don't auto-save if manual date missing
-
-            // Visual feedback (maybe toast or small loading?)
-            // If button is visible (manual), spin it
-             if(preference === 'manual') {
-                btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
-             }
-
-            $.ajax({
-                url: "{{ route('finance.invoices.update-date-preference', $invoice->id) }}",
-                type: "POST",
-                data: {
-                    _token: "{{ csrf_token() }}",
-                    preference: preference,
-                    manual_date: manualDate
-                },
-                success: function(response) {
-                    if(response.success) {
-                         // Toast notification for auto-save
-                         const Toast = Swal.mixin({
-                            toast: true,
-                            position: 'top-end',
-                            showConfirmButton: false,
-                            timer: 2000,
-                            timerProgressBar: true
-                        });
-                        Toast.fire({
-                            icon: 'success',
-                            title: 'Tanggal invoice berhasil diperbarui'
-                        }).then(() => {
-                           if(preference !== 'manual') location.reload(); // Reload to reflect changes if needed (e.g. Due Date)
-                           else {
-                               // For manual, we might want to reload too to ensure consistent state
-                               location.reload();
-                           }
-                        });
-                    } else {
-                        Swal.fire('Gagal', response.message, 'error');
-                    }
-                },
-                error: function(xhr) {
-                    let msg = 'Gagal memperbarui data.';
-                    if(xhr.responseJSON && xhr.responseJSON.message) {
-                        msg = xhr.responseJSON.message;
-                    }
-                    Swal.fire('Gagal', msg, 'error');
-                },
-                complete: function() {
-                    if(preference === 'manual') {
-                         btn.prop('disabled', false).html(originalHtml);
-                    }
-                }
-            });
+        function dateIsDirty() {
+            return (datePrefSelect.val() || '') !== String(datePrefSelect.data('saved') || '')
+                || (dateInput.val() || '') !== String(dateInput.data('saved') || '');
         }
 
-        // Run on load
-        toggleManualInput();
+        function markDateDirty() {
+            const dirty = dateIsDirty();
+            $('#invoiceDateUnsaved').toggleClass('d-none', !dirty);
+            if (dirty) {
+                window.invoiceHasUnsavedChanges = true;
+            }
+        }
 
-        // On Preference Change
+        syncDateInputWithRange();
+
         datePrefSelect.on('change', function() {
-            toggleManualInput();
-            
-            const pref = $(this).val();
-            // Auto-save immediately if NOT manual
-            if(pref !== 'manual') {
-                saveDatePreference();
-            }
+            syncDateInputWithRange();
+            markDateDirty();
         });
+        dateInput.on('change', markDateDirty);
 
-        // On Date Change (for Manual) - Auto save? or use button?
-        // User said: "harusnya dia auto save ketika di pilih bukan harus ceklis dulu"
-        // Interpreting this for Manual: when date is picked.
-        dateInput.on('change', function() {
-            if(datePrefSelect.val() === 'manual') {
-                saveDatePreference();
+        // Returns true when the page should reload (due date is recalculated server-side).
+        window.invoiceSavePendingDate = function() {
+            if (!dateIsDirty()) {
+                return Promise.resolve(false);
             }
-        });
 
-        // Keep button just in case user wants to force update manually
-        btnUpdateDate.on('click', function() {
-             saveDatePreference();
-        });
+            const preference = datePrefSelect.val();
+            const manualDate = dateInput.val();
+            if (!preference || (preference === 'manual' && !manualDate)) {
+                showNotification('error', 'Lengkapi Invoice Date untuk Manual Input.');
+                return Promise.reject(new Error('missing date'));
+            }
+
+            return new Promise(function(resolve, reject) {
+                $.ajax({
+                    url: "{{ route('finance.invoices.update-date-preference', $invoice->id) }}",
+                    type: "POST",
+                    data: {
+                        _token: "{{ csrf_token() }}",
+                        preference: preference,
+                        manual_date: manualDate
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            datePrefSelect.data('saved', preference);
+                            dateInput.data('saved', response.new_date || manualDate);
+                            $('#invoiceDateUnsaved').addClass('d-none');
+                            resolve(true);
+                        } else {
+                            showNotification('error', response.message || 'Gagal menyimpan tanggal invoice.');
+                            reject(new Error('date'));
+                        }
+                    },
+                    error: function(xhr) {
+                        showNotification('error', xhr.responseJSON?.message || 'Gagal menyimpan tanggal invoice.');
+                        reject(new Error('date'));
+                    }
+                });
+            });
+        };
     }
 
     // Auto-save rental price on change
@@ -1732,11 +1723,12 @@ $(document).ready(function() {
         });
     }
 
-    // Discount is entered per rental line on the Rental tab. Each change saves
-    // on its own and the invoice totals are re-derived server-side.
+    // Discount per rental line (Rental tab). UAT 24 Nov 2026: tidak langsung tersimpan;
+    // baris yang berubah ditandai dan dikirim saat tombol SAVE ditekan.
+    const pendingDiscounts = {};
+
     $('.rental-discount-input').on('change', function() {
         const $input = $(this);
-        const invoiceId = $input.data('invoice-id');
         const rentalId = $input.data('rental-id');
         const lineTotal = parseFloat($input.data('line-total')) || 0;
         const previousValue = $input.data('previous-value') ?? $input.prop('defaultValue');
@@ -1753,51 +1745,37 @@ $(document).ready(function() {
             return;
         }
 
-        $input.prop('disabled', true);
-
-        $.ajax({
-            url: `/finance/invoices/${invoiceId}/rental-details/${rentalId}/discount`,
-            method: 'POST',
-            data: {
-                _token: '{{ csrf_token() }}',
-                discount_amount: discountAmount
-            },
-            success: function(response) {
-                syncInvoiceTotals(response);
-                syncRentalDiscountLines(response.lines);
-
-                $('#rental-total-discount').text('{{ currency_symbol() }} ' + response.formatted_discount);
-                $input.prop('disabled', false);
-
-                showNotification('success', 'Diskon rental berhasil diperbarui.');
-            },
-            error: function(xhr) {
-                const errorMsg = xhr.responseJSON?.message || 'Gagal memperbarui diskon rental.';
-                showNotification('error', errorMsg);
-                $input.val(previousValue);
-                $input.prop('disabled', false);
-            }
-        });
-    });
-    
-    // Auto-save additional notes on Enter or Blur
-    $('#additional-notes-input').on('keypress', function(e) {
-        if (e.which === 13 && !e.shiftKey) { // Enter without Shift
-            e.preventDefault();
-            $(this).blur(); // Trigger blur which triggers save
-        }
-    }).on('blur', function() {
-         saveAdditionalNotes('#additional-notes-input');
+        pendingDiscounts[rentalId] = { invoiceId: $input.data('invoice-id'), amount: discountAmount, $input: $input };
+        $input.addClass('border-warning').attr('title', 'Belum disimpan - tekan SAVE');
+        window.invoiceHasUnsavedChanges = true;
     });
 
-    // Auto-save Internal Notes on Enter or Blur
-    $('#internal-notes-input').on('keypress', function(e) {
-        if (e.which === 13 && !e.shiftKey) { // Enter key without Shift
-            e.preventDefault();
-            $(this).blur(); // Trigger blur which triggers save
+    window.invoiceSavePendingDiscounts = async function() {
+        for (const rentalId of Object.keys(pendingDiscounts)) {
+            const pending = pendingDiscounts[rentalId];
+            const response = await $.ajax({
+                url: `/finance/invoices/${pending.invoiceId}/rental-details/${rentalId}/discount`,
+                method: 'POST',
+                data: {
+                    _token: '{{ csrf_token() }}',
+                    discount_amount: pending.amount
+                }
+            }).catch(function(xhr) {
+                showNotification('error', xhr.responseJSON?.message || 'Gagal menyimpan diskon rental.');
+                throw new Error('discount');
+            });
+
+            syncInvoiceTotals(response);
+            syncRentalDiscountLines(response.lines);
+            $('#rental-total-discount').text('{{ currency_symbol() }} ' + response.formatted_discount);
+            pending.$input.removeClass('border-warning').removeAttr('title');
+            delete pendingDiscounts[rentalId];
         }
-    }).on('blur', function() {
-        saveInternalNotes('#internal-notes-input');
+    };
+
+    // Notes (UAT 24 Nov 2026): no autosave on Enter/blur - saved by the header SAVE.
+    $('#additional-notes-input, #internal-notes-input').on('input', function() {
+        window.invoiceHasUnsavedChanges = true;
     });
 
 });
