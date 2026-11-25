@@ -39,6 +39,7 @@ class JobSchedulePrintBuildingScriptTest extends TestCase
         $this->assertStringContainsString('<th style="width: 27%;">Item</th>', $view);
         $this->assertStringContainsString('<th style="width: 31%;">Room</th>', $view);
         $this->assertStringContainsString('This Job Report was generated on', $view);
-        $this->assertStringContainsString('An ISO 14001:2015 Certified Company | IAS Accredited', $view);
+        // UAT 24 Nov 2026: footer seragam dari Master Company, bukan teks ISO hardcode.
+        $this->assertStringContainsString("@include('pdf.partials.identity-footer')", $view);
     }
 }

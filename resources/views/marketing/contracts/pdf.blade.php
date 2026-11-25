@@ -750,30 +750,7 @@
     {!! $parafBox !!}
 
     <div class="page-footer">
-        <table class="footer-grid">
-            <tr>
-                <td style="width: 16%;">
-                    <div class="find-us">Find Us More Info<br>Scan Below</div>
-                    @if ($qrFooterSrc)
-                        <div><img src="{{ $qrFooterSrc }}" alt="QR"></div>
-                    @endif
-                </td>
-                <td class="footer-center" style="width: 68%;">
-                    <div class="iso-line">An ISO 14001:2015 Certified Company | IAS Accredited</div>
-                    <div>{{ $headOfficeLine }}</div>
-                    <div style="text-align:center;">{{ $companyWebsite }}</div>
-                    <div class="branch-line" style="margin-top: 4px;">
-                        Bali . Bandung . Batam . Balikpapan . Banjarmasin . Jakarta . Lampung . Makassar . Manado .
-                        Medan . Palembang . Pekanbaru . Samarinda . Semarang . Surabaya
-                    </div>
-                </td>
-                <td class="seal-cell" style="width: 16%;">
-                    @if ($sealSrc)
-                        <img src="{{ $sealSrc }}" class="seal-img" alt="An ISO 14001:2015 Certified Company">
-                    @endif
-                </td>
-            </tr>
-        </table>
+        @include('pdf.partials.identity-footer')
     </div>
 
     <div class="page-break"></div>
@@ -841,30 +818,7 @@
     {!! $parafBox !!}
 
     <div class="page-footer">
-        <table class="footer-grid">
-            <tr>
-                <td style="width: 16%;">
-                    <div class="find-us">Find Us More Info<br>Scan Below</div>
-                    @if ($qrFooterSrc)
-                        <div><img src="{{ $qrFooterSrc }}" alt="QR"></div>
-                    @endif
-                </td>
-                <td class="footer-center" style="width: 68%;">
-                    <div class="iso-line">An ISO 14001:2015 Certified Company | IAS Accredited</div>
-                    <div>{{ $headOfficeLine }}</div>
-                    <div style="text-align:center;">{{ $companyWebsite }}</div>
-                    <div class="branch-line" style="margin-top: 4px;">
-                        Bali . Bandung . Batam . Balikpapan . Banjarmasin . Jakarta . Lampung . Makassar . Manado .
-                        Medan . Palembang . Pekanbaru . Samarinda . Semarang . Surabaya
-                    </div>
-                </td>
-                <td class="seal-cell" style="width: 16%;">
-                    @if ($sealSrc)
-                        <img src="{{ $sealSrc }}" class="seal-img" alt="An ISO 14001:2015 Certified Company">
-                    @endif
-                </td>
-            </tr>
-        </table>
+        @include('pdf.partials.identity-footer')
     </div>
 
     <div class="page-break"></div>
@@ -936,30 +890,7 @@
     {!! $parafBox !!}
 
     <div class="page-footer">
-        <table class="footer-grid">
-            <tr>
-                <td style="width: 16%;">
-                    <div class="find-us">Find Us More Info<br>Scan Below</div>
-                    @if ($qrFooterSrc)
-                        <div><img src="{{ $qrFooterSrc }}" alt="QR"></div>
-                    @endif
-                </td>
-                <td class="footer-center" style="width: 68%;">
-                    <div class="iso-line">An ISO 14001:2015 Certified Company | IAS Accredited</div>
-                    <div>{{ $headOfficeLine }}</div>
-                    <div style="text-align:center;">{{ $companyWebsite }}</div>
-                    <div class="branch-line" style="margin-top: 4px;">
-                        Bali . Bandung . Batam . Balikpapan . Banjarmasin . Jakarta . Lampung . Makassar . Manado .
-                        Medan . Palembang . Pekanbaru . Samarinda . Semarang . Surabaya
-                    </div>
-                </td>
-                <td class="seal-cell" style="width: 16%;">
-                    @if ($sealSrc)
-                        <img src="{{ $sealSrc }}" class="seal-img" alt="An ISO 14001:2015 Certified Company">
-                    @endif
-                </td>
-            </tr>
-        </table>
+        @include('pdf.partials.identity-footer')
     </div>
 
     <div class="page-break"></div>
@@ -1026,30 +957,7 @@
     {!! $parafBox !!}
 
     <div class="page-footer">
-        <table class="footer-grid">
-            <tr>
-                <td style="width: 16%;">
-                    <div class="find-us">Find Us More Info<br>Scan Below</div>
-                    @if ($qrFooterSrc)
-                        <div><img src="{{ $qrFooterSrc }}" alt="QR"></div>
-                    @endif
-                </td>
-                <td class="footer-center" style="width: 68%;">
-                    <div class="iso-line">An ISO 14001:2015 Certified Company | IAS Accredited</div>
-                    <div>{{ $headOfficeLine }}</div>
-                    <div style="text-align:center;">{{ $companyWebsite }}</div>
-                    <div class="branch-line" style="margin-top: 4px;">
-                        Bali . Bandung . Batam . Balikpapan . Banjarmasin . Jakarta . Lampung . Makassar . Manado .
-                        Medan . Palembang . Pekanbaru . Samarinda . Semarang . Surabaya
-                    </div>
-                </td>
-                <td class="seal-cell" style="width: 16%;">
-                    @if ($sealSrc)
-                        <img src="{{ $sealSrc }}" class="seal-img" alt="An ISO 14001:2015 Certified Company">
-                    @endif
-                </td>
-            </tr>
-        </table>
+        @include('pdf.partials.identity-footer')
     </div>
 
     <div class="page-break"></div>
@@ -1156,30 +1064,7 @@
     {!! $parafBox !!}
 
     <div class="page-footer">
-        <table class="footer-grid">
-            <tr>
-                <td style="width: 16%;">
-                    <div class="find-us">Find Us More Info<br>Scan Below</div>
-                    @if ($qrFooterSrc)
-                        <div><img src="{{ $qrFooterSrc }}" alt="QR"></div>
-                    @endif
-                </td>
-                <td class="footer-center" style="width: 68%;">
-                    <div class="iso-line">An ISO 14001:2015 Certified Company | IAS Accredited</div>
-                    <div>{{ $headOfficeLine }}</div>
-                    <div style="text-align:center;">{{ $companyWebsite }}</div>
-                    <div class="branch-line" style="margin-top: 4px;">
-                        Bali . Bandung . Batam . Balikpapan . Banjarmasin . Jakarta . Lampung . Makassar . Manado .
-                        Medan . Palembang . Pekanbaru . Samarinda . Semarang . Surabaya
-                    </div>
-                </td>
-                <td class="seal-cell" style="width: 16%;">
-                    @if ($sealSrc)
-                        <img src="{{ $sealSrc }}" class="seal-img" alt="An ISO 14001:2015 Certified Company">
-                    @endif
-                </td>
-            </tr>
-        </table>
+        @include('pdf.partials.identity-footer')
     </div>
 </body>
 

@@ -211,9 +211,16 @@ if (file_exists($logoPath)) {
                     <td style="width: 30%;">
                         <div class="rec-company">{{ $companyName }}</div>
                     </td>
-                    <td style="width: 58%;">
+                    <td style="width: 46%;">
                         <div class="rec-title">TANDA TERIMA</div>
                         <div class="rec-number">No. {{ $ttNumber }}</div>
+                    </td>
+                    {{-- UAT 24 Nov 2026: QR nomor dokumen di kop kanan. --}}
+                    <td style="width: 12%; text-align: right;">
+                        @php $receiptQrSrc = \App\Support\PdfLetterhead::qrSrc($ttNumber); @endphp
+                        @if ($receiptQrSrc)
+                            <img src="{{ $receiptQrSrc }}" alt="QR" style="width: 64px; height: 64px;">
+                        @endif
                     </td>
                 </tr>
             </table>
@@ -276,8 +283,7 @@ if (file_exists($logoPath)) {
             </table>
 
             <div class="rec-footer">
-                <div class="addr-line">{{ $footerAddrLine }}</div>
-                <div class="branch-line">{{ $footerBranchLine }}</div>
+                @include('pdf.partials.identity-footer')
             </div>
         </div>
     @endfor

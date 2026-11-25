@@ -3,7 +3,7 @@
 <head>
     <title>Customer Service Report</title>
     <style>
-        @page { margin: 28px 34px 74px 34px; }
+        @page { margin: 28px 34px 150px 34px; }
         body { font-family: sans-serif; font-size: 10px; color: #111; }
         .page-break { page-break-after: always; }
 
@@ -48,11 +48,13 @@
         .signature-table td { width: 50%; vertical-align: bottom; }
         .signature-line { width: 56%; border-top: 1px solid #555; margin: 54px auto 6px; }
 
+        .header-qr { text-align: right; margin-top: 6px; }
+        .header-qr img { width: 72px; height: 72px; }
         .footer-note {
             position: fixed;
-            left: 34px;
-            right: 34px;
-            bottom: 78px;
+            left: 0;
+            right: 0;
+            bottom: -42px;
             border-top: 2px solid #777;
             padding-top: 9px;
             text-align: center;
@@ -62,11 +64,11 @@
         }
         .company-footer {
             position: fixed;
-            left: 34px;
-            right: 34px;
-            bottom: 22px;
+            left: 0;
+            right: 0;
+            bottom: -138px;
             border-top: 2px solid #777;
-            padding-top: 8px;
+            padding-top: 6px;
             text-align: center;
             color: #777;
             font-size: 9px;
@@ -452,6 +454,11 @@
                 </td>
                 <td style="width: 66%;">
                     <div class="company-name">{{ strtoupper($companyName) }}</div>
+                    {{-- UAT 24 Nov 2026: QR nomor dokumen di bawah nama perusahaan. --}}
+                    @php $reportQrSrc = \App\Support\PdfLetterhead::qrSrc($jobNumber ?: ($mainJob->job_number ?? null)); @endphp
+                    @if ($reportQrSrc)
+                        <div class="header-qr"><img src="{{ $reportQrSrc }}" alt="QR"></div>
+                    @endif
                 </td>
             </tr>
         </table>
@@ -541,9 +548,7 @@
         </div>
 
         <div class="company-footer">
-            <strong>An ISO 14001:2015 Certified Company | IAS Accredited</strong><br>
-            {{ $companyFooterLine }}<br>
-            Bali . Bandung . Batam . Balikpapan . Banjarmasin . Jakarta . Lampung . Makassar . Manado . Medan . Palembang . Pekanbaru . Samarinda . Semarang . Surabaya
+            @include('pdf.partials.identity-footer')
         </div>
 
         @if(!$loop->last)

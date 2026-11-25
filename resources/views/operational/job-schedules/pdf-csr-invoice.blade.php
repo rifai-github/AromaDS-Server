@@ -6,7 +6,27 @@
     <title>Service Report</title>
     <style>
         @page {
-            margin: 34px 40px 40px 40px;
+            /* UAT 24 Nov 2026: ruang untuk footer seragam (logo | Master Company footer | sertifikasi). */
+            margin: 34px 40px 120px 40px;
+        }
+
+        .identity-footer {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: -105px;
+            border-top: 1px solid #999;
+            padding-top: 5px;
+        }
+
+        .header-qr {
+            text-align: right;
+            margin-top: 6px;
+        }
+
+        .header-qr img {
+            width: 72px;
+            height: 72px;
         }
 
         body {
@@ -499,7 +519,8 @@
                 36 + // rooms table header
                 $rooms->count() * 34 +
                 90; // signature-table itself
-            $bottomSpacerHeight = max(0, 1050 - $estimatedContentHeight);
+            // Footer seragam memakan ~80px tinggi halaman (margin bawah 40 -> 120).
+            $bottomSpacerHeight = max(0, 970 - $estimatedContentHeight);
         @endphp
 
 
@@ -514,6 +535,10 @@
                 </td>
                 <td style="width: 32%;">
                     <div class="company-name">{{ $companyName }}</div>
+                    @php $attachmentQrSrc = \App\Support\PdfLetterhead::qrSrc($jobNumber ?? ($mainJob->job_number ?? null)); @endphp
+                    @if ($attachmentQrSrc)
+                        <div class="header-qr"><img src="{{ $attachmentQrSrc }}" alt="QR"></div>
+                    @endif
                 </td>
             </tr>
         </table>
@@ -596,6 +621,10 @@
                 </td>
             </tr>
         </table>
+
+        <div class="identity-footer">
+            @include('pdf.partials.identity-footer')
+        </div>
 
         @if (!$loop->last)
             <div class="page-break"></div>
