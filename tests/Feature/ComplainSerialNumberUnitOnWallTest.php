@@ -790,6 +790,40 @@ class ComplainSerialNumberUnitOnWallTest extends TestCase
         $this->assertSame(200, $status, json_encode($payload));
     }
 
+    /**
+     * UAT 24 Nov 2026: admin Done Job dari web saat teknisi masih membuka job di APK ->
+     * aksi APK berikutnya ditolak JOB_CLOSED, tak ada yang tersimpan.
+     */
+    public function test_actions_on_a_job_closed_on_the_web_are_rejected(): void
+    {
+        $job = $this->seedNoMaterialFixture('service');
+        $job->update(['status' => 'done_job']);
+
+        [$status, $payload] = $this->validate($job, self::SERIAL);
+        $this->assertSame(409, $status);
+        $this->assertSame('JOB_CLOSED', $payload['code']);
+
+        $response = app(JobController::class)->saveScannedUnit(Request::create('/api/v1/mobile/units/save-scanned', 'POST', [
+            'job_schedule_id' => $job->id,
+            'room_id' => $this->extraAdviceRoomId($job),
+            'mac' => self::SERIAL,
+            'device_type' => 'Diffuser',
+        ]));
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertSame('JOB_CLOSED', $response->getData(true)['code']);
+        $this->assertSame(0, DB::table('job_schedule_units')->count());
+
+        // The room-picker lookup is read-only and still answers.
+        $lookup = app(JobController::class)->validateSerialNumber(
+            Request::create("/api/v1/mobile/jobs/{$job->id}/validate-serial-number", 'POST', [
+                'serial_number' => self::SERIAL,
+                'resolve_only' => true,
+            ]),
+            $job->id
+        );
+        $this->assertSame(200, $lookup->getStatusCode());
+    }
+
     public function test_save_scanned_unit_rejects_a_unit_on_the_wall_of_another_room(): void
     {
         $job = $this->seedNoMaterialFixture('service');

@@ -1568,6 +1568,11 @@ class JobController extends Controller
                 'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat dikerjakan ulang dari aplikasi teknisi.'
             ], 423);
         }
+        // UAT 24 Nov 2026: job yang sudah selesai/ditutup (mis. Done Job via web) tak boleh
+        // menerima input lagi dari APK - mencegah input ganda.
+        if ($closed = $this->denyIfJobClosed($job)) {
+            return $closed;
+        }
 
         // Validate status: Only allow confirmation if status is 'barang_siap_diambil'
         // This ensures technicians can't confirm materials that are still being prepared
@@ -2502,6 +2507,11 @@ class JobController extends Controller
                 'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat dikerjakan ulang dari aplikasi teknisi.'
             ], 423);
         }
+        // UAT 24 Nov 2026: job yang sudah selesai/ditutup (mis. Done Job via web) tak boleh
+        // menerima input lagi dari APK - mencegah input ganda.
+        if ($closed = $this->denyIfJobClosed($job)) {
+            return $closed;
+        }
         
         // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
         if ($suspendReason = app(\App\Services\Operational\ContractRoomSuspensionService::class)->jobBlockReason($job, true)) {
@@ -2618,6 +2628,11 @@ class JobController extends Controller
                 'status' => 'error',
                 'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat dikerjakan ulang dari aplikasi teknisi.'
             ], 423);
+        }
+        // UAT 24 Nov 2026: job yang sudah selesai/ditutup (mis. Done Job via web) tak boleh
+        // menerima input lagi dari APK - mencegah input ganda.
+        if ($closed = $this->denyIfJobClosed($jobSchedule)) {
+            return $closed;
         }
 
         // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
@@ -2897,6 +2912,11 @@ class JobController extends Controller
                     'status' => 'error',
                     'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat diselesaikan ulang dari aplikasi teknisi.'
                 ], 423);
+            }
+            // UAT 24 Nov 2026: job yang sudah selesai/ditutup (mis. Done Job via web) tak boleh
+            // menerima input lagi dari APK - mencegah input ganda.
+            if ($closed = $this->denyIfJobClosed($jobSchedule)) {
+                return $closed;
             }
 
             // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
@@ -5306,6 +5326,11 @@ class JobController extends Controller
                 'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat dikerjakan ulang dari aplikasi teknisi.'
             ], 423);
         }
+        // UAT 24 Nov 2026: job yang sudah selesai/ditutup (mis. Done Job via web) tak boleh
+        // menerima input lagi dari APK - mencegah input ganda.
+        if ($closed = $this->denyIfJobClosed($jobSchedule)) {
+            return $closed;
+        }
         
         // Check if input is serial number (by checking if it exists in serial_numbers for this job)
         // Get material issue items for this job first
@@ -5467,6 +5492,11 @@ class JobController extends Controller
                     'status' => 'error',
                     'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat dikerjakan ulang dari aplikasi teknisi.'
                 ], 423);
+            }
+            // UAT 24 Nov 2026: job yang sudah selesai/ditutup (mis. Done Job via web) tak boleh
+            // menerima input lagi dari APK - mencegah input ganda.
+            if ($closed = $this->denyIfJobClosed($jobSchedule)) {
+                return $closed;
             }
             // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
             $suspendRoom = $request->filled('room_id') ? \App\Models\JobAdviceRoom::find((int) $request->room_id) : null;
@@ -5737,6 +5767,11 @@ class JobController extends Controller
                     'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat dikerjakan ulang dari aplikasi teknisi.'
                 ], 423);
             }
+            // UAT 24 Nov 2026: job yang sudah selesai/ditutup (mis. Done Job via web) tak boleh
+            // menerima input lagi dari APK - mencegah input ganda.
+            if ($closed = $this->denyIfJobClosed($job)) {
+                return $closed;
+            }
             
             // Get user's team
             $userTeamId = DB::table('team_members')
@@ -5832,6 +5867,11 @@ class JobController extends Controller
                     'status' => 'error',
                     'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat diselesaikan ulang dari aplikasi teknisi.'
                 ], 423);
+            }
+            // UAT 24 Nov 2026: job yang sudah selesai/ditutup (mis. Done Job via web) tak boleh
+            // menerima input lagi dari APK - mencegah input ganda.
+            if ($closed = $this->denyIfJobClosed($job)) {
+                return $closed;
             }
 
             // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
@@ -6600,6 +6640,31 @@ class JobController extends Controller
      * Returns a 403 JsonResponse if the current user's team is not assigned to $job,
      * or null if access is allowed. Usage: if ($deny = $this->denyIfNotAssigned($job)) return $deny;
      */
+    /** Status job yang sudah ditutup: tak boleh lagi menerima input pekerjaan dari APK. */
+    public const MOBILE_CLOSED_JOB_STATUSES = ['done_job', 'completed', 'selesai', 'cancelled', 'suspend', 'dpf'];
+
+    /**
+     * UAT 24 Nov 2026: admin bisa Done Job dari web sementara teknisi masih membuka job itu
+     * di APK. Setiap aksi kerja berikutnya dari APK (termasuk antrean offline yang diputar
+     * ulang) ditolak dengan kode JOB_CLOSED supaya tidak terjadi input ganda; APK lalu
+     * menutup halaman job dan membuang antrean job itu.
+     */
+    private function denyIfJobClosed($job): ?\Illuminate\Http\JsonResponse
+    {
+        if (! $job || ! in_array((string) $job->status, self::MOBILE_CLOSED_JOB_STATUSES, true)) {
+            return null;
+        }
+
+        $label = in_array($job->status, ['done_job', 'completed', 'selesai'], true) ? 'sudah selesai (Done Job)' : 'sudah ditutup ('.$job->status.')';
+
+        return response()->json([
+            'status' => 'error',
+            'code' => 'JOB_CLOSED',
+            'job_status' => $job->status,
+            'message' => 'Job '.($job->job_number ?: '#'.$job->id).' '.$label.' di sistem. Data dari aplikasi tidak disimpan; silakan kembali ke daftar job.',
+        ], 409);
+    }
+
     private function denyIfNotAssigned($job)
     {
         if ($this->userCanAccessJob($job, (int) auth()->id())) {
@@ -6718,6 +6783,11 @@ class JobController extends Controller
                 'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat dikerjakan ulang dari aplikasi teknisi.'
             ], 423);
         }
+        // UAT 24 Nov 2026: job yang sudah selesai/ditutup (mis. Done Job via web) tak boleh
+        // menerima input lagi dari APK - mencegah input ganda.
+        if ($closed = $this->denyIfJobClosed($job)) {
+            return $closed;
+        }
         
         // MOM 19 Nov 2026 p6: room kontrak yang di-SUSPEND tidak boleh dikerjakan.
         if ($suspendReason = app(\App\Services\Operational\ContractRoomSuspensionService::class)->jobBlockReason($job, true)) {
@@ -6819,6 +6889,11 @@ class JobController extends Controller
                 'status' => 'error',
                 'message' => 'Job sedang dalam proses koreksi BA Date oleh admin dan tidak dapat dikerjakan ulang dari aplikasi teknisi.'
             ], 423);
+        }
+        // UAT 24 Nov 2026: job yang sudah selesai/ditutup (mis. Done Job via web) tak boleh
+        // menerima input lagi dari APK - mencegah input ganda.
+        if ($closed = $this->denyIfJobClosed($job)) {
+            return $closed;
         }
 
         $oldSn = $request->old_serial_number;
@@ -7086,6 +7161,10 @@ class JobController extends Controller
         $selectedRoomName = $request->room_name ? trim($request->room_name) : null;
         $source = 'materials'; // Default source
         $snRoomName = null; // Room name dari SN yang ditemukan
+
+        if (! $request->boolean('resolve_only') && ($closed = $this->denyIfJobClosed($job))) {
+            return $closed;
+        }
 
         // UAT 24 Nov 2026 (FATAL): SN yang sudah terdaftar di room A tidak boleh diterima saat
         // teknisi membuka room B - apa pun jenis job-nya, dan sebelum penulisan apa pun
