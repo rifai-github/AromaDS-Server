@@ -391,7 +391,7 @@
                                         <div class="invoice-field-label">Customer Name</div>
                                         <div class="invoice-field-value fw-bold">
                                             @if($invoice->customer)
-                                                <a href="{{ route('company.customers.show', $invoice->customer) }}" target="_blank" rel="noopener noreferrer">{{ $invoice->customer->name }}</a>
+                                                <a href="{{ route('company.customers.show', $invoice->customer) }}" target="_blank" rel="noopener noreferrer">{{ $invoice->bill_to_name ?: $invoice->customer->name }}</a>
                                             @else
                                                 -
                                             @endif
@@ -408,15 +408,20 @@
                                         <div class="invoice-field-value text-secondary" style="line-height: 1.4;">{{ $invoice->billing_address ?? '-' }}</div>
                                     </div>
                                     @php
-                                        $taxSetting = $invoice->customer->customerTaxSettings->first() ?? $invoice->customer->taxSetting;
+                                        // UAT 24 Nov 2026: snapshot saat invoice terbit, bukan master Customer Tax.
+                                        $taxSetting = null;
                                     @endphp
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">NPWP</div>
-                                        <div class="invoice-field-value">{{ $invoice->npwp_number ?? $taxSetting->tax_number ?? '-' }}</div>
+                                        <div class="invoice-field-value">{{ $invoice->npwp_number ?: '-' }}</div>
                                     </div>
                                     <div class="invoice-field">
                                         <div class="invoice-field-label">Tax Address</div>
-                                        <div class="invoice-field-value">{{ $invoice->tax_address ?? $taxSetting->tax_address ?? '-' }}</div>
+                                        <div class="invoice-field-value">{{ $invoice->tax_address ?: '-' }}</div>
+                                    </div>
+                                    <div class="invoice-field">
+                                        <div class="invoice-field-label">NIK</div>
+                                        <div class="invoice-field-value">{{ $invoice->nik_number ?: '-' }}</div>
                                     </div>
                                 </div>
                             </div>

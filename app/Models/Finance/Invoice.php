@@ -510,6 +510,56 @@ class Invoice extends Model
     }
 
     /**
+     * UAT 24 Nov 2026: snapshot identitas customer di invoice (Bill To, NIK, NPWP, alamat
+     * pajak) supaya tidak ikut berubah bila master Customer Tax diganti di tengah penagihan.
+     * Urutan sumber sama dengan yang dulu dibaca langsung saat cetak: billing group, lalu
+     * customer tax pertama, lalu kolom customer.
+     *
+     * @param  bool  $overwrite  false = hanya isi yang kosong (saat dibuat); true = Reload Tax.
+     * @param  array<string>|null  $only  batasi kolom yang distempel
+     */
+    public function stampIdentitySnapshot(bool $overwrite, ?array $only = null): void
+    {
+        try {
+            $customer = $this->customer;
+            if (! $customer) {
+                return;
+            }
+
+            $group = $this->billingGroup;
+            $tax = \Illuminate\Support\Facades\Schema::hasTable('customer_tax_settings')
+                ? $customer->customerTaxSettings()->orderBy('id')->first()
+                : null;
+
+            $values = [
+                'bill_to_name' => $customer->name,
+                'nik_number' => ($group->nik ?? null) ?: $customer->nik,
+                'npwp_number' => $group?->tax_identity_number ?: (($tax->tax_number ?? null) ?: $customer->npwp),
+                'tax_address' => $group?->tax_identity_address ?: (($tax->tax_address ?? null) ?: $customer->npwp_address),
+            ];
+
+            foreach ($values as $column => $value) {
+                if (($only !== null && ! in_array($column, $only, true)) || ! self::hasIdentityColumn($column) || $value === null || $value === '') {
+                    continue;
+                }
+                if ($overwrite || blank($this->getAttribute($column))) {
+                    $this->setAttribute($column, $value);
+                }
+            }
+        } catch (\Throwable $e) {
+            // Snapshot must never block creating an invoice.
+            \Illuminate\Support\Facades\Log::warning('Invoice identity snapshot skipped: '.$e->getMessage());
+        }
+    }
+
+    private static function hasIdentityColumn(string $column): bool
+    {
+        $columns = once(fn () => \Illuminate\Support\Facades\Schema::getColumnListing('invoices'));
+
+        return in_array($column, $columns, true);
+    }
+
+    /**
      * UAT 24 Nov 2026: posisi invoice di periode kontrak untuk printout ("Period: 5 dari 10
      * (range 1 November 2026 - 30 November 2026)") dan detail invoice.
      *
@@ -746,6 +796,9 @@ class Invoice extends Model
 
         static::creating(function ($invoice) {
             $invoice->created_by = auth()->id();
+
+            // UAT 24 Nov 2026: identitas pajak customer distempel saat invoice terbit.
+            $invoice->stampIdentitySnapshot(false);
 
             // Auto-generate invoice_number if not provided
             if (empty($invoice->invoice_number)) {

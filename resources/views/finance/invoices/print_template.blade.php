@@ -461,15 +461,15 @@
                 ->implode('  '),
         );
 
-        /* ===== NPWP / NIK (same source chain as the "Customer Information" card on the invoice page) ===== */
-        $customerTaxSetting = $invoice->customer?->customerTaxSettings?->first();
-        $npwpNumber = trim(
-            (string) ($invoice->npwp_number ?: ($customerTaxSetting->tax_number ?? $invoice->customer?->npwp ?: '')),
-        );
-        $nikNumber = trim((string) ($invoice->customer?->nik ?? ''));
+        /* ===== NPWP / NIK / Bill To: snapshot saat invoice terbit (UAT 24 Nov 2026) =====
+         * Tidak lagi dibaca langsung dari master Customer Tax / Customer, supaya perubahan master
+         * di tengah penagihan tidak mengubah invoice yang sudah terbit. Disegarkan lewat Reload Tax.
+         */
+        $npwpNumber = trim((string) ($invoice->npwp_number ?? ''));
+        $nikNumber = trim((string) ($invoice->nik_number ?? ''));
 
         /* ===== Bill To / Shipment addresses ===== */
-        $billToName = trim((string) ($invoice->customer->name ?? '-'));
+        $billToName = trim((string) ($invoice->bill_to_name ?: ($invoice->customer->name ?? '-')));
         $billToAddress = trim((string) ($invoice->billing_address ?: $invoice->customer?->address ?: '-'));
 
         // Compose the site/shipment address from the first job's building (same approach as CSR).

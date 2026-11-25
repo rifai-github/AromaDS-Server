@@ -2090,6 +2090,14 @@ class InvoiceController extends Controller
             ], 422);
         }
 
+        // Tanpa customer buildInvoiceTaxPayload() melempar TypeError (bukan Exception) -> 500.
+        if (! $invoice->customer) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice ini tidak punya customer; data pajak tidak bisa dimuat ulang.',
+            ], 422);
+        }
+
         try {
             $taxPayload = $this->buildInvoiceTaxPayload(
                 $invoice->customer,
@@ -2128,6 +2136,10 @@ class InvoiceController extends Controller
                 'outstanding' => max($taxPayload['grand_total'] - ($invoice->total_paid ?? 0), 0),
                 'updated_by' => Auth::id(),
             ]);
+
+            // UAT 24 Nov 2026: Reload Tax juga menyegarkan stempel nama Bill To dan NIK.
+            $invoice->stampIdentitySnapshot(true, ['bill_to_name', 'nik_number']);
+            $invoice->save();
 
             return response()->json([
                 'success' => true,
