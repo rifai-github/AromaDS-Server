@@ -330,7 +330,7 @@ class AuthController extends Controller
                 'email' => $user->email ?? '',
                 'phone' => $user->phone ?? '',
                 'role' => $role,
-                'team' => $user->department_name ?? 'Teknisi',
+                'team' => $this->mobileTeamLabel($user),
                 'area' => $branchName !== '' ? 'Area '.$branchName : '-',
                 'photo_path' => $photoPath,
             ]
@@ -480,5 +480,34 @@ class AuthController extends Controller
         }
 
         return route('dashboard'); // Default fallback
+    }
+
+    /**
+     * Field "Tim" di profil APK. QA 26 Nov 2026: dulu diisi nama departemen ("Logistik"),
+     * padahal yang dimaksud tim dari Master Team ("Tim Service Ops"). Sumbernya sama dengan
+     * daftar job APK: tim yang dipimpin user + keanggotaan aktif di tim yang aktif.
+     */
+    private function mobileTeamLabel(User $user): string
+    {
+        $teamNames = \Illuminate\Support\Facades\DB::table('teams')
+            ->where('team_head_id', $user->id)
+            ->where('active_status', true)
+            ->whereNull('deleted_at')
+            ->pluck('team_name')
+            ->merge(
+                \Illuminate\Support\Facades\DB::table('team_members')
+                    ->join('teams', 'teams.id', '=', 'team_members.team_id')
+                    ->where('team_members.user_id', $user->id)
+                    ->where('team_members.is_active', true)
+                    ->where('teams.active_status', true)
+                    ->whereNull('teams.deleted_at')
+                    ->pluck('teams.team_name')
+            )
+            ->map(fn ($name) => trim((string) $name))
+            ->filter()
+            ->unique()
+            ->values();
+
+        return $teamNames->isNotEmpty() ? $teamNames->implode(', ') : ($user->department_name ?? 'Teknisi');
     }
 }
