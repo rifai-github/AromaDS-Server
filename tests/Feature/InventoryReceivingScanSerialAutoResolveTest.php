@@ -263,6 +263,33 @@ class InventoryReceivingScanSerialAutoResolveTest extends TestCase
         ]);
     }
 
+    /**
+     * QA 26 Nov 2026 (JKT-IRC/26-11/0011): SN unit retur dihapus dari receiving (dilepas, status
+     * tetap pending), lalu scan ulang ditolak "sudah terdaftar dengan status Pending".
+     */
+    public function test_a_returned_unit_serial_removed_from_a_receiving_can_be_scanned_again(): void
+    {
+        $this->seedReturnReceiving();
+        $this->seedItem(100, quantity: 1);
+        $this->seedSerial(500, 'DW300-0001', 100, status: 'pending', receivingId: null);
+
+        $payload = $this->scan(['serial_number' => 'DW300-0001']);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertDatabaseHas('serial_numbers', ['id' => 500, 'inventory_receiving_id' => 1, 'status' => 'pending']);
+    }
+
+    public function test_a_pending_serial_still_held_by_another_receiving_is_refused(): void
+    {
+        $this->seedReturnReceiving();
+        $this->seedItem(100, quantity: 1);
+        $this->seedSerial(500, 'DW300-0001', 100, status: 'pending', receivingId: 99);
+
+        $payload = $this->scan(['serial_number' => 'DW300-0001'], 422);
+
+        $this->assertSame('error', $payload['status']);
+    }
+
     public function test_serial_of_a_product_outside_this_receiving_is_rejected(): void
     {
         $this->seedReturnReceiving();

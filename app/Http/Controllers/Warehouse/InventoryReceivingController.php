@@ -1467,7 +1467,14 @@ class InventoryReceivingController extends Controller
                         'created_by' => Auth::id(),
                         'updated_by' => Auth::id(),
                     ]);
-                } elseif ($selectedProductIsUnit && $existingSN && in_array($existingSN->status, ['on_hand', 'on_hand_remove'], true)) {
+                } elseif ($selectedProductIsUnit && $existingSN && (
+                    in_array($existingSN->status, ['on_hand', 'on_hand_remove'], true)
+                    // QA 26 Nov 2026 (JKT-IRC/26-11/0011): SN unit retur yang dihapus dari baris
+                    // receiving dilepas (inventory_receiving_id NULL) tapi statusnya tetap pending,
+                    // lalu scan ulang ditolak "sudah terdaftar ... status Pending". SN pending yang
+                    // tidak terikat receiving mana pun masih dipegang teknisi -> boleh di-scan lagi.
+                    || ($existingSN->status === 'pending' && ! $existingSN->inventory_receiving_id && ! $existingSN->trashed())
+                )) {
                     // Unit returns reuse the exact technician-held serial record.
                     $existingSN->update([
                         'inventory_receiving_id' => $inventoryReceiving->id,
