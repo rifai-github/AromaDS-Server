@@ -118,7 +118,7 @@ class UnitOnWall extends Model
 
     public function installHistories()
     {
-        return $this->histories()->whereIn('action', ['install', 'remove']);
+        return $this->histories()->whereIn('action', ['install', 'remove', 'swap']);
     }
 
     public function serviceHistories()
@@ -231,17 +231,17 @@ class UnitOnWall extends Model
     // Accessors
     public function getFormattedInstallDateAttribute()
     {
-        return $this->install_date ? $this->install_date->format('d/011/Y') : '-';
+        return $this->install_date ? $this->install_date->format('d/M/Y') : '-';
     }
 
     public function getFormattedLastServiceDateAttribute()
     {
-        return $this->last_service_date ? $this->last_service_date->format('d/011/Y') : '-';
+        return $this->last_service_date ? $this->last_service_date->format('d/M/Y') : '-';
     }
 
     public function getFormattedWarrantyExpiresAtAttribute()
     {
-        return $this->warranty_expires_at ? $this->warranty_expires_at->format('d/011/Y') : '-';
+        return $this->warranty_expires_at ? $this->warranty_expires_at->format('d/M/Y') : '-';
     }
 
     public function getIsInstalledAttribute()

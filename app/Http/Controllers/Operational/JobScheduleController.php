@@ -8075,6 +8075,10 @@ class JobScheduleController extends Controller
 
                     $unit = \App\Models\UnitOnWall::create($unitData);
 
+                    // QA 25 Nov 2026: tab History Unit On Wall hanya berisi job remove; pemasangan
+                    // tidak pernah dicatat. Catat sebagai riwayat install.
+                    $this->recordUnitOnWallHistory($unit, 'install', $installJob, "Unit installed by job {$installJob->job_number} (JA {$jobAdvice->job_advice_number}).");
+
                     // Update serial number status
                     $serialNumber = \App\Models\SerialNumber::find($unitSerialNumberId);
                     if ($serialNumber) {
@@ -8663,6 +8667,41 @@ class JobScheduleController extends Controller
      *  itu adalah kapan job schedule job service terakhir di lakukan untuk unit itu, 
      *  akan tercatat di sana."
      */
+    /**
+     * Catat satu baris riwayat Unit On Wall (install / service) untuk job ini, sekali saja per
+     * (unit, aksi, job). Gagal mencatat riwayat tidak boleh menggagalkan penyelesaian job.
+     */
+    private function recordUnitOnWallHistory(UnitOnWall $unit, string $action, JobSchedule $job, string $notes, ?string $actionDate = null): void
+    {
+        try {
+            $exists = UnitOnWallHistory::where('unit_on_wall_id', $unit->id)
+                ->where('action', $action)
+                ->where('job_schedule_id', $job->id)
+                ->exists();
+
+            if ($exists) {
+                return;
+            }
+
+            UnitOnWallHistory::create([
+                'unit_on_wall_id' => $unit->id,
+                'action' => $action,
+                'customer_id' => $unit->customer_id,
+                'customer_name' => $unit->company_name,
+                'location' => $unit->room_name,
+                'action_date' => $actionDate ?: ($job->completed_at ? \Carbon\Carbon::parse($job->completed_at)->toDateString() : now()->toDateString()),
+                'technician_id' => $job->assigned_technician_id,
+                'technician_name' => $job->assignedTechnician?->name,
+                'job_schedule_id' => $job->id,
+                'job_schedule_number' => $job->job_number,
+                'notes' => $notes,
+                'created_by' => \Auth::id(),
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning("Riwayat Unit On Wall ({$action}) gagal dicatat untuk unit {$unit->id}, job {$job->job_number}: ".$e->getMessage());
+        }
+    }
+
     private function autoUpdateUnitOnWallLastServiceDate(JobSchedule $serviceJob, $jobAdvice)
     {
         try {
@@ -8746,6 +8785,10 @@ class JobScheduleController extends Controller
                     $unitsUpdated++;
                 } else {
                 }
+
+                // QA 25 Nov 2026: tab Service Unit On Wall kosong karena service tidak pernah
+                // dicatat di riwayat. Sekali per unit per job.
+                $this->recordUnitOnWallHistory($unit, 'service', $serviceJob, "Service by job {$serviceJob->job_number}.", $serviceDate);
             }
             
             if ($unitsUpdated > 0) {

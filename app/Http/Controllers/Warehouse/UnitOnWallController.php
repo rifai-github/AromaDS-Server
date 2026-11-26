@@ -295,9 +295,15 @@ class UnitOnWallController extends Controller
         
         // Get last service date from job schedules
         // Find service jobs related to this unit that have been completed
-        $lastServiceJob = \App\Models\JobSchedule::where('type', 'service')
+        // QA 25 Nov 2026: last service date kosong. Dulu hanya type 'service' dan
+        // job_schedules.room_id (sering kosong di job multi-ruangan); kini semua jenis service
+        // dan ruangan dari job_schedule_rooms juga.
+        $lastServiceJob = \App\Models\JobSchedule::whereIn('type', ['service', 'service_first', 'service_routine'])
             ->where('building_id', $unitOnWall->building_id)
-            ->where('room_id', $unitOnWall->room_id)
+            ->where(function ($query) use ($unitOnWall) {
+                $query->where('room_id', $unitOnWall->room_id)
+                    ->orWhereHas('jobScheduleRooms', fn ($roomQuery) => $roomQuery->where('room_id', $unitOnWall->room_id));
+            })
             ->whereIn('status', ['completed', 'done_job'])
             ->where(function($query) use ($unitOnWall) {
                 // Match by customer to ensure it's the right unit
