@@ -6480,15 +6480,18 @@ class JobScheduleController extends Controller
             // Material Return dari "tidak dapat menyelesaikan" dibuat tanpa job_schedule_room_id,
             // tetapi ruangan asalnya menyimpan material_return_id. Tanpa ini ruangan tetap
             // "pending" walau return sudah selesai (QA 26 Nov, JKT-IF/26-11/0004).
-            \App\Models\JobScheduleRoom::where('material_return_id', $materialReturn->id)
-                ->when($materialReturn->job_schedule_room_id, fn ($query) => $query->where('id', '!=', $materialReturn->job_schedule_room_id))
-                ->where('material_return_status', '!=', \App\Models\JobScheduleRoom::MATERIAL_RETURN_RETURNED)
-                ->update([
-                    'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_RETURNED,
-                    'material_return_at' => now(),
-                    'material_return_by' => Auth::id(),
-                    'updated_by' => Auth::id(),
-                ]);
+            if (\Illuminate\Support\Facades\Schema::hasColumn('job_schedule_rooms', 'material_return_id')) {
+                \App\Models\JobScheduleRoom::where('material_return_id', $materialReturn->id)
+                    ->when($materialReturn->job_schedule_room_id, fn ($query) => $query->where('id', '!=', $materialReturn->job_schedule_room_id))
+                    ->where(fn ($query) => $query->whereNull('material_return_status')
+                        ->orWhere('material_return_status', '!=', \App\Models\JobScheduleRoom::MATERIAL_RETURN_RETURNED))
+                    ->update([
+                        'material_return_status' => \App\Models\JobScheduleRoom::MATERIAL_RETURN_RETURNED,
+                        'material_return_at' => now(),
+                        'material_return_by' => Auth::id(),
+                        'updated_by' => Auth::id(),
+                    ]);
+            }
 
             // Return cabang -> pusat: if this return was approved to forward to the
             // central warehouse, auto-create a draft InventoryTransfer (branch -> center).
