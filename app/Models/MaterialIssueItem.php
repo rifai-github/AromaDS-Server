@@ -39,6 +39,21 @@ class MaterialIssueItem extends Model
     ];
 
     // Relationships
+    /**
+     * Nama rental asal baris ini (QA 25 Nov 2026: kolom Rental di tab Material Issue, supaya
+     * ketahuan komponen berasal dari rental mana saat satu ruangan punya beberapa rental).
+     * Tabel ini tidak punya kolom rental; nama rental ditulis di catatan saat Material Assign
+     * ("Room: X, Rental: <nama>, RentalDetailID: N"). NULL bila tidak tercatat.
+     */
+    public function getRentalLabelAttribute(): ?string
+    {
+        if (preg_match('/Rental:\s*(.+?)\s*,\s*(RentalDetailID|ComponentID)\s*:/i', (string) $this->notes, $match)) {
+            return trim($match[1]) !== '' ? trim($match[1]) : null;
+        }
+
+        return null;
+    }
+
     public function materialIssue()
     {
         return $this->belongsTo(MaterialIssue::class);

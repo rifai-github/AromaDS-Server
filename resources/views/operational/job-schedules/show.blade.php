@@ -1404,6 +1404,7 @@
                                     <thead>
                                         <tr>
                                             <th>Material Issue No</th>
+                                            <th>Rental</th>
                                             <th>Material Status</th>
                                             <th>Issue Date</th>
                                             <th>Product Category</th>
@@ -1419,6 +1420,7 @@
                                         @forelse($materialIssueItems ?? [] as $item)
                                         <tr>
                                             <td>{{ $item->materialIssue->issue_number ?? '-' }}</td>
+                                            <td style="white-space: normal; min-width: 160px;">{{ $item->rental_label ?? '-' }}</td>
                                             <td>
                                                 @php
                                                     $effectiveStatus = $item->effective_usage_status ?? $item->usage_status ?? $item->materialIssue->status ?? '-';
@@ -1438,7 +1440,7 @@
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="10" class="text-center text-muted">
+                                            <td colspan="11" class="text-center text-muted">
                                                 <i class="fas fa-info-circle me-2"></i>No material items found.
                                             </td>
                                         </tr>
