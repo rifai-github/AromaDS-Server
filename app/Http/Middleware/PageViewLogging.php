@@ -96,13 +96,19 @@ class PageViewLogging
             return; // Skip duplicate logging
         }
 
+        // QA 25 Nov 2026: catat transaksi mana yang dibuka (halaman detail dengan model terikat),
+        // supaya ketahuan siapa membuka modul apa dan transaksi apa.
+        $viewedModel = collect($request->route()?->parameters() ?? [])
+            ->first(fn ($parameter) => $parameter instanceof \Illuminate\Database\Eloquent\Model);
+
         AuditLog::create([
             'user_id' => $user->id,
             'action' => 'page_view',
-            'model_type' => 'PageView',
-            'model_id' => 0,
+            'model_type' => $viewedModel ? get_class($viewedModel) : 'PageView',
+            'model_id' => $viewedModel ? (int) $viewedModel->getKey() : 0,
             'old_values' => null,
             'new_values' => [
+                'reference' => $viewedModel ? AuditLog::referenceFromValues($viewedModel->getAttributes()) : null,
                 'page' => $request->path(),
                 'method' => $request->method(),
                 'url' => $request->fullUrl(),

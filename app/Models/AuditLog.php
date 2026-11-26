@@ -21,8 +21,76 @@ class AuditLog extends Model
         'ip_address',
         'user_agent',
         'page_name',
-        'module_name'
+        'module_name',
+        'reference_number',
     ];
+
+    /**
+     * QA 25 Nov 2026: log hanya menulis "job advice action delete" tanpa nomor dokumen, jadi tidak
+     * ketahuan dokumen mana yang dihapus/diubah/dibuka. Nomor dokumen diambil dari isi record
+     * (atribut pertama yang terisi dari daftar ini) saat baris log dibuat.
+     */
+    public const REFERENCE_KEYS = [
+        'reference', // dipakai PageViewLogging untuk halaman detail
+        'job_advice_number', 'job_number', 'invoice_number', 'contract_number', 'quotation_number',
+        'survey_number', 'issue_number', 'issuing_number', 'receiving_number', 'request_number',
+        'return_number', 'transfer_number', 'adjustment_number', 'opname_number', 'termination_number',
+        'document_number', 'transaction_number', 'receipt_number', 'faktur_number', 'billing_group_name',
+        'customer_code', 'serial_number', 'rental_code', 'sku',
+    ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (AuditLog $log) {
+            if (! self::supportsReferenceNumber() || filled($log->reference_number)) {
+                return;
+            }
+
+            $reference = self::referenceFromValues($log->new_values) ?? self::referenceFromValues($log->old_values);
+            if ($reference !== null) {
+                $log->reference_number = $reference;
+            }
+        });
+    }
+
+    public static function supportsReferenceNumber(): bool
+    {
+        static $supported = null;
+
+        // Fixture test membuat ulang tabel audit_logs dengan/ tanpa kolom ini; jangan di-cache di sana.
+        if (app()->runningUnitTests()) {
+            return \Illuminate\Support\Facades\Schema::hasColumn('audit_logs', 'reference_number');
+        }
+
+        return $supported ??= \Illuminate\Support\Facades\Schema::hasColumn('audit_logs', 'reference_number');
+    }
+
+    public static function referenceFromValues($values): ?string
+    {
+        if (is_string($values)) {
+            $values = json_decode($values, true);
+        }
+
+        if (! is_array($values)) {
+            return null;
+        }
+
+        foreach (self::REFERENCE_KEYS as $key) {
+            $value = $values[$key] ?? null;
+            if (is_scalar($value) && trim((string) $value) !== '') {
+                return mb_substr(trim((string) $value), 0, 100);
+            }
+        }
+
+        return null;
+    }
+
+    /** Nomor transaksi untuk tampilan; baris lama tanpa kolom dibaca dari isi log-nya. */
+    public function getDisplayReferenceNumberAttribute(): ?string
+    {
+        return ($this->attributes['reference_number'] ?? null)
+            ?: (self::referenceFromValues($this->old_values) ?? self::referenceFromValues($this->new_values));
+    }
 
     protected $casts = [
         'old_values' => 'array',

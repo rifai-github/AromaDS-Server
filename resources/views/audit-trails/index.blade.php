@@ -709,6 +709,7 @@
                             <th data-column="id">ID</th>
                             <th data-column="model_type">Table</th>
                             <th data-column="model_id">Record ID</th>
+                            <th data-column="reference_number">Transaction No.</th>
                             <th data-column="action">Action</th>
                             <th data-column="user.name">User</th>
                             <th data-column="page_name|module_name">Menu</th>
@@ -728,6 +729,7 @@
                                 </span>
                             </td>
                             <td>{{ $audit->model_id }}</td>
+                            <td>{{ $audit->display_reference_number ?? '-' }}</td>
                             <td>
                                 @if($audit->action == 'created')
                                     <span class="badge badge-success">
