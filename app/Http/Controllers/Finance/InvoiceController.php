@@ -3022,7 +3022,14 @@ class InvoiceController extends Controller
             ];
         }
 
-        if ($invoice->billing_group_id) {
+        // QA 25 Nov 2026: tombol Generate di detail invoice tidak berbuat apa-apa. Invoice periode
+        // kontrak (dibuat InvoiceGenerationService) yang kebetulan punya billing group dikirim ke
+        // jalur billing group, yang menolak "belum semua job selesai" (prod: JKT-INV/26-11/0002).
+        // Invoice berperiode dibuat ulang lewat generator yang membuatnya, sama seperti tombol
+        // Regenerate di daftar invoice; jalur billing group hanya untuk invoice tanpa periode.
+        $isRentalPeriodInvoice = $invoice->contract && ! empty($invoice->period_invoice);
+
+        if ($invoice->billing_group_id && ! $isRentalPeriodInvoice) {
             $invoiceDate = $invoice->invoice_date ? Carbon::parse($invoice->invoice_date) : now();
             $existingInvoice = Invoice::where('billing_group_id', $invoice->billing_group_id)
                 ->where('id', '!=', $invoice->id)
@@ -3071,6 +3078,8 @@ class InvoiceController extends Controller
             ->where('id', '!=', $invoice->id)
             ->where('invoice_status', '!=', Invoice::STATUS_CANCELLED)
             ->where('period_invoice', $invoice->period_invoice)
+            // Kontrak multi billing group punya satu invoice per billing group per periode.
+            ->when($invoice->billing_group_id, fn ($query) => $query->where('billing_group_id', $invoice->billing_group_id))
             ->first();
 
         if ($existingInvoice) {
