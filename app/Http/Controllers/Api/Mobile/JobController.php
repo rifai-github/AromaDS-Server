@@ -5107,15 +5107,17 @@ class JobController extends Controller
                 ? collect()
                 : \App\Models\JobAdviceRoom::whereIn('id', $jaRoomIds)->pluck('rental_product_id')->filter()->unique()->values();
 
-            if ($rentalIds->isEmpty()) {
+            // Baris satu-rental boleh memakai Unit On Wall lama yang belum menyimpan rental_id
+            // (perilaku lama); baris multi-rental wajib cocok rental_id per rental.
+            $singleRental = $jaRoomIds->count() <= 1;
+            if ($rentalIds->isEmpty() && ! $singleRental) {
                 continue;
             }
 
-            $activeUnitExists = $rentalIds->every(fn ($rentalId) => \App\Models\UnitOnWall::whereIn('serial_number_id', $issuedSerialIds)
+            $unitQuery = fn () => \App\Models\UnitOnWall::whereIn('serial_number_id', $issuedSerialIds)
                 ->where('status', 'active')
                 ->where('customer_id', $job->jobAdvice->customer_id)
                 ->where('building_id', $job->building_id)
-                ->where('rental_id', $rentalId)
                 ->where(function ($query) use ($room) {
                     if ($room->room_id) {
                         $query->where('room_id', $room->room_id);
@@ -5124,8 +5126,18 @@ class JobController extends Controller
                     if ($room->room_name) {
                         $query->orWhereRaw('LOWER(TRIM(room_name)) = ?', [strtolower(trim($room->room_name))]);
                     }
-                })
-                ->exists());
+                });
+
+            $activeUnitExists = $rentalIds->isEmpty()
+                ? $unitQuery()->exists()
+                : $rentalIds->every(fn ($rentalId) => $unitQuery()
+                    ->where(function ($query) use ($rentalId, $singleRental) {
+                        $query->where('rental_id', $rentalId);
+                        if ($singleRental) {
+                            $query->orWhereNull('rental_id');
+                        }
+                    })
+                    ->exists());
 
             if ($activeUnitExists) {
                 $room->markAsCompleted(Auth::id(), 'Auto-synced from active Unit On Wall during mobile verification retry', \App\Models\JobScheduleRoom::SOURCE_APP);
