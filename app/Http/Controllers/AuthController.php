@@ -479,7 +479,11 @@ class AuthController extends Controller
             return route('warehouse.dashboard');
         }
 
-        return route('dashboard'); // Default fallback
+        // QA 26 Nov 2026: Dashboard utama bisa ditutup per role; user tanpa aksesnya diarahkan
+        // ke halaman yang boleh ia buka, bukan ke /dashboard.
+        return \App\Http\Controllers\DashboardController::canView($user)
+            ? route('dashboard')
+            : \App\Http\Controllers\DashboardController::landingUrlFor($user);
     }
 
     /**

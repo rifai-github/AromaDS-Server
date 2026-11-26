@@ -1292,7 +1292,11 @@
                 $isAdminOrManagement = $user->hasRole('Admin') || $user->hasRole('super_admin') || $user->hasRoleStartingWith('Management');
                 $isMarketing = !$isAdminOrManagement && $user->hasPermission('marketing.dashboard');
                 $dashboardRoute = $isMarketing ? route('marketing.dashboard') : route('dashboard');
+                // QA 26 Nov 2026: Dashboard utama hanya untuk Admin/Management atau role yang
+                // diberi izin "Dashboard" di Master Role; user Marketing tetap ke dashboard marketing.
+                $showDashboardMenu = $isMarketing || \App\Http\Controllers\DashboardController::canView($user);
             @endphp
+            @if($showDashboardMenu)
             <div class="menu-item {{ request()->routeIs('dashboard') || request()->routeIs('marketing.dashboard') ? 'active' : '' }}" onclick="navigateTo('{{ $dashboardRoute }}', event)">
                 <div class="left">
                     <i class="fas fa-table-columns"></i>
@@ -1300,6 +1304,7 @@
                 </div>
                 <div class="tooltip">Dashboard</div>
             </div>
+            @endif
 
             <!-- Marketing - Check by permission -->
             @if(auth()->user()->canAccessModule('marketing'))

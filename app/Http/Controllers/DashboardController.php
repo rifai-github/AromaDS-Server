@@ -21,8 +21,56 @@ use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
+    /** Permission Dashboard utama (Master Role > System > Dashboard). */
+    public const PERMISSION = 'system.dashboard.view';
+
+    /**
+     * QA 26 Nov 2026: Dashboard utama disembunyikan untuk non-admin selama sosialisasi &
+     * implementasi, dan bisa dibuka per role lewat Master Role. Admin/Management selalu boleh.
+     */
+    public static function canView(?User $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        return $user->hasRole('Admin')
+            || $user->hasRole('super_admin')
+            || $user->hasRoleStartingWith('Management')
+            || $user->hasPermission(self::PERMISSION);
+    }
+
+    /**
+     * Halaman pertama untuk user tanpa akses Dashboard utama: dashboard modul yang boleh dibuka,
+     * kalau tidak ada halaman profil. Tidak pernah kembali ke /dashboard (cegah redirect loop).
+     */
+    public static function landingUrlFor(User $user): string
+    {
+        foreach ([
+            'marketing.dashboard' => ['marketing.dashboard.view', 'marketing.dashboard'],
+            'operational.dashboard' => ['operational.dashboard.view'],
+            'finance.dashboard' => ['finance.dashboard.view'],
+            'warehouse.dashboard' => ['warehouse.dashboard.view'],
+        ] as $routeName => $permissions) {
+            if (\Illuminate\Support\Facades\Route::has($routeName)) {
+                foreach ($permissions as $permission) {
+                    if ($user->hasPermission($permission)) {
+                        return route($routeName);
+                    }
+                }
+            }
+        }
+
+        return route('profile.index');
+    }
+
     public function index()
     {
+        $user = auth()->user();
+        if ($user && ! self::canView($user)) {
+            return redirect()->to(self::landingUrlFor($user));
+        }
+
         $now = Carbon::now();
         $today = $now->copy()->startOfDay();
         $currentMonth = (int) $now->month;
