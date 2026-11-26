@@ -7701,7 +7701,7 @@ class JobController extends Controller
                 $serialNumberId = $unitOnWall->serialNumber ? $unitOnWall->serialNumber->id : null;
                 $unitRoomName = $unitOnWall->room->room_name ?? $unitOnWall->room_name ?? null;
 
-                if ($selectedRoomName && $unitRoomName && trim(strtolower($selectedRoomName)) !== trim(strtolower($unitRoomName))) {
+                if ($this->unitOnWallIsInOtherRoom($job, $unitOnWall, $selectedRoomName)) {
                     return response()->json([
                         'status' => 'error',
                         'message' => "Serial Number {$serialNumberInput} terpasang di Room: {$unitRoomName}, bukan Room: {$selectedRoomName}",
@@ -7842,7 +7842,7 @@ class JobController extends Controller
             if ($unitOnWall) {
                 $unitRoomName = $unitOnWall->room->room_name ?? $unitOnWall->room_name ?? null;
 
-                if ($selectedRoomName && $unitRoomName && trim(strtolower($selectedRoomName)) !== trim(strtolower($unitRoomName))) {
+                if ($this->unitOnWallIsInOtherRoom($job, $unitOnWall, $selectedRoomName)) {
                     return response()->json([
                         'status' => 'error',
                         'message' => "Serial Number {$serialNumberInput} terpasang di Room: {$unitRoomName}, bukan Room: {$selectedRoomName}",
@@ -8099,6 +8099,57 @@ class JobController extends Controller
      * Room dibandingkan lewat master room id; nama hanya dipakai bila id tak diketahui.
      * Satu room fisik bisa punya beberapa job advice room (1 ruangan 2 rental) - itu bukan konflik.
      */
+    /**
+     * Apakah unit terpasang ini ada di ruangan LAIN dari ruangan yang dipilih teknisi.
+     *
+     * Dibandingkan lewat id master room bila keduanya diketahui, baru jatuh ke nama. QA 26 Nov
+     * (JKT-RF/26-11/0002): master room 45009 diganti nama menjadi "Test Ruang 261116-2Sq" setelah
+     * SQ dibuat, sementara nama ruangan di JA masih "Test Ruang 261116-2". Perbandingan nama saja
+     * menolak SETIAP SN di ruangan itu, padahal ruangannya sama persis.
+     */
+    private function unitOnWallIsInOtherRoom(JobSchedule $job, $unitOnWall, ?string $selectedRoomName): bool
+    {
+        $selectedRoomName = $selectedRoomName !== null ? trim($selectedRoomName) : null;
+        if (! $unitOnWall || ! $selectedRoomName) {
+            return false;
+        }
+
+        $selectedMasterRoomId = $this->masterRoomIdForSelectedRoomName($job, $selectedRoomName);
+        if ($selectedMasterRoomId && $unitOnWall->room_id) {
+            return (int) $unitOnWall->room_id !== (int) $selectedMasterRoomId;
+        }
+
+        // Id tidak bisa dipastikan: cocok bila nama master saat ini ATAU nama yang dicatat di
+        // Unit On Wall sama dengan pilihan teknisi.
+        $knownNames = collect([$unitOnWall->room->room_name ?? null, $unitOnWall->room_name ?? null])
+            ->filter()
+            ->map(fn ($name) => strtolower(trim($name)));
+
+        return $knownNames->isNotEmpty() && ! $knownNames->contains(strtolower($selectedRoomName));
+    }
+
+    /**
+     * Id master room untuk nama ruangan yang dipilih di APK, dari ruangan Job Advice job ini
+     * (nama JA atau nama master saat ini). NULL bila tidak ditemukan atau ambigu.
+     */
+    private function masterRoomIdForSelectedRoomName(JobSchedule $job, string $selectedRoomName): ?int
+    {
+        $jobAdvice = $job->jobAdvice;
+        if (! $jobAdvice) {
+            return null;
+        }
+
+        $ids = $jobAdvice->rooms()->with(['contractRoom.room', 'quotationRoom.room'])->get()
+            ->filter(fn ($room) => collect([$room->room_name, $room->contractRoom?->room?->room_name, $room->quotationRoom?->room?->room_name])
+                ->filter()
+                ->contains(fn ($name) => strtolower(trim($name)) === strtolower(trim($selectedRoomName))))
+            ->map(fn ($room) => $room->room_id ?? $room->contractRoom?->room_id ?? $room->quotationRoom?->room_id)
+            ->filter()
+            ->unique();
+
+        return $ids->count() === 1 ? (int) $ids->first() : null;
+    }
+
     private function serialRegisteredInOtherRoom(JobSchedule $job, string $serial, ?\App\Models\JobAdviceRoom $selectedAdviceRoom, ?string $selectedRoomName): ?string
     {
         $serial = trim($serial);
