@@ -512,7 +512,9 @@ class CsrPrintReportTest extends TestCase
         $this->assertStringContainsString('Install Free', $html);
         $this->assertMatchesRegularExpression('/Lobby<\/td>\s*<td[^>]*>\s*1\s*</', $html);
         $this->assertStringContainsString('<p>Budi PIC</p>', $html);
-        $this->assertStringContainsString('<p>Andi Teknisi</p>', $html);
+        // QA 25 Nov 2026: kotak tanda tangan teknisi dihapus, hanya tanda tangan PIC.
+        $this->assertStringNotContainsString('Technician Signature', $html);
+        $this->assertStringNotContainsString('<p>Andi Teknisi</p>', $html);
         $this->assertStringNotContainsString('<p>Cahaya Mandiri Utama</p>', $html);
     }
 

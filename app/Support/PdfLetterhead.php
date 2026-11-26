@@ -8,12 +8,16 @@ use App\Models\Company;
  * UAT 24 Nov 2026: semua printout PDF (survey, quotation, kontrak, IR/IF/CSR, invoice, tanda
  * terima) memakai kop dan footer yang seragam:
  *  - kiri atas logo ADS; kanan atas nama perusahaan + QR nomor dokumen (beda per dokumen);
- *  - kiri bawah logo, kanan bawah sertifikasi, tengah bawah = Master Company footer 1/2/3
+ *  - kiri bawah "Find Us More Info / Scan Below" + QR linktree (klien 25 Nov), kanan bawah
+ *    sertifikasi, tengah bawah = Master Company footer 1/2/3
  *    (footer 1 tebal) - bukan teks hardcode.
  * Gambar dibuat data-URI karena DomPDF tidak memuat URL lokal.
  */
 class PdfLetterhead
 {
+    /** Tujuan QR kiri bawah footer (jawaban klien 25 Nov 2026). */
+    public const FOOTER_QR_URL = 'https://linktr.ee/aromadeliverysystem';
+
     private static array $imageCache = [];
 
     public static function company(): ?Company

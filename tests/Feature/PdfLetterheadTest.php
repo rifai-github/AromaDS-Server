@@ -59,6 +59,11 @@ class PdfLetterheadTest extends TestCase
         $html = view('pdf.partials.identity-footer')->render();
         $this->assertStringContainsString('font-weight: bold; color: #222;">An ISO 14001:2015 Certified Company', $html);
         $this->assertStringContainsString('Jakarta . Surabaya', $html);
+        // Klien 25 Nov 2026: kiri bawah = teks + QR ke linktree, bukan logo ADS.
+        $this->assertStringContainsString('Find Us More Info', $html);
+        $this->assertStringContainsString('Scan Below', $html);
+        $this->assertStringContainsString('QR https://linktr.ee/aromadeliverysystem', $html);
+        $this->assertStringNotContainsString('alt="Logo"', $html);
     }
 
     public function test_qr_encodes_the_document_number(): void

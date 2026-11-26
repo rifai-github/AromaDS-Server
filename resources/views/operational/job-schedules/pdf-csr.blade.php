@@ -587,23 +587,21 @@
             </tbody>
         </table>
 
+        {{-- QA 25 Nov 2026: kotak tanda tangan teknisi dihapus; cukup tanda tangan PIC beserta
+             nama dan jabatannya. Nama teknisi tetap tercantum di baris "Technician" di atas. --}}
+        @php $picPosition = trim((string) ($picReport?->pic_position ?? '')); @endphp
         <table class="signature-table">
             <tr>
-                <td>
+                <td style="width: 100%;">
                     <p>Customer Signature</p>
                     @if ($picSignatureSrc)
                         <img src="{{ $picSignatureSrc }}" alt="Tanda tangan PIC" style="height: 50px; margin-bottom: -50px;">
                     @endif
-                    <div class="signature-line"></div>
+                    <div class="signature-line" style="width: 28%;"></div>
                     <p>{{ $picName !== '' ? $picName : '(PIC)' }}</p>
-                </td>
-                <td>
-                    <p>Technician Signature</p>
-                    @if ($picSignatureSrc)
-                        <div style="height: 50px; margin-bottom: -50px;"></div>
+                    @if ($picPosition !== '')
+                        <p style="margin-top: -6px;">{{ $picPosition }}</p>
                     @endif
-                    <div class="signature-line"></div>
-                    <p>{{ $technicianSignName }}</p>
                 </td>
             </tr>
         </table>
