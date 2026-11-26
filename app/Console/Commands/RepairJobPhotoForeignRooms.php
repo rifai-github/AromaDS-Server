@@ -66,6 +66,18 @@ class RepairJobPhotoForeignRooms extends Command
                     ->value('r.id');
             }
 
+            // Job yang hanya punya satu ruangan: foto itu pasti milik ruangan tersebut
+            // (prod 26 Nov: JKT-CSR/26-10/0001 hanya "Ruang Periksa Simo", fotonya tertulis LOBBY).
+            if (! $target) {
+                $ownRooms = DB::table('job_schedule_rooms')
+                    ->where('job_schedule_id', $photo->job_schedule_id)
+                    ->whereNull('deleted_at')
+                    ->pluck('id');
+                if ($ownRooms->count() === 1) {
+                    $target = (int) $ownRooms->first();
+                }
+            }
+
             $newRoom = $target ? DB::table('job_schedule_rooms')->where('id', $target)->value('room_name') : null;
             $rows[] = [$photo->id, $photo->job_number ?: ('job#'.$photo->job_schedule_id), $photo->wrong_room, $target ? "{$newRoom} (#{$target})" : '(dikosongkan)'];
             $target ? $remapped++ : $nulled++;
