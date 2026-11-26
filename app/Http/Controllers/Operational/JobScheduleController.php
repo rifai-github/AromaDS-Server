@@ -123,7 +123,13 @@ class JobScheduleController extends Controller
     public function index(Request $request)
     {
         $viewMode = $request->get('view_mode', 'job');
-        
+
+        // QA 25 Nov 2026: "Back to List" dari detail job harus kembali ke daftar dengan filter
+        // terakhir. Filter daftar hidup di query string; simpan per sesi tiap halaman daftar dibuka.
+        if ($request->hasSession() && ! $request->ajax() && ! $request->wantsJson()) {
+            $request->session()->put('job_schedules.list_query', $request->query());
+        }
+
         if ($viewMode === 'room') {
             $query = \App\Models\JobScheduleRoom::with([
                 'jobSchedule.jobAdvice.customer',

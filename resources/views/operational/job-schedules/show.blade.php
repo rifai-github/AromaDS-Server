@@ -575,7 +575,8 @@
                 <div class="card-header" style="background-color: #1e3a8a; border: none; padding: 1rem 1.5rem;">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <a href="{{ route('operational.job-schedules.index', ['view_mode' => $viewMode ?? 'job']) }}" class="btn btn-light btn-sm">
+                            {{-- QA 25 Nov 2026: kembali ke daftar dengan filter terakhir (disimpan di sesi oleh index()). --}}
+                            <a href="{{ route('operational.job-schedules.index', session('job_schedules.list_query') ?: ['view_mode' => $viewMode ?? 'job']) }}" class="btn btn-light btn-sm">
                                 <i class="fas fa-arrow-left"></i> Back to List
                             </a>
                         </div>
