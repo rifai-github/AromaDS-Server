@@ -2348,6 +2348,7 @@ class JobController extends Controller
             // material_issue_items/inventory_issuing_items hanya membawa room_name,
             // sehingga kartu VirusGuard ikut menampilkan diffuser milik rental ADS 250.
             $products = $this->narrowProductsToCardRental($products, $roomGroup, $displayRoom);
+            $products = $this->narrowProductsToCardRentalByMaterialIssue($products, (int) $specificJobScheduleId, $displayRoom, $roomName);
 
             return [
                 'id' => $displayRoom->id,
@@ -4723,6 +4724,76 @@ class JobController extends Controller
      * Unit bisa memvalidasi serial mana pun di situ (lihat catatan pada
      * RoomModel.serviceUnits di aplikasi Flutter).
      */
+    /**
+     * Sempitkan produk kartu memakai rental asal tiap baris Material Issue.
+     *
+     * QA 25-26 Nov 2026 (JKT-IF/26-11/0001: rental 301 = Dispenser A301C + Alluring Floral +
+     * Cleaner, rental 103 = Dispenser AE103C + Bakers Life + Cleaner): kedua kartu menampilkan
+     * enam komponen. Penyaring per kategori di narrowProductsToCardRental() tidak bisa membedakan
+     * karena kedua rental memakai kategori yang sama. Baris Material Issue menyimpan rental
+     * asalnya di catatan ("RentalDetailID: 13"), jadi produk bisa dipetakan ke rental.
+     *
+     * Konservatif: daftar dikembalikan utuh bila ada baris Material Issue ruangan ini tanpa
+     * RentalDetailID, bila rental kartu tidak muncul di baris mana pun, atau bila hasilnya kosong.
+     * Produk yang tidak ada di Material Issue dan entri Unit On Wall tidak pernah dibuang. Produk
+     * yang dipakai kedua rental (mis. Cleaner) tetap tampil di kedua kartu.
+     */
+    private function narrowProductsToCardRentalByMaterialIssue(array $products, int $jobScheduleId, $displayRoom, ?string $roomName): array
+    {
+        $ownRentalId = (int) ($displayRoom->rental_product_id ?? 0);
+        if (empty($products) || ! $ownRentalId || ! $jobScheduleId || trim((string) $roomName) === '') {
+            return $products;
+        }
+
+        $assignmentIds = \App\Models\JobAssignSchedule::where('job_schedule_id', $jobScheduleId)->pluck('id');
+        if ($assignmentIds->isEmpty()) {
+            return $products;
+        }
+
+        $items = \App\Models\MaterialIssueItem::whereIn('job_assign_schedule_id', $assignmentIds)
+            ->whereRaw('LOWER(TRIM(room_name)) = ?', [strtolower(trim((string) $roomName))])
+            ->get(['product_id', 'notes']);
+
+        if ($items->isEmpty()) {
+            return $products;
+        }
+
+        $detailIdByItem = $items->map(fn ($item) => preg_match('/RentalDetailID:\s*(\d+)/i', (string) $item->notes, $m) ? (int) $m[1] : null);
+        if ($detailIdByItem->contains(null)) {
+            return $products;
+        }
+
+        $rentalByDetailId = \App\Models\RentalDetail::withTrashed()
+            ->whereIn('id', $detailIdByItem->unique()->values())
+            ->pluck('master_rental_id', 'id')
+            ->map(fn ($id) => (int) $id);
+
+        $rentalsByProductId = [];
+        foreach ($items->values() as $index => $item) {
+            $rentalId = $rentalByDetailId[$detailIdByItem[$index]] ?? null;
+            if (! $rentalId) {
+                return $products;
+            }
+            $rentalsByProductId[(int) $item->product_id][$rentalId] = true;
+        }
+
+        if (! collect($rentalsByProductId)->contains(fn ($rentals) => isset($rentals[$ownRentalId]))) {
+            return $products;
+        }
+
+        $filtered = array_values(array_filter($products, function ($product) use ($rentalsByProductId, $ownRentalId) {
+            if (($product['source'] ?? null) === 'unit_on_wall') {
+                return true;
+            }
+
+            $rentals = $rentalsByProductId[(int) ($product['product_id'] ?? 0)] ?? null;
+
+            return $rentals === null || isset($rentals[$ownRentalId]);
+        }));
+
+        return empty($filtered) ? $products : $filtered;
+    }
+
     private function narrowProductsToCardRental(array $products, $roomGroup, $displayRoom): array
     {
         if (empty($products) || !$roomGroup || $roomGroup->count() < 2 || !$displayRoom) {
