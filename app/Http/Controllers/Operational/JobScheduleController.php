@@ -4217,7 +4217,7 @@ class JobScheduleController extends Controller
                 // "harus setelah unit on wall terpasang baru generate remove job, jika unit on wall tidak ada maka jangan auto generate remove job"
                 // UPDATE: Untuk Install Free → langsung create remove job setelah install selesai
                 // Untuk Install biasa → remove job baru dibuat setelah semua service period selesai (di cek di service job completion)
-                if (in_array($jobSchedule->type, $installTypes) && $jobAdvice && $jobAdvice->remove_date && $unitOnWallCreated) {
+                if (in_array($jobSchedule->type, $installTypes) && $jobAdvice && $jobAdvice->remove_date && $this->installFreeNeedsRemoveFree($jobSchedule, $jobAdvice, (bool) $unitOnWallCreated)) {
                     // Cek apakah ini Install Free atau Install biasa
                     // IMPORTANT: Check from jobAdvice->type, not jobSchedule->type
                     // Because jobSchedule->type is normalized to "install" for enum consistency
@@ -5263,7 +5263,7 @@ class JobScheduleController extends Controller
                 }
 
                 // AUTO-CREATE REMOVE JOB only if Unit On Wall was successfully created
-                if (in_array($completedSchedule->type, $installTypes) && $jobAdvice && $jobAdvice->remove_date && $unitOnWallCreated) {
+                if (in_array($completedSchedule->type, $installTypes) && $jobAdvice && $jobAdvice->remove_date && $this->installFreeNeedsRemoveFree($completedSchedule, $jobAdvice, (bool) $unitOnWallCreated)) {
                     $isInstallFree = false;
                     if ($jobAdvice && $jobAdvice->type) {
                         $jaTypeLower = strtolower(trim($jobAdvice->type));
@@ -7615,6 +7615,43 @@ class JobScheduleController extends Controller
      * Hanya job pemasangan (Install/IR, Install Free/IF, Ganti Rental); service tidak
      * memasang unit baru.
      */
+    /**
+     * Apakah job Install Free ini perlu dibuatkan Remove Free sekarang.
+     *
+     * Dulu syaratnya "Unit On Wall baru saja dibuat oleh autoCreateUnitOnWall() di panggilan
+     * yang sama". Sejak 25 Nov (createUnitOnWallForCompletedRooms) unit sudah tercatat saat
+     * ruangan selesai, jadi saat BA panggilan itu mengembalikan false dan Remove Free tidak
+     * pernah dibuat (QA 26 Nov, JKT-JA/26-11/0003 Ruang-1 & Ruang-6). Syarat yang benar tetap
+     * sama maknanya — "unit memang terpasang" (MOM8) — tapi dibaca dari data: ada Unit On Wall
+     * aktif hasil job install ini. generateRemoveFreeSchedule() sendiri sudah idempoten per
+     * ruangan, jadi memanggilnya lagi tidak membuat Remove Free dobel.
+     *
+     * Trial yang SQ-nya sudah menjadi kontrak tidak dibuatkan Remove Free (unit tetap di lokasi;
+     * ContractWizardController juga membatalkan Remove Free saat kontrak dibuat), supaya unpost
+     * lalu BA ulang tidak memunculkannya kembali.
+     */
+    public function installFreeNeedsRemoveFree(JobSchedule $installJob, $jobAdvice, bool $unitCreatedNow = false): bool
+    {
+        if (! $jobAdvice || ! $jobAdvice->remove_date) {
+            return false;
+        }
+
+        $hasUnitOnWall = $unitCreatedNow || UnitOnWall::where('install_job_schedule_id', $installJob->id)
+            ->where('status', 'active')
+            ->exists();
+
+        if (! $hasUnitOnWall) {
+            return false;
+        }
+
+        $quotationNumber = $jobAdvice->quotation?->quotation_number ?? $installJob->quotation_number;
+        if ($quotationNumber && Contract::whereHas('quotation', fn ($query) => $query->where('quotation_number', $quotationNumber))->exists()) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function createUnitOnWallForCompletedRooms(JobSchedule $job): bool
     {
         $type = strtolower(trim((string) $job->type));

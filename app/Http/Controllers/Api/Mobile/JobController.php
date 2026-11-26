@@ -6310,7 +6310,11 @@ class JobController extends Controller
                                 // room never got its own remove). Mirrors the web path in
                                 // JobScheduleController::runCompletionAutomation(), which already loops
                                 // $schedulesToComplete and calls generateRemoveFreeSchedule() per schedule.
-                                if ($isInstallFree && $jobAdvice->remove_date && $unitCreated && $isInstallTypeSchedule) {
+                                // Syarat "unit terpasang" dibaca dari Unit On Wall aktif job ini, bukan
+                                // "baru dibuat di panggilan ini": sejak 25 Nov unit sudah dicatat saat
+                                // ruangan selesai (QA 26 Nov: Remove Free Ruang-1/Ruang-6 tidak muncul).
+                                if ($isInstallFree && $jobAdvice->remove_date && $isInstallTypeSchedule
+                                    && $jobScheduleController->installFreeNeedsRemoveFree($completedSchedule, $jobAdvice, (bool) $unitCreated)) {
                                     $autoCreateRemoveJobMethod->invoke($jobScheduleController, $completedSchedule, $jobAdvice);
                                 }
                             }
