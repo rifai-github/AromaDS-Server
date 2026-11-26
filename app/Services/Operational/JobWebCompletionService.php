@@ -914,7 +914,13 @@ class JobWebCompletionService
                 'unit_on_wall_id' => $unitOnWallId ?: ($existingScanForSn->unit_on_wall_id ?? null),
                 'mac' => $mac,
                 'device_type' => $deviceType,
-                'device_name' => $deviceName,
+                // QA 26 Nov 2026 (JKT-IF/26-11/0003): modal jadwal aroma web tidak mengirim nama
+                // perangkat, jadi Device Name tersimpan kosong dan nama lama ikut terhapus.
+                // Pertahankan nama lama, atau pakai nama produk SN-nya.
+                'device_name' => trim((string) $deviceName) !== ''
+                    ? $deviceName
+                    : (($existingScanForSn->device_name ?? null)
+                        ?: \App\Models\SerialNumber::with('masterProduct')->whereRaw('TRIM(serial_number) = ?', [trim($mac)])->first()?->masterProduct?->name),
                 'device_snapshot' => json_encode((object) $snapshot),
                 'scanned_at' => now(),
                 'notes' => $notes,
