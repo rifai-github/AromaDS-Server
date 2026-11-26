@@ -478,7 +478,10 @@ class QuotationWizardController extends Controller
             $products = $productsQuery->with('serviceFrequency:id,frequency_months')
                 ->select('id', 'rental_code', 'rental_name', 'alias', 'daily_price', 'monthly_price', 'unit', 'service_frequency_id')
                 ->orderBy('rental_name')
-                ->limit(50)
+                // QA 25 Nov 2026: tanpa kata kunci hanya 50 rental pertama (abjad) yang muncul,
+                // jadi rental yang dipilih lewat pencarian hilang saat dropdown dibuka ulang.
+                // Seluruh katalog (±340 rental) cukup kecil untuk dikirim sekaligus.
+                ->limit(500)
                 ->get();
 
             $formattedProducts = $products->map(function($product) use ($branchId, $surveyId, $isCorporateCustomer) {

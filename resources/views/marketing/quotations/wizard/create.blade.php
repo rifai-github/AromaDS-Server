@@ -2717,7 +2717,8 @@ $(document).ready(function() {
     }
     
     function saveStep4Data() {
-        if (window.isRestoringData || window.isPopulatingData) {
+        // QA 25 Nov 2026: menyimpan saat restore step 4 belum selesai menulis harga kosong.
+        if (window.isRestoringData || window.isPopulatingData || Date.now() < (window.step4RestoreBusyUntil || 0)) {
             console.log('Skipping saveStep4Data: Restoration/Population in progress');
             return;
         }
@@ -5267,6 +5268,13 @@ $(document).ready(function() {
                 console.log('Found 0 rental configurations to restore');
                 return;
             }
+
+            // QA 25 Nov 2026: Next -> Previous cepat menjalankan restore dua kali di halaman yang
+            // sama: kartu rental tertambah dobel (id sama) dan hanya salinan pertama yang terisi
+            // harga, jadi satu Harga/TOP tampak hilang. Restore terbaru yang berlaku; restore
+            // lama berhenti, dan kartu yang sudah ada tidak ditambah lagi.
+            const restoreToken = (window.step4RestoreToken = (window.step4RestoreToken || 0) + 1);
+            window.step4RestoreBusyUntil = Date.now() + rentalConfigs.length * 150 + 1500;
             
             // Restore each rental configuration
             rentalConfigs.forEach((config, index) => {
@@ -5389,11 +5397,16 @@ $(document).ready(function() {
                 
                 // Use ACTUAL ID for the item creation
                 console.log(`Directly restoring rental item with ID: ${config.uniqueId} for Room: ${actualRoomId}`);
-                addRentalItem(surveyId, actualRoomId, addButton, config.uniqueId);
+                if ($(`#rental-config-${config.uniqueId}`).length === 0) {
+                    addRentalItem(surveyId, actualRoomId, addButton, config.uniqueId);
+                }
                 
                 // Wait for form to be created, then fill it
                 // Increased delay to ensure populateRentalRoomOptions can find the DOM elements
                 setTimeout(() => {
+                    if (restoreToken !== window.step4RestoreToken) {
+                        return; // restore yang lebih baru sudah berjalan
+                    }
                     const uniqueId = config.uniqueId;
                     const rentalForm = $(`#rental-config-${uniqueId}`);
                     
@@ -5684,7 +5697,9 @@ $(document).ready(function() {
             placeholder: 'Pilih Produk Rental...',
             allowClear: true,
             width: '100%',
-            dropdownParent: $(`#rental-config-${uniqueId}`),
+            // QA 25 Nov 2026: dropdown dulu ditempel di dalam kartu rental (di dalam
+            // .table-responsive) sehingga bisa terpotong dan tampak kosong. Dropdown berada di
+            // halaman (bukan modal), jadi cukup memakai body bawaan select2.
             ajax: {
                 url: '{{ route("marketing.quotations.wizard.get-products") }}',
                 dataType: 'json',
@@ -5723,7 +5738,9 @@ $(document).ready(function() {
                         })
                     };
                 },
-                cache: true
+                // Tanpa cache: hasil pencarian lama sempat membuat rental yang sudah dihapus
+                // lalu dipilih ulang tidak muncul.
+                cache: false
             },
             templateResult: function (product) {
                 if (!product.id) return product.text;
@@ -5775,10 +5792,15 @@ $(document).ready(function() {
                 priceLabel.append('<span class="badge bg-warning text-dark ms-2 corporate-badge"><i class="fas fa-lock me-1"></i>Corporate Price</span>');
             }
         } else {
+            // QA 25 Nov 2026: hampir semua master rental berharga 0. Harga 0 dulu tetap ditulis ke
+            // Harga/TOP (menimpa ketikan user) lalu validasi menolak harga 0 -> tombol NEXT mati.
+            // Harga master hanya dipakai bila > 0; harga 0/kosong membiarkan ketikan user, dan
+            // hanya mengosongkan harga yang sebelumnya diisi otomatis dari rental lain.
             const price = resolveRentalProductPriceFromData(data);
-            if (price !== undefined && price !== null && price !== '') {
-                priceInput.val(toWholePrice(price)).trigger('change');
+            if (isPositivePrice(price)) {
+                setAutoFilledRentalPrice(priceInput, price);
             } else {
+                clearAutoFilledRentalPrice(priceInput);
                 fetchAndApplyRentalProductPrice(productSelect, data);
             }
 
@@ -5788,6 +5810,26 @@ $(document).ready(function() {
 
         applyFreeOnlyPriceState(rentalConfig);
     }
+
+    function isPositivePrice(value) {
+        const number = parseFloat(value);
+        return Number.isFinite(number) && number > 0;
+    }
+
+    function setAutoFilledRentalPrice(priceInput, price) {
+        priceInput.val(toWholePrice(price)).attr('data-autofilled-price', '1').trigger('change');
+    }
+
+    function clearAutoFilledRentalPrice(priceInput) {
+        if (priceInput.attr('data-autofilled-price') === '1') {
+            priceInput.val('').removeAttr('data-autofilled-price').trigger('change');
+        }
+    }
+
+    // Harga yang diketik user bukan lagi harga otomatis; jangan dikosongkan saat ganti rental.
+    $(document).on('input', '.rental-configuration input[name*="price"]', function () {
+        $(this).removeAttr('data-autofilled-price');
+    });
 
     function fetchAndApplyRentalProductPrice(productSelect, selectedData = {}) {
         const productId = productSelect.val();
@@ -5812,8 +5854,8 @@ $(document).ready(function() {
                 if (!product) return;
 
                 const price = resolveRentalProductPriceFromData(product);
-                if (price !== undefined && price !== null && price !== '') {
-                    priceInput.val(toWholePrice(price)).trigger('change');
+                if (isPositivePrice(price)) {
+                    setAutoFilledRentalPrice(priceInput, price);
                     applyFreeOnlyPriceState(rentalConfig);
                 }
             },
