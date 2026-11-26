@@ -390,7 +390,11 @@ class InventoryIssuingController extends Controller
         }
         
         if ($request->has('team_id')) {
-            $validationRules['team_id'] = 'nullable|exists:teams,id';
+            // Tim baru harus aktif; tim yang sudah tercatat di issuing ini tetap boleh disimpan ulang.
+            $currentTeamId = \App\Models\InventoryIssuing::whereKey($id)->value('team_id');
+            $validationRules['team_id'] = ['nullable', \Illuminate\Validation\Rule::exists('teams', 'id')->where(
+                fn ($query) => $query->where('active_status', true)->when($currentTeamId, fn ($q) => $q->orWhere('id', $currentTeamId))
+            )];
             $updateData['team_id'] = $request->team_id;
         }
         
@@ -1648,8 +1652,10 @@ public function getUserTeams($userId)
         $user = User::findOrFail($userId);
         
         // Get teams where user is a member (via team_members pivot)
+        // QA 25 Nov 2026: tim nonaktif tidak boleh dipilih (masih menerima tugas di prod).
         $memberTeams = $user->teams()
             ->wherePivot('is_active', true)
+            ->where('teams.active_status', true)
             ->select('teams.id', 'teams.team_name', 'teams.team_code')
             ->get();
         
@@ -1696,7 +1702,7 @@ public function getUserTeams($userId)
         try {
             $request->validate([
                 'received_by' => 'required|exists:users,id',
-                'team_id' => 'required|exists:teams,id',
+                'team_id' => ['required', \Illuminate\Validation\Rule::exists('teams', 'id')->where('active_status', true)],
                 'warehouse_id' => 'required|exists:warehouses,id',
                 'remarks' => 'nullable|string|max:500',
             ]);

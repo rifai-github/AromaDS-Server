@@ -2667,8 +2667,17 @@ class JobScheduleController extends Controller
             'jobScheduleRooms.room'
         ]);
         
-        // STUDY CASE B2: Get teams for per-room assignment dropdown
-        $teams = \App\Models\Team::orderBy('team_name')->get();
+        // STUDY CASE B2: Get teams for per-room assignment dropdown.
+        // QA 25 Nov 2026: hanya tim aktif, plus tim yang sudah ditugaskan di job ini supaya
+        // pilihan lamanya tetap tampil.
+        $assignedTeamIds = $jobSchedule->jobScheduleRooms
+            ->map(fn ($room) => $room->roomAssignment?->team_id ?? $room->roomAssignment?->jobAssignSchedule?->team_id)
+            ->filter()
+            ->unique()
+            ->values();
+        $teams = \App\Models\Team::where(fn ($query) => $query->where('active_status', true)->orWhereIn('id', $assignedTeamIds))
+            ->orderBy('team_name')
+            ->get();
         
         // STUDY CASE B1: Get warehouses for material return
         $warehouses = \App\Models\Warehouse::where('is_active', true)
