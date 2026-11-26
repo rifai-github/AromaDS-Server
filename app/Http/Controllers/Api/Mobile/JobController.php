@@ -4280,6 +4280,75 @@ class JobController extends Controller
         return (bool) ($product?->productType?->is_unit ?? $product?->productCategory?->is_unit ?? false);
     }
 
+    /**
+     * Pesan penolakan bila unit yang di-scan bukan unit rental tujuan, atau slot kategorinya di
+     * rental itu sudah penuh. NULL = boleh.
+     *
+     * Hanya job pemasangan (install / install free). Rental tanpa baris BOM unit, SN yang bukan
+     * unit, atau SN yang produknya tak berkategori tidak dibatasi — perilakunya sama seperti dulu.
+     * Kategori, bukan produk persis, supaya varian unit sekategori tetap diterima (BUG #25).
+     */
+    private function unitScanMismatchForRental(JobSchedule $job, int $targetAdviceRoomId, string $identifier): ?string
+    {
+        if (! in_array(strtolower(trim((string) $job->type)), ['install', 'install_free', 'install free', 'ir', 'if'], true)) {
+            return null;
+        }
+
+        $identifier = trim($identifier);
+        $targetRoom = \App\Models\JobAdviceRoom::with('rentalProduct')->find($targetAdviceRoomId);
+        $required = $this->unitQuantitiesRequiredForRentalRoom($targetRoom);
+
+        if ($identifier === '' || $required === [] || ! $this->scannedIdentifierIsUnit($identifier)) {
+            return null;
+        }
+
+        // Baris BOM unit yang hanya punya tipe (tanpa kategori/produk) tidak ikut terhitung di
+        // $required; kalau ada, kategori yang dibutuhkan tidak lengkap diketahui -> jangan menolak.
+        $typeOnlyUnitRow = \App\Models\RentalDetail::where('master_rental_id', $targetRoom->rental_product_id)
+            ->whereNull('product_category_id')
+            ->whereNull('master_product_id')
+            ->whereHas('productType', fn ($query) => $query->where('is_unit', true))
+            ->exists();
+
+        if ($typeOnlyUnitRow) {
+            return null;
+        }
+
+        $serialNumber = \App\Models\SerialNumber::with('masterProduct')
+            ->whereRaw('TRIM(serial_number) = ?', [$identifier])
+            ->first();
+        $categoryId = $serialNumber?->masterProduct?->product_category_id;
+
+        if (! $categoryId) {
+            return null;
+        }
+
+        $rentalName = $targetRoom?->rentalProduct?->rental_name ?? $targetRoom?->rental_name ?? 'rental ini';
+        $productName = $serialNumber->masterProduct->name ?? $identifier;
+
+        if (! isset($required[$categoryId])) {
+            return "Serial Number {$identifier} ({$productName}) bukan unit untuk {$rentalName}. Scan unit sesuai rental yang sedang dikerjakan.";
+        }
+
+        $alreadyScanned = \DB::table('job_schedule_units')
+            ->where('job_schedule_id', $job->id)
+            ->where('job_advice_room_id', $targetAdviceRoomId)
+            ->whereRaw('TRIM(mac) <> ?', [$identifier])
+            ->pluck('mac')
+            ->filter(function ($mac) use ($categoryId) {
+                return \App\Models\SerialNumber::whereRaw('TRIM(serial_number) = ?', [trim((string) $mac)])
+                    ->whereHas('masterProduct', fn ($query) => $query->where('product_category_id', $categoryId))
+                    ->exists();
+            })
+            ->count();
+
+        if ($alreadyScanned >= (int) $required[$categoryId]) {
+            return "Unit {$productName} untuk {$rentalName} sudah lengkap ({$alreadyScanned} unit). Serial Number {$identifier} tidak dibutuhkan di rental ini.";
+        }
+
+        return null;
+    }
+
     private function canonicalUnitAdviceRoomId(JobSchedule $job, int $requestedAdviceRoomId): int
     {
         $requestedRoom = \App\Models\JobAdviceRoom::find($requestedAdviceRoomId);
@@ -5647,10 +5716,22 @@ class JobController extends Controller
             ]);
             throw $e;
         }
-        
+
+        // Antrean APK lama bisa mengulang scan untuk job yang sudah tidak ada; dulu berujung 500
+        // ("loadMissing() on null") dan antreannya mengulang tiap menit. Format JOB_CLOSED dikenali
+        // APK (JobClosedEvents.isJobClosedResponse) sebagai "buang dari antrean".
+        if (! $jobSchedule) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'JOB_CLOSED',
+                'job_status' => 'not_found',
+                'message' => 'Job tidak ditemukan di sistem. Data dari aplikasi tidak disimpan; silakan kembali ke daftar job.',
+            ], 409);
+        }
+
         try {
             \DB::beginTransaction();
-            
+
             // Parse device_snapshot if it's a string
             $deviceSnapshot = is_string($request->device_snapshot) 
                 ? (json_decode($request->device_snapshot, true) ?: [])
@@ -5686,7 +5767,20 @@ class JobController extends Controller
                     'message' => "Serial Number {$request->mac} sudah dipakai untuk room lain pada job ini. Scan SN yang sesuai dengan room.",
                 ], 409);
             }
-            
+
+            // QA 26 Nov 2026 (JKT-IF/26-11/0003): unit untuk satu rental tidak boleh masuk ke rental
+            // lain di ruangan yang sama (SN HIKV diterima di rental dispenser, SN dispenser diterima
+            // di slot unit ke-2). Hanya untuk job pemasangan; job service/complain/ganti tetap bebas.
+            if ($unitMismatch = $this->unitScanMismatchForRental($jobSchedule, $targetRoomId, (string) $request->mac)) {
+                \DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $unitMismatch,
+                    'rental_mismatch' => true,
+                ], 409);
+            }
+
             // NOTE: Photos are NOT saved here in saveScannedUnit
             // Photos will be saved separately via completeRoom endpoint with before_photos and after_photos
             // This prevents duplicate photo saving (photos would be saved twice if we save here)
