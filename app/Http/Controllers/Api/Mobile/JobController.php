@@ -5025,10 +5025,28 @@ class JobController extends Controller
         }
 
         foreach ($unfinishedRooms as $room) {
-            $activeUnitExists = \App\Models\UnitOnWall::whereIn('serial_number_id', $issuedSerialIds)
+            // Cocokkan PER RENTAL, bukan per ruangan fisik. QA 26 Nov (JKT-IF/26-11/0003, Ruang-3
+            // berisi TestUO1b3x + TestHIKDisp): unit HIKV yang baru dipasang untuk TestHIKDisp ikut
+            // menandai baris TestUO1b3x selesai karena ruangannya sama, lalu APK langsung minta BA.
+            // Baris ini hanya boleh tersinkron bila SETIAP rental di baris itu sudah punya unit aktif.
+            $jaRoomIds = collect([$room->job_advice_room_id])
+                ->merge($room->rentals()->pluck('job_advice_room_id'))
+                ->filter()
+                ->unique()
+                ->values();
+            $rentalIds = $jaRoomIds->isEmpty()
+                ? collect()
+                : \App\Models\JobAdviceRoom::whereIn('id', $jaRoomIds)->pluck('rental_product_id')->filter()->unique()->values();
+
+            if ($rentalIds->isEmpty()) {
+                continue;
+            }
+
+            $activeUnitExists = $rentalIds->every(fn ($rentalId) => \App\Models\UnitOnWall::whereIn('serial_number_id', $issuedSerialIds)
                 ->where('status', 'active')
                 ->where('customer_id', $job->jobAdvice->customer_id)
                 ->where('building_id', $job->building_id)
+                ->where('rental_id', $rentalId)
                 ->where(function ($query) use ($room) {
                     if ($room->room_id) {
                         $query->where('room_id', $room->room_id);
@@ -5038,7 +5056,7 @@ class JobController extends Controller
                         $query->orWhereRaw('LOWER(TRIM(room_name)) = ?', [strtolower(trim($room->room_name))]);
                     }
                 })
-                ->exists();
+                ->exists());
 
             if ($activeUnitExists) {
                 $room->markAsCompleted(Auth::id(), 'Auto-synced from active Unit On Wall during mobile verification retry', \App\Models\JobScheduleRoom::SOURCE_APP);
