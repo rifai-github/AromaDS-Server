@@ -1822,8 +1822,12 @@ function filterMaterials() {
         const matchesSearch = searchTerm === '' || rowText.includes(searchTerm);
         const matchesCategory = categoryFilter === ''
             || (row.getAttribute('data-category-id') || '') === categoryFilter;
+        // QA 25 Nov 2026: produk yang sudah diizinkan dari kategori LAIN (mis. kategori coklat +
+        // 1 strawberry) tersembunyi oleh filter kategori bawaan, sehingga tampak tidak tersimpan.
+        // Baris yang sudah dicentang selalu tampil kecuali sedang mencari.
+        const isChecked = !!row.querySelector('input[type="checkbox"]')?.checked;
 
-        if (matchesSearch && matchesCategory) {
+        if (matchesSearch && (matchesCategory || (searchTerm === '' && isChecked))) {
             row.style.display = '';
             visibleCount++;
         } else {
