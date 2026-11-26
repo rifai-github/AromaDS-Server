@@ -5138,6 +5138,23 @@ class JobController extends Controller
      * Id yang tidak bisa dipetakan dikembalikan NULL — fotonya tetap tersimpan menempel pada
      * job-nya, jauh lebih baik daripada hilang sama sekali.
      */
+    /**
+     * Job ini plus saudara yang berbagi nomor job (job multi-ruangan dipecah per baris job).
+     *
+     * @return array<int, int>
+     */
+    private function photoRoomScopeJobScheduleIds(int $jobScheduleId): array
+    {
+        $jobNumber = JobSchedule::whereKey($jobScheduleId)->value('job_number');
+        $ids = [$jobScheduleId];
+
+        if (is_string($jobNumber) && trim($jobNumber) !== '') {
+            $ids = array_merge($ids, JobSchedule::where('job_number', $jobNumber)->pluck('id')->map(fn ($id) => (int) $id)->all());
+        }
+
+        return array_values(array_unique($ids));
+    }
+
     private function resolveJobPhotoRoomId(int $jobScheduleId, $rawRoomId): ?int
     {
         $roomId = is_numeric($rawRoomId) ? (int) $rawRoomId : 0;
@@ -5146,13 +5163,15 @@ class JobController extends Controller
             return null;
         }
 
-        // 1. Memang sudah id JobScheduleRoom.
-        if (\App\Models\JobScheduleRoom::where('id', $roomId)->exists()) {
-            return $roomId;
-        }
+        // Semua pencarian DIBATASI ke job ini (plus saudara ber-nomor job sama). Dulu langkah
+        // "sudah id JobScheduleRoom" menerima id milik job MANA PUN: id JobAdviceRoom 78124 dari
+        // JKT-IF/26-11/0003 kebetulan juga id baris ruangan job customer lain, sehingga tab
+        // Photos menampilkan "Hijab Mandjha Purwokerto" (QA 26 Nov; 34 foto sn_scan di prod).
+        $jobScheduleIds = $this->photoRoomScopeJobScheduleIds($jobScheduleId);
 
-        // 2. Id JobAdviceRoom lewat kolom langsungnya, diutamakan yang memang milik job ini.
+        // 1. Id JobAdviceRoom (yang memang dikirim APK) lewat kolom langsungnya.
         $byAdviceRoom = \App\Models\JobScheduleRoom::where('job_advice_room_id', $roomId)
+            ->whereIn('job_schedule_id', $jobScheduleIds)
             ->orderByRaw('CASE WHEN job_schedule_id = ? THEN 0 ELSE 1 END', [$jobScheduleId])
             ->orderBy('id')
             ->value('id');
@@ -5161,13 +5180,22 @@ class JobController extends Controller
             return (int) $byAdviceRoom;
         }
 
-        // 3. Ruangan multi-rental menaruh tautannya di pivot, bukan di kolom langsung.
+        // 2. Ruangan multi-rental menaruh tautannya di pivot, bukan di kolom langsung.
         $byPivot = \App\Models\JobScheduleRoomRental::where('job_advice_room_id', $roomId)
-            ->whereHas('jobScheduleRoom', fn ($query) => $query->where('job_schedule_id', $jobScheduleId))
+            ->whereHas('jobScheduleRoom', fn ($query) => $query->whereIn('job_schedule_id', $jobScheduleIds))
             ->value('job_schedule_room_id');
 
         if ($byPivot) {
             return (int) $byPivot;
+        }
+
+        // 3. Memang sudah id JobScheduleRoom milik job ini.
+        $ownRoomId = \App\Models\JobScheduleRoom::where('id', $roomId)
+            ->whereIn('job_schedule_id', $jobScheduleIds)
+            ->value('id');
+
+        if ($ownRoomId) {
+            return (int) $ownRoomId;
         }
 
         \Log::warning('Upload foto: id ruangan dari APK tidak bisa dipetakan ke job_schedule_rooms.', [

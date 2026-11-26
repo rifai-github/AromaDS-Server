@@ -23,6 +23,17 @@ class MobileUploadPhotoRoomIdTest extends TestCase
     {
         parent::setUp();
 
+        Schema::dropIfExists('job_schedules');
+        Schema::create('job_schedules', function (Blueprint $table) {
+            $table->id();
+            $table->string('job_number')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+        foreach ([108, 500, 600, 601] as $jobId) {
+            DB::table('job_schedules')->insert(['id' => $jobId, 'job_number' => $jobId === 600 || $jobId === 601 ? 'JKT-IF/26-11/0009' : null]);
+        }
+
         Schema::create('job_schedule_rooms', function (Blueprint $table) {
             $table->id();
             $table->foreignId('job_schedule_id')->nullable();
@@ -44,7 +55,7 @@ class MobileUploadPhotoRoomIdTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['job_schedule_room_rentals', 'job_schedule_rooms'] as $table) {
+        foreach (['job_schedule_room_rentals', 'job_schedule_rooms', 'job_schedules'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -156,6 +167,46 @@ class MobileUploadPhotoRoomIdTest extends TestCase
             substr_count($body, '$request->job_schedule_room_id ?? $request->room_id'),
             'Id mentah dari request tidak boleh dipakai lagi setelah diterjemahkan.'
         );
+    }
+
+    /**
+     * QA 26 Nov 2026, JKT-IF/26-11/0003: APK mengirim id JobAdviceRoom 78124, yang kebetulan
+     * juga id baris ruangan job customer LAIN. Langkah lama "sudah id JobScheduleRoom" menerimanya
+     * tanpa cek job, sehingga tab Photos menampilkan ruangan "Hijab Mandjha Purwokerto".
+     */
+    public function test_a_room_row_of_another_job_is_never_used(): void
+    {
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 78124,
+            'job_schedule_id' => 500,
+            'job_advice_room_id' => 18527,
+            'room_name' => 'Hijab Mandjha Purwokerto',
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 164337,
+            'job_schedule_id' => 108,
+            'job_advice_room_id' => 78124,
+            'room_name' => 'Ruang-3',
+        ]);
+
+        $this->assertSame(164337, $this->resolve(108, 78124));
+
+        // Tanpa padanan di job ini: NULL, bukan ruangan job lain.
+        DB::table('job_schedule_rooms')->where('id', 164337)->delete();
+        $this->assertNull($this->resolve(108, 78124));
+    }
+
+    public function test_sibling_rows_sharing_the_job_number_are_still_accepted(): void
+    {
+        DB::table('job_schedule_rooms')->insert([
+            'id' => 700,
+            'job_schedule_id' => 601,
+            'job_advice_room_id' => 88001,
+            'room_name' => 'Lobby',
+        ]);
+
+        $this->assertSame(700, $this->resolve(600, 88001));
+        $this->assertSame(700, $this->resolve(600, 700));
     }
 
     public function test_an_unmappable_id_becomes_null_instead_of_losing_the_photo(): void
