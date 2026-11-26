@@ -183,8 +183,41 @@ class JobScheduleRoom extends Model
      */
     public static function isSystemNote(?string $notes): bool
     {
-        return $notes !== null
-            && preg_match('/^\s*(Rentals in this room|Auto CSR for active Unit On Wall rentals):\s*\d+\s*$/i', $notes) === 1;
+        if ($notes === null) {
+            return false;
+        }
+
+        // QA 26 Nov 2026: penanda baris pelacak rental APK juga tampil sebagai Rental Remark.
+        // Teksnya tetap ditulis (isMobileTrackingPlaceholderRoom mencocokkannya), hanya disembunyikan.
+        return preg_match('/^\s*(Rentals in this room|Auto CSR for active Unit On Wall rentals):\s*\d+\s*$/i', $notes) === 1
+            || in_array(strtolower(trim($notes)), [
+                'mobile rental-level tracking',
+                'fallback mobile room for remove job without room linkage.',
+            ], true);
+    }
+
+    /**
+     * Catatan penyelesaian otomatis buatan sistem (bukan ketikan teknisi/admin). QA 26 Nov 2026:
+     * "Auto-synced from active Unit On Wall during mobile verification retry" tampil di kolom
+     * Catatan Teknisi. Teksnya tetap disimpan (label Done lama membacanya), hanya disembunyikan.
+     */
+    public static function isSystemCompletionNote(?string $notes): bool
+    {
+        return $notes !== null && in_array(strtolower(trim($notes)), [
+            'completed via mobile app',
+            'completed with unit package via mobile app',
+            'auto-synced from active unit on wall during mobile verification retry',
+            'completed manually via web admin',
+            'completed via web done job',
+        ], true);
+    }
+
+    /** completion_notes tanpa teks otomatis sistem (kolom Catatan Teknisi). */
+    public function getDisplayCompletionNotesAttribute(): ?string
+    {
+        $notes = $this->completion_notes;
+
+        return self::isSystemCompletionNote($notes) || trim((string) $notes) === '' ? null : $notes;
     }
 
     /** notes tanpa teks sistem jumlah rental. */
@@ -233,6 +266,28 @@ class JobScheduleRoom extends Model
      * ditebak dari catatan penyelesaiannya; baris backfill Catalyst (tanpa user, jam 00:00) =
      * "Import".
      */
+    /**
+     * true = ada log complete_room APK untuk room ini; false = tidak ada padahal log APK sudah
+     * berjalan saat room ini selesai; null = tidak bisa dipastikan (tabel log belum ada / room
+     * selesai sebelum log pertama).
+     */
+    private function completedThroughMobileSyncLog(): ?bool
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('mobile_sync_logs') || ! $this->completed_at) {
+            return null;
+        }
+
+        $firstLogAt = once(fn () => \Illuminate\Support\Facades\DB::table('mobile_sync_logs')->min('created_at'));
+        if (! $firstLogAt || $this->completed_at->lt(\Carbon\Carbon::parse($firstLogAt))) {
+            return null;
+        }
+
+        return \Illuminate\Support\Facades\DB::table('mobile_sync_logs')
+            ->where('job_schedule_room_id', $this->id)
+            ->where('action', 'complete_room')
+            ->exists();
+    }
+
     public function getCompletionSourceLabelAttribute(): ?string
     {
         if ($this->status !== self::STATUS_COMPLETED) {
@@ -244,10 +299,16 @@ class JobScheduleRoom extends Model
             $notes = strtolower((string) $this->completion_notes);
             if (str_contains($notes, 'via web') || str_contains($notes, 'web admin')) {
                 $source = self::SOURCE_WEB;
+            } elseif (str_contains($notes, 'via mobile app') || str_contains($notes, 'auto-synced from active unit on wall')) {
+                $source = self::SOURCE_APP;
             } elseif (! $this->completed_by && $this->completed_at && $this->completed_at->format('H:i:s') === '00:00:00') {
                 return 'Import';
             } else {
-                $source = self::SOURCE_APP;
+                // Selesai sebelum kolom completion_source ada, dengan catatan ketikan pengguna.
+                // QA 26 Nov (JKT-IF/26-11/0001): room yang diselesaikan di web berlabel "Done by
+                // App" karena catatannya ketikan admin. APK selalu meninggalkan log complete_room
+                // di mobile_sync_logs; tanpa log itu, room ini diselesaikan dari web.
+                $source = $this->completedThroughMobileSyncLog() === false ? self::SOURCE_WEB : self::SOURCE_APP;
             }
         }
 

@@ -1369,8 +1369,9 @@
                                             </td>
                                             <td>{{ $displayRentalName ?? '-' }}</td>
                                             {{-- UAT 24 Nov 2026: catatan penyewaan dari APK (job_schedule_rooms.rental_notes) didahulukan. --}}
-                                            <td style="white-space: normal; min-width: 180px;">{{ $jobScheduleRoom->rental_notes ?: ($jaRoom?->notes ?: ($jobScheduleRoom->remark_notes ?: '-')) }}</td>
-                                            <td style="white-space: normal; min-width: 180px;">{{ $jobScheduleRoom->completion_notes ?: '-' }}</td>
+                                            <td style="white-space: normal; min-width: 180px;">{{ $jobScheduleRoom->rental_notes ?: ((\App\Models\JobScheduleRoom::isSystemNote($jaRoom?->notes) ? null : $jaRoom?->notes) ?: ($jobScheduleRoom->remark_notes ?: '-')) }}</td>
+                                            {{-- QA 26 Nov 2026: catatan otomatis sistem tidak ditampilkan sebagai Catatan Teknisi. --}}
+                                            <td style="white-space: normal; min-width: 180px;">{{ $jobScheduleRoom->display_completion_notes ?: '-' }}</td>
                                         </tr>
                                         @empty
                                         <tr>
