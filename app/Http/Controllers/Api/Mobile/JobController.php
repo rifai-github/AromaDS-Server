@@ -6068,6 +6068,9 @@ class JobController extends Controller
             'notes' => 'nullable|string',
             'signature' => 'nullable|string', // Base64 signature
             'pic_name' => 'required|string',
+            // QA 25 Nov 2026: jabatan PIC dicetak di bawah tanda tangan report. Opsional supaya
+            // APK lama (belum punya kolom jabatan) tetap bisa verifikasi.
+            'pic_position' => 'nullable|string|max:255',
             'cannot_complete_all_rooms' => 'nullable|boolean', // Checkbox: Tidak dapat menyelesaikan semua ruangan
         ]);
         
@@ -6279,6 +6282,9 @@ class JobController extends Controller
                         'signature_file' => $signaturePath ?: $existingJobReport?->signature_file,
                         'signature_data' => $request->signature ?: $existingJobReport?->signature_data,
                         'pic_name' => $request->pic_name ?: $existingJobReport?->pic_name,
+                        ...(\App\Models\JobReport::supportsPicPosition()
+                            ? ['pic_position' => $request->pic_position ?: $existingJobReport?->pic_position]
+                            : []),
                         'photos' => !empty($photoUrls) ? $photoUrls : ($existingJobReport?->photos ?: null),
                         'photo_before' => $beforeWorkPhoto ?: $existingJobReport?->photo_before,
                         'photo_after' => $afterWorkPhoto ?: $existingJobReport?->photo_after,

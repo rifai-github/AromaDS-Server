@@ -70,6 +70,12 @@ class JobReport extends Model
         'longitude' => 'decimal:8'
     ];
 
+    /** Kolom pic_position ada (prod: ya); fixture test lama tanpa kolom ini. */
+    public static function supportsPicPosition(): bool
+    {
+        return once(fn () => \Illuminate\Support\Facades\Schema::hasColumn('job_reports', 'pic_position'));
+    }
+
     /**
      * Get the job schedule that owns the report.
      */

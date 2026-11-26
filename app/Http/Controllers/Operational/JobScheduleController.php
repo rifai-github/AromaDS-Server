@@ -5548,6 +5548,7 @@ class JobScheduleController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'pic_name' => 'required|string|max:255',
+            'pic_position' => 'nullable|string|max:255',
             'signature' => 'nullable|string', // base64 data URI
             'pic_photo' => 'nullable|image|max:5120',
             'photos' => 'nullable|array',
@@ -5625,6 +5626,7 @@ class JobScheduleController extends Controller
             $service = app(\App\Services\Operational\JobWebCompletionService::class);
             $meta = $service->finalizeWithBa($jobSchedule, [
                 'pic_name' => $request->input('pic_name'),
+                'pic_position' => $request->input('pic_position'),
                 'notes' => $request->input('notes'),
                 'signature_base64' => $request->input('signature'),
                 'pic_photo' => $request->file('pic_photo'),

@@ -2372,6 +2372,10 @@
                         <input type="text" class="form-control" name="pic_name" id="baPicName" required>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label fw-bold">Jabatan PIC</label>
+                        <input type="text" class="form-control" name="pic_position" id="baPicPosition" maxlength="255" placeholder="Contoh: Building Manager">
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label fw-bold">Foto PIC <span class="text-danger">*</span></label>
                         <input type="file" class="form-control" name="pic_photo" id="baPicPhoto" accept="image/*" capture="environment">
                         <div class="form-text">Di tablet/HP tombol ini menawarkan kamera. Bisa juga unggah file.</div>
@@ -3756,6 +3760,8 @@ function submitDoneJobBa() {
 
     const fd = new FormData();
     fd.append('pic_name', picName);
+    const picPosition = (document.getElementById('baPicPosition')?.value || '').trim();
+    if (picPosition) fd.append('pic_position', picPosition);
     fd.append('signature', baSignaturePad.toDataURL('image/png'));
     fd.append('pic_photo', picPhoto[0]);
     const work = document.getElementById('baWorkPhotos').files;

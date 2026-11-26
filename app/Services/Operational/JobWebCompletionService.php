@@ -123,6 +123,9 @@ class JobWebCompletionService
                 'signature_file' => $signaturePath ?: $existingJobReport?->signature_file,
                 'signature_data' => $verification['signature_base64'] ?: $existingJobReport?->signature_data,
                 'pic_name' => $verification['pic_name'] ?: $existingJobReport?->pic_name,
+                ...(\App\Models\JobReport::supportsPicPosition()
+                    ? ['pic_position' => ($verification['pic_position'] ?? null) ?: $existingJobReport?->pic_position]
+                    : []),
                 'photos' => ! empty($workPhotoPaths) ? $workPhotoPaths : ($existingJobReport?->photos ?: null),
                 'photo_before' => $beforeWorkPhoto ?: $existingJobReport?->photo_before,
                 'photo_after' => $afterWorkPhoto ?: $existingJobReport?->photo_after,
