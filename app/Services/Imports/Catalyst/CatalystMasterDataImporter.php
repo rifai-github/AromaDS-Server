@@ -185,6 +185,10 @@ class CatalystMasterDataImporter
     private ?array $sourceQuotationPrimaryBuildingByNumber = null;
     private ?array $sourceQuotationOldContractByNumber = null;
     private ?array $sourceBillingGroupsByCode = null;
+    /** @var array<string, true>|null cache eligibleContractNumbers() */
+    private ?array $eligibleContractNumbersCache = null;
+    /** @var array<string, true>|null semua nomor MKTContractHd */
+    private ?array $allCatalystContractNumbersCache = null;
     private array $targetCityLookup = [];
     /** @var array<string, int|null> cache resolveMasterRentalId(): rental_code -> master_rentals.id */
     private array $masterRentalIdByCodeCache = [];
@@ -2770,6 +2774,194 @@ class CatalystMasterDataImporter
      * (the SqNo/SQNo case mismatch already cost every contract its quotation
      * link), and a wrong spelling here fails silently as a 0.
      */
+    /**
+     * Nomor kontrak Catalyst yang boleh diimport (jawaban klien no. 3 & 14, 26 Nov 2026):
+     *  - Status = 'P' (posted; D = deleted, T = terminate, G/H tidak diimport);
+     *  - masih berjalan: TransDate + ContractPeriod bulan - 1 hari >= contract_active_until_min;
+     *  - belum di-renew: tidak muncul sebagai OldContractNo di MKTContractDt kontrak berstatus P/T;
+     *  - customer-nya bukan TEST.
+     * Query-nya sama dengan yang dikirim klien, ditambah `OldContractNo IS NOT NULL` supaya
+     * NOT IN tidak mengosongkan seluruh hasil bila ada baris NULL.
+     *
+     * NULL = filter dimatikan (config catalyst-import.contract_filter), semua kontrak lolos.
+     *
+     * @return array<string, true>|null kunci makeKey(nomor kontrak)
+     */
+    protected function eligibleContractNumbers(): ?array
+    {
+        if (! config('catalyst-import.contract_filter', true)) {
+            return null;
+        }
+
+        if ($this->eligibleContractNumbersCache !== null) {
+            return $this->eligibleContractNumbersCache;
+        }
+
+        $rows = $this->source()->select(
+            "SELECT H.TransNmbr AS contract_no
+               FROM MKTContractHd H
+               LEFT JOIN MsCustomer C ON C.CustCode = H.Customer
+              WHERE H.Status = 'P'
+                AND DATEADD(DAY, -1, DATEADD(MONTH, H.ContractPeriod, H.TransDate)) >= ?
+                AND H.TransNmbr NOT IN (
+                    SELECT DISTINCT G.OldContractNo
+                      FROM MKTContractDt G
+                      LEFT JOIN MKTContractHd X ON G.TransNmbr = X.TransNmbr
+                     WHERE X.Status IN ('P', 'T')
+                       AND G.OldContractNo IS NOT NULL
+                )
+                AND ISNULL(C.CustName, '') NOT LIKE '%test%'",
+            [(string) config('catalyst-import.contract_active_until_min', '2026-12-01')]
+        );
+
+        $eligible = [];
+        foreach ($rows as $row) {
+            $key = $this->makeKey($row->contract_no ?? null);
+            if ($key) {
+                $eligible[$key] = true;
+            }
+        }
+
+        return $this->eligibleContractNumbersCache = $eligible;
+    }
+
+    /**
+     * Baris turunan kontrak (ruangan, rental, billing group, Job Advice) ikut dilewati bila
+     * kontraknya tidak lolos filter klien. Dilewati tanpa pesan supaya log import tidak
+     * kebanjiran ribuan baris kontrak lama yang memang sengaja tidak dibawa.
+     */
+    protected function contractPassesClientFilter(?string $contractNo): bool
+    {
+        $eligible = $this->eligibleContractNumbers();
+        if ($eligible === null) {
+            return true;
+        }
+
+        $key = $this->makeKey($contractNo);
+
+        return $key !== null && $key !== '' && isset($eligible[$key]);
+    }
+
+    /**
+     * Satukan baris MKTContractDt yang menunjuk rental yang sama di ruangan yang sama.
+     *
+     * Klien (no. 2, 26 Nov 2026): baris ganda dijumlahkan Qty-nya (ADS-AG/26-10/0074 ruang
+     * Living Room, L1000500: 1 + 1 = 2). Sebelumnya tiap baris diimport sendiri-sendiri dengan
+     * kunci "kontrak||urutan baris"; karena contract_rentals dicocokkan per
+     * (kontrak, rental, ruangan), baris kedua MENIMPA qty baris pertama (audit 25 Nov:
+     * 116 kontrak aktif kurang unit). Kunci barunya stabil (tidak bergeser bila Catalyst
+     * menambah baris) dan sama dengan identitas ruangan di contract_rooms + kode rental.
+     *
+     * Ikut disaring di sini: record berawalan "-" (tidak terpakai) dan kontrak di luar filter klien.
+     *
+     * @param  array<int, array<string, mixed>>  $sourceRows
+     * @return array<int, array<string, mixed>> baris pertama tiap grup, dengan Qty/QtyFree dijumlah,
+     *                                          plus `__group_key` dan `__total_price` (Σ Qty × harga)
+     */
+    protected function groupContractRentalRows(array $sourceRows): array
+    {
+        $grouped = [];
+
+        foreach ($sourceRows as $row) {
+            $contractNo = $this->cleanString($row['TransNmbr'] ?? null);
+            $product = $this->cleanString($row['Product'] ?? null);
+
+            if (! $contractNo || ! $product || $this->isUnusedCatalystDetailRow($contractNo) || ! $this->contractPassesClientFilter($contractNo)) {
+                continue;
+            }
+
+            $groupKey = implode('||', [
+                $contractNo,
+                trim((string) ($row['Building'] ?? '')),
+                trim((string) ($row['FloorCode'] ?? '')),
+                trim((string) ($row['RoomCode'] ?? '')),
+                trim((string) ($row['Room'] ?? '')),
+                $product,
+            ]);
+            $identity = mb_strtoupper($groupKey);
+
+            $qty = (float) ($row['Qty'] ?? 0);
+            $qtyFree = $this->sourceQtyFree($row);
+            $lineTotal = $qty * (float) ($row['PriceForex'] ?? 0);
+
+            if (! isset($grouped[$identity])) {
+                $row['__group_key'] = $groupKey;
+                $row['__total_price'] = $lineTotal;
+                $row['Qty'] = $qty;
+                $row = $this->withSourceQtyFree($row, $qtyFree);
+                $grouped[$identity] = $row;
+
+                continue;
+            }
+
+            $merged = $grouped[$identity];
+            $merged['Qty'] = (float) $merged['Qty'] + $qty;
+            $merged['__total_price'] = (float) $merged['__total_price'] + $lineTotal;
+            $merged = $this->withSourceQtyFree($merged, $this->sourceQtyFree($merged) + $qtyFree);
+
+            // Harga satuan baris pertama bisa 0 (baris free); pakai harga baris yang berisi.
+            if ((float) ($merged['PriceForex'] ?? 0) <= 0 && (float) ($row['PriceForex'] ?? 0) > 0) {
+                $merged['PriceForex'] = $row['PriceForex'];
+            }
+
+            $grouped[$identity] = $merged;
+        }
+
+        return array_values($grouped);
+    }
+
+    /**
+     * Tulis nilai QtyFree ke kolom yang dikenali sourceQtyFree() (ejaan kolom di sumber bisa beda).
+     */
+    protected function withSourceQtyFree(array $row, int $qtyFree): array
+    {
+        foreach (array_keys($row) as $column) {
+            if (is_string($column) && preg_match('/^qty[ _]?free$/i', $column)) {
+                $row[$column] = $qtyFree;
+
+                return $row;
+            }
+        }
+
+        $row['QtyFree'] = $qtyFree;
+
+        return $row;
+    }
+
+    /**
+     * True bila nomor ini memang kontrak Catalyst (ada di MKTContractHd) tetapi tidak lolos
+     * filter klien. Nomor yang bukan kontrak (mis. nomor SQ di MKTContractJobOut) tidak
+     * disentuh, supaya Job Advice berbasis quotation tetap jalan.
+     */
+    protected function isKnownCatalystContractOutsideFilter(string $documentNumber): bool
+    {
+        if ($this->eligibleContractNumbers() === null) {
+            return false;
+        }
+
+        if ($this->allCatalystContractNumbersCache === null) {
+            $this->allCatalystContractNumbersCache = [];
+            foreach ($this->source()->table('MKTContractHd')->whereNotNull('TransNmbr')->pluck('TransNmbr') as $number) {
+                $key = $this->makeKey($number);
+                if ($key) {
+                    $this->allCatalystContractNumbersCache[$key] = true;
+                }
+            }
+        }
+
+        $key = $this->makeKey($documentNumber);
+
+        return $key && isset($this->allCatalystContractNumbersCache[$key]) && ! $this->contractPassesClientFilter($documentNumber);
+    }
+
+    /**
+     * Klien (no. 7): TransNmbr berawalan "-" di MKTContractDt adalah record tidak terpakai.
+     */
+    protected function isUnusedCatalystDetailRow(?string $transNmbr): bool
+    {
+        return str_starts_with(ltrim((string) $transNmbr), '-');
+    }
+
     protected function sourceQtyFree(array $row): int
     {
         foreach ($row as $column => $value) {
@@ -4291,6 +4483,10 @@ class CatalystMasterDataImporter
         $headers = $this->source()->table('MKTContractHd')->whereNotNull('TransNmbr')->get()->map(fn ($row) => (array) $row)->all();
         return $this->runRows('contracts', 'MKTContractHd', $headers, function(array $row) {
             $no = trim($row['TransNmbr'] ?? '');
+            if (! $this->contractPassesClientFilter($no)) {
+                return ['action' => 'skipped'];
+            }
+
             $custCode = $this->cleanString($row['Customer'] ?? null);
             $customerId = $this->findMappedTargetId('MsCustomer', $this->makeKey($custCode), 'customers');
             if (!$customerId) return $this->failedRow('Customer missing');
@@ -4300,7 +4496,9 @@ class CatalystMasterDataImporter
             $sqNo = $this->cleanString($this->sourceValue($row, 'SQNo', 'SqNo'));
             $contractDate = $this->toDate($row['TransDate'] ?? null);
             $quotationId = $this->resolveContractQuotationId($sqNo, $no, $customerId, $contractDate);
-            $salesCode = $this->cleanString($row['Sales'] ?? null);
+            // Klien (no. 8): Sales = sales awal (bisa sudah resign), Sales2 = sales pengganti
+            // yang aktif. Sales2 dipakai bila terisi, kalau kosong kembali ke Sales.
+            $salesCode = $this->cleanString($row['Sales2'] ?? null) ?: $this->cleanString($row['Sales'] ?? null);
             $marketingId = $salesCode ? $this->findMappedTargetId('MsEmployee', $this->makeKey($salesCode), 'users') : null;
 
             $statusRaw = strtoupper(trim($row['Status'] ?? 'P'));
@@ -4331,6 +4529,8 @@ class CatalystMasterDataImporter
                     ?? $this->cleanString($row['Terms'] ?? null),
                 'payment_terms' => $this->normalizeContractPaymentTerms($row['Terms'] ?? null),
                 'npwp_number' => $this->cleanString($row['NPWP'] ?? null),
+                // Klien (no. 11): nomor PO customer, dicetak di invoice.
+                'po_number' => $this->cleanString($row['CustPONo'] ?? null),
                 // --- tab Additional Info ---
                 //
                 // Diperiksa langsung di sumber (MKTContractHd, 71 kolom, 10.984 baris,
@@ -4591,7 +4791,7 @@ class CatalystMasterDataImporter
             $contractNo = $this->cleanString($row->TransNmbr ?? null);
             $billingCode = $this->cleanString($row->BillingGroup ?? null);
             $groupKey = $this->makeKey([$contractNo, $billingCode]);
-            if (!$groupKey) {
+            if (!$groupKey || $this->isUnusedCatalystDetailRow($contractNo) || ! $this->contractPassesClientFilter($contractNo)) {
                 continue;
             }
 
@@ -4658,6 +4858,10 @@ class CatalystMasterDataImporter
 
         $grouped = [];
         foreach ($rows as $row) {
+            if ($this->isUnusedCatalystDetailRow($row->TransNmbr ?? null) || ! $this->contractPassesClientFilter($row->TransNmbr ?? null)) {
+                continue;
+            }
+
             $key = $this->makeKey([$row->TransNmbr ?? null, $row->BillingGroup ?? null, $row->Building ?? null]);
             if ($key && !isset($grouped[$key])) {
                 $grouped[$key] = (array) $row;
@@ -4714,6 +4918,10 @@ class CatalystMasterDataImporter
         $grouped = [];
         foreach ($rows as $r) {
             $cn = trim($r->TransNmbr ?? '');
+            if ($this->isUnusedCatalystDetailRow($cn) || ! $this->contractPassesClientFilter($cn)) {
+                continue;
+            }
+
             $key = implode('||', [$cn, trim($r->Building ?? ''), trim($r->FloorCode ?? ''), trim($r->RoomCode ?? ''), trim($r->Room ?? '')]);
             if ($cn && !isset($grouped[$key])) {
                 $grouped[$key] = [
@@ -4757,10 +4965,9 @@ class CatalystMasterDataImporter
 
     protected function contract_rentals(): array
     {
-        $rows = $this->source()->table('MKTContractDt')->whereNotNull('TransNmbr')->whereNotNull('Product')->get()->map(fn($r)=>(array)$r)->all();
-        foreach ($rows as $index => &$row) {
-            $row['__index'] = $index;
-        }
+        $sourceRows = $this->source()->table('MKTContractDt')->whereNotNull('TransNmbr')->whereNotNull('Product')->get()->map(fn($r)=>(array)$r)->all();
+
+        $rows = $this->groupContractRentalRows($sourceRows);
 
         return $this->runRows('contract_rentals', 'MKTContractDt_rental', $rows, function(array $row) {
             $contractNo = $this->cleanString($row['TransNmbr'] ?? null);
@@ -4779,7 +4986,7 @@ class CatalystMasterDataImporter
             $qty = (float) ($row['Qty'] ?? 0);
             $qtyFree = $this->sourceQtyFree($row);
             $price = (float) ($row['PriceForex'] ?? 0);
-            $index = $row['__index'];
+            $totalPrice = (float) ($row['__total_price'] ?? ($qty * $price));
             $roomId = $this->findMappedTargetId('CATALYST_ROOM', $this->makeKey([
                 $this->findMappedTargetId('MsBuilding', $this->makeKey($row['Building'] ?? null), 'buildings'),
                 $row['FloorCode'] ?? null,
@@ -4787,7 +4994,7 @@ class CatalystMasterDataImporter
                 $row['Room'] ?? null,
             ]), 'master_rooms');
 
-            return $this->syncRecord('contract_rentals', 'MKTContractDt_rental', $this->makeKey("{$contractNo}||{$index}"), 'contract_rentals', [
+            return $this->syncRecord('contract_rentals', 'MKTContractDt_rental', $this->makeKey($row['__group_key']), 'contract_rentals', [
                 'contract_id' => $contractId,
                 'master_rental_id' => $rentalId,
                 'room_id' => $roomId,
@@ -4796,7 +5003,7 @@ class CatalystMasterDataImporter
                 'quantity' => $qty,
                 'qty_free' => $qtyFree,
                 'unit_price' => $price,
-                'total_price' => $qty * $price,
+                'total_price' => $totalPrice,
                 'created_by' => $this->actorId(),
                 'updated_by' => $this->actorId(),
             ], $row);
@@ -4815,6 +5022,11 @@ class CatalystMasterDataImporter
         $grouped = [];
         foreach ($rows as $row) {
             $contractNo = $this->normalizeDocumentNumber($row['ContractNo'] ?? null);
+            // Job Advice kontrak lama yang sengaja tidak diimport (filter klien) ikut dilewati.
+            if ($contractNo && $this->isKnownCatalystContractOutsideFilter($contractNo)) {
+                continue;
+            }
+
             if ($contractNo && !isset($grouped[$contractNo])) {
                 $row['ContractNo'] = $contractNo;
                 $grouped[$contractNo] = $row;
@@ -4860,7 +5072,7 @@ class CatalystMasterDataImporter
         $contractNumbers = [];
         foreach ($contractRows as $row) {
             $contractNo = $this->normalizeDocumentNumber($row['ContractNo'] ?? null);
-            if ($contractNo) {
+            if ($contractNo && ! $this->isKnownCatalystContractOutsideFilter($contractNo)) {
                 $contractNumbers[$contractNo] = $contractNo;
             }
         }

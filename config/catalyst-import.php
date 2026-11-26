@@ -23,4 +23,11 @@ return [
     // UAT 19 Nov 2026: hanya baris FgActive <> 'N' yang diimport untuk step di
     // CatalystMasterDataImporter::ACTIVE_ONLY_STEPS (employee tetap semua).
     'active_only' => filter_var(env('CATALYST_IMPORT_ACTIVE_ONLY', true), FILTER_VALIDATE_BOOLEAN),
+
+    // Jawaban klien no. 3/14 (spreadsheet struktur Catalyst, 26 Nov 2026): kontrak yang
+    // diimport hanya Status P, berakhir (TransDate + ContractPeriod - 1 hari) >= tanggal ini,
+    // belum di-renew kontrak lain, dan customer-nya bukan TEST. Lihat
+    // CatalystMasterDataImporter::eligibleContractNumbers().
+    'contract_filter' => filter_var(env('CATALYST_IMPORT_CONTRACT_FILTER', true), FILTER_VALIDATE_BOOLEAN),
+    'contract_active_until_min' => env('CATALYST_IMPORT_CONTRACT_ACTIVE_UNTIL_MIN', '2026-12-01'),
 ];
