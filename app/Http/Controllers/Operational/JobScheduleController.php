@@ -5426,6 +5426,22 @@ class JobScheduleController extends Controller
                 ], 423);
             }
 
+            // QA 25 Nov 2026: foto Before/After bertanda wajib di form Done room, tetapi room tetap
+            // bisa selesai tanpa foto dari web. Aturannya disamakan dengan APK (completeRoom):
+            // tiap jenis foto wajib ada, baru diunggah atau sudah tersimpan untuk room ini.
+            $hasPhotoType = fn (string $type) => \App\Models\JobPhoto::where('job_schedule_room_id', $jobScheduleRoom->id)
+                ->where('photo_type', $type)
+                ->exists();
+            if ((! $request->hasFile('before_photos') && ! $hasPhotoType('Before Work'))
+                || (! $request->hasFile('after_photos') && ! $hasPhotoType('After Work'))) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Foto sebelum dan sesudah pengerjaan wajib diupload untuk menyelesaikan room.',
+                ], 422);
+            }
+
             $webCompletion = app(\App\Services\Operational\JobWebCompletionService::class);
             $deviceSnapshot = json_decode((string) $request->input('device_snapshot', ''), true);
             $deviceSnapshot = is_array($deviceSnapshot) && $this->webJobRequiresDeviceSettings($jobSchedule)
