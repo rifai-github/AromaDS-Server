@@ -3307,7 +3307,16 @@ class JobScheduleController extends Controller
         // (e.g. Install Free / Remove Free jobs, which store quotation_number directly without a contract)
         $jobScheduleQuotationFallback = null;
         if (! $jobSchedule->jobAdvice?->contract?->quotation && $jobSchedule->quotation_number) {
-            $jobScheduleQuotationFallback = \App\Models\Quotation::where('quotation_number', $jobSchedule->quotation_number)->first();
+            // QA 25 Nov 2026: Install Free dari SQ revisi harus membuka revisi yang dipakai job
+            // (quotation milik Job Advice-nya), bukan SQ awal (revisi 0). Tanpa Job Advice ber-SQ:
+            // revisi approved terbaru, baru revisi terbaru apa pun.
+            $jobAdviceQuotation = $jobSchedule->jobAdvice?->quotation;
+            $jobScheduleQuotationFallback = $jobAdviceQuotation && $jobAdviceQuotation->quotation_number === $jobSchedule->quotation_number
+                ? $jobAdviceQuotation
+                : (\App\Models\Quotation::where('quotation_number', $jobSchedule->quotation_number)
+                    ->orderByRaw("CASE WHEN status = 'approved' THEN 0 ELSE 1 END")
+                    ->orderByDesc('revision_number')
+                    ->first());
         }
 
         $suspensionBadge = app(\App\Services\Operational\ContractRoomSuspensionService::class)->jobSuspensionBadge($jobSchedule);

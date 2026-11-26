@@ -1144,6 +1144,14 @@
                         $quotationDisplayNumber = $job->quotation_number
                             ?: ($job->jobAdvice?->quotation?->quotation_number
                                 ?: ($job->jobAdvice?->contract?->quotation?->quotation_number ?? null));
+                        // QA 25 Nov 2026: Install Free dari SQ revisi menampilkan nomor revisinya
+                        // (mis. JKT-SQ/26-11/0001-1), diambil dari quotation milik Job Advice.
+                        $jobAdviceQuotation = $job->jobAdvice?->quotation;
+                        if ($quotationDisplayNumber && $jobAdviceQuotation
+                            && $jobAdviceQuotation->quotation_number === $quotationDisplayNumber
+                            && (int) ($jobAdviceQuotation->revision_number ?? 0) > 0) {
+                            $quotationDisplayNumber .= '-' . (int) $jobAdviceQuotation->revision_number;
+                        }
                         $contractDisplayNumber = ($isInstallFreeJob && filled($quotationDisplayNumber))
                             ? $quotationDisplayNumber
                             : ($job->contract_number ?: '-');

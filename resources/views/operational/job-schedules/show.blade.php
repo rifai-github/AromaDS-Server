@@ -805,7 +805,8 @@
                                         <div class="info-field-value">
                                             @php $jobScheduleQuotation = $jobSchedule->jobAdvice?->contract?->quotation ?? ($jobScheduleQuotationFallback ?? null); @endphp
                                             @if($jobScheduleQuotation)
-                                                <a href="{{ route('marketing.quotations.show', $jobScheduleQuotation) }}" target="_blank" rel="noopener noreferrer">{{ $jobSchedule->quotation_number ?? $jobScheduleQuotation->quotation_number ?? '-' }}</a>
+                                                @php $jobScheduleQuotationRevision = (int) ($jobScheduleQuotation->revision_number ?? 0); @endphp
+                                                <a href="{{ route('marketing.quotations.show', $jobScheduleQuotation) }}" target="_blank" rel="noopener noreferrer">{{ ($jobSchedule->quotation_number ?? $jobScheduleQuotation->quotation_number ?? '-') . ($jobScheduleQuotationRevision > 0 ? '-' . $jobScheduleQuotationRevision : '') }}</a>
                                             @else
                                                 {{ $jobSchedule->quotation_number ?? '-' }}
                                             @endif
