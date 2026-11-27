@@ -640,12 +640,12 @@
                                             </div>
                                         </div>
                                     </div>
-                                    {{-- MOM 19 Nov 2026 p4: Basis SQ boleh diubah walau kontrak sudah aktif (memengaruhi printout). --}}
+                                    {{-- MOM 19 Nov 2026 p4: Basis Harga (dulu berlabel "Basis SQ", diganti Pak Hengky 27 Nov) boleh diubah walau kontrak sudah aktif (memengaruhi printout). --}}
                                     @php
                                         $contractPriceBasis = $contract->price_basis ?: ($contract->quotation->price_basis ?? 'rental');
                                     @endphp
                                     <div class="contract-field">
-                                        <div class="contract-field-label">Basis SQ</div>
+                                        <div class="contract-field-label">Basis Harga</div>
                                         <div class="contract-field-value">
                                             <div class="input-group input-group-sm" style="max-width: 320px;">
                                                 <select id="contractPriceBasis" class="form-control" data-no-select2>
@@ -5357,7 +5357,7 @@ function saveContractPriceBasis(contractId) {
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.success) {
             const firstError = data.errors ? Object.values(data.errors).flat()[0] : null;
-            throw new Error(firstError || data.message || 'Gagal menyimpan Basis SQ');
+            throw new Error(firstError || data.message || 'Gagal menyimpan Basis Harga');
         }
         Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message, timer: 1800, showConfirmButton: false });
     })

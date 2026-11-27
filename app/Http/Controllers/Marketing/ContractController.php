@@ -3798,7 +3798,7 @@ class ContractController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Basis SQ disimpan: '.($validated['price_basis'] === 'room' ? 'Basis Ruangan' : 'Basis Rental').'.',
+            'message' => 'Basis Harga disimpan: '.($validated['price_basis'] === 'room' ? 'Basis Ruangan' : 'Basis Rental').'.',
             'price_basis' => $validated['price_basis'],
         ]);
     }
