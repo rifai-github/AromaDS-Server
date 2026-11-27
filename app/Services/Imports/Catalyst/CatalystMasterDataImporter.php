@@ -195,6 +195,10 @@ class CatalystMasterDataImporter
     private ?array $sourceBillingGroupsByCode = null;
     /** @var array<string, array<string, mixed>>|null cache sourceContractHeadersByNumber() */
     private ?array $sourceContractHeadersByNumber = null;
+    /** @var array<string, array<string, mixed>>|null MsCustContact Type Finance per CustCode */
+    private ?array $sourceFinanceContactsByCustomer = null;
+    /** @var array<string, array<string, mixed>>|null MsCustomer Phone/Email per CustCode */
+    private ?array $sourceCustomerContactInfo = null;
     /** @var array{room: array<string, string>, floor: array<string, string>}|null MsRoom / MsFloor */
     private ?array $catalystRoomAndFloorNames = null;
     /** @var array<string, array<string, string>> master option -> [lower(nama) => option_name] */
@@ -2778,7 +2782,37 @@ class CatalystMasterDataImporter
         $value = preg_replace('/\s+/', ' ', $value);
         $value = trim((string) $value);
 
-        return $value === '' ? null : Str::limit($value, 20, '');
+        // "-", ".", "0", "(it)": placeholder Catalyst, bukan nomor telepon.
+        if (preg_match_all('/\d/', $value) < 5) {
+            return null;
+        }
+
+        return Str::limit($value, 20, '');
+    }
+
+    /**
+     * Isian placeholder Catalyst ("-", ".", "0", "/N", "N/A", ",", "..") -> NULL; selain itu trim.
+     */
+    protected function cleanPlaceholder($value): ?string
+    {
+        $value = $this->cleanString(preg_replace('/\s+/u', ' ', (string) ($value ?? '')));
+        if ($value === null) {
+            return null;
+        }
+
+        if (preg_match('/^[\s\-\.,\/0]*$/', $value) || in_array(Str::upper($value), ['N/A', 'NA', '/N', 'NONE', 'NULL', 'TIDAK ADA', '(IT)'], true)) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    /** Email billing (boleh beberapa alamat, "a@x.com, b@y.com"); tanpa "@" = placeholder -> NULL. */
+    protected function cleanEmailList($value): ?string
+    {
+        $value = $this->cleanPlaceholder($value);
+
+        return $value !== null && str_contains($value, '@') ? $value : null;
     }
 
     protected function yesNoToBool($value, bool $default = false): bool
@@ -3376,6 +3410,60 @@ class CatalystMasterDataImporter
         }
 
         return $this->sourceBillingGroupsByCode = $lookup;
+    }
+
+    /**
+     * Kontak Finance per customer dari MsCustContact (Type "Finance", aktif, ItemNo terkecil),
+     * cadangan PIC billing group bila MsBillingGroup kosong.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    protected function sourceFinanceContactsByCustomer(): array
+    {
+        if ($this->sourceFinanceContactsByCustomer !== null) {
+            return $this->sourceFinanceContactsByCustomer;
+        }
+
+        $lookup = [];
+        foreach ($this->optionalSourceRows('billing_groups', 'MsCustContact') as $row) {
+            $customerKey = mb_strtoupper((string) $this->makeKey($row['CustCode'] ?? null));
+            if ($customerKey === '' || !$this->yesNoToBool($row['FgActive'] ?? null, true)
+                || Str::lower($this->cleanString($row['Type'] ?? null) ?? '') !== 'finance') {
+                continue;
+            }
+
+            if (!isset($lookup[$customerKey]) || (int) ($row['ItemNo'] ?? 0) < (int) ($lookup[$customerKey]['ItemNo'] ?? 0)) {
+                $lookup[$customerKey] = $row;
+            }
+        }
+
+        return $this->sourceFinanceContactsByCustomer = $lookup;
+    }
+
+    /**
+     * Telepon & email MsCustomer per CustCode (cadangan terakhir PIC billing group).
+     *
+     * @return array<string, array{Phone: mixed, Email: mixed}>
+     */
+    protected function sourceCustomerContactInfo(): array
+    {
+        if ($this->sourceCustomerContactInfo !== null) {
+            return $this->sourceCustomerContactInfo;
+        }
+
+        $lookup = [];
+        try {
+            foreach ($this->source()->table('MsCustomer')->get(['CustCode', 'Phone', 'Email']) as $row) {
+                $key = mb_strtoupper((string) $this->makeKey($row->CustCode ?? null));
+                if ($key !== '') {
+                    $lookup[$key] = ['Phone' => $row->Phone ?? null, 'Email' => $row->Email ?? null];
+                }
+            }
+        } catch (Throwable $e) {
+            $this->logOnce('billing_groups', 'warning', 'optional-source:MsCustomer-contact', 'MsCustomer tidak bisa dibaca untuk cadangan PIC billing group - dilewati.');
+        }
+
+        return $this->sourceCustomerContactInfo = $lookup;
     }
 
     protected function cachedTargetRecord(string $table, ?int $id): ?object
@@ -5496,6 +5584,9 @@ class CatalystMasterDataImporter
             $taxPayload = $this->resolveBillingGroupTaxPayload($contract->customer_id ?? null, $row['NPWP'] ?? null, $legacyBilling);
             $sourceHeader = $this->sourceContractHeadersByNumber()[$this->makeKey($contractNo)] ?? [];
             $bankFields = $this->billingGroupBankPaymentFields($sourceHeader['BankPayment'] ?? null);
+            $billingCustomerCode = $this->makeKey($legacyBilling->CustCode ?? null) ?: $this->makeKey($sourceHeader['Customer'] ?? null);
+            $financeContact = $this->sourceFinanceContactsByCustomer()[mb_strtoupper((string) $billingCustomerCode)] ?? [];
+            $sourceCustomer = $this->sourceCustomerContactInfo()[mb_strtoupper((string) $billingCustomerCode)] ?? [];
 
             return $this->syncRecord('billing_groups', 'MKTContractDt_billing', $this->makeKey([$contractNo, $billingCode]), 'billing_groups', [
                 'contract_id' => $contractId,
@@ -5510,10 +5601,22 @@ class CatalystMasterDataImporter
                 'billing_end_date' => $contract->end_date ?? null,
                 'billing_amount' => $item['amount'] ?? 0,
                 'is_active' => true,
-                'pic_name' => $this->cleanString($legacyBilling->Attn ?? null),
-                'pic_phone' => $this->normalizePhoneLike($legacyBilling->Telp ?? $legacyBilling->Phone ?? null),
-                'pic_email' => $this->cleanString($legacyBilling->EmailBilling ?? null),
-                'pic_address' => $this->cleanString($legacyBilling->Address ?? null),
+                // Temuan 27 Nov (BG 21013/21014 ADS-AG/26-07/0096): MsBillingGroup.Attn/Telp/Phone/
+                // EmailBilling memang kosong di Catalyst untuk BG ini, dan banyak BG lain berisi
+                // placeholder ("-", ".", "/N"). Placeholder -> NULL; Telp kosong ('' bukan NULL) kini
+                // jatuh ke Phone; yang masih kosong dilengkapi kontak Finance customer (MsCustContact
+                // Type Finance) lalu telepon/email MsCustomer.
+                'pic_name' => $this->cleanPlaceholder($legacyBilling->Attn ?? null)
+                    ?? $this->cleanPlaceholder($financeContact['ContactName'] ?? null),
+                'pic_phone' => $this->normalizePhoneLike($legacyBilling->Telp ?? null)
+                    ?? $this->normalizePhoneLike($legacyBilling->Phone ?? null)
+                    ?? $this->normalizePhoneLike($financeContact['Handphone'] ?? null)
+                    ?? $this->normalizePhoneLike($financeContact['Phone'] ?? null)
+                    ?? $this->normalizePhoneLike($sourceCustomer['Phone'] ?? null),
+                'pic_email' => $this->cleanEmailList($legacyBilling->EmailBilling ?? null)
+                    ?? $this->cleanEmailList($financeContact['Email'] ?? null)
+                    ?? $this->cleanEmailList($sourceCustomer['Email'] ?? null),
+                'pic_address' => $this->cleanPlaceholder($legacyBilling->Address ?? null),
                 'npwp_name' => $this->cleanString($customer->name ?? null),
                 // Pak Hengky 27 Nov 2026: default jenis invoice BG hasil import = Hard Copy. Hanya
                 // untuk BG baru; pilihan di BG yang sudah ada (import ulang) tidak ditimpa ('' dibuang

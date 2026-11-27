@@ -1176,4 +1176,79 @@ class CatalystClientFindings27NovImportTest extends TestCase
         // Dibiarkan apa adanya sampai klien memutuskan.
         $this->assertSame('SESUAI ATAS NAMA DI NPWP', DB::table('customers')->where('customer_code', '00018')->value('name'));
     }
+
+    // ── Tambahan: PIC & bank billing group kosong (BG 21013/21014) ──────────
+
+    private function seedBillingGroupPicSources(): void
+    {
+        // Data asli Catalyst untuk ADS-BIL-12/8138: Attn '', Phone '', Telp NULL, EmailBilling NULL.
+        DB::table('MsBillingGroup')->insert([
+            ['BillingCode' => 'ADS-BIL-12/8138', 'Address' => 'RUKO FRANKFURT, 2 Jl. Boulevard Raya Gading Serpong No.C/8', 'Attn' => '', 'Telp' => null, 'Phone' => '', 'EmailBilling' => null],
+            ['BillingCode' => 'ADS-BIL-12/9000', 'Address' => '-', 'Attn' => 'Budi', 'Telp' => '', 'Phone' => '(022) 7314307', 'EmailBilling' => '-'],
+        ]);
+        $this->create('MsCustContact', function (Blueprint $table) {
+            $table->string('CustCode');
+            $table->integer('ItemNo');
+            $table->string('ContactName')->nullable();
+            $table->string('Phone')->nullable();
+            $table->string('Handphone')->nullable();
+            $table->string('Email')->nullable();
+            $table->string('Type')->nullable();
+            $table->string('FgActive')->nullable();
+        });
+        DB::table('MsCustContact')->insert([
+            ['CustCode' => 'ADS-ADSH0001', 'ItemNo' => 1, 'ContactName' => 'Ole', 'Phone' => '(it)', 'Handphone' => '(it)', 'Email' => '(it)', 'Type' => 'Sales', 'FgActive' => 'Y'],
+            ['CustCode' => 'ADS-ADSH0001', 'ItemNo' => 2, 'ContactName' => 'Ole', 'Phone' => '(it)', 'Handphone' => '(it)', 'Email' => '(it)', 'Type' => 'Finance', 'FgActive' => 'Y'],
+        ]);
+        $this->create('MsCustomer', function (Blueprint $table) {
+            $table->string('CustCode');
+            $table->string('Phone')->nullable();
+            $table->string('Email')->nullable();
+        });
+        DB::table('MsCustomer')->insert(['CustCode' => 'ADS-ADSH0001', 'Phone' => '0811127029', 'Email' => 'hairnerds.studio@gmail.com']);
+    }
+
+    public function test_billing_group_pic_and_bank_are_filled_for_contract_0096(): void
+    {
+        $this->createImportMaps();
+        $this->createBankTables();
+        $this->createBillingGroupTables();
+        $this->seedBillingGroupPicSources();
+        DB::table('MKTContractDt')->insert([
+            ['TransNmbr' => 'ADS-AG/26-07/0096', 'Building' => 'ADS-ADSH0009', 'Product' => 'W300200', 'Qty' => 1, 'QtyFree' => 0, 'PriceForex' => 10800000, 'AmountForex' => 10800000, 'FloorCode' => '010', 'RoomCode' => '018', 'Room' => 'R', 'BillingGroup' => 'ADS-BIL-12/9000', 'NPWP' => ''],
+        ]);
+
+        $importer = $this->importer();
+        $importer->call('bank_payments');
+        $importer->call('billing_groups');
+
+        $bg = DB::table('billing_groups')->where('billing_group_name', 'ADS-BIL-12/8138')->first();
+        $this->assertSame('Ole', $bg->pic_name, 'MsBillingGroup.Attn kosong -> kontak Finance customer.');
+        $this->assertSame('0811127029', $bg->pic_phone, '"(it)" bukan nomor -> telepon MsCustomer.');
+        $this->assertSame('hairnerds.studio@gmail.com', $bg->pic_email);
+        $this->assertSame('RUKO FRANKFURT, 2 Jl. Boulevard Raya Gading Serpong No.C/8', $bg->pic_address);
+        $this->assertSame('Bank BCA', $bg->bank_name);
+        $this->assertSame('va_bca', $bg->payment_method);
+
+        $other = DB::table('billing_groups')->where('billing_group_name', 'ADS-BIL-12/9000')->first();
+        $this->assertSame('Budi', $other->pic_name);
+        $this->assertSame('(022) 7314307', $other->pic_phone, "Telp '' (bukan NULL) jatuh ke Phone.");
+        $this->assertSame('hairnerds.studio@gmail.com', $other->pic_email, 'EmailBilling "-" adalah placeholder.');
+        $this->assertNull($other->pic_address, 'Alamat "-" -> NULL.');
+    }
+
+    public function test_placeholder_values_become_null(): void
+    {
+        $importer = $this->importer();
+
+        foreach (['-', '.', '0', '/N', '/n', 'N/A', ',', ' , ', '..', '', '(it)'] as $placeholder) {
+            $this->assertNull($importer->call('cleanPlaceholder', $placeholder), "'{$placeholder}'");
+            $this->assertNull($importer->call('normalizePhoneLike', $placeholder), "'{$placeholder}'");
+            $this->assertNull($importer->call('cleanEmailList', $placeholder), "'{$placeholder}'");
+        }
+
+        $this->assertSame('a@x.com, b@y.com', $importer->call('cleanEmailList', 'a@x.com, b@y.com'));
+        $this->assertSame('Budi', $importer->call('cleanPlaceholder', ' Budi '));
+        $this->assertSame('0811127029', $importer->call('normalizePhoneLike', '0811127029'));
+    }
 }
