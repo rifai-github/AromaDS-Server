@@ -23,6 +23,8 @@ class CatalystMasterDataImporter
         'master_rentals' => ['master_products'],
         'rental_components' => ['master_rentals'],
         'rental_details' => ['master_rentals'],
+        'bank_payments' => ['banks'],
+        'customers' => ['bank_payments'],
         'customer_contacts' => ['customers'],
         'customer_tax_settings' => ['customers'],
         'company_virtual_accounts' => ['customers', 'contracts'],
@@ -37,7 +39,7 @@ class CatalystMasterDataImporter
         'contracts' => ['customers', 'quotations', 'users'],
         'quotation_existing_contracts' => ['quotations', 'contracts'],
         'contract_surveys' => ['contracts', 'quotation_surveys'],
-        'billing_groups' => ['contracts', 'customers'],
+        'billing_groups' => ['contracts', 'customers', 'bank_payments'],
         'contract_buildings' => ['billing_groups', 'buildings'],
         'contract_rooms' => ['contracts', 'buildings'],
         'contract_rentals' => ['contracts', 'master_rentals'],
@@ -73,6 +75,8 @@ class CatalystMasterDataImporter
         'product_categories',
         'product_types',
         'banks',
+        // Pak Hengky 27 Nov 2026: rekening (MsPayType) WAJIB sebelum customers/contracts/billing_groups.
+        'bank_payments',       // depends on: banks
         'branches',
         'departments',
         // UAT 19 Nov 2026: detail Master Option (Position, Product Units, rental_alias, Room Type,
@@ -135,6 +139,7 @@ class CatalystMasterDataImporter
      */
     public const ACTIVE_ONLY_STEPS = [
         'banks',
+        'bank_payments',
         'branches',
         'departments',
         'customer_categories',
@@ -185,6 +190,8 @@ class CatalystMasterDataImporter
     private ?array $sourceQuotationPrimaryBuildingByNumber = null;
     private ?array $sourceQuotationOldContractByNumber = null;
     private ?array $sourceBillingGroupsByCode = null;
+    /** @var array<string, array<string, mixed>>|null cache sourceContractHeadersByNumber() */
+    private ?array $sourceContractHeadersByNumber = null;
     /** @var array<string, true>|null cache eligibleContractNumbers() */
     private ?array $eligibleContractNumbersCache = null;
     /** @var array<string, true>|null semua nomor MKTContractHd */
@@ -345,6 +352,199 @@ class CatalystMasterDataImporter
             ], $row);
         });
     }
+
+    /**
+     * Pak Hengky 27 Nov 2026: "bank payment harus diimport sebelum kontrak, kalau tidak datanya
+     * crash - berhubungan dengan detail billing group". Rekening perusahaan (MsPayType, FgMode B)
+     * dulu hanya bisa masuk lewat catalyst:import-bank-payments-export yang butuh dua file CSV
+     * export dan tidak pernah ikut Full Migration, sehingga MKTContractHd.BankPayment (VABCA di
+     * 6.845 kontrak posted) tidak punya padanan dan Bank Payment di billing group selalu kosong.
+     *
+     * Step ini membaca MsPayType langsung dari Catalyst dan jalan tepat setelah `banks`, jadi
+     * customers (default bank payment), company_virtual_accounts, dan billing_groups selalu
+     * menemukan rekeningnya. Kode bank dipetakan ke master bank KGI lewat peta MsBank; PayType
+     * yang kolom Bank-nya kosong (PMBCA, PMBDG, ...) dicoba dari nama bank di PayName.
+     * Kas, giro, DP, dan akun non-bank (FgMode selain B) bukan rekening, jadi dilewati.
+     */
+    protected function bank_payments(): array
+    {
+        if (!Schema::hasTable('bank_payments')) {
+            return ['stats' => $this->blankStats()];
+        }
+
+        return $this->runStep('bank_payments', 'MsPayType', 'PayCode', function (array $row) {
+            $payCode = $this->makeKey($row['PayCode'] ?? null);
+            if (!$payCode) {
+                return $this->skippedRow('MsPayType tanpa PayCode.');
+            }
+
+            if (Str::upper($this->cleanString($row['FgMode'] ?? null) ?? '') !== 'B') {
+                return ['action' => 'skipped'];
+            }
+
+            $bankId = $this->resolveBankIdForPayType($row);
+            if (!$bankId) {
+                return $this->skippedRow('PayType "' . $payCode . '" tidak menunjuk bank yang ada di master bank.', $payCode);
+            }
+
+            $accountNumber = $this->normalizeBankAccountNumber($row['NoRekening'] ?? null);
+            if (!$accountNumber) {
+                return $this->skippedRow('PayType "' . $payCode . '" tidak punya nomor rekening.', $payCode);
+            }
+
+            $payload = [
+                'account_name' => $this->cleanString($row['NamaRekening'] ?? null)
+                    ?: $this->cleanString($row['PayName'] ?? null)
+                    ?: $payCode,
+                'branch_name' => $this->cleanString($row['BankBranch'] ?? null),
+                'address' => $this->cleanString($row['BankAddr'] ?? null),
+                'phone' => $this->normalizePhoneLike($row['BankPhone'] ?? null),
+                'fax' => $this->normalizePhoneLike($row['BankFax'] ?? null),
+                'is_active' => $this->yesNoToBool($row['FgActive'] ?? null, true),
+            ];
+
+            // Sama dengan catalyst:import-bank-payments-export: PayCode ber-"VA" = rekening VA.
+            // Hanya dinyalakan, tidak pernah dimatikan, supaya setelan Master Bank Payment tetap.
+            if (Str::contains(Str::upper($payCode), 'VA')) {
+                $payload['is_default_va'] = true;
+            }
+
+            return $this->syncRecord('bank_payments', 'MsPayType', $payCode, 'bank_payments', [
+                'bank_id' => $bankId,
+                'account_number' => $accountNumber,
+            ], $payload, $row);
+        });
+    }
+
+    /** Kata kunci nama bank di MsPayType.PayName -> kode MsBank, untuk PayType yang kolom Bank-nya kosong. */
+    private const PAY_TYPE_BANK_KEYWORDS = [
+        'BCA' => 'BC001',
+        'PERMATA' => 'BP001',
+        'MANDIRI' => 'BM001',
+        'BNI' => 'BN001',
+        'BRI' => 'BR001',
+        'OCBC' => 'BO001',
+        'CIMB' => 'BC003',
+        'DANAMON' => 'BD001',
+        'PANIN' => 'PB001',
+        'SINARMAS' => 'BS001',
+        'RIAU' => 'BR002',
+        'BTN' => 'BTN01',
+    ];
+
+    protected function resolveBankIdForPayType(array $row): ?int
+    {
+        $bankCode = $this->makeKey($row['Bank'] ?? null);
+
+        if (!$bankCode) {
+            $payName = ' ' . Str::upper($this->cleanString($row['PayName'] ?? null) ?? '') . ' ';
+            foreach (self::PAY_TYPE_BANK_KEYWORDS as $keyword => $code) {
+                if (preg_match('/\b' . preg_quote($keyword, '/') . '\b/', $payName)) {
+                    $bankCode = $code;
+                    break;
+                }
+            }
+        }
+
+        if (!$bankCode) {
+            return null;
+        }
+
+        $bankId = $this->findMappedTargetId('MsBank', $bankCode, 'banks')
+            ?: DB::table('banks')->where('bank_code', $bankCode)->value('id');
+
+        return $bankId ? (int) $bankId : null;
+    }
+
+    /**
+     * "A/C : 070.128.4496" -> "070.128.4496", "1181 003 868" -> "1181003868",
+     * "Bank Mandiri Batam 10900040471" -> "10900040471". Titik/strip dibiarkan seperti di Catalyst.
+     */
+    protected function normalizeBankAccountNumber($value): ?string
+    {
+        $value = $this->cleanString($value);
+        if ($value === null) {
+            return null;
+        }
+
+        if (preg_match('/([0-9][0-9.\-\s]*[0-9])\s*$/', $value, $match)) {
+            $value = $match[1];
+        }
+
+        $value = preg_replace('/\s+/', '', $value);
+
+        return $value === '' || !preg_match('/\d/', $value) ? null : $value;
+    }
+
+    /**
+     * Rekening yang ditunjuk MKTContractHd.BankPayment, dalam bentuk yang dipakai form
+     * billing group (lihat ContractWizardController & editbg): bank_name, virtual_account_number
+     * "Bank - Nama Rekening (No Rekening)", dan payment_method va_bca / va_mandiri / transfer.
+     *
+     * @return array{bank_name: string|null, virtual_account_number: string, payment_method: string}|null
+     */
+    protected function billingGroupBankPaymentFields(?string $payCode): ?array
+    {
+        $payCode = $this->makeKey($payCode);
+        if (!$payCode) {
+            return null;
+        }
+
+        $bankPaymentId = $this->findMappedTargetId('MsPayType', $payCode, 'bank_payments');
+        if (!$bankPaymentId) {
+            $this->logOnce('billing_groups', 'warning', 'billing-bank-payment-missing:' . $payCode, sprintf(
+                'BankPayment "%s" di MKTContractHd belum punya rekening di bank_payments - jalankan step bank_payments sebelum billing_groups.',
+                $payCode
+            ));
+
+            return null;
+        }
+
+        $bankPayment = $this->cachedTargetRecord('bank_payments', (int) $bankPaymentId);
+        if (!$bankPayment) {
+            return null;
+        }
+
+        $bank = $this->cachedTargetRecord('banks', (int) ($bankPayment->bank_id ?? 0));
+        $bankName = $this->cleanString($bank->name ?? null) ?: $this->cleanString($bank->bank_name ?? null);
+
+        $paymentMethod = 'transfer';
+        if (!empty($bankPayment->is_default_va)) {
+            $paymentMethod = Str::contains(Str::lower((string) $bankName), 'mandiri') ? 'va_mandiri' : 'va_bca';
+        }
+
+        return [
+            'bank_name' => $bankName,
+            'virtual_account_number' => ($bankName ? $bankName . ' - ' : '')
+                . ($bankPayment->account_name ?? '') . ' (' . ($bankPayment->account_number ?? '') . ')',
+            'payment_method' => $paymentMethod,
+        ];
+    }
+
+    /**
+     * Header MKTContractHd per nomor kontrak (kolom yang dibaca step turunan kontrak).
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    protected function sourceContractHeadersByNumber(): array
+    {
+        if ($this->sourceContractHeadersByNumber !== null) {
+            return $this->sourceContractHeadersByNumber;
+        }
+
+        $lookup = [];
+        foreach ($this->source()->table('MKTContractHd')->whereNotNull('TransNmbr')->get() as $row) {
+            $row = (array) $row;
+            unset($row['QRCodeData']);
+            $key = $this->makeKey($row['TransNmbr'] ?? null);
+            if ($key && !isset($lookup[$key])) {
+                $lookup[$key] = $row;
+            }
+        }
+
+        return $this->sourceContractHeadersByNumber = $lookup;
+    }
+
     protected function branches(): array
     {
         $summary = $this->runStep('branches', 'MsBranch', 'BranchCode', function (array $row) {
@@ -808,9 +1008,14 @@ class CatalystMasterDataImporter
                 return $this->failedRow('Customer code or name is empty.');
             }
 
+            // MsCustomer.PaymentTo = kode MsPayType (step bank_payments). Hanya diisi bila
+            // rekeningnya ketemu, supaya pilihan yang sudah diset di KGI tidak dikosongkan.
+            $defaultBankPaymentId = $this->findMappedTargetId('MsPayType', $this->makeKey($row['PaymentTo'] ?? null), 'bank_payments');
+            $extraPayload = $defaultBankPaymentId ? ['default_bank_payment_id' => (int) $defaultBankPaymentId] : [];
+
             return $this->syncRecord('customers', 'MsCustomer', $sourceKey, 'customers', [
                 'customer_code' => $sourceKey,
-            ], [
+            ], $extraPayload + [
                 'name' => $name,
                 'status' => 'customer',
                 'customer_type' => 'company',
@@ -4822,6 +5027,8 @@ class CatalystMasterDataImporter
             $legacyBilling = $billingCode ? ($legacyBillingGroups[$this->makeKey($billingCode)] ?? null) : null;
             $customer = $contract?->customer_id ? DB::table('customers')->where('id', $contract->customer_id)->first() : null;
             $taxPayload = $this->resolveBillingGroupTaxPayload($contract->customer_id ?? null, $row['NPWP'] ?? null, $legacyBilling);
+            $sourceHeader = $this->sourceContractHeadersByNumber()[$this->makeKey($contractNo)] ?? [];
+            $bankFields = $this->billingGroupBankPaymentFields($sourceHeader['BankPayment'] ?? null);
 
             return $this->syncRecord('billing_groups', 'MKTContractDt_billing', $this->makeKey([$contractNo, $billingCode]), 'billing_groups', [
                 'contract_id' => $contractId,
@@ -4842,9 +5049,11 @@ class CatalystMasterDataImporter
                 'pic_address' => $this->cleanString($legacyBilling->Address ?? null),
                 'npwp_name' => $this->cleanString($customer->name ?? null),
                 'invoice_type' => 'soft_copy',
-                'payment_method' => null,
-                'virtual_account_number' => $this->cleanString($contract->virtual_account ?? null),
-                'bank_name' => null,
+                // Pak Hengky 27 Nov 2026: Bank Payment kontrak (MKTContractHd.BankPayment ->
+                // MsPayType -> bank_payments, step bank_payments) tampil di detail billing group.
+                'payment_method' => $bankFields['payment_method'] ?? null,
+                'virtual_account_number' => $bankFields['virtual_account_number'] ?? $this->cleanString($contract->virtual_account ?? null),
+                'bank_name' => $bankFields['bank_name'] ?? null,
                 'created_by' => $this->actorId(),
                 'updated_by' => $this->actorId(),
             ] + $taxPayload, fn ($value) => !($value === '' || $value === [])), $row);
