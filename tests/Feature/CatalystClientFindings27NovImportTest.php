@@ -276,18 +276,22 @@ class CatalystClientFindings27NovImportTest extends TestCase
         DB::table('MKTQuotationHd')->insert([
             ['TransNmbr' => 'ADS-SQ/25-01/0001', 'Revisi' => 0, 'Status' => 'P', 'FgActive' => 'Y', 'SOContractNo' => 'ADS-AG/25-01/0001'],
             ['TransNmbr' => 'ADS-SQ/26-11/0001', 'Revisi' => 0, 'Status' => 'P', 'FgActive' => 'Y', 'SOContractNo' => null],
+            ['TransNmbr' => 'ADS-SQ/26-07/1544', 'Revisi' => 0, 'Status' => 'P', 'FgActive' => 'Y', 'SOContractNo' => 'ADS-AG/26-07/0096'],
         ]);
         DB::table('MKTContractJobOut')->insert([
             ['ContractNo' => 'ADS-SQ/25-01/0001'],
             ['ContractNo' => 'ADS-SQ/26-11/0001'],
+            ['ContractNo' => 'ADS-SQ/26-07/1544'],
         ]);
         DB::table('customers')->insert(['id' => 1, 'name' => 'PT A']);
         DB::table('quotations')->insert([
             ['id' => 10, 'quotation_number' => 'ADS-SQ/25-01/0001', 'customer_id' => 1],
             ['id' => 11, 'quotation_number' => 'ADS-SQ/26-11/0001', 'customer_id' => 1],
+            ['id' => 12, 'quotation_number' => 'ADS-SQ/26-07/1544', 'customer_id' => 1],
         ]);
         $this->map('MKTQuotationHd', 'ADS-SQ/25-01/0001', 'quotations', 10);
         $this->map('MKTQuotationHd', 'ADS-SQ/26-11/0001', 'quotations', 11);
+        $this->map('MKTQuotationHd', 'ADS-SQ/26-07/1544', 'quotations', 12);
     }
 
     public function test_job_advice_from_a_quotation_whose_contract_is_excluded_is_skipped(): void
@@ -297,9 +301,10 @@ class CatalystClientFindings27NovImportTest extends TestCase
 
         $this->importer(['ADS-AG/26-07/0096' => true])->call('job_advices');
 
-        // SQ yang kontraknya terminate tidak boleh hidup lagi lewat JA berbasis quotation;
-        // SQ yang belum jadi kontrak (mis. trial) tetap dapat JA.
-        $this->assertSame(['JA-CATALYST-ADS-SQ/26-11/0001'], DB::table('job_advices')->pluck('job_advice_number')->all());
+        // SQ yang kontraknya terminate tidak boleh hidup lagi lewat JA berbasis quotation.
+        // Jawaban tim 28 Nov: JA dari SQ yang belum/tidak jadi kontrak (mis. trial) juga tidak
+        // diimport; hanya JA milik SQ yang menjadi kontrak valid.
+        $this->assertSame(['JA-CATALYST-ADS-SQ/26-07/1544'], DB::table('job_advices')->pluck('job_advice_number')->all());
     }
 
     // ── 1. Bank payment sebelum kontrak ──────────────────────────────────────
@@ -1231,6 +1236,8 @@ class CatalystClientFindings27NovImportTest extends TestCase
         $this->assertSame('va_bca', $bg->payment_method);
 
         $other = DB::table('billing_groups')->where('billing_group_name', 'ADS-BIL-12/9000')->first();
+        // Jawaban tim 28 Nov: tagihan billing group per TOP (AmountForex per tahun, TOP 1 bulan -> /12).
+        $this->assertEquals(900000, (float) $other->billing_amount);
         $this->assertSame('Budi', $other->pic_name);
         $this->assertSame('(022) 7314307', $other->pic_phone, "Telp '' (bukan NULL) jatuh ke Phone.");
         $this->assertSame('hairnerds.studio@gmail.com', $other->pic_email, 'EmailBilling "-" adalah placeholder.');

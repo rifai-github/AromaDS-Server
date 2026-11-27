@@ -3290,6 +3290,19 @@ class CatalystMasterDataImporter
     }
 
     /**
+     * Jawaban tim 28 Nov 2026 ("SQ saja yang diimport, JA tidak usah"): Job Advice Catalyst yang
+     * menunjuk SQ yang TIDAK menjadi kontrak valid (belum/tidak pernah jadi kontrak, atau kontraknya
+     * tidak lolos filter klien) tidak diimport. SQ-nya sendiri tetap diimport.
+     */
+    protected function quotationWithoutValidContract(?string $quotationNumber): bool
+    {
+        $header = $this->findSourceQuotationHeader($quotationNumber);
+        $soContractNo = $header ? $this->cleanString($this->sourceValue((array) $header, 'SOContractNo', 'SoContractNo')) : null;
+
+        return $soContractNo === null || $this->isKnownCatalystContractOutsideFilter($soContractNo);
+    }
+
+    /**
      * Klien (no. 7): TransNmbr berawalan "-" di MKTContractDt adalah record tidak terpakai.
      */
     protected function isUnusedCatalystDetailRow(?string $transNmbr): bool
@@ -5599,7 +5612,9 @@ class CatalystMasterDataImporter
                 'billing_frequency' => 'monthly',
                 'billing_start_date' => $contract->start_date ?? null,
                 'billing_end_date' => $contract->end_date ?? null,
-                'billing_amount' => $item['amount'] ?? 0,
+                // Jawaban tim 28 Nov 2026: tagihan billing group per TOP. AmountForex Catalyst per tahun
+                // (lihat catalystPricePerTop()), jadi dikali faktor TOP kontrak.
+                'billing_amount' => round((float) ($item['amount'] ?? 0) * $this->catalystTopPriceFactor($sourceHeader['Terms'] ?? null, (int) ($sourceHeader['ContractPeriod'] ?? 12)), 2),
                 'is_active' => true,
                 // Temuan 27 Nov (BG 21013/21014 ADS-AG/26-07/0096): MsBillingGroup.Attn/Telp/Phone/
                 // EmailBilling memang kosong di Catalyst untuk BG ini, dan banyak BG lain berisi
@@ -5672,7 +5687,10 @@ class CatalystMasterDataImporter
                 DB::table('billing_group_buildings')->insert([
                     'billing_group_id' => $billingGroupId,
                     'building_id' => $buildingId,
-                    'billing_amount' => (float) ($row['AmountForex'] ?? 0),
+                    'billing_amount' => round((float) ($row['AmountForex'] ?? 0) * $this->catalystTopPriceFactor(
+                        ($this->sourceContractHeadersByNumber()[$this->makeKey($row['TransNmbr'] ?? null)] ?? [])['Terms'] ?? null,
+                        (int) (($this->sourceContractHeadersByNumber()[$this->makeKey($row['TransNmbr'] ?? null)] ?? [])['ContractPeriod'] ?? 12)
+                    ), 2),
                     'is_active' => true,
                     'created_by' => $this->actorId(),
                     'updated_by' => $this->actorId(),
@@ -5838,7 +5856,7 @@ class CatalystMasterDataImporter
             // JobOut yang menunjuk SQ (bukan kontrak) ikut dilewati bila kontrak hasil SQ itu
             // sendiri tidak lolos filter klien (deleted/terminate/berakhir/ter-renew) - kalau tidak,
             // kontrak yang sengaja tidak diimport tetap muncul lewat JA berbasis quotation.
-            if ($source['type'] === 'quotation' && $this->quotationContractOutsideFilter($source['document_number'])) {
+            if ($source['type'] === 'quotation' && $this->quotationWithoutValidContract($source['document_number'])) {
                 return ['action' => 'skipped'];
             }
 
@@ -5877,7 +5895,7 @@ class CatalystMasterDataImporter
         $rows = [];
         foreach (array_values($contractNumbers) as $contractNo) {
             $source = $this->resolveCatalystJobAdviceSource($contractNo);
-            if ($source && $source['type'] === 'quotation' && $this->quotationContractOutsideFilter($source['document_number'])) {
+            if ($source && $source['type'] === 'quotation' && $this->quotationWithoutValidContract($source['document_number'])) {
                 continue;
             }
 
