@@ -874,7 +874,7 @@
                             </button>
                         </div>
                     </div>
-                    <small class="text-gray-500">Semua category support multiple products selection. Pilih semua product yang ingin dipakai untuk BOM rental ini.</small>
+                    <small class="text-gray-500">Produk Material Type ini tampil paling atas; grup "Produk lain" berisi semua Master Product, jadi bisa pilih kategori + produk satuan dari kategori lain (mis. kategori coklat + 1 strawberry).</small>
                 </div>
             </div>
             <div class="modal-footer">
@@ -998,10 +998,10 @@
 
             <div>
                 <div class="flex items-center justify-between mb-2">
-                    <h4 class="text-md font-semibold">2. Pilih Produk Satuan</h4>
+                    <h4 class="text-md font-semibold">2. Pilih Produk Satuan (semua Master Product)</h4>
                     <span id="materialSelectedCount" class="text-sm text-gray-600"></span>
                 </div>
-                <p class="text-sm text-gray-600 mb-3">Saring per kategori untuk mempermudah, lalu centang produk yang diperlukan. Pilihan di kategori lain tetap tersimpan meski sedang tersaring.</p>
+                <p class="text-sm text-gray-600 mb-3">Daftar ini berisi semua Master Product dari kategori mana pun, jadi produk satuan bisa ditambahkan di samping kategori di bagian 1 (mis. kategori coklat + 1 strawberry). Saring per kategori atau cari bila perlu; pilihan yang tersaring tetap tersimpan.</p>
 
                 <div class="mb-3">
                     <select class="form-select" id="materialCategoryFilter" onchange="handleMaterialCategoryFilterChange()">
@@ -1141,25 +1141,52 @@ function populateProductSelections(products, selectedIds = [], primaryProductId 
     productSelect.innerHTML = '<option value="">Select Product</option>';
     productSelectMulti.innerHTML = '';
 
-    (products || []).forEach(product => {
-        const displayText = (product.name || '-') + (product.packaging_size ? ` (${product.packaging_size})` : '');
+    // Jawaban klien 26 Nov 2026: komponen boleh kategori + produk satuan dari kategori lain
+    // (mis. kategori coklat + 1 strawberry). Produk Material Type baris ini tampil paling atas,
+    // lalu SEMUA Master Product lainnya di grup terpisah supaya tetap bisa dicari dan dipilih.
+    const categorySelect = document.getElementById('product_category_id');
+    const categoryId = categorySelect?.value ? String(categorySelect.value) : '';
+    const categoryName = categoryId && categorySelect.selectedIndex >= 0
+        ? (categorySelect.options[categorySelect.selectedIndex]?.text || '').trim()
+        : '';
+    const list = products || [];
+    const groups = categoryId
+        ? [
+            ['Material Type ini' + (categoryName ? ': ' + categoryName : ''), list.filter(product => String(product.product_category_id ?? '') === categoryId)],
+            ['Produk lain (semua Master Product)', list.filter(product => String(product.product_category_id ?? '') !== categoryId)],
+        ]
+        : [[null, list]];
 
-        const option = document.createElement('option');
-        option.value = product.id;
-        option.text = displayText;
-        option.setAttribute('data-text', displayText);
-        option.setAttribute('data-is-unit', product.is_unit ? 'true' : 'false');
-        option.setAttribute('data-bom-quantity', product.bom_quantity || 0);
-        if (String(product.id) === normalizedPrimaryId) {
-            option.selected = true;
-        }
-        productSelect.appendChild(option);
+    groups.forEach(([label, groupProducts]) => {
+        if (!groupProducts.length) return;
 
-        const multiOption = option.cloneNode(true);
-        if (normalizedSelectedIds.includes(String(product.id))) {
-            multiOption.selected = true;
+        const singleParent = label ? document.createElement('optgroup') : productSelect;
+        const multiParent = label ? document.createElement('optgroup') : productSelectMulti;
+        if (label) {
+            singleParent.label = label;
+            multiParent.label = label;
+            productSelect.appendChild(singleParent);
+            productSelectMulti.appendChild(multiParent);
         }
-        productSelectMulti.appendChild(multiOption);
+
+        groupProducts.forEach(product => {
+            const displayText = (product.name || '-') + (product.packaging_size ? ` (${product.packaging_size})` : '');
+
+            const option = document.createElement('option');
+            option.value = product.id;
+            option.text = displayText;
+            option.setAttribute('data-text', displayText);
+            option.setAttribute('data-is-unit', product.is_unit ? 'true' : 'false');
+            option.setAttribute('data-bom-quantity', product.bom_quantity || 0);
+            if (String(product.id) === normalizedPrimaryId) {
+                option.selected = true;
+            }
+            singleParent.appendChild(option);
+
+            const multiOption = option.cloneNode(true);
+            multiOption.selected = normalizedSelectedIds.includes(String(product.id));
+            multiParent.appendChild(multiOption);
+        });
     });
 }
 
@@ -1177,16 +1204,13 @@ function getProductsForSelectedCategory() {
 function refreshProductsForSelectedCategory(preservedSelectedIds = []) {
     const products = getProductsForSelectedCategory();
 
-    // Products already picked from other categories must stay in the option list, otherwise
-    // populateProductSelections() cannot re-select them and the save would silently drop them.
+    // Produk Material Type baris ini dulu, lalu SEMUA Master Product lain (jawaban klien 26 Nov:
+    // "per produk" = semua produk dari master product), jadi produk satuan dari kategori lain bisa
+    // ditambahkan di samping kategori. Produk yang sudah dipilih otomatis ikut terdaftar.
     const listedIds = new Set(products.map(product => String(product.id)));
-    const carriedOver = (preservedSelectedIds || [])
-        .map(id => String(id))
-        .filter(id => !listedIds.has(id))
-        .map(id => masterProductsCatalog.find(product => String(product.id) === id))
-        .filter(Boolean);
+    const others = masterProductsCatalog.filter(product => !listedIds.has(String(product.id)));
 
-    populateProductSelections(products.concat(carriedOver), preservedSelectedIds);
+    populateProductSelections(products.concat(others), preservedSelectedIds);
 
     if (typeof $ !== 'undefined' && $.fn.select2) {
         const $single = $('#master_product_id');
@@ -1495,11 +1519,18 @@ function updateProductSelectionUI() {
 }
 
 function selectAllFromCategory() {
+    // Dropdown kini juga berisi produk kategori lain, jadi hanya centang produk Material Type
+    // baris ini; produk satuan lain yang sudah dipilih tetap dipertahankan.
+    const categoryIds = new Set(getAllCurrentCategoryProductIds().map(id => String(id)));
+    document.querySelectorAll('#master_product_ids option').forEach(option => {
+        if (categoryIds.has(String(option.value))) {
+            option.selected = true;
+        }
+    });
     if (typeof $ !== 'undefined') {
-        $('#master_product_ids option').prop('selected', true);
         $('#master_product_ids').trigger('change');
     }
-    setAutoExpandMode(true);
+    setAutoExpandMode(categoryIds.size > 0);
 }
 
 function clearProductSelection() {
@@ -1600,9 +1631,10 @@ function openMaterialList(detailId) {
             // Render Product Types Section
             renderProductTypes();
 
-            // Start narrowed to this row's own Material Type - that is the common case, and showing
-            // every category at once is unusable. "Semua Kategori" is one click away.
-            populateMaterialCategoryFilter(globalOwnCategoryId);
+            // Jawaban klien 26 Nov 2026: bagian "per produk" = SEMUA Master Product, tidak dibatasi
+            // Material Type baris ini. Kategori dipilih di bagian 1; dropdown di bagian 2 hanya
+            // penyaring opsional, jadi mulai dari "Semua Kategori".
+            populateMaterialCategoryFilter('');
 
             // Render Individual Products Section
             renderIndividualProducts();

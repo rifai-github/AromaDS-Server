@@ -190,8 +190,9 @@ class MaterialAssignAromaSizeOnlyFilterTest extends TestCase
         $view = $this->viewSource();
 
         $this->assertStringContainsString('function filterSameBrandFamily(', $view);
-        $this->assertStringContainsString('filterSameBrandFamily(item.product, filteredProducts)', $view);
-        $this->assertStringContainsString('filterSameBrandFamily(originalProduct, filteredProducts)', $view);
+        // Argumen ketiga = produk yang sengaja diizinkan dari kategori lain (jawaban klien 26 Nov 2026).
+        $this->assertStringContainsString('filterSameBrandFamily(item.product, filteredProducts, rentalExtraAllowedProductIds(', $view);
+        $this->assertStringContainsString('filterSameBrandFamily(originalProduct, filteredProducts, rentalExtraAllowedProductIds(', $view);
     }
 
     /**

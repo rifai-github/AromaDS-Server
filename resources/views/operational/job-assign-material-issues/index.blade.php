@@ -1368,11 +1368,33 @@
                                         $sqAromaEmpty = $isAromaType && $currentCategoryId
                                             && !empty(($emptyQuotationAromaItemIds ?? [])[(int) $item->id] ?? false);
 
+                                        // Jawaban klien 26 Nov 2026 ("boleh dikecualikan"): produk satuan yang
+                                        // sengaja diizinkan di komponen rental dari kategori LAIN (mis. kategori
+                                        // coklat + 1 strawberry) selalu bisa dipilih, walau di luar brand line /
+                                        // kategori. Produk yang sekategori dengan komponen / produk awal tetap
+                                        // ikut aturan brand line di bawah, karena daftar kategori penuh memuat
+                                        // semua brand line sekaligus.
+                                        $componentCategoryId = $rentalDetail && $rentalDetail->product_category_id
+                                            ? (int) $rentalDetail->product_category_id
+                                            : null;
+                                        $ownMaterialCategoryIds = array_values(array_filter([$componentCategoryId, $currentCategoryId]));
+                                        $explicitExtraAllowedProductIds = (!$currentProductIsUnit && !empty($ownMaterialCategoryIds) && !empty($allowedProductIds))
+                                            ? $products->filter(function ($p) use ($allowedProductIds, $ownMaterialCategoryIds) {
+                                                return in_array((int) $p->id, $allowedProductIds, true)
+                                                    && $p->product_category_id
+                                                    && !in_array((int) $p->product_category_id, $ownMaterialCategoryIds, true);
+                                            })->pluck('id')->map(fn ($id) => (int) $id)->values()->all()
+                                            : [];
+
                                         // Filter products list to the checked Material List for this rental detail.
                                         // Aroma/refill rows are expanded to the whole BRAND LINE within the
                                         // same product category (all aromas, all packaging sizes). Rows with
                                         // no brand_line fall back to the per-aroma base-name grouping.
-                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBaseName, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $hasBrandFamilyScope, $hasCategoryFamilyScope, $currentCategoryId, $currentProductIsUnit, $item, $allowedProductIds, $rentalDetailId, $sqAromaEmpty) {
+                                        $filteredProducts = $products->filter(function($p) use ($isAromaType, $currentVariant, $normalizedCurrentVariant, $normalizedCurrentBaseName, $normalizedCurrentBrandLine, $hasSpecificVariant, $hasStrictAllowedProductList, $hasBrandFamilyScope, $hasCategoryFamilyScope, $currentCategoryId, $currentProductIsUnit, $item, $allowedProductIds, $rentalDetailId, $sqAromaEmpty, $explicitExtraAllowedProductIds) {
+                                            if (in_array((int) $p->id, $explicitExtraAllowedProductIds, true)) {
+                                                return true;
+                                            }
+
                                             if ($sqAromaEmpty) {
                                                 $isUnitProduct = (bool) ($p->productCategory->is_unit ?? false) || (bool) ($p->productType->is_unit ?? false);
 
@@ -2023,7 +2045,49 @@ function normalizeProductCategoryId(product) {
  * ada di daftar material rental-nya. Kalau kategorinya pun tidak diketahui,
  * barulah jatuh ke filterSamePackageMaterialFamily.
  */
-function filterSameBrandFamily(currentProduct, productList) {
+function filterSameBrandFamily(currentProduct, productList, exemptProductIds = []) {
+    const familyProducts = filterSameBrandFamilyStrict(currentProduct, productList);
+    const exempt = new Set((exemptProductIds || []).map(id => String(id)));
+    if (!exempt.size) {
+        return familyProducts;
+    }
+
+    // Jawaban klien 26 Nov 2026 ("boleh dikecualikan"): produk yang sengaja diizinkan di
+    // komponen rental dari kategori lain tidak pernah dibuang aturan brand line.
+    const kept = new Set(familyProducts.map(product => String(product.id)));
+    return productList.filter(product => kept.has(String(product.id)) || exempt.has(String(product.id)));
+}
+
+/**
+ * Produk di daftar material komponen rental (rental_detail_materials) yang berasal dari
+ * kategori LAIN selain kategori komponen dan kategori produk awal - yaitu produk satuan yang
+ * sengaja ditambahkan di samping kategori (mis. kategori coklat + 1 strawberry). Produk
+ * sekategori tetap ikut aturan brand line, karena daftar kategori penuh memuat semua brand line.
+ */
+function rentalExtraAllowedProductIds(productList, allowedProductIds, componentCategoryId, currentProduct) {
+    const allowed = new Set((allowedProductIds || []).map(id => String(id)));
+    if (!allowed.size) {
+        return [];
+    }
+
+    const currentFull = (window.availableProducts || []).find(p => String(p.id) === String(currentProduct?.id)) || currentProduct;
+    const ownCategories = new Set([componentCategoryId, normalizeProductCategoryId(currentFull)]
+        .filter(id => id !== null && id !== undefined && id !== '')
+        .map(id => String(id)));
+    if (!ownCategories.size) {
+        return [];
+    }
+
+    return (productList || [])
+        .filter(product => allowed.has(String(product.id)))
+        .filter(product => {
+            const categoryId = normalizeProductCategoryId(product);
+            return categoryId !== null && !ownCategories.has(categoryId);
+        })
+        .map(product => String(product.id));
+}
+
+function filterSameBrandFamilyStrict(currentProduct, productList) {
     if (!isPackageConversionMaterialProduct(currentProduct)) {
         return productList;
     }
@@ -2438,7 +2502,7 @@ function openEditModal(id) {
                                         }
 
                                         if (!isUnit) {
-                                            filteredProducts = filterSameBrandFamily(item.product, filteredProducts);
+                                            filteredProducts = filterSameBrandFamily(item.product, filteredProducts, rentalExtraAllowedProductIds(filteredProducts, allowedProductIds, productCategoryId, item.product));
                                         }
 
                                         // Unit row styling
@@ -2660,7 +2724,7 @@ function handleComponentChange(selectElement, rowIndex) {
         filteredProducts = window.availableProducts.filter(p => p.product_category_id == productCategoryId || (p.productCategory && p.productCategory.id == productCategoryId));
     }
 
-    filteredProducts = filterSameBrandFamily(originalProduct, filteredProducts);
+    filteredProducts = filterSameBrandFamily(originalProduct, filteredProducts, rentalExtraAllowedProductIds(filteredProducts, allowedProductIds, productCategoryId, originalProduct));
     
     // Rebuild options
     let options = '<option value="">-- Select Product --</option>';
