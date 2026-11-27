@@ -650,4 +650,89 @@ class CatalystClientFindings27NovImportTest extends TestCase
         $this->assertSame('085163050627', $rendra->handphone_1);
         $this->assertSame('MKT-JKT-1', $rendra->department_name);
     }
+
+    // ── 5. TTD Customer dari MsContractSigning ───────────────────────────────
+
+    public function test_contract_signing_becomes_customer_signing_1(): void
+    {
+        $this->createImportMaps();
+        $this->createContractHeaderSource([
+            $this->contractHeader(['TransNmbr' => 'ADS-AG/26-11/0001', 'CustContractSign' => '2']),
+            // Kontrak di luar filter klien tidak disentuh.
+            $this->contractHeader(['TransNmbr' => 'ADS-AG/25-01/0009', 'Status' => 'D', 'CustContractSign' => '1']),
+        ]);
+        $this->create('MsContractSigning', function (Blueprint $table) {
+            $table->string('CustCode');
+            $table->string('CSCode');
+            $table->string('CSName')->nullable();
+            $table->string('Title')->nullable();
+            $table->string('Phone')->nullable();
+            $table->string('Email')->nullable();
+            $table->string('FgActive')->nullable();
+        });
+        $this->create('customer_contacts', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('customer_id')->nullable();
+            $table->string('name');
+            $table->string('position')->nullable();
+            $table->string('email')->nullable();
+            $table->string('phone')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+        $this->create('contracts', function (Blueprint $table) {
+            $table->id();
+            $table->string('contract_number');
+            $table->unsignedBigInteger('customer_id')->nullable();
+            $table->unsignedBigInteger('customer_signing_1_id')->nullable();
+            $table->timestamps();
+        });
+
+        // Baris asli MsContractSigning customer ADS-ADSH0001.
+        DB::table('MsContractSigning')->insert([
+            ['CustCode' => 'ADS-ADSH0001', 'CSCode' => '1', 'CSName' => 'Aldika Riyandi', 'Title' => 'Head of Operations', 'Phone' => '081210067754', 'Email' => 'aldikariyandi27@gmail.com', 'FgActive' => 'Y'],
+            ['CustCode' => 'ADS-ADSH0001', 'CSCode' => '2', 'CSName' => 'ole', 'Title' => 'Head of Operations', 'Phone' => '081210067754', 'Email' => 'aldikariyandi27@gmail.com', 'FgActive' => 'Y'],
+            ['CustCode' => 'ZZZ', 'CSCode' => '1', 'CSName' => 'Orang Lain', 'Title' => 'Owner', 'Phone' => null, 'Email' => null, 'FgActive' => 'Y'],
+        ]);
+        DB::table('contracts')->insert([
+            ['id' => 13258, 'contract_number' => 'ADS-AG/26-07/0096', 'customer_id' => 11886],
+            ['id' => 13300, 'contract_number' => 'ADS-AG/26-11/0001', 'customer_id' => 11886],
+        ]);
+        $this->map('MKTContractHd', 'ADS-AG/26-07/0096', 'contracts', 13258);
+        $this->map('MKTContractHd', 'ADS-AG/26-11/0001', 'contracts', 13300);
+        // "Ole" sudah ada sebagai kontak (MsCustContact) - dipakai ulang, bukan dibuat dobel.
+        DB::table('customer_contacts')->insert(['id' => 500, 'customer_id' => 11886, 'name' => 'Ole', 'position' => null, 'phone' => '0800', 'email' => null]);
+
+        $result = $this->importer(['ADS-AG/26-07/0096' => true, 'ADS-AG/26-11/0001' => true])->call('contract_signings');
+
+        $this->assertSame(2, $result['stats']['updated']);
+
+        $aldika = DB::table('customer_contacts')->where('name', 'Aldika Riyandi')->first();
+        $this->assertNotNull($aldika, 'Penandatangan yang belum jadi kontak dibuat sebagai kontak customer.');
+        $this->assertSame(11886, (int) $aldika->customer_id);
+        $this->assertSame('Head of Operations', $aldika->position);
+        $this->assertSame((int) $aldika->id, (int) DB::table('contracts')->where('id', 13258)->value('customer_signing_1_id'));
+
+        $this->assertSame(500, (int) DB::table('contracts')->where('id', 13300)->value('customer_signing_1_id'));
+        $ole = DB::table('customer_contacts')->where('id', 500)->first();
+        $this->assertSame('0800', $ole->phone, 'Data kontak yang sudah ada tidak ditimpa.');
+        $this->assertSame('Head of Operations', $ole->position, 'Kolom kosong dilengkapi dari MsContractSigning.');
+        $this->assertSame(2, DB::table('customer_contacts')->count());
+
+        // Rerun idempoten.
+        $again = $this->importer(['ADS-AG/26-07/0096' => true, 'ADS-AG/26-11/0001' => true])->call('contract_signings');
+        $this->assertSame(0, $again['stats']['updated']);
+        $this->assertSame(2, DB::table('customer_contacts')->count());
+    }
+
+    public function test_contract_signings_step_runs_after_contracts_and_contacts(): void
+    {
+        $order = $this->stepOrder();
+
+        $this->assertGreaterThan(array_search('contracts', $order, true), array_search('contract_signings', $order, true));
+        $this->assertGreaterThan(array_search('customer_contacts', $order, true), array_search('contract_signings', $order, true));
+    }
 }

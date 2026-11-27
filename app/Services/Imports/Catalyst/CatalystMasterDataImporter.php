@@ -39,6 +39,7 @@ class CatalystMasterDataImporter
         'contracts' => ['customers', 'quotations', 'users'],
         'quotation_existing_contracts' => ['quotations', 'contracts'],
         'contract_surveys' => ['contracts', 'quotation_surveys'],
+        'contract_signings' => ['contracts', 'customer_contacts'],
         'billing_groups' => ['contracts', 'customers', 'bank_payments'],
         'contract_buildings' => ['billing_groups', 'buildings'],
         'contract_rooms' => ['contracts', 'buildings'],
@@ -115,6 +116,8 @@ class CatalystMasterDataImporter
         // MKTContractHd->contracts masih kosong dan existing_contract_id tidak bisa diisi.
         'quotation_existing_contracts', // depends on: quotations, contracts
         'contract_surveys',    // depends on: contracts, surveys
+        // Pak Hengky 27 Nov 2026: TTD Customer kontrak dari MsContractSigning.
+        'contract_signings',   // depends on: contracts, customer_contacts
         // Wajib SETELAH contracts dan SEBELUM billing_groups: MsVirtualAccount.ContractNo
         // baru bisa dipetakan kalau contracts sudah ada, dan billing_groups menyalin
         // contracts.virtual_account saat dibuat.
@@ -4846,7 +4849,8 @@ class CatalystMasterDataImporter
                 //
                 // Sisanya JANGAN dicari lagi di tabel ini:
                 //   - TTD Customer 1-3: kolomnya ada (ContactName1/2/3) tapi NOL baris
-                //     terisi, jadi tidak ada yang bisa diimport.
+                //     terisi. TTD Customer 1 sebenarnya ada di MKTContractHd.CustContractSign
+                //     -> MsContractSigning, diimport step contract_signings (27 Nov 2026).
                 //   - TTD Customer 4, Tanggal Install, Tanggal Service Pertama, dan
                 //     PIC Service (Email): tidak punya kolom sama sekali di MKTContractHd.
                 //   - Kode PPN: bukan milik kontrak di Catalyst, adanya di MsCustomer
@@ -5085,6 +5089,134 @@ class CatalystMasterDataImporter
             }
 
             return ['action' => $exists ? 'skipped' : 'inserted'];
+        });
+    }
+
+    /**
+     * TTD Customer di Additional Info kontrak (Pak Hengky 27 Nov 2026: "tidak terimport sama sekali";
+     * jawaban klien no. 17: MsContractSigning PERLU diimport).
+     *
+     * Di Catalyst penandatangan kontrak bukan kolom MKTContractHd (ContactName1-3 kosong semua),
+     * melainkan MKTContractHd.CustContractSign = MsContractSigning.CSCode milik customer kontrak
+     * (PK MsContractSigning = CustCode + CSCode; per 27 Nov 2026 seluruh 7.459 kontrak posted
+     * terisi dan semuanya ketemu pasangannya). Di KGI TTD Customer 1 adalah customer_contacts.id,
+     * jadi penandatangan dicari/dibuat sebagai kontak customer (nama, jabatan = Title, HP, email)
+     * lalu dipasang ke contracts.customer_signing_1_id.
+     *
+     * MsContractSigning (10.182 baris) dibaca per potongan berurutan PK - query gabungan sebelumnya
+     * timeout - dan hanya baris milik customer kontrak yang lolos filter yang disimpan di memori.
+     */
+    protected function contract_signings(): array
+    {
+        $contracts = [];
+        $neededCustomers = [];
+        foreach ($this->sourceContractHeadersByNumber() as $contractKey => $header) {
+            $signCode = $this->makeKey($header['CustContractSign'] ?? null);
+            $custCode = $this->makeKey($header['Customer'] ?? null);
+            if (!$signCode || !$custCode || !$this->contractPassesClientFilter($contractKey)) {
+                continue;
+            }
+
+            $contracts[] = ['contract_no' => $contractKey, 'cust_code' => $custCode, 'sign_code' => $signCode];
+            $neededCustomers[mb_strtoupper($custCode)] = true;
+        }
+
+        $signers = [];
+        if ($contracts !== []) {
+            $this->source()->table('MsContractSigning')
+                ->orderBy('CustCode')
+                ->orderBy('CSCode')
+                ->chunk(2000, function ($rows) use (&$signers, $neededCustomers): void {
+                    foreach ($rows as $row) {
+                        $row = (array) $row;
+                        $custCode = $this->makeKey($row['CustCode'] ?? null);
+                        $signCode = $this->makeKey($row['CSCode'] ?? null);
+                        if ($custCode && $signCode && isset($neededCustomers[mb_strtoupper($custCode)])) {
+                            $signers[mb_strtoupper($custCode . '||' . $signCode)] = $row;
+                        }
+                    }
+                });
+        }
+
+        return $this->runRows('contract_signings', 'MsContractSigning', $contracts, function (array $item) use ($signers) {
+            $sourceKey = $this->makeKey([$item['cust_code'], $item['sign_code']]);
+            $contractId = $this->findMappedTargetId('MKTContractHd', $item['contract_no'], 'contracts');
+            if (!$contractId) {
+                return $this->skippedRow('Kontrak belum diimport.', $item['contract_no']);
+            }
+
+            $signer = $signers[mb_strtoupper($sourceKey)] ?? null;
+            $name = $signer ? $this->cleanString(preg_replace('/\s+/u', ' ', (string) ($signer['CSName'] ?? ''))) : null;
+            if (!$name) {
+                return $this->skippedRow('Penandatangan ' . $sourceKey . ' tidak ada di MsContractSigning.', $item['contract_no']);
+            }
+
+            $contract = $this->cachedTargetRecord('contracts', (int) $contractId);
+            $customerId = (int) ($contract->customer_id ?? 0);
+            if (!$customerId) {
+                return $this->skippedRow('Kontrak tanpa customer.', $item['contract_no']);
+            }
+
+            $contactId = $this->findMappedTargetId('MsContractSigning', $sourceKey, 'customer_contacts');
+            if (!$contactId) {
+                // Penandatangan sering sudah ada sebagai kontak (MsCustContact) - pakai yang itu.
+                $existing = DB::table('customer_contacts')
+                    ->where('customer_id', $customerId)
+                    ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)])
+                    ->when(in_array('deleted_at', $this->columns('customer_contacts'), true), fn ($query) => $query->whereNull('deleted_at'))
+                    ->orderBy('id')
+                    ->first();
+                $contactId = $existing->id ?? null;
+            }
+
+            $contactPayload = array_filter([
+                'position' => $this->cleanString($signer['Title'] ?? null),
+                'phone' => $this->normalizePhoneLike($signer['Phone'] ?? null),
+                'email' => $this->normalizeEmailLike($signer['Email'] ?? null),
+            ], fn ($value) => $value !== null);
+
+            if (!$contactId) {
+                $contactId = $this->apply
+                    ? $this->insertTargetRecord('customer_contacts', $this->filterPayload('customer_contacts', [
+                        'customer_id' => $customerId,
+                        'name' => $name,
+                        'is_active' => $this->yesNoToBool($signer['FgActive'] ?? null, true),
+                    ] + $contactPayload))
+                    : $this->nextTempId();
+            } elseif ($this->apply) {
+                // Kontak yang sudah ada hanya dilengkapi, tidak ditimpa.
+                $current = DB::table('customer_contacts')->where('id', $contactId)->first();
+                $fill = array_filter($contactPayload, fn ($value, $column) => blank($current->{$column} ?? null), ARRAY_FILTER_USE_BOTH);
+                if ($fill !== []) {
+                    DB::table('customer_contacts')->where('id', $contactId)->update($this->filterPayload('customer_contacts', $fill + ['updated_at' => now()]));
+                }
+            }
+
+            $this->rememberMap('MsContractSigning', $sourceKey, 'customer_contacts', (int) $contactId, $signer);
+
+            if ($this->apply && $contactId > 0 && Schema::hasTable('customer_customer_contact')
+                && !DB::table('customer_customer_contact')->where('customer_id', $customerId)->where('customer_contact_id', $contactId)->exists()) {
+                DB::table('customer_customer_contact')->insert([
+                    'customer_id' => $customerId,
+                    'customer_contact_id' => $contactId,
+                    'is_primary' => false,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            if ((int) ($contract->customer_signing_1_id ?? 0) === (int) $contactId) {
+                return ['action' => 'skipped'];
+            }
+
+            if ($this->apply && $contactId > 0) {
+                DB::table('contracts')->where('id', $contractId)->update([
+                    'customer_signing_1_id' => $contactId,
+                    'updated_at' => now(),
+                ]);
+            }
+
+            return ['action' => 'updated'];
         });
     }
 
