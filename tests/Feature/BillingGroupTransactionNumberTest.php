@@ -53,7 +53,7 @@ class BillingGroupTransactionNumberTest extends TestCase
     public function test_new_erp_billing_group_gets_next_number_of_its_month(): void
     {
         $this->migrate();
-        Carbon::setTestNow('2026-12-02 10:00:00');
+        Carbon::setTestNow('2027-12-02 10:00:00');
 
         DB::table('billing_groups')->insert([
             ['billing_group_name' => 'ADS-BIL-12/8378', 'transaction_number' => 'ADS-BIL-12/8378', 'deleted_at' => null],
@@ -87,5 +87,23 @@ class BillingGroupTransactionNumberTest extends TestCase
 
         $this->assertNull($bg->transaction_number);
         $this->assertSame('Billing Group 1', $bg->display_transaction_number);
+    }
+
+    public function test_erp_numbering_waits_until_1_january_2027(): void
+    {
+        $this->migrate();
+        Carbon::setTestNow('2026-12-31 23:00:00');
+
+        $beforeStart = BillingGroup::create(['billing_group_name' => 'Billing Group 1']);
+        $this->assertNull($beforeStart->transaction_number, 'Catalyst masih menerbitkan nomor sampai 1 Jan 2027.');
+
+        $catalyst = BillingGroup::create(['billing_group_name' => 'ADS-BIL-12/8400']);
+        $this->assertSame('ADS-BIL-12/8400', $catalyst->transaction_number, 'Kode Catalyst tetap dipakai.');
+
+        Carbon::setTestNow('2027-01-01 08:00:00');
+        $afterStart = BillingGroup::create(['billing_group_name' => 'Billing Group 2']);
+        $this->assertSame('ADS-BIL-01/0001', $afterStart->transaction_number);
+
+        Carbon::setTestNow();
     }
 }

@@ -71,10 +71,26 @@ class BillingGroup extends Model
             }
 
             $name = trim((string) $billingGroup->billing_group_name);
-            $billingGroup->transaction_number = preg_match(self::TRANSACTION_NUMBER_PATTERN, $name)
-                ? $name
-                : static::nextTransactionNumber();
+            if (preg_match(self::TRANSACTION_NUMBER_PATTERN, $name)) {
+                $billingGroup->transaction_number = $name;
+
+                return;
+            }
+
+            // Jawaban tim 28 Nov 2026: penomoran ADS-BIL dari KGI baru dimulai 1 Jan 2027. Sampai
+            // itu Catalyst masih menerbitkan nomor, jadi BG baru dari KGI belum diberi nomor agar
+            // tidak bentrok dengan nomor Catalyst.
+            if (now()->lt(static::transactionNumberingStartsAt())) {
+                return;
+            }
+
+            $billingGroup->transaction_number = static::nextTransactionNumber();
         });
+    }
+
+    public static function transactionNumberingStartsAt(): Carbon
+    {
+        return Carbon::parse(config('finance.billing_group_numbering_start', '2027-01-01'))->startOfDay();
     }
 
     public static function supportsTransactionNumber(): bool
