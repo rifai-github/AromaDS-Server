@@ -274,11 +274,19 @@ class BillingGroupController extends Controller
         $billingGroup = $this->applyContractRelatedAccessControlFilter(BillingGroup::query(), auth()->user())
             ->findOrFail($id);
 
-        $validator = Validator::make($request->all(), [
-            // PIC Information
+        // Pak Hengky 27 Nov 2026 (ADS-AG/26-07/0096): form edit dulu tampil dengan PIC, konfigurasi
+        // pajak, dan bank payment kosong, lalu Simpan menimpa nilai tersimpan dengan kosong.
+        // Aturan update kini: field yang tidak dikirim atau tidak berubah tidak disentuh, dan
+        // grup pajak/bank yang dikirim kosong tidak pernah menghapus nilai tersimpan.
+        $canSeePicInfo = User::currentCanSeePicInfo();
+        $changed = fn (string $field) => $request->exists($field)
+            && trim((string) $request->input($field, '')) !== trim((string) ($billingGroup->{$field} ?? ''));
+
+        // Validasi hanya untuk nilai yang benar-benar diubah: data import sering berisi
+        // "-" / "." di pic_email atau telepon panjang, yang dulu membuat form tak bisa disimpan
+        // sama sekali walau user tidak menyentuh field itu.
+        $rules = [
             'pic_name' => 'nullable|string|max:255',
-            'pic_phone' => 'nullable|string|max:20',
-            'pic_email' => 'nullable|email|max:255',
             'pic_address' => 'nullable|string',
             // Tax Information (NEW: individual fields)
             'npwp' => 'nullable|string|max:30',
@@ -295,7 +303,15 @@ class BillingGroupController extends Controller
             'bank_name' => 'nullable|string|max:100',
             'building_ids' => 'nullable|array',
             'building_ids.*' => 'exists:buildings,id',
-        ]);
+        ];
+        if ($canSeePicInfo && $changed('pic_email')) {
+            $rules['pic_email'] = 'nullable|email|max:255';
+        }
+        if ($canSeePicInfo && $changed('pic_phone')) {
+            $rules['pic_phone'] = 'nullable|string|max:20';
+        }
+
+        $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             return redirect()->back()
@@ -304,51 +320,94 @@ class BillingGroupController extends Controller
         }
 
         try {
-            // Build combined tax_type and tax_number from individual fields
-            $npwp = $request->npwp;
-            $nitku = $request->nitku;
-            $nik = $request->nik;
-            
-            $taxTypes = [];
-            $taxNumbers = [];
-            
-            if ($npwp) {
-                $taxTypes[] = 'NPWP';
-                $taxNumbers[] = $npwp;
+            $attributes = [];
+
+            // PIC: hanya field yang dikirim dan berubah. Email/telepon dari user tanpa izin
+            // PIC Info diabaikan (field-nya tersembunyi); bila ia mengganti kontak PIC, email/
+            // telepon diambil dari kontak itu di server.
+            foreach (['pic_name', 'pic_address'] as $field) {
+                if ($changed($field)) {
+                    $attributes[$field] = $request->input($field);
+                }
             }
-            if ($nitku) {
-                $taxTypes[] = 'NITKU';
-                $taxNumbers[] = $nitku;
+            if ($canSeePicInfo) {
+                foreach (['pic_email', 'pic_phone'] as $field) {
+                    if ($changed($field)) {
+                        $attributes[$field] = $request->input($field);
+                    }
+                }
+            } elseif ($request->boolean('pic_contact_changed') && ctype_digit((string) $request->input('pic_contact_id'))) {
+                // Hanya kontak milik customer kontrak ini (relasi langsung maupun pivot), sama
+                // dengan daftar yang dirender form edit.
+                $customer = optional($billingGroup->contract)->customer;
+                $contactId = (int) $request->input('pic_contact_id');
+                $contact = $customer
+                    ? ($customer->customerContacts()->whereKey($contactId)->first()
+                        ?? $customer->contacts()->where('customer_contacts.id', $contactId)->first())
+                    : null;
+                if ($contact) {
+                    $attributes['pic_email'] = $contact->email;
+                    $attributes['pic_phone'] = $contact->phone;
+                }
             }
-            if ($nik) {
-                $taxTypes[] = 'NIK';
-                $taxNumbers[] = $nik;
+
+            // Pajak: satu grup. Dikirim kosong semua padahal ada data tersimpan = bukan
+            // perubahan (dulu menghapus NPWP/NITKU). Tidak berubah = tax_type/tax_number tidak
+            // dirombak ulang.
+            $taxFields = ['npwp', 'nitku', 'nik'];
+            $taxSubmittedBlank = collect($taxFields)->every(fn ($field) => trim((string) $request->input($field, '')) === '');
+            $taxStoredFilled = collect($taxFields)->contains(fn ($field) => filled($billingGroup->{$field}))
+                || filled($billingGroup->tax_number);
+            $taxChanged = collect($taxFields)->contains(fn ($field) => $changed($field));
+
+            if ($taxChanged && ! ($taxSubmittedBlank && $taxStoredFilled)) {
+                // Build combined tax_type and tax_number from individual fields
+                $npwp = $request->npwp;
+                $nitku = $request->nitku;
+                $nik = $request->nik;
+
+                $taxTypes = [];
+                $taxNumbers = [];
+
+                if ($npwp) {
+                    $taxTypes[] = 'NPWP';
+                    $taxNumbers[] = $npwp;
+                }
+                if ($nitku) {
+                    $taxTypes[] = 'NITKU';
+                    $taxNumbers[] = $nitku;
+                }
+                if ($nik) {
+                    $taxTypes[] = 'NIK';
+                    $taxNumbers[] = $nik;
+                }
+
+                $attributes['tax_type'] = !empty($taxTypes) ? implode(', ', $taxTypes) : ($request->tax_type ?? $billingGroup->tax_type);
+                $attributes['tax_number'] = !empty($taxNumbers) ? implode(', ', $taxNumbers) : ($request->tax_number ?? $billingGroup->tax_number);
+                $attributes['npwp'] = $npwp;
+                $attributes['nitku'] = $nitku;
+                $attributes['nik'] = $nik;
             }
-            
-            $taxType = !empty($taxTypes) ? implode(', ', $taxTypes) : ($request->tax_type ?? $billingGroup->tax_type);
-            $taxNumber = !empty($taxNumbers) ? implode(', ', $taxNumbers) : ($request->tax_number ?? $billingGroup->tax_number);
-            
-            $billingGroup->update([
-                // PIC Information
-                'pic_name' => $request->pic_name,
-                'pic_phone' => $request->pic_phone,
-                'pic_email' => $request->pic_email,
-                'pic_address' => $request->pic_address,
-                // Tax Information (built from individual fields)
-                'tax_type' => $taxType,
-                'tax_number' => $taxNumber,
-                'npwp' => $npwp,
-                'nitku' => $nitku,
-                'nik' => $nik,
-                'npwp_address' => $request->npwp_address,
-                // Invoice Type
-                'invoice_type' => $request->invoice_type ?? $billingGroup->invoice_type ?? 'soft_copy',
-                // Payment Method
-                'bank_name' => $request->bank_name,
-                'payment_method' => $request->payment_method,
-                'virtual_account_number' => $request->virtual_account_number,
-                'updated_by' => auth()->id(),
-            ]);
+            if ($changed('npwp_address') && filled($request->input('npwp_address'))) {
+                $attributes['npwp_address'] = $request->npwp_address;
+            }
+
+            // Invoice Type
+            if (filled($request->invoice_type)) {
+                $attributes['invoice_type'] = $request->invoice_type;
+            } elseif (blank($billingGroup->invoice_type)) {
+                $attributes['invoice_type'] = 'soft_copy';
+            }
+
+            // Payment Method: nilai kosong tidak pernah menimpa bank/VA/metode yang tersimpan.
+            foreach (['bank_name', 'payment_method', 'virtual_account_number'] as $field) {
+                if ($changed($field) && filled($request->input($field))) {
+                    $attributes[$field] = $request->input($field);
+                }
+            }
+
+            $attributes['updated_by'] = auth()->id();
+            $billingGroup->update($attributes);
 
             // Sync building assignments if provided
             if ($request->has('building_ids')) {

@@ -82,9 +82,13 @@
                         <!-- PIC Selection Dropdown -->
                         <div class="mb-3">
                             <label for="pic_contact_select" class="form-label fw-bold text-primary">Select PIC from Customer Contacts</label>
-                            <select class="form-select" id="pic_contact_select">
+                            {{-- name="pic_contact_id" + pic_contact_changed: user tanpa izin PIC Info tidak melihat
+                                 email/telepon, jadi saat ia mengganti kontak server yang mengambil email/telepon dari
+                                 kontak itu. Tanpa penggantian kontak, nilai tersimpan tidak disentuh (Pak Hengky 27 Nov). --}}
+                            <select class="form-select" id="pic_contact_select" name="pic_contact_id">
                                 <option value="">-- Select Contact --</option>
                                 @php
+                                    $canSeePicInfo = \App\Models\User::currentCanSeePicInfo();
                                     $allContacts = collect();
                                     if($contract->customer->contacts) {
                                         $allContacts = $allContacts->merge($contract->customer->contacts);
@@ -109,7 +113,25 @@
                                     $picNameValue = old('pic_name', $billingGroup->pic_name ?: ($matchedPicContact->name ?? ''));
                                     $picEmailValue = old('pic_email', $billingGroup->pic_email ?: ($matchedPicContact->email ?? ''));
                                     $picPhoneValue = old('pic_phone', $billingGroup->pic_phone ?: $matchedPicPhone);
+
+                                    // Pak Hengky 27 Nov (ADS-AG/26-07/0096): PIC hasil import Catalyst sering tidak
+                                    // sama persis dengan nama/email kontak customer, sehingga dropdown tampil kosong
+                                    // ("-- Select Contact --") seolah PIC-nya tidak ada. PIC tersimpan selalu
+                                    // ditampilkan sebagai opsi terpilih.
+                                    $showStoredPicOption = ! $matchedPicContact
+                                        && (filled($billingGroup->pic_name) || filled($billingGroup->pic_email) || filled($billingGroup->pic_phone));
                                 @endphp
+                                @if($showStoredPicOption)
+                                    <option value="__stored__" selected data-stored="1"
+                                            data-name="{{ $billingGroup->pic_name }}"
+                                            @if($canSeePicInfo)
+                                            data-email="{{ $billingGroup->pic_email }}"
+                                            data-phone="{{ $billingGroup->pic_phone }}"
+                                            @endif
+                                            >
+                                        {{ $billingGroup->pic_name ?: '(tanpa nama)' }} - PIC tersimpan di billing group ini
+                                    </option>
+                                @endif
                                 @foreach($allContacts as $contact)
                                     @php
                                         // Robust phone detection
@@ -117,14 +139,17 @@
                                     @endphp
                                     <option value="{{ $contact->id }}"
                                             data-name="{{ $contact->name }}"
+                                            @if($canSeePicInfo)
                                             data-email="{{ $contact->email }}"
                                             data-phone="{{ $phone }}"
+                                            @endif
                                             data-position="{{ $contact->position ?? '' }}"
                                             {{ ($matchedPicContact && $matchedPicContact->id === $contact->id) ? 'selected' : '' }}>
                                         {{ $contact->name }} - {{ $contact->position ?? 'No Position' }}
                                     </option>
                                 @endforeach
                             </select>
+                            <input type="hidden" name="pic_contact_changed" id="pic_contact_changed" value="0">
                         </div>
                         <hr>
                         <div class="row">
@@ -142,22 +167,33 @@
                             <div class="col-md-4">
                                 <div class="mb-3">
                                     <label for="pic_email" class="form-label">E-Mail</label>
-                                    <input type="email" class="form-control @error('pic_email') is-invalid @enderror" 
-                                           id="pic_email" name="pic_email"
-                                           value="{{ $picEmailValue }}">
+                                    @if($canSeePicInfo)
+                                        {{-- type="text": email hasil import ("-", ".") ditolak validasi browser type="email"
+                                             sehingga form tidak bisa disimpan; server tetap memvalidasi email yang DIUBAH. --}}
+                                        <input type="text" inputmode="email" class="form-control @error('pic_email') is-invalid @enderror"
+                                               id="pic_email" name="pic_email"
+                                               value="{{ $picEmailValue }}">
+                                    @else
+                                        {{-- Tanpa izin PIC Info: tidak ada input bernama, jadi tidak ada yang bisa menimpa nilai tersimpan. --}}
+                                        <input type="text" class="form-control" value="{{ \App\Models\User::PIC_INFO_HIDDEN_LABEL }}" disabled>
+                                    @endif
                                     @error('pic_email')
-                                        <div class="invalid-feedback">{{ $message }}</div>
+                                        <div class="invalid-feedback d-block">{{ $message }}</div>
                                     @enderror
                                 </div>
                             </div>
                             <div class="col-md-4">
                                 <div class="mb-3">
                                     <label for="pic_phone" class="form-label">Phone 1</label>
-                                    <input type="text" class="form-control @error('pic_phone') is-invalid @enderror" 
-                                           id="pic_phone" name="pic_phone"
-                                           value="{{ $picPhoneValue }}">
+                                    @if($canSeePicInfo)
+                                        <input type="text" class="form-control @error('pic_phone') is-invalid @enderror"
+                                               id="pic_phone" name="pic_phone"
+                                               value="{{ $picPhoneValue }}">
+                                    @else
+                                        <input type="text" class="form-control" value="{{ \App\Models\User::PIC_INFO_HIDDEN_LABEL }}" disabled>
+                                    @endif
                                     @error('pic_phone')
-                                        <div class="invalid-feedback">{{ $message }}</div>
+                                        <div class="invalid-feedback d-block">{{ $message }}</div>
                                     @enderror
                                 </div>
                             </div>
@@ -268,7 +304,12 @@
 
                         <div class="mb-3">
                             <label for="tax_configuration" class="form-label">Select Tax Configuration</label>
-                            <select class="form-select @error('tax_configuration') is-invalid @enderror" id="tax_configuration" onchange="handleEditTaxSelection()">
+                            @php
+                                $billingGroupHasStoredTax = filled(old('npwp', $billingGroup->npwp)) || filled(old('nitku', $billingGroup->nitku))
+                                    || filled(old('nik', $billingGroup->nik)) || filled($billingGroup->tax_number);
+                            @endphp
+                            <select class="form-select @error('tax_configuration') is-invalid @enderror" id="tax_configuration" onchange="handleEditTaxSelection()"
+                                    data-has-stored-tax="{{ $billingGroupHasStoredTax ? '1' : '0' }}">
                                 <option value="">Select tax configuration...</option>
                                 @php
                                     $customer = $contract->customer;
@@ -303,6 +344,32 @@
                                         }
                                     }
                                     
+                                    // Pak Hengky 27 Nov (ADS-AG/26-07/0096): billing group hasil import menyimpan
+                                    // NITKU sebagai 6 digit akhir ("000000") dan kadang NPWP 15 digit, sedangkan opsi
+                                    // di bawah memakai NITKU 22 digit - perbandingan string mentah tak pernah cocok,
+                                    // dropdown tampil kosong dan harus dipilih ulang. Bandingkan bentuk normalnya.
+                                    $taxDigits = fn ($value) => preg_replace('/\D/', '', (string) $value);
+                                    $normalizeNpwp = function ($value) use ($taxDigits) {
+                                        $digits = $taxDigits($value);
+                                        return strlen($digits) === 15 ? '0' . $digits : $digits;
+                                    };
+                                    $normalizeNitku = function ($npwp, $nitku) use ($taxDigits, $normalizeNpwp) {
+                                        $digits = $taxDigits($nitku);
+                                        $npwpKey = $normalizeNpwp($npwp);
+                                        if ($digits !== '' && strlen($digits) <= 6 && $npwpKey !== '') {
+                                            return $npwpKey . str_pad($digits, 6, '0', STR_PAD_LEFT);
+                                        }
+                                        return $digits;
+                                    };
+                                    $storedNpwpKey = $normalizeNpwp($storedNpwp);
+                                    $storedNitkuKey = $normalizeNitku($storedNpwp, $storedNitku);
+                                    $taxOptionMatchesStored = fn ($npwp, $nitku) => $storedNpwpKey !== ''
+                                        && $normalizeNpwp($npwp) === $storedNpwpKey
+                                        && ($storedNitkuKey === '' || $normalizeNitku($npwp, $nitku) === $storedNitkuKey);
+                                    // Hanya satu opsi yang boleh terpilih (induk & cabang bisa sama-sama cocok).
+                                    $taxOptionSelected = false;
+                                    $hasStoredTaxData = filled($storedNpwp) || filled($storedNitku) || filled($storedNik) || filled($billingGroup->tax_number);
+
                                     // ===== Option 1: INDUK (Master Customer) =====
                                     if ($indukNpwp) {
                                         $nitku = $indukNitku ?: $autoNitkuFromInduk;
@@ -318,9 +385,9 @@
                                         ]);
                                         
                                         // Check if this option matches stored values OR if stored values are empty (Default to Induk)
-                                        $hasStoredData = !empty($storedNpwp) || !empty($billingGroup->tax_number);
-                                        $isMatch = ($storedNpwp === $indukNpwp && $storedNitku === $nitku);
-                                        $isSelected = ($isMatch || !$hasStoredData) ? 'selected' : '';
+                                        $isMatch = $taxOptionMatchesStored($indukNpwp, $nitku);
+                                        $isSelected = (! $taxOptionSelected && ($isMatch || ! $hasStoredTaxData)) ? 'selected' : '';
+                                        $taxOptionSelected = $taxOptionSelected || $isSelected !== '';
                                         
                                         echo "<option value='" . htmlspecialchars($valueData, ENT_QUOTES) . "' {$isSelected} 
                                             data-source='induk'
@@ -397,8 +464,9 @@
                                         ]);
                                         
                                         // Check if this option matches stored values
-                                        $isSelected = ($storedNpwp === $npwp && $storedNitku === $nitku) ? 'selected' : '';
-                                        
+                                        $isSelected = (! $taxOptionSelected && $taxOptionMatchesStored($npwp, $nitku)) ? 'selected' : '';
+                                        $taxOptionSelected = $taxOptionSelected || $isSelected !== '';
+
                                         echo "<option value='" . htmlspecialchars($valueData, ENT_QUOTES) . "' {$isSelected}
                                             data-source='cabang'
                                             data-setting-id='{$setting->id}'
@@ -407,14 +475,40 @@
                                             data-nik='{$indukNik}' 
                                             data-address='{$address}'>{$label}</option>";
                                     }
+
+                                    // Data pajak tersimpan yang tidak ada padanannya di Customer Tax tetap ditampilkan
+                                    // sebagai opsi terpilih, bukan dropdown kosong yang memaksa memilih ulang.
+                                    $storedTaxOption = null;
+                                    if (! $taxOptionSelected && $hasStoredTaxData) {
+                                        $storedTaxAddress = old('npwp_address', $billingGroup->npwp_address);
+                                        $storedTaxLabel = 'Tersimpan: ' . ($billingGroup->tax_number ?: trim(implode(', ', array_filter([$storedNpwp, $storedNitku, $storedNik]))))
+                                            . ($storedTaxAddress ? ' - ' . $storedTaxAddress : '');
+                                        $storedTaxOption = [
+                                            'value' => json_encode([
+                                                'source' => 'stored',
+                                                'npwp' => $storedNpwp,
+                                                'nitku' => $storedNitku,
+                                                'nik' => $storedNik,
+                                                'address' => $storedTaxAddress,
+                                                'tax_type' => old('tax_type', $billingGroup->tax_type),
+                                                'tax_number' => old('tax_number', $billingGroup->tax_number),
+                                            ]),
+                                            'label' => $storedTaxLabel,
+                                        ];
+                                    }
                                 @endphp
+                                @if($storedTaxOption)
+                                    <option value="{{ $storedTaxOption['value'] }}" selected data-source="stored">{{ $storedTaxOption['label'] }}</option>
+                                @endif
                             </select>
                         </div>
 
                         <!-- Hidden fields to store individual tax values -->
                         <input type="hidden" name="npwp" id="tax_npwp" value="{{ $storedNpwp }}">
                         <input type="hidden" name="nitku" id="tax_nitku" value="{{ $storedNitku }}">
-                        <input type="hidden" name="nik" id="tax_nik" value="{{ $storedNik ?? $indukNik }}">
+                        {{-- Dulu jatuh ke NIK induk saat NIK billing group kosong: simpan tanpa mengubah apa pun
+                             ikut menulis NIK induk dan merombak tax_type/tax_number. --}}
+                        <input type="hidden" name="nik" id="tax_nik" value="{{ $storedNik }}">
                         <input type="hidden" name="tax_type" id="tax_type" value="{{ old('tax_type', $billingGroup->tax_type) }}">
                         
                         <div class="row">
@@ -472,19 +566,32 @@
                             <label for="bank_payment_select" class="form-label fw-bold text-primary">Select Bank Payment</label>
                             <select class="form-select" id="bank_payment_select" onchange="populateBankPayment(this)">
                                 <option value="">-- Choose Bank Payment --</option>
+                                @php $bankPaymentSelected = false; @endphp
                                 @foreach($bankPayments as $payment)
-                                    <option value="{{ $payment->id }}" 
+                                    @php
+                                        // virtual_account_number disimpan sebagai "Bank - Nama (No)", jadi bandingkan nomor hasil parse ($accountNo); dulu dibandingkan string utuh sehingga tak pernah terpilih.
+                                        $isBankPaymentMatch = ! $bankPaymentSelected
+                                            && (string) $accountNo !== ''
+                                            && trim((string) $accountNo) === trim((string) $payment->account_number);
+                                        $bankPaymentSelected = $bankPaymentSelected || $isBankPaymentMatch;
+                                    @endphp
+                                    <option value="{{ $payment->id }}"
                                         data-bank-name="{{ $payment->bank->name ?? '' }}"
                                         data-account-name="{{ $payment->account_name }}"
                                         data-account-no="{{ $payment->account_number }}"
                                         data-is-va="{{ $payment->is_default_va ? '1' : '0' }}"
-                                        {{-- Try to match existing data if possible, though strict matching might be hard if data was manual --}}
-                                        {{-- virtual_account_number disimpan sebagai "Bank - Nama (No)", jadi bandingkan nomor hasil parse ($accountNo); dulu dibandingkan string utuh sehingga tak pernah terpilih. --}}
-                                        {{ ((string) $accountNo !== '' && trim((string) $accountNo) === trim((string) $payment->account_number)) ? 'selected' : '' }}
+                                        {{ $isBankPaymentMatch ? 'selected' : '' }}
                                     >
                                         {{ $payment->bank->name ?? 'Unknown' }} - {{ $payment->account_name }} ({{ $payment->account_number }})
                                     </option>
                                 @endforeach
+                                {{-- Pak Hengky 27 Nov: bank tersimpan yang tak ada di daftar Bank Payment aktif (atau tak
+                                     bisa dicocokkan) tetap tampil terpilih, bukan dropdown kosong yang harus dipilih ulang. --}}
+                                @if(! $bankPaymentSelected && (filled($billingGroup->bank_name) || filled($billingGroup->virtual_account_number) || filled($billingGroup->payment_method)))
+                                    <option value="__stored__" selected data-stored="1">
+                                        Tersimpan: {{ $billingGroup->virtual_account_number ?: ($billingGroup->bank_name ?: $billingGroup->payment_method) }}
+                                    </option>
+                                @endif
                             </select>
                         </div>
 
@@ -575,9 +682,21 @@
 @push('scripts')
 <script>
     // Global function for Bank Payment Dropdown
+    // Pak Hengky 27 Nov: memilih placeholder / opsi "Tersimpan" (atau tombol x select2) dulu
+    // mengosongkan bank_name, VA, dan payment_method yang tersimpan. Kini dikembalikan ke nilai
+    // tersimpan (nilai awal atribut value) - mengosongkan bukan lagi efek samping dropdown.
+    function restoreStoredValues(ids) {
+        ids.forEach(function(id) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.value = el.defaultValue;
+            }
+        });
+    }
+
     window.populateBankPayment = function(select) {
         const option = select.options[select.selectedIndex];
-        if (option.value) {
+        if (option && option.value && option.value !== '__stored__') {
             const bankName = option.getAttribute('data-bank-name');
             const accountName = option.getAttribute('data-account-name');
             const accountNo = option.getAttribute('data-account-no');
@@ -625,13 +744,7 @@
             document.getElementById('payment_method').value = type;
             document.getElementById('payment_method_display').value = display;
         } else {
-            // Clear fields if deselect
-            document.getElementById('bank_name').value = '';
-            document.getElementById('account_name').value = '';
-            document.getElementById('account_no').value = '';
-            document.getElementById('virtual_account_number').value = '';
-            document.getElementById('payment_method').value = '';
-            document.getElementById('payment_method_display').value = '';
+            restoreStoredValues(['bank_name', 'account_name', 'account_no', 'virtual_account_number', 'payment_method', 'payment_method_display']);
         }
     };
 
@@ -647,19 +760,26 @@
     // PIC Dropdown Change Handler
     const picSelect = document.getElementById('pic_contact_select');
     if (picSelect) {
+        const picChangedInput = document.getElementById('pic_contact_changed');
         const applyPicSelection = function() {
             const option = picSelect.options[picSelect.selectedIndex];
-            if (option && option.value) {
-                // Get data attributes
-                const name = option.getAttribute('data-name') || '';
-                const email = option.getAttribute('data-email') || '';
-                const phone = option.getAttribute('data-phone') || '';
-
-                // Update fields
-                document.getElementById('pic_name').value = name;
-                document.getElementById('pic_email').value = email;
-                document.getElementById('pic_phone').value = phone;
+            if (!option || !option.value || option.value === '__stored__') {
+                // Placeholder / tombol x select2 / opsi "PIC tersimpan": kembali ke PIC tersimpan,
+                // jangan kosongkan (Pak Hengky 27 Nov).
+                restoreStoredValues(['pic_name', 'pic_email', 'pic_phone']);
+                if (picChangedInput) picChangedInput.value = '0';
+                return;
             }
+
+            // Field email/telepon tidak dirender untuk user tanpa izin PIC Info; server yang
+            // mengisinya dari kontak terpilih (pic_contact_changed = 1).
+            const picNameInput = document.getElementById('pic_name');
+            const picEmailInput = document.getElementById('pic_email');
+            const picPhoneInput = document.getElementById('pic_phone');
+            if (picNameInput) picNameInput.value = option.getAttribute('data-name') || '';
+            if (picEmailInput) picEmailInput.value = option.getAttribute('data-email') || '';
+            if (picPhoneInput) picPhoneInput.value = option.getAttribute('data-phone') || '';
+            if (picChangedInput) picChangedInput.value = '1';
         };
         picSelect.addEventListener('change', applyPicSelection);
         // QA 26 Nov 2026 (BG 21622): dropdown ini dibungkus select2 oleh layout, dan select2
@@ -681,9 +801,12 @@
         const taxNumberDisplay = document.getElementById('tax_number');
         const taxAddressDisplay = document.getElementById('npwp_address');
 
-        if (taxConfigSelect && taxConfigSelect.selectedIndex > 0) {
-            const selectedOption = taxConfigSelect.options[taxConfigSelect.selectedIndex];
-            
+        const selectedTaxOption = taxConfigSelect && taxConfigSelect.selectedIndex > 0
+            ? taxConfigSelect.options[taxConfigSelect.selectedIndex]
+            : null;
+        if (selectedTaxOption && selectedTaxOption.getAttribute('data-source') !== 'stored') {
+            const selectedOption = selectedTaxOption;
+
             // Parse JSON value and set hidden fields
             try {
                 const taxData = JSON.parse(selectedOption.value);
@@ -739,23 +862,22 @@
                 console.log('Edit Tax selection (from attributes):', selectedOption.value);
             }
         } else {
-            // Clear all fields
-            if (npwpInput) npwpInput.value = '';
-            if (nitkuInput) nitkuInput.value = '';
-            if (nikInput) nikInput.value = '';
-            // ppnCodeInput/ppnCodeDisplay tidak pernah dideklarasikan di halaman ini: dulu baris
-            // ini melempar ReferenceError setiap pilihan pajak dikosongkan dan sisa form tak terisi.
-            if (taxTypeInput) taxTypeInput.value = '';
-            if (taxNumberDisplay) taxNumberDisplay.value = '';
-            if (taxAddressDisplay) taxAddressDisplay.value = '';
+            // Placeholder / tombol x select2 / opsi "Tersimpan": kembalikan data pajak tersimpan.
+            // Dulu semua field dikosongkan, jadi Simpan menghapus NPWP/NITKU billing group
+            // (Pak Hengky 27 Nov). ppnCodeInput/ppnCodeDisplay tidak pernah dideklarasikan di
+            // halaman ini - jangan dirujuk lagi (dulu melempar ReferenceError).
+            restoreStoredValues(['tax_npwp', 'tax_nitku', 'tax_nik', 'tax_type', 'tax_number', 'npwp_address']);
         }
     }
-    
-    // Initialize tax selection immediately on page load
-    // Only run if we actually have an option selected (index > 0) to avoid clearing legacy data
+
+    // Saat halaman dibuka, hidden field pajak sudah berisi nilai TERSIMPAN. Menjalankan
+    // handleEditTaxSelection() di sini dulu menulis ulang NITKU ke 22 digit, menyuntik NIK
+    // induk, dan merombak tax_type/tax_number walau user tidak mengubah apa pun. Jadi hanya
+    // dijalankan untuk billing group yang belum punya data pajak (default: induk).
     if (window.handleEditTaxSelection) {
         const taxConfigSelect = document.getElementById('tax_configuration');
-        if (taxConfigSelect && taxConfigSelect.selectedIndex > 0) {
+        if (taxConfigSelect && taxConfigSelect.selectedIndex > 0
+            && taxConfigSelect.getAttribute('data-has-stored-tax') !== '1') {
             window.handleEditTaxSelection();
         }
     }

@@ -63,7 +63,9 @@ class BillingGroupPicAddressFormTest extends TestCase
         $update = substr($update, 0, strpos($update, 'public function ', 10));
 
         $this->assertStringContainsString("'pic_address' => 'nullable|string'", $update);
-        $this->assertStringContainsString("'pic_address' => \$request->pic_address", $update);
+        // Pak Hengky 27 Nov: PIC kini hanya ditulis bila dikirim dan berubah (lihat
+        // BillingGroupEditPreservesStoredValuesTest), pic_address tetap termasuk.
+        $this->assertStringContainsString("foreach (['pic_name', 'pic_address'] as \$field)", $update);
     }
 
     public function test_reload_tax_also_refreshes_the_billing_address(): void
