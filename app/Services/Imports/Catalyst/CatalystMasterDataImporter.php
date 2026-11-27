@@ -192,6 +192,8 @@ class CatalystMasterDataImporter
     private ?array $sourceBillingGroupsByCode = null;
     /** @var array<string, array<string, mixed>>|null cache sourceContractHeadersByNumber() */
     private ?array $sourceContractHeadersByNumber = null;
+    /** @var array<string, string>|null nomor SQ -> price_basis dari kontraknya */
+    private ?array $sourceQuotationPriceBasisCache = null;
     /** @var array<string, true>|null cache eligibleContractNumbers() */
     private ?array $eligibleContractNumbersCache = null;
     /** @var array<string, true>|null semua nomor MKTContractHd */
@@ -3160,6 +3162,55 @@ class CatalystMasterDataImporter
     }
 
     /**
+     * MKTContractHd.PrintInvoice_By -> contracts/quotations.price_basis (Quotation::PRICE_BASIS_LABELS).
+     * Per 27 Nov 2026: "Room" di 7.456 kontrak posted, "Rental" di 3.
+     */
+    protected function normalizeCatalystPriceBasis($value): ?string
+    {
+        $value = Str::lower($this->cleanString($value) ?? '');
+
+        return match (true) {
+            Str::startsWith($value, 'room'), $value === 'ruangan' => 'room',
+            Str::startsWith($value, 'rental') => 'rental',
+            default => null,
+        };
+    }
+
+    /**
+     * Basis harga SQ = basis harga kontrak yang lahir dari SQ itu: SOContractNo dulu, lalu kontrak
+     * yang SQNo-nya menunjuk SQ ini (kontrak posted didahulukan).
+     */
+    protected function sourceQuotationPriceBasis(string $quotationNumber, ?string $soContractNo): ?string
+    {
+        $headers = $this->sourceContractHeadersByNumber();
+
+        if ($soContractNo && isset($headers[$this->makeKey($soContractNo)])) {
+            $basis = $this->normalizeCatalystPriceBasis($headers[$this->makeKey($soContractNo)]['PrintInvoice_By'] ?? null);
+            if ($basis) {
+                return $basis;
+            }
+        }
+
+        if ($this->sourceQuotationPriceBasisCache === null) {
+            $this->sourceQuotationPriceBasisCache = [];
+            foreach ($headers as $header) {
+                $sq = $this->normalizeDocumentNumber($this->sourceValue($header, 'SQNo', 'SqNo'));
+                $basis = $this->normalizeCatalystPriceBasis($header['PrintInvoice_By'] ?? null);
+                if (!$sq || !$basis) {
+                    continue;
+                }
+
+                $posted = Str::upper(trim((string) ($header['Status'] ?? ''))) === 'P';
+                if (!isset($this->sourceQuotationPriceBasisCache[$sq]) || $posted) {
+                    $this->sourceQuotationPriceBasisCache[$sq] = $basis;
+                }
+            }
+        }
+
+        return $this->sourceQuotationPriceBasisCache[$this->normalizeDocumentNumber($quotationNumber)] ?? null;
+    }
+
+    /**
      * True bila SQ ini sudah menjadi kontrak Catalyst (SOContractNo) dan kontrak itu tidak lolos
      * filter klien. SQ yang belum jadi kontrak (trial, masih berjalan) tidak terpengaruh.
      */
@@ -4377,9 +4428,14 @@ class CatalystMasterDataImporter
             $periodMonths = max(1, (int) ($row['ContractPeriod'] ?? 12));
             $term = $this->mapCatalystTermOfPayment($row['Term'] ?? null);
 
+            // MKTQuotationHd tidak punya kolom basis harga; nilainya ada di kontrak hasil SQ ini
+            // (MKTContractHd.PrintInvoice_By). SQ yang belum jadi kontrak memakai default DB.
+            $priceBasis = $this->sourceQuotationPriceBasis($sqNo, $this->cleanString($this->sourceValue($row, 'SOContractNo', 'SoContractNo')));
+            $extraPayload = $priceBasis ? ['price_basis' => $priceBasis] : [];
+
             return $this->syncRecord('quotations', 'MKTQuotationHd', $this->makeKey($sqNo), 'quotations', [
                 'quotation_number' => $sqNo,
-            ], [
+            ], $extraPayload + [
                 'customer_id' => $customerId,
                 'prospect_id' => $customerId,
                 'survey_id' => $primarySurveyId ?: $this->findMappedTargetId('MKTQuotationRental_survey', $this->quotationSurveySourceKey($sqNo, $this->cleanString($row['BillTo'] ?? null) ?? ''), 'surveys'),
@@ -4728,9 +4784,14 @@ class CatalystMasterDataImporter
                 $endDate = \Carbon\Carbon::parse($startDate)->addMonths($periodMonths)->subDay()->toDateString();
             }
 
+            // Pak Hengky 27 Nov 2026: basis harga Catalyst bisa per ruangan - kolomnya
+            // MKTContractHd.PrintInvoice_By ("Room" / "Rental").
+            $priceBasis = $this->normalizeCatalystPriceBasis($row['PrintInvoice_By'] ?? null);
+            $extraPayload = $priceBasis ? ['price_basis' => $priceBasis] : [];
+
             return $this->syncRecord('contracts', 'MKTContractHd', $this->makeKey($no), 'contracts', [
                 'contract_number' => $no,
-            ], [
+            ], $extraPayload + [
                 'customer_id' => $customerId,
                 'quotation_id' => $quotationId,
                 'marketing_id' => $marketingId,

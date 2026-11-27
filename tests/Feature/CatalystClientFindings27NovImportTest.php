@@ -122,6 +122,87 @@ class CatalystClientFindings27NovImportTest extends TestCase
         return $steps->getValue(app(CatalystMasterDataImporter::class));
     }
 
+    // ── 3. Basis harga per ruangan ──────────────────────────────────────────
+
+    private function createContractStepTables(): void
+    {
+        $this->create('customers', function (Blueprint $table) {
+            $table->id();
+            $table->string('customer_code')->nullable();
+            $table->string('name')->nullable();
+        });
+        $this->create('quotations', function (Blueprint $table) {
+            $table->id();
+            $table->string('quotation_number');
+            $table->unsignedBigInteger('customer_id')->nullable();
+            $table->date('quotation_date')->nullable();
+            $table->string('price_basis')->nullable()->default('rental');
+        });
+        $this->create('contracts', function (Blueprint $table) {
+            $table->id();
+            $table->string('contract_number');
+            $table->string('po_number')->nullable();
+            $table->string('price_basis')->nullable();
+            $table->unsignedBigInteger('customer_id')->nullable();
+            $table->unsignedBigInteger('quotation_id')->nullable();
+            $table->unsignedBigInteger('marketing_id')->nullable();
+            $table->date('contract_date')->nullable();
+            $table->date('start_date')->nullable();
+            $table->date('end_date')->nullable();
+            $table->decimal('contract_value', 18, 2)->nullable();
+            $table->decimal('net_value', 18, 2)->nullable();
+            $table->string('term_of_payment')->nullable();
+            $table->string('payment_terms')->nullable();
+            $table->string('npwp_number')->nullable();
+            $table->string('status')->nullable();
+            $table->string('contract_status')->nullable();
+            $table->string('contract_type')->nullable();
+            $table->boolean('is_approved')->default(false);
+            $table->boolean('is_posted')->default(false);
+            $table->boolean('is_contract')->default(false);
+            $table->unsignedBigInteger('internal_signing_id')->nullable();
+            $table->unsignedBigInteger('customer_signing_1_id')->nullable();
+            $table->text('internal_remark')->nullable();
+            $table->text('external_remark')->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->timestamps();
+        });
+
+        DB::table('customers')->insert(['id' => 11886, 'customer_code' => 'ADS-ADSH0001', 'name' => 'PT. HAIRNERDS STUDIO INDONESIA']);
+        $this->map('MsCustomer', 'ADS-ADSH0001', 'customers', 11886);
+    }
+
+    public function test_contract_price_basis_comes_from_print_invoice_by(): void
+    {
+        $this->createImportMaps();
+        $this->createContractStepTables();
+        $this->createContractHeaderSource([
+            $this->contractHeader(['TransNmbr' => 'ADS-AG/26-11/0001', 'SQNo' => 'ADS-SQ/26-10/0001', 'PrintInvoice_By' => 'Rental']),
+        ]);
+
+        $this->importer()->call('contracts');
+
+        $this->assertSame('room', DB::table('contracts')->where('contract_number', 'ADS-AG/26-07/0096')->value('price_basis'));
+        $this->assertSame('rental', DB::table('contracts')->where('contract_number', 'ADS-AG/26-11/0001')->value('price_basis'));
+    }
+
+    public function test_quotation_price_basis_follows_the_contract_it_became(): void
+    {
+        $this->createContractHeaderSource();
+        $importer = $this->importer();
+
+        $this->assertSame('room', $importer->call('sourceQuotationPriceBasis', 'ADS-SQ/26-07/1544', 'ADS-AG/26-07/0096'));
+        // Tanpa SOContractNo: dicari lewat MKTContractHd.SQNo.
+        $this->assertSame('room', $importer->call('sourceQuotationPriceBasis', 'ADS-SQ/26-07/1544', null));
+        // SQ yang belum jadi kontrak tidak dikarang - default DB yang berlaku.
+        $this->assertNull($importer->call('sourceQuotationPriceBasis', 'ADS-SQ/26-11/9999', null));
+
+        $this->assertSame('room', $importer->call('normalizeCatalystPriceBasis', 'Room'));
+        $this->assertSame('rental', $importer->call('normalizeCatalystPriceBasis', 'Rental'));
+        $this->assertNull($importer->call('normalizeCatalystPriceBasis', null));
+    }
+
     // ── 2. Hanya kontrak posted & lolos filter ──────────────────────────────
 
     public function test_client_filter_query_only_accepts_posted_contracts(): void
@@ -335,6 +416,57 @@ class CatalystClientFindings27NovImportTest extends TestCase
         $this->assertNotContains('bank_payments', CatalystMasterDataImporter::DISABLED_STEPS);
     }
 
+    /**
+     * MKTContractHd dengan kolom yang dibaca importer, berisi baris asli ADS-AG/26-07/0096
+     * (dicek read-only di Catalyst 27 Nov 2026).
+     */
+    private function createContractHeaderSource(array $extraRows = []): void
+    {
+        $this->create('MKTContractHd', function (Blueprint $table) {
+            $table->string('TransNmbr');
+            $table->dateTime('TransDate')->nullable();
+            $table->string('Status')->nullable();
+            $table->string('ContractType')->nullable();
+            $table->string('CustPONo')->nullable();
+            $table->string('Sales')->nullable();
+            $table->string('Sales2')->nullable();
+            $table->string('Customer')->nullable();
+            $table->integer('ContractPeriod')->nullable();
+            $table->string('BankPayment')->nullable();
+            $table->string('VirtualAccount')->nullable();
+            $table->string('Terms')->nullable();
+            $table->decimal('BaseForex', 18, 4)->nullable();
+            $table->string('InternalMemo')->nullable();
+            $table->string('ContractNote')->nullable();
+            $table->string('SQNo')->nullable();
+            $table->string('FgTerminate')->nullable();
+            $table->string('EmpSign')->nullable();
+            $table->string('NPWP')->nullable();
+            $table->string('CustContractSign')->nullable();
+            $table->string('PrintInvoice_By')->nullable();
+        });
+
+        DB::table('MKTContractHd')->insert(array_merge([[
+            'TransNmbr' => 'ADS-AG/26-07/0096', 'TransDate' => '2026-07-18 00:00:00', 'Status' => 'P', 'ContractType' => 'Renewal',
+            'CustPONo' => '', 'Sales' => 'EMP094', 'Sales2' => 'EMP094', 'Customer' => 'ADS-ADSH0001', 'ContractPeriod' => 12,
+            'BankPayment' => 'VABCA', 'VirtualAccount' => '002033', 'Terms' => '00', 'BaseForex' => 64800000,
+            'InternalMemo' => 'RENEWAL GANTI UNIT DARI 005s/200 ML KE W300/200 ML', 'ContractNote' => '', 'SQNo' => 'ADS-SQ/26-07/1544',
+            'FgTerminate' => null, 'EmpSign' => 'EMP111', 'NPWP' => '', 'CustContractSign' => '1', 'PrintInvoice_By' => 'Room',
+        ]], $extraRows));
+    }
+
+    /** Baris MKTContractHd tambahan (kolom yang tak disebut = kosong). */
+    private function contractHeader(array $overrides): array
+    {
+        return array_merge([
+            'TransNmbr' => null, 'TransDate' => '2026-11-01 00:00:00', 'Status' => 'P', 'ContractType' => 'New',
+            'CustPONo' => '', 'Sales' => 'EMP094', 'Sales2' => '', 'Customer' => 'ADS-ADSH0001', 'ContractPeriod' => 12,
+            'BankPayment' => 'VABCA', 'VirtualAccount' => '', 'Terms' => '00', 'BaseForex' => 0, 'InternalMemo' => '',
+            'ContractNote' => '', 'SQNo' => null, 'FgTerminate' => null, 'EmpSign' => '', 'NPWP' => '',
+            'CustContractSign' => '', 'PrintInvoice_By' => 'Room',
+        ], $overrides);
+    }
+
     private function createBillingGroupTables(): void
     {
         $this->create('customers', function (Blueprint $table) {
@@ -383,17 +515,7 @@ class CatalystClientFindings27NovImportTest extends TestCase
             $table->string('Phone')->nullable();
             $table->string('EmailBilling')->nullable();
         });
-        $this->create('MKTContractHd', function (Blueprint $table) {
-            $table->string('TransNmbr');
-            $table->string('Status')->nullable();
-            $table->string('Customer')->nullable();
-            $table->string('BankPayment')->nullable();
-            $table->string('VirtualAccount')->nullable();
-            $table->string('PrintInvoice_By')->nullable();
-            $table->string('CustContractSign')->nullable();
-            $table->string('Terms')->nullable();
-            $table->integer('ContractPeriod')->nullable();
-        });
+        $this->createContractHeaderSource();
         $this->create('MKTContractDt', function (Blueprint $table) {
             $table->string('TransNmbr');
             $table->string('Building')->nullable();
@@ -412,10 +534,6 @@ class CatalystClientFindings27NovImportTest extends TestCase
         DB::table('customers')->insert(['id' => 11886, 'customer_code' => 'ADS-ADSH0001', 'name' => 'PT. HAIRNERDS STUDIO INDONESIA']);
         DB::table('contracts')->insert(['id' => 13258, 'contract_number' => 'ADS-AG/26-07/0096', 'customer_id' => 11886, 'start_date' => '2026-07-18', 'end_date' => '2027-07-17']);
         $this->map('MKTContractHd', 'ADS-AG/26-07/0096', 'contracts', 13258);
-        DB::table('MKTContractHd')->insert([
-            'TransNmbr' => 'ADS-AG/26-07/0096', 'Status' => 'P', 'Customer' => 'ADS-ADSH0001', 'BankPayment' => 'VABCA',
-            'VirtualAccount' => '002033', 'PrintInvoice_By' => 'Room', 'CustContractSign' => '1', 'Terms' => '00', 'ContractPeriod' => 12,
-        ]);
         DB::table('MKTContractDt')->insert([
             ['TransNmbr' => 'ADS-AG/26-07/0096', 'Building' => 'ADS-ADSH0008', 'Product' => 'A305200', 'Qty' => 1, 'QtyFree' => 0, 'PriceForex' => 10800000, 'AmountForex' => 10800000, 'FloorCode' => '010', 'RoomCode' => '018', 'Room' => 'Services Area 1', 'BillingGroup' => 'ADS-BIL-12/8138', 'NPWP' => '0430314344036000'],
         ]);
