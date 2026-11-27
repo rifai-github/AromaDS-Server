@@ -226,14 +226,14 @@ class Invoice extends Model
                 'invoice_id' => $this->id,
                 'activity_type' => $type,
                 'notes' => $notes,
-                'created_by' => $userId ?? auth()->id() ?? $this->updated_by ?? $this->created_by ?? 1,
+                'created_by' => \App\Models\Invoice::resolveActivityUserId([$userId, auth()->id(), $this->updated_by, $this->created_by]),
             ]);
         }
 
         return $this->invoiceActivities()->create([
             'activity_type' => $type,
             'notes' => $notes,
-            'created_by' => $userId ?? auth()->id() ?? $this->updated_by ?? $this->created_by ?? 1,
+            'created_by' => \App\Models\Invoice::resolveActivityUserId([$userId, auth()->id(), $this->updated_by, $this->created_by]),
         ]);
     }
 

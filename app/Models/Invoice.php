@@ -142,7 +142,7 @@ class Invoice extends Model
             'invoice_id' => $this->id,
             'activity_type' => $type,
             'notes' => $notes,
-            'created_by' => $userId ?? auth()->id() ?? $this->updated_by ?? $this->created_by ?? 1,
+            'created_by' => static::resolveActivityUserId([$userId, auth()->id(), $this->updated_by, $this->created_by]),
         ];
 
         if (! Schema::hasTable('invoice_activities')) {
@@ -150,6 +150,23 @@ class Invoice extends Model
         }
 
         return \App\Models\Finance\InvoiceActivity::create($payload);
+    }
+
+    /**
+     * invoice_activities.created_by wajib menunjuk user yang ada (FK). Prod 28 Nov 2026: invoice
+     * otomatis dari cron (tanpa login, invoice tanpa created_by) jatuh ke user id 1 yang tidak ada
+     * (user terkecil id 28) sehingga seluruh pembuatan invoice gagal & di-rollback. Pakai kandidat
+     * pertama yang benar-benar ada, lalu user aktif ber-id terkecil.
+     */
+    public static function resolveActivityUserId(array $candidates): ?int
+    {
+        foreach ($candidates as $candidate) {
+            if ($candidate && \App\Models\User::whereKey((int) $candidate)->exists()) {
+                return (int) $candidate;
+            }
+        }
+
+        return \App\Models\User::query()->orderBy('id')->value('id');
     }
 
     public function jobSchedules()
