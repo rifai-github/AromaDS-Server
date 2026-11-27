@@ -1127,4 +1127,50 @@ class CatalystClientFindings27NovImportTest extends TestCase
         $this->importer()->call('billing_groups');
         $this->assertSame('soft_copy', DB::table('billing_groups')->where('id', $billingGroup->id)->value('invoice_type'));
     }
+
+    // ── 11. Nama customer = FPCustKode, alias = CustName ────────────────────
+
+    public function test_customer_name_comes_from_fpcustkode_and_alias_from_custname(): void
+    {
+        $this->createImportMaps();
+        $this->create('customers', function (Blueprint $table) {
+            $table->id();
+            $table->string('customer_code')->nullable();
+            $table->string('name')->nullable();
+            $table->string('label_alias')->nullable();
+            $table->text('notes')->nullable();
+            $table->string('status')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->integer('grace_period_days')->default(0);
+            $table->timestamps();
+        });
+        $this->create('MsCustomer', function (Blueprint $table) {
+            $table->string('CustCode');
+            $table->string('CustName')->nullable();
+            $table->string('FPCustKode')->nullable();
+            $table->string('FgActive')->nullable();
+        });
+        DB::table('MsCustomer')->insert([
+            // Asli Catalyst: CustName & FPCustKode berisi baris baru di ujung.
+            ['CustCode' => 'ADS-ADSH0001', 'CustName' => "Hairnerd Studio\r\n", 'FPCustKode' => "PT. HAIRNERDS  STUDIO\r\nINDONESIA\r\n\r\n", 'FgActive' => 'Y'],
+            ['CustCode' => '00017', 'CustName' => 'Hotel Contoh', 'FPCustKode' => '  ', 'FgActive' => 'Y'],
+            ['CustCode' => '00018', 'CustName' => 'Toko B', 'FPCustKode' => 'SESUAI ATAS NAMA DI NPWP', 'FgActive' => 'Y'],
+        ]);
+        // Customer lama dengan kode sama dipakai ulang, tidak dibuat dobel.
+        DB::table('customers')->insert(['id' => 11886, 'customer_code' => 'ADS-ADSH0001', 'name' => 'Hairnerd Studio']);
+
+        $this->importer()->call('customers');
+
+        $this->assertSame(3, DB::table('customers')->count());
+        $hairnerd = DB::table('customers')->find(11886);
+        $this->assertSame('PT. HAIRNERDS STUDIO INDONESIA', $hairnerd->name);
+        $this->assertSame('Hairnerd Studio', $hairnerd->label_alias);
+
+        $hotel = DB::table('customers')->where('customer_code', '00017')->first();
+        $this->assertSame('Hotel Contoh', $hotel->name, 'FPCustKode kosong -> nama = CustName.');
+        $this->assertSame('Hotel Contoh', $hotel->label_alias);
+
+        // Dibiarkan apa adanya sampai klien memutuskan.
+        $this->assertSame('SESUAI ATAS NAMA DI NPWP', DB::table('customers')->where('customer_code', '00018')->value('name'));
+    }
 }

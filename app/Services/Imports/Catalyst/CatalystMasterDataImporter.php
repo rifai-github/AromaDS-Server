@@ -989,7 +989,13 @@ class CatalystMasterDataImporter
     {
         return $this->runStep('customers', 'MsCustomer', 'CustCode', function (array $row) {
             $sourceKey = $this->makeKey($row['CustCode'] ?? null);
-            $name = $this->cleanString($row['CustName'] ?? null);
+            // Pak Hengky 27 Nov 2026: nama customer KGI = MsCustomer.FPCustKode - walau namanya
+            // "Kode", isinya NAMA customer untuk faktur pajak (mis. "PT. HAIRNERDS STUDIO
+            // INDONESIA"); label alias = CustName (nama dagang, "Hairnerd Studio"). Spasi/baris
+            // baru dirapikan; FPCustKode kosong -> nama = CustName. (Filter TEST kontrak tetap
+            // membaca CustName Catalyst.)
+            $alias = $this->normalizeCustomerName($row['CustName'] ?? null);
+            $name = $this->normalizeCustomerName($row['FPCustKode'] ?? null) ?: $alias;
             $categoryId = $this->findMappedTargetId('MsCustGroup', $this->makeKey($row['CustGroup'] ?? null), 'customer_categories');
             $companyTypeName = $this->sourceCustomerTypeLookup[$this->makeKey($row['CustType'] ?? null)] ?? null;
             $fallbackAddress = $this->sourceCustomerAddressLookup[$sourceKey] ?? [];
@@ -1026,6 +1032,7 @@ class CatalystMasterDataImporter
                 'customer_code' => $sourceKey,
             ], $extraPayload + [
                 'name' => $name,
+                'label_alias' => $alias,
                 'status' => 'customer',
                 'customer_type' => 'company',
                 'company_type' => $this->resolveCompanyType($companyTypeName),
@@ -1060,9 +1067,15 @@ class CatalystMasterDataImporter
                     'FallbackDeliveryCode' => $fallbackAddress['delivery_code'] ?? null,
                     'FallbackDeliveryType' => $fallbackAddress['delivery_type'] ?? null,
                 ]),
-                'notes' => $this->cleanString($row['FPCustKode'] ?? null),
             ], $row);
         });
+    }
+
+    /** Trim + rapatkan spasi/baris baru di dalam nama ("Hairnerd Studio
+" -> "Hairnerd Studio"). */
+    protected function normalizeCustomerName($value): ?string
+    {
+        return $this->cleanString(preg_replace('/\s+/u', ' ', (string) ($value ?? '')));
     }
 
     protected function customer_contacts(): array
