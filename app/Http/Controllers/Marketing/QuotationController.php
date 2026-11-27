@@ -821,6 +821,39 @@ class QuotationController extends Controller
         }
     }
 
+    /**
+     * Jawaban klien 26 Nov 2026: Basis Harga SQ (per ruangan / per rental) bisa diubah dari
+     * Basic Info selama SQ masih draft. Aturannya sama dengan tombol EDIT SQ (draft & revisi
+     * terbaru). Total SQ tidak dihitung ulang; basis hanya mengatur tampilan baris di PDF.
+     */
+    public function updatePriceBasis(Request $request, Quotation $quotation)
+    {
+        $validated = $request->validate([
+            'price_basis' => 'required|in:room,rental',
+        ]);
+
+        if ($quotation->status !== 'draft' || ! $quotation->is_latest_revision) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Basis Harga hanya bisa diubah saat SQ masih draft.',
+            ], 422);
+        }
+
+        $quotation->update([
+            'price_basis' => $validated['price_basis'],
+            'updated_by' => Auth::id(),
+        ]);
+
+        $label = Quotation::priceBasisLabel($validated['price_basis']);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Basis Harga disimpan: '.$label.'.',
+            'price_basis' => $validated['price_basis'],
+            'label' => $label,
+        ]);
+    }
+
     public function updateEditableFields(Request $request, Quotation $quotation)
     {
         $validated = $request->validate([

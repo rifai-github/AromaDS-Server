@@ -340,6 +340,27 @@
                                         <div class="quotation-field-label">Term of Payment</div>
                                         <div class="quotation-field-value">{{ $quotation->terms_of_payment_label }}</div>
                                     </div>
+                                    {{-- Jawaban klien 26 Nov 2026: Basis Harga tampil di Basic Info; boleh diubah selama SQ draft (sama seperti tombol EDIT). --}}
+                                    <div class="quotation-field">
+                                        <div class="quotation-field-label">Basis Harga</div>
+                                        <div class="quotation-field-value">
+                                            @if($quotation->status === 'draft' && $quotation->is_latest_revision)
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <select id="quotationPriceBasis" class="form-select form-select-sm" style="max-width: 180px;">
+                                                        @unless(array_key_exists((string) $quotation->price_basis, \App\Models\Quotation::PRICE_BASIS_LABELS))
+                                                            <option value="" selected disabled>- Pilih -</option>
+                                                        @endunless
+                                                        @foreach(\App\Models\Quotation::PRICE_BASIS_LABELS as $priceBasisValue => $priceBasisLabel)
+                                                            <option value="{{ $priceBasisValue }}" @selected($quotation->price_basis === $priceBasisValue)>{{ $priceBasisLabel }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="saveQuotationPriceBasis()">Simpan</button>
+                                                </div>
+                                            @else
+                                                <span id="quotationPriceBasisLabel">{{ \App\Models\Quotation::priceBasisLabel($quotation->price_basis) }}</span>
+                                            @endif
+                                        </div>
+                                    </div>
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">Cabang</div>
                                         <div class="quotation-field-value">
@@ -1437,6 +1458,44 @@ function openJobAdviceModalFromQuotation(quotationId) {
 }
 
 // Goal SQ Auto-save logic
+function saveQuotationPriceBasis() {
+    const select = document.getElementById('quotationPriceBasis');
+    if (!select || !select.value) {
+        Swal.fire({ icon: 'warning', title: 'Pilih Basis Harga terlebih dahulu' });
+        return;
+    }
+
+    const Toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 3000,
+        timerProgressBar: true
+    });
+
+    $.ajax({
+        url: '{{ route("marketing.quotations.update-price-basis", $quotation->id) }}',
+        method: 'POST',
+        headers: { 'Accept': 'application/json' },
+        data: {
+            _token: '{{ csrf_token() }}',
+            price_basis: select.value
+        },
+        success: function(response) {
+            Toast.fire({
+                icon: response.status === 'success' ? 'success' : 'error',
+                title: response.message || 'Basis Harga disimpan'
+            });
+        },
+        error: function(xhr) {
+            Toast.fire({
+                icon: 'error',
+                title: (xhr.responseJSON && xhr.responseJSON.message) || 'Gagal menyimpan Basis Harga'
+            });
+        }
+    });
+}
+
 $(document).on('change', '.autosave-goal', function() {
     var id = $(this).data('id');
     var value = $(this).val();

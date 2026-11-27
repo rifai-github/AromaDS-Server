@@ -475,6 +475,44 @@ $qrFooterSrc = $qrPng($companyWebsite !== '' ? $companyWebsite : 'https://www.ad
         $quotationDetails = $quotation->quotationDetails ?? collect();
         $detailGroups = $quotationDetails->groupBy(fn($d) => trim((string) ($d->survey->display_building_name ?? '')));
 
+        /* ===== Label kolom ITEM =====
+         * An explicit per-line rental_alias wins; rental_name is the fallback.
+         *
+         * Kecuali: import Catalyst mengisi rental_alias dengan KODE rental
+         * (quotation_details.rental_alias == master_rentals.rental_code), bukan
+         * alias pilihan pengguna. Alias semacam itu tidak membawa informasi apa pun
+         * dan bikin PDF mencetak "A10812100" di kolom ITEM, jadi dilewati.
+         *
+         * MOM 18 Nov 2026 p3c: "category" master rental salah tarik data (isinya
+         * "Rental" untuk semua rental hasil Excel) dan diganti Rental Alias. Alias
+         * baris sudah terisi default dari alias master rental di step 4; bila user
+         * mengosongkannya yang tampil nama rental asli, bukan category. */
+        $itemLabelOf = function ($detail) {
+            $rawAlias = trim((string) ($detail->rental_alias ?? ''));
+            $rentalCode = trim((string) ($detail->masterRental->rental_code ?? ''));
+            $aliasIsRentalCode = $rawAlias !== '' && $rentalCode !== ''
+                && strcasecmp($rawAlias, $rentalCode) === 0;
+
+            return ($aliasIsRentalCode ? '' : $rawAlias)
+                ?: ($detail->masterRental->rental_name ?? '-');
+        };
+
+        /* ===== Basis Harga (jawaban klien 26 Nov 2026) =====
+         * 'room'   = satu baris per ruangan dengan kolom Room (layout lama).
+         * 'rental' = di tiap gedung baris digabung per rental: qty & total dijumlah, tanpa kolom
+         *            Room. Total / TOP SQ tidak berubah (tetap grand_total quotation). */
+        $isRentalBasis = strtolower(trim((string) ($quotation->price_basis ?? ''))) === 'rental';
+        $rentalRowGroups = $isRentalBasis
+            ? $detailGroups->map(fn($details) => $details
+                ->groupBy(fn($d) => ($d->master_rental_id ?? 0) . '|' . $itemLabelOf($d))
+                ->map(fn($rows) => [
+                    'label' => $itemLabelOf($rows->first()),
+                    'qty' => $rows->sum(fn($d) => (int) ($d->quantity ?: 1)),
+                    'total' => $rows->sum(fn($d) => (float) ($d->total_price ?? 0)),
+                ])
+                ->values())
+            : collect();
+
         /* ===== Bottom-pin spacer height =====
          * Pushes totals/terms/footer to the bottom of the page on short quotations.
          * Estimated from row counts since DomPDF v3.1.2 ignores `height` on <table>/<div>
@@ -484,7 +522,9 @@ $qrFooterSrc = $qrPng($companyWebsite !== '' ? $companyWebsite : 'https://www.ad
         $buildingGroupCount = $detailGroups
             ->filter(fn($g, $name) => trim((string) $name) !== '' && trim((string) $name) !== '-')
             ->count();
-        $itemRowCount = $quotationDetails->count();
+        $itemRowCount = $isRentalBasis
+            ? $rentalRowGroups->sum(fn($rows) => $rows->count())
+            : $quotationDetails->count();
         $estimatedContentHeight =
             215 + // letterhead + bill-to/meta block
             40 + // items table header
@@ -565,9 +605,15 @@ $qrFooterSrc = $qrPng($companyWebsite !== '' ? $companyWebsite : 'https://www.ad
     <table class="items-table">
         <thead>
             <tr>
-                <th style="width: 30%;">Item</th>
-                <th style="width: 50%;">Room</th>
-                <th style="width: 20%;" class="right">Total / TOP</th>
+                @if ($isRentalBasis)
+                    <th style="width: 60%;">Item</th>
+                    <th style="width: 15%;" class="center">Qty</th>
+                    <th style="width: 25%;" class="right">Total / TOP</th>
+                @else
+                    <th style="width: 30%;">Item</th>
+                    <th style="width: 50%;">Room</th>
+                    <th style="width: 20%;" class="right">Total / TOP</th>
+                @endif
             </tr>
         </thead>
         <tbody>
@@ -577,29 +623,18 @@ $qrFooterSrc = $qrPng($companyWebsite !== '' ? $companyWebsite : 'https://www.ad
                         <td colspan="3">Gedung&nbsp;:&nbsp;&nbsp;{{ $buildingName }}</td>
                     </tr>
                 @endif
+                @if ($isRentalBasis)
+                    @foreach ($rentalRowGroups[$buildingName] ?? [] as $rentalRow)
+                        <tr>
+                            <td>{{ $rentalRow['label'] }}</td>
+                            <td class="center">{{ number_format($rentalRow['qty'], 0) }}</td>
+                            <td class="right">{{ number_format($rentalRow['total'], 0) }}</td>
+                        </tr>
+                    @endforeach
+                @else
                 @foreach ($details as $detail)
                     @php
-                        /* ITEM column shows the rental's PRODUCT CATEGORY (master_rentals.category,
-                         * sourced from product_categories.name), not the rental name — matches the
-                         * client's reference quotation layout. An explicit per-line rental_alias
-                         * still wins; rental_name only remains as a last-resort fallback.
-                         *
-                         * Kecuali: import Catalyst mengisi rental_alias dengan KODE rental
-                         * (quotation_details.rental_alias == master_rentals.rental_code), bukan
-                         * alias pilihan pengguna. Alias semacam itu tidak membawa informasi apa pun
-                         * dan bikin PDF mencetak "A10812100" di kolom ITEM, jadi dilewati. */
-                        $rawAlias = trim((string) ($detail->rental_alias ?? ''));
-                        $rentalCode = trim((string) ($detail->masterRental->rental_code ?? ''));
-                        $aliasIsRentalCode = $rawAlias !== '' && $rentalCode !== ''
-                            && strcasecmp($rawAlias, $rentalCode) === 0;
-
-                        /* MOM 18 Nov 2026 p3c: "category" master rental salah tarik data (isinya
-                         * "Rental" untuk semua rental hasil Excel) dan diganti Rental Alias. Alias
-                         * baris sudah terisi default dari alias master rental di step 4; bila user
-                         * mengosongkannya yang tampil nama rental asli, bukan category. */
-                        $itemLabel =
-                            ($aliasIsRentalCode ? '' : $rawAlias)
-                            ?: ($detail->masterRental->rental_name ?? '-');
+                        $itemLabel = $itemLabelOf($detail);
                     @endphp
                     <tr>
                         <td>{{ $itemLabel }}</td>
@@ -607,6 +642,7 @@ $qrFooterSrc = $qrPng($companyWebsite !== '' ? $companyWebsite : 'https://www.ad
                         <td class="right">{{ number_format($detail->total_price ?? 0, 0) }}</td>
                     </tr>
                 @endforeach
+                @endif
             @empty
             @endforelse
         </tbody>

@@ -172,6 +172,17 @@ class Quotation extends Model
         return self::formatTermsOfPaymentLabel($this->terms_of_payment);
     }
 
+    /** Basis Harga SQ (quotations.price_basis): 'room' = per ruangan, 'rental' = per rental. */
+    public const PRICE_BASIS_LABELS = [
+        'room' => 'Per Ruangan',
+        'rental' => 'Per Rental',
+    ];
+
+    public static function priceBasisLabel($value): string
+    {
+        return self::PRICE_BASIS_LABELS[strtolower(trim((string) $value))] ?? '-';
+    }
+
     public function existingContract()
     {
         return $this->belongsTo(Contract::class, 'existing_contract_id')
