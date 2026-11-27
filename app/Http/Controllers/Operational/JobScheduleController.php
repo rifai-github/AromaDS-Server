@@ -7415,6 +7415,23 @@ class JobScheduleController extends Controller
                 })
                 ->values();
 
+            // QA 26 Nov 2026: ruangan trial yang sudah masuk kontrak tidak dicabut (unit tetap
+            // di lokasi); hanya ruangan di luar kontrak yang dibuatkan Remove Free.
+            if ($isInstallFree) {
+                $quotationNumber = $jobAdvice->quotation?->quotation_number ?? $installJob->quotation_number;
+                $contractedRoomIds = app(\App\Services\Operational\InstallFreeContractRoomScope::class)
+                    ->contractedRoomIdsForQuotationNumber($quotationNumber);
+                if ($contractedRoomIds->isNotEmpty()) {
+                    $roomsNeedingRemove = $roomsNeedingRemove
+                        ->reject(function ($room) use ($contractedRoomIds) {
+                            $roomId = app(\App\Services\Operational\InstallFreeContractRoomScope::class)->jobAdviceRoomPhysicalId($room);
+
+                            return ! $roomId || $contractedRoomIds->contains($roomId);
+                        })
+                        ->values();
+                }
+            }
+
             if ($roomsNeedingRemove->isEmpty()) {
                 \Log::info("Remove job already linked for all completed rooms in Job Advice {$jobAdvice->job_advice_number}. Skipping.");
                 return;
@@ -7696,10 +7713,31 @@ class JobScheduleController extends Controller
 
         $quotationNumber = $jobAdvice->quotation?->quotation_number ?? $installJob->quotation_number;
         if ($quotationNumber && Contract::whereHas('quotation', fn ($query) => $query->where('quotation_number', $quotationNumber))->exists()) {
-            return false;
+            // QA 26 Nov 2026 (Ruang-3 tidak ikut SQ-2): yang tetap di lokasi hanya ruangan yang
+            // masuk kontrak. Ruangan trial lain tetap butuh Remove Free.
+            return $this->installFreeRoomsOutsideContract($installJob, $quotationNumber)->isNotEmpty();
         }
 
         return true;
+    }
+
+    /**
+     * Ruangan selesai di job Install Free yang TIDAK masuk kontrak dari SQ yang sama.
+     * Ruangan yang tak terbaca room_id-nya dianggap sudah dikontrak (perilaku lama: tanpa Remove Free).
+     */
+    private function installFreeRoomsOutsideContract(JobSchedule $installJob, string $quotationNumber): \Illuminate\Support\Collection
+    {
+        $scope = app(\App\Services\Operational\InstallFreeContractRoomScope::class);
+        $contracted = $scope->contractedRoomIdsForQuotationNumber($quotationNumber);
+
+        return \App\Models\JobScheduleRoom::with('jobAdviceRoom.contractRoom', 'jobAdviceRoom.quotationRoom')
+            ->where('job_schedule_id', $installJob->id)
+            ->where('status', \App\Models\JobScheduleRoom::STATUS_COMPLETED)
+            ->get()
+            ->map(fn ($room) => $scope->physicalRoomId($room))
+            ->filter(fn ($roomId) => $roomId && ! $contracted->contains($roomId))
+            ->unique()
+            ->values();
     }
 
     public function createUnitOnWallForCompletedRooms(JobSchedule $job): bool

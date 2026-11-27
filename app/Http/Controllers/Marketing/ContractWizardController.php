@@ -979,18 +979,13 @@ class ContractWizardController extends Controller
             // maka job 'remove_free' yang mungkin sudah terjadwal harus dibatalkan
             // karena unit sekarang sudah resmi menjadi kontrak (tetap di lokasi).
             try {
-                $pendingRemoveFreeJobs = \App\Models\JobSchedule::where('quotation_number', $quotation->quotation_number)
-                    ->where('type', 'remove_free')
-                    ->whereIn('status', ['scheduled', 'new_job', 'assign_team', 'material_assign', 'material_ready'])
-                    ->get();
-                    
-                foreach ($pendingRemoveFreeJobs as $removeJob) {
-                    $removeJob->update([
-                        'status' => 'cancelled',
-                        'internal_notes' => ($removeJob->internal_notes ? $removeJob->internal_notes . "\n" : "") . "Auto-cancelled because quotation turned into Contract: {$contractNumber}"
-                    ]);
-                    \Log::info("Auto-cancelled Remove Free Job: {$removeJob->job_number} for Quotation: {$quotation->quotation_number}");
-                }
+                // QA 26 Nov 2026: hanya Remove Free ruangan yang masuk kontrak yang dibatalkan.
+                $cancelledRemoveFree = app(\App\Services\Operational\InstallFreeContractRoomScope::class)->cancelPendingRemoveFreeForContract(
+                    $contract,
+                    ['scheduled', 'new_job', 'assign_team', 'material_assign', 'material_ready'],
+                    "Auto-cancelled because quotation turned into Contract: {$contractNumber}"
+                );
+                \Log::info("Auto-cancelled {$cancelledRemoveFree} Remove Free job(s) for Quotation: {$quotation->quotation_number}");
             } catch (\Exception $e) {
                 \Log::error("Error auto-cancelling remove free jobs in Wizard: " . $e->getMessage());
                 // Jangan gagalkan pembuatan kontrak jika ini gagal

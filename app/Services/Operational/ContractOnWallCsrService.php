@@ -481,46 +481,27 @@ class ContractOnWallCsrService
 
     private function cancelPendingRemoveFreeJobs(Contract $contract, Collection $roomGroups, string $trigger): int
     {
-        $quotationNumber = $contract->quotation?->quotation_number;
         $roomIds = $roomGroups
             ->map(fn ($roomGroup) => $roomGroup['contract_room']->room_id)
             ->filter()
             ->unique()
             ->values();
 
-        if (! $quotationNumber && $roomIds->isEmpty()) {
-            return 0;
-        }
-
-        $query = JobSchedule::whereIn('type', ['remove_free', 'remove free'])
-            ->whereIn('status', [
+        // QA 26 Nov 2026: hanya Remove Free ruangan yang masuk kontrak yang dibatalkan;
+        // ruangan trial yang tidak ikut kontrak tetap dicabut.
+        return app(InstallFreeContractRoomScope::class)->cancelPendingRemoveFreeForContract(
+            $contract,
+            [
                 'scheduled',
                 'new_job',
                 'assign_team',
                 'assign_material',
                 'barang_dipersiapkan',
                 'barang_siap_diambil',
-            ])
-            ->where(function ($removeQuery) use ($quotationNumber, $roomIds) {
-                if ($quotationNumber) {
-                    $removeQuery->where('quotation_number', $quotationNumber);
-                }
-
-                if ($roomIds->isNotEmpty()) {
-                    $removeQuery->orWhereIn('room_id', $roomIds);
-                }
-            });
-
-        $jobs = $query->get();
-        foreach ($jobs as $job) {
-            $job->update([
-                'status' => 'cancelled',
-                'internal_notes' => trim(($job->internal_notes ? $job->internal_notes."\n" : '').
-                    "Auto-cancelled because contract {$contract->contract_number} generated first CSR for active Unit On Wall ({$trigger})."),
-            ]);
-        }
-
-        return $jobs->count();
+            ],
+            "Auto-cancelled because contract {$contract->contract_number} generated first CSR for active Unit On Wall ({$trigger}).",
+            $roomIds
+        );
     }
 
     private function resolveFirstServiceDate(Contract $contract): Carbon
