@@ -66,6 +66,13 @@ class RepairTrialRemovedContinuationJobs extends Command
                     $q->where('ja.contract_id', $contract->id)
                         ->orWhere('js.contract_number', $contract->contract_number);
                 })
+                // Hanya job lanjutan yang menempel di JA TRIAL (Install Free / JA tanpa kontrak).
+                // Job dari JA milik kontrak sendiri (mis. JA Install kontrak, prod 27 Nov:
+                // ADS-JA/26-11/0007 → Job Check Ruang-1 59999-60009) bukan sisa trial.
+                ->where(function ($q) {
+                    $q->whereNull('ja.contract_id')
+                        ->orWhereRaw("LOWER(REPLACE(COALESCE(ja.type, ''), ' ', '_')) = ?", ['install_free']);
+                })
                 ->whereExists(function ($q) use ($removedRoomIds) {
                     $q->selectRaw('1')->from('job_schedule_rooms as r')
                         ->whereColumn('r.job_schedule_id', 'js.id')

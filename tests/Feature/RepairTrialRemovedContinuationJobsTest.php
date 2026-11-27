@@ -36,6 +36,7 @@ class RepairTrialRemovedContinuationJobsTest extends TestCase
         Schema::create('job_advices', function (Blueprint $t) {
             $t->id();
             $t->unsignedBigInteger('contract_id')->nullable();
+            $t->string('type')->nullable();
             $t->timestamps();
             $t->softDeletes();
         });
@@ -88,7 +89,10 @@ class RepairTrialRemovedContinuationJobsTest extends TestCase
 
         DB::table('quotations')->insert(['id' => 30576, 'quotation_number' => 'BLP-SQ/26-11/0133']);
         DB::table('contracts')->insert(['id' => 21791, 'contract_number' => 'BLP-CA/26-11/0005', 'quotation_id' => 30576]);
-        DB::table('job_advices')->insert(['id' => 27674, 'contract_id' => null]); // JA trial
+        DB::table('job_advices')->insert([
+            ['id' => 27674, 'contract_id' => null, 'type' => 'install_free'], // JA trial
+            ['id' => 27680, 'contract_id' => 21791, 'type' => 'Install'],     // JA Install milik kontrak
+        ]);
 
         DB::table('job_schedules')->insert([
             // trial
@@ -100,6 +104,8 @@ class RepairTrialRemovedContinuationJobsTest extends TestCase
             ['id' => 59940, 'type' => 'service_routine', 'status' => 'scheduled', 'job_advice_id' => 27674, 'quotation_number' => 'BLP-SQ/26-11/0133', 'contract_number' => 'BLP-CA/26-11/0005', 'period' => 3, 'job_number' => null, 'ba_date' => null],
             // Job Check benar (Ruang-3, unit masih di lokasi)
             ['id' => 59950, 'type' => 'service_routine', 'status' => 'scheduled', 'job_advice_id' => 27674, 'quotation_number' => 'BLP-SQ/26-11/0133', 'contract_number' => 'BLP-CA/26-11/0005', 'period' => 2, 'job_number' => null, 'ba_date' => null],
+            // Job Check dari JA Install kontrak sendiri (prod 59999): bukan sisa trial
+            ['id' => 59999, 'type' => 'service_routine', 'status' => 'scheduled', 'job_advice_id' => 27680, 'quotation_number' => 'BLP-SQ/26-11/0133', 'contract_number' => 'BLP-CA/26-11/0005', 'period' => 2, 'job_number' => null, 'ba_date' => null],
             // Ruang-1 tapi sudah dikerjakan: jangan disentuh
             ['id' => 59960, 'type' => 'service_routine', 'status' => 'assign_material', 'job_advice_id' => 27674, 'quotation_number' => 'BLP-SQ/26-11/0133', 'contract_number' => 'BLP-CA/26-11/0005', 'period' => 4, 'job_number' => 'X', 'ba_date' => null],
         ]);
@@ -109,6 +115,7 @@ class RepairTrialRemovedContinuationJobsTest extends TestCase
             ['id' => 3, 'job_schedule_id' => 59940, 'room_id' => 45024, 'room_name' => 'Ruang-1', 'status' => 'pending'],
             ['id' => 4, 'job_schedule_id' => 59950, 'room_id' => 45026, 'room_name' => 'Ruang-3', 'status' => 'pending'],
             ['id' => 5, 'job_schedule_id' => 59960, 'room_id' => 45024, 'room_name' => 'Ruang-1', 'status' => 'pending'],
+            ['id' => 6, 'job_schedule_id' => 59999, 'room_id' => 45024, 'room_name' => 'Ruang-1', 'status' => 'pending'],
         ]);
         DB::table('job_schedule_room_rentals')->insert([
             ['id' => 11, 'job_schedule_room_id' => 2],
