@@ -175,7 +175,11 @@ class JobScheduleController extends Controller
                         ->from($table)
                         ->whereNotNull('job_advice_id')
                         ->whereNull('deleted_at')
-                        ->groupBy('job_advice_id', 'building_id', 'type', 'period', 'job_number');
+                        ->groupBy('job_advice_id', 'building_id', 'type', 'period', 'job_number')
+                        // QA 26 Nov 2026: Job Check Unit Only (material_checked sejak dibuat) jangan
+                        // digabung dengan CSR ruangan lain di periode yang sama selama belum bernomor.
+                        // Harus sama dengan unassignedServiceFlowMarker().
+                        ->groupByRaw("CASE WHEN (job_number IS NULL OR job_number = '') AND LOWER(COALESCE(type, '')) IN ('service', 'service_first', 'service_routine') AND COALESCE(material_checked, 0) = 1 THEN 1 ELSE 0 END");
                 })
                 ->orWhereNull('job_advice_id');
             });
@@ -738,8 +742,24 @@ class JobScheduleController extends Controller
             $job->building_id ?? 'no-building',
             $job->type ?? 'no-type',
             $job->period ?? 'no-period',
-            $jobNumber !== '' ? "job:{$jobNumber}" : 'job:unassigned',
+            $jobNumber !== '' ? "job:{$jobNumber}" : 'job:unassigned'.$this->unassignedServiceFlowMarker($job),
         ]);
+    }
+
+    /**
+     * QA 26 Nov 2026 (JA BLP-JA/26-11/0007): Job Check Unit Only Ruang-1 dan CSR Ruang-2 punya JA,
+     * gedung, tipe (service_first) dan periode yang sama, sehingga tampil sebagai SATU baris "Job
+     * Check" dan Material Assign untuk CSR Ruang-2 ditolak ("Aksi Tidak Sesuai"). Job Check Unit
+     * Only dibuat dengan material_checked = true; selama belum bernomor itulah pembedanya.
+     * Harus sama dengan groupByRaw di index().
+     */
+    private function unassignedServiceFlowMarker(JobSchedule $job): string
+    {
+        $type = strtolower(trim((string) ($job->type ?? '')));
+
+        return in_array($type, ['service', 'service_first', 'service_routine'], true) && (bool) $job->material_checked
+            ? '|flow:prechecked'
+            : '';
     }
 
     /**
@@ -760,7 +780,7 @@ class JobScheduleController extends Controller
             $job->building_id ?? '0',
             $job->type,
             $visit,
-        ]);
+        ]).$this->unassignedServiceFlowMarker($job);
     }
 
     private function applyDisplayContractNumberFilter($query, string $value, string $viewMode): void
@@ -3661,6 +3681,14 @@ class JobScheduleController extends Controller
                     }
                     
                     $siblings = $siblingsQuery->get();
+                    // QA 26 Nov 2026: Job Check Unit Only dan CSR yang belum bernomor jangan
+                    // saling ikut sebagai saudara (lihat unassignedServiceFlowMarker()).
+                    if (blank($jobSchedule->job_number)) {
+                        $ownFlowMarker = $this->unassignedServiceFlowMarker($jobSchedule);
+                        $siblings = $siblings
+                            ->filter(fn ($sibling) => $this->unassignedServiceFlowMarker($sibling) === $ownFlowMarker)
+                            ->values();
+                    }
                     $siblingJobSchedules = $siblingJobSchedules->merge($siblings);
                 }
 
