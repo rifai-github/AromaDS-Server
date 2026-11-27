@@ -7,6 +7,7 @@ use App\Models\ContractRoom;
 use App\Models\JobAdviceRoom;
 use App\Models\JobSchedule;
 use App\Models\JobScheduleRoom;
+use App\Models\UnitOnWall;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -22,6 +23,10 @@ use Illuminate\Support\Facades\Log;
  */
 class InstallFreeContractRoomScope
 {
+    private const DONE_JOB_STATUSES = ['completed', 'done_job', 'selesai'];
+
+    private const ACTIVE_UNIT_STATUSES = ['active', 'installed', 'on_wall', 'on wall', 'onwall'];
+
     /**
      * Ruangan master (room_id) yang sudah masuk kontrak (belum dihapus) dari nomor SQ ini.
      */
@@ -77,6 +82,76 @@ class InstallFreeContractRoomScope
             ?? $jaRoom->quotationRoom?->room_id;
 
         return $id ? (int) $id : null;
+    }
+
+    /**
+     * QA 27 Nov 2026 (Customer Testing Indo, BLP-SQ/26-11/0133 → BLP-CA/26-11/0005): Ruang-1 sudah
+     * Remove Free (ADS-RF/26-11/0001 done, unit dicabut), Ruang-3 masih di lokasi. Saat kontrak
+     * disetujui, Ruang-1 tetap dibuatkan Job Check 2–12 seolah unitnya masih terpasang.
+     *
+     * Ruangan fisik (room_id) yang unit trial-nya dari nomor SQ ini SUDAH dicabut: Remove Free SQ
+     * ini selesai untuk ruangan itu, dan tidak ada unit aktif di ruangan itu yang dipasang job SQ
+     * ini (mis. dipasang ulang). Ruangan ini tidak boleh dapat job lanjutan (CSR / Job Check);
+     * kalau masuk kontrak, pemasangannya lewat JA Install biasa.
+     */
+    public function trialRemovedRoomIds(?string $quotationNumber): Collection
+    {
+        if (! $quotationNumber) {
+            return collect();
+        }
+
+        $removeJobs = JobSchedule::whereIn('type', ['remove_free', 'remove free'])
+            ->where('quotation_number', $quotationNumber)
+            ->whereNotIn('status', ['cancelled', 'canceled', 'undone'])
+            ->get(['id', 'status', 'room_id']);
+
+        if ($removeJobs->isEmpty()) {
+            return collect();
+        }
+
+        $removedRoomIds = collect();
+        foreach ($removeJobs as $job) {
+            $jobDone = in_array(strtolower(trim((string) $job->status)), self::DONE_JOB_STATUSES, true);
+            $rooms = JobScheduleRoom::with('jobAdviceRoom.contractRoom', 'jobAdviceRoom.quotationRoom')
+                ->where('job_schedule_id', $job->id)
+                ->get();
+
+            if ($rooms->isEmpty()) {
+                if ($jobDone && $job->room_id) {
+                    $removedRoomIds->push((int) $job->room_id);
+                }
+
+                continue;
+            }
+
+            foreach ($rooms as $room) {
+                if (! $jobDone && strtolower((string) $room->status) !== JobScheduleRoom::STATUS_COMPLETED) {
+                    continue;
+                }
+
+                $roomId = $this->physicalRoomId($room);
+                if ($roomId) {
+                    $removedRoomIds->push($roomId);
+                }
+            }
+        }
+
+        $removedRoomIds = $removedRoomIds->unique()->values();
+        if ($removedRoomIds->isEmpty()) {
+            return $removedRoomIds;
+        }
+
+        // Unit SQ ini yang masih aktif di ruangan itu (dipasang ulang) → ruangan tetap di lokasi.
+        // Unit trial SQ lain di ruangan yang sama tidak dihitung.
+        $stillOnWallRoomIds = UnitOnWall::query()
+            ->whereIn('status', self::ACTIVE_UNIT_STATUSES)
+            ->whereIn('room_id', $removedRoomIds->all())
+            ->whereHas('installJobSchedule', fn ($query) => $query->where('quotation_number', $quotationNumber))
+            ->pluck('room_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique();
+
+        return $removedRoomIds->diff($stillOnWallRoomIds)->values();
     }
 
     /**

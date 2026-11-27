@@ -106,9 +106,24 @@ class ContractOnWallCsrService
 
     private function eligibleRoomGroups(Contract $contract): Collection
     {
+        // QA 27 Nov 2026 (BLP-CA/26-11/0005): ruangan trial yang sudah Remove Free (unit dicabut)
+        // bukan "unit masih di lokasi" walau ada unit lain di ruangan itu (mis. trial SQ lain).
+        $trialRemovedRoomIds = app(InstallFreeContractRoomScope::class)
+            ->trialRemovedRoomIds($contract->quotation?->quotation_number);
+
         return $contract->contractRooms
             ->filter(fn ($contractRoom) => $contractRoom->room !== null)
-            ->map(function ($contractRoom) use ($contract) {
+            ->map(function ($contractRoom) use ($contract, $trialRemovedRoomIds) {
+                if ($contractRoom->room_id && $trialRemovedRoomIds->contains((int) $contractRoom->room_id)) {
+                    Log::info('Skipping on-wall CSR creation because the trial unit of this room was already removed.', [
+                        'contract_id' => $contract->id,
+                        'contract_room_id' => $contractRoom->id,
+                        'room_id' => $contractRoom->room_id,
+                    ]);
+
+                    return null;
+                }
+
                 $unitOnWall = $this->activeUnitOnWallForContractRoom($contract, $contractRoom);
                 if (! $unitOnWall || $this->activeServiceScheduleExists($contract, $contractRoom)) {
                     return null;
@@ -360,10 +375,17 @@ class ContractOnWallCsrService
             ->values()
             ->all();
 
+        // QA 27 Nov 2026 (BLP-CA/26-11/0005 Ruang-1): unit trial yang sudah Remove Free tidak lagi
+        // di lokasi, jadi tidak boleh dapat Job Check lanjutan.
+        $trialRemovedRoomIds = app(InstallFreeContractRoomScope::class)
+            ->trialRemovedRoomIds($contract->quotation?->quotation_number)
+            ->all();
+
         foreach ($jobAdvices as $jobAdvice) {
             // JA dari revisi SQ lain: hanya ruangan yang masuk kontrak (Ruang-3 yang tak ikut
             // kontrak tidak boleh dapat Job Check).
             $allowedRoomIds = (int) $jobAdvice->quotation_id === (int) $contract->quotation_id ? null : $contractRoomIds;
+            $allowedRoomIds = $this->withoutTrialRemovedRooms($jobAdvice, $allowedRoomIds, $trialRemovedRoomIds);
             $jobAdvice->setRelation('contract', $contract);
 
             $completedInstalls = JobSchedule::query()
@@ -384,6 +406,32 @@ class ContractOnWallCsrService
         }
 
         return $createdCount;
+    }
+
+    /**
+     * Batas ruangan untuk generator Job Check (null = semua ruangan JA) dikurangi ruangan yang
+     * unit trial-nya sudah dicabut. Urutan room_id fisik mengikuti
+     * JobScheduleController::getJobAdviceRoomPhysicalRoomId().
+     *
+     * @param  array<int, int>|null  $allowedRoomIds
+     * @param  array<int, int>  $trialRemovedRoomIds
+     * @return array<int, int>|null
+     */
+    private function withoutTrialRemovedRooms(JobAdvice $jobAdvice, ?array $allowedRoomIds, array $trialRemovedRoomIds): ?array
+    {
+        if (empty($trialRemovedRoomIds)) {
+            return $allowedRoomIds;
+        }
+
+        $candidateRoomIds = $allowedRoomIds ?? $jobAdvice->rooms
+            ->map(fn ($jaRoom) => $jaRoom->contractRoom?->room_id ?? $jaRoom->quotationRoom?->room_id ?? $jaRoom->room_id)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        return array_values(array_diff($candidateRoomIds, $trialRemovedRoomIds));
     }
 
     /**
