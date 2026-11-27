@@ -924,7 +924,7 @@
                                     <option value="{{ $unitOption->option_name }}">{{ $unitOption->option_name }}</option>
                                 @endforeach
                             </select>
-                            <small class="form-text text-muted">Source: Master Option Unit (ID 46)</small>
+                            <small class="form-text text-muted">Source: Master Option Unit (ID 46). Unit semua Master Product di category ini ikut unit ini.</small>
                         </div>
                     </div>
                 </div>
@@ -1509,6 +1509,9 @@ function submitCategoryForm(e) {
     .then(data => {
         if (data.status === 'success') {
             closeModal();
+            if (data.products_unit_updated > 0) {
+                alert(data.message);
+            }
             location.reload();
         } else {
             console.error('Validation errors:', data.errors);

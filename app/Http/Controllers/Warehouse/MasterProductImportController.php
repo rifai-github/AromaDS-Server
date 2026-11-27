@@ -212,7 +212,8 @@ class MasterProductImportController extends Controller
                             'part_no' => $this->cleanValue($row['PartNo'] ?? ''),
                             'description' => $description,
                             'dimensions' => $dimensions,
-                            'unit' => $this->normalizeUnit($row['Unit'] ?? $productTypeUnit ?? ''),
+                            // Unit ikut Product Category kalau category punya unit (aturan klien 26 Nov 2026).
+                            'unit' => ProductCategory::enforcedUnitFor($productCategoryId) ?? $this->normalizeUnit($row['Unit'] ?? $productTypeUnit ?? ''),
                             'unit_order' => $unitOrder,
                             'net_weight' => $this->parseDecimal($row['NetWeight'] ?? 0),
                             'gross_weight' => $this->parseDecimal($row['GrossWeight'] ?? 0),

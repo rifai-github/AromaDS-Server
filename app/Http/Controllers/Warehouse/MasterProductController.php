@@ -64,6 +64,19 @@ class MasterProductController extends Controller
         return null;
     }
 
+    /**
+     * Unit Master Product mengikuti Product Category (aturan klien 26 Nov 2026):
+     * kalau category punya unit, unit kiriman form diabaikan dan diganti unit category.
+     * Category tanpa unit -> unit produk tetap dari form.
+     */
+    private function applyCategoryUnit(Request $request): void
+    {
+        $categoryUnit = ProductCategory::enforcedUnitFor($request->input('product_category_id'));
+        if ($categoryUnit !== null) {
+            $request->merge(['unit' => $categoryUnit]);
+        }
+    }
+
     private function validateBrandLineAgainstCategory(Request $request): void
     {
         $categoryBrandLine = $this->resolveCategoryBrandLine((int) $request->product_category_id);
@@ -260,6 +273,8 @@ class MasterProductController extends Controller
      */
     public function store(Request $request)
     {
+        $this->applyCategoryUnit($request);
+
         $request->validate([
             'name' => 'required|string|max:255',
             'variant_name' => 'nullable|string|max:255',
@@ -478,6 +493,8 @@ class MasterProductController extends Controller
             if (request()->ajax()) return response()->json(['status' => 'error', 'message' => 'Product not found'], 404);
             return abort(404);
         }
+
+        $this->applyCategoryUnit($request);
         
         $request->validate([
             'name' => 'required|string|max:255',

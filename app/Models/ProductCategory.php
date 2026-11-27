@@ -68,6 +68,57 @@ class ProductCategory extends Model
         return $this->hasMany(MasterProduct::class, 'product_category_id');
     }
 
+    /**
+     * Unit yang wajib dipakai Master Product di category ini, atau null kalau
+     * category belum punya unit (produk boleh mengisi unit sendiri).
+     *
+     * Aturan klien 26 Nov 2026: unit Master Product mengikuti Product Category
+     * dan hanya bisa diubah lewat category.
+     */
+    public static function enforcedUnitFor($categoryId): ?string
+    {
+        if (empty($categoryId) || !is_numeric($categoryId)) {
+            return null;
+        }
+
+        $unit = trim((string) static::query()->whereKey($categoryId)->value('unit'));
+
+        return $unit !== '' ? $unit : null;
+    }
+
+    /**
+     * Samakan unit semua Master Product (termasuk yang soft-deleted) di category
+     * ini dengan unit category. Hanya teks unit yang diganti; qty stok tidak
+     * dikonversi. Mengembalikan jumlah produk yang berubah.
+     */
+    public function cascadeUnitToProducts(): int
+    {
+        $unit = trim((string) $this->unit);
+        if ($unit === '') {
+            return 0;
+        }
+
+        // Bandingkan di PHP (case-sensitive): collation MySQL menganggap 'PCS' = 'pcs'.
+        $ids = MasterProduct::withTrashed()
+            ->where('product_category_id', $this->id)
+            ->get(['id', 'unit'])
+            ->filter(fn ($product) => (string) $product->unit !== $unit)
+            ->pluck('id');
+
+        $values = ['unit' => $unit, 'updated_at' => now()];
+        if (auth()->id()) {
+            $values['updated_by'] = auth()->id();
+        }
+
+        foreach ($ids->chunk(500) as $chunk) {
+            MasterProduct::withTrashed()
+                ->whereIn('id', $chunk->all())
+                ->update($values);
+        }
+
+        return $ids->count();
+    }
+
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by');

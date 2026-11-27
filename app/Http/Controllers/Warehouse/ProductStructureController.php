@@ -413,13 +413,35 @@ class ProductStructureController extends Controller
                 'updated_by' => Auth::id()
             ];
 
+            $previousUnit = trim((string) $category->unit);
+
             $category->update($this->normalizeSerialPolicyData($data));
+
+            // Unit Master Product mengikuti category (aturan klien 26 Nov 2026):
+            // unit category berubah -> semua produk di category ini ikut. Qty stok tidak dikonversi.
+            $cascadedProducts = 0;
+            if ($category->unit && trim((string) $category->unit) !== $previousUnit) {
+                $cascadedProducts = $category->cascadeUnitToProducts();
+                \Log::info('Product category unit cascaded to master products', [
+                    'category_id' => $category->id,
+                    'from_unit' => $previousUnit !== '' ? $previousUnit : null,
+                    'to_unit' => $category->unit,
+                    'products_updated' => $cascadedProducts,
+                    'user_id' => Auth::id(),
+                ]);
+            }
 
             DB::commit();
 
+            $message = 'Product category updated successfully.';
+            if ($cascadedProducts > 0) {
+                $message .= " Unit {$cascadedProducts} produk di category ini ikut diubah menjadi {$category->unit}.";
+            }
+
             return response()->json([
                 'status' => 'success',
-                'message' => 'Product category updated successfully.',
+                'message' => $message,
+                'products_unit_updated' => $cascadedProducts,
                 'data' => $category->load(['parent', 'createdBy', 'updatedBy'])
             ]);
 

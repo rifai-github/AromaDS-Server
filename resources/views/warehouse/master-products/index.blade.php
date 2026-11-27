@@ -992,30 +992,54 @@ function previewPhoto(input, previewContainerId) {
     }
 }
 
+// Unit produk mengikuti unit Product Category (aturan klien 26 Nov 2026).
+// Category punya unit -> field Unit diisi dari category dan dikunci (ubah lewat Product Structure).
+// Category tanpa unit -> field Unit boleh diisi manual.
+function applyCategoryUnitLock(unitInput, categoryUnit) {
+    if (!unitInput) return;
+
+    const unit = (categoryUnit || '').trim();
+    const hint = unitInput.parentElement ? unitInput.parentElement.querySelector('small') : null;
+
+    if (unit) {
+        unitInput.value = unit;
+        unitInput.readOnly = true;
+        unitInput.style.backgroundColor = '#f3f4f6';
+        unitInput.placeholder = 'Auto-filled from Category';
+        if (hint) hint.textContent = 'Unit mengikuti Product Category dan tidak bisa diubah di sini. Ubah unit lewat Product Structure.';
+    } else {
+        unitInput.readOnly = false;
+        unitInput.style.backgroundColor = '';
+        unitInput.placeholder = 'Isi unit (Category belum punya unit)';
+        if (hint) hint.textContent = 'Category ini belum punya unit, isi unit produk secara manual.';
+    }
+}
+
+function categoryUnitOf(selectElement) {
+    if (!selectElement) return '';
+    const selectedOption = selectElement.options[selectElement.selectedIndex];
+    return selectedOption && selectedOption.value ? (selectedOption.getAttribute('data-unit') || '').trim() : '';
+}
+
 // Update unit field when product category changes
 function updateUnitFromProductCategory(selectElement) {
-    const selectedOption = selectElement.options[selectElement.selectedIndex];
-    const unitValue = selectedOption ? selectedOption.getAttribute('data-unit') : '';
-    
-    // Find unit display field - try both create and edit modal field IDs
-    let unitDisplay = document.getElementById('edit_unit_display');
-    if (!unitDisplay) {
-        unitDisplay = document.getElementById('unit_display');
-    }
-    
-    if (unitDisplay) {
-        unitDisplay.value = unitValue || '';
-        console.log('Unit updated from category to:', unitValue);
-    }
-    
+    const unitValue = categoryUnitOf(selectElement);
+    const form = selectElement.closest('form') || document;
+
+    const unitDisplay = form.querySelector('input[name="unit"]')
+        || document.getElementById('edit_unit_display')
+        || document.getElementById('unit_display')
+        || document.getElementById('dup_unit_display');
+    applyCategoryUnitLock(unitDisplay, unitValue);
+
     // Also update unit_order if exists
     let unitOrderDisplay = document.getElementById('edit_unit_order_display');
     if (!unitOrderDisplay) {
         unitOrderDisplay = document.getElementById('unit_order_display');
     }
-    
-    if (unitOrderDisplay) {
-        unitOrderDisplay.value = unitValue || '';
+
+    if (unitOrderDisplay && unitValue) {
+        unitOrderDisplay.value = unitValue;
     }
 }
 
@@ -1629,14 +1653,13 @@ function openCreateModal() {
         
         if (productCategorySelect) {
             productCategorySelect.addEventListener('change', function() {
-                const selectedOption = this.options[this.selectedIndex];
-                const unitValue = selectedOption ? selectedOption.getAttribute('data-unit') : '';
-                if (unitDisplay) unitDisplay.value = unitValue || '';
+                applyCategoryUnitLock(unitDisplay, categoryUnitOf(this));
                 
                 toggleRefillSpecsSection(this, refillSpecsSection);
             });
             // Trigger initial state for refill specs section
             toggleRefillSpecsSection(productCategorySelect, refillSpecsSection);
+            applyCategoryUnitLock(unitDisplay, categoryUnitOf(productCategorySelect));
         }
         
         // Initialize custom selects (e.g. NiceSelect) for newly injected HTML
@@ -2326,19 +2349,9 @@ function openEditModal(id) {
             const editProductCategorySelect = document.getElementById('edit_product_category_id');
             
             if (editProductCategorySelect && editUnitDisplay) {
-                // Set initial unit value - prioritize existing data, fallback to product type
-                if (data.unit) {
-                    editUnitDisplay.value = data.unit;
-                } else {
-                    // If no unit saved, try to get from selected product category
-                    const selectedOption = editProductCategorySelect.options[editProductCategorySelect.selectedIndex];
-                    if (selectedOption && selectedOption.value) {
-                        const unitFromCategory = selectedOption.getAttribute('data-unit');
-                        if (unitFromCategory) {
-                            editUnitDisplay.value = unitFromCategory;
-                        }
-                    }
-                }
+                // Unit category menang; category tanpa unit -> pakai unit produk & boleh diedit.
+                editUnitDisplay.value = data.unit || '';
+                applyCategoryUnitLock(editUnitDisplay, categoryUnitOf(editProductCategorySelect));
                     
                 // Set unit_order from unit if not set
                 const editUnitOrderDisplay = document.getElementById('edit_unit_order_display');
@@ -2361,22 +2374,8 @@ function openEditModal(id) {
                 editProductCategorySelect.addEventListener('change', function() {
                     toggleRefillSpecsSection(this, editRefillSpecsSection);
                     
-                    const selectedOption = this.options[this.selectedIndex];
-                    if (selectedOption && selectedOption.value) {
-                        const unitValue = selectedOption.getAttribute('data-unit');
-                        if (unitValue) {
-                            // Auto-fill unit from product category
-                            editUnitDisplay.value = unitValue;
-                            
-                            // Auto-fill unit_order from product category unit
-                            const editUnitOrderDisplay = document.getElementById('edit_unit_order_display');
-                            if (editUnitOrderDisplay) {
-                                editUnitOrderDisplay.value = unitValue;
-                            }
-                        }
-                    } else {
-                        editUnitDisplay.value = '';
-                    }
+                    // Unit (lock/unlock + unit_order) diurus updateUnitFromProductCategory via handleCategoryChange.
+                    applyCategoryUnitLock(editUnitDisplay, categoryUnitOf(this));
                 });
             }
             
@@ -2718,6 +2717,7 @@ function openDuplicateModal(id) {
         const dupRefillSpecsSection = document.getElementById('dup-refill-specs-section');
         if (dupProductCategorySelect) {
             toggleRefillSpecsSection(dupProductCategorySelect, dupRefillSpecsSection);
+            applyCategoryUnitLock(document.getElementById('dup_unit_display'), categoryUnitOf(dupProductCategorySelect));
             dupProductCategorySelect.addEventListener('change', function() {
                 toggleRefillSpecsSection(this, dupRefillSpecsSection);
             });
