@@ -3129,7 +3129,8 @@ class CatalystMasterDataImporter
             $grouped[$identity] = $merged;
         }
 
-        return array_values($grouped);
+        // Dijumlah dulu, baru disaring: dua baris (1 + 0) di ruangan yang sama tetap 1 unit.
+        return array_values(array_filter($grouped, fn (array $row) => $this->sourceRowHasQuantity($row)));
     }
 
     /**
@@ -3243,6 +3244,20 @@ class CatalystMasterDataImporter
     protected function isUnusedCatalystDetailRow(?string $transNmbr): bool
     {
         return str_starts_with(ltrim((string) $transNmbr), '-');
+    }
+
+    /**
+     * Pak Hengky 27 Nov 2026: baris rental dengan QTY + QTY free < 1 tidak diimport - baris itu
+     * (unit lama yang diganti saat renewal: Qty 0, QtyInstall 1; 767 baris di kontrak posted)
+     * mengotori job schedule. Kontrak memakai Qty, SQ memakai QtyTotal (cadangan QtyContract).
+     */
+    protected function sourceRowHasQuantity(array $row, bool $quotation = false): bool
+    {
+        $qty = $quotation
+            ? (float) ($row['QtyTotal'] ?? $row['QtyContract'] ?? 1)
+            : (float) ($row['Qty'] ?? 0);
+
+        return $qty + $this->sourceQtyFree($row) >= 1;
     }
 
     protected function sourceQtyFree(array $row): int
@@ -4520,7 +4535,7 @@ class CatalystMasterDataImporter
                 trim($r->Room ?? '')
             );
 
-            if ($sourceKey && !isset($grouped[$sourceKey])) {
+            if ($sourceKey && !isset($grouped[$sourceKey]) && $this->sourceRowHasQuantity((array) $r, true)) {
                 $payload = (array) $r;
                 $payload['TransNmbr'] = $this->normalizeDocumentNumber($r->TransNmbr ?? null);
                 $grouped[$sourceKey] = $payload;
@@ -4752,7 +4767,7 @@ class CatalystMasterDataImporter
             $sq = $this->normalizeDocumentNumber($r->TransNmbr ?? null) ?? '';
             $bd = trim($r->Building ?? '');
             $key = implode('||', [$sq, $bd, trim($r->FloorCode ?? ''), trim($r->RoomCode ?? ''), trim($r->Room ?? '')]);
-            if ($sq && !isset($grouped[$key])) {
+            if ($sq && !isset($grouped[$key]) && $this->sourceRowHasQuantity((array) $r, true)) {
                 $payload = (array) $r;
                 $payload['TransNmbr'] = $sq;
                 $grouped[$key] = [
@@ -4823,6 +4838,11 @@ class CatalystMasterDataImporter
             $product = $this->cleanString($row['Product'] ?? null);
             $sourceKey = $this->makeKey("{$sqNo}||" . ($row['__index'] ?? ''));
             
+            // Disaring di mapper (bukan sebelum __index dibuat) supaya kunci peta baris lain tetap.
+            if (!$this->sourceRowHasQuantity($row, true)) {
+                return ['action' => 'skipped'];
+            }
+
             $quotationId = $this->findMappedTargetId('MKTQuotationHd', $this->makeKey($sqNo), 'quotations');
             if (!$quotationId) {
                 return $this->skippedRow('Q missing', $sourceKey);
@@ -4894,6 +4914,10 @@ class CatalystMasterDataImporter
                 $row['Product'] ?? null,
                 $row['__index'] ?? null,
             ]);
+            if (!$this->sourceRowHasQuantity($row, true)) {
+                return ['action' => 'skipped'];
+            }
+
             $quotationId = $this->findMappedTargetId('MKTQuotationHd', $this->makeKey($sqNo), 'quotations');
             if (!$quotationId) {
                 return $this->skippedRow('Q missing', $sourceKey);
@@ -5424,11 +5448,16 @@ class CatalystMasterDataImporter
                 $grouped[$groupKey] = [
                     'row' => (array) $row,
                     'amount' => $amount,
+                    'has_quantity' => false,
                 ];
             } else {
                 $grouped[$groupKey]['amount'] += $amount;
             }
+            $grouped[$groupKey]['has_quantity'] = $grouped[$groupKey]['has_quantity'] || $this->sourceRowHasQuantity((array) $row);
         }
+
+        // Billing group yang seluruh barisnya QTY + QTY free < 1 tidak punya unit untuk ditagih.
+        $grouped = array_filter($grouped, fn (array $item) => $item['has_quantity']);
 
         $legacyBillingGroups = $this->sourceBillingGroupsByCode();
 
@@ -5493,7 +5522,7 @@ class CatalystMasterDataImporter
             }
 
             $key = $this->makeKey([$row->TransNmbr ?? null, $row->BillingGroup ?? null, $row->Building ?? null]);
-            if ($key && !isset($grouped[$key])) {
+            if ($key && !isset($grouped[$key]) && $this->sourceRowHasQuantity((array) $row)) {
                 $grouped[$key] = (array) $row;
             }
         }
@@ -5553,7 +5582,8 @@ class CatalystMasterDataImporter
             }
 
             $key = implode('||', [$cn, trim($r->Building ?? ''), trim($r->FloorCode ?? ''), trim($r->RoomCode ?? ''), trim($r->Room ?? '')]);
-            if ($cn && !isset($grouped[$key])) {
+            // Ruangan yang hanya berisi baris QTY + QTY free < 1 tidak diimport.
+            if ($cn && !isset($grouped[$key]) && $this->sourceRowHasQuantity((array) $r)) {
                 $grouped[$key] = [
                     'key' => $key,
                     'row' => (array) $r

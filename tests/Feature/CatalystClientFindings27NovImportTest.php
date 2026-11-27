@@ -1054,4 +1054,59 @@ class CatalystClientFindings27NovImportTest extends TestCase
 
         $this->assertSame(900000.0, $this->importer()->call('sourceQuotationPricePerTop', 'ADS-SQ/26-07/1544', 10800000.0));
     }
+
+    // ── 9. QTY + QTY free < 1 tidak diimport ────────────────────────────────
+
+    public function test_contract_rows_without_quantity_are_not_imported(): void
+    {
+        $this->createImportMaps();
+        $this->createBillingGroupTables();
+        $this->createContractRentalTables();
+        $this->create('contract_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('contract_id');
+            $table->unsignedBigInteger('room_id')->nullable();
+            $table->unsignedBigInteger('billing_group_id')->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->timestamps();
+        });
+        $base = ['TransNmbr' => 'ADS-AG/26-07/0096', 'Building' => 'ADS-ADSH0008', 'RoomCode' => '018', 'BillingGroup' => 'ADS-BIL-12/8138', 'NPWP' => ''];
+        DB::table('MKTContractDt')->insert([
+            // Unit lama yang diganti saat renewal: Qty 0, QtyFree 0 (asli ADS-AG/26-07/0096).
+            $base + ['Product' => 'ADS05-12-200', 'Qty' => 0, 'QtyFree' => 0, 'PriceForex' => 0, 'AmountForex' => 0, 'FloorCode' => '011', 'Room' => 'Services Area 2'],
+            $base + ['Product' => 'W300200', 'Qty' => 1, 'QtyFree' => 0, 'PriceForex' => 10800000, 'AmountForex' => 10800000, 'FloorCode' => '011', 'Room' => 'Services Area 2'],
+            // Ruangan yang hanya berisi baris qty 0.
+            $base + ['Product' => 'ADS05-12-200', 'Qty' => 0, 'QtyFree' => 0, 'PriceForex' => 0, 'AmountForex' => 0, 'FloorCode' => '012', 'Room' => 'Gudang'],
+            // Qty 0 tapi QtyFree 1 = unit gratis, tetap masuk.
+            $base + ['Product' => 'A305200', 'Qty' => 0, 'QtyFree' => 1, 'PriceForex' => 0, 'AmountForex' => 0, 'FloorCode' => '013', 'Room' => 'Lobby'],
+        ]);
+        DB::table('source_import_maps')->insert(['source_system' => 'catalyst', 'source_table' => 'MsBuilding', 'source_key' => 'ADS-ADSH0008', 'target_table' => 'buildings', 'target_id' => 15956]);
+        $this->createRoomTables();
+
+        $importer = $this->importer(['ADS-AG/26-07/0096' => true]);
+        $importer->call('contract_rooms');
+        $importer->call('contract_rentals');
+
+        $this->assertSame(
+            ['A305200', 'A305200', 'W300200'],
+            DB::table('contract_rentals')->orderBy('rental_alias')->pluck('rental_alias')->all(),
+            'ADS05-12-200 (qty 0 + free 0) tidak boleh jadi rental kontrak.'
+        );
+        $this->assertSame(
+            ['Lobby', 'Services Area 1', 'Services Area 2'],
+            DB::table('contract_rooms')->join('master_rooms', 'master_rooms.id', '=', 'contract_rooms.room_id')->orderBy('room_name')->pluck('room_name')->all(),
+            'Ruangan "Gudang" hanya berisi baris qty 0.'
+        );
+    }
+
+    public function test_quotation_rows_without_quantity_are_skipped(): void
+    {
+        $importer = $this->importer();
+
+        $this->assertFalse($importer->call('sourceRowHasQuantity', ['QtyTotal' => 0, 'QtyFree' => 0], true));
+        $this->assertTrue($importer->call('sourceRowHasQuantity', ['QtyTotal' => 0, 'QtyFree' => 1], true));
+        $this->assertTrue($importer->call('sourceRowHasQuantity', ['QtyTotal' => 1, 'QtyFree' => 0], true));
+        $this->assertFalse($importer->call('sourceRowHasQuantity', ['Qty' => 0, 'QtyFree' => 0]));
+    }
 }
