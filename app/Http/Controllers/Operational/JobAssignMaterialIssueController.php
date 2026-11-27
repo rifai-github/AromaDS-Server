@@ -760,6 +760,26 @@ class JobAssignMaterialIssueController extends Controller
 
         $branchIds = $this->getUserBranchAccessIds($user);
 
+        // Keputusan klien 26 Nov 2026: Hirarki Data Cabang adalah batas. User yang cabangnya
+        // dipilih eksplisit hanya melihat material assign gedung/gudang cabang itu (plus tim
+        // yang ia ikuti), bukan buatannya sendiri di cabang lain.
+        $explicitBranchIds = $this->explicitAccessBranchIds($user);
+        if (!empty($explicitBranchIds)) {
+            return $query->where(function ($q) use ($userTeamIds, $explicitBranchIds) {
+                $q->whereHas('jobAssignSchedule.jobSchedule.building', function ($subQ) use ($explicitBranchIds) {
+                    $subQ->whereIn('branch_id', $explicitBranchIds);
+                })->orWhereHas('materialIssue.warehouse', function ($subQ) use ($explicitBranchIds) {
+                    $subQ->whereIn('branch_id', $explicitBranchIds);
+                });
+
+                if (!empty($userTeamIds)) {
+                    $q->orWhereHas('jobAssignSchedule', function ($subQ) use ($userTeamIds) {
+                        $subQ->whereIn('team_id', $userTeamIds);
+                    });
+                }
+            });
+        }
+
         return $query->where(function ($q) use ($accessibleUserIds, $userTeamIds, $branchIds) {
             $q->whereIn('created_by', $accessibleUserIds)
                 ->orWhereHas('jobAssignSchedule.jobSchedule.jobAdvice', function ($subQ) use ($accessibleUserIds) {

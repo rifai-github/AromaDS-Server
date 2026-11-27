@@ -232,56 +232,48 @@ class JobScheduleController extends Controller
                 ->values()
                 ->all();
             
-            if ($viewMode === 'room') {
-                $query->whereHas('jobSchedule', function($q) use ($accessibleUserIds, $userTeamIds, $branchIds, $branchCityIds) {
-                    $q->where(function($subQ) use ($accessibleUserIds, $userTeamIds, $branchIds, $branchCityIds) {
-                         $subQ->whereIn('created_by', $accessibleUserIds)
-                              ->orWhereHas('jobAdvice', function($adviceQ) use ($accessibleUserIds) {
-                                  $adviceQ->whereIn('created_by', $accessibleUserIds)
-                                          ->orWhereIn('request_by', $accessibleUserIds);
-                              })
-                              ->when(!empty($branchIds) || !empty($branchCityIds), function ($accessQ) use ($branchIds, $branchCityIds) {
-                                  $accessQ->orWhereHas('building', function ($buildingQ) use ($branchIds, $branchCityIds) {
-                                      $buildingQ->where(function ($branchQ) use ($branchIds, $branchCityIds) {
-                                          if (!empty($branchIds) && \Schema::hasColumn('buildings', 'branch_id')) {
-                                              $branchQ->whereIn('branch_id', $branchIds);
-                                          }
+            // Keputusan klien 26 Nov 2026: Hirarki Data Cabang adalah BATAS. User ber-Hirarki Cabang
+            // hanya melihat job yang gedungnya di cabang (atau area kota) yang dipilih, plus job yang
+            // ditugaskan ke timnya. Tanpa Hirarki Cabang: perilaku lama (data sendiri/bawahan/JA,
+            // tim).
+            $branchHasColumn = \Schema::hasColumn('buildings', 'branch_id');
+            $inAllowedBranch = function ($buildingQ) use ($branchIds, $branchCityIds, $branchHasColumn) {
+                $buildingQ->where(function ($branchQ) use ($branchIds, $branchCityIds, $branchHasColumn) {
+                    if (!empty($branchIds) && $branchHasColumn) {
+                        $branchQ->whereIn('branch_id', $branchIds);
+                    }
 
-                                          if (!empty($branchCityIds)) {
-                                              $branchQ->orWhereIn('city_id', $branchCityIds);
-                                          }
-                                      });
-                                  });
-                              })
-                              ->orWhereHas('jobAssignSchedules', function($assignQ) use ($userTeamIds) {
-                                  $assignQ->whereIn('team_id', $userTeamIds);
-                              });
-                    });
+                    if (!empty($branchCityIds)) {
+                        $branchQ->orWhereIn('city_id', $branchCityIds);
+                    }
+                });
+            };
+            $jobAccess = function ($q) use ($accessibleUserIds, $userTeamIds, $branchIds, $branchCityIds, $inAllowedBranch) {
+                if (!empty($branchIds) || !empty($branchCityIds)) {
+                    $q->whereHas('building', $inAllowedBranch)
+                      ->orWhereHas('jobAssignSchedules', function ($assignQ) use ($userTeamIds) {
+                          $assignQ->whereIn('team_id', $userTeamIds);
+                      });
+
+                    return;
+                }
+
+                $q->whereIn('created_by', $accessibleUserIds)
+                  ->orWhereHas('jobAdvice', function ($adviceQ) use ($accessibleUserIds) {
+                      $adviceQ->whereIn('created_by', $accessibleUserIds)
+                              ->orWhereIn('request_by', $accessibleUserIds);
+                  })
+                  ->orWhereHas('jobAssignSchedules', function ($assignQ) use ($userTeamIds) {
+                      $assignQ->whereIn('team_id', $userTeamIds);
+                  });
+            };
+
+            if ($viewMode === 'room') {
+                $query->whereHas('jobSchedule', function ($q) use ($jobAccess) {
+                    $q->where($jobAccess);
                 });
             } else {
-                $query->where(function($q) use ($accessibleUserIds, $userTeamIds, $branchIds, $branchCityIds) {
-                    $q->whereIn('created_by', $accessibleUserIds)
-                      ->orWhereHas('jobAdvice', function($subQ) use ($accessibleUserIds) {
-                          $subQ->whereIn('created_by', $accessibleUserIds)
-                               ->orWhereIn('request_by', $accessibleUserIds);
-                      })
-                      ->when(!empty($branchIds) || !empty($branchCityIds), function ($accessQ) use ($branchIds, $branchCityIds) {
-                          $accessQ->orWhereHas('building', function ($buildingQ) use ($branchIds, $branchCityIds) {
-                              $buildingQ->where(function ($branchQ) use ($branchIds, $branchCityIds) {
-                                  if (!empty($branchIds) && \Schema::hasColumn('buildings', 'branch_id')) {
-                                      $branchQ->whereIn('branch_id', $branchIds);
-                                  }
-
-                                  if (!empty($branchCityIds)) {
-                                      $branchQ->orWhereIn('city_id', $branchCityIds);
-                                  }
-                              });
-                          });
-                      })
-                      ->orWhereHas('jobAssignSchedules', function($subQ) use ($userTeamIds) {
-                          $subQ->whereIn('team_id', $userTeamIds);
-                      });
-                });
+                $query->where($jobAccess);
             }
         }
         

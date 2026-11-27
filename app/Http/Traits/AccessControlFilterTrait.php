@@ -78,6 +78,15 @@ trait AccessControlFilterTrait
             return $query;
         }
 
+        // Keputusan klien 26 Nov 2026: Hirarki Data tipe Cabang adalah BATAS, bukan tambahan.
+        // User yang di-set "Cabang: Bali" hanya melihat data cabang Bali — data cabang Bandung
+        // tidak muncul walau ia sendiri yang membuatnya. Dulu cabang di-OR dengan data
+        // sendiri/bawahan, jadi data cabang lain tetap terlihat.
+        $explicitBranchIds = $branchField ? $this->explicitAccessBranchIds($user) : [];
+        if (! empty($explicitBranchIds)) {
+            return $this->applyStrictBranchFilter($query, $user, $explicitBranchIds, $createdByField, $marketingField, $branchField, $extraAccessLogic, $warehouseField);
+        }
+
         // Check default restriction (None)
         $noneAccess = $user->accessLevels()
             ->where('access_type', 'none')
@@ -200,6 +209,72 @@ trait AccessControlFilterTrait
     }
 
     /**
+     * Filter untuk user ber-Hirarki Data Cabang (keputusan klien 26 Nov 2026):
+     *  - data yang cabangnya termasuk cabang yang dipilih: terlihat (siapa pun pembuatnya);
+     *  - data TANPA cabang: hanya terlihat oleh pembuatnya / bawahannya (perilaku lama);
+     *  - data cabang lain: tidak terlihat;
+     *  - akses khusus modul (gudang yang dikelola, logika tambahan seperti tim job) tetap berlaku.
+     */
+    protected function applyStrictBranchFilter($query, User $user, array $branchIds, $createdByField, $marketingField, string $branchField, $extraAccessLogic, $warehouseField)
+    {
+        $accessibleUserIds = $this->getAccessibleUserIds($user);
+        $managedWarehouseIds = \App\Models\Warehouse::where(function ($q) use ($user) {
+            $q->where('manager', $user->id)
+                ->orWhereHas('admins', fn ($sq) => $sq->where('user_id', $user->id));
+        })
+            ->where('is_active', true)
+            ->pluck('id')
+            ->toArray();
+
+        $query->where(function ($containerQ) use ($branchIds, $branchField, $accessibleUserIds, $createdByField, $marketingField, $extraAccessLogic, $managedWarehouseIds, $warehouseField) {
+            $containerQ->where(function ($q) use ($branchIds, $branchField, $accessibleUserIds, $createdByField, $marketingField, $managedWarehouseIds, $warehouseField) {
+                $ownRecord = function ($ownQ) use ($accessibleUserIds, $createdByField, $marketingField) {
+                    $ownQ->where(function ($creatorQ) use ($accessibleUserIds, $createdByField, $marketingField) {
+                        $creatorQ->whereIn($createdByField, $accessibleUserIds);
+                        if ($marketingField && $marketingField !== $createdByField) {
+                            $creatorQ->orWhereIn($marketingField, $accessibleUserIds);
+                        }
+                    });
+                };
+
+                if (str_contains($branchField, '.')) {
+                    [$relation, $column] = explode('.', $branchField, 2);
+                    $q->whereHas($relation, fn ($sq) => $sq->whereIn($column, $branchIds))
+                        ->orWhere(function ($noBranchQ) use ($relation, $column, $ownRecord) {
+                            $noBranchQ->where(function ($missing) use ($relation, $column) {
+                                $missing->whereDoesntHave($relation)
+                                    ->orWhereHas($relation, fn ($sq) => $sq->whereNull($column));
+                            });
+                            $ownRecord($noBranchQ);
+                        });
+                } else {
+                    $table = $q->getModel()->getTable();
+                    $q->whereIn($table.'.'.$branchField, $branchIds)
+                        ->orWhere(function ($noBranchQ) use ($table, $branchField, $ownRecord) {
+                            $noBranchQ->whereNull($table.'.'.$branchField);
+                            $ownRecord($noBranchQ);
+                        });
+                }
+
+                if (! empty($managedWarehouseIds) && $warehouseField) {
+                    if (str_contains($warehouseField, '.')) {
+                        [$relation, $column] = explode('.', $warehouseField, 2);
+                        $q->orWhereHas($relation, fn ($sq) => $sq->whereIn($column, $managedWarehouseIds));
+                    } else {
+                        $q->orWhereIn($q->getModel()->getTable().'.'.$warehouseField, $managedWarehouseIds);
+                    }
+                }
+            });
+
+            if ($extraAccessLogic) {
+                $extraAccessLogic($containerQ);
+            }
+        });
+
+        return $query;
+    }
+
+    /**
      * Apply the same user hierarchy to Contract queries.
      */
     protected function applyContractAccessControlFilter($query, $user = null, $createdByField = 'created_by', $marketingField = 'marketing_id')
@@ -240,6 +315,21 @@ trait AccessControlFilterTrait
 
         // Hirarki Data tipe Branch (eksplisit): kontrak yang quotation-nya di cabang itu ikut terlihat.
         $branchIds = $withBranchAccess ? $this->explicitAccessBranchIds($user) : [];
+
+        // Keputusan klien 26 Nov 2026: cabang adalah BATAS. Kontrak cabang lain tidak terlihat;
+        // kontrak tanpa cabang hanya oleh pembuatnya/marketingnya.
+        if (! empty($branchIds)) {
+            return $query->where(function ($q) use ($accessibleUserIds, $contractRelation, $branchIds) {
+                $q->whereHas($contractRelation.'.quotation', fn ($quotationQuery) => $quotationQuery->whereIn('branch_id', $branchIds))
+                    ->orWhere(function ($noBranchQ) use ($accessibleUserIds, $contractRelation) {
+                        $noBranchQ->whereDoesntHave($contractRelation.'.quotation', fn ($quotationQuery) => $quotationQuery->whereNotNull('branch_id'))
+                            ->whereHas($contractRelation, function ($contractQuery) use ($accessibleUserIds) {
+                                $contractQuery->whereIn('created_by', $accessibleUserIds)
+                                    ->orWhereIn('marketing_id', $accessibleUserIds);
+                            });
+                    });
+            });
+        }
 
         return $query->where(function ($q) use ($accessibleUserIds, $contractRelation, $createdByField, $branchIds) {
             if ($createdByField) {

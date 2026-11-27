@@ -244,4 +244,30 @@ class AccessControlFilterBranchFallbackTest extends TestCase
 
         $this->assertSame([100, 200], $visibleIds);
     }
+
+    public function test_explicit_branch_access_is_a_hard_boundary_even_for_own_records(): void
+    {
+        // Keputusan klien 26 Nov 2026: Hirarki cabang = Bali saja -> data Bandung tidak muncul,
+        // walau dibuat oleh user itu sendiri.
+        DB::table('users')->insert(['id' => 5, 'name' => 'Sales Bali', 'branch_id' => 24]);
+        DB::table('users')->insert(['id' => 6, 'name' => 'Rekan Bali', 'branch_id' => 24]);
+        DB::table('user_access_levels')->insert([
+            'user_id' => 5,
+            'access_type' => 'branch',
+            'access_config' => json_encode(['allowed_branches' => [24]]),
+            'is_active' => true,
+        ]);
+
+        DB::table('records')->insert(['id' => 300, 'created_by' => 6, 'branch_id' => 24]); // cabang Bali, buatan orang lain
+        DB::table('records')->insert(['id' => 301, 'created_by' => 5, 'branch_id' => 31]); // buatannya sendiri di Bandung
+        DB::table('records')->insert(['id' => 302, 'created_by' => 5, 'branch_id' => null]); // buatannya, tanpa cabang
+        DB::table('records')->insert(['id' => 303, 'created_by' => 6, 'branch_id' => 31]); // Bandung, orang lain
+
+        $visibleIds = $this->filterAsController($this->recordModel()->newQuery(), User::findOrFail(5))
+            ->orderBy('id')
+            ->pluck('id')
+            ->all();
+
+        $this->assertSame([300, 302], $visibleIds);
+    }
 }

@@ -34,7 +34,24 @@ class InventoryController extends Controller
         $user = Auth::user();
         $query = InventoryTransfer::with(['fromWarehouse', 'toWarehouse', 'creator', 'updatedBy']);
         $accessibleBranchIds = $this->getInventoryTransferAccessibleBranchIds($user);
+        $explicitBranchIds = $this->hasUnrestrictedAccessControlData($user) ? [] : $this->explicitAccessBranchIds($user);
 
+        // Keputusan klien 26 Nov 2026: Hirarki Data Cabang adalah batas. Transfer hanya tampil
+        // bila gudang asal/tujuannya di cabang yang dipilih (atau gudang yang ia kelola).
+        if (! empty($explicitBranchIds)) {
+            $managedWarehouseIds = \App\Models\Warehouse::where('manager', $user->id)
+                ->where('is_active', true)
+                ->pluck('id')
+                ->toArray();
+            $query->where(function ($q) use ($explicitBranchIds, $managedWarehouseIds) {
+                $q->whereHas('fromWarehouse', fn ($w) => $w->whereIn('branch_id', $explicitBranchIds))
+                    ->orWhereHas('toWarehouse', fn ($w) => $w->whereIn('branch_id', $explicitBranchIds));
+                if (! empty($managedWarehouseIds)) {
+                    $q->orWhereIn('from_warehouse_id', $managedWarehouseIds)
+                        ->orWhereIn('to_warehouse_id', $managedWarehouseIds);
+                }
+            });
+        } else {
         $query = $this->applyAccessControlFilter($query, null, 'created_by', null, null, function ($q) use ($user, $accessibleBranchIds) {
             if (! empty($accessibleBranchIds)) {
                 $q->orWhereHas('fromWarehouse', function ($warehouseQuery) use ($accessibleBranchIds) {
@@ -54,6 +71,7 @@ class InventoryController extends Controller
                     ->orWhereIn('to_warehouse_id', $managedWarehouseIds);
             }
         });
+        }
 
         $query->orderBy('created_at', 'desc');
 
