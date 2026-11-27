@@ -587,7 +587,17 @@ class InvoiceGenerationService
             // install (IF) continued into the contract and the unit stayed on the wall, no IR
             // job exists in this period — so the first CSR/service job becomes the Before
             // Service trigger. Gated on Before Service + no IR job to avoid double invoicing.
-            return $timing === 'before_service' && ! $periodHasInstallTrigger;
+            if ($timing === 'before_service' && ! $periodHasInstallTrigger) {
+                return true;
+            }
+
+            // QA 26 Nov 2026 (BLP-CA/26-11/0004 Ruang-1): unit Unit Only hasil trial yang lanjut
+            // kontrak tidak punya IR, jadi periode 1-nya hanya punya job check/service. Dulu
+            // periode itu tak pernah ditagih pada After Service (dan pada Before Service bila
+            // ruangan LAIN di periode itu punya IR). Dicek per ruangan supaya tak dobel dengan IR.
+            return $isUnitOnly
+                && $period === 1
+                && $this->unitOnlyJobRoomsHaveNoInstallJob($contract, $jobSchedule);
         }
 
         if (in_array($rentalType, ['unit_refill', 'refill_only'], true)) {
@@ -597,6 +607,34 @@ class InvoiceGenerationService
         $legacyTriggerTypes = $this->getInvoiceTriggerJobTypes($contract);
 
         return $legacyTriggerTypes === null || in_array($jobType, $legacyTriggerTypes, true);
+    }
+
+    /**
+     * True bila ruangan job ini (room_id) tidak pernah punya job Install (IR) yang aktif di kontrak
+     * yang sama. Job yang belum tersimpan / tanpa data ruangan → false (perilaku lama).
+     */
+    private function unitOnlyJobRoomsHaveNoInstallJob(Contract $contract, JobSchedule $jobSchedule): bool
+    {
+        if (! $jobSchedule->exists || ! $contract->exists) {
+            return false;
+        }
+
+        $roomIds = JobScheduleRoom::where('job_schedule_id', $jobSchedule->id)
+            ->whereNotNull('room_id')
+            ->pluck('room_id')
+            ->unique()
+            ->values();
+
+        if ($roomIds->isEmpty()) {
+            return false;
+        }
+
+        return ! JobSchedule::whereIn('type', ['install', 'installation', 'installation_report', 'ir'])
+            ->whereNotIn('status', ['cancelled', 'undone'])
+            ->where('id', '!=', $jobSchedule->id)
+            ->whereHas('jobAdvice', fn ($query) => $query->where('contract_id', $contract->id))
+            ->whereHas('jobScheduleRooms', fn ($query) => $query->whereIn('room_id', $roomIds))
+            ->exists();
     }
 
     private function normalizeJobType(?string $type): string
