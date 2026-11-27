@@ -188,7 +188,26 @@ class ContractOnWallCsrService
                 }
             })
             ->get()
+            // QA 26 Nov 2026 (Ruang-6/Ruang-1 BLP-CA/26-11/0004): unit trial dari SQ lain
+            // (BLP-SQ/26-11/0003) dulu ikut terpilih karena cek di bawah hanya memastikan ADA
+            // install SQ kontrak di ruangan itu, bukan bahwa unit INI yang dipasangnya.
+            ->reject(fn (UnitOnWall $unitOnWall) => $unitOnWall->belongsToOtherQuotationTrial($this->installSourceQuotationNumbers($contract)))
+            ->sortBy(fn (UnitOnWall $unitOnWall) => in_array(
+                $unitOnWall->installJobSchedule?->quotation_number,
+                $this->installSourceQuotationNumbers($contract),
+                true
+            ) ? 0 : 1)
             ->first(fn (UnitOnWall $unitOnWall) => $this->hasCompletedInstallSourceForContract($contract, $contractRoom, $unitOnWall));
+    }
+
+    private function installSourceQuotationNumbers(Contract $contract): array
+    {
+        return $this->unitOnWallInstallSourceContracts($contract)
+            ->map(fn (Contract $sourceContract) => $sourceContract->quotation?->quotation_number)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function hasCompletedInstallSourceForContract(Contract $contract, $contractRoom, UnitOnWall $unitOnWall): bool

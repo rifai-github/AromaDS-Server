@@ -222,10 +222,60 @@ class UnitOnWall extends Model
         }
 
         if (! (clone $query)->whereIn('contract_id', $contractIds)->exists()) {
-            return $query;
+            // QA 26 Nov 2026 (Ruang-6 BLP-CA/26-11/0004): saat fail-open, unit trial dari SQ LAIN
+            // (DIS...0007 dipasang trial BLP-SQ/26-11/0003) ikut tampil di kartu service kontrak
+            // dari BLP-SQ/26-11/0004. Unit tanpa kontrak yang dipasang job Install Free milik SQ
+            // lain bukan unit kontrak ini.
+            $quotationNumbers = Contract::withTrashed()
+                ->with('quotation')
+                ->whereIn('id', $contractIds)
+                ->get()
+                ->map(fn ($contract) => $contract->quotation?->quotation_number)
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            return $query->excludingOtherQuotationTrials($quotationNumbers);
         }
 
         return $query->whereIn('contract_id', $contractIds);
+    }
+
+    /**
+     * Buang unit tanpa kontrak yang dipasang oleh job Install Free dari SQ di luar daftar.
+     * Unit tanpa job install / tanpa nomor SQ (data lama) tetap ikut.
+     */
+    public function scopeExcludingOtherQuotationTrials($query, array $quotationNumbers)
+    {
+        $quotationNumbers = array_values(array_filter($quotationNumbers));
+        if (empty($quotationNumbers)) {
+            return $query;
+        }
+
+        return $query->whereNot(function ($unitQuery) use ($quotationNumbers) {
+            $unitQuery->whereNull('contract_id')
+                ->whereHas('installJobSchedule', function ($jobQuery) use ($quotationNumbers) {
+                    $jobQuery->whereIn('type', ['install_free', 'install free', 'if'])
+                        ->whereNotNull('quotation_number')
+                        ->whereNotIn('quotation_number', $quotationNumbers);
+                });
+        });
+    }
+
+    public function belongsToOtherQuotationTrial(array $quotationNumbers): bool
+    {
+        $quotationNumbers = array_values(array_filter($quotationNumbers));
+        if (empty($quotationNumbers) || $this->contract_id) {
+            return false;
+        }
+
+        $installJob = $this->installJobSchedule;
+        if (! $installJob || ! in_array(strtolower(trim((string) $installJob->type)), ['install_free', 'install free', 'if'], true)) {
+            return false;
+        }
+
+        return $installJob->quotation_number && ! in_array($installJob->quotation_number, $quotationNumbers, true);
     }
 
     // Accessors
