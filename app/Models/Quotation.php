@@ -362,8 +362,35 @@ class Quotation extends Model
                     ->from('quotations as newer_quotations')
                     ->whereColumn('newer_quotations.quotation_number', 'quotations.quotation_number')
                     ->whereColumn('newer_quotations.revision_number', '>', 'quotations.revision_number')
-                    ->whereNull('newer_quotations.deleted_at');
+                    ->whereNull('newer_quotations.deleted_at')
+                    // QA 26 Nov 2026: revisi yang dihapus (cancelled) tidak lagi menutup revisi sebelumnya.
+                    ->where(fn ($status) => $status->whereNull('newer_quotations.status')
+                        ->orWhere('newer_quotations.status', '!=', 'cancelled'));
             });
+    }
+
+    /**
+     * QA 26 Nov 2026 (BLP-SQ/26-11/0003): menghapus revisi draft terbaru hanya mengubah statusnya
+     * jadi cancelled, tetapi tanda "revisi terakhir" tetap padanya sehingga revisi sebelumnya
+     * kehilangan tombol Revisi dan tak bisa dipakai untuk kontrak. Kembalikan tanda itu ke revisi
+     * aktif tertinggi sebelumnya.
+     */
+    public function releaseLatestRevisionAfterCancel(): void
+    {
+        if (! $this->is_latest_revision || $this->status !== 'cancelled') {
+            return;
+        }
+
+        $this->update(['is_latest_revision' => false]);
+
+        $previous = static::where('quotation_number', $this->quotation_number)
+            ->where('id', '!=', $this->id)
+            ->where('revision_number', '<', $this->revision_number)
+            ->where(fn ($status) => $status->whereNull('status')->orWhere('status', '!=', 'cancelled'))
+            ->orderByDesc('revision_number')
+            ->first();
+
+        $previous?->update(['is_latest_revision' => true]);
     }
 
     // Accessors
@@ -572,11 +599,21 @@ class Quotation extends Model
     public function copyAsRevision()
     {
         return \DB::transaction(function () {
-            // Mark current as not latest
+            // Mark current (and any stale sibling) as not latest
             $this->update(['is_latest_revision' => false]);
+            static::withTrashed()
+                ->where('quotation_number', $this->quotation_number)
+                ->where('id', '!=', $this->id)
+                ->where('is_latest_revision', true)
+                ->update(['is_latest_revision' => false]);
 
-            // Calculate new revision number
-            $newRevisionNumber = $this->revision_number + 1;
+            // Calculate new revision number. QA 26 Nov 2026: revisi yang pernah dihapus
+            // (cancelled / soft-deleted) tetap memegang nomornya (unique index), jadi pakai
+            // nomor tertinggi + 1, bukan revisi ini + 1.
+            $newRevisionNumber = max(
+                (int) $this->revision_number,
+                (int) static::withTrashed()->where('quotation_number', $this->quotation_number)->max('revision_number')
+            ) + 1;
 
             // Create the new quotation copy
             $newQuotation = $this->replicate();

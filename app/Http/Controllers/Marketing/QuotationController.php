@@ -69,7 +69,9 @@ class QuotationController extends Controller
                 ->selectRaw('COUNT(*)')
                 ->whereColumn('nq.quotation_number', 'quotations.quotation_number')
                 ->whereColumn('nq.revision_number', '>', 'quotations.revision_number')
-                ->whereNull('nq.deleted_at')])
+                ->whereNull('nq.deleted_at')
+                // QA 26 Nov 2026: revisi yang dihapus (cancelled) tidak menghitung.
+                ->where(fn ($status) => $status->whereNull('nq.status')->orWhere('nq.status', '!=', 'cancelled'))])
             ->with([
                 'customer:id,name',
                 'survey:id,survey_location',
@@ -932,6 +934,7 @@ class QuotationController extends Controller
                 'status' => 'cancelled',
                 'updated_by' => Auth::id()
             ]);
+            $quotation->releaseLatestRevisionAfterCancel();
 
             DB::commit();
 
@@ -990,6 +993,7 @@ class QuotationController extends Controller
                     'status' => 'cancelled',
                     'updated_by' => Auth::id()
                 ]);
+                $quotation->releaseLatestRevisionAfterCancel();
                 
                 $deletedCount++;
             }
