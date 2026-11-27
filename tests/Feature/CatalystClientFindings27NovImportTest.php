@@ -1109,4 +1109,22 @@ class CatalystClientFindings27NovImportTest extends TestCase
         $this->assertTrue($importer->call('sourceRowHasQuantity', ['QtyTotal' => 1, 'QtyFree' => 0], true));
         $this->assertFalse($importer->call('sourceRowHasQuantity', ['Qty' => 0, 'QtyFree' => 0]));
     }
+
+    // ── 10. Jenis invoice default Hard Copy ─────────────────────────────────
+
+    public function test_imported_billing_group_defaults_to_hard_copy_without_overwriting_existing_choice(): void
+    {
+        $this->createImportMaps();
+        $this->createBankTables();
+        $this->createBillingGroupTables();
+
+        $this->importer()->call('billing_groups');
+        $billingGroup = DB::table('billing_groups')->where('contract_id', 13258)->first();
+        $this->assertSame('hard_copy', $billingGroup->invoice_type);
+
+        // Diubah user lalu import ulang: pilihan user tetap.
+        DB::table('billing_groups')->where('id', $billingGroup->id)->update(['invoice_type' => 'soft_copy']);
+        $this->importer()->call('billing_groups');
+        $this->assertSame('soft_copy', DB::table('billing_groups')->where('id', $billingGroup->id)->value('invoice_type'));
+    }
 }

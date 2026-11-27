@@ -5496,7 +5496,12 @@ class CatalystMasterDataImporter
                 'pic_email' => $this->cleanString($legacyBilling->EmailBilling ?? null),
                 'pic_address' => $this->cleanString($legacyBilling->Address ?? null),
                 'npwp_name' => $this->cleanString($customer->name ?? null),
-                'invoice_type' => 'soft_copy',
+                // Pak Hengky 27 Nov 2026: default jenis invoice BG hasil import = Hard Copy. Hanya
+                // untuk BG baru; pilihan di BG yang sudah ada (import ulang) tidak ditimpa ('' dibuang
+                // array_filter di bawah, jadi kolomnya tidak ikut di-update).
+                'invoice_type' => $this->findMappedTargetId('MKTContractDt_billing', $this->makeKey([$contractNo, $billingCode]), 'billing_groups')
+                    ? ''
+                    : 'hard_copy',
                 // Pak Hengky 27 Nov 2026: Bank Payment kontrak (MKTContractHd.BankPayment ->
                 // MsPayType -> bank_payments, step bank_payments) tampil di detail billing group.
                 'payment_method' => $bankFields['payment_method'] ?? null,
