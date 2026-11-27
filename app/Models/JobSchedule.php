@@ -674,6 +674,26 @@ class JobSchedule extends Model
             $freqTimes = (int) $this->service_frequency;
         }
 
+        // Klien 27 Nov 2026: rental service tiap N bulan (mis. 3 bulan 1x) → service ke-n jatuh
+        // di bulan ke-((n-1) x N + 1). Sama dengan InvoiceGenerationService::computeInvoicePeriodForJob().
+        if ($freqTimes <= 1 && $this->id) {
+            try {
+                $intervalMonths = (int) (\Illuminate\Support\Facades\DB::table('job_schedule_rooms as jsr')
+                ->join('job_advice_rooms as jar', 'jar.id', '=', 'jsr.job_advice_room_id')
+                ->join('master_rentals as mr', 'mr.id', '=', 'jar.rental_product_id')
+                ->join('rental_service_frequencies as rsf', 'rsf.id', '=', 'mr.service_frequency_id')
+                ->where('jsr.job_schedule_id', $this->id)
+                ->whereNull('jsr.deleted_at')
+                ->where(fn ($q) => $q->whereNull('rsf.frequency_times_per_month')->orWhere('rsf.frequency_times_per_month', '<=', 1))
+                ->max('rsf.frequency_months') ?? 1);
+            } catch (\Throwable $e) {
+                $intervalMonths = 1;
+            }
+            if ($intervalMonths > 1) {
+                return intdiv(((int) $this->period - 1) * $intervalMonths, max(1, (int) $topInterval)) + 1;
+            }
+        }
+
         // Calculate Divisor
         // Example: 4x service per month, Monthly Invoice (TOP=1) -> Divisor = 4
         // PS 1,2,3,4 / 4 -> ceil -> 1.

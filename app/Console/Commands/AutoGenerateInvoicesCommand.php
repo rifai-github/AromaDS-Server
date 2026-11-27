@@ -49,6 +49,19 @@ class AutoGenerateInvoicesCommand extends Command
                 // Get rental periods for this contract
                 // We optimize by checking periods ending in the past (up to today)
                 // because future periods definitely aren't "completed" yet.
+                // Klien 27 Nov 2026: periode ke-2 dst mengikuti TOP (tanggal invoice sebelumnya +
+                // interval TOP), juga di bulan tanpa jadwal service. Itu hanya bisa terpicu oleh
+                // jadwal harian ini, jadi kontrak yang sudah punya invoice di ERP memakai aturan
+                // yang sama dengan pemicu real-time.
+                $hasErpInvoice = \App\Models\Invoice::where('contract_id', $contract->id)
+                    ->where('invoice_status', '!=', \App\Models\Invoice::STATUS_CANCELLED)
+                    ->exists();
+                if ($hasErpInvoice) {
+                    $invoiceService->attemptAutoInvoiceForContract($contract->id);
+
+                    continue;
+                }
+
                 $periods = $invoiceService->getRentalPeriodsForContract($contract->id);
                 
                 foreach ($periods as $period) {

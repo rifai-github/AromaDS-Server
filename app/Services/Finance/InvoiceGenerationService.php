@@ -65,11 +65,17 @@ class InvoiceGenerationService
             }
 
             $periodNumber = $this->parsePeriodNumber($rentalPeriod);
+            $activeBillingGroups = $contract->billingGroups->where('is_active', true)->values();
 
             // Check if the invoice trigger jobs for this rental period are completed.
             // Before Service: IR/install BA triggers invoice.
             // After Service: CSR/service BA triggers invoice.
-            $allJobsCompleted = $this->checkInvoiceTriggerJobsCompletedInPeriod($contract, $periodStart, $periodEnd, $periodNumber);
+            // Klien 27 Nov 2026 (kondisi 4c): dengan lebih dari satu Billing Group, kesiapan
+            // dinilai per Billing Group (generateInvoicesPerBillingGroup); di sini cukup ada
+            // job yang siap.
+            $allJobsCompleted = $activeBillingGroups->count() > 1
+                ? $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)->isNotEmpty()
+                : $this->checkInvoiceTriggerJobsCompletedInPeriod($contract, $periodStart, $periodEnd, $periodNumber);
 
             if (! $allJobsCompleted) {
                 DB::rollBack();
@@ -100,8 +106,6 @@ class InvoiceGenerationService
             // one invoice per billing group instead of a single contract-wide invoice.
             // Zero or exactly one active billing group keeps the original single-invoice
             // behavior below untouched.
-            $activeBillingGroups = $contract->billingGroups->where('is_active', true)->values();
-
             if ($activeBillingGroups->count() > 1) {
                 $result = $this->generateInvoicesPerBillingGroup($contract, $activeBillingGroups, $rentalPeriod, $periodStart, $periodEnd);
 
@@ -166,10 +170,10 @@ class InvoiceGenerationService
      */
     private function checkInvoiceTriggerJobsCompletedInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): bool
     {
-        $totalJobs = $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)->count();
-        $completedJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)->count();
+        $assignedJobs = $this->getAssignedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber);
+        $readyJobs = $assignedJobs->filter(fn (JobSchedule $jobSchedule) => $this->isReadyTriggerJob($contract, $jobSchedule));
 
-        return $totalJobs > 0 && $totalJobs === $completedJobs;
+        return $readyJobs->isNotEmpty() && $readyJobs->count() === $assignedJobs->count();
     }
 
     /**
@@ -185,7 +189,7 @@ class InvoiceGenerationService
      */
     private function getTotalJobsCount(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): int
     {
-        return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)->count();
+        return $this->getAssignedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)->count();
     }
 
     /**
@@ -302,9 +306,53 @@ class InvoiceGenerationService
 
         $topInterval = max(1, (int) ($contract->top_interval_months ?? 1));
         $freqTimes = is_numeric($job->service_frequency) ? max(1, (int) $job->service_frequency) : 1;
+
+        // Klien 27 Nov 2026 ("bedakan periode service dengan periode invoice"): rental yang
+        // service-nya tiap N bulan (mis. 3 bulan 1x) menyimpan service_frequency = 1 (kali per
+        // bulan), sehingga service ke-2 (bulan ke-4) dulu dihitung milik invoice periode 2.
+        // Service ke-n jatuh di bulan ke-((n-1) x N + 1) → periode invoice sesuai TOP.
+        $intervalMonths = $freqTimes <= 1 ? $this->serviceIntervalMonthsForJob($job) : 1;
+        if ($intervalMonths > 1) {
+            return intdiv(((int) $job->period - 1) * $intervalMonths, $topInterval) + 1;
+        }
+
         $divisor = max(1, $freqTimes * $topInterval);
 
         return (int) ceil(((int) $job->period) / $divisor);
+    }
+
+    /** @var array<int, int> job_schedule_id => interval bulan service */
+    private array $serviceIntervalMonthsCache = [];
+
+    /**
+     * Interval bulan service rental job ini (RentalServiceFrequency.frequency_months), 1 bila
+     * bulanan / tak diketahui. Dibaca lewat job_schedule_rooms → job_advice_rooms → rental.
+     */
+    private function serviceIntervalMonthsForJob(JobSchedule $job): int
+    {
+        $jobId = (int) $job->id;
+        if (! $jobId) {
+            return 1;
+        }
+
+        if (! array_key_exists($jobId, $this->serviceIntervalMonthsCache)) {
+            $months = 1;
+            try {
+                $months = (int) (DB::table('job_schedule_rooms as jsr')
+                    ->join('job_advice_rooms as jar', 'jar.id', '=', 'jsr.job_advice_room_id')
+                    ->join('master_rentals as mr', 'mr.id', '=', 'jar.rental_product_id')
+                    ->join('rental_service_frequencies as rsf', 'rsf.id', '=', 'mr.service_frequency_id')
+                    ->where('jsr.job_schedule_id', $jobId)
+                    ->whereNull('jsr.deleted_at')
+                    ->where(fn ($q) => $q->whereNull('rsf.frequency_times_per_month')->orWhere('rsf.frequency_times_per_month', '<=', 1))
+                    ->max('rsf.frequency_months') ?? 1);
+            } catch (\Throwable $e) {
+                $months = 1;
+            }
+            $this->serviceIntervalMonthsCache[$jobId] = max(1, $months);
+        }
+
+        return $this->serviceIntervalMonthsCache[$jobId];
     }
 
     /**
@@ -326,13 +374,19 @@ class InvoiceGenerationService
      * $periodNumber === null (callers that don't know their period number, e.g. direct
      * legacy calls) preserves the original calendar-window-only behavior for every job.
      */
-    private function resolveInvoiceTriggerJobIds(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber): array
+    private function resolveInvoiceTriggerJobIds(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber, bool $includeLeftLocation = false): array
     {
+        // $includeLeftLocation: job yang sudah dikerjakan tetapi teknisi meninggalkan lokasi
+        // (BA belum keluar) tetap dihitung sebagai job ter-assign yang belum selesai.
+        $excludedStatuses = $includeLeftLocation
+            ? array_values(array_diff(self::NON_BILLABLE_JOB_STATUSES, ['meninggalkan_lokasi']))
+            : self::NON_BILLABLE_JOB_STATUSES;
+
         $baseQuery = fn () => JobSchedule::whereHas('jobAdvice', function ($query) use ($contract) {
             $query->where('contract_id', $contract->id);
         })
             ->whereNull('catalyst_backfill_at')
-            ->whereNotIn('status', self::NON_BILLABLE_JOB_STATUSES)
+            ->whereNotIn('status', $excludedStatuses)
             ->whereRaw("LOWER(COALESCE(type, '')) NOT IN (?, ?, ?, ?)", self::NON_BILLABLE_JOB_TYPES);
 
         $windowJobs = $baseQuery()
@@ -369,9 +423,9 @@ class InvoiceGenerationService
         return array_values(array_unique($ids));
     }
 
-    private function getCandidateInvoiceJobsQuery(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null)
+    private function getCandidateInvoiceJobsQuery(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null, bool $includeLeftLocation = false)
     {
-        $jobIds = $this->resolveInvoiceTriggerJobIds($contract, $periodStart, $periodEnd, $periodNumber);
+        $jobIds = $this->resolveInvoiceTriggerJobIds($contract, $periodStart, $periodEnd, $periodNumber, $includeLeftLocation);
 
         return JobSchedule::with([
             'jobAdvice.rooms.rentalProduct',
@@ -388,9 +442,9 @@ class InvoiceGenerationService
             ->orderBy('id');
     }
 
-    private function getInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): \Illuminate\Support\Collection
+    private function getInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null, bool $includeLeftLocation = false): \Illuminate\Support\Collection
     {
-        $candidates = $this->getCandidateInvoiceJobsQuery($contract, $periodStart, $periodEnd, $periodNumber)->get();
+        $candidates = $this->getCandidateInvoiceJobsQuery($contract, $periodStart, $periodEnd, $periodNumber, $includeLeftLocation)->get();
 
         // Whether this period contains an actual Install (IR) job. When a free-trial install
         // (IF) continues straight into the contract with the unit still on the wall, no IR job
@@ -430,14 +484,69 @@ class InvoiceGenerationService
     private function getReadyInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): \Illuminate\Support\Collection
     {
         return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)
-            ->filter(function (JobSchedule $jobSchedule) use ($contract) {
-                $isCompletedWithBa = in_array($jobSchedule->status, self::BILLABLE_COMPLETED_STATUSES, true)
-                    && ! empty($jobSchedule->ba_date);
-
-                return $isCompletedWithBa
-                    || $this->isPendingBeforeServiceTrialContinuation($contract, $jobSchedule);
-            })
+            ->filter(fn (JobSchedule $jobSchedule) => $this->isReadyTriggerJob($contract, $jobSchedule))
             ->values();
+    }
+
+    private function isReadyTriggerJob(Contract $contract, JobSchedule $jobSchedule): bool
+    {
+        $isCompletedWithBa = in_array($jobSchedule->status, self::BILLABLE_COMPLETED_STATUSES, true)
+            && ! empty($jobSchedule->ba_date);
+
+        return $isCompletedWithBa
+            || $this->isPendingBeforeServiceTrialContinuation($contract, $jobSchedule);
+    }
+
+    /**
+     * Klien 27 Nov 2026 (Before & After Service sama): invoice terbit bila job yang SUDAH
+     * DI-ASSIGN (lewat Material Assign/Team Assign) sudah selesai dan ada BA Date. Job yang
+     * belum di-assign (masih new_job/scheduled, mis. ruangan yang dikerjakan nanti atau job
+     * susulan "tidak dapat menyelesaikan semua ruangan") tidak ditunggu.
+     */
+    private function isAssignedTriggerJob(JobSchedule $jobSchedule): bool
+    {
+        return ! in_array(strtolower(trim((string) $jobSchedule->status)), ['new_job', 'scheduled'], true);
+    }
+
+    /**
+     * Job pemicu periode ini yang wajib selesai sebelum invoice terbit: sudah di-assign
+     * (termasuk yang sudah meninggalkan lokasi tapi BA belum keluar) atau sudah siap.
+     */
+    private function getAssignedInvoiceTriggerJobsInPeriod(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber = null): \Illuminate\Support\Collection
+    {
+        return $this->getInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber, true)
+            ->filter(fn (JobSchedule $jobSchedule) => $this->isReadyTriggerJob($contract, $jobSchedule)
+                || $this->isAssignedTriggerJob($jobSchedule))
+            ->values();
+    }
+
+    /**
+     * Satu bucket Billing Group siap ditagih bila ada job siap yang menyentuh ruangannya dan
+     * SEMUA job ter-assign yang menyentuh ruangannya sudah siap. $roomIds null = seluruh kontrak.
+     */
+    private function isBillingBucketReady(Contract $contract, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber, ?array $roomIds): bool
+    {
+        $assigned = $this->getAssignedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber);
+        if ($roomIds !== null) {
+            $assigned = $assigned->filter(fn (JobSchedule $jobSchedule) => $this->jobTouchesContractRooms($jobSchedule, $roomIds));
+        }
+
+        $ready = $assigned->filter(fn (JobSchedule $jobSchedule) => $this->isReadyTriggerJob($contract, $jobSchedule));
+
+        return $ready->isNotEmpty() && $ready->count() === $assigned->count();
+    }
+
+    private function jobTouchesContractRooms(JobSchedule $jobSchedule, array $roomIds): bool
+    {
+        $roomIds = array_map('intval', $roomIds);
+
+        foreach ($this->getRentalDetailsForJob($jobSchedule) as $rental) {
+            if (in_array((int) ($rental['contract_room_id'] ?? 0), $roomIds, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function isPendingBeforeServiceTrialContinuation(Contract $contract, JobSchedule $jobSchedule): bool
@@ -664,7 +773,7 @@ class InvoiceGenerationService
      * back to $contract->billingGroup (latest), which is the original single-invoice
      * behavior — unchanged for contracts with zero or one billing group.
      */
-    private function createInvoiceForRentalPeriod(Contract $contract, string $rentalPeriod, Carbon $periodStart, Carbon $periodEnd, ?BillingGroup $billingGroupOverride = null): Invoice
+    private function createInvoiceForRentalPeriod(Contract $contract, string $rentalPeriod, Carbon $periodStart, Carbon $periodEnd, ?BillingGroup $billingGroupOverride = null, ?Carbon $invoiceDateOverride = null, ?string $internalNote = null): Invoice
     {
         $invoiceNumber = $this->documentNumberService->generate(
             'invoice',
@@ -725,6 +834,12 @@ class InvoiceGenerationService
             }
         }
 
+        // Klien 27 Nov 2026: invoice susulan bertanggal sama dengan invoice pertama periode itu,
+        // dan invoice periode berikutnya mengikuti tanggal invoice sebelumnya (TOP).
+        if ($invoiceDateOverride) {
+            $invoiceDate = $invoiceDateOverride->copy();
+        }
+
         // Recalculate Due Date based on final Invoice Date
         $dueDate = $this->calculateDueDate($invoiceDate, $paymentTerms);
 
@@ -758,7 +873,7 @@ class InvoiceGenerationService
             'gedung' => $this->getBuildingInfo($contract),
             'alamat_1' => $contract->customer->address ?? '',
             'alamat_2' => $contract->customer->city ?? '',
-            'catatan_internal' => "Auto-generated for rental period: {$rentalPeriod}. ".($contract->internal_notes ?? ''),
+            'catatan_internal' => "Auto-generated for rental period: {$rentalPeriod}. ".($internalNote ? $internalNote.' ' : '').($contract->internal_notes ?? ''),
             'catatan_customer' => "Invoice for services completed in period {$periodStart->format('d/m/Y')} - {$periodEnd->format('d/m/Y')}",
             'pic_finance' => $billingGroup->pic_name ?? $contract->billingGroup->pic_name ?? '',
             'email' => $billingGroup->pic_email ?? $contract->billingGroup->pic_email ?? $contract->customer->email ?? '',
@@ -933,6 +1048,12 @@ class InvoiceGenerationService
         foreach ($buckets as $bucket) {
             $billingGroup = $bucket['billing_group'];
             $billingGroupId = $billingGroup?->id;
+
+            // Klien 27 Nov 2026 (kondisi 4c): Billing Group ini baru ditagih bila semua job
+            // ter-assign yang menyentuh ruangannya (lintas gedung sekalipun) sudah selesai + BA.
+            if (! $this->isBillingBucketReady($contract, $periodStart, $periodEnd, $periodNumber, $bucket['room_ids'])) {
+                continue;
+            }
 
             // Compute (without persisting) whether this bucket has anything to bill before
             // creating an invoice header/number for it, so an empty bucket doesn't burn a
@@ -1834,17 +1955,30 @@ class InvoiceGenerationService
             $periods = $this->getRentalPeriodsForContract($contractId);
 
             foreach ($periods as $period) {
-                // We only care about periods that are fully COMPLETED
-                if ($period['status'] !== 'completed') {
-                    continue;
-                }
-
                 $periodStart = Carbon::parse($period['period_start']);
                 $periodEnd = Carbon::parse($period['period_end']);
 
-                if ($activeBillingGroups->count() > 1) {
-                    $this->attemptAutoInvoiceForMultiBillingGroupPeriod($contract, $activeBillingGroups, $period, $periodStart, $periodEnd);
+                // Klien 27 Nov 2026: periode ke-2 dst mengikuti TOP penagihan (tanggal invoice
+                // sebelumnya + interval TOP), bukan jadwal service. Hanya bila periode
+                // sebelumnya sudah punya invoice di ERP; selain itu tetap logika lama.
+                if (($period['period_number'] ?? null) !== null
+                    && $period['period_number'] >= 2
+                    && $this->attemptTopAnchoredPeriodInvoice($contract, $activeBillingGroups, $period, $periodStart, $periodEnd)) {
+                    continue;
+                }
 
+                // Klien 27 Nov 2026 (kondisi 4c): lebih dari satu Billing Group dinilai per
+                // Billing Group, jadi cukup ada job yang sudah siap di periode ini.
+                if ($activeBillingGroups->count() > 1) {
+                    if (in_array($period['status'], ['completed', 'partial'], true)) {
+                        $this->attemptAutoInvoiceForMultiBillingGroupPeriod($contract, $activeBillingGroups, $period, $periodStart, $periodEnd);
+                    }
+
+                    continue;
+                }
+
+                // We only care about periods whose ASSIGNED trigger jobs are all completed
+                if ($period['status'] !== 'completed') {
                     continue;
                 }
 
@@ -1872,12 +2006,11 @@ class InvoiceGenerationService
                     } else {
                         Log::warning('Real-time Invoice Trigger: [FAILED] '.$result['message']);
                     }
-                } elseif ($exists->invoice_status === Invoice::STATUS_DRAFT) {
+                } else {
                     // A room/rental whose job completed after this period's invoice was
-                    // first drafted would otherwise never get billed (the existence check
-                    // above used to just skip). Backfill any missing rental lines while
-                    // the invoice is still a draft.
-                    $this->refreshDraftInvoiceRentalDetails($exists, $periodStart, $periodEnd, null, $period['period_number'] ?? null);
+                    // first drafted would otherwise never get billed. Draft → baris
+                    // ditambahkan; sudah tidak Draft → invoice susulan bertanggal sama.
+                    $this->supplementPeriodInvoice($contract, $period['rental_period'], $periodStart, $periodEnd, $period['period_number'] ?? null, null, null, false);
                 }
             }
 
@@ -1923,10 +2056,23 @@ class InvoiceGenerationService
                 true
             );
 
+            if (! $this->isBillingBucketReady($contract, $periodStart, $periodEnd, $period['period_number'] ?? null, $bucket['room_ids'])) {
+                continue;
+            }
+
             if (! $existing) {
                 $anyMissing = true;
-            } elseif ($existing->invoice_status === Invoice::STATUS_DRAFT) {
-                $this->refreshDraftInvoiceRentalDetails($existing, $periodStart, $periodEnd, $bucket['room_ids'], $period['period_number'] ?? null);
+            } else {
+                $this->supplementPeriodInvoice(
+                    $contract,
+                    $period['rental_period'],
+                    $periodStart,
+                    $periodEnd,
+                    $period['period_number'] ?? null,
+                    $bucket['room_ids'],
+                    $bucket['billing_group_id'] ? $activeBillingGroups->firstWhere('id', $bucket['billing_group_id']) : null,
+                    true
+                );
             }
         }
 
@@ -1960,6 +2106,318 @@ class InvoiceGenerationService
      * (see attemptAutoInvoiceForMultiBillingGroupPeriod()); null bills every eligible room,
      * which is the original single-invoice behavior.
      */
+    /**
+     * Klien 27 Nov 2026 (poin 3 & jawaban 4): periode invoice ke-2 dst mengikuti TOP penagihan.
+     *  - Tanggal yang diharapkan = tanggal invoice pertama periode sebelumnya + interval TOP.
+     *  - Before Service: terbit pada tanggal itu, tanpa menunggu service.
+     *  - After Service: job service ter-assign di periode ini harus sudah selesai + BA; tanggal
+     *    invoice = yang lebih akhir antara tanggal harapan dan BA Date service terakhirnya
+     *    (service 3 Feb terlaksana 5 Feb → invoice 5 Feb, berikutnya ikut 5 Maret). Periode
+     *    tanpa jadwal service (rental 3 bulan 1x di bulan ke-2/3) dianggap sudah service.
+     *  - Baris: rental dari job yang selesai di periode ini + rental periode sebelumnya yang
+     *    masih aktif di kontrak (tidak di-suspend), harga dari kontrak.
+     *
+     * @return bool true bila periode ini diatur aturan TOP (ada invoice periode sebelumnya),
+     *              false agar pemanggil memakai logika lama.
+     */
+    private function attemptTopAnchoredPeriodInvoice(Contract $contract, \Illuminate\Support\Collection $activeBillingGroups, array $period, Carbon $periodStart, Carbon $periodEnd): bool
+    {
+        $timing = $this->getInvoiceTiming($contract);
+        if (! in_array($timing, ['before_service', 'after_service'], true)) {
+            return false;
+        }
+
+        $periodNumber = (int) $period['period_number'];
+        $previousLabel = 'Period '.($periodNumber - 1);
+        $topMonths = max(1, (int) ($contract->top_interval_months ?? 1));
+
+        if ($activeBillingGroups->count() > 1) {
+            $roomBucketMap = $this->resolveContractRoomBillingGroupMap($contract, $activeBillingGroups);
+            $leftoverRoomIds = array_values(array_diff($contract->contractRooms->pluck('id')->all(), array_keys($roomBucketMap)));
+            $buckets = $activeBillingGroups
+                ->map(fn (BillingGroup $billingGroup) => [
+                    'billing_group' => $billingGroup,
+                    'room_ids' => array_keys(array_filter($roomBucketMap, fn ($bgId) => $bgId === $billingGroup->id)),
+                    'scoped' => true,
+                ])
+                ->values()
+                ->all();
+            $buckets[] = ['billing_group' => null, 'room_ids' => $leftoverRoomIds, 'scoped' => true];
+        } else {
+            $buckets = [['billing_group' => $contract->billingGroup, 'room_ids' => null, 'scoped' => false]];
+        }
+
+        $anyAnchor = false;
+
+        foreach ($buckets as $bucket) {
+            $previousInvoices = $this->periodInvoices($contract, $previousLabel, $bucket['billing_group'], $bucket['scoped']);
+            if ($previousInvoices->isEmpty()) {
+                continue;
+            }
+            $anyAnchor = true;
+
+            if ($this->periodInvoices($contract, $period['rental_period'], $bucket['billing_group'], $bucket['scoped'])->isNotEmpty()) {
+                $this->supplementPeriodInvoice($contract, $period['rental_period'], $periodStart, $periodEnd, $periodNumber, $bucket['room_ids'], $bucket['billing_group'], $bucket['scoped']);
+
+                continue;
+            }
+
+            if ($contract->hold_invoice) {
+                continue;
+            }
+
+            $expectedDate = Carbon::parse($previousInvoices->first()->invoice_date)->addMonthsNoOverflow($topMonths)->startOfDay();
+            if (now()->startOfDay()->lt($expectedDate)) {
+                continue;
+            }
+
+            $invoiceDate = $expectedDate->copy();
+            if ($timing === 'after_service') {
+                $assigned = $this->getAssignedInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber);
+                if ($bucket['room_ids'] !== null) {
+                    $assigned = $assigned->filter(fn (JobSchedule $jobSchedule) => $this->jobTouchesContractRooms($jobSchedule, $bucket['room_ids']));
+                }
+                $ready = $assigned->filter(fn (JobSchedule $jobSchedule) => $this->isReadyTriggerJob($contract, $jobSchedule));
+                if ($ready->count() !== $assigned->count()) {
+                    continue;
+                }
+
+                $lastBaDate = $ready->pluck('ba_date')->filter()->map(fn ($date) => Carbon::parse($date))->max();
+                if ($lastBaDate && $lastBaDate->gt($invoiceDate)) {
+                    $invoiceDate = $lastBaDate->copy()->startOfDay();
+                }
+            }
+
+            $this->createTopAnchoredInvoice($contract, $period['rental_period'], $periodStart, $periodEnd, $periodNumber, $bucket, $previousInvoices, $invoiceDate);
+        }
+
+        return $anyAnchor;
+    }
+
+    private function periodInvoices(Contract $contract, string $rentalPeriod, ?BillingGroup $billingGroup, bool $scopeByBillingGroup): \Illuminate\Support\Collection
+    {
+        return Invoice::where(function ($query) use ($contract) {
+            $query->where('contract_id', $contract->id)
+                ->orWhere('contract_number', $contract->contract_number ?? '');
+        })
+            ->where('invoice_status', '!=', Invoice::STATUS_CANCELLED)
+            ->where('period_invoice', $rentalPeriod)
+            ->when($scopeByBillingGroup, function ($query) use ($billingGroup) {
+                $billingGroup
+                    ? $query->where('billing_group_id', $billingGroup->id)
+                    : $query->whereNull('billing_group_id');
+            })
+            ->with('invoiceRentalDetails')
+            ->orderBy('invoice_date')
+            ->orderBy('id')
+            ->get();
+    }
+
+    private function createTopAnchoredInvoice(Contract $contract, string $rentalPeriod, Carbon $periodStart, Carbon $periodEnd, int $periodNumber, array $bucket, \Illuminate\Support\Collection $previousInvoices, Carbon $invoiceDate): ?Invoice
+    {
+        $jobPairs = $this->computeBillableRentalPairs($contract, $periodStart, $periodEnd, [], $bucket['room_ids'], $periodNumber);
+        $billedKeys = array_map(fn ($pair) => $this->invoiceRentalBillingKey($pair['rental'], $this->invoiceBuildingNameForJob($pair['job'])), $jobPairs);
+        $carried = $this->carriedForwardRentalLines($contract, $previousInvoices, $billedKeys, $invoiceDate);
+
+        if (empty($jobPairs) && empty($carried)) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($contract, $rentalPeriod, $periodStart, $periodEnd, $periodNumber, $bucket, $jobPairs, $carried, $invoiceDate) {
+            $invoice = $this->createInvoiceForRentalPeriod(
+                $contract,
+                $rentalPeriod,
+                $periodStart,
+                $periodEnd,
+                $bucket['billing_group'],
+                $invoiceDate,
+                "Tanggal mengikuti TOP penagihan (invoice periode sebelumnya + interval TOP)."
+            );
+
+            $jobIds = [];
+            foreach ($jobPairs as $pair) {
+                $this->createInvoiceDetail($invoice, $pair['job'], $pair['rental']);
+                $jobIds[] = $pair['job']->id;
+            }
+
+            foreach ($carried as $line) {
+                $payload = [
+                    'master_rental_id' => $line['master_rental_id'],
+                    'job_no' => null,
+                    'building_name' => $line['building_name'],
+                    'room_name' => $line['room_name'],
+                    'rental_name' => $line['rental_name'],
+                    'quantity' => $line['quantity'],
+                    'unit_price' => $line['unit_price'],
+                    'total_price' => $line['total_price'],
+                    'created_by' => auth()->id(),
+                ];
+                if (Schema::hasColumn('invoice_rental_details', 'qty_free')) {
+                    $payload['qty_free'] = $line['qty_free'];
+                }
+                $invoice->invoiceRentalDetails()->create($payload);
+            }
+
+            if (! empty($jobIds)) {
+                $this->attachApprovedBaFiles($invoice, $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)
+                    ->whereIn('id', array_unique($jobIds))
+                    ->values());
+            }
+            $this->attachVerifiedContractFiles($invoice, $contract);
+            $invoice->refresh();
+            $this->updateInvoiceTotals($invoice);
+
+            Log::info("Real-time Invoice Trigger: TOP-anchored invoice {$invoice->invoice_number} for contract {$contract->contract_number} {$rentalPeriod} dated {$invoiceDate->toDateString()}");
+
+            return $invoice;
+        });
+    }
+
+    /**
+     * Rental yang ditagih di periode sebelumnya dan masih aktif di kontrak (ruangan masih ada,
+     * tidak di-suspend pada tanggal invoice, rental masih terdaftar). Harga diambil dari kontrak.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function carriedForwardRentalLines(Contract $contract, \Illuminate\Support\Collection $previousInvoices, array $billedKeys, Carbon $invoiceDate): array
+    {
+        $contract->loadMissing('contractRooms.room.building');
+        $roomsByKey = [];
+        foreach ($contract->contractRooms as $contractRoom) {
+            $buildingName = $contractRoom->room?->building?->building_name ?? '';
+            $key = strtolower(trim((string) $buildingName)).'|'.strtolower(trim((string) ($contractRoom->room?->room_name ?? '')));
+            $roomsByKey[$key] ??= $contractRoom;
+        }
+
+        $suspensions = app(\App\Services\Operational\ContractRoomSuspensionService::class);
+        $lines = [];
+
+        foreach ($previousInvoices->flatMap(fn (Invoice $invoice) => $invoice->invoiceRentalDetails) as $detail) {
+            $billingKey = $this->invoiceRentalBillingKey([
+                'room_name' => $detail->room_name,
+                'master_rental_id' => $detail->master_rental_id,
+            ], $detail->building_name);
+            if (in_array($billingKey, $billedKeys, true)) {
+                continue;
+            }
+
+            $contractRoom = $roomsByKey[strtolower(trim((string) $detail->building_name)).'|'.strtolower(trim((string) $detail->room_name))] ?? null;
+            if (! $contractRoom) {
+                continue; // ruangan sudah tidak ada di kontrak
+            }
+
+            if ($suspensions->isContractRoomSuspended((int) $contractRoom->id, $invoiceDate->toDateString())) {
+                continue;
+            }
+
+            $contractRental = $this->findContractRentalForRoomAndRental($contract, (int) $detail->master_rental_id, $contractRoom->room_id ? (int) $contractRoom->room_id : null);
+            if (! $contractRental) {
+                continue; // rental sudah diganti / tidak terdaftar lagi
+            }
+
+            $billedKeys[] = $billingKey;
+            $lines[] = [
+                'master_rental_id' => (int) $detail->master_rental_id,
+                'building_name' => $detail->building_name,
+                'room_name' => $detail->room_name,
+                'rental_name' => $detail->rental_name,
+                'quantity' => $contractRental->quantity ?? $detail->quantity ?? 1,
+                'qty_free' => $contractRental->qty_free ?? 0,
+                'unit_price' => $contractRental->unit_price ?? $detail->unit_price ?? 0,
+                'total_price' => $contractRental->total_price
+                    ?? (($contractRental->quantity ?? 1) * ($contractRental->unit_price ?? 0)),
+            ];
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Klien 27 Nov 2026 (kondisi 4a/4b): ruangan yang selesai belakangan (job susulan / baru
+     * di-assign) masuk ke invoice periode yang sama bila masih Draft; bila invoice periode itu
+     * sudah tidak Draft (approved / terkirim), dibuat invoice susulan dengan tanggal invoice
+     * pertama periode itu ("invoice mengacu pada kontrak, bukan selesainya job").
+     *
+     * Dedup memakai semua invoice (non-cancelled) periode itu di bucket yang sama.
+     *
+     * @return Invoice|null invoice yang menerima baris baru
+     */
+    private function supplementPeriodInvoice(Contract $contract, string $rentalPeriod, Carbon $periodStart, Carbon $periodEnd, ?int $periodNumber, ?array $allowedContractRoomIds, ?BillingGroup $billingGroup, bool $scopeByBillingGroup): ?Invoice
+    {
+        $invoices = Invoice::where(function ($query) use ($contract) {
+            $query->where('contract_id', $contract->id)
+                ->orWhere('contract_number', $contract->contract_number ?? '');
+        })
+            ->where('invoice_status', '!=', Invoice::STATUS_CANCELLED)
+            ->where('period_invoice', $rentalPeriod)
+            ->when($scopeByBillingGroup, function ($query) use ($billingGroup) {
+                $billingGroup
+                    ? $query->where('billing_group_id', $billingGroup->id)
+                    : $query->whereNull('billing_group_id');
+            })
+            ->with('invoiceRentalDetails')
+            ->orderBy('invoice_date')
+            ->orderBy('id')
+            ->get();
+
+        if ($invoices->isEmpty()) {
+            return null;
+        }
+
+        $billedRentals = $invoices
+            ->flatMap(fn (Invoice $invoice) => $invoice->invoiceRentalDetails)
+            ->map(fn ($detail) => $this->invoiceRentalBillingKey([
+                'room_name' => $detail->room_name,
+                'master_rental_id' => $detail->master_rental_id,
+            ], $detail->building_name))
+            ->all();
+
+        $pairs = $this->computeBillableRentalPairs($contract, $periodStart, $periodEnd, $billedRentals, $allowedContractRoomIds, $periodNumber);
+        if (empty($pairs)) {
+            return null;
+        }
+
+        $primary = $invoices->first();
+        $target = $invoices->first(fn (Invoice $invoice) => $invoice->invoice_status === Invoice::STATUS_DRAFT);
+
+        return DB::transaction(function () use ($contract, $rentalPeriod, $periodStart, $periodEnd, $periodNumber, $pairs, $primary, $target, $billingGroup) {
+            $isNew = ! $target;
+            if ($isNew) {
+                $target = $this->createInvoiceForRentalPeriod(
+                    $contract,
+                    $rentalPeriod,
+                    $periodStart,
+                    $periodEnd,
+                    $billingGroup ?? ($primary->billing_group_id ? BillingGroup::find($primary->billing_group_id) : null),
+                    Carbon::parse($primary->invoice_date),
+                    "Invoice susulan untuk {$rentalPeriod} (invoice pertama {$primary->invoice_number})."
+                );
+            }
+
+            $jobIds = [];
+            foreach ($pairs as $pair) {
+                $this->createInvoiceDetail($target, $pair['job'], $pair['rental']);
+                $jobIds[] = $pair['job']->id;
+            }
+
+            $contributingJobs = $this->getReadyInvoiceTriggerJobsInPeriod($contract, $periodStart, $periodEnd, $periodNumber)
+                ->whereIn('id', array_unique($jobIds))
+                ->values();
+            $this->attachApprovedBaFiles($target, $contributingJobs);
+            if ($isNew) {
+                $this->attachVerifiedContractFiles($target, $contract);
+            }
+
+            $target->refresh();
+            $this->updateInvoiceTotals($target);
+
+            Log::info(($isNew ? 'Real-time Invoice Trigger: created supplementary invoice ' : 'Real-time Invoice Trigger: added late room line(s) into draft invoice ')
+                .$target->invoice_number." for contract {$contract->contract_number} {$rentalPeriod}");
+
+            return $target;
+        });
+    }
+
     private function refreshDraftInvoiceRentalDetails(Invoice $invoice, Carbon $periodStart, Carbon $periodEnd, ?array $allowedContractRoomIds = null, ?int $periodNumber = null): void
     {
         $contract = $invoice->contract_id ? Contract::find($invoice->contract_id) : null;

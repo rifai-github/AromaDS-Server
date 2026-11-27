@@ -2752,4 +2752,318 @@ class BillingGroupInvoiceRegenerationTest extends TestCase
         $this->assertFalse($resultAgain['success']);
         $this->assertDatabaseCount('invoices', 2);
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Aturan auto-invoice klien 27 Nov 2026 (final meeting offline + jawaban tim WA)
+    // ---------------------------------------------------------------------------------------
+
+    private function makeCountingInvoiceService(): InvoiceGenerationService
+    {
+        return new InvoiceGenerationService(new class extends DocumentNumberService
+        {
+            private int $counter = 0;
+
+            public function __construct() {}
+
+            public function generate(
+                string $documentType,
+                ?string $branchCode = null,
+                ?int $buildingId = null,
+                ?int $contractId = null,
+                ?int $quotationId = null,
+                ?int $surveyId = null,
+                ?int $warehouseId = null,
+                ?int $branchId = null,
+                \DateTimeInterface|string|null $documentDate = null
+            ): string {
+                return 'TST-INV/'.str_pad((string) ++$this->counter, 4, '0', STR_PAD_LEFT);
+            }
+        });
+    }
+
+    /**
+     * @param  array<string, array{building:int, status:string, ba:?string}>  $rooms
+     * @return array{0: Contract, 1: array<string, JobSchedule>, 2: int}
+     */
+    private function makeClientRuleContract(string $paymentMethod, array $rooms, bool $twoBillingGroups = false): array
+    {
+        DB::table('users')->insert(['name' => 'Admin', 'email' => 'rule@aroma.com', 'created_at' => now(), 'updated_at' => now()]);
+        $customer = Customer::create(['name' => 'Customer Rule 27 Nov']);
+        $quotationId = DB::table('quotations')->insertGetId(['payment_method' => $paymentMethod, 'created_at' => now(), 'updated_at' => now()]);
+        $contract = Contract::create([
+            'contract_number' => 'JKT-CA/26-06/0777',
+            'customer_id' => $customer->id,
+            'quotation_id' => $quotationId,
+            'payment_terms' => 30,
+            'start_date' => '2026-06-21',
+            'end_date' => '2026-12-20',
+        ]);
+
+        DB::table('buildings')->insert([
+            ['id' => 9501, 'building_name' => 'Gedung 1', 'name' => 'Gedung 1', 'created_at' => now(), 'updated_at' => now()],
+            ['id' => 9502, 'building_name' => 'Gedung 2', 'name' => 'Gedung 2', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $groups = [];
+        foreach ($twoBillingGroups ? [1, 2] : [1] as $n) {
+            $groups[$n] = BillingGroup::create([
+                'billing_group_name' => "Billing Group {$n}",
+                'customer_id' => $customer->id,
+                'contract_id' => $contract->id,
+                'billing_frequency' => 'monthly',
+                'is_active' => true,
+            ]);
+        }
+        if ($twoBillingGroups) {
+            DB::table('billing_group_buildings')->insert([
+                ['billing_group_id' => $groups[1]->id, 'building_id' => 9501, 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
+                ['billing_group_id' => $groups[2]->id, 'building_id' => 9502, 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
+            ]);
+        }
+
+        $jobAdviceId = DB::table('job_advices')->insertGetId(['contract_id' => $contract->id, 'created_at' => now(), 'updated_at' => now()]);
+        $jobType = str_contains(strtolower($paymentMethod), 'before') ? 'install' : 'service_first';
+
+        $jobs = [];
+        $i = 0;
+        foreach ($rooms as $key => $room) {
+            $i++;
+            $roomId = 9510 + $i;
+            DB::table('master_rooms')->insert(['id' => $roomId, 'building_id' => 9500 + $room['building'], 'room_name' => "Ruang-{$key}", 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('contract_rooms')->insert(['id' => 9520 + $i, 'contract_id' => $contract->id, 'room_id' => $roomId, 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('master_rentals')->insert(['id' => 9530 + $i, 'rental_name' => "Rental {$key}", 'rental_type' => 'unit_refill', 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('contract_rentals')->insert(['id' => 9540 + $i, 'contract_id' => $contract->id, 'master_rental_id' => 9530 + $i, 'room_id' => $roomId, 'quantity' => 1, 'unit_price' => 1000000, 'total_price' => 1000000, 'created_at' => now(), 'updated_at' => now()]);
+
+            $job = JobSchedule::create([
+                'job_number' => $room['status'] === 'new_job' ? null : "JKT-JOB/{$key}",
+                'type' => $jobType,
+                'status' => $room['status'],
+                'job_advice_id' => $jobAdviceId,
+                'building_id' => 9500 + $room['building'],
+                'room_id' => $roomId,
+                'period' => $jobType === 'install' ? null : 1,
+                'service_frequency' => 1,
+                'schedule_date' => '2026-06-21',
+                'ba_date' => $room['ba'],
+            ]);
+            DB::table('job_advice_rooms')->insert([
+                'id' => 9550 + $i,
+                'job_advice_id' => $jobAdviceId,
+                'contract_room_id' => 9520 + $i,
+                'contract_rental_id' => 9540 + $i,
+                'rental_product_id' => 9530 + $i,
+                $jobType === 'install' ? 'install_job_schedule_id' : 'service_job_schedule_id' => $job->id,
+                'room_name' => "Ruang-{$key}",
+                'rental_name' => "Rental {$key}",
+                'status' => 'completed',
+                'is_trial' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('job_schedule_rooms')->insert([
+                'job_schedule_id' => $job->id,
+                'job_advice_room_id' => 9550 + $i,
+                'room_id' => $roomId,
+                'room_name' => "Ruang-{$key}",
+                'status' => 'completed',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $jobs[$key] = $job;
+        }
+
+        return [$contract, $jobs, $jobAdviceId];
+    }
+
+    private function invoiceLineRooms(int $invoiceId): array
+    {
+        return DB::table('invoice_rental_details')->where('invoice_id', $invoiceId)->orderBy('room_name')->pluck('room_name')->all();
+    }
+
+    public function test_rule_27_nov_first_invoice_does_not_wait_for_unassigned_rooms(): void
+    {
+        Carbon::setTestNow('2026-06-22');
+        [$contract] = $this->makeClientRuleContract('After Service', [
+            'A' => ['building' => 1, 'status' => 'done_job', 'ba' => '2026-06-21'],
+            'B' => ['building' => 1, 'status' => 'new_job', 'ba' => null], // belum di-assign
+        ]);
+
+        $this->makeCountingInvoiceService()->attemptAutoInvoiceForContract($contract->id);
+
+        $invoice = LegacyInvoice::where('contract_id', $contract->id)->where('period_invoice', 'Period 1')->first();
+        $this->assertNotNull($invoice, 'Invoice pertama keluar walau Ruang-B belum di-assign.');
+        $this->assertSame(['Ruang-A'], $this->invoiceLineRooms($invoice->id));
+        Carbon::setTestNow();
+    }
+
+    public function test_rule_27_nov_assigned_room_without_ba_still_holds_the_invoice(): void
+    {
+        Carbon::setTestNow('2026-06-22');
+        [$contract, $jobs] = $this->makeClientRuleContract('Before Service', [
+            'A' => ['building' => 1, 'status' => 'done_job', 'ba' => '2026-06-21'],
+            'B' => ['building' => 1, 'status' => 'meninggalkan_lokasi', 'ba' => null], // sudah dikerjakan, BA belum
+        ]);
+        $service = $this->makeCountingInvoiceService();
+
+        $service->attemptAutoInvoiceForContract($contract->id);
+        $this->assertSame(0, LegacyInvoice::where('contract_id', $contract->id)->count());
+
+        $jobs['B']->update(['status' => 'assign_material']);
+        $service->attemptAutoInvoiceForContract($contract->id);
+        $this->assertSame(0, LegacyInvoice::where('contract_id', $contract->id)->count());
+
+        $jobs['B']->update(['status' => 'done_job', 'ba_date' => '2026-06-22']);
+        $service->attemptAutoInvoiceForContract($contract->id);
+        $invoice = LegacyInvoice::where('contract_id', $contract->id)->first();
+        $this->assertSame(['Ruang-A', 'Ruang-B'], $this->invoiceLineRooms($invoice->id));
+        Carbon::setTestNow();
+    }
+
+    public function test_rule_27_nov_late_room_after_invoice_sent_gets_supplementary_invoice_dated_like_the_first(): void
+    {
+        Carbon::setTestNow('2026-06-22');
+        [$contract, $jobs] = $this->makeClientRuleContract('Before Service', [
+            'A' => ['building' => 1, 'status' => 'done_job', 'ba' => '2026-06-21'],
+            'B' => ['building' => 1, 'status' => 'new_job', 'ba' => null], // job susulan
+        ]);
+        $service = $this->makeCountingInvoiceService();
+        $service->attemptAutoInvoiceForContract($contract->id);
+
+        $first = LegacyInvoice::where('contract_id', $contract->id)->firstOrFail();
+        $first->update(['invoice_status' => 'sent']);
+
+        Carbon::setTestNow('2026-06-27');
+        $jobs['B']->update(['status' => 'done_job', 'ba_date' => '2026-06-26', 'job_number' => 'JKT-JOB/B']);
+        $service->attemptAutoInvoiceForContract($contract->id);
+
+        $invoices = LegacyInvoice::where('contract_id', $contract->id)->orderBy('id')->get();
+        $this->assertCount(2, $invoices);
+        $this->assertSame('Period 1', $invoices[1]->period_invoice);
+        $this->assertSame(Carbon::parse($first->invoice_date)->toDateString(), Carbon::parse($invoices[1]->invoice_date)->toDateString());
+        $this->assertSame(['Ruang-A'], $this->invoiceLineRooms($first->id));
+        $this->assertSame(['Ruang-B'], $this->invoiceLineRooms($invoices[1]->id));
+
+        // Dipanggil lagi: tidak menagih dobel.
+        $service->attemptAutoInvoiceForContract($contract->id);
+        $this->assertSame(2, LegacyInvoice::where('contract_id', $contract->id)->count());
+        Carbon::setTestNow();
+    }
+
+    public function test_rule_27_nov_each_billing_group_is_ready_on_its_own(): void
+    {
+        Carbon::setTestNow('2026-06-22');
+        [$contract] = $this->makeClientRuleContract('Before Service', [
+            'A' => ['building' => 1, 'status' => 'done_job', 'ba' => '2026-06-21'],
+            'B' => ['building' => 1, 'status' => 'assign_material', 'ba' => null], // BG 1, ter-assign, belum selesai
+            'C' => ['building' => 2, 'status' => 'done_job', 'ba' => '2026-06-21'],
+        ], true);
+
+        $this->makeCountingInvoiceService()->attemptAutoInvoiceForContract($contract->id);
+
+        $invoices = LegacyInvoice::where('contract_id', $contract->id)->get();
+        $this->assertCount(1, $invoices, 'Hanya Billing Group 2 yang siap.');
+        $this->assertSame(['Ruang-C'], $this->invoiceLineRooms($invoices[0]->id));
+        Carbon::setTestNow();
+    }
+
+    public function test_rule_27_nov_before_service_next_period_follows_top_date(): void
+    {
+        Carbon::setTestNow('2026-06-22');
+        [$contract] = $this->makeClientRuleContract('Before Service', [
+            'A' => ['building' => 1, 'status' => 'done_job', 'ba' => '2026-06-21'],
+        ]);
+        $service = $this->makeCountingInvoiceService();
+        $service->attemptAutoInvoiceForContract($contract->id);
+        $first = LegacyInvoice::where('contract_id', $contract->id)->firstOrFail();
+        $this->assertSame('2026-06-21', Carbon::parse($first->invoice_date)->toDateString());
+
+        Carbon::setTestNow('2026-07-20');
+        $service->attemptAutoInvoiceForContract($contract->id);
+        $this->assertSame(0, LegacyInvoice::where('contract_id', $contract->id)->where('period_invoice', 'Period 2')->count());
+
+        Carbon::setTestNow('2026-07-21');
+        $service->attemptAutoInvoiceForContract($contract->id);
+        $second = LegacyInvoice::where('contract_id', $contract->id)->where('period_invoice', 'Period 2')->firstOrFail();
+        $this->assertSame('2026-07-21', Carbon::parse($second->invoice_date)->toDateString());
+        $this->assertSame(['Ruang-A'], $this->invoiceLineRooms($second->id));
+        $this->assertEquals(1000000, (float) DB::table('invoice_rental_details')->where('invoice_id', $second->id)->value('total_price'));
+        Carbon::setTestNow();
+    }
+
+    public function test_rule_27_nov_after_service_month_without_service_bills_on_top_date(): void
+    {
+        Carbon::setTestNow('2026-06-22');
+        [$contract] = $this->makeClientRuleContract('After Service', [
+            'A' => ['building' => 1, 'status' => 'done_job', 'ba' => '2026-06-21'],
+        ]);
+        $service = $this->makeCountingInvoiceService();
+        $service->attemptAutoInvoiceForContract($contract->id);
+
+        // Rental 3 bulan 1x: tidak ada service di periode 2 → dianggap sudah service.
+        Carbon::setTestNow('2026-07-21');
+        $service->attemptAutoInvoiceForContract($contract->id);
+        $second = LegacyInvoice::where('contract_id', $contract->id)->where('period_invoice', 'Period 2')->firstOrFail();
+        $this->assertSame('2026-07-21', Carbon::parse($second->invoice_date)->toDateString());
+        $this->assertSame(['Ruang-A'], $this->invoiceLineRooms($second->id));
+        Carbon::setTestNow();
+    }
+
+    public function test_rule_27_nov_after_service_late_service_moves_the_invoice_date(): void
+    {
+        Carbon::setTestNow('2026-06-22');
+        [$contract, $jobs, $jobAdviceId] = $this->makeClientRuleContract('After Service', [
+            'A' => ['building' => 1, 'status' => 'done_job', 'ba' => '2026-06-21'],
+        ]);
+        $service = $this->makeCountingInvoiceService();
+        $service->attemptAutoInvoiceForContract($contract->id);
+
+        $periodTwo = JobSchedule::create([
+            'job_number' => 'JKT-CSR/A-2',
+            'type' => 'service_routine',
+            'status' => 'assign_material',
+            'job_advice_id' => $jobAdviceId,
+            'building_id' => 9501,
+            'room_id' => 9511,
+            'period' => 2,
+            'service_frequency' => 1,
+            'schedule_date' => '2026-07-21',
+        ]);
+        DB::table('job_schedule_rooms')->insert([
+            'job_schedule_id' => $periodTwo->id,
+            'job_advice_room_id' => 9551,
+            'room_id' => 9511,
+            'room_name' => 'Ruang-A',
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Carbon::setTestNow('2026-07-21');
+        $service->attemptAutoInvoiceForContract($contract->id);
+        $this->assertSame(0, LegacyInvoice::where('contract_id', $contract->id)->where('period_invoice', 'Period 2')->count(), 'Service bulan ini belum selesai.');
+
+        Carbon::setTestNow('2026-07-23');
+        $periodTwo->update(['status' => 'done_job', 'ba_date' => '2026-07-23']);
+        $service->attemptAutoInvoiceForContract($contract->id);
+        $second = LegacyInvoice::where('contract_id', $contract->id)->where('period_invoice', 'Period 2')->firstOrFail();
+        $this->assertSame('2026-07-23', Carbon::parse($second->invoice_date)->toDateString());
+        Carbon::setTestNow();
+    }
+
+    public function test_rule_27_nov_quarterly_service_maps_to_its_own_month(): void
+    {
+        $service = $this->makeCountingInvoiceService();
+        $cache = new \ReflectionProperty(InvoiceGenerationService::class, 'serviceIntervalMonthsCache');
+        $cache->setAccessible(true);
+        $cache->setValue($service, [501 => 3, 502 => 3, 503 => 1]);
+        $method = new \ReflectionMethod(InvoiceGenerationService::class, 'computeInvoicePeriodForJob');
+        $method->setAccessible(true);
+
+        $contract = new Contract(['payment_terms' => 30]);
+        $job = fn (int $id, int $period) => tap(new JobSchedule(['type' => 'service_routine', 'period' => $period, 'service_frequency' => 1]), fn ($j) => $j->id = $id);
+
+        $this->assertSame(1, $method->invoke($service, $job(501, 1), $contract));
+        $this->assertSame(4, $method->invoke($service, $job(502, 2), $contract), 'Service ke-2 rental 3 bulan 1x = bulan ke-4.');
+        $this->assertSame(2, $method->invoke($service, $job(503, 2), $contract), 'Rental bulanan tidak berubah.');
+    }
 }
