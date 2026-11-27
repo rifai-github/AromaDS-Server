@@ -887,17 +887,13 @@ class InventoryIssuingService
                     ->where('building_id', $baseJob->building_id)
                     ->where('type', $baseJob->type);
 
-                if ($baseJob->period !== null) {
-                    $query->where('period', $baseJob->period);
-                } else {
-                    $query->whereNull('period');
-                }
+                // QA batch 4 (27 Nov 2026): saudara = kunjungan yang sama (seri rental lain di bulan
+                // yang sama ikut, bulan lain tidak). Lihat JobSchedule::serviceVisitKey().
+                $baseJob->constrainToSameServiceVisit($query);
 
-                // QA batch 4 (27 Nov 2026): periode yang sama milik seri rental lain (bulan
-                // berbeda) bukan saudara. Lihat JobSchedule::serviceSeriesMarker().
                 $relatedJobs = $relatedJobs->merge($query->get()->filter(
                     fn ($related) => (int) $related->id === (int) $baseJob->id
-                        || $related->serviceSeriesMarker() === $baseJob->serviceSeriesMarker()
+                        || $related->isSameServiceVisitAs($baseJob)
                 ));
 
                 continue;

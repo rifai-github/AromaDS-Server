@@ -4364,16 +4364,12 @@ class JobAssignMaterialIssueController extends Controller
             ->where('building_id', $jobSchedule->building_id)
             ->where('type', $jobSchedule->type);
 
-        if ($jobSchedule->period !== null) {
-            $query->where('period', $jobSchedule->period);
-        } else {
-            $query->whereNull('period');
-        }
+        // QA batch 4 (27 Nov 2026): saudara = kunjungan yang sama — seri rental lain di bulan yang
+        // sama ikut, bulan lain tidak. Lihat JobSchedule::serviceVisitKey().
+        $jobSchedule->constrainToSameServiceVisit($query);
 
-        // QA batch 4 (27 Nov 2026): periode yang sama milik seri rental lain (bulan berbeda)
-        // bukan saudara. Lihat JobSchedule::serviceSeriesMarker().
         return $query->get()
-            ->filter(fn ($sibling) => $sibling->serviceSeriesMarker() === $jobSchedule->serviceSeriesMarker())
+            ->filter(fn ($sibling) => $sibling->isSameServiceVisitAs($jobSchedule))
             ->values();
     }
 
@@ -4387,8 +4383,8 @@ class JobAssignMaterialIssueController extends Controller
             $jobSchedule->job_advice_id ?? 'no-ja',
             $jobSchedule->building_id ?? 'no-building',
             $jobSchedule->type ?? 'no-type',
-            $jobSchedule->period ?? 'no-period',
-        ]).$jobSchedule->serviceSeriesMarker();
+            $jobSchedule->serviceVisitKey(),
+        ]);
     }
 
     private function formatJobRoomLabel(JobSchedule $jobSchedule): string

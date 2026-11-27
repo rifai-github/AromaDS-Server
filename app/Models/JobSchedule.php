@@ -1255,39 +1255,84 @@ class JobSchedule extends Model
         ]);
     }
 
-    /** Interval (hari) seri service bulanan 1x — disamakan dengan NULL (data lama). */
+    /** Interval (hari) seri service bulanan 1x — dipakai untuk NULL (data lama). */
     public const DEFAULT_SERVICE_SERIES_INTERVAL_DAYS = 30;
 
     /**
      * QA batch 4 (27 Nov 2026, JA ADS-JA/26-11/0007 Ruang-5): satu ruangan bisa memegang dua
      * rental dengan frekuensi service berbeda (TestRO2b1x 2 bulan 1x + TestVG1b1x 1 bulan 1x).
-     * Masing-masing kini punya seri job service sendiri, dan `period` dihitung per seri — jadi
-     * "periode 2" seri 2-bulanan (bulan ke-3) BUKAN kunjungan yang sama dengan "periode 2" seri
-     * bulanan (bulan ke-2). Pembedanya `service_interval_days` (30 x frequency_months /
-     * frequency_times_per_month) yang diisi generator service lanjutan.
+     * Masing-masing punya seri job service sendiri dan `period` dihitung per seri, jadi nomor
+     * periode saja tidak lagi menunjukkan kunjungan yang sama.
      *
-     * Seri bulanan 1x (30 hari) dan data lama (NULL) memberi penanda kosong, sehingga
-     * pengelompokan Job View / Material Assign / saudara job untuk kasus yang sudah ada tidak
-     * berubah. Harus sama dengan serviceSeriesGroupingSql().
+     * Klien 28 Nov 2026: "2 job dengan 1 kali kunjungan" — job rental-rental yang jatuh di bulan
+     * yang sama tetap 2 baris job, tetapi SATU kunjungan (satu baris Job View, satu batch Material
+     * Assign, satu nomor JS). Kunci kunjungannya: jarak hari dari service pertama =
+     * (period - 1) x service_interval_days (NULL = 30, data lama/bulanan). TestRO2b1x periode 2
+     * (60 hari) dan TestVG1b1x periode 3 (2 x 30) → kunjungan yang sama; bulan berbeda tetap terpisah.
+     *
+     * Dihitung dari period (bukan schedule_date), jadi ruangan-ruangan satu periode yang tanggalnya
+     * sedikit berbeda tetap satu kunjungan, dan untuk data lama/seri bulanan kuncinya sebanding satu-
+     * satu dengan period (perilaku lama tidak berubah). Harus sama dengan serviceVisitGroupingSql().
      */
-    public function serviceSeriesMarker(): string
+    public function serviceVisitKey(): string
     {
-        $type = strtolower(trim((string) ($this->type ?? '')));
-        if (! in_array($type, ['service', 'service_first', 'service_routine'], true)) {
-            return '';
+        if ($this->usesServiceVisitOffset()) {
+            $days = (int) ($this->getAttributes()['service_interval_days'] ?? 0);
+            $days = $days > 0 ? $days : self::DEFAULT_SERVICE_SERIES_INTERVAL_DAYS;
+
+            return 'visit:'.(((int) $this->period - 1) * $days);
         }
 
-        $days = (int) ($this->getAttributes()['service_interval_days'] ?? 0);
-
-        return $days > 0 && $days !== self::DEFAULT_SERVICE_SERIES_INTERVAL_DAYS
-            ? "|every:{$days}d"
-            : '';
+        return 'period:'.($this->period ?? 'no-period');
     }
 
-    /** Ekspresi SQL padanan serviceSeriesMarker() (0 = seri bawaan). */
-    public static function serviceSeriesGroupingSql(): string
+    /** Job service berperiode: kunjungannya dikenali dari jarak hari, bukan nomor periode. */
+    public function usesServiceVisitOffset(): bool
     {
-        return "CASE WHEN LOWER(COALESCE(type, '')) IN ('service', 'service_first', 'service_routine') AND COALESCE(service_interval_days, 0) NOT IN (0, ".self::DEFAULT_SERVICE_SERIES_INTERVAL_DAYS.') THEN service_interval_days ELSE 0 END';
+        $type = strtolower(trim((string) ($this->type ?? '')));
+
+        return in_array($type, ['service', 'service_first', 'service_routine'], true)
+            && filled($this->period)
+            && is_numeric($this->period);
+    }
+
+    /**
+     * Batasi query saudara ke kunjungan yang sama. Untuk job service, nomor periode saudara bisa
+     * berbeda (seri rental lain), jadi query tidak dibatasi period; pemanggil wajib menyaring hasil
+     * dengan isSameServiceVisitAs(). Job lain tetap dibatasi period seperti dulu.
+     */
+    public function constrainToSameServiceVisit($query)
+    {
+        if ($this->usesServiceVisitOffset()) {
+            return $query->whereNotNull('period');
+        }
+
+        return $this->period !== null
+            ? $query->where('period', $this->period)
+            : $query->whereNull('period');
+    }
+
+    public function isSameServiceVisitAs(self $other): bool
+    {
+        return $this->serviceVisitKey() === $other->serviceVisitKey();
+    }
+
+    /**
+     * Ekspresi SQL padanan serviceVisitKey() untuk GROUP BY: [pengganti kolom period, jarak hari].
+     *
+     * @return array{0: string, 1: string}
+     */
+    public static function serviceVisitGroupingSql(bool $hasIntervalColumn): array
+    {
+        $isServiceWithPeriod = "LOWER(COALESCE(type, '')) IN ('service', 'service_first', 'service_routine') AND period IS NOT NULL AND period <> ''";
+        $interval = $hasIntervalColumn
+            ? 'COALESCE(NULLIF(service_interval_days, 0), '.self::DEFAULT_SERVICE_SERIES_INTERVAL_DAYS.')'
+            : (string) self::DEFAULT_SERVICE_SERIES_INTERVAL_DAYS;
+
+        return [
+            "CASE WHEN {$isServiceWithPeriod} THEN NULL ELSE period END",
+            "CASE WHEN {$isServiceWithPeriod} THEN (period - 1) * {$interval} ELSE NULL END",
+        ];
     }
 
     /** Interval hari seri service dari RentalServiceFrequency (bulanan 1x = 30). */

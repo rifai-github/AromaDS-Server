@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Operational\JobAssignMaterialIssueController;
 use App\Http\Controllers\Operational\JobScheduleController;
 use App\Models\Contract;
 use App\Models\JobAdvice;
@@ -9,6 +10,7 @@ use App\Models\JobSchedule;
 use App\Models\User;
 use App\Services\Finance\InvoiceGenerationService;
 use App\Services\Operational\JobMaterialCompletionService;
+use App\Services\Warehouse\InventoryIssuingService;
 use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Auth;
@@ -297,50 +299,97 @@ class MultiFrequencyRoomServiceSeriesTest extends TestCase
         $this->assertCount(16, $this->generatedJobs());
     }
 
-    public function test_job_view_and_material_assign_do_not_merge_different_months_with_the_same_period(): void
+    /**
+     * Klien 28 Nov 2026: "2 job dengan 1 kali kunjungan". Bulan di mana kedua rental jatuh tempo
+     * (Jan, Mar, Mei, Jul, Sep 2027) = 1 baris Job View / 1 batch Material Assign berisi 2 job;
+     * bulan lain (hanya TestVG1b1x) tetap kunjungan sendiri.
+     */
+    public function test_same_month_jobs_of_both_rentals_form_one_visit_other_months_stay_separate(): void
     {
         $this->generateFollowUps();
         $generated = $this->generatedJobs();
-        $roP2 = $generated->first(fn ($job) => $this->linkedRentals($job) === [self::JAR_RO] && (int) $job->period === 2);
-        $vgP2 = $generated->first(fn ($job) => $this->linkedRentals($job) === [self::JAR_VG] && (int) $job->period === 2);
+        $job = fn (int $jaRoomId, int $period) => $generated->first(fn ($candidate) => $this->linkedRentals($candidate) === [$jaRoomId] && (int) $candidate->period === $period);
 
-        $this->assertNotSame($this->controllerCall('buildJobGroupingKey', $roP2), $this->controllerCall('buildJobGroupingKey', $vgP2));
-        $this->assertNotSame($this->controllerCall('materialAssignBatchKey', $roP2), $this->controllerCall('materialAssignBatchKey', $vgP2));
+        $roP2 = $job(self::JAR_RO, 2);   // 2027-01-27
+        $vgP2 = $job(self::JAR_VG, 2);   // 2026-12-27
+        $vgP3 = $job(self::JAR_VG, 3);   // 2027-01-27
+        $vgP4 = $job(self::JAR_VG, 4);   // 2027-02-27
+        $roP6 = $job(self::JAR_RO, 6);   // 2027-09-27
+        $vgP11 = $job(self::JAR_VG, 11); // 2027-09-27
 
-        // SQL Job View: satu baris per job service (16) + service pertama.
-        $representatives = DB::table('job_schedules')
-            ->selectRaw('MIN(id) as id')
-            ->whereNotNull('job_advice_id')
-            ->whereNull('deleted_at')
-            ->groupBy('job_advice_id', 'building_id', 'type', 'period', 'job_number')
-            ->groupByRaw("CASE WHEN (job_number IS NULL OR job_number = '') AND LOWER(COALESCE(type, '')) IN ('service', 'service_first', 'service_routine') AND COALESCE(material_checked, 0) = 1 THEN 1 ELSE 0 END")
-            ->groupByRaw("CASE WHEN (job_number IS NULL OR job_number = '') THEN (".JobSchedule::serviceSeriesGroupingSql().') ELSE 0 END')
-            ->pluck('id');
-        $this->assertCount(17, $representatives);
+        // Tanggal kedua seri persis sama di bulan yang sama (dihitung dari tanggal service pertama).
+        $this->assertEquals($roP2->schedule_date, $vgP3->schedule_date);
+        $this->assertEquals($roP6->schedule_date, $vgP11->schedule_date);
 
-        // Saudara job (Material Completion) tidak menyeberang ke seri lain.
-        $related = $this->callProtected(app(JobMaterialCompletionService::class), 'resolveRelatedJobs', $roP2);
-        $this->assertSame([(int) $roP2->id], $related->pluck('id')->map(fn ($id) => (int) $id)->all());
+        foreach (['buildJobGroupingKey', 'materialAssignBatchKey'] as $keyMethod) {
+            $this->assertSame($this->controllerCall($keyMethod, $roP2), $this->controllerCall($keyMethod, $vgP3), $keyMethod);
+            $this->assertSame($this->controllerCall($keyMethod, $roP6), $this->controllerCall($keyMethod, $vgP11), $keyMethod);
+            $this->assertNotSame($this->controllerCall($keyMethod, $roP2), $this->controllerCall($keyMethod, $vgP2), $keyMethod);
+            $this->assertNotSame($this->controllerCall($keyMethod, $roP2), $this->controllerCall($keyMethod, $vgP4), $keyMethod);
+        }
+
+        // SQL Job View: 11 kunjungan (Des 2026 .. Okt 2027) + service pertama.
+        $this->assertCount(12, $this->jobViewRepresentatives());
+
+        // Saudara job (Material Completion, Submit Issue, Inventory Issuing) = kunjungan yang sama.
+        $expected = [(int) $roP2->id, (int) $vgP3->id];
+        sort($expected);
+        $ids = fn ($collection) => $collection->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all();
+        $this->assertSame($expected, $ids($this->callProtected(app(JobMaterialCompletionService::class), 'resolveRelatedJobs', $roP2)));
+        $this->assertSame($expected, $ids($this->callProtected(app(JobAssignMaterialIssueController::class), 'resolveSubmitIssueSiblingJobs', $vgP3)));
+        $this->assertSame($expected, $ids($this->callProtected(app(InventoryIssuingService::class), 'expandGroupedJobSchedules', collect([$roP2]))));
+        $this->assertSame([(int) $vgP2->id], $ids($this->callProtected(app(JobMaterialCompletionService::class), 'resolveRelatedJobs', $vgP2)));
+
+        // Setelah bernomor sama (satu kunjungan), tetap satu baris Job View.
+        DB::table('job_schedules')->whereIn('id', $expected)->update(['job_number' => 'BLP-CSR/27-01/0001', 'status' => 'assign_material']);
+        $this->assertCount(12, $this->jobViewRepresentatives());
+        $this->assertSame(
+            $this->controllerCall('buildJobGroupingKey', JobSchedule::findOrFail($roP2->id)),
+            $this->controllerCall('buildJobGroupingKey', JobSchedule::findOrFail($vgP3->id))
+        );
     }
 
-    public function test_legacy_rows_without_interval_still_group_like_before(): void
+    public function test_single_series_and_legacy_rows_still_group_by_period(): void
     {
-        // Data lama (service_interval_days NULL) dan seri bulanan (30) tetap satu kunjungan.
-        $legacy = new JobSchedule();
-        $legacy->forceFill(['job_advice_id' => 1, 'building_id' => 1, 'type' => 'service', 'period' => '3', 'job_number' => null, 'service_interval_days' => null]);
-        $monthly = new JobSchedule();
-        $monthly->forceFill(['job_advice_id' => 1, 'building_id' => 1, 'type' => 'service', 'period' => '3', 'job_number' => null, 'service_interval_days' => 30]);
-        $twoMonthly = new JobSchedule();
-        $twoMonthly->forceFill(['job_advice_id' => 1, 'building_id' => 1, 'type' => 'service', 'period' => '3', 'job_number' => null, 'service_interval_days' => 60]);
-        $install = new JobSchedule();
-        $install->forceFill(['job_advice_id' => 1, 'building_id' => 1, 'type' => 'install', 'period' => null, 'job_number' => null, 'service_interval_days' => 60]);
+        $make = function (array $attributes): JobSchedule {
+            $job = new JobSchedule();
+            $job->forceFill(array_merge(['job_advice_id' => 1, 'building_id' => 1, 'type' => 'service', 'job_number' => null, 'service_interval_days' => null], $attributes));
 
-        $this->assertSame('', $legacy->serviceSeriesMarker());
-        $this->assertSame('', $monthly->serviceSeriesMarker());
-        $this->assertSame('|every:60d', $twoMonthly->serviceSeriesMarker());
-        $this->assertSame('', $install->serviceSeriesMarker());
-        $this->assertSame($this->controllerCall('buildJobGroupingKey', $legacy), $this->controllerCall('buildJobGroupingKey', $monthly));
-        $this->assertSame($this->controllerCall('materialAssignBatchKey', $legacy), $this->controllerCall('materialAssignBatchKey', $monthly));
+            return $job;
+        };
+
+        // Data lama (NULL) dan seri bulanan (30) periode sama = kunjungan sama; beda periode = beda.
+        $legacyP3 = $make(['period' => '3']);
+        $monthlyP3 = $make(['period' => '3', 'service_interval_days' => 30]);
+        $monthlyP4 = $make(['period' => '4', 'service_interval_days' => 30]);
+        $twoMonthlyP2 = $make(['period' => '2', 'service_interval_days' => 60]);
+        $twoMonthlyP3 = $make(['period' => '3', 'service_interval_days' => 60]);
+        $install = $make(['type' => 'install', 'period' => null, 'service_interval_days' => 60]);
+        // Job Check Unit Only (material_checked) tetap terpisah dari CSR di kunjungan yang sama.
+        $check = $make(['period' => '3', 'material_checked' => true]);
+
+        $this->assertSame('visit:60', $legacyP3->serviceVisitKey());
+        $this->assertSame('visit:60', $monthlyP3->serviceVisitKey());
+        $this->assertSame('visit:60', $twoMonthlyP2->serviceVisitKey());
+        $this->assertSame('visit:120', $twoMonthlyP3->serviceVisitKey());
+        $this->assertSame('period:no-period', $install->serviceVisitKey());
+
+        foreach (['buildJobGroupingKey', 'materialAssignBatchKey'] as $keyMethod) {
+            $this->assertSame($this->controllerCall($keyMethod, $legacyP3), $this->controllerCall($keyMethod, $monthlyP3), $keyMethod);
+            $this->assertNotSame($this->controllerCall($keyMethod, $monthlyP3), $this->controllerCall($keyMethod, $monthlyP4), $keyMethod);
+            $this->assertNotSame($this->controllerCall($keyMethod, $monthlyP3), $this->controllerCall($keyMethod, $twoMonthlyP3), $keyMethod);
+            $this->assertNotSame($this->controllerCall($keyMethod, $legacyP3), $this->controllerCall($keyMethod, $check), $keyMethod);
+        }
+
+        // Dua ruangan satu periode dengan tanggal sedikit berbeda tetap satu batch Material Assign.
+        $roomA = $make(['period' => '2', 'service_interval_days' => 30, 'schedule_date' => '2027-01-27']);
+        $roomB = $make(['period' => '2', 'service_interval_days' => 30, 'schedule_date' => '2027-02-03']);
+        $this->assertSame($this->controllerCall('materialAssignBatchKey', $roomA), $this->controllerCall('materialAssignBatchKey', $roomB));
+
+        // Bernomor: tetap dikelompokkan per nomor JS.
+        $numberedA = $make(['period' => '2', 'job_number' => 'BLP-CSR/26-11/0001', 'material_checked' => true]);
+        $numberedB = $make(['period' => '2', 'job_number' => 'BLP-CSR/26-11/0001']);
+        $this->assertSame($this->controllerCall('buildJobGroupingKey', $numberedA), $this->controllerCall('buildJobGroupingKey', $numberedB));
     }
 
     public function test_invoice_period_follows_each_rental_series_month(): void
@@ -432,6 +481,21 @@ class MultiFrequencyRoomServiceSeriesTest extends TestCase
     }
 
     // ---------------------------------------------------------------- helpers
+
+    private function jobViewRepresentatives()
+    {
+        [$visitPeriodSql, $visitOffsetSql] = JobSchedule::serviceVisitGroupingSql(true);
+
+        return DB::table('job_schedules')
+            ->selectRaw('MIN(id) as id')
+            ->whereNotNull('job_advice_id')
+            ->whereNull('deleted_at')
+            ->groupBy('job_advice_id', 'building_id', 'type', 'job_number')
+            ->groupByRaw($visitPeriodSql)
+            ->groupByRaw($visitOffsetSql)
+            ->groupByRaw("CASE WHEN (job_number IS NULL OR job_number = '') AND LOWER(COALESCE(type, '')) IN ('service', 'service_first', 'service_routine') AND COALESCE(material_checked, 0) = 1 THEN 1 ELSE 0 END")
+            ->pluck('id');
+    }
 
     private function generateFollowUps(): void
     {

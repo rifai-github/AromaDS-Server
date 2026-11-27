@@ -168,26 +168,26 @@ class JobScheduleController extends Controller
             // Show one representative per generated visit. Once Material Assign has created
             // a job_number, keep each job_number separated so old/new material batches do
             // not share rooms or status badges in the dashboard.
-            $groupByServiceSeries = \Illuminate\Support\Facades\Schema::hasColumn((new \App\Models\JobSchedule)->getTable(), 'service_interval_days');
-            $query->where(function ($q) use ($groupByServiceSeries) {
+            // QA batch 4 + klien 28 Nov 2026: job service dikelompokkan per KUNJUNGAN (jarak hari dari
+            // service pertama), bukan nomor periode — seri rental 2-bulanan & bulanan yang jatuh di
+            // bulan yang sama jadi satu baris. Harus sama dengan JobSchedule::serviceVisitKey().
+            [$visitPeriodSql, $visitOffsetSql] = \App\Models\JobSchedule::serviceVisitGroupingSql(
+                \Illuminate\Support\Facades\Schema::hasColumn((new \App\Models\JobSchedule)->getTable(), 'service_interval_days')
+            );
+            $query->where(function ($q) use ($visitPeriodSql, $visitOffsetSql) {
                 $table = (new \App\Models\JobSchedule)->getTable();
-                $q->whereIn('id', function ($sub) use ($table, $groupByServiceSeries) {
+                $q->whereIn('id', function ($sub) use ($table, $visitPeriodSql, $visitOffsetSql) {
                     $sub->selectRaw('MIN(id)')
                         ->from($table)
                         ->whereNotNull('job_advice_id')
                         ->whereNull('deleted_at')
-                        ->groupBy('job_advice_id', 'building_id', 'type', 'period', 'job_number')
+                        ->groupBy('job_advice_id', 'building_id', 'type', 'job_number')
+                        ->groupByRaw($visitPeriodSql)
+                        ->groupByRaw($visitOffsetSql)
                         // QA 26 Nov 2026: Job Check Unit Only (material_checked sejak dibuat) jangan
                         // digabung dengan CSR ruangan lain di periode yang sama selama belum bernomor.
                         // Harus sama dengan unassignedServiceFlowMarker().
                         ->groupByRaw("CASE WHEN (job_number IS NULL OR job_number = '') AND LOWER(COALESCE(type, '')) IN ('service', 'service_first', 'service_routine') AND COALESCE(material_checked, 0) = 1 THEN 1 ELSE 0 END");
-
-                    // QA batch 4 (27 Nov 2026): seri service rental 2-bulanan dan bulanan di ruangan
-                    // yang sama punya nomor periode yang sama untuk bulan yang berbeda — jangan
-                    // digabung selama belum bernomor. Harus sama dengan JobSchedule::serviceSeriesMarker().
-                    if ($groupByServiceSeries) {
-                        $sub->groupByRaw("CASE WHEN (job_number IS NULL OR job_number = '') THEN (".\App\Models\JobSchedule::serviceSeriesGroupingSql().') ELSE 0 END');
-                    }
                 })
                 ->orWhereNull('job_advice_id');
             });
@@ -754,8 +754,9 @@ class JobScheduleController extends Controller
             $job->job_advice_id ?? 'no-ja',
             $job->building_id ?? 'no-building',
             $job->type ?? 'no-type',
-            $job->period ?? 'no-period',
-            $jobNumber !== '' ? "job:{$jobNumber}" : 'job:unassigned'.$this->unassignedServiceFlowMarker($job).$job->serviceSeriesMarker(),
+            // Kunjungan, bukan nomor periode mentah (lihat JobSchedule::serviceVisitKey()).
+            $job->serviceVisitKey(),
+            $jobNumber !== '' ? "job:{$jobNumber}" : 'job:unassigned'.$this->unassignedServiceFlowMarker($job),
         ]);
     }
 
@@ -782,14 +783,15 @@ class JobScheduleController extends Controller
      * schedule_date - satu baris NEW JOB pecah jadi beberapa nomor JS setelah Material Assign.
      * Job tanpa period tetap dipisah per tanggal seperti sebelumnya.
      *
-     * QA batch 4 (27 Nov 2026): period dihitung per seri rental. Seri 2-bulanan dan bulanan di
-     * ruangan yang sama dibedakan lewat serviceSeriesMarker() supaya "periode 2" keduanya (bulan
-     * berbeda) tidak berbagi satu nomor JS.
+     * QA batch 4 + klien 28 Nov 2026: period dihitung per seri rental. Kunjungannya diambil dari
+     * JobSchedule::serviceVisitKey() (jarak hari dari service pertama, diturunkan dari period —
+     * tetap bukan schedule_date): seri berbeda yang jatuh di bulan yang sama berbagi satu nomor JS,
+     * bulan berbeda tidak. Untuk job service bulanan/data lama kuncinya setara period seperti dulu.
      */
     private function materialAssignBatchKey(JobSchedule $job): string
     {
         $visit = filled($job->period)
-            ? 'period:'.$job->period
+            ? $job->serviceVisitKey()
             : 'date:'.($job->schedule_date ? $job->schedule_date->format('Y-m-d') : 'nodate');
 
         return implode('|', [
@@ -797,7 +799,7 @@ class JobScheduleController extends Controller
             $job->building_id ?? '0',
             $job->type,
             $visit,
-        ]).$this->unassignedServiceFlowMarker($job).$job->serviceSeriesMarker();
+        ]).$this->unassignedServiceFlowMarker($job);
     }
 
     private function applyDisplayContractNumberFilter($query, string $value, string $viewMode): void
@@ -1313,21 +1315,18 @@ class JobScheduleController extends Controller
                 ->where('id', '!=', $id)
                 ->where('status', '!=', 'cancelled');
             
-            // Add accurate period grouping to prevent unassigning future services
-            if ($jobSchedule->period !== null) {
-                $siblingsQuery->where('period', $jobSchedule->period);
-            } else {
-                $siblingsQuery->whereNull('period');
-            }
-            
+            // Add accurate period grouping to prevent unassigning future services.
+            // QA batch 4: untuk job service, saudara = kunjungan yang sama (bisa beda nomor periode
+            // bila seri rental lain jatuh di bulan yang sama) — lihat JobSchedule::serviceVisitKey().
+            $jobSchedule->constrainToSameServiceVisit($siblingsQuery);
+
             // If room_ids is provided, filter siblings to only those rooms
             if ($request->has('room_ids')) {
                 $siblingsQuery->whereIn('id', $request->room_ids);
             }
 
-            // QA batch 4: periode yang sama milik seri rental lain (bulan berbeda) bukan saudara.
             $siblings = $siblingsQuery->get()
-                ->filter(fn ($sibling) => $sibling->serviceSeriesMarker() === $jobSchedule->serviceSeriesMarker())
+                ->filter(fn ($sibling) => $sibling->isSameServiceVisitAs($jobSchedule))
                 ->values();
 
             $targets = $targets->merge($siblings);
@@ -2747,15 +2746,11 @@ class JobScheduleController extends Controller
                 $siblingsQuery->where('job_number', $jobSchedule->job_number);
                 $siblingJobIds = $siblingsQuery->pluck('id')->toArray();
             } else {
-                if ($jobSchedule->period !== null) {
-                    $siblingsQuery->where('period', $jobSchedule->period);
-                } else {
-                    $siblingsQuery->whereNull('period');
-                }
+                // QA batch 4: saudara = kunjungan yang sama (JobSchedule::serviceVisitKey()).
+                $jobSchedule->constrainToSameServiceVisit($siblingsQuery);
 
-                // QA batch 4: periode yang sama milik seri rental lain (bulan berbeda) bukan saudara.
                 $siblingJobIds = $siblingsQuery->get()
-                    ->filter(fn ($sibling) => $sibling->serviceSeriesMarker() === $jobSchedule->serviceSeriesMarker())
+                    ->filter(fn ($sibling) => $sibling->isSameServiceVisitAs($jobSchedule))
                     ->pluck('id')
                     ->values()
                     ->toArray();
@@ -3700,15 +3695,12 @@ class JobScheduleController extends Controller
                         ->where('type', $jobSchedule->type)
                         ->where('id', '!=', $jobSchedule->id);
                         
-                    if ($jobSchedule->period !== null) {
-                        $siblingsQuery->where('period', $jobSchedule->period);
-                    } else {
-                        $siblingsQuery->whereNull('period');
-                    }
-                    
-                    // QA batch 4: periode yang sama milik seri rental lain (bulan berbeda) bukan saudara.
+                    // QA batch 4: saudara = kunjungan yang sama (JobSchedule::serviceVisitKey()) —
+                    // seri rental lain di bulan yang sama ikut, bulan lain tidak.
+                    $jobSchedule->constrainToSameServiceVisit($siblingsQuery);
+
                     $siblings = $siblingsQuery->get()
-                        ->filter(fn ($sibling) => $sibling->serviceSeriesMarker() === $jobSchedule->serviceSeriesMarker())
+                        ->filter(fn ($sibling) => $sibling->isSameServiceVisitAs($jobSchedule))
                         ->values();
                     // QA 26 Nov 2026: Job Check Unit Only dan CSR yang belum bernomor jangan
                     // saling ikut sebagai saudara (lihat unassignedServiceFlowMarker()).
@@ -12634,13 +12626,8 @@ class JobScheduleController extends Controller
                             ->where('job_advice_id', $selectedJob->job_advice_id)
                             ->where('building_id', $selectedJob->building_id)
                             ->where('type', $selectedJob->type)
-                            ->where(function ($query) use ($selectedJob) {
-                                if ($selectedJob->period === null) {
-                                    $query->whereNull('period');
-                                } else {
-                                    $query->where('period', $selectedJob->period);
-                                }
-                            })
+                            // QA batch 4: kunjungan yang sama (JobSchedule::serviceVisitKey()).
+                            ->where(fn ($query) => $selectedJob->constrainToSameServiceVisit($query))
                             ->where(function ($query) use ($selectedJob) {
                                 if ($selectedJob->job_number) {
                                     $query->where('job_number', $selectedJob->job_number);
@@ -12652,10 +12639,9 @@ class JobScheduleController extends Controller
                         $strictQuery->where('id', $selectedJob->id);
                     }
 
-                    // QA batch 4: periode yang sama milik seri rental lain (bulan berbeda) bukan saudara.
                     $siblings = $strictQuery->get()
                         ->filter(fn ($sibling) => (int) $sibling->id === (int) $selectedJob->id
-                            || $sibling->serviceSeriesMarker() === $selectedJob->serviceSeriesMarker())
+                            || $sibling->isSameServiceVisitAs($selectedJob))
                         ->values();
                 } else {
                     // Find all siblings to ensure we get the whole group for team assignment flows.

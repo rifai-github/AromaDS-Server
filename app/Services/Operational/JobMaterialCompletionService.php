@@ -159,17 +159,13 @@ class JobMaterialCompletionService
                 ->where('building_id', $jobSchedule->building_id)
                 ->where('type', $jobSchedule->type);
 
-            if ($jobSchedule->period !== null) {
-                $query->where('period', $jobSchedule->period);
-            } else {
-                $query->whereNull('period');
-            }
+            // QA batch 4 (27 Nov 2026): saudara = kunjungan yang sama (seri rental lain di bulan yang
+            // sama ikut, bulan lain tidak). Lihat JobSchedule::serviceVisitKey().
+            $jobSchedule->constrainToSameServiceVisit($query);
 
-            // QA batch 4 (27 Nov 2026): periode yang sama milik seri rental lain (bulan berbeda)
-            // bukan saudara. Lihat JobSchedule::serviceSeriesMarker().
             return $query->get()
                 ->filter(fn ($related) => (int) $related->id === (int) $jobSchedule->id
-                    || $related->serviceSeriesMarker() === $jobSchedule->serviceSeriesMarker())
+                    || $related->isSameServiceVisitAs($jobSchedule))
                 ->unique('id')
                 ->values();
         }
