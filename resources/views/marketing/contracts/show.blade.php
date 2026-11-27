@@ -1305,7 +1305,7 @@
                                 $roomCheckboxShown = [];
                             @endphp
                             <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
-                                <table class="table table-bordered table-striped" id="roomRentalTable" style="min-width: 1200px; white-space: nowrap;">
+                                <table class="table table-bordered table-striped" id="roomRentalTable" data-client-table style="min-width: 1200px; white-space: nowrap;">
                                     <thead>
                                         <tr>
                                             <th data-no-filter style="width: 32px;">
@@ -1313,7 +1313,7 @@
                                                     <input type="checkbox" id="suspendRoomSelectAll" title="Pilih semua room">
                                                 @endif
                                             </th>
-                                            <th data-no-filter>No</th>
+                                            <th data-no-filter data-row-number>No</th>
                                             <th data-column="building.nama_gedung|building.name">Building</th>
                                             <th data-column="room.room_name">Room</th>
                                             <th data-column="room.room_type">Room Type</th>
@@ -1464,41 +1464,41 @@
                         </div>
                         <div class="card-body">
                             <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
-                                <table id="billingGroupsTable" class="table table-bordered table-striped table-hover" style="width: 100%; min-width: 2000px;">
+                                <table id="billingGroupsTable" data-client-table class="table table-bordered table-striped table-hover" style="width: 100%; min-width: 2000px;">
                                     <thead>
                                         <tr>
                                             <th><input type="checkbox" id="selectAllBillingGroups"></th>
-                                            <th>Billing Id</th>
-                                            <th>Nomor Kontrak</th>
-                                            <th>NPWP</th>
-                                            <th>NITKU</th>
-                                             <th>NIK</th>
+                                            <th data-column="Billing Id">Billing Id</th>
+                                            <th data-column="Nomor Kontrak">Nomor Kontrak</th>
+                                            <th data-column="NPWP">NPWP</th>
+                                            <th data-column="NITKU">NITKU</th>
+                                             <th data-column="NIK">NIK</th>
                                              {{-- Kolom ini diisi dari billing_groups.npwp_address, yaitu alamat
                                                   yang terdaftar di kantor pajak — bukan alamat penagihan. Label
                                                   lamanya bikin salah paham. --}}
                                              {{-- Alamat tujuan penagihan (billing_groups.pic_address); inilah
                                                   yang dipakai jadi Billing Address di invoice. --}}
-                                             <th>Alamat Penagihan</th>
-                                             <th>Alamat Penagihan Pajak</th>
-                                            <th>PIC Finance</th>
+                                             <th data-column="Alamat Penagihan">Alamat Penagihan</th>
+                                             <th data-column="Alamat Penagihan Pajak">Alamat Penagihan Pajak</th>
+                                            <th data-column="PIC Finance">PIC Finance</th>
                                             @if($canSeePicInfo)
-                                            <th>E-Mail</th>
-                                            <th>Phone 1</th>
+                                            <th data-column="E-Mail">E-Mail</th>
+                                            <th data-column="Phone 1">Phone 1</th>
                                             @endif
-                                            <th>Bank Name</th>
-                                            <th>Account Name</th>
-                                            <th>Account No</th>
-                                            <th>Wajib Pungut?</th>
-                                            <th>Invoice Type</th>
-                                            <th>Alamat 1</th>
-                                            <th>Alamat 2</th>
-                                            <th>Provinsi</th>
-                                            <th>Kota / Kabupaten</th>
-                                            <th>Kecamatan</th>
-                                            <th>Kelurahan</th>
-                                            <th>Kode Pos</th>
-                                            <th>Terakhir Update</th>
-                                            <th>Oleh</th>
+                                            <th data-column="Bank Name">Bank Name</th>
+                                            <th data-column="Account Name">Account Name</th>
+                                            <th data-column="Account No">Account No</th>
+                                            <th data-column="Wajib Pungut?">Wajib Pungut?</th>
+                                            <th data-column="Invoice Type">Invoice Type</th>
+                                            <th data-column="Alamat 1">Alamat 1</th>
+                                            <th data-column="Alamat 2">Alamat 2</th>
+                                            <th data-column="Provinsi">Provinsi</th>
+                                            <th data-column="Kota / Kabupaten">Kota / Kabupaten</th>
+                                            <th data-column="Kecamatan">Kecamatan</th>
+                                            <th data-column="Kelurahan">Kelurahan</th>
+                                            <th data-column="Kode Pos">Kode Pos</th>
+                                            <th data-column="Terakhir Update">Terakhir Update</th>
+                                            <th data-column="Oleh">Oleh</th>
                                             <th>Action</th>
                                         </tr>
                                         <tr class="filter-row">
@@ -1789,16 +1789,16 @@
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-bordered table-striped" id="buildingsTable">
+                                <table class="table table-bordered table-striped" id="buildingsTable" data-client-table>
                                     <thead>
                                         <tr>
-                                            <th>No</th>
-                                            <th>Building Name</th>
-                                            <th>Postal Code</th>
-                                            <th>Address</th>
-                                            <th>City</th>
-                                            <th>Billing Group</th>
-                                            <th>Status</th>
+                                            <th data-no-filter data-row-number>No</th>
+                                            <th data-column="Building Name">Building Name</th>
+                                            <th data-column="Postal Code">Postal Code</th>
+                                            <th data-column="Address">Address</th>
+                                            <th data-column="City">City</th>
+                                            <th data-column="Billing Group">Billing Group</th>
+                                            <th data-column="Status">Status</th>
                                             <!-- <th>Actions</th> -->
                                         </tr>
                                     </thead>
@@ -2027,22 +2027,22 @@
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-bordered table-striped table-hover" id="filesTable">
+                                <table class="table table-bordered table-striped table-hover" id="filesTable" data-client-table>
                                     <thead style="background-color: #e3f2fd;">
                                         <tr>
                                             <th style="width: 40px;">
                                                 <input type="checkbox" id="selectAllFiles" onchange="toggleAllFileCheckboxes(this)">
                                             </th>
-                                            <th style="width: 50px;">No</th>
-                                            <th>File Name</th>
-                                            <th style="width: 110px;">File Type</th>
-                                            <th style="width: 90px;">Size</th>
-                                            <th style="width: 110px;">Upload Date</th>
-                                            <th style="width: 100px;">Uploaded By</th>
-                                            <th style="width: 80px;">Status</th>
-                                            <th style="width: 120px;">Pelengkap Invoice</th>
-                                            <th style="width: 100px;">Approved By</th>
-                                            <th style="width: 110px;">Approved At</th>
+                                            <th style="width: 50px;" data-no-filter data-row-number>No</th>
+                                            <th data-column="File Name">File Name</th>
+                                            <th style="width: 110px;" data-column="File Type">File Type</th>
+                                            <th style="width: 90px;" data-column="Size">Size</th>
+                                            <th style="width: 110px;" data-column="Upload Date">Upload Date</th>
+                                            <th style="width: 100px;" data-column="Uploaded By">Uploaded By</th>
+                                            <th style="width: 80px;" data-column="Status">Status</th>
+                                            <th style="width: 120px;" data-column="Pelengkap Invoice">Pelengkap Invoice</th>
+                                            <th style="width: 100px;" data-column="Approved By">Approved By</th>
+                                            <th style="width: 110px;" data-column="Approved At">Approved At</th>
                                             <th style="width: 120px;">Actions</th>
                                         </tr>
                                     </thead>
@@ -2194,6 +2194,8 @@
 <!-- Billing Group modals removed - now using separate pages (addbg.blade.php and editbg.blade.php) -->
 
 @push('scripts')
+{{-- Sort/filter tabel tab di browser, tanpa reload ke tab Basic Info (Pak Hengky 27 Nov). --}}
+@include('components.client-table-tools')
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
 // Contract and building data
@@ -2422,9 +2424,16 @@ $(document).ready(function() {
             'font-weight': 'bold'
         });
         $(target).addClass('show active').css('display', 'block');
-        
+
+        // Simpan tab aktif di hash URL: reload apa pun (simpan, hapus, dll.) kembali ke tab
+        // ini, bukan melompat ke Basic Info (Pak Hengky 27 Nov). replaceState: tanpa scroll
+        // dan tanpa menumpuk riwayat Back.
+        if (/^#[A-Za-z0-9_-]+$/.test(target) && window.history && window.history.replaceState) {
+            window.history.replaceState(null, '', window.location.pathname + window.location.search + target);
+        }
+
         console.log('Tab switched to:', target, 'Active classes applied');
-        
+
         // If billing group tab is activated, update building coverage
         if (target === '#billing-group') {
             updateBuildingCoverage();
@@ -2556,20 +2565,9 @@ $(document).ready(function() {
         updateBillingGroupSelectionButtons();
     });
     
-    // Billing Groups Table - Filter functionality
-    $('#billingGroupsTable .filter-row input').on('keyup', function() {
-        var columnIndex = $(this).parent().index();
-        var searchValue = $(this).val().toLowerCase();
-        
-        $('#billingGroupsTable tbody tr').each(function() {
-            var cellValue = $(this).find('td').eq(columnIndex).text().toLowerCase();
-            if (cellValue.indexOf(searchValue) === -1) {
-                $(this).hide();
-            } else {
-                $(this).show();
-            }
-        });
-    });
+    // Filter & sort tabel Billing Group kini lewat components/client-table-tools
+    // (data-client-table): semua kotak filter digabung, tidak lagi hanya kolom terakhir
+    // yang diketik, dan Enter tidak me-reload ke tab Basic Info (Pak Hengky 27 Nov).
 });
 
 // Billing Group Functions

@@ -58,7 +58,7 @@ class Uat19NovUiFixesTest extends TestCase
 
         $this->assertStringContainsString('id="bgEditSelectedBtn"', $source);
         $this->assertStringContainsString('function deleteSelectedBillingGroups()', $source);
-        $this->assertStringContainsString('<th>Alamat Penagihan Pajak</th>', $source);
+        $this->assertStringContainsString('<th data-column="Alamat Penagihan Pajak">Alamat Penagihan Pajak</th>', $source);
         $this->assertStringNotContainsString('<th>Alamat Kantor Pajak</th>', $source);
     }
 

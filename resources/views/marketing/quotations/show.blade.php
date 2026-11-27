@@ -494,10 +494,10 @@
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
-                                <table class="table table-bordered table-striped" id="quotationDetailsTable" style="min-width: 1550px; white-space: nowrap;">
+                                <table class="table table-bordered table-striped" id="quotationDetailsTable" data-client-table style="min-width: 1550px; white-space: nowrap;">
                                     <thead>
                                         <tr>
-                                            <th data-no-filter>No</th>
+                                            <th data-no-filter data-row-number>No</th>
                                             <th data-column="surveyDetail.survey.survey_number">Survey No</th>
                                             <th data-column="building">Building</th>
                                             <th data-column="surveyDetail.room_name">Nama Ruangan</th>
@@ -998,6 +998,8 @@
 @endpush
 
 @push('scripts')
+{{-- Sort/filter tabel Detail SQ di browser, tanpa reload ke tab Basic Info (Pak Hengky 27 Nov). --}}
+@include('components.client-table-tools')
 <!-- Bootstrap 5 JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -1044,11 +1046,21 @@ $(document).ready(function() {
         
         // Show target content with proper Bootstrap classes
         $(target).addClass('show active').css('display', 'block');
-        
+
+        // Simpan tab aktif di hash URL supaya reload tidak melompat ke Basic Info (Pak Hengky 27 Nov).
+        if (/^#[A-Za-z0-9_-]+$/.test(target) && window.history && window.history.replaceState) {
+            window.history.replaceState(null, '', window.location.pathname + window.location.search + target);
+        }
+
         console.log('Tab switched to:', target, 'Active classes applied');
         console.log('Target element visible:', $(target).is(':visible'));
         console.log('Target element display:', $(target).css('display'));
     });
+
+    // Buka tab dari hash URL (mis. #quotation-detail) lewat handler klik di atas.
+    if (/^#[A-Za-z0-9_-]+$/.test(window.location.hash)) {
+        $('#quotationTabs button[data-bs-target="' + window.location.hash + '"]').first().trigger('click');
+    }
 });
 
 document.addEventListener('DOMContentLoaded', function() {

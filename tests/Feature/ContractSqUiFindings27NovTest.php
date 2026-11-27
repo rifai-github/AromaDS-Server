@@ -30,6 +30,37 @@ class ContractSqUiFindings27NovTest extends TestCase
         $this->assertStringNotContainsString("'Basis SQ disimpan: '", $controller);
     }
 
+    public function test_tab_tables_sort_and_filter_in_the_browser_without_reloading(): void
+    {
+        $contract = $this->viewSource('marketing/contracts/show');
+        $quotation = $this->viewSource('marketing/quotations/show');
+        $tools = $this->viewSource('components/client-table-tools');
+
+        // Tabel tab ikut sort/filter sisi klien.
+        foreach (['roomRentalTable', 'billingGroupsTable', 'buildingsTable', 'filesTable'] as $tableId) {
+            $this->assertMatchesRegularExpression('/id="'.$tableId.'"[^>]*data-client-table/', $contract, "{$tableId} belum data-client-table");
+        }
+        $this->assertMatchesRegularExpression('/id="quotationDetailsTable"[^>]*data-client-table/', $quotation);
+        $this->assertStringContainsString("@include('components.client-table-tools')", $contract);
+        $this->assertStringContainsString("@include('components.client-table-tools')", $quotation);
+
+        // Filter lama tabel Billing Group (hanya satu kolom, keyup) tidak bertabrakan lagi.
+        $this->assertStringNotContainsString("$('#billingGroupsTable .filter-row input').on('keyup'", $contract);
+
+        // Komponen: header ditandai data-no-sort (skrip sort global ?sort= reload dilewati),
+        // Enter di filter dicegat pada fase capture sebelum handler global yang me-reload.
+        $this->assertStringContainsString("th.setAttribute('data-no-sort', '')", $tools);
+        $this->assertStringContainsString("event.stopImmediatePropagation();", $tools);
+        $this->assertMatchesRegularExpression("/addEventListener\\('keydown',[\\s\\S]*?\\}, true\\);/", $tools);
+        $this->assertStringNotContainsString('window.location', $tools);
+
+        // Tab aktif disimpan di hash, dan hash dibuka saat load (kontrak & SQ).
+        foreach ([$contract, $quotation] as $source) {
+            $this->assertStringContainsString('window.history.replaceState(null, \'\', window.location.pathname + window.location.search + target);', $source);
+        }
+        $this->assertStringContainsString('$(\'#quotationTabs button[data-bs-target="\' + window.location.hash + \'"]\').first().trigger(\'click\');', $quotation);
+    }
+
     public function test_sq_basic_info_shows_payment_method_and_term_of_payment_once(): void
     {
         $quotation = $this->viewSource('marketing/quotations/show');
