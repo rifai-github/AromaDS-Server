@@ -298,6 +298,9 @@ class BillingGroupEditPreservesStoredValuesTest extends TestCase
         $this->assertStringNotContainsString('$storedNik ?? $indukNik', $source);
         // Placeholder mengembalikan nilai tersimpan, bukan mengosongkan.
         $this->assertStringContainsString('restoreStoredValues', $source);
+        // Nilai tersimpan dipotret saat load; defaultValue input hidden ikut berubah saat .value diisi.
+        $this->assertStringContainsString('storedFieldValues[id] = el.value;', $source);
+        $this->assertStringNotContainsString('el.value = el.defaultValue;', $source);
         $this->assertStringNotContainsString("document.getElementById('bank_name').value = '';", $source);
         // Inisialisasi pajak saat load tidak merombak data tersimpan.
         $this->assertStringContainsString("getAttribute('data-has-stored-tax') !== '1'", $source);

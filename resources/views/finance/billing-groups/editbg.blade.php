@@ -685,11 +685,25 @@
     // Pak Hengky 27 Nov: memilih placeholder / opsi "Tersimpan" (atau tombol x select2) dulu
     // mengosongkan bank_name, VA, dan payment_method yang tersimpan. Kini dikembalikan ke nilai
     // tersimpan (nilai awal atribut value) - mengosongkan bukan lagi efek samping dropdown.
+    // Nilai awal dipotret SEKALI saat skrip dimuat (sebelum handler apa pun mengubahnya).
+    // Bukan el.defaultValue: untuk input type="hidden" mengubah .value ikut mengubah atribut
+    // value, sehingga defaultValue tidak lagi berisi nilai tersimpan.
+    const storedFieldValues = {};
+    ['pic_name', 'pic_email', 'pic_phone',
+     'tax_npwp', 'tax_nitku', 'tax_nik', 'tax_type', 'tax_number', 'npwp_address',
+     'bank_name', 'account_name', 'account_no', 'virtual_account_number', 'payment_method', 'payment_method_display'
+    ].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) {
+            storedFieldValues[id] = el.value;
+        }
+    });
+
     function restoreStoredValues(ids) {
         ids.forEach(function(id) {
             const el = document.getElementById(id);
-            if (el) {
-                el.value = el.defaultValue;
+            if (el && Object.prototype.hasOwnProperty.call(storedFieldValues, id)) {
+                el.value = storedFieldValues[id];
             }
         });
     }
