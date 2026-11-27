@@ -453,14 +453,8 @@
                                         <div class="quotation-field-label">Lama Sewa</div>
                                         <div class="quotation-field-value">{{ $quotation->rental_period }} {{ $quotation->rental_unit ? ucfirst($quotation->rental_unit) : '' }}</div>
                                     </div>
-                                    <div class="quotation-field">
-                                        <div class="quotation-field-label">Payment Method</div>
-                                        <div class="quotation-field-value">{{ ucfirst(str_replace('_', ' ', $quotation->billing_methods)) }}</div>
-                                    </div>
-                                    <div class="quotation-field">
-                                        <div class="quotation-field-label">Term of Payment</div>
-                                        <div class="quotation-field-value">{{ $quotation->terms_of_payment_label }}</div>
-                                    </div>
+                                    {{-- Pak Hengky 27 Nov 2026: Payment Method & Term of Payment dulu tampil dua kali
+                                         (kartu No Quotation dan kartu ini). Cukup di kartu No Quotation. --}}
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">Remark External</div>
                                         <div class="quotation-field-value">{{ $quotation->additional_notes ?? '-' }}</div>

@@ -29,4 +29,12 @@ class ContractSqUiFindings27NovTest extends TestCase
         $controller = file_get_contents(app_path('Http/Controllers/Marketing/ContractController.php'));
         $this->assertStringNotContainsString("'Basis SQ disimpan: '", $controller);
     }
+
+    public function test_sq_basic_info_shows_payment_method_and_term_of_payment_once(): void
+    {
+        $quotation = $this->viewSource('marketing/quotations/show');
+
+        $this->assertSame(1, substr_count($quotation, '<div class="quotation-field-label">Payment Method</div>'));
+        $this->assertSame(1, substr_count($quotation, '<div class="quotation-field-label">Term of Payment</div>'));
+    }
 }
