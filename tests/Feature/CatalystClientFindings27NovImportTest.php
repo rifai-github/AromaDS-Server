@@ -122,6 +122,105 @@ class CatalystClientFindings27NovImportTest extends TestCase
         return $steps->getValue(app(CatalystMasterDataImporter::class));
     }
 
+    // ── 2. Hanya kontrak posted & lolos filter ──────────────────────────────
+
+    public function test_client_filter_query_only_accepts_posted_contracts(): void
+    {
+        $source = file_get_contents(app_path('Services/Imports/Catalyst/CatalystMasterDataImporter.php'));
+        $start = strpos($source, 'protected function eligibleContractNumbers(): ?array');
+        $body = substr($source, $start, strpos($source, 'protected function contractPassesClientFilter', $start) - $start);
+
+        $this->assertStringContainsString("WHERE H.Status = 'P'", $body);
+        $this->assertStringContainsString("NOT LIKE '%test%'", $body);
+        $this->assertStringContainsString('DATEADD(DAY, -1, DATEADD(MONTH, H.ContractPeriod, H.TransDate))', $body);
+    }
+
+    public function test_child_rows_of_excluded_contracts_are_not_imported(): void
+    {
+        $importer = $this->importer(['ADS-AG/26-07/0096' => true]);
+
+        $rows = $importer->call('groupContractRentalRows', [
+            ['TransNmbr' => 'ADS-AG/26-07/0096', 'Building' => 'B1', 'FloorCode' => '010', 'RoomCode' => '018', 'Room' => 'R1', 'Product' => 'A305200', 'Qty' => 1, 'QtyFree' => 0, 'PriceForex' => 100],
+            // Status D (deleted) / T (terminate) -> tidak ada di daftar eligible.
+            ['TransNmbr' => 'ADS-AG/26-07/0097', 'Building' => 'B1', 'FloorCode' => '010', 'RoomCode' => '018', 'Room' => 'R1', 'Product' => 'A305200', 'Qty' => 1, 'QtyFree' => 0, 'PriceForex' => 100],
+            ['TransNmbr' => '-ADS-AG/26-07/0096', 'Building' => 'B1', 'FloorCode' => '010', 'RoomCode' => '018', 'Room' => 'R1', 'Product' => 'A305200', 'Qty' => 1, 'QtyFree' => 0, 'PriceForex' => 100],
+        ]);
+
+        $this->assertCount(1, $rows);
+        $this->assertSame('ADS-AG/26-07/0096', $rows[0]['TransNmbr']);
+    }
+
+    private function createJobAdviceTables(): void
+    {
+        $this->create('MKTContractHd', function (Blueprint $table) {
+            $table->string('TransNmbr');
+            $table->string('Status')->nullable();
+        });
+        $this->create('MKTQuotationHd', function (Blueprint $table) {
+            $table->string('TransNmbr');
+            $table->integer('Revisi')->default(0);
+            $table->string('Status')->nullable();
+            $table->string('FgActive')->nullable();
+            $table->string('SOContractNo')->nullable();
+        });
+        $this->create('MKTContractJobOut', function (Blueprint $table) {
+            $table->string('ContractNo');
+        });
+        $this->create('customers', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+        });
+        $this->create('quotations', function (Blueprint $table) {
+            $table->id();
+            $table->string('quotation_number');
+            $table->unsignedBigInteger('customer_id')->nullable();
+            $table->string('company_name')->nullable();
+            $table->date('quotation_date')->nullable();
+            $table->unsignedBigInteger('marketing_id')->nullable();
+        });
+        $this->create('job_advices', function (Blueprint $table) {
+            $table->id();
+            $table->string('job_advice_number');
+            $table->string('reference_number')->nullable();
+            $table->unsignedBigInteger('quotation_id')->nullable();
+            $table->unsignedBigInteger('contract_id')->nullable();
+            $table->string('status')->nullable();
+            $table->timestamps();
+        });
+
+        DB::table('MKTContractHd')->insert([
+            ['TransNmbr' => 'ADS-AG/26-07/0096', 'Status' => 'P'],
+            ['TransNmbr' => 'ADS-AG/25-01/0001', 'Status' => 'T'],
+        ]);
+        DB::table('MKTQuotationHd')->insert([
+            ['TransNmbr' => 'ADS-SQ/25-01/0001', 'Revisi' => 0, 'Status' => 'P', 'FgActive' => 'Y', 'SOContractNo' => 'ADS-AG/25-01/0001'],
+            ['TransNmbr' => 'ADS-SQ/26-11/0001', 'Revisi' => 0, 'Status' => 'P', 'FgActive' => 'Y', 'SOContractNo' => null],
+        ]);
+        DB::table('MKTContractJobOut')->insert([
+            ['ContractNo' => 'ADS-SQ/25-01/0001'],
+            ['ContractNo' => 'ADS-SQ/26-11/0001'],
+        ]);
+        DB::table('customers')->insert(['id' => 1, 'name' => 'PT A']);
+        DB::table('quotations')->insert([
+            ['id' => 10, 'quotation_number' => 'ADS-SQ/25-01/0001', 'customer_id' => 1],
+            ['id' => 11, 'quotation_number' => 'ADS-SQ/26-11/0001', 'customer_id' => 1],
+        ]);
+        $this->map('MKTQuotationHd', 'ADS-SQ/25-01/0001', 'quotations', 10);
+        $this->map('MKTQuotationHd', 'ADS-SQ/26-11/0001', 'quotations', 11);
+    }
+
+    public function test_job_advice_from_a_quotation_whose_contract_is_excluded_is_skipped(): void
+    {
+        $this->createImportMaps();
+        $this->createJobAdviceTables();
+
+        $this->importer(['ADS-AG/26-07/0096' => true])->call('job_advices');
+
+        // SQ yang kontraknya terminate tidak boleh hidup lagi lewat JA berbasis quotation;
+        // SQ yang belum jadi kontrak (mis. trial) tetap dapat JA.
+        $this->assertSame(['JA-CATALYST-ADS-SQ/26-11/0001'], DB::table('job_advices')->pluck('job_advice_number')->all());
+    }
+
     // ── 1. Bank payment sebelum kontrak ──────────────────────────────────────
 
     private function createBankTables(): void

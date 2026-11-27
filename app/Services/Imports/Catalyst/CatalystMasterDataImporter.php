@@ -3160,6 +3160,18 @@ class CatalystMasterDataImporter
     }
 
     /**
+     * True bila SQ ini sudah menjadi kontrak Catalyst (SOContractNo) dan kontrak itu tidak lolos
+     * filter klien. SQ yang belum jadi kontrak (trial, masih berjalan) tidak terpengaruh.
+     */
+    protected function quotationContractOutsideFilter(?string $quotationNumber): bool
+    {
+        $header = $this->findSourceQuotationHeader($quotationNumber);
+        $soContractNo = $header ? $this->cleanString($this->sourceValue((array) $header, 'SOContractNo', 'SoContractNo')) : null;
+
+        return $soContractNo !== null && $this->isKnownCatalystContractOutsideFilter($soContractNo);
+    }
+
+    /**
      * Klien (no. 7): TransNmbr berawalan "-" di MKTContractDt adalah record tidak terpakai.
      */
     protected function isUnusedCatalystDetailRow(?string $transNmbr): bool
@@ -4925,6 +4937,11 @@ class CatalystMasterDataImporter
 
             $contractId = $this->findMappedTargetId('MKTContractHd', $this->makeKey($row['OldContractNo'] ?? null), 'contracts');
             if (!$contractId) {
+                // Kontrak lama SQ renewal memang sudah ter-renew, jadi wajar tidak lolos filter klien.
+                if ($this->isKnownCatalystContractOutsideFilter((string) ($row['OldContractNo'] ?? ''))) {
+                    return ['action' => 'skipped'];
+                }
+
                 return $this->failedRow('Old contract missing for ' . ($row['OldContractNo'] ?? 'empty'), $sqNo);
             }
 
@@ -5256,6 +5273,13 @@ class CatalystMasterDataImporter
                 return $this->failedRow('Contract or quotation mapping missing for Job Advice.', $sourceKey);
             }
 
+            // JobOut yang menunjuk SQ (bukan kontrak) ikut dilewati bila kontrak hasil SQ itu
+            // sendiri tidak lolos filter klien (deleted/terminate/berakhir/ter-renew) - kalau tidak,
+            // kontrak yang sengaja tidak diimport tetap muncul lewat JA berbasis quotation.
+            if ($source['type'] === 'quotation' && $this->quotationContractOutsideFilter($source['document_number'])) {
+                return ['action' => 'skipped'];
+            }
+
             $target = $this->cachedTargetRecord($source['target_table'], $source['target_id']);
             if (!$target) {
                 return $this->failedRow('Target ' . $source['type'] . ' missing for Job Advice.', $sourceKey);
@@ -5291,6 +5315,10 @@ class CatalystMasterDataImporter
         $rows = [];
         foreach (array_values($contractNumbers) as $contractNo) {
             $source = $this->resolveCatalystJobAdviceSource($contractNo);
+            if ($source && $source['type'] === 'quotation' && $this->quotationContractOutsideFilter($source['document_number'])) {
+                continue;
+            }
+
             $jobAdviceId = $this->findMappedTargetId('MKTContractJobOut', $this->makeKey($contractNo), 'job_advices');
 
             if (!$source || !$jobAdviceId) {
