@@ -7740,6 +7740,43 @@ class JobScheduleController extends Controller
             ->values();
     }
 
+    /**
+     * Jumlah Unit On Wall yang boleh dibuat untuk satu JA room = qty (operational) x jumlah unit di
+     * BOM rental (aturan sama dengan APK requiredUnitSlotCountForRoom). Tidak pernah lebih kecil
+     * dari qty lama, jadi rental satu-unit tidak berubah. Slot tanpa SN tetap dilewati di bawah.
+     */
+    private function unitOnWallSlotCountForJobAdviceRoom($jaRoom, int $unitQuantity): int
+    {
+        $rentalId = $jaRoom->rental_product_id ?? null;
+        if (! $rentalId) {
+            return $unitQuantity;
+        }
+
+        try {
+            $unitDetails = \App\Models\RentalDetail::where('master_rental_id', $rentalId)
+                ->where(function ($q) {
+                    $q->whereHas('productCategory', fn ($catQ) => $catQ->where('is_unit', true))
+                        ->orWhereHas('productType', fn ($typeQ) => $typeQ->where('is_unit', true))
+                        ->orWhereHas('masterProduct.productCategory', fn ($catQ) => $catQ->where('is_unit', true));
+                })
+                ->get();
+        } catch (\Throwable $e) {
+            return $unitQuantity;
+        }
+
+        if ($unitDetails->isEmpty()) {
+            return $unitQuantity;
+        }
+
+        $roomQuantity = max($unitQuantity, 1);
+        $slots = 0;
+        foreach ($unitDetails as $detail) {
+            $slots += max((int) ($detail->bom_rental_qty ?: $detail->quantity ?: 1), 1) * $roomQuantity;
+        }
+
+        return max($unitQuantity, $slots);
+    }
+
     public function createUnitOnWallForCompletedRooms(JobSchedule $job): bool
     {
         $type = strtolower(trim((string) $job->type));
@@ -7864,6 +7901,12 @@ class JobScheduleController extends Controller
                 $serialNumberIds = [];
                 $serialNumberStrings = [];
                 $unitQuantity = max(0, (int) ceil((float) ($jaRoom->operational_quantity ?? 0)));
+                // QA 26 Nov 2026 (TestHIKDisp: Thermal + Dispenser, qty 1): rental yang BOM-nya
+                // berisi lebih dari satu unit butuh satu Unit On Wall per unit fisik. Dulu dibatasi
+                // qty rental saja, jadi unit kedua (A-8) tak pernah tercatat dan tak muncul di
+                // Remove. Jumlah slot = qty x unit di BOM, sama dengan aturan APK.
+                $unitQuantity = $this->unitOnWallSlotCountForJobAdviceRoom($jaRoom, $unitQuantity);
+                $serialProductIds = [];
 
                 // STEP 1: Prefer what the technician ACTUALLY scanned/verified in the
                 // app (job_schedule_units) over what the warehouse merely issued (WI).
@@ -7910,6 +7953,7 @@ class JobScheduleController extends Controller
                             }
                             $serialNumberIds[] = $snRecord->id;
                             $serialNumberStrings[$snRecord->id] = $snRecord->serial_number;
+                            $serialProductIds[$snRecord->id] = $snRecord->master_product_id;
                         }
                     }
                 }
@@ -7967,6 +8011,7 @@ class JobScheduleController extends Controller
                                     }
                                     $serialNumberIds[] = $candidateSerial->id;
                                     $serialNumberStrings[$candidateSerial->id] = $candidateSerial->serial_number;
+                                    $serialProductIds[$candidateSerial->id] = $candidateSerial->master_product_id ?? null;
                                 }
 
                                 $usedInventoryIssuingItemIds[] = $inventoryIssuingItem->id;
@@ -8098,7 +8143,8 @@ class JobScheduleController extends Controller
                         'building_id' => $installJob->building_id,
                         'room_id' => $roomId,
                         'rental_id' => $rental->id,
-                        'product_id' => $productId,
+                        // Rental multi-unit (Thermal + Dispenser): tiap unit memakai produk SN-nya sendiri.
+                        'product_id' => $unitProductId = ($serialProductIds[$unitSerialNumberId] ?? null) ?: $productId,
                         'serial_number_id' => $unitSerialNumberId,
                         'serial_number' => $unitSerialNumberString, // Add serial_number string field
                         'install_date' => $installJob->schedule_date ?? now()->toDateString(),
@@ -8107,7 +8153,7 @@ class JobScheduleController extends Controller
                         'company_name' => $companyName,
                         'room_name' => $roomName ?? 'N/A',
                         'rental_name' => $rental->rental_name ?? $jaRoom->rental_name ?? 'N/A',
-                        'product_name' => \App\Models\MasterProduct::find($productId)->name ?? 'N/A', // Add product_name
+                        'product_name' => \App\Models\MasterProduct::find($unitProductId)->name ?? 'N/A', // Add product_name
                         'created_by' => \App\Models\User::first()?->id ?? null, // Use first user or null
                         'updated_by' => \App\Models\User::first()?->id ?? null
                     ];
