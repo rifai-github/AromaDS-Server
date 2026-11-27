@@ -61,6 +61,20 @@ class ContractSqUiFindings27NovTest extends TestCase
         $this->assertStringContainsString('$(\'#quotationTabs button[data-bs-target="\' + window.location.hash + \'"]\').first().trigger(\'click\');', $quotation);
     }
 
+    public function test_every_room_rental_row_has_a_suspend_checkbox_synced_per_room(): void
+    {
+        $contract = $this->viewSource('marketing/contracts/show');
+
+        // Dulu hanya baris rental pertama tiap ruangan yang punya checkbox.
+        $this->assertStringNotContainsString('$roomCheckboxShown', $contract);
+        $this->assertStringContainsString('$showRoomCheckbox = $canSuspendRooms && $rowRoom;', $contract);
+        // Baris tanpa ruangan kontrak: checkbox nonaktif DENGAN alasan, bukan kosong tanpa penjelasan.
+        $this->assertStringContainsString('title="Rental ini tidak terhubung ke ruangan kontrak, jadi tidak bisa di-suspend per ruangan"', $contract);
+        // Baris satu ruangan saling ikut, dan suspend dikirim sekali per ruangan.
+        $this->assertStringContainsString('if (box !== event.target && box.value === event.target.value)', $contract);
+        $this->assertStringContainsString('if (seen.has(box.value)) return false;', $contract);
+    }
+
     public function test_sq_basic_info_shows_payment_method_and_term_of_payment_once(): void
     {
         $quotation = $this->viewSource('marketing/quotations/show');

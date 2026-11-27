@@ -1302,7 +1302,6 @@
                                         ->get()
                                     : collect();
                                 $openRoomSuspensions = $roomSuspensionLogs->whereNull('unsuspended_at')->keyBy('contract_room_id');
-                                $roomCheckboxShown = [];
                             @endphp
                             <div class="table-responsive" style="overflow-x: auto; max-width: 100%;">
                                 <table class="table table-bordered table-striped" id="roomRentalTable" data-client-table style="min-width: 1200px; white-space: nowrap;">
@@ -1334,15 +1333,23 @@
                                         @endphp
                                         @php
                                             $rowSuspension = $rowRoom ? $openRoomSuspensions->get($rowRoom->id) : null;
-                                            $showRoomCheckbox = $canSuspendRooms && $rowRoom && !isset($roomCheckboxShown[$rowRoom->id]);
-                                            if ($rowRoom) { $roomCheckboxShown[$rowRoom->id] = true; }
+                                            // Pak Hengky 27 Nov (ADS-AG/26-07/0096): checkbox suspend berlaku per
+                                            // RUANGAN, dulu hanya dirender di baris rental pertama tiap ruangan, jadi
+                                            // ruangan dengan 2 rental terlihat "sebagian bisa dicentang, sebagian tidak".
+                                            // Kini setiap baris punya checkbox; baris satu ruangan saling ikut (JS).
+                                            $showRoomCheckbox = $canSuspendRooms && $rowRoom;
+                                            $roomRentalCount = $rowRoom ? $roomRentalRows->filter(fn ($candidate) => $candidate['room'] && $candidate['room']->id === $rowRoom->id)->count() : 0;
                                         @endphp
                                         <tr @if($rowRental) id="rental-row-{{ $rowRental->id }}" @endif @if($rowSuspension) style="background-color: #fff7ed;" @endif>
                                             <td>
                                                 @if($showRoomCheckbox)
                                                     <input type="checkbox" class="suspend-room-checkbox" value="{{ $rowRoom->id }}"
                                                            data-suspended="{{ $rowSuspension ? '1' : '0' }}"
-                                                           data-room-name="{{ $rowRoom->room?->room_name ?? 'Room #'.$rowRoom->id }}">
+                                                           data-room-name="{{ $rowRoom->room?->room_name ?? 'Room #'.$rowRoom->id }}"
+                                                           title="Suspend berlaku per ruangan{{ $roomRentalCount > 1 ? ': '.$roomRentalCount.' baris rental ruangan ini ikut tercentang' : '' }}">
+                                                @elseif($canSuspendRooms)
+                                                    <input type="checkbox" disabled
+                                                           title="Rental ini tidak terhubung ke ruangan kontrak, jadi tidak bisa di-suspend per ruangan">
                                                 @endif
                                             </td>
                                             <td>{{ $index + 1 }}</td>
@@ -5228,7 +5235,14 @@ function updateBaFilesSupported(contractId, supported) {
 // MOM 19 Nov 2026 p6: Suspend/Unsuspend room. Centang room -> Suspend -> pilih tanggal ->
 // konfirmasi "Anda yakin mau suspend room ini pada tanggal xxx?".
 function selectedSuspendRooms() {
-    return Array.from(document.querySelectorAll('.suspend-room-checkbox:checked'));
+    // Satu ruangan bisa punya beberapa baris (satu per rental) dengan checkbox ber-value sama:
+    // ambil satu per ruangan.
+    const seen = new Set();
+    return Array.from(document.querySelectorAll('.suspend-room-checkbox:checked')).filter(box => {
+        if (seen.has(box.value)) return false;
+        seen.add(box.value);
+        return true;
+    });
 }
 
 function refreshSuspendRoomButtons() {
@@ -5242,6 +5256,14 @@ function refreshSuspendRoomButtons() {
 document.addEventListener('change', function (event) {
     if (event.target && event.target.id === 'suspendRoomSelectAll') {
         document.querySelectorAll('.suspend-room-checkbox').forEach(box => { box.checked = event.target.checked; });
+    }
+    if (event.target && event.target.classList && event.target.classList.contains('suspend-room-checkbox')) {
+        // Baris lain dari ruangan yang sama ikut tercentang/lepas.
+        document.querySelectorAll('.suspend-room-checkbox').forEach(box => {
+            if (box !== event.target && box.value === event.target.value) {
+                box.checked = event.target.checked;
+            }
+        });
     }
     if (event.target && (event.target.id === 'suspendRoomSelectAll' || event.target.classList.contains('suspend-room-checkbox'))) {
         refreshSuspendRoomButtons();
