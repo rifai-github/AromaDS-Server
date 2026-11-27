@@ -49,6 +49,11 @@ class CustomerContact extends Model
         foreach (array_unique(array_filter(array_map('intval', $customerIds))) as $customerId) {
             \Illuminate\Support\Facades\Cache::forget("survey-wizard:contacts:{$customerId}");
             \Illuminate\Support\Facades\Cache::forget("survey-wizard:contacts:v2:{$customerId}");
+            // QA 26 Nov 2026: PIC baru dari wizard kontrak tak muncul di dropdown Billing Group
+            // berikutnya karena /api/customers/{id}/contacts (kunci :v3) masih tersimpan 5 menit.
+            foreach (['v1', 'v2', 'v3'] as $version) {
+                \Illuminate\Support\Facades\Cache::forget("customer:{$customerId}:api-contacts:{$version}");
+            }
         }
     }
 

@@ -1555,7 +1555,19 @@ function fetchCustomerBuildingsCached(customerId) {
         }
     })
     .then(response => response.json())
-    .then(data => mergeBuildingsById(normalizeBuildingsResponse(data), getQuotationBuildings()))
+    .then(data => {
+        const quotationBuildings = getQuotationBuildings();
+        const merged = mergeBuildingsById(normalizeBuildingsResponse(data), quotationBuildings);
+        // QA 26 Nov 2026: kontrak mengikuti SQ. Bila SQ punya gedung, tampilkan hanya gedung SQ
+        // itu (data customer hanya melengkapi isinya); gedung customer lain ("x Gedung Test 3 x")
+        // tidak ikut. SQ lama tanpa gedung tetap memakai semua gedung customer.
+        const quotationBuildingIds = new Set(
+            quotationBuildings.map(building => parseInt(building && building.id)).filter(id => id && !Number.isNaN(id))
+        );
+        return quotationBuildingIds.size > 0
+            ? merged.filter(building => quotationBuildingIds.has(building.id))
+            : merged;
+    })
     .catch(error => {
         customerLookupCache.buildings.delete(cacheKey);
         throw error;
@@ -3903,9 +3915,27 @@ function saveClientContact() {
 }
 
 function addContactToDropdowns(contact) {
-    const option = `<option value="${contact.id}">${contact.name}</option>`;
+    // QA 26 Nov 2026: PIC baru dari Billing Group 1 tak muncul di Billing Group yang ditambah
+    // sesudahnya, karena daftar kontak di-cache per halaman. Buang cache itu agar BG baru memuat
+    // ulang, dan buat opsi lengkap (jabatan + email) seperti loadPICFinanceContacts().
+    const customerIdField = document.querySelector('input[name="customer_id"]');
+    const customerId = (customerIdField && customerIdField.value) || contact.customer_id;
+    if (customerId && typeof customerLookupCache !== 'undefined' && customerLookupCache.contacts) {
+        customerLookupCache.contacts.delete(customerId);
+        customerLookupCache.contacts.delete(String(customerId));
+        customerLookupCache.contacts.delete(parseInt(customerId));
+    }
+
     document.querySelectorAll('select[name*="company_signing"], select[name*="pic_finance"]').forEach(select => {
-        select.insertAdjacentHTML('beforeend', option);
+        if (Array.from(select.options).some(existing => String(existing.value) === String(contact.id))) {
+            return;
+        }
+        const option = document.createElement('option');
+        option.value = contact.id;
+        option.textContent = (contact.name || '') + (contact.position ? ` - ${contact.position}` : '');
+        option.setAttribute('data-contact-email', contact.email || '');
+        option.setAttribute('data-contact-phone', contact.phone || '');
+        select.appendChild(option);
     });
 
     // PIC Service menyimpan email, bukan id contact.

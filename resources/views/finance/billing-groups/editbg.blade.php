@@ -644,20 +644,27 @@
     // PIC Dropdown Change Handler
     const picSelect = document.getElementById('pic_contact_select');
     if (picSelect) {
-        picSelect.addEventListener('change', function() {
-            const option = this.options[this.selectedIndex];
-            if (option.value) {
+        const applyPicSelection = function() {
+            const option = picSelect.options[picSelect.selectedIndex];
+            if (option && option.value) {
                 // Get data attributes
                 const name = option.getAttribute('data-name') || '';
                 const email = option.getAttribute('data-email') || '';
                 const phone = option.getAttribute('data-phone') || '';
-                
+
                 // Update fields
                 document.getElementById('pic_name').value = name;
                 document.getElementById('pic_email').value = email;
                 document.getElementById('pic_phone').value = phone;
             }
-        });
+        };
+        picSelect.addEventListener('change', applyPicSelection);
+        // QA 26 Nov 2026 (BG 21622): dropdown ini dibungkus select2 oleh layout, dan select2
+        // memicu change lewat jQuery yang tidak sampai ke addEventListener. PIC baru terlihat
+        // terpilih tetapi field PIC lama yang tersimpan. Dengarkan juga event jQuery-nya.
+        if (window.jQuery) {
+            window.jQuery(picSelect).on('change select2:select', applyPicSelection);
+        }
     }
     
     // Tax Configuration Dropdown Logic - NEW: NPWP+NITKU paired options with JSON values
