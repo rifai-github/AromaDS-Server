@@ -278,6 +278,13 @@
     @php
         $company = \App\Models\Company::first();
 
+        /* ===== Role "PIC Info" (jawaban klien 26 Nov 2026): email & telepon PIC disembunyikan di PDF
+           untuk user tanpa izin; nama PIC tetap tampil. ===== */
+        $canSeePicInfo = \App\Models\User::currentCanSeePicInfo();
+        $picEmail = $canSeePicInfo ? $survey->display_email : '-';
+        $picPhoneOne = $canSeePicInfo ? $survey->display_phone_one : '-';
+        $picPhoneTwo = $canSeePicInfo ? ($survey->phone_2 ?? '-') : '-';
+
         /* ===== Company identity for header/footer ===== */
         $companyName = strtoupper(trim((string) ($company->name ?? 'PT. PINK SERVICES INDONESIA')));
         $companyAddress = trim(
@@ -400,8 +407,8 @@
                 <div class="lbl">Survey Untuk :</div>
                 <div class="party-name">{{ strtoupper($surveyForName) }}</div>
                 <div class="party-addr">{{ $surveyForAddress ?: '-' }}</div>
-                @if ($survey->display_contact_person !== '-' || $survey->display_phone_one !== '-')
-                    <div class="party-addr">{{ trim(($survey->display_contact_person !== '-' ? $survey->display_contact_person : '') . ($survey->display_phone_one !== '-' ? ' - ' . $survey->display_phone_one : '')) }}</div>
+                @if ($survey->display_contact_person !== '-' || $picPhoneOne !== '-')
+                    <div class="party-addr">{{ trim(($survey->display_contact_person !== '-' ? $survey->display_contact_person : '') . ($picPhoneOne !== '-' ? ' - ' . $picPhoneOne : '')) }}</div>
                 @endif
             </td>
             <td class="info-right">
@@ -469,15 +476,15 @@
             </tr>
             <tr>
                 <td class="detail-label">Email</td>
-                <td>{{ $survey->display_email }}</td>
+                <td>{{ $picEmail }}</td>
                 <td class="detail-label">Jabatan</td>
                 <td>{{ $survey->display_position }}</td>
             </tr>
             <tr>
                 <td class="detail-label">Telepon 1</td>
-                <td>{{ $survey->display_phone_one }}</td>
+                <td>{{ $picPhoneOne }}</td>
                 <td class="detail-label">Telepon 2</td>
-                <td>{{ $survey->phone_2 ?? '-' }}</td>
+                <td>{{ $picPhoneTwo }}</td>
             </tr>
         </table>
     </div>

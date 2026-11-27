@@ -3,6 +3,11 @@
 @section('title', 'Survey Detail - Updated')
 
 @section('content')
+@php
+    // Role "PIC Info" (jawaban klien 26 Nov 2026): email & telepon PIC hanya untuk Admin/Management
+    // atau user dengan izin marketing.contract-pic-info.view. Nama PIC tetap tampil.
+    $canSeePicInfo = \App\Models\User::currentCanSeePicInfo();
+@endphp
 
 <!-- Force CSS untuk layout -->
 <style>
@@ -318,11 +323,11 @@
                                     </div>
                                     <div class="survey-field">
                                         <div class="survey-field-label">E-mail</div>
-                                        <div class="survey-field-value">{{ $survey->display_email }}</div>
+                                        <div class="survey-field-value">{{ $canSeePicInfo ? $survey->display_email : \App\Models\User::PIC_INFO_HIDDEN_LABEL }}</div>
                                     </div>
                                     <div class="survey-field">
                                         <div class="survey-field-label">Phone 1</div>
-                                        <div class="survey-field-value">{{ $survey->display_phone_one }}</div>
+                                        <div class="survey-field-value">{{ $canSeePicInfo ? $survey->display_phone_one : \App\Models\User::PIC_INFO_HIDDEN_LABEL }}</div>
                                     </div>
                                     <div class="survey-field">
                                         <div class="survey-field-label">Jabatan / Posisi</div>
@@ -1259,9 +1264,11 @@ $(document).ready(function() {
             company_name: @json($survey->customer->name ?? $survey->company_name),
             customer_type: @json($survey->customer_type),
             contact_person: @json($survey->contact_person),
+@if($canSeePicInfo)
             email: @json($survey->email ?: $survey->customer?->email),
             phone_1: @json($survey->phone_1 ?: $survey->customer?->phone),
             phone_2: @json($survey->phone_2),
+@endif
             position: @json($survey->position),
             building_name: @json($survey->building->building_name ?? $survey->building_name),
             address_1: @json($survey->building->building_address ?? $survey->address_1),
@@ -1377,9 +1384,11 @@ $(document).ready(function() {
                     company_name: @json($survey->customer->name ?? $survey->company_name),
                     customer_type: @json($survey->customer_type),
                     contact_person: @json($survey->contact_person),
+@if($canSeePicInfo)
                     email: @json($survey->email ?: $survey->customer?->email),
                     phone_1: @json($survey->phone_1 ?: $survey->customer?->phone),
                     phone_2: @json($survey->phone_2),
+@endif
                     position: @json($survey->position),
                     building_name: @json($survey->building->building_name ?? $survey->building_name),
                     address_1: @json($survey->building->building_address ?? $survey->address_1),

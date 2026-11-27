@@ -340,7 +340,11 @@
             (string) ($quotation->prospect->company_address ?? ($quotation->customer->address ?? '-')),
         );
         $picName = trim((string) ($quotation->pic_name ?: ($quotation->prospect->contact_person ?? '')));
-        $picPhone = trim((string) ($quotation->prospect->contact_phone ?? ''));
+        // Role "PIC Info" (jawaban klien 26 Nov 2026): telepon PIC disembunyikan di PDF untuk user
+        // tanpa izin marketing.contract-pic-info.view; nama PIC tetap tampil.
+        $picPhone = \App\Models\User::currentCanSeePicInfo()
+            ? trim((string) ($quotation->prospect->contact_phone ?? ''))
+            : '';
 
         /* ===== Periode / Syarat Pembayaran / SC ===== */
         $periodeText = trim((string) ($quotation->rental_period ?? ''));

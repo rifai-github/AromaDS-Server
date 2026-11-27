@@ -4,6 +4,11 @@
 @section('breadcrumb', 'Home / Marketing / Survey')
 
 @section('content')
+@php
+    // Role "PIC Info" (jawaban klien 26 Nov 2026): email & telepon PIC hanya untuk Admin/Management
+    // atau user dengan izin marketing.contract-pic-info.view. Nama PIC tetap tampil.
+    $canSeePicInfo = \App\Models\User::currentCanSeePicInfo();
+@endphp
 <style>
     /* Global overflow control */
     html, body {
@@ -1835,6 +1840,7 @@ function openViewModal(id) {
                             <label class="form-label">Marketing</label>
                             <p class="detail-value">${data.marketing ? data.marketing.name : 'N/A'}</p>
                         </div>
+@if($canSeePicInfo)
                         <div class="detail-item">
                             <label class="form-label">Phone 1</label>
                             <p class="detail-value">${data.phone_1 || 'N/A'}</p>
@@ -1847,6 +1853,12 @@ function openViewModal(id) {
                             <label class="form-label">Email</label>
                             <p class="detail-value">${data.email || 'N/A'}</p>
                         </div>
+@else
+                        <div class="detail-item">
+                            <label class="form-label">Phone / Email</label>
+                            <p class="detail-value">{{ \App\Models\User::PIC_INFO_HIDDEN_LABEL }}</p>
+                        </div>
+@endif
                         <div class="detail-item">
                             <label class="form-label">Survey Location</label>
                             <p class="detail-value">${data.survey_location || 'N/A'}</p>
@@ -2051,6 +2063,7 @@ function openEditModal(id) {
                                 <label class="form-label">Contact Person *</label>
                                 <input type="text" name="contact_person" class="form-input" value="${data.contact_person || ''}" required>
                             </div>
+@if($canSeePicInfo)
                             <div class="form-group">
                                 <label class="form-label">Email *</label>
                                 <input type="email" name="email" class="form-input" value="${data.email || ''}" required>
@@ -2063,6 +2076,12 @@ function openEditModal(id) {
                                 <label class="form-label">Phone 2</label>
                                 <input type="text" name="phone_2" class="form-input" value="${data.phone_2 || ''}">
                             </div>
+@else
+                            <div class="form-group">
+                                <label class="form-label">Email / Phone</label>
+                                <p class="text-gray-500 text-sm">{{ \App\Models\User::PIC_INFO_HIDDEN_LABEL }}</p>
+                            </div>
+@endif
                             <div class="form-group">
                                 <label class="form-label">Jabatan/Posisi</label>
                                 <input type="text" name="position" class="form-input" value="${data.position || ''}">
@@ -3069,12 +3088,20 @@ function openEditModal(id) {
                             <label class="form-label">Contact Person *</label>
                             <input type="text" name="contact_person" class="form-input" value="${data.contact_person || ''}" required>
                         </div>
+@if($canSeePicInfo)
                         <div class="form-group">
                             <label class="form-label">Phone Number *</label>
                             <input type="text" name="phone" class="form-input" value="${data.phone || ''}" required>
                         </div>
+@else
+                        <div class="form-group">
+                            <label class="form-label">Phone / Email</label>
+                            <p class="text-gray-500 text-sm">{{ \App\Models\User::PIC_INFO_HIDDEN_LABEL }}</p>
+                        </div>
+@endif
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+@if($canSeePicInfo)
                         <div class="form-group">
                             <label class="form-label">Email *</label>
                             <input type="email" name="email" class="form-input" value="${data.email || ''}" required>
@@ -3083,6 +3110,7 @@ function openEditModal(id) {
                             <label class="form-label">Phone 2</label>
                             <input type="text" name="phone_2" class="form-input" value="${data.phone_2 || ''}">
                         </div>
+@endif
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="form-group">

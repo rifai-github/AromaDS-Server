@@ -17,12 +17,8 @@
 @php
     // UAT 19 Nov: role "PIC Info". Email & telepon PIC hanya untuk Admin/Management atau user
     // dengan izin marketing.contract-pic-info.view; lainnya hanya melihat nama PIC.
-    $canSeePicInfo = auth()->check() && (
-        auth()->user()->hasRole('super_admin')
-        || auth()->user()->hasRole('Admin')
-        || auth()->user()->hasRoleStartingWith('Management')
-        || auth()->user()->hasPermission('marketing.contract-pic-info.view')
-    );
+    // Aturan tunggal di User::canSeePicInfo() (dipakai juga Survey & SQ, web + PDF).
+    $canSeePicInfo = \App\Models\User::currentCanSeePicInfo();
     // MOM 19 Nov 2026 p6: Suspend/Unsuspend room kontrak.
     $canSuspendRooms = auth()->check() && (
         auth()->user()->hasRole('super_admin')

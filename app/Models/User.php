@@ -534,6 +534,27 @@ class User extends Authenticatable
         return $this->hasPermission($permission);
     }
 
+    /**
+     * Role "PIC Info" (UAT 19 Nov, jawaban klien 26 Nov 2026): email & telepon PIC di Survey,
+     * SQ, dan Kontrak (halaman web maupun PDF) hanya untuk Admin/Management atau user dengan
+     * izin ini. Nama PIC tetap tampil. API APK teknisi (Api/Mobile) TIDAK memakai aturan ini.
+     */
+    public const PIC_INFO_PERMISSION = 'marketing.contract-pic-info.view';
+
+    public const PIC_INFO_HIDDEN_LABEL = 'Disembunyikan (butuh izin PIC Info)';
+
+    public function canSeePicInfo(): bool
+    {
+        return $this->canPerform(self::PIC_INFO_PERMISSION);
+    }
+
+    public static function currentCanSeePicInfo(): bool
+    {
+        $user = auth()->user();
+
+        return $user instanceof self && $user->canSeePicInfo();
+    }
+
     public function hasPermission($permission)
     {
         $permissionLookup = $this->getResolvedPermissionLookup();

@@ -633,6 +633,15 @@ class ContractController extends Controller
     {
         $contract->load(['marketing', 'customer', 'quotation.survey.surveyor', 'creator', 'contractRooms', 'contractRentals.masterRental', 'billingGroups', 'contractFiles', 'invoices']);
 
+        // Role "PIC Info" (jawaban klien 26 Nov 2026): email & telepon PIC tidak dikirim ke user tanpa izin.
+        if (! \App\Models\User::currentCanSeePicInfo()) {
+            $contract->makeHidden(['pic_service_email']);
+            $contract->customer?->makeHidden(['email', 'phone']);
+            $contract->quotation?->makeHidden(['pic_email', 'pic_phone']);
+            $contract->quotation?->survey?->makeHidden(['email', 'phone_1', 'phone_2']);
+            $contract->billingGroups->each->makeHidden(['pic_email', 'pic_phone']);
+        }
+
         return response()->json($contract);
     }
 
@@ -848,7 +857,8 @@ class ContractController extends Controller
             'tax_code' => $request->tax_code,
             'install_date' => $request->install_date,
             'first_service_date' => $request->first_service_date,
-            'pic_service_email' => $request->pic_service_email,
+            // Role "PIC Info": user tanpa izin tidak melihat field ini, jadi jangan timpa nilainya.
+            'pic_service_email' => \App\Models\User::currentCanSeePicInfo() ? $request->pic_service_email : $contract->pic_service_email,
             'notes' => $request->internal_notes,
             'additional_notes' => $request->additional_notes,
             'contract_back' => $request->contract_back ?? false,

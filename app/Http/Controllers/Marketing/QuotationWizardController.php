@@ -669,6 +669,21 @@ class QuotationWizardController extends Controller
                 });
             }
 
+            // Role "PIC Info" (jawaban klien 26 Nov 2026): email & telepon PIC tidak dikirim ke user
+            // tanpa izin; nama/jabatan tetap ada untuk dipilih. Saat disimpan, email & telepon
+            // diisi server dari kontak yang dipilih (picContactForSave()).
+            if (! \App\Models\User::currentCanSeePicInfo()) {
+                $customerContacts = collect($customerContacts)->map(function ($contact) {
+                    $row = $contact instanceof \Illuminate\Database\Eloquent\Model ? $contact->toArray() : (array) $contact;
+                    unset($row['email'], $row['phone'], $row['email_verification_token']);
+                    if (isset($row['customer']) && is_array($row['customer'])) {
+                        unset($row['customer']['email'], $row['customer']['phone']);
+                    }
+
+                    return $row;
+                })->values();
+            }
+
             return response()->json([
                 'internal_pics' => $internalPics,
                 'customer_contacts' => $customerContacts
@@ -677,6 +692,49 @@ class QuotationWizardController extends Controller
             \Log::error('Error in getPicContacts: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to fetch PIC contacts: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Email & telepon PIC yang disimpan ke quotation. User tanpa izin "PIC Info" tidak menerima
+     * email/telepon kontak di wizard (getPicContacts() menyamarkannya), jadi pic_email/pic_phone
+     * datang kosong. Jangan timpa data dengan kosong: pakai nilai lama bila PIC tidak berganti,
+     * atau ambil dari kontak customer yang dipilih (nama sama).
+     */
+    private function picContactForSave(Request $request, $customerId, ?Quotation $existing = null): array
+    {
+        if (\App\Models\User::currentCanSeePicInfo()) {
+            return [
+                'pic_email' => $request->get('pic_email'),
+                'pic_phone' => $request->get('pic_phone'),
+            ];
+        }
+
+        $picName = trim((string) $request->get('pic_quotation'));
+
+        if ($existing && trim((string) $existing->pic_name) === $picName) {
+            return [
+                'pic_email' => $existing->pic_email,
+                'pic_phone' => $existing->pic_phone,
+            ];
+        }
+
+        $contact = null;
+        if ($picName !== '' && $customerId) {
+            $contact = CustomerContact::query()
+                ->where('name', $picName)
+                ->where('is_active', true)
+                ->where(function ($q) use ($customerId) {
+                    $q->where('customer_id', $customerId)
+                        ->orWhereHas('customers', fn ($c) => $c->where('customers.id', $customerId));
+                })
+                ->orderBy('id')
+                ->first();
+        }
+
+        return [
+            'pic_email' => $contact?->email,
+            'pic_phone' => $contact?->phone,
+        ];
     }
 
     public function store(Request $request)
@@ -835,8 +893,7 @@ class QuotationWizardController extends Controller
                 'valid_until' => \Carbon\Carbon::parse($quotationDate)->addDays(30)->toDateString(), // 30 days validity
                 'company_name' => $survey && $survey->customer ? $survey->customer->name : ($survey && $survey->prospect ? $survey->prospect->company_name : ($renewalCompanyName ?? 'Unknown Company')),
                 'pic_name' => $request->get('pic_quotation') ?? 'Unknown PIC',
-                'pic_email' => $request->get('pic_email'),
-                'pic_phone' => $request->get('pic_phone'),
+                ...$this->picContactForSave($request, $survey ? $survey->customer_id : $renewalCustomerId),
                 'billing_methods' => $request->get('payment_method'),
                 'payment_method' => $request->get('payment_method'),
                 'status' => 'draft',
@@ -1136,8 +1193,7 @@ class QuotationWizardController extends Controller
                     'valid_until' => \Carbon\Carbon::parse($quotationDate)->addDays(30)->toDateString(),
                     'company_name' => $survey && $survey->customer ? $survey->customer->name : ($survey && $survey->prospect ? $survey->prospect->company_name : ($renewalCompanyName ?? 'Unknown Company')),
                     'pic_name' => $request->get('pic_quotation') ?? 'Unknown PIC',
-                    'pic_email' => $request->get('pic_email'),
-                    'pic_phone' => $request->get('pic_phone'),
+                    ...$this->picContactForSave($request, $survey ? $survey->customer_id : $renewalCustomerId, $quotation),
                     'billing_methods' => $request->get('payment_method'),
                     'payment_method' => $request->get('payment_method'),
                     'status' => 'draft',
@@ -1668,6 +1724,15 @@ class QuotationWizardController extends Controller
             $quotation->load('quotationDetails.masterRental');
         }
 
+        // Role "PIC Info": data quotation di-embed sebagai JSON di halaman wizard; jangan ikutkan
+        // email/telepon PIC (dan fallback prospect/survey) untuk user tanpa izin.
+        if (! \App\Models\User::currentCanSeePicInfo()) {
+            $quotation->makeHidden(['pic_email', 'pic_phone']);
+            $quotation->prospect?->makeHidden(['contact_email', 'contact_phone']);
+            $quotation->survey?->makeHidden(['email', 'phone_1', 'phone_2']);
+            $quotation->surveys?->each->makeHidden(['email', 'phone_1', 'phone_2']);
+        }
+
         return view('marketing.quotations.wizard.create', compact(
             'quotation',
             'termOfPaymentOptions', 'marketingUsers',
@@ -1813,8 +1878,7 @@ class QuotationWizardController extends Controller
                     'external_remark' => $request->external_remark,
                     'tax_setting_id' => $request->tax_setting_id,
                     'pic_name' => $request->pic_quotation,
-                    'pic_email' => $request->pic_email,
-                    'pic_phone' => $request->pic_phone,
+                    ...$this->picContactForSave($request, $customerId ?? $quotation->customer_id, $quotation),
                     'price_basis' => $request->price_basis,
                     'updated_by' => Auth::id()
                 ]);
@@ -1843,8 +1907,7 @@ class QuotationWizardController extends Controller
                     'external_remark' => $request->external_remark,
                     'tax_setting_id' => $request->tax_setting_id,
                     'pic_name' => $request->pic_quotation,
-                    'pic_email' => $request->pic_email,
-                    'pic_phone' => $request->pic_phone,
+                    ...$this->picContactForSave($request, $customerId),
                     'price_basis' => $request->price_basis,
                     'status' => 'draft',
                     'created_by' => Auth::id(),

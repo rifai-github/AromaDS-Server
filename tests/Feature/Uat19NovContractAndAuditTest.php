@@ -149,7 +149,8 @@ class Uat19NovContractAndAuditTest extends TestCase
         $view = file_get_contents(View::getFinder()->find('marketing.contracts.show'));
 
         $this->assertStringContainsString('onclick="saveContractPoNumber({{ $contract->id }})"', $view);
-        $this->assertStringContainsString("auth()->user()->hasPermission('marketing.contract-pic-info.view')", $view);
+        // Jawaban klien 26 Nov 2026: aturan tunggal di User::canSeePicInfo() (Survey, SQ, Kontrak).
+        $this->assertStringContainsString('$canSeePicInfo = \App\Models\User::currentCanSeePicInfo();', $view);
         $this->assertMatchesRegularExpression('/@if\(\$canSeePicInfo\)\s*<td>\{\{ \$email \}\}<\/td>\s*<td>\{\{ \$phone1 \}\}<\/td>\s*@endif/', str_replace("\r\n", "\n", $view));
         // 3 di tabel Billing Group + 1 di modal edit Additional Info (PIC Service Email).
         $this->assertSame(4, substr_count($view, '@if($canSeePicInfo)'));

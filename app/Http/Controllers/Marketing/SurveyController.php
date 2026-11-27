@@ -358,12 +358,34 @@ class SurveyController extends Controller
     public function edit(Survey $survey)
     {
         $survey->load(['customer', 'building', 'surveyor', 'marketing', 'creator', 'updater']);
-        return response()->json($survey);
+        return response()->json($this->maskPicContactForCurrentUser($survey));
+    }
+
+    /**
+     * Role "PIC Info" (jawaban klien 26 Nov 2026): email & telepon PIC tidak dikirim ke user tanpa
+     * izin (termasuk fallback email/telepon customer). Nama PIC tetap dikirim.
+     */
+    private function maskPicContactForCurrentUser(Survey $survey): Survey
+    {
+        if (\App\Models\User::currentCanSeePicInfo()) {
+            return $survey;
+        }
+
+        $survey->makeHidden(['email', 'phone_1', 'phone_2']);
+        if ($survey->relationLoaded('customer') && $survey->customer) {
+            $survey->customer->makeHidden(['email', 'phone']);
+        }
+
+        return $survey;
     }
 
     public function update(Request $request, Survey $survey)
     {
-        $validator = Validator::make($request->all(), [
+        // Role "PIC Info": user tanpa izin tidak melihat email/telepon PIC di form, jadi nilainya
+        // tidak divalidasi dan TIDAK ditimpa (pola sama dengan pic_service_email kontrak).
+        $canSeePicInfo = \App\Models\User::currentCanSeePicInfo();
+
+        $rules = [
             'survey_number' => 'required|string|max:255',
             'status' => 'required|in:draft,submitted,approved,rejected,in_progress,completed,cancelled',
             'survey_date' => 'required|date',
@@ -392,16 +414,20 @@ class SurveyController extends Controller
             'postal_code' => 'nullable|string|max:10',
             'survey_result' => 'nullable|string',
             'recommendations' => 'nullable|string'
-        ]);
+        ];
+        if (! $canSeePicInfo) {
+            unset($rules['email'], $rules['phone_1'], $rules['phone_2']);
+        }
+        $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             $errors = $validator->errors();
             $errorMessages = [];
-            
+
             foreach ($errors->all() as $error) {
                 $errorMessages[] = $error;
             }
-            
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Please fix the following errors:',
@@ -417,8 +443,8 @@ class SurveyController extends Controller
             // Get building info for auto-filling building_name
             $building = \App\Models\Building::find($request->building_id);
             $buildingName = $building ? ($building->building_name) : null;
-            
-            $survey->update([
+
+            $payload = [
                 'survey_number' => $request->survey_number,
                 'status' => $request->status,
                 'survey_date' => $request->survey_date,
@@ -448,7 +474,11 @@ class SurveyController extends Controller
                 'survey_result' => $request->survey_result,
                 'recommendations' => $request->recommendations,
                 'updated_by' => Auth::id()
-            ]);
+            ];
+            if (! $canSeePicInfo) {
+                unset($payload['email'], $payload['phone_1'], $payload['phone_2']);
+            }
+            $survey->update($payload);
 
             // Sync customer_id to all Master Rooms for this survey (Fix for missing customer_id)
             if ($survey->surveyDetails->isNotEmpty()) {
@@ -467,7 +497,7 @@ class SurveyController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Survey updated successfully',
-                'data' => $survey
+                'data' => $this->maskPicContactForCurrentUser($survey)
             ]);
         } catch (\Exception $e) {
             return response()->json([

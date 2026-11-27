@@ -16,6 +16,10 @@
             $quotationBackUrl = $decodedReturnUrl;
         }
     }
+
+    // Role "PIC Info" (jawaban klien 26 Nov 2026): email & telepon PIC hanya untuk Admin/Management
+    // atau user dengan izin marketing.contract-pic-info.view. Nama PIC tetap tampil.
+    $canSeePicInfo = \App\Models\User::currentCanSeePicInfo();
 @endphp
 
 @section('content')
@@ -415,13 +419,13 @@
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">PIC Email</div>
                                         <div class="quotation-field-value">
-                                            {{ $quotation->pic_email ?? ($quotation->prospect->contact_email ?? ($quotation->customer->email ?? '-')) }}
+                                            {{ $canSeePicInfo ? ($quotation->pic_email ?? ($quotation->prospect->contact_email ?? ($quotation->customer->email ?? '-'))) : \App\Models\User::PIC_INFO_HIDDEN_LABEL }}
                                         </div>
                                     </div>
                                     <div class="quotation-field">
                                         <div class="quotation-field-label">PIC Phone</div>
                                         <div class="quotation-field-value">
-                                            {{ $quotation->pic_phone ?? ($quotation->prospect->contact_phone ?? ($quotation->customer->phone ?? '-')) }}
+                                            {{ $canSeePicInfo ? ($quotation->pic_phone ?? ($quotation->prospect->contact_phone ?? ($quotation->customer->phone ?? '-'))) : \App\Models\User::PIC_INFO_HIDDEN_LABEL }}
                                         </div>
                                     </div>
                                     <div class="quotation-field">
