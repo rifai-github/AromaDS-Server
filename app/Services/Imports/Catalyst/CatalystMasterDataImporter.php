@@ -3532,6 +3532,40 @@ class CatalystMasterDataImporter
         return null;
     }
 
+    /**
+     * Pak Hengky 27 Nov 2026: harga rental Catalyst (PriceForex) adalah harga PER TAHUN per unit,
+     * sedangkan KGI menyimpan harga PER TOP (InvoiceGenerationService menagih unit_price apa adanya
+     * tiap invoice). Contoh ADS-AG/26-07/0096: 10.800.000 / tahun, TOP 1 bulan -> 900.000.
+     *
+     * Bukti "per tahun" (Catalyst, 27 Nov 2026, semua kontrak lolos filter): MKTContractHd.BaseForex
+     * = SUM(MKTContractDt.AmountForex) x ContractPeriod / 12 tanpa kecuali - kontrak 24 bulan 2x,
+     * 6 bulan 0,5x, 1 bulan 1/12. Jadi pembaginya 12, BUKAN panjang kontrak:
+     *   harga per TOP = PriceForex x bulan per TOP / 12
+     * Bulan per TOP: fixed interval -> N bulan ("00" = 1, "3XM" = 3); advance ("1x") -> seluruh
+     * periode kontrak (sekali bayar); "Nx per periode" -> periode / N. Kode tak dikenal -> 1 bulan,
+     * sama dengan default Contract::getTopIntervalMonthsAttribute().
+     * ⚠ TOP > 1 bulan (mis. 3 bulan -> x 3/12) masih menunggu konfirmasi klien.
+     */
+    public function catalystPricePerTop(float $annualPrice, $termCode, int $periodMonths): float
+    {
+        return round($annualPrice * $this->catalystTopPriceFactor($termCode, $periodMonths), 2);
+    }
+
+    public function catalystTopPriceFactor($termCode, int $periodMonths): float
+    {
+        $periodMonths = max(1, $periodMonths);
+        $term = $this->mapCatalystTermOfPayment($termCode);
+
+        $topMonths = match ($term['mode'] ?? null) {
+            'fixed_interval' => max(1, (int) ($term['months'] ?? 1)),
+            'advance' => $periodMonths,
+            'per_contract_period' => $periodMonths / max(1, (int) ($term['payment_count'] ?? 1)),
+            default => 1,
+        };
+
+        return $topMonths / 12;
+    }
+
     protected function ensureMasterRoomId(
         ?int $buildingId,
         ?int $customerId,
@@ -4640,6 +4674,14 @@ class CatalystMasterDataImporter
         });
     }
 
+    /** Harga per TOP baris rental SQ: Term & ContractPeriod header SQ (revisi terakhir). */
+    protected function sourceQuotationPricePerTop(?string $quotationNumber, float $annualPrice): float
+    {
+        $header = (array) ($this->findSourceQuotationHeader($quotationNumber) ?? []);
+
+        return $this->catalystPricePerTop($annualPrice, $header['Term'] ?? null, (int) ($header['ContractPeriod'] ?? 12));
+    }
+
     protected $quotationSurveyCounter = [];
 
     protected function quotation_surveys(): array
@@ -4799,7 +4841,8 @@ class CatalystMasterDataImporter
 
             $qty = (float) ($row['QtyTotal'] ?? $row['QtyContract'] ?? 1);
             $qtyFree = $this->sourceQtyFree($row);
-            $price = (float) ($row['PriceForex'] ?? 0);
+            $annualPrice = (float) ($row['PriceForex'] ?? 0);
+            $price = $this->sourceQuotationPricePerTop($sqNo, $annualPrice);
 
             $index = $row['__index'];
 
@@ -4818,6 +4861,7 @@ class CatalystMasterDataImporter
                     'LegacyFloorCode' => $row['FloorCode'] ?? null,
                     'LegacyRoomCode' => $row['RoomCode'] ?? null,
                     'LegacyFrequency' => $row['FrequencyService'] ?? null,
+                    'CatalystPricePerYear' => $annualPrice,
                 ]),
                 'created_by' => $this->actorId(),
                 'updated_by' => $this->actorId(),
@@ -4886,7 +4930,7 @@ class CatalystMasterDataImporter
 
             $qty = (float) ($row['QtyTotal'] ?? $row['QtyContract'] ?? 1);
             $qtyFree = $this->sourceQtyFree($row);
-            $price = (float) ($row['PriceForex'] ?? 0);
+            $price = $this->sourceQuotationPricePerTop($sqNo, (float) ($row['PriceForex'] ?? 0));
 
             return $this->syncRecord('quotation_details', 'MKTQuotationRental_detail', $this->makeKey([
                 $sqNo,
@@ -5571,8 +5615,11 @@ class CatalystMasterDataImporter
 
             $qty = (float) ($row['Qty'] ?? 0);
             $qtyFree = $this->sourceQtyFree($row);
-            $price = (float) ($row['PriceForex'] ?? 0);
-            $totalPrice = (float) ($row['__total_price'] ?? ($qty * $price));
+            // PriceForex Catalyst = harga per tahun -> harga per TOP (lihat catalystPricePerTop()).
+            $header = $this->sourceContractHeadersByNumber()[$this->makeKey($contractNo)] ?? [];
+            $factor = $this->catalystTopPriceFactor($header['Terms'] ?? null, (int) ($header['ContractPeriod'] ?? 12));
+            $price = round((float) ($row['PriceForex'] ?? 0) * $factor, 2);
+            $totalPrice = round((float) ($row['__total_price'] ?? ($qty * (float) ($row['PriceForex'] ?? 0))) * $factor, 2);
             $roomId = $this->findMappedTargetId('CATALYST_ROOM', $this->makeKey([
                 $this->findMappedTargetId('MsBuilding', $this->makeKey($row['Building'] ?? null), 'buildings'),
                 $row['FloorCode'] ?? null,

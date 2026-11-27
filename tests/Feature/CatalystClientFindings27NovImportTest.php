@@ -978,4 +978,80 @@ class CatalystClientFindings27NovImportTest extends TestCase
         // Catalyst tidak punya EndDate: TransDate + ContractPeriod bulan - 1 hari.
         $this->assertSame('2027-07-17', $contract->end_date);
     }
+
+    // ── 8. Harga per TOP ────────────────────────────────────────────────────
+
+    public function test_catalyst_annual_price_is_converted_to_price_per_top(): void
+    {
+        $importer = $this->importer();
+
+        // Kasus klien: 10.800.000 / tahun, TOP "00" (1 bulan), kontrak 12 bulan -> 900.000.
+        $this->assertSame(900000.0, $importer->catalystPricePerTop(10800000, '00', 12));
+        // Harga Catalyst per TAHUN (BaseForex = SUM(AmountForex) x periode / 12), jadi kontrak
+        // 24 bulan TOP 1 bulan tetap 900.000, bukan 450.000.
+        $this->assertSame(900000.0, $importer->catalystPricePerTop(10800000, '00', 24));
+        // Asumsi, menunggu konfirmasi klien: TOP 3 bulan -> 3/12.
+        $this->assertSame(2700000.0, $importer->catalystPricePerTop(10800000, '3XM', 12));
+        // "1x" (In Advance) = sekali bayar seluruh periode: 10 bulan -> 10/12.
+        $this->assertSame(9000000.0, $importer->catalystPricePerTop(10800000, '1x', 10));
+        // "2x per periode", 12 bulan -> tiap 6 bulan.
+        $this->assertSame(5400000.0, $importer->catalystPricePerTop(10800000, '2x', 12));
+        // Kode tak dikenal -> 1 bulan (default Contract::top_interval_months).
+        $this->assertSame(900000.0, $importer->catalystPricePerTop(10800000, null, 12));
+    }
+
+    private function createContractRentalTables(): void
+    {
+        $this->create('master_rentals', function (Blueprint $table) {
+            $table->id();
+            $table->string('rental_code');
+            $table->softDeletes();
+        });
+        $this->create('contract_rentals', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('contract_id');
+            $table->unsignedBigInteger('master_rental_id');
+            $table->string('rental_alias')->nullable();
+            $table->unsignedBigInteger('room_id')->nullable();
+            $table->decimal('quantity', 10, 2)->nullable();
+            $table->integer('qty_free')->default(0);
+            $table->decimal('unit_price', 18, 2)->nullable();
+            $table->decimal('total_price', 18, 2)->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->timestamps();
+        });
+        DB::table('master_rentals')->insert([
+            ['id' => 35, 'rental_code' => 'A305200'],
+            ['id' => 43, 'rental_code' => 'ADS05-12-200'],
+            ['id' => 332, 'rental_code' => 'W300200'],
+        ]);
+    }
+
+    public function test_contract_rental_price_is_stored_per_top(): void
+    {
+        $this->createImportMaps();
+        $this->createBillingGroupTables();
+        $this->createContractRentalTables();
+        DB::table('MKTContractDt')->insert([
+            ['TransNmbr' => 'ADS-AG/26-07/0096', 'Building' => 'ADS-ADSH0008', 'Product' => 'W300200', 'Qty' => 2, 'QtyFree' => 0, 'PriceForex' => 10800000, 'AmountForex' => 21600000, 'FloorCode' => '011', 'RoomCode' => '018', 'Room' => 'Services Area 2', 'BillingGroup' => 'ADS-BIL-12/8138', 'NPWP' => ''],
+        ]);
+
+        $this->importer(['ADS-AG/26-07/0096' => true])->call('contract_rentals');
+
+        $a305 = DB::table('contract_rentals')->where('master_rental_id', 35)->first();
+        $this->assertSame(900000.0, (float) $a305->unit_price);
+        $this->assertSame(900000.0, (float) $a305->total_price);
+
+        $w300 = DB::table('contract_rentals')->where('master_rental_id', 332)->first();
+        $this->assertSame(900000.0, (float) $w300->unit_price);
+        $this->assertSame(1800000.0, (float) $w300->total_price);
+    }
+
+    public function test_quotation_rental_price_uses_the_sq_term_and_period(): void
+    {
+        $this->createQuotationSource();
+
+        $this->assertSame(900000.0, $this->importer()->call('sourceQuotationPricePerTop', 'ADS-SQ/26-07/1544', 10800000.0));
+    }
 }
