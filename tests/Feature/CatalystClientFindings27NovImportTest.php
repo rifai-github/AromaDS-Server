@@ -570,4 +570,84 @@ class CatalystClientFindings27NovImportTest extends TestCase
         $this->assertNull($billingGroup->bank_name);
         $this->assertNotEmpty(array_filter($importer->warnings, fn ($m) => str_contains($m, 'step bank_payments')));
     }
+
+    // ── 4. Marketing phone & department ─────────────────────────────────────
+
+    private function createEmployeeSource(): void
+    {
+        $this->create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('nik')->nullable();
+            $table->string('name');
+            $table->string('username')->nullable();
+            $table->string('email')->nullable();
+            $table->string('password')->nullable();
+            $table->string('phone')->nullable();
+            $table->string('handphone_1')->nullable();
+            $table->unsignedBigInteger('department_id')->nullable();
+            $table->string('department_name')->nullable();
+            $table->unsignedBigInteger('branch_id')->nullable();
+            $table->string('branch_name')->nullable();
+            $table->string('position_name')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+        $this->create('departments', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+        });
+        $this->create('MsEmployee', function (Blueprint $table) {
+            $table->string('EmpNumb');
+            $table->string('EmpName');
+            $table->string('HandPhone')->nullable();
+            $table->string('ResPhone')->nullable();
+            $table->string('OriPhone')->nullable();
+            $table->string('Email')->nullable();
+            $table->string('Department')->nullable();
+            $table->string('Branch')->nullable();
+            $table->string('JobTitle')->nullable();
+            $table->string('FgActive')->nullable();
+        });
+        $this->create('MsDepartment', function (Blueprint $table) {
+            $table->string('DeptCode');
+            $table->string('DeptName');
+        });
+        foreach (['SAUsers' => ['EmpNumb', 'UserId', 'UserName', 'FgActive', 'BranchCode', 'CreateDate'], 'MsBranchUser' => ['UserId', 'BranchCode', 'FgActive'], 'MsDeptUser' => ['UserId', 'Department', 'FgActive'], 'MsJobTitle' => ['JobTtlCode', 'JobTtlName']] as $name => $columns) {
+            $this->create($name, function (Blueprint $table) use ($columns) {
+                foreach ($columns as $column) {
+                    $table->string($column)->nullable();
+                }
+            });
+        }
+
+        DB::table('departments')->insert(['id' => 121, 'name' => 'MKT-JKT-1']);
+        $this->map('MsDepartment', '44', 'departments', 121);
+        DB::table('MsDepartment')->insert(['DeptCode' => '44', 'DeptName' => 'MKT-JKT-1']);
+        DB::table('MsEmployee')->insert([
+            // Data asli Catalyst: EMP094 (marketing ADS-AG/26-07/0096) tidak punya nomor HP sama sekali.
+            ['EmpNumb' => 'EMP094', 'EmpName' => 'Fahrul Hidayat', 'HandPhone' => null, 'ResPhone' => null, 'OriPhone' => null, 'Email' => null, 'Department' => '44', 'Branch' => 'ADS', 'JobTitle' => null, 'FgActive' => 'Y'],
+            ['EmpNumb' => '20560', 'EmpName' => 'Rendra Wicaksono Driyo', 'HandPhone' => '085163050627', 'ResPhone' => null, 'OriPhone' => null, 'Email' => null, 'Department' => '44', 'Branch' => 'ADS', 'JobTitle' => null, 'FgActive' => 'Y'],
+        ]);
+    }
+
+    public function test_employee_department_name_and_phone_reach_the_marketing_info(): void
+    {
+        $this->createImportMaps();
+        $this->createEmployeeSource();
+        // Nomor yang sudah diisi manual di KGI tidak boleh dikosongkan Catalyst yang kosong.
+        DB::table('users')->insert(['id' => 782, 'nik' => 'EMP094', 'name' => 'Fahrul Hidayat', 'username' => 'fahrul hidayat', 'email' => 'empemp094@pinkads.internal', 'handphone_1' => '0811111111']);
+        $this->map('MsEmployee', 'EMP094', 'users', 782);
+
+        $this->importer()->call('users');
+
+        $fahrul = DB::table('users')->where('nik', 'EMP094')->first();
+        $this->assertSame('MKT-JKT-1', $fahrul->department_name);
+        $this->assertSame(121, (int) $fahrul->department_id);
+        $this->assertSame('0811111111', $fahrul->handphone_1);
+
+        $rendra = DB::table('users')->where('nik', '20560')->first();
+        $this->assertSame('085163050627', $rendra->handphone_1);
+        $this->assertSame('MKT-JKT-1', $rendra->department_name);
+    }
 }

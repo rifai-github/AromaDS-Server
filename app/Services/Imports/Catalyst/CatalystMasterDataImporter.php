@@ -3967,6 +3967,18 @@ class CatalystMasterDataImporter
             $departmentAssignmentsByUserId[$userIdKey][] = $departmentCode;
         }
 
+        // Pak Hengky 27 Nov 2026 (ADS-AG/26-07/0096): Department di Marketing Information kontrak
+        // kosong. Halaman itu membaca users.department_name, yang dulu sengaja dikosongkan bila
+        // department_id terpetakan. Nama departemen kini selalu ditulis (DeptName MsDepartment).
+        $departmentNames = [];
+        foreach ($this->optionalSourceRows('users', 'MsDepartment') as $departmentRow) {
+            $departmentKey = $this->makeKey($departmentRow['DeptCode'] ?? null);
+            $departmentName = $this->cleanString($departmentRow['DeptName'] ?? null);
+            if ($departmentKey && $departmentName) {
+                $departmentNames[$departmentKey] = $departmentName;
+            }
+        }
+
         // Pre-load MsJobTitle keyed by JobTtlCode
         $jobTitleMap = $this->source()->table('MsJobTitle')
             ->get()
@@ -3995,6 +4007,7 @@ class CatalystMasterDataImporter
             $saUsersMap,
             $branchAssignmentsByUserId,
             $departmentAssignmentsByUserId,
+            $departmentNames,
             $jobTitleMap,
             $employeeDetailMap,
             $empStatusNames,
@@ -4028,6 +4041,9 @@ class CatalystMasterDataImporter
             $departmentId = $deptCode
                 ? $this->findMappedTargetId('MsDepartment', $deptCode, 'departments')
                 : null;
+            $departmentName = ($deptCode ? ($departmentNames[$deptCode] ?? null) : null)
+                ?: ($departmentId ? $this->cleanString($this->cachedTargetRecord('departments', (int) $departmentId)->name ?? null) : null)
+                ?: ($departmentId ? null : $this->cleanString($row['Department'] ?? null));
 
             $assignedBranchCodes = $loginUserIdKey
                 ? array_values(array_unique(array_filter($branchAssignmentsByUserId[$loginUserIdKey] ?? [])))
@@ -4116,8 +4132,12 @@ class CatalystMasterDataImporter
                 'username'         => $username,
                 'email'            => $email,
                 'join_date'        => $this->toDate($row['HireDate'] ?? null),
-                'phone'            => $this->cleanString($row['ResPhone'] ?? null),
-                'handphone_1'      => $this->cleanString($row['HandPhone'] ?? null),
+                // Marketing Phone di kontrak membaca handphone_1. Kosong di Catalyst = nilai di KGI
+                // tidak ditimpa (lihat array_filter di bawah) - user ini tabel yang dipertahankan.
+                'phone'            => $this->normalizePhoneLike($row['ResPhone'] ?? null),
+                'handphone_1'      => $this->normalizePhoneLike($row['HandPhone'] ?? null)
+                    ?: $this->normalizePhoneLike($row['ResPhone'] ?? null)
+                    ?: $this->normalizePhoneLike($row['OriPhone'] ?? null),
                 'address_1'        => $this->cleanString($row['ResAddr'] ?? null),
                 'address_2'        => $this->cleanString($row['OriAddr'] ?? null),
                 'identity_number'  => $this->cleanString($row['IDCard'] ?? null),
@@ -4126,7 +4146,7 @@ class CatalystMasterDataImporter
                 'bpjs_date'        => $bpjsDate,
                 'position_name'    => $positionName,
                 'department_id'    => $departmentId,
-                'department_name'  => $departmentId ? null : $this->cleanString($row['Department'] ?? null),
+                'department_name'  => $departmentName,
                 'branch_id'        => $branchId,
                 'branch_name'      => $branchId ? null : $this->cleanString($row['Branch'] ?? null),
                 'is_active'        => $isActive,
@@ -4151,6 +4171,12 @@ class CatalystMasterDataImporter
             }
             foreach ($profileMapper->map($profileRow, $empStatusNames) as $profileField => $profileValue) {
                 $userPayload[$profileField] = $profileValue;
+            }
+
+            foreach (['phone', 'handphone_1', 'department_name'] as $keepWhenBlank) {
+                if (($userPayload[$keepWhenBlank] ?? null) === null) {
+                    unset($userPayload[$keepWhenBlank]);
+                }
             }
 
             if ($this->apply && !$existingTargetUser) {
