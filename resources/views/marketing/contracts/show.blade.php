@@ -1320,7 +1320,7 @@
                                             <th data-column="masterRental.rental_name">Rental Name</th>
                                             <th data-column="quantity">Qty</th>
                                             <th data-column="qty_free">Qty Free</th>
-                                            <th data-column="unit_price">Price</th>
+                                            <th data-column="unit_price">Price / TOP</th>
                                             <th data-column="total_price">Total</th>
                                             <th data-column="masterRental.description">Description</th>
                                         </tr>

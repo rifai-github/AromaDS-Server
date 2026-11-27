@@ -75,6 +75,15 @@ class ContractSqUiFindings27NovTest extends TestCase
         $this->assertStringContainsString('if (seen.has(box.value)) return false;', $contract);
     }
 
+    public function test_room_rental_price_column_is_labelled_per_top(): void
+    {
+        $contract = $this->viewSource('marketing/contracts/show');
+
+        // contract_rentals.unit_price adalah harga per angsuran TOP (sama dengan "Harga Rental / TOP" di SQ).
+        $this->assertStringContainsString('<th data-column="unit_price">Price / TOP</th>', $contract);
+        $this->assertStringNotContainsString('<th data-column="unit_price">Price</th>', $contract);
+    }
+
     public function test_sq_basic_info_shows_payment_method_and_term_of_payment_once(): void
     {
         $quotation = $this->viewSource('marketing/quotations/show');
