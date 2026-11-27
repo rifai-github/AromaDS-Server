@@ -2713,7 +2713,7 @@ function addBillingAddress() {
                 <select name="billing_addresses[${addressIndex}][invoice_receipt]" class="form-control">
                     <option value="">Pilih...</option>
                     <option value="soft_copy">Soft copy</option>
-                    <option value="hard_copy">Hard copy</option>
+                    <option value="hard_copy" selected>Hard copy</option>
                     <option value="both">Both</option>
                     <option value="manual">Manual</option>
                 </select>

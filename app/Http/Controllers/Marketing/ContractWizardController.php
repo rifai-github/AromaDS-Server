@@ -689,7 +689,9 @@ class ContractWizardController extends Controller
                     }
                     
                     // Get invoice type (invoice_receipt)
-                    $invoiceType = $billingAddress['invoice_receipt'] ?? 'soft_copy';
+                    // Pak Hengky 27 Nov 2026: default Invoice Type = Hard Copy (dulu Soft Copy). '?:' juga
+                    // menangkap opsi kosong "Pilih..." yang dulu lolos '??' dan tersimpan sebagai string kosong.
+                    $invoiceType = ($billingAddress['invoice_receipt'] ?? null) ?: 'hard_copy';
                     
                     // Get mandatory tax (wajib pungut)
                     $mandatoryTax = $billingAddress['mandatory_tax'] ?? 'no';

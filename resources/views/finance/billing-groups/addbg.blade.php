@@ -333,6 +333,28 @@
                     </div>
                 </div>
 
+                <!-- Invoice Type Section -->
+                {{-- Pak Hengky 27 Nov 2026: default Invoice Type billing group baru = Hard Copy. Form ini dulu
+                     tidak punya pilihan Invoice Type sama sekali sehingga selalu tersimpan Soft Copy. --}}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header" style="background-color: #1e3a8a; color: white; padding: 1rem 1.5rem;">
+                        <h5 class="mb-0"><i class="fas fa-file-invoice-dollar me-2"></i>Invoice Type</h5>
+                    </div>
+                    <div class="card-body" style="padding: 1.5rem;">
+                        <div class="mb-3">
+                            <label for="invoice_type" class="form-label">Invoice Type</label>
+                            <select class="form-select @error('invoice_type') is-invalid @enderror" id="invoice_type" name="invoice_type">
+                                @foreach(['hard_copy' => 'Hard Copy', 'soft_copy' => 'Soft Copy', 'both' => 'Both', 'manual' => 'Manual'] as $invoiceTypeValue => $invoiceTypeLabel)
+                                    <option value="{{ $invoiceTypeValue }}" @selected(old('invoice_type', 'hard_copy') === $invoiceTypeValue)>{{ $invoiceTypeLabel }}</option>
+                                @endforeach
+                            </select>
+                            @error('invoice_type')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Payment Method Section -->
                 <div class="card shadow-sm mb-4">
                     <div class="card-header" style="background-color: #1e3a8a; color: white; padding: 1rem 1.5rem;">

@@ -48,6 +48,9 @@ class BillingGroupService
                 'billing_end_date' => $data['billing_end_date'] ?? null,
                 'billing_amount' => $data['billing_amount'],
                 'is_active' => $data['is_active'] ?? true,
+                // Default Invoice Type billing group baru = Hard Copy (Pak Hengky 27 Nov 2026); tanpa
+                // ini jatuh ke default kolom DB soft_copy.
+                'invoice_type' => ($data['invoice_type'] ?? null) ?: 'hard_copy',
                 'created_by' => auth()->id(),
             ]);
 

@@ -118,7 +118,7 @@ class BillingGroupController extends Controller
             'tax_number' => 'nullable|string|max:100',
             'npwp_address' => 'nullable|string',
             // Invoice Type
-            'invoice_type' => 'required|in:hard_copy,soft_copy,both,manual',
+            'invoice_type' => 'nullable|in:hard_copy,soft_copy,both,manual', // kosong = Hard Copy (Pak Hengky 27 Nov)
             // Payment Method
             'payment_method' => 'nullable|string|max:50',
             'virtual_account_number' => 'nullable|string|max:255', // Removed regex strictness for legacy compat
@@ -204,7 +204,7 @@ class BillingGroupController extends Controller
                 'tax_type' => $taxType,
                 'tax_number' => $taxNumber,
                 'ppn_code' => $request->ppn_code,
-                'invoice_type' => $request->invoice_type,
+                'invoice_type' => $request->invoice_type ?: 'hard_copy',
                 'payment_method' => $request->payment_method, // This will store 'va_bca', 'transfer' etc.
                 'virtual_account_number' => $vaNumber,
                 'bank_name' => $request->bank_name,
@@ -396,7 +396,7 @@ class BillingGroupController extends Controller
             if (filled($request->invoice_type)) {
                 $attributes['invoice_type'] = $request->invoice_type;
             } elseif (blank($billingGroup->invoice_type)) {
-                $attributes['invoice_type'] = 'soft_copy';
+                $attributes['invoice_type'] = 'hard_copy';
             }
 
             // Payment Method: nilai kosong tidak pernah menimpa bank/VA/metode yang tersimpan.
@@ -1377,7 +1377,7 @@ class BillingGroupController extends Controller
                     'nik' => $request->input('nik') ?: null,
                     'ppn_code' => $ppnCode,
                     // Invoice Type
-                    'invoice_type' => $request->invoice_type ?? 'soft_copy',
+                    'invoice_type' => $request->invoice_type ?: 'hard_copy', // default Hard Copy (Pak Hengky 27 Nov 2026)
                     // Payment Method
                     'payment_method' => $request->payment_method_type, // Storing 'transfer', 'va' etc. from metadata
                     'virtual_account_number' => $request->virtual_account_number,
@@ -1458,6 +1458,8 @@ class BillingGroupController extends Controller
                 'billing_end_date' => $billingGroup->billing_end_date,
                 'billing_amount' => $billingGroup->billing_amount,
                 'is_active' => $billingGroup->is_active,
+                // Salinan ikut membawa Invoice Type sumbernya (dulu jatuh ke default kolom DB soft_copy).
+                'invoice_type' => $billingGroup->invoice_type ?: 'hard_copy',
                 'created_by' => auth()->id() ?? 1,
             ]);
 

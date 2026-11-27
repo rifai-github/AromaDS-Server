@@ -543,10 +543,10 @@
                             <select class="form-select @error('invoice_type') is-invalid @enderror" 
                                     id="invoice_type" name="invoice_type">
                                 <option value="">Select Invoice Type</option>
-                                <option value="hard_copy" {{ old('invoice_type', $billingGroup->invoice_type) == 'hard_copy' ? 'selected' : '' }}>Hard Copy</option>
-                                <option value="soft_copy" {{ old('invoice_type', $billingGroup->invoice_type) == 'soft_copy' ? 'selected' : '' }}>Soft Copy</option>
-                                <option value="both" {{ old('invoice_type', $billingGroup->invoice_type) == 'both' ? 'selected' : '' }}>Both</option>
-                                <option value="manual" {{ old('invoice_type', $billingGroup->invoice_type) == 'manual' ? 'selected' : '' }}>Manual</option>
+                                <option value="hard_copy" {{ old('invoice_type', $billingGroup->invoice_type ?: 'hard_copy') == 'hard_copy' ? 'selected' : '' }}>Hard Copy</option>
+                                <option value="soft_copy" {{ old('invoice_type', $billingGroup->invoice_type ?: 'hard_copy') == 'soft_copy' ? 'selected' : '' }}>Soft Copy</option>
+                                <option value="both" {{ old('invoice_type', $billingGroup->invoice_type ?: 'hard_copy') == 'both' ? 'selected' : '' }}>Both</option>
+                                <option value="manual" {{ old('invoice_type', $billingGroup->invoice_type ?: 'hard_copy') == 'manual' ? 'selected' : '' }}>Manual</option>
                             </select>
                             @error('invoice_type')
                                 <div class="invalid-feedback">{{ $message }}</div>
